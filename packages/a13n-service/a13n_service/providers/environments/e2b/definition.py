@@ -6,8 +6,8 @@ from a13n_harness.providers.environment.e2b.shared import E2BProviderRuntime
 from a13n_service.providers.environment._backend import ManagementBackend
 from a13n_service.providers.environment._backend_factory import ManagementBackendFactory
 from a13n_service.providers.environment.definition import management_definition
+from a13n_service.providers.environment.recipes.e2b import E2BRecipe
 
-from .configuration import E2BRecipe
 from .management import E2BManagement
 
 

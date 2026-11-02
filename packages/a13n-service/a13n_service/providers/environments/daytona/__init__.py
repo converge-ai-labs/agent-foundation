@@ -8,9 +8,9 @@ from a13n_harness.providers.environment.native.environment import NativeRuntime
 from a13n_service.providers.environment._backend_factory import ManagementBackendFactory
 from a13n_service.providers.environment.daytona_build import DaytonaDesktopPreparation
 from a13n_service.providers.environment.definition import management_definition
+from a13n_service.providers.environment.recipes.daytona import DaytonaRecipe
 
 from . import desktop_build
-from .configuration import DaytonaRecipe
 from .management import DaytonaManagement
 
 

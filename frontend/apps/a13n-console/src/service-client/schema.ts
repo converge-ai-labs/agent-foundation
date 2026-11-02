@@ -12965,7 +12965,18 @@ export interface components {
       /** Daily */
       daily: components["schemas"]["DailyUsage"][];
       runs: components["schemas"]["RunMetrics"];
+      /** Series */
+      series?: components["schemas"]["UsageSeries"][];
       usage: components["schemas"]["ModelMetrics"];
+    };
+    /** UsageSeries */
+    UsageSeries: {
+      /** Daily */
+      daily: components["schemas"]["DailyUsage"][];
+      /** Key */
+      key: string | null;
+      /** Name */
+      name: string | null;
     };
     /** UsageSummary */
     UsageSummary: {
@@ -22643,6 +22654,8 @@ export interface operations {
         end: string;
         /** @description Filter by Run execution identity; requires workspace admin. */
         principal_id?: string | null;
+        group_by?: ("agents" | "models") | null;
+        metric?: "cost" | "tokens";
         timezone?: string;
       };
       header?: {

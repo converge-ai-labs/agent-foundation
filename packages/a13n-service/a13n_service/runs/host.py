@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.execution_policy import ExecutionPolicy
 from a13n_service.infra.errors import ServiceError, invalid
-from a13n_service.resources.agents import instructions
+from a13n_service.resources.agents import instructions, stored
 from a13n_service.resources.agents.schemas import SharedSkillSync
 from a13n_service.resources.agents.tables import AgentRevisionRow, AgentRow
 from a13n_service.resources.agents.toolsets import (
@@ -145,7 +145,7 @@ async def resolve_host(
         )
     return HostPlan(
         parts,
-        execution=ExecutionPolicy().overlay(RunOptions.model_validate(run.options).execution),
+        execution=ExecutionPolicy().overlay(stored.require(RunOptions, run.options, kind="run", id=run.id).execution),
         memories=await resolve_memories(session, run),
         file_tools=memory_file_tools(agent.config.toolsets),
         record_tools=memory_record_tools(agent.config.toolsets),

@@ -13,8 +13,8 @@ from a13n_harness.environment.models import EnvironmentState
 from a13n_harness.providers.environment.modal.shared import ModalConnectionConfiguration, ModalCredential
 from a13n_service.infra.errors import ServiceError
 from a13n_service.providers.environment import desktop_access as wire
+from a13n_service.providers.environment.recipes.modal import ModalRecipe
 from a13n_service.providers.environments.modal import provider
-from a13n_service.providers.environments.modal.configuration import ModalRecipe
 from a13n_service.runs.desktop_assistance import service
 
 GENERATION = "a" * 32

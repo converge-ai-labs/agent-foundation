@@ -19,9 +19,8 @@ from a13n_harness.providers.environment.e2b.provider import E2BProviderRuntime
 from pydantic import BaseModel, Field
 
 from a13n_service.providers.environment.e2b_build import E2BDesktopPreparation
-from a13n_service.settings import RENEWAL_HORIZON_SECONDS
+from a13n_service.providers.environment.recipes.e2b import CloudRecipe
 
-from .configuration import E2BRecipe
 from .definition import E2B as BASE_E2B
 from .desktop_build import DesktopBuildAPI, revision, specification
 
@@ -37,10 +36,6 @@ class Account(EnvironmentProviderConfiguration):
 
     def connection(self) -> E2BConnectionConfiguration:
         return E2BConnectionConfiguration(domain=self.domain)
-
-
-class CloudRecipe(E2BRecipe):
-    timeout_seconds: int = Field(default=3600, ge=RENEWAL_HORIZON_SECONDS, le=86_400, title="Sandbox timeout (seconds)")
 
 
 async def _provider(*, configuration: BaseModel, credential: E2BCredential | None, runtime: E2BProviderRuntime | None):

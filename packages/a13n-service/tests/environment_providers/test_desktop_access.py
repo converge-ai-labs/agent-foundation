@@ -10,7 +10,7 @@ from a13n_harness.environment.errors import EnvironmentProviderError, Environmen
 from a13n_harness.providers.environment.e2b.shared import E2BProviderRuntime
 from a13n_service.providers.environment import desktop_access as protocol
 from a13n_service.providers.environment import desktop_guest as guest
-from a13n_service.providers.environments.e2b.configuration import E2BRecipe
+from a13n_service.providers.environment.recipes.e2b import E2BRecipe
 from a13n_service.providers.environments.e2b.management import E2BManagement
 from pydantic import SecretStr
 

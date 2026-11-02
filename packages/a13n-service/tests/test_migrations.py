@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 from a13n_service.distribution import OSS, Distribution
 from a13n_service.infra.db import transaction
-from a13n_service.infra.platform import PLATFORM_GROUPS, PLATFORM_TOOLS
+from a13n_service.infra.platform import PLATFORM_GROUPS
 from a13n_service.migrations.runner import check, migration_connection, upgrade
 from a13n_service.resources.revisions import config_digest
 from a13n_service.runs.tables import SessionRow
@@ -407,24 +407,45 @@ async def test_legacy_toolsets_and_platform_selections_are_rewritten(database, s
         digest == config_digest(stored)
         for stored, digest in rows(database, "SELECT config, digest FROM agent_revisions")
     )
-    # The guards are back on, and the rewritten rows read as current configurations.
+    # The guards are back on, and the rewritten rows remain readable as historical configurations.
     assert rows(database, "SELECT DISTINCT tgenabled FROM pg_trigger WHERE NOT tgisinternal") == [("O",)]
-    effects = {tool.key: tool.effect for tool in PLATFORM_TOOLS}
+    # This migration freezes its original API-tool vocabulary; the current business
+    # catalog deliberately removes/renames it and cannot define historical effects.
+    historical_writes = {
+        "create_agent",
+        "update_agent",
+        "archive_agent",
+        "unarchive_agent",
+        "duplicate_agent",
+        "create_agent_revision",
+        "set_default_agent_revision",
+        "create_finding",
+    }
 
     def permissions(toolset: dict) -> set[tuple[str, str]]:
-        return {(effects[key], tool["permission"]) for key, tool in toolset["tools"].items() if tool["enabled"]}
+        return {
+            ("write" if key in historical_writes else "read", tool["permission"])
+            for key, tool in toolset["tools"].items()
+            if tool["enabled"]
+        }
 
     revision = await service.client.get(f"{service.api}/agents/{agent['id']}/revisions/{agent['default_revision_id']}")
     stored = revision.json()["config"]["toolsets"]
-    assert [group for group in PLATFORM_GROUPS if stored[group]["enabled"]] == ["agents", "execution"]
-    assert permissions(stored["agents"]) == {("read", "ask"), ("write", "inherit")}
+    assert [group for group in PLATFORM_GROUPS if stored.get(group, {}).get("enabled", False)] == [
+        "agents",
+        "execution",
+    ]
+    # Historical reads preserve the migration's sparse policy, without expanding
+    # omitted defaults using the new platform catalogue.
+    assert permissions(stored["agents"]) == {("read", "ask")}
+    assert "create_agent_revision" not in stored["agents"]["tools"]
     executed = await service.client.get(f"{service.api}/runs/{run['id']}/agent")
     assert executed.status_code == 200, executed.text
     toolsets = executed.json()["config"]["toolsets"]
     assert "configuration" not in toolsets and toolsets["web"]["enabled"] is False
     # The override replaced the whole selection, so the revision's other group is off for this run.
-    assert [group for group in PLATFORM_GROUPS if toolsets[group]["enabled"]] == ["execution"]
-    assert permissions(toolsets["execution"]) == {("read", "inherit"), ("write", "allow")}
+    assert [group for group in PLATFORM_GROUPS if toolsets.get(group, {}).get("enabled", False)] == ["execution"]
+    assert permissions(toolsets["execution"]) == {("write", "allow")}
 
 
 @pytest.mark.parametrize("invalid_index", [False, True])

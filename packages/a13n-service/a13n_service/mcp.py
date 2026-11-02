@@ -20,6 +20,7 @@ from a13n_service.api_access import credential_context
 from a13n_service.api_tools import api_tools
 from a13n_service.documentation import Documents
 from a13n_service.infra.platform import PLATFORM_METADATA, PlatformOperation
+from a13n_service.platform_tools import Definition, PlatformTool, validate_catalog
 from a13n_service.settings import Settings
 from a13n_service.tenancy.access import unauthenticated
 from a13n_service.tenancy.requests import cached_credential, current_credential, current_runtime, current_workspace
@@ -28,8 +29,9 @@ from a13n_service.tenancy.requests import cached_credential, current_credential,
 class WorkspaceKey:
     """Run before the child changes request.app; never authenticate through browser cookies."""
 
-    def __init__(self, app: ASGIApp):
+    def __init__(self, app: ASGIApp, *, internal: bool = False):
         self.app = app
+        self.internal = internal
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] == "http":
@@ -40,7 +42,7 @@ class WorkspaceKey:
             if scheme.lower() != "bearer" or not token.strip():
                 raise unauthenticated()
             credential = await current_credential(request, await current_runtime(request))
-            if credential.principal.confinement is None:
+            if credential.principal.confinement is None or (credential.platform is not None) != self.internal:
                 raise unauthenticated()
             await current_workspace(credential.principal, request.headers.get("x-workspace-id"))
             with credential_context(credential, scope):
@@ -103,6 +105,30 @@ def build_mcp(app: FastAPI, settings: Settings, routes: Sequence[APIRoute]) -> S
             name="search_documents",
             annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
         )
+    )
+    return server.http_app(
+        path="/",
+        stateless_http=True,
+        json_response=True,
+        host_origin_protection=True,
+        allowed_hosts=[urlsplit(origin).netloc for origin in settings.server.public_origins],
+        allowed_origins=sorted(settings.server.public_origins),
+    )
+
+
+def build_platform_mcp(app: FastAPI, settings: Settings, definitions: Sequence[Definition]) -> StarletteWithLifespan:
+    validate_catalog(definitions)
+    tools = [PlatformTool(contract, app) for contract in definitions]
+    server = FastMCP(
+        "a13n Service platform tools",
+        version=version("a13n-service"),
+        instructions="Use explicit platform tools. Preserve observed versions for edits. Never replay an unknown write outcome.",
+        tools=tools,
+        middleware=[RunToolScope(tools)],
+        on_duplicate="error",
+        tasks=False,
+        mask_error_details=True,
+        dereference_schemas=False,
     )
     return server.http_app(
         path="/",

@@ -5,6 +5,16 @@ description: 连接外部客户端，通过 MCP 更新工作空间资源并排�
 
 将支持 MCP 的客户端连接到 Service，即可管理工作空间资源并查看执行情况。先列出 agent 或搜索已安装版本的文档，再用同一连接读取资源，携带返回的 ETag 完成更新。
 
+## 内部 agent 工具
+
+Service 管理的 agent 使用独立的内部平台工具目录。Host 将 Run 凭证提供给 `/api/v1/platform-tools/`；外部工作空间密钥使用下文介绍的管理连接。内部工具接收直接的任务字段和带版本条件的差量，返回业务结果，不会回退到原始 API 工具。例如，修改 agent 的模型只提交 `agent_id`、原读取状态的 `expected_version` 和 `model`，其余配置由 Service 保留。Schedule 工具根据任务指令和执行选项构造 invocation。连接秘密仍通过受控配置或授权流程处理。内部 Run 凭证不能使用外部管理 MCP 或原始产品 HTTP 绕过工具准入。
+
+Service 0.1 之前可能引入破坏性变更，开发者须自行迁移已有数据。这次内部工具替换就是其中一次：所有此前保存过规范化配置的 Agent 都可能需要完整重写，即使被移除的工具条目原本处于禁用状态。此变更不提供兼容层，不保证新旧 Control/Worker 混合运行，也不保证恢复旧 Run。部署前应停止接收新任务及定时、手动调度，等待活动 Run 完成，并处理待审批、等待中的 Run 以及结果不明的外部操作。关闭旧部署，同步更新 Control 和 Worker，完成数据迁移或配置重写后，再恢复任务接收。
+
+修改 Agent 配置时，指定 `base_revision_id` 就必须显式指定 `make_default`，否则返回 `invalid_argument`。缺少必填版本会导致参数校验失败，版本过期则返回 `precondition_failed`。遇到冲突应重新读取并审核新的变更，不能悄悄替换已获批准的版本。
+
+本页后续示例描述仍受支持的外部管理 MCP 契约，包括 HTTP 响应封装和 `request_body` 参数。
+
 ## 使用工作区密钥连接
 
 准备提供 API 的 Service 进程（`control` 或 `all`）、可访问的地址，以及有权执行目标操作的[工作空间 API key](identity.md#api-keys)。仅运行 worker 的进程不提供 MCP。

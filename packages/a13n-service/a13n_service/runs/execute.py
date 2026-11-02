@@ -56,6 +56,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from a13n_service.infra.db import short_session, transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.telemetry import attempt_observation
+from a13n_service.resources.agents import stored
 from a13n_service.resources.agents.service import load_revision
 from a13n_service.resources.agents.toolsets import enabled_tools
 from a13n_service.runs import agent, checkpoints, claim, compactions, deferred, inbox, inputs, placement
@@ -257,7 +258,7 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
         scope = WorkspaceScope(run.organization_id, run.workspace_id)
         authority = ExecutionAuthority.model_validate(run.authority)
         revision = await load_revision(session, run.agent_id, run.agent_revision_id)
-        options = RunOptions.model_validate(run.options)
+        options = stored.require(RunOptions, run.options, kind="run", id=run.id)
         resolved = await agent.resolve(
             session,
             principal,
@@ -926,10 +927,13 @@ class _Attempt:
                         content,
                         input_id=entry.id,
                         immediate=entry.kind == "message" and self.plan.host.execution.steering == "immediate",
+                        best_effort=True,
                     )
                 except RunError as error:
-                    if error.code != "run_not_active":
+                    if error.code not in {"run_not_active", "steering_timeout"}:
                         raise
+                    # Neither refusal accepted the input. Keep its assignment and FIFO position
+                    # for the next boundary, recovery, or ordinary terminal continuation.
                     return
                 self.offers.open[entry.id] = self.offers.unsent.pop(0)
 

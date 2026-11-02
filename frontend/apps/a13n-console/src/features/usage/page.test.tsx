@@ -135,7 +135,7 @@ function setup() {
           },
   }));
 }
-it("loads summaries, switches dimensions, pages, and keeps chart metric switches local", async () => {
+it("loads summaries, switches dimensions, pages, and requests ranked series for chart metrics", async () => {
   setup();
   mount();
   const user = userEvent.setup();
@@ -148,10 +148,19 @@ it("loads summaries, switches dimensions, pages, and keeps chart metric switches
       { name: "Tokens" },
     ),
   );
-  expect(http.GET.mock.calls).toHaveLength(calls);
+  await waitFor(() => expect(http.GET.mock.calls).toHaveLength(calls + 1));
+  expect(http.GET.mock.calls.at(-1)?.[1].params.query).toMatchObject({
+    group_by: "agents",
+    metric: "tokens",
+  });
   await user.click(screen.getByRole("button", { name: "Next" }));
   expect(await screen.findByText("Second page")).toBeTruthy();
-  await user.click(screen.getByRole("button", { name: "By model" }));
+  await user.click(
+    within(screen.getByRole("group", { name: "Group usage by" })).getByRole(
+      "button",
+      { name: "By model" },
+    ),
+  );
   expect(await screen.findByText("Unpriced model")).toBeTruthy();
   const table = screen.getByRole("table", { name: "Usage breakdown" });
   await waitFor(() =>
@@ -247,7 +256,12 @@ it("lets an admin inspect a member across overview, model and agent usage and re
   });
   await user.click(screen.getByRole("button", { name: "Next" }));
   await screen.findByText("Second page");
-  await user.click(screen.getByRole("button", { name: "By model" }));
+  await user.click(
+    within(screen.getByRole("group", { name: "Group usage by" })).getByRole(
+      "button",
+      { name: "By model" },
+    ),
+  );
   await screen.findByText("Unpriced model");
   const modelQuery = http.GET.mock.calls
     .filter(([path]) => path === "/api/v1/usage/models")
@@ -284,7 +298,12 @@ it("filters the whole page from the top member picker and switches or clears ide
   mount();
   const user = userEvent.setup();
   await screen.findByText("Support assistant");
-  await user.click(screen.getByRole("button", { name: "By model" }));
+  await user.click(
+    within(screen.getByRole("group", { name: "Group usage by" })).getByRole(
+      "button",
+      { name: "By model" },
+    ),
+  );
   await screen.findByText("Unpriced model");
   await user.click(screen.getByRole("button", { name: "Member: All members" }));
   await user.click(await screen.findByRole("button", { name: "Alice · User" }));
@@ -324,7 +343,7 @@ it("filters the whole page from the top member picker and switches or clears ide
   );
   expect(screen.queryByText("Viewing usage for")).toBeNull();
   expect(
-    screen
+    within(screen.getByRole("group", { name: "Group usage by" }))
       .getByRole("button", { name: "By model" })
       .getAttribute("aria-pressed"),
   ).toBe("true");

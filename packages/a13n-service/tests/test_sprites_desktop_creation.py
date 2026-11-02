@@ -9,7 +9,7 @@ from a13n_harness.environment.models import EnvironmentState
 from a13n_harness.providers.environment.native.errors import failure
 from a13n_harness.providers.environment.sprites.shared import SpritesTargetState
 from a13n_service.providers.environment.errors import EnvironmentManagementError
-from a13n_service.providers.environments.sprites.configuration import SpritesRecipe
+from a13n_service.providers.environment.recipes.sprites import SpritesRecipe
 from a13n_service.runs.environments import lifecycle
 
 pytestmark = pytest.mark.anyio

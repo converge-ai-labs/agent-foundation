@@ -36,7 +36,7 @@ if TYPE_CHECKING:
     from e2b.sandbox.sandbox_api import SandboxInfo
 
 
-from .configuration import E2BRecipe
+from a13n_service.providers.environment.recipes.e2b import E2BRecipe
 
 
 class E2BManagement(E2BReference, ManagementBackend):

@@ -84,7 +84,7 @@ def test_failed_environment_journey_cleans_up_with_its_frozen_recipe(tmp_path, m
 
 
 def test_daytona_journey_uses_the_operator_envd_snapshot(monkeypatch, pytestconfig, environment_journeys):
-    from a13n_service.providers.environments.daytona.configuration import DaytonaRecipe
+    from a13n_service.providers.environment.recipes.daytona import DaytonaRecipe
 
     monkeypatch.setenv("DAYTONA_API_KEY", "fixture-key")
     monkeypatch.setenv("DAYTONA_ORGANIZATION_ID", "fixture-org")
