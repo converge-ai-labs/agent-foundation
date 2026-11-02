@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useImperativeHandle, useRef, type Ref } from "react";
 import { basicSetup, EditorView } from "codemirror";
 import {
   Annotation,
@@ -7,7 +7,7 @@ import {
   type Extension,
 } from "@codemirror/state";
 import { keymap } from "@codemirror/view";
-import { gotoLine } from "@codemirror/search";
+import { gotoLine, openSearchPanel } from "@codemirror/search";
 import { javascript } from "@codemirror/lang-javascript";
 import { python } from "@codemirror/lang-python";
 import { json } from "@codemirror/lang-json";
@@ -53,6 +53,18 @@ const sourceHighlighting = syntaxHighlighting(
   ]),
 );
 
+export type SourceEditorHandle = {
+  focus: () => void;
+  find: () => void;
+  goToLine: () => void;
+};
+
+export type EditorCursor = {
+  line: number;
+  column: number;
+  selected: number;
+};
+
 export type EditorPosition = {
   anchor: number;
   head: number;
@@ -91,6 +103,8 @@ export function SourceEditor({
   position,
   onPosition,
   onSave,
+  ref,
+  onCursor,
 }: {
   value: string;
   onChange?: (value: string) => void;
@@ -105,6 +119,8 @@ export function SourceEditor({
   position?: EditorPosition;
   onPosition?: (position: EditorPosition) => void;
   onSave?: () => void;
+  ref?: Ref<SourceEditorHandle>;
+  onCursor?: (cursor: EditorCursor) => void;
   onSelection?: (
     range: { start_line: number; end_line: number } | undefined,
   ) => void;
@@ -112,6 +128,21 @@ export function SourceEditor({
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<EditorView | null>(null);
   const wrapMode = useRef(new Compartment());
+  const cursor = useRef(onCursor);
+  cursor.current = onCursor;
+  useImperativeHandle(
+    ref,
+    () => ({
+      focus: () => editor.current?.focus(),
+      find: () => {
+        if (editor.current) openSearchPanel(editor.current);
+      },
+      goToLine: () => {
+        if (editor.current) gotoLine(editor.current);
+      },
+    }),
+    [],
+  );
   const save = useRef(onSave);
   save.current = onSave;
   const remember = useRef(onPosition);
@@ -124,6 +155,18 @@ export function SourceEditor({
   selection.current = onSelection;
   useEffect(() => {
     if (!host.current) return;
+    const reportCursor = (state: EditorState) => {
+      const range = state.selection.main;
+      const line = state.doc.lineAt(range.head);
+      cursor.current?.({
+        line: line.number,
+        column: range.head - line.from + 1,
+        selected: state.selection.ranges.reduce(
+          (total, range) => total + range.to - range.from,
+          0,
+        ),
+      });
+    };
     const view = new EditorView({
       parent: host.current,
       doc: value,
@@ -145,7 +188,7 @@ export function SourceEditor({
         basicSetup,
         EditorView.editable.of(!readOnly),
         EditorState.readOnly.of(readOnly),
-        EditorView.contentAttributes.of({ "aria-label": label }),
+        EditorView.contentAttributes.of({ "aria-label": label, tabindex: "0" }),
         EditorView.updateListener.of((update) => {
           if (
             update.docChanged &&
@@ -161,6 +204,7 @@ export function SourceEditor({
               ),
             );
           if (update.selectionSet || update.docChanged) {
+            reportCursor(update.state);
             const range = update.state.selection.main;
             selection.current?.(
               range.empty
@@ -187,27 +231,53 @@ export function SourceEditor({
             backgroundColor: "var(--a13n-canvas)",
             color: "var(--a13n-text)",
           },
+          "&.cm-focused": {
+            outline: fill ? "none" : "2px solid var(--a13n-signal-soft)",
+            outlineOffset: "1px",
+          },
           ".cm-content": {
-            fontFamily: "var(--a13n-mono)",
+            padding: "8px 0",
             minHeight: fill ? "100%" : "160px",
           },
+          ".cm-line": { padding: "0 12px" },
           ".cm-gutters": {
             backgroundColor: "var(--a13n-surface)",
             color: "var(--a13n-secondary)",
             border: "none",
           },
-          ".cm-activeLine, .cm-activeLineGutter": {
-            backgroundColor: "var(--a13n-surface)",
-          },
+          // The selection layer sits behind the text: an opaque active line
+          // hides mouse/keyboard selections on that line.
+          ".cm-activeLine": { backgroundColor: "var(--a13n-hover)" },
+          ".cm-activeLineGutter": { backgroundColor: "var(--a13n-selected)" },
           ".cm-cursor": { borderLeftColor: "var(--a13n-text)" },
-          "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection":
+          ".cm-selectionBackground": {
+            backgroundColor:
+              "color-mix(in srgb, var(--a13n-signal) 16%, transparent)",
+          },
+          "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground":
             {
-              backgroundColor: "var(--a13n-selected)",
+              backgroundColor:
+                "color-mix(in srgb, var(--a13n-signal) 26%, transparent)",
             },
           ".cm-panels, .cm-tooltip": {
             backgroundColor: "var(--a13n-elevated)",
             color: "var(--a13n-text)",
             borderColor: "var(--a13n-border)",
+          },
+          ".cm-panel.cm-search": {
+            padding: "8px 32px 8px 8px",
+            lineHeight: "2.4",
+          },
+          ".cm-panel.cm-search input[type=checkbox]": {
+            accentColor: "var(--a13n-signal)",
+          },
+          ".cm-searchMatch": {
+            backgroundColor: "var(--a13n-signal-soft)",
+            outline: "1px solid var(--a13n-signal-soft)",
+          },
+          ".cm-searchMatch-selected": {
+            backgroundColor:
+              "color-mix(in srgb, var(--a13n-signal) 30%, transparent)",
           },
           ".cm-textfield, .cm-button": {
             background: "var(--a13n-surface)",
@@ -225,14 +295,21 @@ export function SourceEditor({
             borderColor: "var(--a13n-border)",
           },
           ".cm-scroller": {
+            fontFamily: "var(--a13n-mono)",
+            lineHeight: "1.65",
             maxHeight: fill ? "none" : "min(400px, 50dvh)",
             overflow: "auto",
+            overscrollBehavior: "contain",
+          },
+          "@media (max-width: 640px) and (pointer: coarse)": {
+            "&": { fontSize: "16px" },
           },
         }),
         extensions ?? [],
       ],
     });
     editor.current = view;
+    reportCursor(view.state);
     if (position) {
       view.dispatch({
         selection: {
