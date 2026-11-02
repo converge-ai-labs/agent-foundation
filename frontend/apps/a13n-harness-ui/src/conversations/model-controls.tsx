@@ -1,3 +1,5 @@
+import { useTranslation } from "../i18n";
+import { modelControlMessage } from "./model-control-messages";
 import type { Schema } from "../transport/client";
 import { SettingsRow, useComposerSettings } from "./composer-settings";
 import { ThinkingPicker } from "./thinking-picker";
@@ -38,6 +40,7 @@ export function ModelControlPanel({
   model?: Schema<"ModelSummary">;
   disabled?: boolean;
 }) {
+  const { t } = useTranslation();
   const settings = useComposerSettings()!;
   const reasoning = model?.reasoning_mode;
   const showReasoning =
@@ -79,43 +82,58 @@ export function ModelControlPanel({
   return (
     <div className={styles.modelControls}>
       <SettingsRow
-        label="Thinking"
+        label={t("Thinking")}
         value={
           controls.thinking == null
-            ? "Default"
-            : (model?.thinking?.options.find(
-                (item) => item.value === controls.thinking,
-              )?.label ?? "Unavailable selection")
+            ? t("Default")
+            : modelControlMessage(
+                model?.thinking?.options.find(
+                  (item) => item.value === controls.thinking,
+                )?.label ?? "Unavailable selection",
+                t,
+              )
         }
         disabled={disabled}
         onClick={() => settings.navigate("thinking")}
       />
       {showReasoning && (
         <SettingsRow
-          label="Reasoning mode"
+          label={t("Reasoning mode")}
           value={
             controls.reasoning_mode == null
-              ? reasoningModeLabel(reasoning?.state) +
-                (reasoning?.state === "default" ? "" : " · Model default")
+              ? reasoning?.state === "default"
+                ? modelControlMessage(reasoningModeLabel(reasoning.state), t)
+                : t("{{mode}} · Model default", {
+                    mode: modelControlMessage(
+                      reasoningModeLabel(reasoning?.state),
+                      t,
+                    ),
+                  })
               : reasoning?.supported
-                ? reasoningModeLabel(controls.reasoning_mode)
-                : "Unavailable selection"
+                ? modelControlMessage(
+                    reasoningModeLabel(controls.reasoning_mode),
+                    t,
+                  )
+                : t("Unavailable selection")
           }
           disabled={disabled}
           onClick={() => settings.navigate("reasoning")}
         />
       )}
       <SettingsRow
-        label="Speed"
+        label={t("Speed")}
         value={
           controls.fast == null
-            ? speedLabel(model?.fast?.state)
-            : speedLabel(
-                controls.fast === "ultrafast"
-                  ? "ultrafast"
-                  : controls.fast
-                    ? "on"
-                    : "off",
+            ? modelControlMessage(speedLabel(model?.fast?.state), t)
+            : modelControlMessage(
+                speedLabel(
+                  controls.fast === "ultrafast"
+                    ? "ultrafast"
+                    : controls.fast
+                      ? "on"
+                      : "off",
+                ),
+                t,
               )
         }
         disabled={disabled}

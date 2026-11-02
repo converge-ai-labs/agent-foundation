@@ -43,7 +43,7 @@ function catalogErrors(catalogs: Record<string, Record<string, string>>) {
   return errors;
 }
 
-it("validates onboarding catalogs with locale-specific plurals and interpolation", () => {
+it("validates localized catalogs with locale-specific plurals and interpolation", () => {
   expect(catalogErrors({ en, "zh-CN": zhCN })).toEqual([]);
   for (const key of Object.keys(en)) expect(i18n.exists(key), key).toBe(true);
 });
@@ -121,8 +121,16 @@ const surfaces = [
   "configuration/resource-choice.tsx",
   "setup/accounts.tsx",
   "setup/account-messages.ts",
+  "conversations/composer-settings.tsx",
+  "conversations/thread-run-choices.tsx",
+  "conversations/model-controls.tsx",
+  "conversations/model-picker.tsx",
+  "conversations/thinking-picker.tsx",
+  "conversations/fast-picker.tsx",
+  "conversations/reasoning-mode-picker.tsx",
+  "conversations/model-control-messages.ts",
 ];
-it("keeps literal onboarding translation calls in the catalogs", () => {
+it("keeps literal translation calls in the catalogs", () => {
   const missing: string[] = [];
   for (const path of surfaces) {
     const source = readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
