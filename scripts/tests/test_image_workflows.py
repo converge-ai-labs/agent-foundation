@@ -173,7 +173,13 @@ def test_development_sandbox_publication_requires_both_binary_builds(result, mon
 
 @pytest.mark.parametrize(
     "component,variant",
-    [("a13n-service", "standard"), ("a13n-envd", "standard"), ("a13n-envd", "slim"), ("a13n-envd", "desktop")],
+    [
+        ("a13n-service", "standard"),
+        ("a13n-service", "browser"),
+        ("a13n-envd", "standard"),
+        ("a13n-envd", "slim"),
+        ("a13n-envd", "desktop"),
+    ],
 )
 @pytest.mark.parametrize("version", ["1.2.3", "1.2.3-rc.2"])
 def test_all_release_image_tags_follow_one_channel_policy(component, variant, version, tmp_path, monkeypatch) -> None:
@@ -181,17 +187,19 @@ def test_all_release_image_tags_follow_one_channel_policy(component, variant, ve
     steps = jobs["publish-image"]["steps"]
     script = next(step["run"] for step in steps if step["name"] == "Resolve image tags")
     output = tmp_path / "output"
-    image = f"ghcr.io/example/{component}"
+    image_name = "a13n-browser" if variant == "browser" else component
+    image = f"ghcr.io/example/{image_name}"
+    monkeypatch.setenv("IMAGE_NAME", image_name)
     monkeypatch.setenv("IMAGE", image)
     monkeypatch.setenv("VERSION", version)
     monkeypatch.setenv("VARIANT", variant)
     monkeypatch.setenv("GITHUB_OUTPUT", str(output))
     subprocess.run(["bash", "-eu", "-c", script], check=True)
     tags = [line for line in output.read_text().splitlines() if line.startswith(image)]
-    suffix = f"-{variant}" if variant != "standard" else ""
+    suffix = f"-{variant}" if variant not in {"standard", "browser"} else ""
     stable = variant if variant != "standard" else "latest"
     expected = [f"{image}:{version}{suffix}"]
-    if "-rc." not in version:
+    if "-rc." not in version and variant != "browser":
         expected.append(f"{image}:{stable}")
     assert tags == expected
 
@@ -389,7 +397,13 @@ def test_service_release_publishes_both_architectures_and_pins_its_compose_image
         "${A13N_SERVICE_IMAGE:-ghcr.io/converge-ai-labs/a13n-service:dev}",
         "${A13N_SERVICE_IMAGE:-ghcr.io/converge-ai-labs/a13n-service:1.2.3-rc.1}",
     )
+    browser = (compose / "a13n-service-browser.yaml").read_text()
+    assert (tmp_path / "dist/a13n-service-browser.yaml").read_text() == browser.replace(
+        "${A13N_SERVICE_IMAGE:-ghcr.io/converge-ai-labs/a13n-service:latest}",
+        "${A13N_SERVICE_IMAGE:-ghcr.io/converge-ai-labs/a13n-service:1.2.3-rc.1}",
+    )
     assert sorted(path.name for path in (tmp_path / "dist").iterdir()) == [
+        "a13n-service-browser.yaml",
         "a13n-service-quickstart.yaml",
         "a13n-service.yaml",
     ]
