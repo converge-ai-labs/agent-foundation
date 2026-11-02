@@ -104,7 +104,7 @@ export function UsageChart({
         <>
           <div className={styles.legend} aria-label={t("Chart legend")}>
             {series.map((item, index) => (
-              <span key={item.key ?? "others"}>
+              <span key={item.key === null ? "others" : `series:${item.key}`}>
                 <i style={{ background: color(index) }} />
                 {seriesName(item)}
               </span>
@@ -183,7 +183,11 @@ export function UsageChart({
                               return (
                                 value > 0 && (
                                   <span
-                                    key={item.key ?? "others"}
+                                    key={
+                                      item.key === null
+                                        ? "others"
+                                        : `series:${item.key}`
+                                    }
                                     className={styles.segment}
                                     style={{
                                       height: `${(value / values[index]!) * 100}%`,
@@ -211,7 +215,13 @@ export function UsageChart({
                           if (!usage || !usage.requests) return null;
                           const value = amount(usage);
                           return (
-                            <li key={item.key ?? "others"}>
+                            <li
+                              key={
+                                item.key === null
+                                  ? "others"
+                                  : `series:${item.key}`
+                              }
+                            >
                               <i style={{ background: color(seriesIndex) }} />
                               <span className={styles.seriesName}>
                                 {seriesName(item)}

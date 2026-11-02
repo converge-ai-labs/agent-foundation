@@ -43,7 +43,7 @@ function mount(metric: "cost" | "tokens" = "cost") {
         },
       ]}
       series={[
-        { key: "model-a", name: "Model A", daily: [day("6", 600)] },
+        { key: "others", name: "Model A", daily: [day("6", 600)] },
         { key: "model-b", name: "Model B", daily: [day(null, 100)] },
         { key: null, name: null, daily: [day("4", 300)] },
       ]}
