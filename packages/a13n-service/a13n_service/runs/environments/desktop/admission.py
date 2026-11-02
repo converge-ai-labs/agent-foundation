@@ -1,29 +1,19 @@
-"""Computer-only admission and typed settlement; no transaction spans a provider call."""
+"""Prospective Computer admission and fresh-observation registration."""
 
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
-import anyio
-from a13n_harness.environment.computer import (
-    ComputerActionResult,
-    ComputerCall,
-    ComputerClipboard,
-    ComputerClipboardWriteResult,
-    ComputerDescription,
-    ComputerScreenshot,
-    ComputerZoom,
-)
+from a13n_harness.environment.computer import ComputerCall, ComputerScreenshot
 from a13n_harness.environment.models import EnvironmentAction, EnvironmentError, EnvironmentState
-from a13n_harness.tool_execution import current_execution
 from sqlalchemy import select
 
-from a13n_service.infra.db import lock, now, transaction
+from a13n_service.infra.db import lock, transaction
 from a13n_service.infra.errors import conflict
 from a13n_service.infra.ids import new_object_id
 from a13n_service.runs.attempts import Lease
 from a13n_service.runs.environments.desktop import freshness, identity
-from a13n_service.runs.environments.desktop.tables import ComputerOperationRow, DesktopBlockedRow, DesktopControlRow
+from a13n_service.runs.environments.desktop.tables import DesktopBlockedRow, DesktopControlRow
 from a13n_service.runs.environments.mounts import require_usable
 from a13n_service.runs.environments.tables import EnvironmentRow
 from a13n_service.runs.runtime import Runtime
@@ -42,7 +32,6 @@ GUIDANCE = (
 
 @dataclass(frozen=True)
 class Permit:
-    id: str
     control_id: str
     generation: int
     episode: int
@@ -104,21 +93,7 @@ async def admit(
                         "hint": "Observe the desktop and make a new model decision before input.",
                     },
                 )
-            permit = Permit(new_object_id("cop"), row.id, row.generation, row.episode, source)
-            record = current_execution()
-            session.add(
-                ComputerOperationRow(
-                    id=permit.id,
-                    control_id=row.id,
-                    environment_id=environment.id,
-                    run_id=run.id,
-                    attempt_id=lease.attempt_id,
-                    execution_id=record.execution_id if record is not None else None,
-                    generation=row.generation,
-                    episode=row.episode,
-                    action=call.action.value,
-                )
-            )
+            permit = Permit(row.id, row.generation, row.episode, source)
     if permit is None:
         # Raising inside the transaction would lose the actual blocked registration.
         raise EnvironmentError(
@@ -129,55 +104,25 @@ async def admit(
     return permit
 
 
-@dataclass(frozen=True)
-class Settlement:
-    settled: bool
-    effect: str | None
-    cleanup_complete: bool | None
-
-
-def evidence(call: ComputerCall) -> Settlement:
-    if not call.dispatched:
-        return Settlement(True, "not_executed", True)
-    result = call.result
-    if isinstance(result, ComputerActionResult):
-        return Settlement(result.input_cleanup_complete, result.effect, result.input_cleanup_complete)
-    if isinstance(result, ComputerClipboardWriteResult):
-        return Settlement(result.cleanup_complete, result.effect, result.cleanup_complete)
-    if call.error is not None and call.error.details.get("dispatch_stage") == "pre_dispatch":
-        return Settlement(True, "not_executed", True)
-    if isinstance(result, (ComputerScreenshot, ComputerDescription, ComputerClipboard, ComputerZoom)):
-        return Settlement(True, None, True)
-    return Settlement(False, "unknown", None)
-
-
-async def settle(runtime: Runtime, permit: Permit, call: ComputerCall) -> None:
-    result = evidence(call)
+async def register_observation(runtime: Runtime, permit: Permit, call: ComputerCall) -> None:
+    if (
+        permit.source is None
+        or call.action != EnvironmentAction.COMPUTER_OBSERVE
+        or not isinstance(call.result, ComputerScreenshot)
+    ):
+        return
     async with transaction(runtime.storage) as session:
         control = await lock(session, DesktopControlRow, permit.control_id)
-        operation = await lock(session, ComputerOperationRow, permit.id)
-        assert control is not None and operation is not None
-        if control.generation != permit.generation:
-            # Authoritative target loss already retired this operation; late evidence cannot revive it.
+        assert control is not None
+        if control.control != "automation" or (control.generation, control.episode) != (
+            permit.generation,
+            permit.episode,
+        ):
             return
-        operation.dispatched = call.dispatched
-        operation.effect = result.effect
-        operation.cleanup_complete = result.cleanup_complete
-        if result.settled:
-            operation.settled_at = await now(session)
-        observed = (
-            permit.source is not None
-            and call.action == EnvironmentAction.COMPUTER_OBSERVE
-            and isinstance(call.result, ComputerScreenshot)
-            and control.control == "automation"
-            and (control.generation, control.episode) == (permit.generation, permit.episode)
-        )
-    if observed:
-        assert permit.source is not None and isinstance(call.result, ComputerScreenshot)
-        permit.source.observed(
-            freshness.Observation(permit.control_id, permit.generation, permit.episode, call.result.observation),
-            call.result.image_identifier,
-        )
+    permit.source.observed(
+        freshness.Observation(permit.control_id, permit.generation, permit.episode, call.result.observation),
+        call.result.image_identifier,
+    )
 
 
 @asynccontextmanager
@@ -190,8 +135,5 @@ async def operation(
         return
     assert state is not None
     permit = await admit(runtime, lease, mount, state, call)
-    try:
-        yield
-    finally:
-        with anyio.CancelScope(shield=True), anyio.fail_after(5):
-            await settle(runtime, permit, call)
+    yield
+    await register_observation(runtime, permit, call)

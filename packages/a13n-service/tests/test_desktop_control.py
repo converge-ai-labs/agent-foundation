@@ -250,7 +250,8 @@ async def admitted(service, desktop):
     return lease, mount, state
 
 
-async def test_computer_drain_blocks_reads_and_coalesces_actual_recipients(service, desktop):
+@pytest.mark.parametrize("action", ["environment.computer.observe", "environment.computer.click"])
+async def test_takeover_allows_admitted_call_to_finish_and_blocks_later_calls(service, desktop, action):
     from a13n_harness.environment.computer import ComputerCall
     from a13n_harness.environment.models import EnvironmentAction, EnvironmentError
     from a13n_service.runs.environments.desktop import admission
@@ -258,78 +259,85 @@ async def test_computer_drain_blocks_reads_and_coalesces_actual_recipients(servi
     from sqlalchemy import select
 
     lease, mount, state = await admitted(service, desktop)
-    call = ComputerCall(EnvironmentAction.COMPUTER_OBSERVE)
-    permit = await admission.admit(service.runtime, lease, mount, state, call)
-    draining = await begin(service, desktop)
-    assert draining.control == "draining" and not desktop[4]
-    for _ in range(2):
-        with pytest.raises(EnvironmentError, match="human control"):
-            await admission.admit(
-                service.runtime, lease, mount, state, ComputerCall(EnvironmentAction.COMPUTER_OBSERVE)
-            )
+    call = ComputerCall(EnvironmentAction(action))
+    entered, release = asyncio.Event(), asyncio.Event()
+    finished = []
+
+    async def invoke():
+        async with admission.operation(service.runtime, lease, mount, state, call):
+            entered.set()
+            await release.wait()
+            finished.append(True)
+
+    pending = asyncio.create_task(invoke())
+    await asyncio.wait_for(entered.wait(), 5)
+    try:
+        human = await begin(service, desktop)
+        assert human.control == "human" and desktop[4]
+        assert not pending.done()
+        for _ in range(2):
+            with pytest.raises(EnvironmentError, match="human control"):
+                await admission.admit(service.runtime, lease, mount, state, ComputerCall(EnvironmentAction(action)))
+    finally:
+        release.set()
+        await asyncio.wait_for(pending, 5)
+    assert finished == [True]
     async with transaction(service.runtime.storage) as session:
         registrations = list(await session.scalars(select(DesktopBlockedRow)))
         assert len(registrations) == 1
         assert registrations[0].run_id == lease.run_id
         assert registrations[0].mount == mount.model_dump(mode="json")
-    await admission.settle(service.runtime, permit, call)
-    async with transaction(service.runtime.storage) as session:
-        (await session.get(DesktopControlRow, draining.id)).due_at = None
-    await control.reconcile(service.runtime, draining.id)
-    assert (await control.get(service.runtime, desktop[2], service.tenant.workspace_id, desktop[1])).control == "human"
 
 
 @pytest.mark.parametrize("stage", ["pre_dispatch", "dispatched", None])
-async def test_provider_error_settles_only_proven_non_dispatch(service, desktop, stage):
+async def test_provider_error_does_not_block_takeover(service, desktop, stage):
     from a13n_harness.environment.computer import ComputerCall
     from a13n_harness.environment.models import EnvironmentAction, EnvironmentError
     from a13n_service.runs.environments.desktop import admission
-    from a13n_service.runs.environments.desktop.tables import ComputerOperationRow
 
     lease, mount, state = await admitted(service, desktop)
     call = ComputerCall(EnvironmentAction.COMPUTER_CLICK)
-    permit = await admission.admit(service.runtime, lease, mount, state, call)
-    call.dispatched = True
-    call.error = EnvironmentError(
-        "Provider refused input",
-        code="environment_operation_failed",
-        details={"dispatch_stage": stage} if stage else {},
-    )
-    await admission.settle(service.runtime, permit, call)
-    async with transaction(service.runtime.storage) as session:
-        row = await session.get_one(ComputerOperationRow, permit.id)
-        assert (row.settled_at is not None) == (stage == "pre_dispatch")
-        assert row.effect == ("not_executed" if stage == "pre_dispatch" else "unknown")
-    assert (await begin(service, desktop)).control == ("human" if stage == "pre_dispatch" else "draining")
+    with pytest.raises(EnvironmentError, match="Provider refused input"):
+        async with admission.operation(service.runtime, lease, mount, state, call):
+            raise EnvironmentError(
+                "Provider refused input",
+                code="environment_operation_failed",
+                details={"dispatch_stage": stage} if stage else {},
+            )
+    assert (await begin(service, desktop)).control == "human"
 
 
-async def test_unknown_computer_dispatch_survives_expiry_and_pregrant_cancellation(service, desktop):
+async def test_abandoned_computer_call_does_not_poison_later_takeover_or_retirement(service, desktop):
     from a13n_harness.environment.computer import ComputerCall
-    from a13n_harness.environment.models import EnvironmentAction, EnvironmentError
+    from a13n_harness.environment.models import EnvironmentAction
+    from a13n_service.runs.environments import lifecycle
     from a13n_service.runs.environments.desktop import admission
-    from a13n_service.runs.environments.desktop.tables import ComputerOperationRow, DesktopBlockedRow
     from sqlalchemy import select
 
     lease, mount, state = await admitted(service, desktop)
-    call = ComputerCall(EnvironmentAction.COMPUTER_CLICK)
-    permit = await admission.admit(service.runtime, lease, mount, state, call)
-    call.dispatched = True
-    await admission.settle(service.runtime, permit, call)
-    draining = await begin(service, desktop)
-    with pytest.raises(EnvironmentError):
-        await admission.admit(service.runtime, lease, mount, state, ComputerCall(EnvironmentAction.COMPUTER_OBSERVE))
+    from a13n_service.runs.schemas import Outcome
+    from a13n_service.runs.seal import seal_attempt
+
+    # Worker loss after admission leaves no per-call lifecycle to reconcile.
+    await admission.admit(service.runtime, lease, mount, state, ComputerCall(EnvironmentAction.COMPUTER_CLICK))
+    for _ in range(2):
+        human = await begin(service, desktop)
+        assert human.control == "human"
+        async with transaction(service.runtime.storage) as session:
+            row = await session.get(DesktopControlRow, human.id)
+            row.expires_at = await now(session) - timedelta(seconds=1)
+            row.due_at = None
+        await control.reconcile(service.runtime, human.id)
+        assert (
+            await control.get(service.runtime, desktop[2], service.tenant.workspace_id, desktop[1])
+        ).control == "automation"
+    response = await service.client.post(f"{service.api}/runs/{lease.run_id}/interrupt")
+    assert response.status_code == 200, response.text
     async with transaction(service.runtime.storage) as session:
-        row = await session.get(DesktopControlRow, draining.id)
-        row.expires_at = await now(session) - timedelta(seconds=1)
-        row.due_at = None
-    await control.reconcile(service.runtime, draining.id)
+        assert await session.scalar(select(lifecycle.in_use(mount.environment_id)))
+    await seal_attempt(service.runtime, lease, Outcome.cancelled())
     async with transaction(service.runtime.storage) as session:
-        assert (await session.get(DesktopControlRow, draining.id)).control == "automation"
-        assert (await session.get(ComputerOperationRow, permit.id)).settled_at is None
-        assert (await session.scalar(select(DesktopBlockedRow))).suppressed
-    # A later takeover still cannot hand input to a human while the unknown call can act.
-    assert (await begin(service, desktop)).control == "draining"
-    assert not desktop[4]
+        assert not await session.scalar(select(lifecycle.in_use(mount.environment_id)))
 
 
 @pytest.mark.parametrize("reason", ["lease_expired", "binding_removed"])
@@ -757,8 +765,7 @@ async def test_computer_admission_is_scoped_to_native_target_across_threads(serv
         with pytest.raises(EnvironmentError, match="human control"):
             await admission.admit(service.runtime, lease, mount, state, call)
     else:
-        permit = await admission.admit(service.runtime, lease, mount, state, call)
-        await admission.settle(service.runtime, permit, call)
+        await admission.admit(service.runtime, lease, mount, state, call)
     async with transaction(service.runtime.storage) as session:
         registrations = list(await session.scalars(select(DesktopBlockedRow)))
         assert len(registrations) == int(same_target)
@@ -768,38 +775,24 @@ async def test_computer_admission_is_scoped_to_native_target_across_threads(serv
     assert (await control.get(service.runtime, actor, service.tenant.workspace_id, environment_id)).id == human.id
 
 
-@pytest.mark.parametrize("outcome", ["missing", "unknown", "cancelled", "not_dispatched", "completed"])
-async def test_read_drain_requires_completion_evidence(service, desktop, outcome):
+@pytest.mark.parametrize("outcome", ["missing", "failed", "cancelled", "completed"])
+async def test_read_outcome_does_not_block_takeover(service, desktop, outcome):
     from a13n_harness.environment.computer import ComputerCall, ComputerDescription
     from a13n_harness.environment.models import EnvironmentAction, EnvironmentError
     from a13n_service.runs.environments.desktop import admission
-    from a13n_service.runs.environments.desktop.tables import ComputerOperationRow
 
     lease, mount, state = await admitted(service, desktop)
     call = ComputerCall(EnvironmentAction.COMPUTER_DESCRIBE)
-    with pytest.raises(asyncio.CancelledError) if outcome == "cancelled" else nullcontext():
+    expected = {"cancelled": asyncio.CancelledError, "failed": EnvironmentError}.get(outcome)
+    with pytest.raises(expected) if expected else nullcontext():
         async with admission.operation(service.runtime, lease, mount, state, call):
-            call.dispatched = True
             if outcome == "cancelled":
                 raise asyncio.CancelledError
-            if outcome in {"unknown", "not_dispatched"}:
-                call.error = EnvironmentError(
-                    "Read failed",
-                    code="environment_operation_failed",
-                    details={"dispatch_stage": "pre_dispatch" if outcome == "not_dispatched" else "dispatched"},
-                )
+            if outcome == "failed":
+                raise EnvironmentError("Read failed", code="environment_operation_failed")
             if outcome == "completed":
                 call.result = ComputerDescription(targets=(), observe_ready=True, input_ready=True)
-    from sqlalchemy import select
-
-    async with transaction(service.runtime.storage) as session:
-        operation = await session.scalar(
-            select(ComputerOperationRow).where(ComputerOperationRow.run_id == lease.run_id)
-        )
-        assert (operation.settled_at is not None) == (outcome in {"not_dispatched", "completed"})
-    assert (await begin(service, desktop)).control == (
-        "human" if outcome in {"not_dispatched", "completed"} else "draining"
-    )
+    assert (await begin(service, desktop)).control == "human"
 
 
 @pytest.mark.parametrize("failure", ["lost", "credential_changed", "network"])
@@ -810,16 +803,15 @@ async def test_native_loss_retires_desktop_obligations_and_fences_aliases(servic
     from a13n_service.infra.errors import ServiceError
     from a13n_service.runs.environments import lifecycle, renewal
     from a13n_service.runs.environments.desktop import admission
-    from a13n_service.runs.environments.desktop.tables import ComputerOperationRow, DesktopBlockedRow, DesktopViewerRow
+    from a13n_service.runs.environments.desktop.tables import DesktopBlockedRow, DesktopViewerRow
     from sqlalchemy import select
 
     _, environment_id, actor, calls, *_ = desktop
     lease, mount, state = await admitted(service, desktop)
-    call = ComputerCall(EnvironmentAction.COMPUTER_OBSERVE, dispatched=True)
-    permit = await admission.admit(service.runtime, lease, mount, state, call)
-    await admission.settle(service.runtime, permit, call)
+    call = ComputerCall(EnvironmentAction.COMPUTER_OBSERVE)
+    await admission.admit(service.runtime, lease, mount, state, call)
     read = await viewer.open_viewer(service.runtime, actor, service.tenant.workspace_id, environment_id, OpenViewer())
-    draining = await begin(service, desktop)
+    human = await begin(service, desktop)
     with pytest.raises(EnvironmentError):
         await admission.admit(service.runtime, lease, mount, state, call)
     async with transaction(service.runtime.storage) as session:
@@ -845,30 +837,27 @@ async def test_native_loss_retires_desktop_obligations_and_fences_aliases(servic
     )
     before = len(calls)
     await renewal.publish(service.runtime, claim, error)
-    # Replaying publication and late local settlement cannot revive or re-invalidate the target.
+    # Replaying publication cannot revive or re-invalidate the target.
     await renewal.publish(service.runtime, claim, error)
-    await admission.settle(service.runtime, permit, call)
     async with transaction(service.runtime.storage) as session:
-        row = await session.get(DesktopControlRow, draining.id)
-        operation = await session.get(ComputerOperationRow, permit.id)
+        row = await session.get(DesktopControlRow, human.id)
         blocked = await session.scalar(select(DesktopBlockedRow).where(DesktopBlockedRow.control_id == row.id))
         reader = await session.scalar(select(DesktopViewerRow).where(DesktopViewerRow.control_id == row.id))
         if failure == "lost":
-            assert row.generation == draining.generation + 1
+            assert row.generation == human.generation + 1
             assert row.control == "automation" and row.failure == "environment_lost"
             assert row.viewer is None and row.claim_id is None and row.due_at is None
-            assert operation.settled_at is not None and operation.effect == "unknown"
             assert blocked.suppressed and blocked.entry_id is None
             assert reader.expires_at < read.expires_at
             assert not await session.scalar(select(lifecycle.in_use(alias_id)))
         else:
-            assert row.generation == draining.generation and row.control == "draining"
-            assert operation.settled_at is None and not blocked.suppressed
+            assert row.generation == human.generation and row.control == "human"
+            assert not blocked.suppressed
             assert await session.scalar(select(lifecycle.in_use(alias_id)))
     if failure == "lost":
         with pytest.raises(ServiceError, match="environment lost"):
             await viewer.open_viewer(service.runtime, actor, service.tenant.workspace_id, alias_id, OpenViewer())
-        await control.reconcile(service.runtime, draining.id)
+        await control.reconcile(service.runtime, human.id)
         assert len(calls) == before
 
 
@@ -1016,3 +1005,66 @@ async def test_start_loss_invalidates_original_native_target_idempotently(servic
         assert row.generation == initial.generation + 1 and row.failure == "environment_lost"
     with pytest.raises(ServiceError):
         await viewer.open_viewer(service.runtime, actor, service.tenant.workspace_id, environment_id, OpenViewer())
+
+
+async def test_takeover_intent_blocks_calls_before_viewer_grant_and_can_be_cancelled(service, desktop, monkeypatch):
+    from unittest.mock import AsyncMock
+
+    from a13n_harness.environment.computer import ComputerCall
+    from a13n_harness.environment.models import EnvironmentAction, EnvironmentError
+    from a13n_service.runs.environments.desktop import admission
+    from a13n_service.runs.environments.desktop.tables import DesktopBlockedRow
+    from sqlalchemy import select
+
+    lease, mount, state = await admitted(service, desktop)
+    with monkeypatch.context() as patch:
+        patch.setattr(control, "reconcile", AsyncMock())
+        pending = await begin(service, desktop)
+    assert pending.control == "draining" and not desktop[4]
+    with pytest.raises(EnvironmentError, match="human control"):
+        await admission.admit(service.runtime, lease, mount, state, ComputerCall(EnvironmentAction.COMPUTER_OBSERVE))
+    returned = await control.handback(
+        service.runtime, desktop[2], service.tenant.workspace_id, desktop[1], if_match=etag(pending.id, pending.version)
+    )
+    assert returned.control == "automation" and not desktop[4]
+    async with transaction(service.runtime.storage) as session:
+        blocked = await session.scalar(select(DesktopBlockedRow))
+        assert blocked.suppressed and blocked.entry_id is None
+    await admission.admit(service.runtime, lease, mount, state, ComputerCall(EnvironmentAction.COMPUTER_OBSERVE))
+
+
+@pytest.mark.parametrize("transition", ["none", "takeover", "handback", "lost"])
+async def test_observation_registration_requires_unchanged_automation_episode(service, desktop, transition):
+    from a13n_harness.environment.computer import ComputerCall, ComputerScreenshot
+    from a13n_harness.environment.models import EnvironmentAction
+    from a13n_service.runs.environments.desktop import admission, freshness, identity
+
+    from .test_computer_freshness import observation
+
+    lease, mount, state = await admitted(service, desktop)
+    owner = freshness.Freshness()
+    source = freshness.Invocation("agent", (), owner)
+    token = freshness.current.set(source)
+    try:
+        call = ComputerCall(EnvironmentAction.COMPUTER_OBSERVE)
+        async with admission.operation(service.runtime, lease, mount, state, call):
+            call.result = ComputerScreenshot(observation().reference, b"captured-pixels")
+            if transition in {"takeover", "handback"}:
+                human = await begin(service, desktop)
+                if transition == "handback":
+                    await control.handback(
+                        service.runtime,
+                        desktop[2],
+                        service.tenant.workspace_id,
+                        desktop[1],
+                        if_match=etag(human.id, human.version),
+                    )
+            elif transition == "lost":
+                async with transaction(service.runtime.storage) as session:
+                    await identity.invalidate(session, state)
+    finally:
+        freshness.current.reset(token)
+    if transition == "none":
+        assert owner.observations["agent"][call.result.image_identifier].reference == call.result.observation
+    else:
+        assert owner.observations == {}

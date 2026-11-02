@@ -129,7 +129,7 @@ it("takes over independently, connects only after settlement, renews and returns
   get.mockResolvedValue(reply(draining));
   post.mockResolvedValueOnce(reply(draining));
   await user.click(screen.getByRole("button", { name: "Take control" }));
-  await screen.findByText("Waiting for Computer actions to settle");
+  await screen.findByText("Authorizing Computer control");
   expect(screen.queryByRole("button", { name: "Connect input" })).toBeNull();
   expect(post.mock.calls[0][1].body).toEqual({ thread_id: "thread" });
   get.mockResolvedValue(reply(human));

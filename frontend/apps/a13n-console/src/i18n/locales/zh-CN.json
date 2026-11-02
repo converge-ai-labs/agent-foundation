@@ -6,7 +6,7 @@
   "Environment mount": "环境挂载",
   "Desktop authority changed. Refresh before reconnecting.": "桌面控制权限已变更，请刷新后重新连接。",
   "Agent controls Computer": "Agent 控制 Computer",
-  "Waiting for Computer actions to settle": "正在等待 Computer 操作结束",
+  "Authorizing Computer control": "正在授权 Computer 控制",
   "Returning Computer control": "正在交还 Computer 控制权",
   "You control Computer": "你正在控制 Computer",
   "Another user controls Computer": "其他用户正在控制 Computer",

@@ -148,7 +148,7 @@ async def test_computer_guard_receives_typed_result_before_admission_exits(effec
 
     @asynccontextmanager
     async def guard(call: ComputerCall):
-        assert not call.dispatched and call.result is None
+        assert call.result is None
         try:
             yield
         finally:
@@ -170,11 +170,11 @@ async def test_computer_guard_receives_typed_result_before_admission_exits(effec
         )
         assert calls[0].result is screenshot
         assert calls[1].observation is screenshot.observation
-        assert calls[1].dispatched and calls[1].result is result
+        assert calls[1].result is result
         assert result.effect == effect and result.input_cleanup_complete is cleanup
 
 
-async def test_computer_guard_distinguishes_pre_dispatch_cancellation_and_clipboard_cleanup(monkeypatch):
+async def test_computer_guard_exposes_results_and_propagates_cancellation(monkeypatch):
     calls = []
 
     @asynccontextmanager
@@ -190,7 +190,7 @@ async def test_computer_guard_distinguishes_pre_dispatch_cancellation_and_clipbo
     ) as environment:
         with pytest.raises(EnvironmentError):
             await environment.computer.write_clipboard("\0")
-        assert not calls[-1].dispatched and calls[-1].result is None
+        assert calls[-1].result is None
         computer.clipboard_cleanup = False
         with pytest.raises(EnvironmentError):
             await environment.computer.write_clipboard("text")
@@ -203,11 +203,11 @@ async def test_computer_guard_distinguishes_pre_dispatch_cancellation_and_clipbo
         monkeypatch.setattr(computer, "execute", cancelled)
         with pytest.raises(asyncio.CancelledError):
             await environment.computer.execute(ComputerTypeText(text="text"))
-        assert calls[-1].dispatched and calls[-1].result is None
+        assert calls[-1].result is None
 
 
 @pytest.mark.parametrize("stage", ["pre_dispatch", "dispatched"])
-async def test_computer_guard_receives_provider_error_before_settlement(stage, monkeypatch):
+async def test_computer_guard_propagates_provider_error(stage, monkeypatch):
     calls = []
     failure = EnvironmentError("Input failed", code="environment_operation_failed", details={"dispatch_stage": stage})
 
@@ -215,9 +215,10 @@ async def test_computer_guard_receives_provider_error_before_settlement(stage, m
     async def guard(call: ComputerCall):
         try:
             yield
-        finally:
-            assert call.error is failure
+        except EnvironmentError as error:
+            assert error is failure
             calls.append(call)
+            raise
 
     runtime, computer = mount(COMPUTER_ACTIONS, computer_guard=guard)
 
@@ -231,7 +232,7 @@ async def test_computer_guard_receives_provider_error_before_settlement(stage, m
         with pytest.raises(EnvironmentError) as raised:
             await environment.computer.execute(ComputerTypeText(text="text"))
         assert raised.value is failure
-        assert calls[-1].dispatched and calls[-1].result is None
+        assert calls[-1].result is None
 
 
 async def test_computer_guard_rejection_never_dispatches():

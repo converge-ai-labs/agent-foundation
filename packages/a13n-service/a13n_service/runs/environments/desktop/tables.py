@@ -1,8 +1,8 @@
-"""Native-target control, Computer dispatch evidence, and actual blocked recipients."""
+"""Native-target control, viewer reservations, and actual blocked recipients."""
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, CheckConstraint, DateTime, ForeignKey, Index, String, UniqueConstraint, func, text
+from sqlalchemy import BigInteger, CheckConstraint, DateTime, ForeignKey, Index, String, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -39,28 +39,6 @@ class DesktopControlRow(Stamped, Base):
     claim_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     failure: Mapped[str | None]
-
-
-class ComputerOperationRow(Base):
-    __tablename__ = "computer_operations"
-    __table_args__ = (
-        Index("ix_computer_operations_unsettled", "control_id", postgresql_where=text("settled_at IS NULL")),
-    )
-    id: Mapped[str] = mapped_column(String(72), primary_key=True)
-    control_id: Mapped[str] = mapped_column(ForeignKey("desktop_controls.id"))
-    environment_id: Mapped[str] = mapped_column(ForeignKey("environments.id"))
-    run_id: Mapped[str] = mapped_column(ForeignKey("runs.id"))
-    attempt_id: Mapped[str] = mapped_column(ForeignKey("run_attempts.id"))
-    execution_id: Mapped[str | None] = mapped_column(ForeignKey("tool_executions.id"))
-    generation: Mapped[int]
-    episode: Mapped[int]
-    action: Mapped[str]
-    # Null is unknown after worker loss; no lease deadline clears it.
-    dispatched: Mapped[bool | None]
-    effect: Mapped[str | None]
-    cleanup_complete: Mapped[bool | None]
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    settled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class DesktopBlockedRow(Base):

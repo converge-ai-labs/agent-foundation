@@ -11,7 +11,6 @@ from a13n_service.infra.db import now
 from a13n_service.infra.errors import conflict
 from a13n_service.infra.ids import new_object_id
 from a13n_service.runs.environments.desktop.tables import (
-    ComputerOperationRow,
     DesktopBlockedRow,
     DesktopControlRow,
     DesktopViewerRow,
@@ -84,12 +83,6 @@ async def invalidate(session: AsyncSession, state: EnvironmentState | None) -> N
     row.expires_at = row.viewer = row.grant_id = row.guest_generation = None
     row.claim_id = row.claim_until = row.due_at = None
     row.grant_dispatched = False
-    # Target destruction ends possible execution without inventing effect/cleanup evidence.
-    await session.execute(
-        update(ComputerOperationRow)
-        .where(ComputerOperationRow.control_id == row.id, ComputerOperationRow.settled_at.is_(None))
-        .values(settled_at=current)
-    )
     await session.execute(
         update(DesktopViewerRow).where(DesktopViewerRow.control_id == row.id).values(expires_at=current)
     )

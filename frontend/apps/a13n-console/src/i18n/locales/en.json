@@ -6,7 +6,7 @@
   "Environment mount": "Environment mount",
   "Desktop authority changed. Refresh before reconnecting.": "Desktop authority changed. Refresh before reconnecting.",
   "Agent controls Computer": "Agent controls Computer",
-  "Waiting for Computer actions to settle": "Waiting for Computer actions to settle",
+  "Authorizing Computer control": "Authorizing Computer control",
   "Returning Computer control": "Returning Computer control",
   "You control Computer": "You control Computer",
   "Another user controls Computer": "Another user controls Computer",

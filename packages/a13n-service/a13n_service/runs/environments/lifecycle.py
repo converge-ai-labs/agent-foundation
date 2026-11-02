@@ -91,7 +91,6 @@ def in_use(environment_id: SQLColumnExpression[str] | str) -> ColumnElement[bool
     context holds the reservation of its native target under any alias."""
     from a13n_service.runs.environments.desktop.identity import TARGET_FIELDS
     from a13n_service.runs.environments.desktop.tables import (
-        ComputerOperationRow,
         DesktopBlockedRow,
         DesktopControlRow,
         DesktopViewerRow,
@@ -111,7 +110,6 @@ def in_use(environment_id: SQLColumnExpression[str] | str) -> ColumnElement[bool
     )
     holds_desktop = (
         exists().where(DesktopControlRow.environment_id == held.id, DesktopControlRow.control != "automation")
-        | exists().where(ComputerOperationRow.environment_id == held.id, ComputerOperationRow.settled_at.is_(None))
         | exists().where(
             DesktopViewerRow.environment_id == held.id, DesktopViewerRow.expires_at > func.clock_timestamp()
         )

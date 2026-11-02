@@ -247,7 +247,7 @@ Docker 需要配置 `desktop_viewer_url`，例如 `wss://desktop.example/{contai
 ### 获取与归还桌面控制权
 
 1. 在可交互会话中打开**桌面**，选择环境挂载。
-2. 选择**查看桌面**进行只读查看，或选择**接管**申请 Computer 输入控制。Service 等待已接收的 Computer 操作结束。
+2. 选择**查看桌面**进行只读查看，或选择**接管**申请 Computer 输入控制。Service 阻止后续 Computer 调用并授权人工查看器。已放行的调用可以继续完成，包括发送输入。
 3. 出现**你正在控制 Computer**后，选择**连接输入**。文件、Shell、进程、脚本、其他桌面和 agent 的模型工作继续运行。
 4. 需要更多时间时选择**续期控制权**。默认租约为五分钟；运维者通过 `control.desktop_control_seconds`、`control.desktop_control_min_seconds` 和 `control.desktop_control_max_seconds` 配置默认值和请求范围。
 5. 完成后选择**归还控制权**。Service 撤销输入并确认按键和鼠标按钮清理，再重新开放 Computer 通道。
@@ -256,7 +256,7 @@ Docker 需要配置 `desktop_viewer_url`，例如 `wss://desktop.example/{contai
 
 接管期间受阻的 Computer 调用返回未执行结果，并为该 thread 登记交还通知。agent 可以继续其他工作或结束当前回合，无需轮询。确认交还后，现有收件箱向仍符合条件的调用方投递可用性提示。agent 必须观察当前桌面并进行新的模型决策，之后才能发送输入；旧手势不会重放。已结束的子 agent 不会重新启动。待处理问题和审批仍需按原有流程提交完整响应批次。
 
-Computer 影响不确定或输入清理未确认时，Computer 访问保持阻塞，等待核对。该控制边界覆盖受管理的 Computer 调用，包括 CodeAct 内的调用。它不会冻结任意访客进程、Shell 启动的界面自动化或独立客户端。
+人工查看器的授权撤销或按键、鼠标按钮清理未确认时，Computer 访问保持阻塞，等待核对。agent 的 Computer 调用失败或失去执行方不会延迟接管。该控制边界覆盖受管理的 Computer 调用，包括 CodeAct 内的调用。它不会冻结任意访客进程、Shell 启动的界面自动化或独立客户端。
 
 ### 升级桌面控制
 

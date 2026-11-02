@@ -4,7 +4,7 @@ import json
 from datetime import datetime, timedelta
 from urllib.parse import quote
 
-from sqlalchemy import exists, select, update
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra.audit import record
@@ -18,7 +18,7 @@ from a13n_service.providers.environment import desktop_access as wire
 from a13n_service.runs.environments import service
 from a13n_service.runs.environments.desktop import access, identity
 from a13n_service.runs.environments.desktop.schemas import Control, Renew, Takeover, Viewer, viewer_url
-from a13n_service.runs.environments.desktop.tables import ComputerOperationRow, DesktopBlockedRow, DesktopControlRow
+from a13n_service.runs.environments.desktop.tables import DesktopBlockedRow, DesktopControlRow
 from a13n_service.runs.environments.tables import EnvironmentRow, ThreadEnvironmentRow
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.tables import ThreadRow
@@ -106,6 +106,7 @@ async def takeover(
         if row.control != "automation":
             raise conflict("environment", environment_id, "desktop_control_pending")
         row.episode += 1
+        # The wire state denotes pending viewer authorization, not a Computer-operation drain.
         row.control = "draining"
         row.environment_id, row.provider_identity = environment.id, environment.provider_identity
         row.controller_id, row.controller_thread_id = actor.id, thread.id
@@ -281,12 +282,6 @@ async def reconcile(runtime: Runtime, control_id: str) -> None:
         if row.control == "automation" or (row.claim_until is not None and row.claim_until > current):
             return
         if row.due_at is not None and row.due_at > current:
-            return
-        if row.control == "draining" and await session.scalar(
-            select(exists().where(ComputerOperationRow.control_id == row.id, ComputerOperationRow.settled_at.is_(None)))
-        ):
-            row.failure = "desktop_operations_unsettled"
-            row.due_at = current + timedelta(seconds=access.SCAN_SECONDS)
             return
         try:
             selected = await access.target(session, runtime, environment)

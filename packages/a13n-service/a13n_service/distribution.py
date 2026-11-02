@@ -96,7 +96,6 @@ from a13n_service.runs.environments.desktop.delivery import handbacks as desktop
 from a13n_service.runs.environments.desktop.maintenance import sweep as desktop_control_sweep
 from a13n_service.runs.environments.desktop.routes import router as desktop_control_router
 from a13n_service.runs.environments.desktop.tables import (
-    ComputerOperationRow,
     DesktopBlockedRow,
     DesktopControlRow,
     DesktopViewerRow,
@@ -409,7 +408,6 @@ OSS = Distribution(
         ModalDesktopImageRow,
         DaytonaDesktopSnapshotRow,
         VercelDesktopSnapshotRow,
-        ComputerOperationRow,
         DesktopBlockedRow,
         DesktopControlRow,
         DesktopViewerRow,

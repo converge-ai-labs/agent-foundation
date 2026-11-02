@@ -15,7 +15,7 @@ from .test_migrations import rows
 
 pytestmark = pytest.mark.anyio
 OLD_HEAD = "29270d0290da"
-NEW_HEAD = "b805ded3d96d"
+NEW_HEAD = "c810697ccc5c"
 
 
 @pytest.fixture
@@ -192,5 +192,42 @@ async def test_downgrade_preserves_handback_history_after_control_pruning(databa
                 command.downgrade(config, OLD_HEAD)
         assert rows(database, "SELECT version_num FROM alembic_version") == [(NEW_HEAD,)]
         assert rows(database, f"SELECT to_jsonb(t)::text FROM {table} t ORDER BY id") == before
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.parametrize("settled", [False, True])
+async def test_admission_cutover_drops_operation_ledger_and_preserves_control(database, service, desktop, settled):
+    from a13n_service.runs.environments.desktop import control
+
+    from .test_desktop_control import admitted
+
+    lease, mount, _ = await admitted(service, desktop)
+    current = await control.get(service.runtime, desktop[2], service.tenant.workspace_id, desktop[1])
+    with migration_connection(database, OSS) as config:
+        command.downgrade(config, "b805ded3d96d")
+    engine = create_engine(database.url.get_secret_value())
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO computer_operations "
+                    "(id, control_id, environment_id, run_id, attempt_id, generation, episode, action, settled_at) "
+                    "VALUES ('old-call', :control, :environment, :run, :attempt, 1, 0, 'environment.computer.click', "
+                    "CASE WHEN :settled THEN now() ELSE NULL END)"
+                ),
+                {
+                    "control": current.id,
+                    "environment": mount.environment_id,
+                    "run": lease.run_id,
+                    "attempt": lease.attempt_id,
+                    "settled": settled,
+                },
+            )
+        before = rows(database, "SELECT to_jsonb(c)::text FROM desktop_controls c")
+        upgrade(database, OSS)
+        assert rows(database, "SELECT to_regclass('computer_operations')::text") == [(None,)]
+        assert rows(database, "SELECT to_jsonb(c)::text FROM desktop_controls c") == before
+        check(database, OSS)
     finally:
         engine.dispose()

@@ -176,18 +176,10 @@ class ComputerClipboardWriteResult:
 
 @dataclass(slots=True)
 class ComputerCall:
-    """One facade dispatch, shared with the Host's Computer admission scope.
-
-    The facade marks dispatch immediately before calling the provider and publishes
-    its validated typed result before leaving admission. A missing result after
-    dispatch is not evidence that external input stopped. Effect uncertainty and
-    input cleanup are independent; a normal Python return does not imply cleanup.
-    """
+    """A Computer request and validated result shared with the Host's admission scope."""
 
     action: EnvironmentAction
     observation: ComputerObservation | None = None
-    dispatched: bool = False
-    error: EnvironmentError | None = None
     result: (
         ComputerActionResult
         | ComputerClipboardWriteResult

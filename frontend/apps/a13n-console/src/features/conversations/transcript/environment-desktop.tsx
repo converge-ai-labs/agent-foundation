@@ -411,7 +411,7 @@ export function EnvironmentDesktop({
                 control.control === "automation"
                   ? "Agent controls Computer"
                   : control.control === "draining"
-                    ? "Waiting for Computer actions to settle"
+                    ? "Authorizing Computer control"
                     : control.control === "returning"
                       ? "Returning Computer control"
                       : mine

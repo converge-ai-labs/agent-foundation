@@ -70,11 +70,7 @@ class _ComputerFacade:
         call = ComputerCall(action=action, observation=observation)
         async with self._environment._operation_lease(entered, action, "computer") as current:
             async with current.provider.admit_computer(call):
-                try:
-                    yield current, call
-                except EnvironmentError as error:
-                    call.error = error
-                    raise
+                yield current, call
 
     async def read_clipboard(self, *, max_bytes: int = 16384, alias: str | None = None) -> ComputerClipboard:
         entered = self._environment._select_entered(alias)
@@ -84,7 +80,6 @@ class _ComputerFacade:
                 raise EnvironmentError("Computer operations unavailable.", code="environment_unsupported")
             if not 1 <= max_bytes <= 16384:
                 raise EnvironmentError("max_bytes must be between 1 and 16384.", code="environment_request_invalid")
-            call.dispatched = True
             result = await computer.read_clipboard(max_bytes=max_bytes)
             call.result = result
             return result
@@ -105,7 +100,6 @@ class _ComputerFacade:
                     code="environment_request_invalid",
                     details={"dispatch_stage": "pre_dispatch"},
                 )
-            call.dispatched = True
             result = await computer.write_clipboard(text)
             _validate_provider_artifacts(entered, result.receipt)
             call.result = result
@@ -132,7 +126,6 @@ class _ComputerFacade:
             computer = entered.operations.computer
             if computer is None:
                 raise EnvironmentError("Computer operations unavailable.", code="environment_unsupported")
-            call.dispatched = True
             result = await computer.describe()
             call.result = result
             return result
@@ -145,7 +138,6 @@ class _ComputerFacade:
             computer = entered.operations.computer
             if computer is None:
                 raise EnvironmentError("Computer operations unavailable.", code="environment_unsupported")
-            call.dispatched = True
             result = await computer.observe(target_id=target_id, max_dimension=max_dimension)
             _validate_provider_artifacts(entered, result.observation)
             call.result = result
@@ -167,7 +159,6 @@ class _ComputerFacade:
             region.validate_bounds(observation.width, observation.height)
             if not 256 <= max_dimension <= 2048:
                 raise EnvironmentError("Invalid image dimension.", code="environment_request_invalid")
-            call.dispatched = True
             result = await computer.zoom(observation, region, max_dimension=max_dimension)
             call.result = result
             return result
@@ -205,7 +196,6 @@ class _ComputerFacade:
             if isinstance(request, ComputerScroll) and request.unit == "steps":
                 if max(abs(request.delta_x), abs(request.delta_y)) > 100:
                     raise EnvironmentError("Scroll delta exceeds 100 steps", code="environment_request_invalid")
-            call.dispatched = True
             result = await computer.execute(request)
             _validate_provider_artifacts(entered, result.receipt)
             call.result = result
