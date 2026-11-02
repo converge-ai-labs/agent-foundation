@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button, ChoiceField, SettingsSection } from "a13n-ui";
@@ -21,6 +22,7 @@ export function BrowserFields({
   onChange: (source: string) => void;
   active?: boolean;
 }) {
+  const { t } = useTranslation();
   const { client } = useTransport();
   const scan = useQuery({
     queryKey: ["browser-executables"],
@@ -87,7 +89,7 @@ export function BrowserFields({
     <SettingsSection
       title={
         <span className="flex items-center justify-between gap-4">
-          <span>Advanced browser settings</span>
+          <span>{t("Advanced browser settings")}</span>
           {setup?.supported !== false && (
             <Button
               size="sm"
@@ -95,34 +97,38 @@ export function BrowserFields({
               disabled={scan.isFetching}
               onClick={() => void scan.refetch()}
             >
-              {scan.isFetching ? "Scanning…" : "Scan"}
+              {scan.isFetching ? t("Scanning…") : t("Scan")}
             </Button>
           )}
         </span>
       }
-      description="Installed components are selected automatically. Changes require saving and restarting Harness UI."
+      description={t(
+        "Installed components are selected automatically. Changes require saving and restarting Harness UI.",
+      )}
     >
       <ChoiceField
-        label="Browser mode"
+        label={t("Browser mode")}
         value={text("mode") || "auto"}
         onValueChange={(value) => set("mode", value)}
         options={[
           {
             value: "auto",
-            label: "Auto",
-            hint: "Prepare one shared browser and let Agents open pages as needed.",
+            label: t("Auto"),
+            hint: t(
+              "Prepare one shared browser and let Agents open pages as needed.",
+            ),
           },
           {
             value: "disabled",
-            label: "Disabled",
-            hint: "Do not start the Host browser or provide browser tools.",
+            label: t("Disabled"),
+            hint: t("Do not start the Host browser or provide browser tools."),
           },
         ]}
       />
       <div className={styles.configuration}>
         {setup?.supported === false ? (
           <p className="text-xs text-muted-foreground" role="status">
-            {setup.message}
+            {t(setup.message ?? "")}
           </p>
         ) : (
           <>
@@ -137,7 +143,7 @@ export function BrowserFields({
                 "Window preview": mac ? <MacCaptureSettings /> : undefined,
                 Browser: (
                   <ExecutableField
-                    label="Browser executable"
+                    label={t("Browser executable")}
                     value={text("executable")}
                     candidates={(scan.data?.browsers ?? []).map((item) => ({
                       value: item.path,
@@ -149,7 +155,7 @@ export function BrowserFields({
                 ),
                 "VNC server": (
                   <ExecutableField
-                    label="VNC executable"
+                    label={t("VNC executable")}
                     value={text("vnc_executable")}
                     candidates={(scan.data?.vncs ?? []).map((item) => ({
                       value: item.path,
@@ -163,26 +169,29 @@ export function BrowserFields({
             />
             {notice && (
               <p className="text-xs text-muted-foreground" role="status">
-                {notice}
+                {t(notice)}
               </p>
             )}
             {setup?.vnc && setup.vnc.kind !== "tigervnc" && (
               <p className="text-xs text-muted-foreground">
-                This VNC adapter uses a fixed desktop size. Zoom is available;
-                Viewport size switching is unavailable.
+                {t(
+                  "This VNC adapter uses a fixed desktop size. Zoom is available; Viewport size switching is unavailable.",
+                )}
               </p>
             )}
             <p className="text-xs text-muted-foreground">
               {mac
                 ? ""
-                : "Missing a program? Install a Chromium-based browser and VNC server on this Host (inside the container for Docker), then Scan again. Use Other for an installed program outside the detected locations. "}
+                : t(
+                    "Missing a program? Install a Chromium-based browser and VNC server on this Host (inside the container for Docker), then Scan again. Use Other for an installed program outside the detected locations. ",
+                  )}
               <a
                 href="https://a13n.dev/docs/a13n-harness-ui/webui#first-time-setup"
                 target="_blank"
                 rel="noreferrer"
                 className="underline underline-offset-4"
               >
-                Browser setup guide
+                {t("Browser setup guide")}
               </a>
             </p>
             <BrowserInstallInstructions steps={setup?.steps ?? []} />
@@ -206,6 +215,7 @@ function ExecutableField({
   disabled: boolean;
   onChange: (value: string) => void;
 }) {
+  const { t } = useTranslation();
   const [custom, setCustom] = useState(false);
   const other =
     custom || (!!value && !candidates.some((item) => item.value === value));
@@ -217,9 +227,9 @@ function ExecutableField({
         disabled={disabled}
         hideLabel
         options={[
-          { value: "automatic", label: "Automatic" },
+          { value: "automatic", label: t("Automatic") },
           ...candidates,
-          { value: "other", label: "Other" },
+          { value: "other", label: t("Other") },
         ]}
         onValueChange={(next) => {
           setCustom(next === "other");
@@ -228,11 +238,13 @@ function ExecutableField({
       />
       {other && (
         <TextField
-          label={`${label} path`}
+          label={t("{{label}} path", { label })}
           value={value}
           disabled={disabled}
           onChange={onChange}
-          description="Absolute path on this Host. Invalid paths are reported without falling back to another program."
+          description={t(
+            "Absolute path on this Host. Invalid paths are reported without falling back to another program.",
+          )}
         />
       )}
     </div>

@@ -33,7 +33,7 @@ export function Toolbar({
           onChange={(event) => onSearchChange(event.target.value)}
         />
       )}
-      {filters && <div className={styles.toolbarFilters}>{filters}</div>}
+      {filters}
       {children}
       {trailing && <div className={styles.toolbarTrailing}>{trailing}</div>}
     </div>

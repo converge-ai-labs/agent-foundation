@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import {
   lazy,
   Suspense,
@@ -35,6 +36,7 @@ function CaptureStatus({
   onClose: () => void;
   failed?: boolean;
 }) {
+  const { t } = useTranslation();
   return (
     <ModalFrame
       open
@@ -43,17 +45,19 @@ function CaptureStatus({
       }}
       finalFocus={false}
       title={
-        failed ? "Screenshot editor unavailable" : "Loading screenshot editor…"
+        failed
+          ? t("Screenshot editor unavailable")
+          : t("Loading screenshot editor…")
       }
       description={
         failed
-          ? "Reload the page and capture again."
-          : "Preparing local editing tools."
+          ? t("Reload the page and capture again.")
+          : t("Preparing local editing tools.")
       }
-      closeLabel="Close"
+      closeLabel={t("Close")}
       footer={
         <Button variant="outline" onClick={onClose}>
-          Cancel
+          {t("Cancel")}
         </Button>
       }
     />
@@ -77,12 +81,13 @@ export function Desktop({
   session: Schema<"BrowserState">;
   controlToken: string;
   busy: boolean;
-  activity?: string;
+  activity?: "take-control" | "handback" | "updating" | "";
   onReconnectControl?: () => void;
   onControlActivity?: () => void;
   scale?: BrowserScale;
   actions?: ReactNode;
 }) {
+  const { t } = useTranslation();
   const { client } = useTransport();
   const returnToChat = useContext(ReturnToChat);
   const captureButton = useRef<HTMLButtonElement>(null);
@@ -151,8 +156,17 @@ export function Desktop({
     controlToken && !nativePreview ? "Connecting control…" : "Connecting…";
   const currentConnection = connectionState.key === connectionKey;
   const canReconnect = currentConnection && connectionState.retry;
+  const activityLabel =
+    activity === "take-control"
+      ? t("Taking control…")
+      : activity === "handback"
+        ? t("Handing back…")
+        : activity === "updating"
+          ? t("Updating browser…")
+          : "";
   const message =
-    activity || (currentConnection ? connectionState.status : initialStatus);
+    activityLabel ||
+    t(currentConnection ? connectionState.status : initialStatus);
   inputAllowed.current = interactive && !!controlToken;
   const activityCallback = useRef(onControlActivity);
   activityCallback.current = onControlActivity;
@@ -454,16 +468,16 @@ export function Desktop({
         <span className={styles.connectionState} role="status">
           {message ||
             (interactive
-              ? "You have control"
+              ? t("You have control")
               : session.control === "human"
-                ? "Automation paused"
-                : "Watching")}
+                ? t("Automation paused")
+                : t("Watching"))}
         </span>
         <Button
           ref={captureButton}
           size="icon"
           variant="ghost"
-          aria-label="Capture and annotate screenshot"
+          aria-label={t("Capture and annotate screenshot")}
           disabled={!connected || busy || !!capture}
           onClick={captureFrame}
         >
@@ -485,8 +499,8 @@ export function Desktop({
         className={`${styles.desktop} ${scale === "fit" ? styles.desktopFit : ""}`}
         aria-label={
           nativePreview
-            ? "Read-only browser window preview"
-            : "Remote browser desktop"
+            ? t("Read-only browser window preview")
+            : t("Remote browser desktop")
         }
         aria-busy={!connected || busy}
       >
@@ -521,7 +535,7 @@ export function Desktop({
           <button
             type="button"
             className={styles.readOnlyGuard}
-            aria-label="Read-only browser"
+            aria-label={t("Read-only browser")}
             onPointerDown={showHint}
             onClick={showHint}
             onContextMenu={(event) => {
@@ -535,22 +549,24 @@ export function Desktop({
             <div className={styles.controlHint} role="status">
               <HandArrowDown size={28} aria-hidden="true" />
               <strong>
-                {busy ? "Updating browser…" : "Take control to interact"}
+                {busy ? t("Updating browser…") : t("Take control to interact")}
               </strong>
               <span>
                 {busy ? (
-                  "Please wait."
+                  t("Please wait.")
                 ) : controlToken ? (
-                  "Wait for the connection or reconnect."
+                  t("Wait for the connection or reconnect.")
                 ) : session.control === "human" ? (
                   <>
-                    Click <HandArrowDown aria-label="Take control here" /> to
-                    move control to this browser. Agent tools stay paused.
+                    <HandArrowDown aria-hidden="true" />
+                    {t(
+                      "Click Take control here to move control to this browser. Agent tools stay paused.",
+                    )}
                   </>
                 ) : (
                   <>
-                    Click <HandArrowDown aria-label="Take control" /> in the
-                    toolbar.
+                    <HandArrowDown aria-hidden="true" />
+                    {t("Click Take control in the toolbar.")}
                   </>
                 )}
               </span>
@@ -561,12 +577,14 @@ export function Desktop({
           <div className={styles.streamStatus}>
             <div className={styles.controlHint}>
               <strong>{message}</strong>
-              {activity === "Taking control…" && (
-                <span>Waiting for current browser operations to finish.</span>
+              {activity === "take-control" && (
+                <span>
+                  {t("Waiting for current browser operations to finish.")}
+                </span>
               )}
               {!activity && controlToken && !nativePreview && (
                 <span>
-                  Automation stays paused. You can hand back at any time.
+                  {t("Automation stays paused. You can hand back at any time.")}
                 </span>
               )}
               {nativePreview && canReconnect && <MacCaptureSettings />}
@@ -582,8 +600,8 @@ export function Desktop({
                 >
                   <ArrowClockwise />
                   {controlToken && !nativePreview
-                    ? "Reconnect control"
-                    : "Reconnect"}
+                    ? t("Reconnect control")
+                    : t("Reconnect")}
                 </Button>
               )}
             </div>
@@ -591,7 +609,7 @@ export function Desktop({
         )}
         {!!clipboardError && (
           <p className={styles.inputNotice} role="status">
-            {clipboardError}
+            {t(clipboardError)}
           </p>
         )}
       </div>

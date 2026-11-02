@@ -111,6 +111,41 @@
   font-size: var(--a13n-text-2xs);
   font-weight: 500;
 }
+.schemaArray {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.schemaArray > legend {
+  margin-bottom: 8px;
+  font-size: var(--a13n-text-sm);
+  font-weight: 500;
+}
+.arrayDescription {
+  margin: 0;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.arrayItem {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding-block: 12px;
+  border-top: 1px solid var(--a13n-border);
+}
+.arrayItem > legend {
+  padding-right: 8px;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+}
+.arrayRemove {
+  justify-self: end;
+}
+.arrayAdd {
+  justify-self: start;
+}
 /* File drop: the one dashed outline in the product. */
 .dropZone {
   display: grid;

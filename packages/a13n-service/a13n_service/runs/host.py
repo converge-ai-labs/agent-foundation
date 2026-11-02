@@ -42,6 +42,7 @@ from a13n_service.runs.agent import ResolvedAgent, media_understanding
 from a13n_service.runs.assets import AssetsCapability
 from a13n_service.runs.attempts import Lease
 from a13n_service.runs.browsers.admission import GUIDANCE as BROWSER_GUIDANCE
+from a13n_service.runs.browsers.context import BrowserContextCapability
 from a13n_service.runs.browsers.execution import Backend as BrowserBackend
 from a13n_service.runs.browsers.execution import open_backend
 from a13n_service.runs.browsers.schemas import BrowserBinding
@@ -179,6 +180,9 @@ class Host:
             features.append(ToolExecutionCapability(self.plan.execution.tools))
         parts = self.plan.parts[agent.revision_id]
         if agent.revision_id in self.browsers:
+            features.append(
+                BrowserContextCapability(self.runtime, self.lease, self.browsers[agent.revision_id].binding)
+            )
             features.append(
                 BrowserUseCapability(
                     enabled_tools=parts.browser_tools,

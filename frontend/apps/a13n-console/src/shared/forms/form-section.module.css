@@ -79,7 +79,7 @@
   :global(
     [data-slot="field"]:not([data-field-layout]):not(
         :has(
-          > textarea,
+          > [data-slot="textarea-control"],
           > .sr-only,
           > [data-slot="select-trigger"],
           > [data-slot="select-button"],
