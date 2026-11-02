@@ -414,22 +414,6 @@
   flex-wrap: wrap;
   gap: 8px;
 }
-.legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 16px;
-  margin-bottom: 12px;
-  font-size: var(--a13n-text-xs);
-  color: var(--a13n-secondary);
-}
-.legend > span {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-.legend i,
 .tooltipRows i {
   width: 8px;
   height: 8px;

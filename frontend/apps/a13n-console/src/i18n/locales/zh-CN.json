@@ -3576,6 +3576,5 @@
   "Lowest cost": "费用最低",
   "Sort by {{field}}, {{direction}}": "按{{field}}排序，{{direction}}",
   "Others": "其他",
-  "Chart grouping": "图表分组",
-  "Chart legend": "图例"
+  "Chart grouping": "图表分组"
 }
