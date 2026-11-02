@@ -39,7 +39,7 @@ def process_identity(pid: int) -> str | None:
         if fields[0] == "Z":
             return None
         return fields[19]
-    except FileNotFoundError:
+    except (FileNotFoundError, ProcessLookupError):
         return None
 
 
@@ -50,7 +50,7 @@ def group_alive(group: int) -> bool:
             fields = stat.read_text().rsplit(")", 1)[1].split()
             if fields[0] != "Z" and int(fields[2]) == group:
                 return True
-        except FileNotFoundError:
+        except (FileNotFoundError, ProcessLookupError):
             pass
     return False
 
@@ -87,7 +87,7 @@ class Runtime:
         if self.chromium is None or self.chromium.returncode is not None or self.cdp_url is None:
             return
         try:
-            async with asyncio.timeout(5):
+            async with asyncio.timeout(15):
                 async with connect(self.cdp_url, proxy=None, open_timeout=2, close_timeout=1) as connection:
                     await connection.send('{"id":1,"method":"Browser.close"}')
                     # A CDP acknowledgement precedes profile flushing; wait for the owned process.
@@ -95,6 +95,26 @@ class Runtime:
         except (OSError, TimeoutError, WebSocketException):
             # A failed browser must still reach the bounded signal cleanup below.
             pass
+
+    async def close_children(self) -> None:
+        # One shared deadline keeps sequential cleanup below the provider's 30s stop budget.
+        try:
+            async with asyncio.timeout(5):
+                for process in reversed(self.children):
+                    if process.returncode is None:
+                        try:
+                            process.terminate()
+                        except ProcessLookupError:
+                            pass
+                    await process.wait()
+        except TimeoutError:
+            for process in reversed(self.children):
+                if process.returncode is None:
+                    try:
+                        process.kill()
+                    except ProcessLookupError:
+                        pass
+            await asyncio.gather(*(process.wait() for process in self.children))
 
     async def proxy(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter, port: int) -> None:
         async def copy(source, target):
@@ -148,18 +168,7 @@ class Runtime:
                 await self.run(info)
             finally:
                 await self.close_chromium()
-                # End Chromium before the display it uses, even if graceful close failed.
-                for process in reversed(self.children):
-                    if process.returncode is None:
-                        try:
-                            process.terminate()
-                        except ProcessLookupError:
-                            pass
-                    try:
-                        await asyncio.wait_for(process.wait(), 5)
-                    except TimeoutError:
-                        process.kill()
-                        await process.wait()
+                await self.close_children()
                 self.guest.publish(previous, json.dumps({**info, "ready": False}))
 
     async def run(self, info: dict) -> None:

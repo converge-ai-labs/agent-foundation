@@ -346,3 +346,75 @@ async def test_docker_observe_exec_race(tmp_path, code, status, same_id, stopped
             await provider.observe(allocation)
         assert raised.value is error
     assert client.containers.get.call_count == (1 if code != 409 else 2)
+
+
+async def test_stop_fences_runtime_and_requires_confirmed_exit(tmp_path, monkeypatch):
+    monkeypatch.setattr(SelfHosted, "__abstractmethods__", frozenset())
+    provider = SelfHosted(tmp_path, "test")
+    ready = LiveBrowser({}, runtime_id="current")
+    stopped = LiveBrowser({}, status="stopped", runtime_id="current")
+    provider.observe = AsyncMock(return_value=ready)
+    provider.halt = AsyncMock()
+    with pytest.raises(BrowserProviderError) as changed:
+        await provider.stop("browser_stop", {"runtime_id": "old"})
+    assert changed.value.code == "runtime_changed"
+    provider.halt.assert_not_awaited()
+    with pytest.raises(BrowserProviderError) as unconfirmed:
+        await provider.stop("browser_stop", {"runtime_id": "current"})
+    assert unconfirmed.value.code == "runtime_stop_unconfirmed"
+    provider.observe.side_effect = [ready, stopped]
+    assert await provider.stop("browser_stop", {"runtime_id": "current"}) == stopped
+
+
+async def test_runtime_child_cleanup_has_one_shared_deadline(monkeypatch):
+    import asyncio
+
+    events = []
+
+    class Child:
+        def __init__(self, name, stuck=False):
+            self.name, self.stuck, self.returncode = name, stuck, None
+
+        def terminate(self):
+            events.append((self.name, "terminate"))
+            if not self.stuck:
+                self.returncode = 0
+
+        def kill(self):
+            events.append((self.name, "kill"))
+            self.returncode = -9
+
+        async def wait(self):
+            while self.returncode is None:
+                await asyncio.sleep(0.001)
+            return self.returncode
+
+    original_timeout = asyncio.timeout
+    budgets = []
+
+    def timeout(seconds):
+        budgets.append(seconds)
+        return original_timeout(0.01)
+
+    monkeypatch.setattr(runtime.asyncio, "timeout", timeout)
+    instance = object.__new__(runtime.Runtime)
+    instance.children = [Child("display"), Child("browser", stuck=True)]
+    await instance.close_children()
+    assert budgets == [5]
+    assert events == [("browser", "terminate"), ("browser", "kill"), ("display", "kill")]
+
+
+@pytest.mark.parametrize("failure", [OSError, TimeoutError])
+async def test_runtime_cdp_failure_falls_back_to_child_cleanup(monkeypatch, failure):
+    class BrokenConnection:
+        async def __aenter__(self):
+            raise failure()
+
+        async def __aexit__(self, *_):
+            pass
+
+    monkeypatch.setattr(runtime, "connect", lambda *args, **kwargs: BrokenConnection())
+    instance = object.__new__(runtime.Runtime)
+    instance.chromium = type("Process", (), {"returncode": None})()
+    instance.cdp_url = "ws://invalid"
+    await instance.close_chromium()

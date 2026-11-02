@@ -133,27 +133,7 @@ class SelfHosted(ABC):
                 raise BrowserProviderError("allocation_missing", certainty="known")
             if current.runtime_id != state.get("runtime_id"):
                 raise BrowserProviderError("runtime_changed", certainty="known")
-            try:
-                if current.status == "ready":
-                    browser = await Chromium.connect(str(current.state["cdp_url"]), timeout=15, discover=False)
-                    try:
-                        await browser.close_browser()
-                    finally:
-                        await browser.close()
-                    # Browser.close acknowledges before profile flushing and process exit finish.
-                    # Let the supervisor observe that exit before terminating the remaining display.
-                    with anyio.move_on_after(15):
-                        while True:
-                            try:
-                                observed = await self.observe(allocation)
-                                if observed is None or observed.status == "stopped":
-                                    break
-                            except BrowserProviderError:
-                                # The runtime can be between management shutdown and process exit.
-                                pass
-                            await asyncio.sleep(0.1)
-            finally:
-                await self.halt(allocation)
+            await self.halt(allocation)
             result = await self.observe(allocation)
             if result is None or result.status != "stopped":
                 raise BrowserProviderError("runtime_stop_unconfirmed")
