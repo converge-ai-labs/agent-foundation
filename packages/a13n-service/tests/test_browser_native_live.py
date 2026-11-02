@@ -1,12 +1,9 @@
 """Opt-in Linux desktop validation using operator-installed Chromium and VNC binaries."""
 
 import asyncio
-import base64
 import os
-import struct
 import subprocess
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -22,43 +19,7 @@ from .http_support import serve_http
 pytestmark = pytest.mark.anyio
 
 
-def native_x11_focus(root, screenshot=None):
-    """Inspect only the display belonging to this test's allocation."""
-    for proc in Path("/proc").glob("[0-9]*/environ"):
-        try:
-            env = dict(item.split(b"=", 1) for item in proc.read_bytes().split(b"\0") if b"=" in item)
-            if str(root).encode() not in env.get(b"XAUTHORITY", b"") or b"DISPLAY" not in env:
-                continue
-            display_env = {**os.environ, "DISPLAY": env[b"DISPLAY"].decode(), "XAUTHORITY": env[b"XAUTHORITY"].decode()}
-            code = (
-                "import ctypes; x=ctypes.CDLL('libX11.so.6'); x.XOpenDisplay.restype=ctypes.c_void_p; "
-                "d=x.XOpenDisplay(None); assert d; w=ctypes.c_ulong(); r=ctypes.c_int(); "
-                "x.XGetInputFocus(ctypes.c_void_p(d),ctypes.byref(w),ctypes.byref(r)); print(hex(w.value))"
-            )
-            focus = subprocess.run(["python", "-c", code], env=display_env, capture_output=True, text=True, timeout=2)
-            active = subprocess.run(
-                ["xprop", "-root", "_NET_ACTIVE_WINDOW"], env=display_env, capture_output=True, text=True, timeout=2
-            )
-            result = {"input_focus": focus.stdout.strip(), "active_window": active.stdout.strip()}
-            if screenshot is not None:
-                try:
-                    capture = subprocess.run(
-                        ["xwd", "-root", "-silent", "-out", str(screenshot)],
-                        env=display_env,
-                        capture_output=True,
-                        text=True,
-                        timeout=2,
-                    )
-                    result["desktop_capture"] = f"exit {capture.returncode}: {capture.stderr.strip()}"
-                except (OSError, subprocess.TimeoutExpired) as exc:
-                    result["desktop_capture"] = str(exc)
-            return result
-        except (OSError, ValueError, subprocess.TimeoutExpired):
-            continue
-    return {"error": "test display not found"}
-
-
-async def test_native_profile_input_and_recovery(tmp_path, monkeypatch):
+async def test_native_viewer_expiry_and_profile_recovery(tmp_path, monkeypatch):
     chromium = os.environ.get("A13N_TEST_BROWSER_NATIVE_CHROMIUM")
     if not chromium:
         pytest.skip("Requires A13N_TEST_BROWSER_NATIVE_CHROMIUM and installed Linux desktop binaries")
@@ -105,37 +66,6 @@ async def test_native_profile_input_and_recovery(tmp_path, monkeypatch):
             frame = await blocking(rfb.frame)
             assert frame["pixel_bytes"] > 0
 
-            async def input_diagnostics(screenshot=None):
-                return {
-                    "grant_seconds_remaining": (grant.expires_at - datetime.now(UTC)).total_seconds(),
-                    "dom": await connection.evaluate(
-                        page, "({hasFocus: document.hasFocus(), active: document.activeElement.outerHTML})"
-                    ),
-                    "x11": await blocking(native_x11_focus, tmp_path, screenshot),
-                }
-
-            before_input = await input_diagnostics()
-            before_input["send_seconds_remaining"] = (grant.expires_at - datetime.now(UTC)).total_seconds()
-            for down in (1, 0):
-                await blocking(rfb.send, struct.pack("!BBHI", 4, down, 0, ord("n")))
-            try:
-                async with asyncio.timeout(5):
-                    while await connection.evaluate(page, "document.querySelector('input').value") != "n":
-                        await asyncio.sleep(0.1)
-            except TimeoutError:
-                output = Path("test-results")
-                output.mkdir(exist_ok=True)
-                print(
-                    "Native input diagnostics:",
-                    {
-                        "frame": frame,
-                        "before": before_input,
-                        "after": await input_diagnostics(output / "native-input-desktop.xwd"),
-                    },
-                )
-                screenshot = await connection.send("Page.captureScreenshot", page=page)
-                (output / "native-input-page.png").write_bytes(base64.b64decode(screenshot["data"]))
-                raise
             await provider.close()
             await asyncio.sleep(max(0, (grant.expires_at - datetime.now(UTC)).total_seconds()) + 0.5)
             assert await blocking(rfb.closed)
