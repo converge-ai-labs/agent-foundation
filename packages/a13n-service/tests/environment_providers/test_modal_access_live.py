@@ -16,7 +16,7 @@ from a13n_harness.providers.environment.modal.shared import (
 )
 from a13n_harness.providers.environment.native.environment import NativeRuntime
 from a13n_service.providers.environment import desktop_access as wire
-from a13n_service.providers.environments.modal.configuration import ModalRecipe
+from a13n_service.providers.environment.recipes.modal import ModalRecipe
 from a13n_service.providers.environments.modal.management import ModalManagement
 from websockets.exceptions import ConnectionClosed, InvalidMessage, InvalidStatus
 

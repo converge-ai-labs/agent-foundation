@@ -22,8 +22,8 @@ from pydantic import ConfigDict, Field, field_validator
 
 from a13n_service.providers.endpoints import engine_endpoint
 from a13n_service.providers.environment.definition import EnvironmentManagementDefinition
+from a13n_service.providers.environment.recipes.docker import DockerRecipe
 
-from .configuration import DockerRecipe
 from .definition import DOCKER as BASE_DOCKER
 
 _MOUNTS = DockerRecipe.model_fields["mounts"]

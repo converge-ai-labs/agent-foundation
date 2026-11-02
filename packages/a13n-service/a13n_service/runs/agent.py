@@ -71,8 +71,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from a13n_service.infra.errors import ServiceError
 from a13n_service.providers.model_settings import effective_settings
 from a13n_service.providers.registry import Registry
-from a13n_service.resources.agents import definition, toolsets
-from a13n_service.resources.agents.schemas import AgentConfig, AgentOverride, SubagentSelection, apply_override
+from a13n_service.resources.agents import definition, stored, toolsets
+from a13n_service.resources.agents.schemas import AgentConfig, AgentOverride, SubagentSelection
 from a13n_service.resources.agents.service import SelectedRevision
 from a13n_service.resources.agents.validation import connection_types, subagent_graph
 from a13n_service.resources.models.media import workspace_media
@@ -140,7 +140,7 @@ async def resolve(
 
     Models must still be usable by the run's principal under its authority; subagent revisions are pinned.
     """
-    config = revision.config if override is None else apply_override(revision.config, override)
+    config = stored.require_effective(revision.config, override, revision_id=revision.revision_id)
     graph = await subagent_graph(session, scope.workspace_id, revision.agent_id, config)
     models: dict[str, ResolvedModel] = {}
 

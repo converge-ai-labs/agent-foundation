@@ -10,8 +10,8 @@ from a13n_harness.providers.environment.native.environment import NativeRuntime
 from a13n_service.providers.environment._backend_factory import BackendProvider, ManagementBackendFactory
 from a13n_service.providers.environment.definition import management_definition
 from a13n_service.providers.environment.modal_build import ModalDesktopPreparation
+from a13n_service.providers.environment.recipes.modal import ModalRecipe
 
-from .configuration import ModalRecipe
 from .desktop_build import DesktopBuildAPI, locator, revision, specification
 from .management import ModalManagement
 

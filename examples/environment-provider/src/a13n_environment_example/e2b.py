@@ -6,7 +6,7 @@ import secrets
 
 from a13n_harness.environment.commands import CommandRequest, ShellCommand
 from a13n_harness.environment.retention import EnvironmentOutputPolicy
-from a13n_service.providers.environments.e2b.configuration import E2BRecipe
+from a13n_service.providers.environment.recipes.e2b import E2BRecipe
 from a13n_service.providers.environments.e2b.definition import E2B
 
 

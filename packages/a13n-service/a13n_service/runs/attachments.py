@@ -35,7 +35,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra.errors import ServiceError
-from a13n_service.resources.agents.schemas import AgentOverride, apply_override
+from a13n_service.resources.agents import stored
+from a13n_service.resources.agents.schemas import AgentOverride
 from a13n_service.resources.agents.service import SelectedRevision
 from a13n_service.resources.assets.tables import AssetRow
 from a13n_service.resources.models.service import resolve_model
@@ -206,7 +207,7 @@ async def require_readable(
     fields = asset_fields(payload)
     if not fields:
         return
-    config = revision.config if overrides is None else apply_override(revision.config, overrides)
+    config = stored.require_effective(revision.config, overrides, revision_id=revision.revision_id)
     model = await resolve_model(session, principal, scope, config.model, authority=authority)
     recipient = Recipient(model.config.characteristics.capabilities, primary)
     rows = await session.execute(

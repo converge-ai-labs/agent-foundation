@@ -21,6 +21,7 @@ from a13n_service.infra.errors import ServiceError
 from a13n_service.providers.browser.definition import BrowserProviderDefinition
 from a13n_service.providers.endpoints import check_endpoint, dialed_endpoint
 from a13n_service.providers.environment.definition import EnvironmentManagementDefinition
+from a13n_service.providers.environment.recipes import TemplateRecipe as TemplateRecipe
 from a13n_service.providers.model_settings import check_settings, settings_schema
 
 type RegisteredProvider = ProviderDefinition

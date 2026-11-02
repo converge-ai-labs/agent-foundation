@@ -211,8 +211,11 @@ async def test_distribution_authentication_and_explicit_operation_admission(
         await runs_kit.start_thread(service, agent, "inspect agents")
         (lease,) = await claim(service.runtime, worker_id="extension-test", worker_build="test", limit=1)
         token = await issue(service.runtime, lease, frozenset({"agents"}))
+        from .platform_support import rpc as platform_rpc
+
         async with client(service, {"secret": token}) as http:
-            response = await rpc(http, "tools/list")
+            assert (await rpc(http, "tools/list")).status_code == 401
+            response = await platform_rpc(http, "tools/list")
             assert response.status_code == 200, response.text
             names = {tool["name"] for tool in response.json()["result"]["tools"]}
             assert names and "extension_selected" not in names

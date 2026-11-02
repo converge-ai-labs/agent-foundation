@@ -9,6 +9,7 @@ from sqlalchemy import or_, select
 from a13n_service.infra.db import now, transaction
 from a13n_service.infra.errors import conflict
 from a13n_service.infra.ids import new_object_id
+from a13n_service.resources.agents import stored
 from a13n_service.runs.attempts import Lease
 from a13n_service.runs.browsers import lifecycle
 from a13n_service.runs.browsers.schemas import BrowserBinding
@@ -123,7 +124,7 @@ async def admit(
                 row.observation_epoch,
                 row.provider_id,
                 selected_id,
-                RunOptions.model_validate(run.options).configuration or RunConfiguration(),
+                stored.require(RunOptions, run.options, kind="run", id=run.id).configuration or RunConfiguration(),
             )
             session.add(
                 BrowserOperationRow(

@@ -21,7 +21,7 @@ from a13n_harness.environment.configuration import ComputerConfiguration
 from a13n_harness.providers.web.domains import DomainRestrictions
 from a13n_harness.providers.web.options import MAX_SCRAPE_CONTENT_BYTES
 from a13n_harness.tools import ToolIdentity, ToolPermissionMode, ToolPermissionSetting, source_tool_id
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, JsonValue, StringConstraints
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, JsonValue, StringConstraints, ValidationInfo
 
 from a13n_service.infra.ids import ObjectId
 from a13n_service.infra.platform import PLATFORM_TOOLS, PlatformGroup
@@ -29,7 +29,7 @@ from a13n_service.infra.schema import model_schema
 from a13n_service.providers.registry import WebOperation
 
 PUBLISH_ASSET_TOOL_ID = "service.publish_asset"
-PLATFORM_SOURCE = "platform"
+PLATFORM_SOURCE = "service-platform"
 
 type ToolsetKey = Literal["files", "shell", "computer", "browser", "web", "memory", "assets"] | PlatformGroup
 ToolKey = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]{0,63}$")]
@@ -184,7 +184,7 @@ def _platform(group: PlatformGroup, display_name: str, description: str) -> _Too
                 tool.summary,
                 source_tool_id(PLATFORM_SOURCE, tool.key, kind="mcp"),
                 tool.key,
-                description=f"{tool.method} {tool.path.removeprefix('/api/v1')}",
+                description=tool.summary,
                 default_permission="allow" if tool.effect == "read" else "ask",
             )
             for tool in PLATFORM_TOOLS
@@ -508,13 +508,21 @@ def catalog(supported_web_operations: frozenset[str]) -> ToolsetCatalog:
     return ToolsetCatalog(items=tuple(toolset.definition(supported_web_operations) for toolset in _TOOLSETS))
 
 
-def normalize_toolsets(value: dict[ToolsetKey, ToolsetSelection]) -> dict[ToolsetKey, ToolsetSelection]:
+def normalize_toolsets(
+    value: dict[ToolsetKey, ToolsetSelection], info: ValidationInfo | None = None
+) -> dict[ToolsetKey, ToolsetSelection]:
     """Every toolset of the catalogue with its defaults materialized and its typed config validated."""
+    if info is not None and info.context and info.context.get("preserve_toolsets"):
+        return value
     return {toolset.key: _normalize(toolset, value.get(toolset.key)) for toolset in _TOOLSETS}
 
 
-def normalize_toolset_overrides(value: dict[ToolsetKey, ToolsetSelection]) -> dict[ToolsetKey, ToolsetSelection]:
+def normalize_toolset_overrides(
+    value: dict[ToolsetKey, ToolsetSelection], info: ValidationInfo | None = None
+) -> dict[ToolsetKey, ToolsetSelection]:
     """Only the submitted toolsets, each a whole replacement; omitted toolsets keep the revision's."""
+    if info is not None and info.context and info.context.get("preserve_toolsets"):
+        return value
     return {key: _normalize(_BY_KEY[key], selected) for key, selected in value.items()}
 
 
@@ -532,8 +540,20 @@ def _normalize(toolset: _Toolset, selected: ToolsetSelection | None) -> ToolsetS
     return ToolsetSelection(enabled=selected.enabled, config=configuration, tools=tools)
 
 
-Toolsets = Annotated[dict[ToolsetKey, ToolsetSelection], AfterValidator(normalize_toolsets)]
-ToolsetOverrides = Annotated[dict[ToolsetKey, ToolsetSelection], AfterValidator(normalize_toolset_overrides)]
+def _validate_toolsets(
+    value: dict[ToolsetKey, ToolsetSelection], info: ValidationInfo
+) -> dict[ToolsetKey, ToolsetSelection]:
+    return normalize_toolsets(value, info)
+
+
+def _validate_overrides(
+    value: dict[ToolsetKey, ToolsetSelection], info: ValidationInfo
+) -> dict[ToolsetKey, ToolsetSelection]:
+    return normalize_toolset_overrides(value, info)
+
+
+Toolsets = Annotated[dict[ToolsetKey, ToolsetSelection], AfterValidator(_validate_toolsets)]
+ToolsetOverrides = Annotated[dict[ToolsetKey, ToolsetSelection], AfterValidator(_validate_overrides)]
 
 
 def default_toolsets() -> dict[ToolsetKey, ToolsetSelection]:

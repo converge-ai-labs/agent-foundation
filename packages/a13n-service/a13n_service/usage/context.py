@@ -4,7 +4,8 @@ from sqlalchemy import BigInteger, func, select
 
 from a13n_service.infra.db import Storage, short_session
 from a13n_service.infra.errors import not_found
-from a13n_service.resources.agents.schemas import AgentConfig, apply_override
+from a13n_service.resources.agents import stored
+from a13n_service.resources.agents.schemas import AgentConfig
 from a13n_service.resources.agents.tables import AgentRevisionRow
 from a13n_service.resources.models.schemas import ModelConfig
 from a13n_service.resources.models.tables import ModelRow
@@ -78,10 +79,10 @@ async def read_context_usage(
             and not observed.get("delegation_id")
             and observed.get("source", "agent") == "agent"
         ):
-            config = AgentConfig.model_validate(revision.config)
-            override = RunOptions.model_validate(run.options).overrides
+            config = stored.read(AgentConfig, revision.config)
+            override = stored.read(RunOptions, run.options).overrides
             if override is not None:
-                config = apply_override(config, override)
+                config = stored.read_effective(config, override)
             capacity = config.model_characteristics.context_window_tokens
             if capacity is None:
                 configured_model = await session.scalar(

@@ -11,7 +11,7 @@ from a13n_harness.environment.errors import EnvironmentProviderError
 from a13n_harness.environment.models import EnvironmentState
 from a13n_service.infra.db import now, transaction
 from a13n_service.providers.environment.e2b_build import Build, BuildStatus, Template
-from a13n_service.providers.environments.e2b.configuration import E2BRecipe
+from a13n_service.providers.environment.recipes.e2b import E2BRecipe
 from a13n_service.runs.environments import e2b_templates as builds
 from a13n_service.runs.environments import lifecycle, maintenance
 from a13n_service.runs.environments.schemas import Handle

@@ -65,7 +65,9 @@ async def test_an_endpoint_outside_the_operator_policy_is_never_dialed(  # type:
         assert changed.status_code == 409 and details(changed)["reason"] == "provider_endpoint_denied"
 
 
-async def test_deleting_a_target_keeps_its_device_and_drops_its_token(service) -> None:  # type: ignore[no-untyped-def]
+async def test_deleting_a_target_keeps_its_device_and_drops_its_token(service, runs_kit) -> None:  # type: ignore[no-untyped-def]
+    # This test owns target mutations; background provisioning must not race the observed ETag.
+    await runs_kit.pause_sweeps(service)
     environment_id = await insert(service, "https://laptop.test")
     renamed = await change(service, environment_id, {"name": "Laptop"})
     assert renamed.status_code == 200 and renamed.json()["name"] == "Laptop"

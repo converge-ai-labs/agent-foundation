@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints
+from pydantic.experimental.missing_sentinel import MISSING
 
 from a13n_service.infra.ids import ObjectId
 from a13n_service.infra.labels import Labels
@@ -70,3 +71,12 @@ class Template(BaseModel):
 class TemplatePage(BaseModel):
     items: list[Template]
     next_cursor: str | None
+
+
+class TemplateConfigurationChanges(BaseModel):
+    """Sparse lifecycle and recipe replacement, merged under the template fence."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    recipe: dict[str, JsonValue] | MISSING = Field(default=MISSING)
+    stop_after_seconds: int | MISSING | None = Field(default=MISSING, ge=60, le=2592000)
+    delete_after_seconds: int | MISSING | None = Field(default=MISSING, ge=60, le=31536000)

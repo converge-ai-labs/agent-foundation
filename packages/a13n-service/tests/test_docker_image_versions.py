@@ -13,8 +13,8 @@ from a13n_harness.environment.models import EnvironmentState
 from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.environment.docker.runtime import DockerProviderRuntime, DockerSDKEngine
 from a13n_service.infra.db import transaction
+from a13n_service.providers.environment.recipes.docker import DockerRecipe
 from a13n_service.providers.environments.docker import DEFAULT_SANDBOX_IMAGE, default_image, docker
-from a13n_service.providers.environments.docker.configuration import DockerRecipe
 from a13n_service.providers.environments.docker.management import DockerManagement
 from a13n_service.resources.environment_templates.tables import EnvironmentTemplateRow
 from a13n_service.runs.environments.adapters import execution_connector

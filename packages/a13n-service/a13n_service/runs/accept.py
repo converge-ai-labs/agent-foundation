@@ -19,7 +19,8 @@ from a13n_service.infra.db import after_commit, now, transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.ids import new_object_id
 from a13n_service.infra.telemetry import meter
-from a13n_service.resources.agents.schemas import AgentConfig, AgentOverride, apply_override
+from a13n_service.resources.agents import stored
+from a13n_service.resources.agents.schemas import AgentConfig, AgentOverride
 from a13n_service.resources.agents.service import (
     SelectedRevision,
     load_revision,
@@ -132,7 +133,7 @@ class Source:
         overrides: AgentOverride | None,
     ) -> "Source":
         """A message whose principal the caller authorized and whose revision and overrides it validated."""
-        options = RunOptions.model_validate(entry.options)
+        options = stored.require(RunOptions, entry.options, kind="inbox_entry", id=entry.id)
         return cls(
             trigger=trigger,
             principal=principal,
@@ -156,7 +157,7 @@ class Source:
         scope = WorkspaceScope(thread.organization_id, thread.workspace_id)
         authority = ExecutionAuthority.model_validate(entry.authority)
         principal = await _authorized(session, runtime, scope, entry.principal_id, authority)
-        overrides = RunOptions.model_validate(entry.options).overrides
+        overrides = stored.require(RunOptions, entry.options, kind="inbox_entry", id=entry.id).overrides
         revision, overrides = await run_revision(
             session, runtime, principal, scope, entry.agent_id, entry.agent_revision_id, overrides, authority=authority
         )
@@ -186,7 +187,7 @@ class Source:
             authority=authority,
             revision=await select_revision(session, run.workspace_id, run.agent_id, run.agent_revision_id),
             revision_selection="inherited",
-            options=RunOptions.model_validate(run.options),
+            options=stored.require(RunOptions, run.options, kind="run", id=run.id),
             options_digest=run.options_digest,
             occurrence_trigger_entry_id=run.occurrence_trigger_entry_id if trigger == "resume" else None,
             entry=entry,
@@ -247,8 +248,8 @@ async def primary_source(
     origin = await session.get(RunRow, thread.origin_run_id)
     assert origin is not None and thread.origin_thread_id is not None and thread.subagent is not None
     revision = await load_revision(session, origin.agent_id, origin.agent_revision_id)
-    override = RunOptions.model_validate(origin.options).overrides
-    spawning = revision.config if override is None else apply_override(revision.config, override)
+    override = stored.require(RunOptions, origin.options, kind="run", id=origin.id).overrides
+    spawning = stored.require_effective(revision.config, override, revision_id=revision.revision_id)
     policy = spawning.subagents[thread.subagent].environment
     if policy.mode == "shared":
         return await primary_mount(session, thread.origin_thread_id)

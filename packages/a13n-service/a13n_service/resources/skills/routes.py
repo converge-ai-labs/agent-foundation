@@ -8,11 +8,9 @@ from a13n_service.infra.http import IfMatch, PageLimit, download_headers, tagged
 from a13n_service.infra.platform import platform_operation
 from a13n_service.resources.requests import CurrentRuntime
 from a13n_service.resources.revisions import Search
-from a13n_service.resources.runtime import Runtime
 from a13n_service.resources.skills import content, service
-from a13n_service.resources.skills.github import GitHub
+from a13n_service.resources.skills.requests import package_importer
 from a13n_service.resources.skills.schemas import (
-    GitHubSource,
     Skill,
     SkillCreate,
     SkillManifest,
@@ -23,23 +21,10 @@ from a13n_service.resources.skills.schemas import (
     SkillUpdate,
     SkillValidate,
     SourceKind,
-    UploadSource,
 )
-from a13n_service.tenancy.requests import Actor, WorkspaceId, limit_uploads
+from a13n_service.tenancy.requests import Actor, WorkspaceId
 
 router = APIRouter(prefix="/api/v1/skills", tags=["skills"])
-
-
-async def _github(request: Request, actor: Actor, runtime: Runtime, source: UploadSource | GitHubSource) -> GitHub:
-    """The importer; reading from GitHub counts against the caller's upload budget, as the stored archive does."""
-    if isinstance(source, GitHubSource):
-        await limit_uploads(request, actor.id)
-    settings = runtime.settings
-    return GitHub(
-        policy=runtime.endpoint_policy,
-        timeout=settings.control.import_timeout,
-        max_bytes=settings.objects.max_bytes,
-    )
 
 
 @router.post("", response_model=Skill, status_code=201, openapi_extra=platform_operation("skills", "write"))
@@ -51,7 +36,7 @@ async def create_skill(
     actor: Actor,
     runtime: CurrentRuntime,
 ) -> Skill:
-    github = await _github(request, actor, runtime, body.source)
+    github = await package_importer(request, actor, runtime, body.source)
     result = await service.create_skill(runtime.storage, runtime.objects, github, actor, workspace_id, body)
     return tagged(response, result)
 
@@ -62,7 +47,7 @@ async def validate_skill(
 ) -> SkillManifest:
     """The manifest the package would give a new skill or revision, checked as creation checks it; nothing is
     stored."""
-    github = await _github(request, actor, runtime, body.source)
+    github = await package_importer(request, actor, runtime, body.source)
     return await service.validate_package(runtime.storage, runtime.objects, github, actor, workspace_id, body.source)
 
 
@@ -162,7 +147,7 @@ async def create_skill_revision(
     if_match: IfMatch = None,
 ) -> SkillRevision:
     """A package whose manifest equals the default revision's creates nothing and returns that revision."""
-    github = await _github(request, actor, runtime, body.source)
+    github = await package_importer(request, actor, runtime, body.source)
     return await service.create_revision(
         runtime.storage, runtime.objects, github, actor, workspace_id, skill_id, body, if_match=if_match
     )

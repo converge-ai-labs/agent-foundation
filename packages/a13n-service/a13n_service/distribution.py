@@ -23,6 +23,8 @@ from a13n_service.infra.db import Base, schema_rules, table_rules
 from a13n_service.infra.ids import new_object_id
 from a13n_service.infra.outbox import Delivery, OutboxRow, purge_settled
 from a13n_service.infra.sweeps import Sweep
+from a13n_service.platform_catalog import catalog as platform_catalog
+from a13n_service.platform_tools import Definition
 from a13n_service.providers.environments import BUILT_IN_ENVIRONMENT_PROVIDERS
 from a13n_service.providers.registry import RegisteredProvider
 from a13n_service.provisioning.tables import WorkspaceProvisioningRow
@@ -172,6 +174,7 @@ class Distribution:
     tables: tuple[type[Base], ...] = ()
     migrations: tuple[Path, ...] = ()
     settings: Mapping[str, type[Section]] = field(default_factory=dict)
+    platform_tools: tuple[Callable[[], tuple[Definition, ...]], ...] = ()
     sweeps: tuple[SweepFactory, ...] = ()
     providers: tuple[RegisteredProvider, ...] = ()
     admission: AdmissionPolicy | None = None
@@ -198,6 +201,7 @@ class Distribution:
             tables=self.tables + extension.tables,
             migrations=self.migrations + extension.migrations,
             settings=MappingProxyType({**self.settings, **extension.settings}),
+            platform_tools=self.platform_tools + extension.platform_tools,
             sweeps=self.sweeps + extension.sweeps,
             providers=self.providers + extension.providers,
             admission=extension.admission or self.admission,
@@ -348,6 +352,7 @@ def _purge_outbox(runtime: Runtime) -> Sweep:
 
 
 OSS = Distribution(
+    platform_tools=(platform_catalog,),
     name="oss",
     tables=(
         OrganizationRow,
