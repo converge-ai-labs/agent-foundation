@@ -77,18 +77,18 @@ See [browser-server operation](../../../docs/a13n-harness-ui/webui.md) and [HTTP
 
 ## Display language
 
-Login, connection startup, guided setup, its model editor and provider-account connection controls, and setup/readiness support English and Simplified Chinese. Other workbench workflows remain in English. This is the first implementation slice of [#1248](https://github.com/converge-ai-labs/agent-foundation/issues/1248), not complete application localization.
+Login, connection startup, guided setup, its model editor and provider-account connection controls, and setup/readiness support English and Simplified Chinese. The chat composer also localizes input guidance, attachment controls/previews, submission and Stop feedback, Goal/Coordinator choices and clear-context confirmation. Navigation, transcripts, model/environment selectors, skill suggestions and remaining configuration/native-panel workflows remain in English. These are incremental deliveries under [#1248](https://github.com/converge-ai-labs/agent-foundation/issues/1248), not complete application localization.
 
 Choose **System**, **English**, or **简体中文** during login/setup or in General settings. The preference belongs to this viewer's browser, independently of Console. System scans browser languages in order: `en` variants select English, `zh` variants select Simplified Chinese, and no supported match selects English. Automatic resolution never saves a manual language choice. If browser storage is unavailable, a manual choice lasts for the current page session.
 
 Switching updates text and document language without remounting the application or replaying requests. The existing MCP Apps Host-context observer forwards locale changes without remounting Apps or replaying tool results. Model/user content, source, credentials, provider diagnostics, identifiers and paths retain their original values.
 
-Messages live in application-owned `src/i18n/locales/{en,zh-CN}.json`. Use `useTranslation` from `src/i18n`, whole messages with interpolation, i18next number formatting, and each language's plural categories. Shared `a13n-ui` components receive translated strings from their callers. English fallback remains available at runtime; keep both catalogs complete for every message added in this slice.
+Messages live in application-owned `src/i18n/locales/{en,zh-CN}.json`. Use `useTranslation` from `src/i18n`, whole messages with interpolation, i18next number formatting, and each language's plural categories. Shared `a13n-ui` components receive translated strings from their callers. English fallback remains available at runtime; keep both catalogs complete for every localized message. Retained composer feedback is translated when rendered, so language changes do not mutate draft or request state. `conversations/composer-messages.ts` lists known application messages; unknown diagnostics, interpolated filenames and previewed file content remain verbatim.
 
 Run the focused catalog, preference and language-control checks from the repository root:
 
 ```bash
-pnpm --dir frontend --filter a13n-harness-ui-webui test src/i18n
+pnpm --dir frontend --filter a13n-harness-ui-webui test src/i18n src/conversations/composer-language.test.tsx src/conversations/composer-messages.test.ts
 ```
 
-These tests also run in the existing Harness UI frontend CI suite. Catalog checks cover missing/empty values, interpolation and locale-required plurals, with invalid fixtures. Literal onboarding translation calls and dynamic login-state labels have focused coverage. Application-wide untranslated-source detection and the remaining conversation/configuration/native-panel workflows remain follow-up work under #1248.
+These tests also run in the existing Harness UI frontend CI suite. Catalog checks cover missing/empty values, interpolation and locale-required plurals, with invalid fixtures. Literal translation calls in the localized workflows, dynamic login states and retained composer/Stop messages have focused catalog coverage. Composer interaction checks use the real language control and preserve editor/undo/attachment state through switching, accepted or uncertain submission, and pending/rejected/uncertain Stop without replaying requests. Application-wide untranslated-source detection and the remaining conversation/configuration/native-panel workflows remain follow-up work under #1248.

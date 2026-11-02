@@ -1,4 +1,5 @@
 import { SettingsSection } from "./settings";
+import { useTranslation } from "../i18n";
 import { useContext, type ReactNode, type FocusEventHandler } from "react";
 import { Button, FormField, Input } from "a13n-ui";
 import { WarningCircleIcon } from "@phosphor-icons/react";
@@ -54,6 +55,7 @@ export function ErrorNotice({
   /** One quiet line for secondary content, without the notice frame. */
   inline?: boolean;
 }) {
+  const { t } = useTranslation();
   const connectionNotice = useContext(ConnectionNoticeContext);
   if (!error || (connectionNotice && isConnectionError(error))) return null;
   return (
@@ -69,7 +71,7 @@ export function ErrorNotice({
       </div>
       {retry && (
         <Button variant="ghost" size="sm" onClick={retry}>
-          Retry
+          {t("Retry")}
         </Button>
       )}
     </div>

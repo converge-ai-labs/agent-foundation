@@ -17,6 +17,7 @@ import type { ThreadDraft } from "./draft";
 import { inlinePattern, isReadyAttachment } from "./inline-attachments";
 import { retainedImage } from "./attachment-thumbnail";
 import styles from "./conversation.module.css";
+import type { TFunction } from "i18next";
 
 export type ComposerAttachmentView = {
   transport: Transport;
@@ -30,27 +31,56 @@ export const refreshAttachments = StateEffect.define<null>();
 const clipboardType = "application/x-a13n-composer";
 // CodeMirror can give an equal new widget the old DOM without calling toDOM.
 const imageDisposers = new WeakMap<HTMLElement, () => void>();
+const widgets = new WeakMap<HTMLElement, AttachmentWidget>();
 
 class AttachmentWidget extends WidgetType {
+  readonly file: File | undefined;
   constructor(
     readonly key: string,
     readonly id: string | undefined,
     readonly name: string,
     readonly draft: ThreadDraft,
     readonly context: ComposerAttachmentView,
+    readonly removeLabel: string,
+    readonly title: string,
   ) {
     super();
+    this.file = draft.uploads.get(key)?.file;
   }
   eq(other: AttachmentWidget) {
     return (
+      this.sameAttachment(other) &&
+      this.name === other.name &&
+      this.removeLabel === other.removeLabel &&
+      this.title === other.title
+    );
+  }
+  sameAttachment(other: AttachmentWidget) {
+    return (
       this.key === other.key &&
       this.id === other.id &&
-      this.name === other.name &&
+      this.file === other.file &&
       this.context.transport === other.context.transport &&
       this.context.threadId === other.context.threadId &&
       this.context.metadata.get(this.id ?? "") ===
         other.context.metadata.get(other.id ?? "")
     );
+  }
+  updateDOM(dom: HTMLElement) {
+    const previous = widgets.get(dom);
+    if (!previous || !this.sameAttachment(previous)) return false;
+    const open = dom.querySelector("button")!;
+    open.querySelector("span")!.textContent =
+      this.draft.uploads.get(this.key)?.status === "staged"
+        ? this.draft.uploads.get(this.key)!.file.name
+        : this.name;
+    open.title = this.title;
+    open.setAttribute("aria-label", this.name);
+    dom
+      .querySelectorAll("button")[1]
+      .setAttribute("aria-label", this.removeLabel);
+    widgets.set(dom, this);
+    return true;
   }
   toDOM(view: EditorView) {
     const chip = document.createElement("span");
@@ -89,9 +119,7 @@ class AttachmentWidget extends WidgetType {
       upload?.status === "staged" ? upload.file.name : undefined;
     label.textContent = stagedName ?? this.name;
     open.append(label);
-    open.title = stagedName
-      ? `${stagedName} · Uploads when you send`
-      : this.name;
+    open.title = this.title;
     open.setAttribute("aria-label", this.name);
     open.onclick = () => {
       if (isReadyAttachment(this.id)) this.context.preview(this.id, attachment);
@@ -100,16 +128,18 @@ class AttachmentWidget extends WidgetType {
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = styles.inlineAttachmentRemove;
-    remove.setAttribute("aria-label", `Remove ${this.name}`);
+    remove.setAttribute("aria-label", this.removeLabel);
     remove.textContent = "×";
     remove.onclick = () =>
       this.draft.removeAttachment(this.key, view.posAtDOM(chip));
     chip.append(open, remove);
+    widgets.set(chip, this);
     return chip;
   }
   destroy(dom: HTMLElement) {
     imageDisposers.get(dom)?.();
     imageDisposers.delete(dom);
+    widgets.delete(dom);
   }
   ignoreEvent() {
     return true;
@@ -119,17 +149,25 @@ class AttachmentWidget extends WidgetType {
 export function composerAttachments(
   draft: ThreadDraft,
   context: () => ComposerAttachmentView,
+  translate: () => TFunction,
 ): Extension {
   const label = (key: string) => {
+    const t = translate();
     const id = draft.doc.getMap<string>("attachments").get(key);
+    const name = draft.uploads.get(key)?.file.name ?? t("Attachment");
     return isReadyAttachment(id)
-      ? (context().metadata.get(id)?.name ?? "Attachment")
-      : `${draft.uploads.get(key)?.file.name ?? "Attachment"} · ${id === "failed" ? "upload failed — retry" : draft.uploads.get(key)?.status === "staged" ? "ready to upload" : "not ready"}`;
+      ? (context().metadata.get(id)?.name ?? t("Attachment"))
+      : id === "failed"
+        ? t("{{name}} · upload failed — retry", { name })
+        : draft.uploads.get(key)?.status === "staged"
+          ? t("{{name}} · ready to upload", { name })
+          : t("{{name}} · not ready", { name });
   };
   const displayText = (text: string) =>
     text.replace(inlinePattern, (_match, key: string) => `[${label(key)}]`);
-  const decorations = (view: EditorView) =>
-    Decoration.set(
+  const decorations = (view: EditorView) => {
+    const t = translate();
+    return Decoration.set(
       [...view.state.doc.toString().matchAll(inlinePattern)].map((match) =>
         Decoration.replace({
           widget: new AttachmentWidget(
@@ -138,10 +176,17 @@ export function composerAttachments(
             label(match[1]),
             draft,
             context(),
+            t("Remove {{name}}", { name: label(match[1]) }),
+            draft.uploads.get(match[1])?.status === "staged"
+              ? t("{{name}} · Uploads when you send", {
+                  name: draft.uploads.get(match[1])!.file.name,
+                })
+              : label(match[1]),
           ),
         }).range(match.index, match.index + match[0].length),
       ),
     );
+  };
   const plugin = ViewPlugin.fromClass(
     class {
       decorations: DecorationSet;

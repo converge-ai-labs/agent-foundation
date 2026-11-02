@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { useState, type ReactElement } from "react";
 import { Button, DialogClose, ModalFrame } from "a13n-ui";
 
@@ -19,6 +20,7 @@ export function ConfirmAction({
   destructive?: boolean;
   confirmationRequired?: boolean;
 }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   return (
     <ModalFrame
@@ -34,11 +36,11 @@ export function ConfirmAction({
       }}
       title={title}
       description={description}
-      closeLabel="Close confirmation"
+      closeLabel={t("Close confirmation")}
       footer={
         <>
           <DialogClose render={<Button variant="outline" />}>
-            Cancel
+            {t("Cancel")}
           </DialogClose>
           <Button
             variant={destructive ? "destructive" : "default"}

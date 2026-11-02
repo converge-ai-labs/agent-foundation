@@ -5,6 +5,10 @@ import en from "./locales/en.json";
 import zhCN from "./locales/zh-CN.json";
 import { i18n } from "./index";
 import type { Schema } from "../transport/client";
+import {
+  composerMessages,
+  stopOutcomeMessages,
+} from "../conversations/composer-messages";
 
 function catalogErrors(catalogs: Record<string, Record<string, string>>) {
   const errors: string[] = [];
@@ -108,7 +112,7 @@ it("formats counts and resolves known login states without translating provider 
   await i18n.changeLanguage("en");
 });
 
-// Guard the workflows introduced in this slice; application-wide source linting
+// Guard the localized workflows; application-wide source linting
 // and the remaining workbench workflows are tracked separately in #1248.
 const surfaces = [
   "app.tsx",
@@ -121,8 +125,17 @@ const surfaces = [
   "configuration/resource-choice.tsx",
   "setup/accounts.tsx",
   "setup/account-messages.ts",
+  "conversations/composer.tsx",
+  "conversations/composer-editor.tsx",
+  "conversations/composer-attachments.ts",
+  "conversations/composer-messages.ts",
+  "conversations/task-options.tsx",
+  "conversations/clear-context.tsx",
+  "shell/confirm-action.tsx",
+  "shell/image-preview.tsx",
+  "shell/ui.tsx",
 ];
-it("keeps literal onboarding translation calls in the catalogs", () => {
+it("keeps literal translation calls in the localized workflow catalogs", () => {
   const missing: string[] = [];
   for (const path of surfaces) {
     const source = readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
@@ -152,4 +165,14 @@ it("keeps literal onboarding translation calls in the catalogs", () => {
     visit(ast);
   }
   expect(missing).toEqual([]);
+});
+
+it("keeps retained composer feedback and terminal stop outcomes in both catalogs", () => {
+  for (const key of [
+    ...composerMessages,
+    ...Object.values(stopOutcomeMessages),
+  ]) {
+    expect(Object.hasOwn(en, key), key).toBe(true);
+    expect(Object.hasOwn(zhCN, key), key).toBe(true);
+  }
 });

@@ -1,3 +1,5 @@
+import { useTranslation } from "../i18n";
+import { composerMessage, stopMessage } from "./composer-messages";
 import {
   cloneElement,
   createContext,
@@ -382,6 +384,7 @@ export function Composer({
   leadingControls?: ReactNode;
   modelId?: string;
 }) {
+  const { t } = useTranslation();
   const draft = useDraft(threadId);
   const disconnected = useContext(ConnectionNoticeContext);
   const appContexts = useAppContextSelection();
@@ -453,7 +456,13 @@ export function Composer({
   }, [referenceAdded]);
   const previewRequest = useRef<AbortController | null>(null);
   useEffect(() => () => previewRequest.current?.abort(), [transport, threadId]);
-  const [error, setError] = useState("");
+  const [notice, setNotice] = useState<{
+    message: string;
+    values?: Record<string, string>;
+  }>({ message: "" });
+  const error = notice.message;
+  const setError = (message: string, values?: Record<string, string>) =>
+    setNotice({ message, values });
   const skillContext = JSON.stringify([
     local,
     skillDefaults,
@@ -504,6 +513,7 @@ export function Composer({
   const [preview, setPreview] = useState<{
     name: string;
     text: string;
+    notice?: string;
     url?: string;
     source?: Schema<"ThreadAttachment">["source"];
     image?: boolean;
@@ -560,6 +570,9 @@ export function Composer({
   const valid = hasInput && !missing;
   const cancellation = useStopOperation(threadId, draft, activity, reconcile);
   const { stopping, canStop } = cancellation;
+  const stopNotice = cancellation.request
+    ? stopMessage(cancellation.request, t)
+    : undefined;
   const stop = () => {
     if (!canStop) return;
     // A shared draft can become empty during preparation. Abort unsubmitted
@@ -572,10 +585,10 @@ export function Composer({
     return cancellation.stop();
   };
   const stopLabel = cancellation.retryable
-    ? "Retry Stop"
+    ? t("Retry Stop")
     : stopping
-      ? "Stopping"
-      : "Stop";
+      ? t("Stopping")
+      : t("Stop");
   const ready =
     local ||
     (draft.status === "Connected" && !draft.replacement && !draft.error);
@@ -610,16 +623,18 @@ export function Composer({
     !draft.replacement
       ? missing
         ? uploading
-          ? "Waiting for attachments…"
-          : "Resolve unavailable attachments before sending."
+          ? t("Waiting for attachments…")
+          : t("Resolve unavailable attachments before sending.")
         : coordinatorBlocked && !busy
-          ? "Choose a project and an idle chat to coordinate agents."
+          ? t("Choose a project and an idle chat to coordinate agents.")
           : !ready
-            ? "Waiting for the shared draft connection…"
+            ? t("Waiting for the shared draft connection…")
             : !busy && !canRun
-              ? (unavailableReason ?? "Refresh chat status before sending.")
+              ? unavailableReason
+                ? composerMessage(unavailableReason, t)
+                : t("Refresh chat status before sending.")
               : busy && !canSteer
-                ? "This operation cannot accept another message yet."
+                ? t("This operation cannot accept another message yet.")
                 : undefined
       : undefined;
   const submit = async (action: "send" | "steer") => {
@@ -822,8 +837,10 @@ export function Composer({
       if (total > 20 * 1024 * 1024)
         throw new Error("Selected attachments exceed 20 MiB.");
       for (const file of files)
-        if (file.size > 10 * 1024 * 1024)
-          throw new Error(`${file.name} exceeds 10 MiB.`);
+        if (file.size > 10 * 1024 * 1024) {
+          setError("{{name}} exceeds 10 MiB.", { name: file.name });
+          return;
+        }
       // Reserve every position synchronously, before any upload can finish.
       const pending = files.map((file) => {
         const key = draft.addAttachment("pending", at);
@@ -859,21 +876,27 @@ export function Composer({
         { signal: controller.signal },
       );
       const blob = await response.blob();
-      let text = "Binary attachment. Download to inspect its original bytes.";
+      let text = "";
+      let notice: string | undefined =
+        "Binary attachment. Download to inspect its original bytes.";
       if (blob.size <= 256 * 1024) {
         try {
           const decoded = new TextDecoder("utf-8", { fatal: true }).decode(
             await blob.arrayBuffer(),
           );
-          if (!decoded.includes("\0")) text = decoded;
+          if (!decoded.includes("\0")) {
+            text = decoded;
+            notice = undefined;
+          }
         } catch {
           /* Binary content is never injected into HTML. */
         }
-      } else text = "Too large to preview. Download the file to view it.";
+      } else notice = "Too large to preview. Download the file to view it.";
       if (controller.signal.aborted) return;
       setPreview({
         name: attachment?.name ?? id,
         text,
+        notice,
         url: URL.createObjectURL(blob),
         source: attachment?.source,
         image: attachment?.media_type.startsWith("image/"),
@@ -891,7 +914,9 @@ export function Composer({
       size="sm"
       className={styles.goalButton}
       aria-pressed={draft.mode === "goal"}
-      title="Keep working until the goal is done or the follow-up limit is reached."
+      title={t(
+        "Keep working until the goal is done or the follow-up limit is reached.",
+      )}
       disabled={!canRun || busy || preparing || pending || unknown}
       onClick={() => {
         draft.mode = draft.mode === "goal" ? "normal" : "goal";
@@ -899,7 +924,7 @@ export function Composer({
       }}
     >
       <Target aria-hidden weight={draft.mode === "goal" ? "fill" : "regular"} />
-      Goal
+      {t("Goal")}
     </Button>
   );
   const coordinatorDisabled =
@@ -915,15 +940,18 @@ export function Composer({
     draft.notify();
   };
   const ownerControl = owner && (
-    <span className={styles.workerIdentity} title={`Managed by ${owner.title}`}>
+    <span
+      className={styles.workerIdentity}
+      title={t("Managed by {{name}}", { name: owner.title })}
+    >
       <CoordinatorIcon size={16} />
-      <span>Managed by · {owner.title}</span>
+      <span>{t("Managed by · {{name}}", { name: owner.title })}</span>
       {owner.onRemove && (
         <Button
           variant="ghost"
           size="icon-sm"
-          aria-label="Remove Coordinator assignment"
-          title="Create an independent chat instead"
+          aria-label={t("Remove Coordinator assignment")}
+          title={t("Create an independent chat instead")}
           disabled={owner.locked || preparing || pending || unknown}
           onClick={owner.onRemove}
         >
@@ -938,9 +966,9 @@ export function Composer({
     (coordinatorActive ? (
       <span
         className={styles.coordinatorIdentity}
-        title="This chat is a coordinator. This can't be undone."
+        title={t("This chat is a coordinator. This can't be undone.")}
       >
-        <CoordinatorIcon size={16} /> Coordinator
+        <CoordinatorIcon size={16} /> {t("Coordinator")}
       </span>
     ) : (
       <Button
@@ -950,51 +978,63 @@ export function Composer({
         aria-pressed={draft.coordinator}
         title={
           coordinator.available
-            ? "Plan and delegate work to agents. Stays on after your first message."
-            : "Choose a project, finish active work and answer pending requests first."
+            ? t(
+                "Plan and delegate work to agents. Stays on after your first message.",
+              )
+            : t(
+                "Choose a project, finish active work and answer pending requests first.",
+              )
         }
         disabled={coordinatorDisabled}
         onClick={toggleCoordinator}
       >
-        <CoordinatorIcon size={16} /> Coordinate agents
+        <CoordinatorIcon size={16} /> {t("Coordinate agents")}
       </Button>
     ));
   return (
     <section
       className={styles.composer}
-      aria-label={busy ? "Next message" : "Message composer"}
+      aria-label={busy ? t("Next message") : t("Message composer")}
     >
       <div className={styles.composerFeedback}>
         {feedback}
         {contextCleared && (
           <p role="status" className={styles.composerConnection}>
-            Context cleared. Your next message starts fresh; chat history and
-            your draft are kept.
+            {t(
+              "Context cleared. Your next message starts fresh; chat history and your draft are kept.",
+            )}
           </p>
         )}
         {showSyncStatus && draft.status !== "Connected" && (
           <p role="status" className={styles.composerConnection}>
-            {draft.status} · your edits are still in this tab
+            {t("{{status}} · your edits are still in this tab", {
+              status: composerMessage(draft.status, t),
+            })}
           </p>
         )}
         {draft.replacement && (
           <div role="alert" className={styles.warning}>
             <p>
-              The shared draft changed. Keep your input or discard it to rejoin.
-              Neither option sends a message.
+              {t(
+                "The shared draft changed. Keep your input or discard it to rejoin. Neither option sends a message.",
+              )}
             </p>
             <Button
               variant="outline"
               onClick={() => draft.joinReplacement(true)}
             >
-              Keep my input
+              {t("Keep my input")}
             </Button>
             <ConfirmAction
               key={draft.replacement.draft_id}
-              trigger={<Button variant="ghost">Discard and rejoin</Button>}
-              title="Discard old input?"
-              description="Discard this tab's old input and join the new shared draft?"
-              confirmLabel="Discard and rejoin"
+              trigger={
+                <Button variant="ghost">{t("Discard and rejoin")}</Button>
+              }
+              title={t("Discard old input?")}
+              description={t(
+                "Discard this tab's old input and join the new shared draft?",
+              )}
+              confirmLabel={t("Discard and rejoin")}
               destructive
               onConfirm={() => draft.joinReplacement(false)}
             />
@@ -1003,15 +1043,16 @@ export function Composer({
         {draft.coordinatorUncertain && (
           <div className={styles.warning} role="alert">
             <p>
-              Coordination may already be on. Check its status before sending.
-              Your input is saved here.
+              {t(
+                "Coordination may already be on. Check its status before sending. Your input is saved here.",
+              )}
             </p>
             <Button
               variant="outline"
               loading={coordinatorStatus.isPending}
               onClick={() => coordinatorStatus.mutate()}
             >
-              Check status
+              {t("Check status")}
             </Button>
           </div>
         )}
@@ -1034,12 +1075,18 @@ export function Composer({
                   : "status"
               }
             >
-              {cancellation.request.message}
-              {cancellation.observationFailed &&
-                " Current status is unavailable; stopping is not yet confirmed."}
+              {stopNotice}
+              {cancellation.observationFailed && (
+                <>
+                  {" "}
+                  {t(
+                    "Current status is unavailable; stopping is not yet confirmed.",
+                  )}
+                </>
+              )}
             </p>
             <Button variant="ghost" size="sm" onClick={cancellation.refresh}>
-              Check stop status
+              {t("Check stop status")}
             </Button>
           </div>
         )}
@@ -1052,18 +1099,29 @@ export function Composer({
           draft.submission.kind !== "rejected" &&
           !unknown && (
             <p role="alert" className={styles.warning}>
-              {error || draft.error}
+              {composerMessage(
+                error || draft.error,
+                t,
+                error ? notice.values : undefined,
+              )}
             </p>
           )}
         {(draft.submission.kind === "rejected" || unknown) && (
           <div role="alert" className={styles.warning}>
-            <p>{"message" in draft.submission && draft.submission.message}</p>
+            <p>
+              {"message" in draft.submission &&
+                composerMessage(draft.submission.message, t)}
+            </p>
             {unknown &&
               "receipt" in draft.submission &&
               draft.submission.receipt && (
                 <details>
-                  <summary>Message details</summary>
-                  <small>Operation: {draft.submission.receipt}</small>
+                  <summary>{t("Message details")}</summary>
+                  <small>
+                    {t("Operation: {{receipt}}", {
+                      receipt: draft.submission.receipt,
+                    })}
+                  </small>
                 </details>
               )}
             {unknown && (
@@ -1072,14 +1130,18 @@ export function Composer({
                   variant="outline"
                   onClick={onReviewOutcome ?? reconcile}
                 >
-                  {onReviewOutcome ? "Review message" : "Refresh chat"}
+                  {onReviewOutcome ? t("Review message") : t("Refresh chat")}
                 </Button>
                 {!onReviewOutcome && (
                   <ConfirmAction
-                    trigger={<Button variant="ghost">Allow new message</Button>}
-                    title="Enable a new submission?"
-                    description="Your message may already be sent. Check the chat before allowing another message."
-                    confirmLabel="Enable submission"
+                    trigger={
+                      <Button variant="ghost">{t("Allow new message")}</Button>
+                    }
+                    title={t("Enable a new submission?")}
+                    description={t(
+                      "Your message may already be sent. Check the chat before allowing another message.",
+                    )}
+                    confirmLabel={t("Enable submission")}
                     onConfirm={() => {
                       draft.submission = { kind: "idle" };
                       draft.notify();
@@ -1100,14 +1162,14 @@ export function Composer({
             {!transport.shareId &&
               draft.mode === "goal" &&
               cloneElement(goalToggle, {
-                "aria-label": "Turn off keep working",
+                "aria-label": t("Turn off keep working"),
               })}
             {ownerControl ||
               (coordinatorActive
                 ? coordinatorControl
                 : draft.coordinator && coordinatorControl
                   ? cloneElement(coordinatorControl, {
-                      "aria-label": "Turn off agent coordination",
+                      "aria-label": t("Turn off agent coordination"),
                     })
                   : null)}
           </div>
@@ -1129,8 +1191,8 @@ export function Composer({
             variant="ghost"
             size="icon-sm"
             className={styles.attachButton}
-            aria-label="Attach files"
-            title="Attach files · you can also paste or drop files"
+            aria-label={t("Attach files")}
+            title={t("Attach files · you can also paste or drop files")}
             loading={uploading}
             disabled={preparing}
             onClick={() => upload.current?.click()}
@@ -1151,8 +1213,11 @@ export function Composer({
                       } catch (failure) {
                         setError(
                           failure instanceof Error
-                            ? `Could not load skills: ${failure.message}`
+                            ? "Could not load skills: {{message}}"
                             : "Could not load skills. Type $ again to retry.",
+                          failure instanceof Error
+                            ? { message: failure.message }
+                            : undefined,
                         );
                         throw failure;
                       }
@@ -1199,8 +1264,8 @@ export function Composer({
               {showSyncStatus && draft.status === "Connected" && (
                 <span
                   role="status"
-                  aria-label="Syncing edits…"
-                  title="Syncing edits…"
+                  aria-label={t("Syncing edits…")}
+                  title={t("Syncing edits…")}
                 >
                   <CircleNotch
                     className={styles.threadRunning}
@@ -1214,7 +1279,7 @@ export function Composer({
                 coordinatorEnabled={draft.coordinator}
                 goal={
                   <Switch
-                    aria-label="Goal"
+                    aria-label={t("Goal")}
                     title={goalToggle.props.title}
                     checked={draft.mode === "goal"}
                     disabled={
@@ -1229,7 +1294,7 @@ export function Composer({
                 coordinator={
                   !owner && !coordinatorActive && coordinator ? (
                     <Switch
-                      aria-label="Coordinate agents"
+                      aria-label={t("Coordinate agents")}
                       title={
                         coordinatorControl
                           ? coordinatorControl.props.title
@@ -1275,21 +1340,21 @@ export function Composer({
               stopAction
                 ? stopLabel
                 : pending
-                  ? "Submitting"
+                  ? t("Submitting")
                   : preparing
-                    ? "Preparing"
+                    ? t("Preparing")
                     : busy
-                      ? "Steer"
-                      : "Send"
+                      ? t("Steer")
+                      : t("Send")
             }
             title={
-              (stopAction ? cancellation.request?.message : undefined) ??
+              (stopAction ? stopNotice : undefined) ??
               blockedReason ??
               (stopAction
-                ? "Stop this operation"
+                ? t("Stop this operation")
                 : busy
-                  ? "Steer current operation · Enter"
-                  : "Send message · Enter")
+                  ? t("Steer current operation · Enter")
+                  : t("Send message · Enter"))
             }
             disabled={stopAction ? !canStop : busy ? !canSteer : !canSend}
             loading={stopAction ? stopping : pending || preparing}
@@ -1316,37 +1381,44 @@ export function Composer({
             setPreview(null);
           }
         }}
-        title={preview?.name ?? "Attachment"}
-        description="This is the attached snapshot. The original file may have changed."
-        closeLabel="Close"
+        title={preview?.name ?? t("Attachment")}
+        description={t(
+          "This is the attached snapshot. The original file may have changed.",
+        )}
+        closeLabel={t("Close")}
       >
         {preview?.source && (
           <div className={styles.summary}>
             {"path" in preview.source && (
-              <p>Server snapshot · {preview.source.path}</p>
+              <p>
+                {t("Server snapshot · {{path}}", { path: preview.source.path })}
+              </p>
             )}
             {"repository_path" in preview.source && (
               <p>
                 {preview.source.comparison} · {preview.source.repository_path} ·
-                HEAD {preview.source.head_oid ?? "empty tree"}
+                HEAD {preview.source.head_oid ?? t("empty tree")}
               </p>
             )}
             <details>
-              <summary>Source</summary>
+              <summary>{t("Source")}</summary>
               <pre className={styles.code}>
                 {JSON.stringify(preview.source, null, 2)}
               </pre>
             </details>
             <p>
-              This is a saved snapshot. Sending keeps it and its source details
-              in the chat, even if the original changes.
+              {t(
+                "This is a saved snapshot. Sending keeps it and its source details in the chat, even if the original changes.",
+              )}
             </p>
           </div>
         )}
-        <pre className={styles.code}>{preview?.text}</pre>
+        <pre className={styles.code}>
+          {preview?.notice ? composerMessage(preview.notice, t) : preview?.text}
+        </pre>
         {preview?.url && (
           <a href={preview.url} download={preview.name}>
-            Download original
+            {t("Download original")}
           </a>
         )}
       </ModalFrame>
