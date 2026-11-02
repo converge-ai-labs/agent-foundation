@@ -306,7 +306,12 @@ async def reconcile(runtime: Runtime, control_id: str) -> None:
             description = await send(wire.Describe())
             if not isinstance(description, wire.Description) or not description.revocation_fences_grants:
                 raise ValueError("Desktop grant fencing is unavailable")
-            if guest_generation is not None and description.generation != guest_generation:
+            # Restart invalidates the old grant; only cleanup may use the new generation.
+            if (
+                phase in {"draining", "human"}
+                and guest_generation is not None
+                and description.generation != guest_generation
+            ):
                 raise ValueError("Desktop guest generation changed")
             guest_generation = description.generation
             if phase in {"draining", "human"}:

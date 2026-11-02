@@ -1,6 +1,7 @@
 """Native-target control through real SQL; provider I/O is an explicit fake guest."""
 
 import asyncio
+import json
 from contextlib import asynccontextmanager, nullcontext
 from dataclasses import replace
 from datetime import timedelta
@@ -205,6 +206,114 @@ async def test_failed_revoke_retry_is_not_reset_by_repeated_handback(service, de
     assert (
         await control.get(service.runtime, actor, service.tenant.workspace_id, environment_id)
     ).control == "automation"
+
+
+def restarted_guest(desktop, monkeypatch, tmp_path):
+    from unittest.mock import AsyncMock
+
+    from a13n_service.providers.environment import desktop_guest
+
+    instance = desktop_guest.Supervisor(tmp_path, ":99", None, 6081, "websockify")
+    monkeypatch.setattr(instance, "settle", AsyncMock())
+    calls = desktop[3]
+    calls.clear()
+
+    @asynccontextmanager
+    async def connection(runtime, selected, operation_id):
+        async def send(request):
+            calls.append(request)
+            result = await instance.dispatch(request.model_dump(mode="json"))
+            return wire.decode("test", request, json.dumps({"result": result}))
+
+        yield send
+
+    monkeypatch.setattr(access, "connection", connection)
+    return instance
+
+
+@pytest.mark.parametrize("phase", ["human", "returning"])
+async def test_supervisor_restart_returns_control_after_verified_cleanup(
+    service, desktop, monkeypatch, tmp_path, phase
+):
+    _, environment_id, actor, calls, _, _ = desktop
+    human = await begin(service, desktop)
+    guest = restarted_guest(desktop, monkeypatch, tmp_path)
+    async with transaction(service.runtime.storage) as session:
+        row = await session.get(DesktopControlRow, human.id)
+        grant_id = row.grant_id
+        row.due_at = None
+        if phase == "returning":
+            await control.return_control(session, row)
+    await control.reconcile(service.runtime, human.id)
+    if phase == "human":
+        current = await control.get(service.runtime, actor, service.tenant.workspace_id, environment_id)
+        assert current.control == "returning" and current.failure == "desktop_grant_failed"
+        assert [type(call) for call in calls] == [wire.Describe]
+        calls.clear()
+        await control.reconcile(service.runtime, human.id)
+    current = await control.get(service.runtime, actor, service.tenant.workspace_id, environment_id)
+    assert current.control == "automation" and current.failure is None
+    assert [type(call) for call in calls] == [wire.Describe, wire.Inspect, wire.Settle]
+    assert calls[1].operation == "revoke"
+    assert calls[1].generation == calls[2].generation == guest.generation != GENERATION
+    assert guest.revocations == {grant_id: human.episode}
+    guest.settle.assert_awaited_once()
+
+
+async def test_supervisor_restart_cleanup_failure_keeps_computer_blocked_until_retry(
+    service, desktop, monkeypatch, tmp_path
+):
+    from a13n_harness.environment.computer import ComputerCall
+    from a13n_harness.environment.models import EnvironmentAction, EnvironmentError
+    from a13n_service.runs.environments.desktop import admission
+
+    lease, mount, state = await admitted(service, desktop)
+    _, environment_id, actor, calls, _, _ = desktop
+    human = await begin(service, desktop)
+    guest = restarted_guest(desktop, monkeypatch, tmp_path)
+    guest.settle.side_effect = RuntimeError("input cleanup unconfirmed")
+    returned = await control.handback(
+        service.runtime, actor, service.tenant.workspace_id, environment_id, if_match=etag(human.id, human.version)
+    )
+    assert returned.control == "returning" and returned.failure == "desktop_revoke_failed"
+    assert isinstance(calls[-1], wire.Settle)
+    with pytest.raises(EnvironmentError, match="human control"):
+        await admission.admit(service.runtime, lease, mount, state, ComputerCall(EnvironmentAction.COMPUTER_CLICK))
+    async with transaction(service.runtime.storage) as session:
+        row = await session.get(DesktopControlRow, human.id)
+        assert row.viewer is None and row.claim_id is None and row.due_at is not None
+        row.due_at = None
+    guest.settle.side_effect = None
+    await control.reconcile(service.runtime, human.id)
+    current = await control.get(service.runtime, actor, service.tenant.workspace_id, environment_id)
+    assert current.control == "automation"
+    guest.settle.assert_awaited()
+    assert guest.settle.await_count == 2
+    await admission.admit(service.runtime, lease, mount, state, ComputerCall(EnvironmentAction.COMPUTER_OBSERVE))
+
+
+@pytest.mark.parametrize("fence", ["claim", "generation", "episode"])
+async def test_supervisor_restart_cleanup_cannot_publish_past_fence(service, desktop, monkeypatch, tmp_path, fence):
+    _, environment_id, actor, _, _, _ = desktop
+    human = await begin(service, desktop)
+    guest = restarted_guest(desktop, monkeypatch, tmp_path)
+
+    async def settle():
+        async with transaction(service.runtime.storage) as session:
+            row = await session.get(DesktopControlRow, human.id)
+            if fence == "claim":
+                row.claim_until = await now(session) - timedelta(seconds=1)
+            elif fence == "generation":
+                row.generation += 1
+            else:
+                row.episode += 1
+
+    guest.settle.side_effect = settle
+    returned = await control.handback(
+        service.runtime, actor, service.tenant.workspace_id, environment_id, if_match=etag(human.id, human.version)
+    )
+    guest.settle.assert_awaited_once()
+    assert returned.control == "returning"
 
 
 async def test_return_during_possible_grant_fences_publication(service, desktop):
