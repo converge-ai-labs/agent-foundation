@@ -45,9 +45,9 @@ class PlatformTool(PlatformOperation):
     summary: str
 
 
-# Generated from explicitly owned business definitions; independent of OpenAPI admission.
+# Generated from explicitly owned platform tool definitions; independent of OpenAPI admission.
 PLATFORM_TOOLS = TypeAdapter(tuple[PlatformTool, ...]).validate_json(
-    files("a13n_service.infra").joinpath("business_tools.json").read_bytes()
+    files("a13n_service.infra").joinpath("platform_tools.json").read_bytes()
 )
 
 

@@ -42,8 +42,8 @@ class CredentialAccess:
         if "authorization" not in request.headers or scope["path"] in {
             "/api/v1/mcp",
             "/api/v1/mcp/",
-            "/api/v1/business-tools",
-            "/api/v1/business-tools/",
+            "/api/v1/platform-tools",
+            "/api/v1/platform-tools/",
         }:
             await self.app(scope, receive, send)
             return

@@ -6,10 +6,10 @@ from pydantic import BaseModel, ConfigDict
 from pydantic import Field as Query
 from pydantic.experimental.missing_sentinel import MISSING
 
-from a13n_service.business_tools import ToolContext as BusinessContext
-from a13n_service.business_tools import definition
 from a13n_service.infra.http import PageLimit
 from a13n_service.infra.labels import Labels
+from a13n_service.platform_tools import ToolContext as PlatformContext
+from a13n_service.platform_tools import definition
 from a13n_service.resources.revisions import Search
 from a13n_service.resources.runtime import Runtime
 from a13n_service.resources.skills import service
@@ -29,7 +29,7 @@ from a13n_service.resources.skills.schemas import (
     SourceKind,
 )
 
-type ToolContext = BusinessContext[Runtime]
+type ToolContext = PlatformContext[Runtime]
 
 
 class SkillMetadata(BaseModel):

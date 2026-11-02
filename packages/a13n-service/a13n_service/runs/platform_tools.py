@@ -40,7 +40,7 @@ class PlatformToolset(WrapperToolset[AgentContext]):
                         ctx.model.prepare_request(None, ModelRequestParameters(function_tools=[tool.tool_def]))
                 except (ValueError, TypeError, RecursionError, UserError) as error:
                     raise UserError(
-                        f"Business tool {name} schema is incompatible with the selected model at parameters: {error}"
+                        f"Platform tool {name} schema is incompatible with the selected model at parameters: {error}"
                     ) from error
                 metadata = {**(tool.tool_def.metadata or {}), TOOL_IDENTITY_KEY: self.tools[name]}
                 result[name] = replace(tool, tool_def=replace(tool.tool_def, metadata=metadata))
@@ -61,7 +61,7 @@ async def platform_capability(
         request.headers["authorization"] = "Bearer " + await issue(runtime, lease, groups)
 
     server = runtime.settings.server
-    url = (server.control_url or server.public_url).rstrip("/") + "/api/v1/business-tools/"
+    url = (server.control_url or server.public_url).rstrip("/") + "/api/v1/platform-tools/"
     http = httpx2.AsyncClient(
         event_hooks={"request": [credentials]},
         headers={"host": urlsplit(server.public_url).netloc},

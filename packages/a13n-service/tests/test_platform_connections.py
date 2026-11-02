@@ -5,13 +5,13 @@ import json
 import pytest
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.http import etag
-from a13n_service.resources.connections import business_tools as tools
-from a13n_service.resources.connections.business_inputs import ConnectionChanges, ConnectionCreation
-from a13n_service.resources.connector_providers.business_tools import TOOLS as CONNECTOR_TOOLS
-from a13n_service.resources.providers.business_tools import TOOLS as PROVIDER_TOOLS
+from a13n_service.resources.connections import platform_tools as tools
+from a13n_service.resources.connections.platform_inputs import ConnectionChanges, ConnectionCreation
+from a13n_service.resources.connector_providers.platform_tools import TOOLS as CONNECTOR_TOOLS
+from a13n_service.resources.providers.platform_tools import TOOLS as PROVIDER_TOOLS
 from pydantic import ValidationError
 
-from .test_business_schedules import context
+from .test_platform_schedules import context
 
 pytestmark = pytest.mark.anyio
 

@@ -4,15 +4,15 @@ from typing import Annotated
 
 from pydantic import Field
 
-from a13n_service.business_tools import ToolContext as BusinessContext
-from a13n_service.business_tools import definition
 from a13n_service.infra import reads
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.http import PageLimit
+from a13n_service.platform_tools import ToolContext as PlatformContext
+from a13n_service.platform_tools import definition
 from a13n_service.providers.tools import mcp_catalog
 from a13n_service.resources import catalog_reads
 from a13n_service.resources.connections import authorization, discovery, service
-from a13n_service.resources.connections.business_inputs import (
+from a13n_service.resources.connections.platform_inputs import (
     AccessSetup,
     ConnectionChanges,
     ConnectionCreation,
@@ -24,7 +24,7 @@ from a13n_service.resources.connections.business_inputs import (
 from a13n_service.resources.connections.schemas import ConnectionTest, ConnectionUpdate, ToolPage
 from a13n_service.resources.runtime import Runtime
 
-type ToolContext = BusinessContext[Runtime]
+type ToolContext = PlatformContext[Runtime]
 
 
 async def list_mcp_servers(

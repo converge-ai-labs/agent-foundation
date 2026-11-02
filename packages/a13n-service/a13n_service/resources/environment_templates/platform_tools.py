@@ -5,9 +5,9 @@ from typing import Annotated
 from pydantic import Field as Query
 from pydantic.experimental.missing_sentinel import MISSING
 
-from a13n_service.business_tools import ToolContext as BusinessContext
-from a13n_service.business_tools import definition
 from a13n_service.infra.http import PageLimit
+from a13n_service.platform_tools import ToolContext as PlatformContext
+from a13n_service.platform_tools import definition
 from a13n_service.resources.environment_templates import service
 from a13n_service.resources.environment_templates.schemas import (
     Template,
@@ -20,7 +20,7 @@ from a13n_service.resources.environment_templates.schemas import (
 from a13n_service.resources.environment_templates.tool_inputs import TemplateCreation, TemplateEdit
 from a13n_service.resources.runtime import Runtime
 
-type ToolContext = BusinessContext[Runtime]
+type ToolContext = PlatformContext[Runtime]
 
 
 async def create_environment_template(ctx: ToolContext, *, body: TemplateCreation) -> Template:

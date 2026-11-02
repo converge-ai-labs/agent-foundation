@@ -1,14 +1,14 @@
-"""Explicit execution business tools, independent of HTTP operation admission."""
+"""Explicit execution platform tools, independent of HTTP operation admission."""
 
-from a13n_service.business_tools import ToolContext as BusinessContext
-from a13n_service.business_tools import definition
 from a13n_service.infra import reads
 from a13n_service.infra.http import PageLimit
-from a13n_service.runs import business_content as content
+from a13n_service.platform_tools import ToolContext as PlatformContext
+from a13n_service.platform_tools import definition
+from a13n_service.runs import content_tools as content
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.tool_executions import views
 
-type ToolContext = BusinessContext[Runtime]
+type ToolContext = PlatformContext[Runtime]
 
 
 async def list_tool_executions(

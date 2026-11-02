@@ -48,8 +48,8 @@ def test_export_matches_service_http_and_existing_wire_models() -> None:
         assert json.loads(target.read_text()) == schema
 
 
-def test_exported_business_tools_are_independent_of_http_admission() -> None:
-    from a13n_service.business_catalog import catalog
+def test_exported_platform_tools_are_independent_of_http_admission() -> None:
+    from a13n_service.platform_catalog import catalog
 
     tools = contract.documents()[contract.PLATFORM_TOOLS]
     assert {tool["key"] for tool in tools} == {tool.name for tool in catalog()}
@@ -63,7 +63,7 @@ def test_export_and_drift_check_work_without_sdk_directory(tmp_path: Path, monke
     target = tmp_path / "proto/a13n-service"
     monkeypatch.setattr(contract, "TARGET", target)
     monkeypatch.setattr(contract, "SKILL_SCHEMA", tmp_path / "package/agent-config.json")
-    monkeypatch.setattr(contract, "BUSINESS_SCHEMA", tmp_path / "package/business-tools.json")
+    monkeypatch.setattr(contract, "PLATFORM_SCHEMA", tmp_path / "package/platform-tools.json")
     monkeypatch.setattr(
         contract, "documents", lambda distribution: {target / "openapi.json": {"info": {"version": "1"}}}
     )

@@ -1,4 +1,4 @@
-"""Explicit execution business tools, independent of HTTP operation admission."""
+"""Explicit execution platform tools, independent of HTTP operation admission."""
 
 from typing import Annotated, Literal, get_args
 
@@ -6,17 +6,17 @@ from pydantic import AwareDatetime
 from pydantic import Field as Path
 from pydantic import Field as Query
 
-from a13n_service.business_tools import ToolContext as BusinessContext
-from a13n_service.business_tools import definition
 from a13n_service.infra import reads
 from a13n_service.infra.ids import ObjectId
+from a13n_service.platform_tools import ToolContext as PlatformContext
+from a13n_service.platform_tools import definition
 from a13n_service.providers.traces import SpanPage
-from a13n_service.runs import business_content as content
+from a13n_service.runs import content_tools as content
 from a13n_service.runs import trace_reads, trace_search, traces
 from a13n_service.runs.findings import analysis
 from a13n_service.runs.runtime import Runtime
 
-type ToolContext = BusinessContext[Runtime]
+type ToolContext = PlatformContext[Runtime]
 
 TraceId = Annotated[str, Path(pattern="^[0-9a-f]{32}$")]
 IdFilter = Annotated[ObjectId | None, Query()]

@@ -5,12 +5,12 @@ from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
-from a13n_service.business_tools import ToolContext
 from a13n_service.infra import cursors
 from a13n_service.infra.errors import ServiceError
-from a13n_service.runs import business_content, business_tools, trace_tools
-from a13n_service.runs.findings import business_tools as finding_tools
-from a13n_service.runs.tool_executions import business_tools as execution_tools
+from a13n_service.platform_tools import ToolContext
+from a13n_service.runs import content_tools, platform_queries, trace_tools
+from a13n_service.runs.findings import platform_tools as finding_tools
+from a13n_service.runs.tool_executions import platform_tools as execution_tools
 from a13n_service.tenancy.authorize import BUILT_IN_ROLES, Grant, Principal
 from fastapi import Request
 from pydantic import ValidationError
@@ -30,11 +30,11 @@ def context(service: SimpleNamespace) -> ToolContext:
 
 def test_execution_catalog_owns_every_existing_operation_and_has_no_http_arguments():
     definitions = (
-        *business_tools.TOOLS,
+        *platform_queries.TOOLS,
         *trace_tools.TOOLS,
         *finding_tools.TOOLS,
         *execution_tools.TOOLS,
-        *business_content.TOOLS,
+        *content_tools.TOOLS,
     )
     names = {tool.name for tool in definitions}
     assert len(names) == len(definitions) == 32
@@ -92,61 +92,59 @@ async def test_run_content_references_continue_search_and_reject_changed_version
     agent = await create_agent(service, "Reader", await create_model(service))
     created = await start_thread(service, agent, "A long input " + "hello needle " * 1000)
     ctx = context(service)
-    detail = await business_tools.get_run(ctx, run_id=created["run"]["id"])
+    detail = await platform_queries.get_run(ctx, run_id=created["run"]["id"])
     ref = detail.content["input"]
-    first = await business_content.read_content(ctx, reference=ref, limit=200)
+    first = await content_tools.read_content(ctx, reference=ref, limit=200)
     assert first.fragment.total_chars > 200 and first.continuation
-    following = await business_content.read_content(ctx, reference=first.continuation, limit=200)
+    following = await content_tools.read_content(ctx, reference=first.continuation, limit=200)
     assert following.fragment.offset == first.fragment.next_offset
     assert following.fragment.version == first.fragment.version
-    match = await business_content.search_content(ctx, reference=ref, query="needle", limit=200)
+    match = await content_tools.search_content(ctx, reference=ref, query="needle", limit=200)
     assert match.fragment.match_offset is not None
-    source, _version, offset = business_content.unpack(ctx, ref)
-    stale = business_content.encode_reference(ctx, source, "0" * 64, offset)
+    source, _version, offset = content_tools.unpack(ctx, ref)
+    stale = content_tools.encode_reference(ctx, source, "0" * 64, offset)
     with pytest.raises(ServiceError) as changed:
-        await business_content.read_content(ctx, reference=stale)
+        await content_tools.read_content(ctx, reference=stale)
     assert changed.value.code == "conflict"
     assert changed.value.details["reason"] == "content_changed"
-    assert (
-        json.loads((await business_content.read_content(ctx, reference=detail.content["labels"])).fragment.text) == {}
-    )
+    assert json.loads((await content_tools.read_content(ctx, reference=detail.content["labels"])).fragment.text) == {}
 
 
 async def test_content_handle_is_not_authority_and_cannot_cross_workspace(service):
     agent = await create_agent(service, "Reader", await create_model(service))
     created = await start_thread(service, agent, "secret input")
     ctx = context(service)
-    detail = await business_tools.get_run(ctx, run_id=created["run"]["id"])
+    detail = await platform_queries.get_run(ctx, run_id=created["run"]["id"])
     ref = detail.content["input"]
     denied = replace(ctx, actor=Principal(ctx.actor.id, "user", ()))
     with pytest.raises(ServiceError) as forbidden:
-        await business_content.read_content(denied, reference=ref)
+        await content_tools.read_content(denied, reference=ref)
     assert forbidden.value.code in {"forbidden", "not_found"}
     with pytest.raises(ServiceError) as run_scope:
-        await business_content.read_content(replace(ctx, origin="run_other"), reference=ref)
+        await content_tools.read_content(replace(ctx, origin="run_other"), reference=ref)
     assert run_scope.value.code == "invalid_argument"
     other = replace(ctx, workspace_id="ws_other")
     with pytest.raises(ServiceError) as scope:
-        await business_content.read_content(other, reference=ref)
+        await content_tools.read_content(other, reference=ref)
     assert scope.value.code == "invalid_argument"
     # Even rewriting the navigation scope cannot grant access to the source resource.
-    source, version, offset = business_content.unpack(ctx, ref)
+    source, version, offset = content_tools.unpack(ctx, ref)
     forged = cursors.encode("execution-content-v1", "ws_other", source.model_dump(mode="json"), version, offset)
     with pytest.raises(ServiceError):
-        await business_content.read_content(other, reference=forged)
+        await content_tools.read_content(other, reference=forged)
 
 
 async def test_configuration_and_inbox_return_usable_versioned_handles(service):
     agent = await create_agent(service, "Configuration", await create_model(service), instructions="Keep exact config")
     created = await start_thread(service, agent, "Read configuration")
     ctx = context(service)
-    configured = await business_tools.get_run_configuration(ctx, run_id=created["run"]["id"], part="instructions")
-    original = await business_content.read_content(ctx, reference=configured.content["original"])
+    configured = await platform_queries.get_run_configuration(ctx, run_id=created["run"]["id"], part="instructions")
+    original = await content_tools.read_content(ctx, reference=configured.content["original"])
     assert original.fragment.text == "Keep exact config"
     assert configured.summary.revision_id == agent["default_revision_id"]
-    inbox = await business_tools.list_inbox(ctx, thread_id=created["thread"]["id"])
-    entry = await business_tools.get_inbox_entry(ctx, thread_id=created["thread"]["id"], entry_id=inbox.items[0].id)
-    payload = await business_content.read_content(ctx, reference=entry.content["payload"])
+    inbox = await platform_queries.list_inbox(ctx, thread_id=created["thread"]["id"])
+    entry = await platform_queries.get_inbox_entry(ctx, thread_id=created["thread"]["id"], entry_id=inbox.items[0].id)
+    payload = await content_tools.read_content(ctx, reference=entry.content["payload"])
     assert "Read configuration" in payload.fragment.text
 
 
@@ -159,11 +157,11 @@ async def test_item_navigation_resolves_retained_content_and_keeps_pages_bounded
     created = await runs_kit.start_thread(service, agent, "Return long output")
     await (await runs_kit.attempt(service))
     ctx = context(service)
-    page = await business_tools.list_run_items(ctx, run_id=created["run"]["id"], limit=100)
+    page = await platform_queries.list_run_items(ctx, run_id=created["run"]["id"], limit=100)
     assert reads.size(page) < 12000
     found = False
     for refs in page.content.values():
-        match = await business_content.search_content(ctx, reference=refs["all"], query="retained marker")
+        match = await content_tools.search_content(ctx, reference=refs["all"], query="retained marker")
         if match.fragment.match_offset is not None:
             assert "retained marker" in match.fragment.text
             assert match.fragment.total_chars > 10000

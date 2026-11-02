@@ -336,7 +336,7 @@ async def test_analysis_credential_lists_no_traces_and_reads_only_selected_ones(
 
         async def invoke(name, **arguments):
             response = await http.post(
-                "/api/v1/business-tools/",
+                "/api/v1/platform-tools/",
                 json={
                     "jsonrpc": "2.0",
                     "id": 1,

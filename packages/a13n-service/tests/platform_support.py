@@ -1,4 +1,4 @@
-"""Clients for the internal business contract, independent of HTTP operation IDs."""
+"""Clients for the internal platform tool contract, independent of HTTP operation IDs."""
 
 from typing import Any
 
@@ -9,7 +9,7 @@ from .mcp_support import client as client
 
 async def rpc(http: httpx2.AsyncClient, method: str, **params: Any) -> httpx2.Response:
     return await http.post(
-        "/api/v1/business-tools/", json={"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
+        "/api/v1/platform-tools/", json={"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
     )
 
 

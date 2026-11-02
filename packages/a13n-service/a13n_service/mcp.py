@@ -18,9 +18,9 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from a13n_service.api_access import credential_context
 from a13n_service.api_tools import api_tools
-from a13n_service.business_tools import BusinessTool, Definition, validate_catalog
 from a13n_service.documentation import Documents
 from a13n_service.infra.platform import PLATFORM_METADATA, PlatformOperation
+from a13n_service.platform_tools import Definition, PlatformTool, validate_catalog
 from a13n_service.settings import Settings
 from a13n_service.tenancy.access import unauthenticated
 from a13n_service.tenancy.requests import cached_credential, current_credential, current_runtime, current_workspace
@@ -116,13 +116,13 @@ def build_mcp(app: FastAPI, settings: Settings, routes: Sequence[APIRoute]) -> S
     )
 
 
-def build_business_mcp(app: FastAPI, settings: Settings, definitions: Sequence[Definition]) -> StarletteWithLifespan:
+def build_platform_mcp(app: FastAPI, settings: Settings, definitions: Sequence[Definition]) -> StarletteWithLifespan:
     validate_catalog(definitions)
-    tools = [BusinessTool(contract, app) for contract in definitions]
+    tools = [PlatformTool(contract, app) for contract in definitions]
     server = FastMCP(
-        "a13n Service business tools",
+        "a13n Service platform tools",
         version=version("a13n-service"),
-        instructions="Use explicit business tools. Preserve observed versions for edits. Never replay an unknown write outcome.",
+        instructions="Use explicit platform tools. Preserve observed versions for edits. Never replay an unknown write outcome.",
         tools=tools,
         middleware=[RunToolScope(tools)],
         on_duplicate="error",

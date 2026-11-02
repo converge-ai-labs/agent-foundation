@@ -6,11 +6,11 @@ from pydantic import BaseModel, ConfigDict, Field
 from pydantic import Field as Query
 from pydantic.experimental.missing_sentinel import MISSING
 
-from a13n_service.business_tools import ToolContext as BusinessContext
-from a13n_service.business_tools import definition
 from a13n_service.infra import reads
 from a13n_service.infra.http import PageLimit
 from a13n_service.infra.labels import Labels
+from a13n_service.platform_tools import ToolContext as PlatformContext
+from a13n_service.platform_tools import definition
 from a13n_service.resources import catalog_reads
 from a13n_service.resources.agents import read_views, service
 from a13n_service.resources.agents.schemas import (
@@ -33,7 +33,7 @@ from a13n_service.resources.agents.toolsets import ToolsetCatalog
 from a13n_service.resources.revisions import Search
 from a13n_service.resources.runtime import Runtime
 
-type ToolContext = BusinessContext[Runtime]
+type ToolContext = PlatformContext[Runtime]
 
 
 class AgentMetadata(BaseModel):

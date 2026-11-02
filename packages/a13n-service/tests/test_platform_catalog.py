@@ -1,10 +1,10 @@
-"""Coverage and real model-adapter checks for the explicit business catalog."""
+"""Coverage and real model-adapter checks for the explicit platform catalog."""
 
 import json
 
 import pytest
-from a13n_service.business_catalog import catalog
-from a13n_service.business_tools import validate_catalog
+from a13n_service.platform_catalog import catalog
+from a13n_service.platform_tools import validate_catalog
 from jsonschema import Draft202012Validator
 from pydantic_ai.models import ModelRequestParameters
 from pydantic_ai.models.anthropic import AnthropicModel
@@ -133,7 +133,7 @@ DISPOSITION = {
 }
 
 
-def test_every_baseline_capability_has_an_explicit_business_destination():
+def test_every_baseline_capability_has_an_explicit_platform_destination():
     tools = catalog()
     validate_catalog(tools)
     assert len(DISPOSITION) == 113

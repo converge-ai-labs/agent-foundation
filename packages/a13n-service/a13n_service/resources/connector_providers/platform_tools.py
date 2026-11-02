@@ -4,16 +4,16 @@ from typing import Annotated
 
 from pydantic import Field as Query
 
-from a13n_service.business_tools import ToolContext as BusinessContext
-from a13n_service.business_tools import definition
 from a13n_service.infra import reads
 from a13n_service.infra.http import PageLimit
+from a13n_service.platform_tools import ToolContext as PlatformContext
+from a13n_service.platform_tools import definition
 from a13n_service.resources import catalog_reads
 from a13n_service.resources.connector_providers import catalog
 from a13n_service.resources.connector_providers.schemas import ConnectorActionPage, ConnectorApp, ConnectorAppPage
 from a13n_service.resources.runtime import Runtime
 
-type ToolContext = BusinessContext[Runtime]
+type ToolContext = PlatformContext[Runtime]
 
 
 async def list_connector_apps(

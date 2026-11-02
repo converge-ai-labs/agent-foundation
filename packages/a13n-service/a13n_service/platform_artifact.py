@@ -2,8 +2,8 @@
 
 from collections.abc import Sequence
 
-from a13n_service.business_tools import Definition, validate_catalog
 from a13n_service.infra.platform import PLATFORM_TOOLS
+from a13n_service.platform_tools import Definition, validate_catalog
 
 
 def validate_artifact_catalog(definitions: Sequence[Definition]) -> None:
@@ -21,7 +21,7 @@ def validate_artifact_catalog(definitions: Sequence[Definition]) -> None:
     changed = sorted(name for name in bundled.keys() & contributed.keys() if bundled[name] != contributed[name])
     if missing or unbundled or changed:
         raise ValueError(
-            "Business artifact catalog does not match Distribution: "
+            "Platform artifact catalog does not match Distribution: "
             f"missing definitions={missing}; unbundled definitions={unbundled}; changed metadata={changed}. "
-            "Regenerate and bundle the business catalog for this fixed Distribution."
+            "Regenerate and bundle the platform catalog for this fixed Distribution."
         )

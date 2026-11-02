@@ -22,7 +22,7 @@ from sqlalchemy import delete, select, update
 from starlette.requests import Request
 from starlette.responses import Response
 
-from .business_support import call, client, rpc
+from .platform_support import call, client, rpc
 from .test_providers import models_endpoint
 
 pytestmark = pytest.mark.anyio

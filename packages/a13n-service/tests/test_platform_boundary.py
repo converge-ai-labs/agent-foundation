@@ -1,4 +1,4 @@
-"""Business admission and deferred writes preserve the reviewed execution boundary."""
+"""Platform admission and deferred writes preserve the reviewed execution boundary."""
 
 import json
 import re
@@ -10,16 +10,16 @@ from a13n_service.infra.platform import PLATFORM_GROUPS
 from a13n_service.runs.platform_tokens import issue
 from a13n_service.runs.platform_tools import PlatformToolset
 
-from .business_support import call, client, rpc
 from .conftest import add_agent
 from .mcp_support import key
 from .mcp_support import rpc as external_rpc
+from .platform_support import call, client, rpc
 from .test_platform_tools import lease_for
 
 pytestmark = pytest.mark.anyio
 
 
-async def test_run_credentials_admit_only_internal_business_transport(service, scripted_model, runs_kit):
+async def test_run_credentials_admit_only_internal_platform_transport(service, scripted_model, runs_kit):
     lease, _, _ = await lease_for(service, scripted_model, runs_kit)
     token = await issue(service.runtime, lease, frozenset(PLATFORM_GROUPS))
     async with client(service, {"secret": token}) as http:
@@ -163,7 +163,7 @@ async def test_unknown_write_response_is_not_replayed(service, scripted_model, r
     async def lose_response(self, request, *args, **kwargs):
         nonlocal sends
         response = await original(self, request, *args, **kwargs)
-        if request.url.path == "/api/v1/business-tools/" and request.method == "POST":
+        if request.url.path == "/api/v1/platform-tools/" and request.method == "POST":
             body = json.loads(request.content)
             if body.get("method") == "tools/call" and body.get("params", {}).get("name") == "update_agent_metadata":
                 sends += 1

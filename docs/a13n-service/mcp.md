@@ -7,7 +7,7 @@ Connect an MCP-capable client to Service to manage workspace resources and inspe
 
 ## Internal agent tools
 
-Service-managed agents use a separate internal business-tool catalog. The Host supplies its Run credential to `/api/v1/business-tools/`; external workspace keys use the management connection described below. Internal tools take direct task fields and versioned deltas, return business results, and never fall back to raw API tools. For example, changing an agent model submits `agent_id`, the observed `expected_version` and `model`; the Service preserves other configuration. Schedule tools construct invocation from task instructions and execution choices. Connection secrets remain in trusted configuration or authorization flows. Internal Run credentials cannot use external management MCP or raw product HTTP as a bypass.
+Service-managed agents use a separate internal platform-tool catalog. The Host supplies its Run credential to `/api/v1/platform-tools/`; external workspace keys use the management connection described below. Internal tools take direct task fields and versioned deltas, return business results, and never fall back to raw API tools. For example, changing an agent model submits `agent_id`, the observed `expected_version` and `model`; the Service preserves other configuration. Schedule tools construct invocation from task instructions and execution choices. Connection secrets remain in trusted configuration or authorization flows. Internal Run credentials cannot use external management MCP or raw product HTTP as a bypass.
 
 The remaining examples on this page describe the supported external management MCP contract, including its HTTP envelopes and `request_body` arguments.
 

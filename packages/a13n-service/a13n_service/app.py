@@ -26,7 +26,6 @@ from sqlalchemy import text
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from a13n_service.api_access import CredentialAccess
-from a13n_service.business_artifact import validate_artifact_catalog
 from a13n_service.distribution import OSS, Distribution
 from a13n_service.infra.crypto import FILE_KEY_ID, KeyRing, file_key
 from a13n_service.infra.db import Storage, short_session
@@ -38,9 +37,10 @@ from a13n_service.infra.objects.s3 import open_s3
 from a13n_service.infra.sweeps import require_unique, run_sweeps
 from a13n_service.infra.tasks import Tasks
 from a13n_service.infra.telemetry import open_instrumentation
-from a13n_service.mcp import WorkspaceKey, build_business_mcp, build_mcp
+from a13n_service.mcp import WorkspaceKey, build_mcp, build_platform_mcp
 from a13n_service.migrations.run_objects import require_current
 from a13n_service.migrations.runner import heads, upgrade
+from a13n_service.platform_artifact import validate_artifact_catalog
 from a13n_service.providers.environments import offered
 from a13n_service.providers.metrics import Queries
 from a13n_service.providers.registry import Registry
@@ -172,7 +172,7 @@ async def open_runtime(
 ) -> Runtime:
     from a13n_service.runs.search import initialize
 
-    validate_artifact_catalog(tuple(tool for contribute in distribution.business_tools for tool in contribute()))
+    validate_artifact_catalog(tuple(tool for contribute in distribution.platform_tools for tool in contribute()))
     await asyncio.to_thread(initialize)
     storage = open_storage(config.database)
     stack.push_async_callback(storage.close)
@@ -326,7 +326,7 @@ def build_app(
                                     run_collector(runtime, kind), name=f"collector-{kind}", service=True
                                 )
                     await stack.enter_async_context(mcp.lifespan(mcp))
-                    await stack.enter_async_context(business_mcp.lifespan(business_mcp))
+                    await stack.enter_async_context(platform_mcp.lifespan(platform_mcp))
                     catalog = ModelsDevCatalog(
                         catalog_channels(runtime.registry.models.values()), runtime.endpoint_policy
                     )
@@ -411,9 +411,9 @@ def build_app(
         app.add_middleware(CredentialAccess)
         mcp = build_mcp(app, config, api_routes)
         app.mount("/api/v1/mcp", WorkspaceKey(mcp))
-        definitions = tuple(tool for contribute in distribution.business_tools for tool in contribute())
-        business_mcp = build_business_mcp(app, config, definitions)
-        app.mount("/api/v1/business-tools", WorkspaceKey(business_mcp, internal=True))
+        definitions = tuple(tool for contribute in distribution.platform_tools for tool in contribute())
+        platform_mcp = build_platform_mcp(app, config, definitions)
+        app.mount("/api/v1/platform-tools", WorkspaceKey(platform_mcp, internal=True))
     if serves_api and (console / "index.html").is_file():
         app.router.default = console_fallback(console, app.router.default)
     install_error_envelope(app)

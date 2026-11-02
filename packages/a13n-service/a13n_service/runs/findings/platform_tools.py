@@ -1,8 +1,8 @@
-"""Explicit execution business tools, independent of HTTP operation admission."""
+"""Explicit execution platform tools, independent of HTTP operation admission."""
 
-from a13n_service.business_tools import ToolContext as BusinessContext
-from a13n_service.business_tools import definition
 from a13n_service.infra.http import PageLimit
+from a13n_service.platform_tools import ToolContext as PlatformContext
+from a13n_service.platform_tools import definition
 from a13n_service.runs.findings import analysis, service
 from a13n_service.runs.findings.schemas import (
     AnalysisPage,
@@ -15,7 +15,7 @@ from a13n_service.runs.findings.schemas import (
 )
 from a13n_service.runs.runtime import Runtime
 
-type ToolContext = BusinessContext[Runtime]
+type ToolContext = PlatformContext[Runtime]
 
 
 async def list_finding_analyses(ctx: ToolContext, *, limit: PageLimit = 20, cursor: str | None = None) -> AnalysisPage:

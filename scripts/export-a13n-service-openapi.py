@@ -6,9 +6,9 @@ from importlib import import_module
 from pathlib import Path
 
 from a13n_service.app import build_app
-from a13n_service.business_tools import validate_catalog
 from a13n_service.distribution import OSS, Distribution
 from a13n_service.infra.platform import PLATFORM_GROUPS
+from a13n_service.platform_tools import validate_catalog
 from a13n_service.resources.agents.schemas import AgentConfig
 from a13n_service.runs.stream import frames_schema
 from a13n_service.runs.thread_stream import frames_schema as thread_frames_schema
@@ -16,13 +16,13 @@ from a13n_service.runs.thread_stream import frames_schema as thread_frames_schem
 ROOT = Path(__file__).resolve().parents[1]
 TARGET = ROOT / "proto/a13n-service"
 SKILL_SCHEMA = ROOT / "packages/a13n-service/a13n_service/builtin_skills/platform-operations/schemas/agent-config.json"
-BUSINESS_SCHEMA = SKILL_SCHEMA.with_name("business-tools.json")
-PLATFORM_TOOLS = ROOT / "packages/a13n-service/a13n_service/infra/business_tools.json"
+PLATFORM_SCHEMA = SKILL_SCHEMA.with_name("platform-tools.json")
+PLATFORM_TOOLS = ROOT / "packages/a13n-service/a13n_service/infra/platform_tools.json"
 
 
 def platform_tools(distribution: Distribution = OSS) -> list[dict]:
-    """Internal contracts come only from explicit business definitions."""
-    definitions = tuple(tool for contribution in distribution.business_tools for tool in contribution())
+    """Internal contracts come only from explicit platform tool definitions."""
+    definitions = tuple(tool for contribution in distribution.platform_tools for tool in contribution())
     validate_catalog(definitions)
     return sorted(
         [
@@ -33,9 +33,9 @@ def platform_tools(distribution: Distribution = OSS) -> list[dict]:
     )
 
 
-def business_schemas(distribution: Distribution = OSS) -> dict[str, object]:
+def platform_schemas(distribution: Distribution = OSS) -> dict[str, object]:
     """Release-bound model inputs compiled from the same explicit definitions as invocation."""
-    definitions = tuple(tool for contribution in distribution.business_tools for tool in contribution())
+    definitions = tuple(tool for contribution in distribution.platform_tools for tool in contribution())
     validate_catalog(definitions)
     return {
         "tools": [
@@ -88,7 +88,7 @@ def main() -> None:
     changed = []
     outputs = {} if args.skills_only else documents(distribution)
     outputs[SKILL_SCHEMA] = AgentConfig.model_json_schema()
-    outputs[BUSINESS_SCHEMA] = business_schemas(distribution)
+    outputs[PLATFORM_SCHEMA] = platform_schemas(distribution)
     for target, schema in outputs.items():
         if args.check:
             try:

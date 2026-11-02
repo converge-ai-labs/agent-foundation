@@ -1,8 +1,8 @@
 """Explicit provider discovery and readiness contracts; credentials stay in trusted configuration."""
 
-from a13n_service.business_tools import ToolContext as BusinessContext
-from a13n_service.business_tools import definition
 from a13n_service.infra.http import PageLimit
+from a13n_service.platform_tools import ToolContext as PlatformContext
+from a13n_service.platform_tools import definition
 from a13n_service.resources.providers import discovery, service
 from a13n_service.resources.providers.schemas import Provider, ProviderModel, ProviderPage, ProviderTest
 from a13n_service.resources.providers.tables import (
@@ -14,7 +14,7 @@ from a13n_service.resources.providers.tables import (
 )
 from a13n_service.resources.runtime import Runtime
 
-type ToolContext = BusinessContext[Runtime]
+type ToolContext = PlatformContext[Runtime]
 
 
 async def list_model_providers(ctx: ToolContext, *, limit: PageLimit = 50, cursor: str | None = None) -> ProviderPage:

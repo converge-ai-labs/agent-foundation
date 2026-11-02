@@ -11,11 +11,11 @@ from typing import Annotated, Literal
 from a13n_stream_protocol.display import Item
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
-from a13n_service.business_tools import ToolContext as BusinessContext
-from a13n_service.business_tools import definition
 from a13n_service.infra import reads
 from a13n_service.infra.crypto import Envelope, SecretLocation
 from a13n_service.infra.errors import ServiceError, invalid
+from a13n_service.platform_tools import ToolContext as PlatformContext
+from a13n_service.platform_tools import definition
 from a13n_service.resources.agents import read_views as agent_reads
 from a13n_service.runs import entries, item_reads, runs, traces
 from a13n_service.runs.findings import analysis
@@ -23,7 +23,7 @@ from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import context_response
 from a13n_service.runs.tool_executions import views as execution_views
 
-type ToolContext = BusinessContext[Runtime]
+type ToolContext = PlatformContext[Runtime]
 
 RunSection = Literal[
     "input",
@@ -113,7 +113,7 @@ class ContentRead(BaseModel):
 def _location(ctx: ToolContext) -> SecretLocation:
     # Navigation issued by one Run cannot be repurposed to reach sources another
     # Run has not selected. This is integrity protection, not source authority.
-    return SecretLocation(None, "business_content", "reference_v1", f"{ctx.workspace_id}/{ctx.origin or ctx.actor.id}")
+    return SecretLocation(None, "content_tools", "reference_v1", f"{ctx.workspace_id}/{ctx.origin or ctx.actor.id}")
 
 
 def encode_reference(ctx: ToolContext, source: Source, version: str, offset: int = 0) -> str:

@@ -3,10 +3,10 @@
 from types import SimpleNamespace
 
 import pytest
-from a13n_service.business_tools import ToolContext
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.http import etag
-from a13n_service.runs.schedules import business_tools as tools
+from a13n_service.platform_tools import ToolContext
+from a13n_service.runs.schedules import platform_tools as tools
 from a13n_service.runs.schedules.schemas import CronSchedule, OccurrenceQuery
 from a13n_service.runs.schedules.tasks import TaskChanges, TaskOptions
 from a13n_service.tenancy.authorize import BUILT_IN_ROLES, Grant, Principal

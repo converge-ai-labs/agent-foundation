@@ -436,7 +436,7 @@ async def test_legacy_toolsets_and_platform_selections_are_rewritten(database, s
         "execution",
     ]
     # Historical reads preserve the migration's sparse policy, without expanding
-    # omitted defaults using the new business catalogue.
+    # omitted defaults using the new platform catalogue.
     assert permissions(stored["agents"]) == {("read", "ask")}
     assert "create_agent_revision" not in stored["agents"]["tools"]
     executed = await service.client.get(f"{service.api}/runs/{run['id']}/agent")

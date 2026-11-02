@@ -1,4 +1,4 @@
-"""Explicit business contracts and their authenticated internal MCP boundary.
+"""Explicit platform tool contracts and their authenticated internal MCP boundary.
 
 Feature contributions own names, schemas, effects and calls. OpenAPI admission never
 adds an internal capability. Transport serialization supplies no authorization.
@@ -63,11 +63,11 @@ def definition(
             containers[name] = underlying
             for field_name, field in underlying.model_fields.items():
                 if field_name in fields:
-                    raise ValueError(f"Conflicting business input: {handler.__name__}.{field_name}")
+                    raise ValueError(f"Conflicting platform input: {handler.__name__}.{field_name}")
                 fields[field_name] = (field.annotation, field)
         else:
             if name in fields:
-                raise ValueError(f"Conflicting business input: {handler.__name__}.{name}")
+                raise ValueError(f"Conflicting platform input: {handler.__name__}.{name}")
             fields[name] = (annotation, ... if parameter.default is inspect.Parameter.empty else parameter.default)
     inputs = create_model(handler.__name__ + "Input", __config__=ConfigDict(extra="forbid"), **fields)
     return Definition(
@@ -85,16 +85,16 @@ def validate_catalog(definitions: Sequence[Definition]) -> None:
     names: set[str] = set()
     for contract in definitions:
         if contract.name in names:
-            raise ValueError(f"Duplicate business tool: {contract.name}")
+            raise ValueError(f"Duplicate platform tool: {contract.name}")
         names.add(contract.name)
         if "request_body" in contract.inputs.model_fields:
-            raise ValueError(f"Business tool cannot expose an HTTP body: {contract.name}")
+            raise ValueError(f"Platform tool cannot expose an HTTP body: {contract.name}")
         version = contract.inputs.model_fields.get("expected_version")
         if version is not None and not version.is_required():
-            raise ValueError(f"Business precondition must be required: {contract.name}")
+            raise ValueError(f"Platform precondition must be required: {contract.name}")
 
 
-class BusinessTool(Tool):
+class PlatformTool(Tool):
     def __init__(self, contract: Definition, app: FastAPI):
         super().__init__(
             name=contract.name,
@@ -121,7 +121,7 @@ class BusinessTool(Tool):
         identity = request_id(request.scope)
         try:
             if credential is None or credential.platform is None or contract.group not in credential.platform.groups:
-                raise ServiceError("forbidden", "Business tool is not admitted")
+                raise ServiceError("forbidden", "Platform tool is not admitted")
             parsed = contract.inputs.model_validate(arguments)
             kwargs = {name: getattr(parsed, name) for name in parsed.model_fields_set}
             if isinstance(version := kwargs.get("expected_version"), str):

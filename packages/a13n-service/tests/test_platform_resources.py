@@ -1,17 +1,17 @@
-"""Resource business contracts preserve deltas, package sources and observed versions."""
+"""Resource platform tool contracts preserve deltas, package sources and observed versions."""
 
 from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
-from a13n_service.business_tools import ToolContext
 from a13n_service.infra.errors import ServiceError
-from a13n_service.resources.agents import business_tools as agents
+from a13n_service.platform_tools import ToolContext
+from a13n_service.resources.agents import platform_tools as agents
 from a13n_service.resources.agents.schemas import AgentConfig, AgentConfigurationChanges
-from a13n_service.resources.environment_templates import business_tools as templates
+from a13n_service.resources.environment_templates import platform_tools as templates
 from a13n_service.resources.environment_templates.tool_inputs import TemplateCreation, TemplateEdit
-from a13n_service.resources.models import business_tools as models
-from a13n_service.resources.skills import business_tools as skills
+from a13n_service.resources.models import platform_tools as models
+from a13n_service.resources.skills import platform_tools as skills
 from a13n_service.resources.skills.schemas import SkillCreate, SkillRevisionCreate
 from fastapi import Request
 from jsonschema import Draft202012Validator
@@ -52,14 +52,14 @@ def test_resource_schemas_are_explicit_and_versions_required():
         TemplateEdit.model_validate({"recipe": {"type": "docker", "configuration": {"privileged": True}}})
 
 
-async def test_agent_business_creation_and_atomic_delta(service):
+async def test_agent_platform_creation_and_atomic_delta(service):
     model = await create_model(service)
     ctx = context(service)
     head = await agents.create_agent(
         ctx,
         body=agents.AgentCreation.model_validate(
             {
-                "name": "Business Agent",
+                "name": "Platform Agent",
                 "model": model,
                 "instructions": "Preserve",
                 "user_questions": True,

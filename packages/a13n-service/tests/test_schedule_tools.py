@@ -17,9 +17,9 @@ from a13n_service.runs.tables import InboxEntryRow, RunRow
 from a13n_service.tenancy.authorize import BUILT_IN_ROLES
 from sqlalchemy import select
 
-from .business_support import call as business_call
-from .business_support import rpc as business_rpc
 from .mcp_support import call, client, key
+from .platform_support import call as platform_call
+from .platform_support import rpc as platform_rpc
 from .test_platform_tools import lease_for, set_role
 from .test_schedules import configuration
 
@@ -53,14 +53,14 @@ async def test_schedule_discovery_selection_and_group_scope(service, scripted_mo
     lease, _, _ = await lease_for(service, scripted_model, runs_kit)
     token = await issue(service.runtime, lease, frozenset({"schedules"}))
     async with client(service, {"secret": token}) as http:
-        tools = (await business_rpc(http, "tools/list")).json()["result"]["tools"]
+        tools = (await platform_rpc(http, "tools/list")).json()["result"]["tools"]
         assert {tool["name"] for tool in tools} == READS | WRITES
         for tool in tools:
             read = tool["name"] in READS
             assert tool["_meta"]["x-a13n-platform"] == {"group": "schedules", "effect": "read" if read else "write"}
             assert tool["annotations"]["readOnlyHint"] is read
         http.headers["x-workspace-id"] = "ws_another"
-        assert (await business_rpc(http, "tools/list")).status_code == 403
+        assert (await platform_rpc(http, "tools/list")).status_code == 403
         del http.headers["x-workspace-id"]
         assert (await http.post(f"/api/v1/runs/{lease.run_id}/interrupt")).status_code == 403
 
@@ -74,9 +74,9 @@ async def test_schedule_discovery_selection_and_group_scope(service, scripted_mo
 
     token = await issue(service.runtime, lease, frozenset({"agents"}))
     async with client(service, {"secret": token}) as http:
-        tools = (await business_rpc(http, "tools/list")).json()["result"]["tools"]
+        tools = (await platform_rpc(http, "tools/list")).json()["result"]["tools"]
         assert not (READS | WRITES) & {tool["name"] for tool in tools}
-        assert (await business_rpc(http, "tools/call", name="list_schedules", arguments={})).json()["result"]["isError"]
+        assert (await platform_rpc(http, "tools/call", name="list_schedules", arguments={})).json()["result"]["isError"]
         assert (await http.get("/api/v1/schedules")).status_code == 403
 
 
@@ -212,8 +212,8 @@ async def test_schedule_tools_cannot_expand_run_permissions(service, scripted_mo
     async with transaction(service.runtime.storage) as session:
         await set_role(session, service, "admin")
     async with client(service, {"secret": token}) as http:
-        assert "items" in await business_call(http, "list_schedules")
-        result = await business_call(
+        assert "items" in await platform_call(http, "list_schedules")
+        result = await platform_call(
             http,
             "create_schedule",
             name="Daily report",
@@ -333,14 +333,14 @@ async def test_internal_task_contract_lifecycle_and_versioned_edits(service, scr
             "structured_inputs": [{"scope": "tests"}],
             "idempotency_key": "internal-task",
         }
-        created = await business_call(http, "create_schedule", **args)
+        created = await platform_call(http, "create_schedule", **args)
         assert created["state"] == "paused", created
-        replay = await business_call(http, "create_schedule", **args)
+        replay = await platform_call(http, "create_schedule", **args)
         assert replay["id"] == created["id"]
-        reused = await business_call(http, "create_schedule", **{**args, "instructions": "Another task"})
+        reused = await platform_call(http, "create_schedule", **{**args, "instructions": "Another task"})
         assert reused["error"]["details"]["reason"] == "idempotency_key_reused"
         target = {"schedule_id": created["id"]}
-        changed = await business_call(
+        changed = await platform_call(
             http,
             "update_schedule",
             **target,
@@ -351,11 +351,11 @@ async def test_internal_task_contract_lifecycle_and_versioned_edits(service, scr
             {"type": "text", "text": "Report and verify"},
             {"type": "json", "value": {"scope": "tests"}},
         ]
-        stale = await business_call(
+        stale = await platform_call(
             http, "pause_schedule", **target, expected_version=f"{created['id']}:{created['version']}"
         )
         assert stale["error"]["code"] == "precondition_failed"
-        missing = await business_rpc(
+        missing = await platform_rpc(
             http, "tools/call", name="update_schedule", arguments={**target, "name": "Missing version"}
         )
         assert missing.json()["result"]["isError"]
@@ -364,17 +364,17 @@ async def test_internal_task_contract_lifecycle_and_versioned_edits(service, scr
             "expected_version": f"{changed['id']}:{changed['version']}",
             "idempotency_key": "internal-dispatch",
         }
-        occurrence = await business_call(http, "dispatch_schedule", **dispatch_args)
+        occurrence = await platform_call(http, "dispatch_schedule", **dispatch_args)
         assert occurrence["status"] == "pending"
         assert occurrence["snapshot"]["invocation"] == changed["invocation"]
-        repeated = await business_call(http, "dispatch_schedule", **dispatch_args)
+        repeated = await platform_call(http, "dispatch_schedule", **dispatch_args)
         assert repeated["id"] == occurrence["id"]
-        archived = await business_call(
+        archived = await platform_call(
             http, "archive_schedule", **target, expected_version=dispatch_args["expected_version"]
         )
         assert archived["state"] == "archived"
         # Removed raw arguments cannot be smuggled into the same-named task contract.
-        rejected = await business_rpc(
+        rejected = await platform_rpc(
             http,
             "tools/call",
             name="create_schedule",

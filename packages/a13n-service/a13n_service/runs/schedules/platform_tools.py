@@ -4,10 +4,10 @@ from typing import Annotated, Literal
 
 from pydantic import Field, JsonValue
 
-from a13n_service.business_tools import ToolContext as BusinessContext
-from a13n_service.business_tools import definition
 from a13n_service.infra.ids import ObjectId
 from a13n_service.infra.labels import Labels
+from a13n_service.platform_tools import ToolContext as PlatformContext
+from a13n_service.platform_tools import definition
 from a13n_service.resources.memories.schemas import MemoryMounts
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schedules import dispatch, queries, service, tasks
@@ -27,7 +27,7 @@ from a13n_service.runs.schedules.schemas import (
 )
 from a13n_service.runs.schemas import context_response
 
-type ToolContext = BusinessContext[Runtime]
+type ToolContext = PlatformContext[Runtime]
 
 
 async def create_schedule(

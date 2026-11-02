@@ -1,4 +1,4 @@
-"""Explicit execution business tools, independent of HTTP operation admission."""
+"""Explicit execution platform tools, independent of HTTP operation admission."""
 
 from typing import Annotated, Literal, get_args
 
@@ -6,13 +6,13 @@ from a13n_stream_protocol.display import ItemKind, ItemState
 from pydantic import BaseModel, Field
 from pydantic import Field as Query
 
-from a13n_service.business_tools import ToolContext as BusinessContext
-from a13n_service.business_tools import definition
 from a13n_service.infra import reads
 from a13n_service.infra.http import PageLimit
+from a13n_service.platform_tools import ToolContext as PlatformContext
+from a13n_service.platform_tools import definition
 from a13n_service.resources.agents import read_views as agent_reads
 from a13n_service.runs import authors, entries, item_reads, listings, read_views, runs, sessions, threads
-from a13n_service.runs import business_content as content
+from a13n_service.runs import content_tools as content
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import (
     Attempts,
@@ -33,7 +33,7 @@ from a13n_service.runs.schemas import (
     context_response,
 )
 
-type ToolContext = BusinessContext[Runtime]
+type ToolContext = PlatformContext[Runtime]
 
 
 class ItemReadPage(BaseModel):

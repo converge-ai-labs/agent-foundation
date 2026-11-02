@@ -14,4 +14,4 @@ The user reviews the proposal and saves through the existing Provider API under 
 
 A confirmed save and Run resume are separate operations. Retry only resume after a confirmed save. There is no create idempotency: an uncertain save or page reload requires checking the Providers page before explicitly retrying, since another create may duplicate it. A stale update requires a fresh read and proposal. Never substitute a newer ETag into an already reviewed request. If the user cancels, do not repeat the request without their instruction.
 
-Provider deletion and other account administration are outside the internal business catalog. Use the existing trusted Console workflow when authorized; do not fall back to raw HTTP tools.
+Provider deletion and other account administration are outside the internal platform catalog. Use the existing trusted Console workflow when authorized; do not fall back to raw HTTP tools.

@@ -7,12 +7,12 @@ from pydantic import Field
 from pydantic import Field as Query
 from pydantic.experimental.missing_sentinel import MISSING
 
-from a13n_service.business_tools import ToolContext as BusinessContext
-from a13n_service.business_tools import definition
 from a13n_service.infra import reads
 from a13n_service.infra.errors import invalid
 from a13n_service.infra.http import PageLimit
 from a13n_service.infra.ids import ObjectId
+from a13n_service.platform_tools import ToolContext as PlatformContext
+from a13n_service.platform_tools import definition
 from a13n_service.resources.models import media, read_views, service
 from a13n_service.resources.models.catalog import ModelsDevCatalog
 from a13n_service.resources.models.schemas import (
@@ -28,7 +28,7 @@ from a13n_service.resources.models.schemas import (
 )
 from a13n_service.resources.runtime import Runtime
 
-type ToolContext = BusinessContext[Runtime]
+type ToolContext = PlatformContext[Runtime]
 
 
 class ModelCreation(ModelConfig):
