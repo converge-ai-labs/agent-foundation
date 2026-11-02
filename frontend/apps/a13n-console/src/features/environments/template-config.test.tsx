@@ -107,7 +107,19 @@ const dockerSchema = {
     },
     desktop: { type: "boolean", default: false },
     memory_gb: { type: "number", title: "Memory (GB)" },
-    mounts: { type: "array", title: "Mounts", items: { type: "object" } },
+    mounts: {
+      type: "array",
+      title: "Host directory mounts",
+      items: {
+        type: "object",
+        required: ["source", "target"],
+        properties: {
+          source: { type: "string", title: "Source" },
+          target: { type: "string", title: "Target" },
+          read_only: { type: "boolean", title: "Read only", default: true },
+        },
+      },
+    },
     shell: { type: "string", title: "Shell", default: "/bin/sh" },
   },
 };
@@ -832,4 +844,51 @@ it("manages connections in place without losing the template draft", async () =>
     }).value,
   ).toBe("custom-recipe");
   expect(state.POST).not.toHaveBeenCalled();
+});
+
+it("saves structured host mounts and preserves them through JSON and preset switches", async () => {
+  const user = userEvent.setup();
+  await selectProvider(user, "Docker");
+  await user.type(
+    screen.getByRole("textbox", { name: "Name" }),
+    "Mounted workspace",
+  );
+  await user.click(screen.getByRole("button", { name: "Mounts" }));
+  await user.click(screen.getByRole("button", { name: "Add item" }));
+  await user.type(
+    screen.getByRole("textbox", { name: "Source" }),
+    "/srv/reference",
+  );
+  await user.type(
+    screen.getByRole("textbox", { name: "Target" }),
+    "/reference",
+  );
+  await user.click(screen.getByRole("switch", { name: "Read only" }));
+  await user.click(screen.getByRole("button", { name: "JSON" }));
+  const json = screen.getByRole("textbox", {
+    name: "Template configuration (JSON)",
+  }) as HTMLTextAreaElement;
+  expect(JSON.parse(json.value).mounts).toEqual([
+    { source: "/srv/reference", target: "/reference", read_only: false },
+  ]);
+  await user.click(screen.getByRole("button", { name: "Fields" }));
+  await user.click(screen.getByRole("button", { name: "Desktop environment" }));
+  await user.click(screen.getByRole("button", { name: "Create template" }));
+  await waitFor(() =>
+    expect(state.POST).toHaveBeenCalledWith("/api/v1/environment-templates", {
+      body: expect.objectContaining({
+        config: expect.objectContaining({
+          recipe: expect.objectContaining({
+            mounts: [
+              {
+                source: "/srv/reference",
+                target: "/reference",
+                read_only: false,
+              },
+            ],
+          }),
+        }),
+      }),
+    }),
+  );
 });

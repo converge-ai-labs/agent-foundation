@@ -266,7 +266,7 @@
 }
 /* A section action centres on the title line, not on title and summary. */
 .sectionActions {
-  composes: compact from "../controls.module.css";
+  composes: secondary from "../controls.module.css";
   max-width: 100%;
   flex-wrap: wrap;
   display: flex;
