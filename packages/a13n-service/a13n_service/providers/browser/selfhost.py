@@ -185,7 +185,9 @@ class SelfHosted(ABC):
                 raise
             return browser
 
-    async def ensure_viewer(self, state: dict[str, JsonValue], grant_id: str, *, expires_at: datetime) -> ViewerGrant:
+    async def ensure_viewer(
+        self, state: dict[str, JsonValue], grant_id: str, *, episode: int, expires_at: datetime
+    ) -> ViewerGrant:
         async with self.running(state) as (allocation, current):
             result = await self.desktop(
                 allocation,
@@ -194,6 +196,7 @@ class SelfHosted(ABC):
                     "generation": current.state["viewer_generation"],
                     "operation": "ensure",
                     "id": grant_id,
+                    "episode": episode,
                     "expires_at": expires_at.timestamp(),
                 },
             )
@@ -203,7 +206,7 @@ class SelfHosted(ABC):
                 datetime.fromtimestamp(result["expires_at"], UTC),
             )
 
-    async def revoke_viewer(self, state: dict[str, JsonValue], grant_id: str) -> None:
+    async def revoke_viewer(self, state: dict[str, JsonValue], grant_id: str, *, episode: int) -> None:
         async with self.allocation(str(state["allocation_id"])) as allocation:
             current = (
                 await self.observe(allocation) if allocation.record and not allocation.record.get("deleted") else None
@@ -218,6 +221,7 @@ class SelfHosted(ABC):
                     "generation": current.state["viewer_generation"],
                     "operation": "revoke_browser",
                     "id": grant_id,
+                    "episode": episode,
                 },
             )
 

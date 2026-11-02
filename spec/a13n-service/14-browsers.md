@@ -66,7 +66,7 @@ Release requires workspace `write` and the Browser's current `If-Match`. Accepte
 
 ## Built-in self-hosted providers
 
-Docker is the recommended small-scale self-hosted provider. It owns one exact container and its private profile filesystem; stopping retains that container. Closing a provider adapter or stopping Service leaves a running container alive. Service recovery reconnects the recorded container and runtime identity. Container or host restart is a new runtime generation, even with the same container ID. Deletion removes the owned container and profile and fences delayed create/start work.
+Docker is the recommended small-scale self-hosted provider. It owns one exact container and its private profile filesystem; stopping retains that container. Closing a provider adapter or stopping Service leaves a running container alive. Service recovery reconnects the recorded container and runtime identity. Container or host restart is a new runtime generation, even with the same container ID. Deletion removes the owned container and profile and fences delayed create/start work. CDP is reachable by peers on the same Docker network; deployment network membership is a trust boundary.
 
 Native is an explicitly enabled Linux debugging provider requiring operator-installed Chromium and desktop dependencies. It owns a private profile and runtime on the Service host. A Service exit may end that runtime while retaining the profile. Start requires proof that the previous writer has ended and exclusive ownership of the same profile. The provider does not recover an arbitrary process by PID, name, URL or title.
 
@@ -131,18 +131,18 @@ Rejecting a notice preserves the same checkpoint cut's completed tools, inline c
 
 A deployment registers trusted Browser Provider definitions under kind `browser`. Each supplies account/credential schemas, a creation recipe schema, backend identity and a factory. `supports_stop`, `supports_files` and `supports_viewer` default to false. Configuring an operator-owned Browser root registers built-in `docker`; explicitly enabling Native also registers `native`. Registered types remain the deployment's inventory.
 
-| Operation                                        | Required meaning                                                         |
-| ------------------------------------------------ | ------------------------------------------------------------------------ |
-| `create(allocation_id, recipe)`                  | Create under the stable Service allocation identity                      |
-| `inspect(allocation_id, state)`                  | Find that allocation without creating, restarting or replacing it        |
-| `stop(allocation_id, state)`                     | Confirm runtime termination while preserving the allocation and profile  |
-| `start(allocation_id, state)`                    | Start a new runtime in the original retained allocation                  |
-| `delete(allocation_id, state)`                   | Idempotently confirm termination, including uncertain creation           |
-| `connect(state)`                                 | Borrow a browser-level Chromium CDP connection; closing disconnects only |
-| `ensure_viewer(state, grant_id, expires_at=...)` | Create or extend the same input grant toward an absolute UTC deadline    |
-| `revoke_viewer(state, grant_id)`                 | Revoke existing and pending input connections under that identity        |
+| Operation                                                     | Required meaning                                                         |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `create(allocation_id, recipe)`                               | Create under the stable Service allocation identity                      |
+| `inspect(allocation_id, state)`                               | Find that allocation without creating, restarting or replacing it        |
+| `stop(allocation_id, state)`                                  | Confirm runtime termination while preserving the allocation and profile  |
+| `start(allocation_id, state)`                                 | Start a new runtime in the original retained allocation                  |
+| `delete(allocation_id, state)`                                | Idempotently confirm termination, including uncertain creation           |
+| `connect(state)`                                              | Borrow a browser-level Chromium CDP connection; closing disconnects only |
+| `ensure_viewer(state, grant_id, episode=..., expires_at=...)` | Create or extend the same input grant toward an absolute UTC deadline    |
+| `revoke_viewer(state, grant_id, episode=...)`                 | Revoke existing and pending input connections under that identity        |
 
-Successful deletion fences late creation and pending viewer ensures under the allocation identity; an ensure cannot create or revive a terminated allocation. `ensure_viewer` is the single initial-grant and renewal operation: retries and out-of-order requests never duplicate or shorten a grant, and may read back an expiry already extended by a newer request. It never grants beyond the greatest requested absolute deadline or reopens an expired or revoked identity. Service compares returned expiry with its current durable control deadline, not a stale request's deadline, and never replaces a newer viewer observation with an older one. Successful revocation fences late and pending ensures under the grant identity and revokes all existing input connections. An adapter must establish those guarantees before advertising support; hiding a viewer button or merely rejecting new connections is insufficient. Errors distinguish not-dispatched, known and unknown outcomes and expose only classified codes. Protected state contains supplier connection details, never public metadata or model input.
+Service supplies the durable, strictly increasing control episode to both viewer operations; each episode has one stable grant identity. An older episode cannot restore input or revoke a newer episode. Successful deletion fences late creation and pending viewer ensures under the allocation identity; an ensure cannot create or revive a terminated allocation. `ensure_viewer` is the single initial-grant and renewal operation: retries and out-of-order requests never duplicate or shorten a grant, and may read back an expiry already extended by a newer request. It never grants beyond the greatest requested absolute deadline or reopens an expired or revoked identity. Service compares returned expiry with its current durable control deadline, not a stale request's deadline, and never replaces a newer viewer observation with an older one. Successful revocation fences late and pending ensures under the grant identity and revokes all existing input connections. An adapter must establish those guarantees before advertising support; hiding a viewer button or merely rejecting new connections is insufficient. Errors distinguish not-dispatched, known and unknown outcomes and expose only classified codes. Protected state contains supplier connection details, never public metadata or model input.
 
 Credential rotation retains backend identity. Backend/account identity changes fail closed for existing Browsers, including cleanup; restoring the original account configuration is required to manage the original allocation. Disabled accounts refuse new use while retaining authorized cleanup.
 

@@ -323,11 +323,11 @@ async def test_revoke_before_delayed_grant_cannot_resurrect_input(supervisor):
     assert commands == []
 
 
-async def test_browser_history_capacity_refuses_new_ensure_and_unknown_revoke(supervisor):
+async def test_environment_history_capacity_refuses_new_grant_and_unknown_revoke(supervisor):
     instance, _, _ = supervisor
     instance.revocations.update({f"grant_{index:08d}": index + 1 for index in range(guest.MAX_HISTORY)})
     with pytest.raises(guest.Refused, match="capacity_exceeded"):
-        await request(instance, "ensure", id="grant_newest", expires_at=guest.time.time() + 60)
+        await request(instance, "grant", id="grant_newest", mode="control", epoch=1, ttl_seconds=60)
     with pytest.raises(guest.Refused, match="capacity_exceeded"):
-        await request(instance, "revoke_browser", id="grant_unknown")
+        await request(instance, "revoke", id="grant_unknown", epoch=1)
     assert len(instance.revocations) == guest.MAX_HISTORY

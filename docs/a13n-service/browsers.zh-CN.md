@@ -47,7 +47,7 @@ make image-browser BROWSER_IMAGE=a13n-browser:local
 
 创建 `type: "docker"`、`configuration: {"image": "a13n-browser:local", "pull_policy": "never"}` 的浏览器 provider。Recipe 接受 `width` 和 `height`，空 recipe 使用默认桌面尺寸。`pull_policy: "if_missing"` 允许拉取本地缺失的显式指定镜像。镜像变更影响新分配；保留的浏览器继续使用原容器。
 
-容器化 Service 需要 Engine socket、`browsers.root` 持久挂载和主机网络。浏览器端点只发布在 Engine 主机的 loopback 接口。桥接网络中的 Service 容器无法通过自己的 loopback 访问这些端点。Browser 容器仍保留独立网络和文件系统隔离。Service 账号的 Engine 访问属于高权限运维授权，只应授予受信任部署。不支持远程 Engine 和多主机调度。CDP 和 guest viewer 端口必须保持私有；Console 使用经过认证的 Service WebSocket 转发，在 HTTPS 下使用 `wss`。反向代理必须转发 WebSocket upgrade。
+容器化 Service 需要 Engine socket、`browsers.root` 持久挂载和主机网络。浏览器端点只发布在 Engine 主机的 loopback 接口。桥接网络中的 Service 容器无法通过自己的 loopback 访问这些端点。Browser 容器拥有独立文件系统和网络命名空间，但同一 Docker 网络中的其他容器可以访问其 CDP 端点。应确保网络成员可信。Service 账号的 Engine 访问属于高权限运维授权，只应授予受信任部署。不支持远程 Engine 和多主机调度。CDP 和 guest viewer 端口必须保持私有；Console 使用经过认证的 Service WebSocket 转发，在 HTTPS 下使用 `wss`。反向代理必须转发 WebSocket upgrade。
 
 Native 要求 Linux，且运维人员已安装 Chromium、`Xvfb`、`openbox`、`xauth`、`x11vnc` 和 `websockify`，并可通过 PATH 找到。需显式启用：
 

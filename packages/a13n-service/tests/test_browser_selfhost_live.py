@@ -58,7 +58,7 @@ async def test_docker_profile_input_and_recovery(tmp_path):
         )
 
         grant = await provider.ensure_viewer(
-            live.state, "browser_live_input", expires_at=datetime.now(UTC) + timedelta(seconds=8)
+            live.state, "browser_live_input", episode=1, expires_at=datetime.now(UTC) + timedelta(seconds=8)
         )
         rfb = await blocking(RFB, grant.url, grant.state["password"])
         assert (await blocking(rfb.frame))["pixel_bytes"] > 0
@@ -121,7 +121,7 @@ async def test_docker_profile_input_and_recovery(tmp_path):
             await provider.download_file(resumed.state, "../profile/Local State", max_bytes=1024)
         with pytest.raises(BrowserProviderError):
             await provider.ensure_viewer(
-                live.state, "browser_late_input", expires_at=datetime.now(UTC) + timedelta(seconds=60)
+                live.state, "browser_late_input", episode=2, expires_at=datetime.now(UTC) + timedelta(seconds=60)
             )
         await provider.delete(identity, resumed.state)
         assert await provider.inspect(identity, resumed.state) is None

@@ -110,7 +110,7 @@ class Supplier:
         assert method in {"Page.enable", "Runtime.enable"}, method
         return {}
 
-    async def ensure_viewer(self, state, grant_id, *, expires_at):
+    async def ensure_viewer(self, state, grant_id, *, episode, expires_at):
         if state["id"] not in self.live:
             raise ValueError("terminated allocation cannot grant input")
         if grant_id in self.revoked or (
@@ -122,7 +122,7 @@ class Supplier:
         self.viewer_deadlines[grant_id] = max(expires_at, self.viewer_deadlines.get(grant_id, expires_at))
         return ViewerGrant("https://viewer.example/secret", {}, self.viewer_deadlines[grant_id])
 
-    async def revoke_viewer(self, state, grant_id):
+    async def revoke_viewer(self, state, grant_id, *, episode):
         if self.fail_revoke:
             raise TimeoutError("still connected")
         self.revoked.add(grant_id)

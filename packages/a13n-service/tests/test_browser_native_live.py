@@ -60,7 +60,7 @@ async def test_native_viewer_expiry_and_profile_recovery(tmp_path, monkeypatch):
             assert cookie["success"]
             assert identity in await connection.evaluate(page, "document.cookie")
             grant = await provider.ensure_viewer(
-                live.state, "native_input", expires_at=datetime.now(UTC) + timedelta(seconds=8)
+                live.state, "native_input", episode=1, expires_at=datetime.now(UTC) + timedelta(seconds=8)
             )
             rfb = await blocking(RFB, grant.url, grant.state["password"])
             frame = await blocking(rfb.frame)
@@ -93,7 +93,7 @@ async def test_native_viewer_expiry_and_profile_recovery(tmp_path, monkeypatch):
             assert await connection.evaluate(page, "localStorage.getItem('retained')") == "native"
             with pytest.raises(BrowserProviderError):
                 await provider.ensure_viewer(
-                    live.state, "late_native_input", expires_at=datetime.now(UTC) + timedelta(seconds=60)
+                    live.state, "late_native_input", episode=2, expires_at=datetime.now(UTC) + timedelta(seconds=60)
                 )
             await provider.delete(identity, resumed.state)
             assert await provider.inspect(identity, resumed.state) is None

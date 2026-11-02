@@ -73,9 +73,12 @@ class BrowserProvider(Protocol):
         """Borrow a browser-level CDP connection; close disconnects, not terminates."""
         ...
 
-    async def ensure_viewer(self, state: dict[str, JsonValue], grant_id: str, *, expires_at: datetime) -> ViewerGrant:
+    async def ensure_viewer(
+        self, state: dict[str, JsonValue], grant_id: str, *, episode: int, expires_at: datetime
+    ) -> ViewerGrant:
         """Create or extend the same input grant toward an absolute UTC deadline.
 
+        The episode increases for each control interval and identifies one grant.
         Replays and out-of-order calls never shorten or duplicate the grant. The
         returned expiry covers all input connections, not only the viewer URL.
         Never grant input past the greatest requested deadline, or reopen an
@@ -85,7 +88,7 @@ class BrowserProvider(Protocol):
         """
         ...
 
-    async def revoke_viewer(self, state: dict[str, JsonValue], grant_id: str) -> None:
+    async def revoke_viewer(self, state: dict[str, JsonValue], grant_id: str, *, episode: int) -> None:
         """Confirm all input connections are revoked, including uncertain grants.
 
         Revocation permanently fences this grant identity: a late ensure request

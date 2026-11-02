@@ -115,6 +115,10 @@ class Supervisor:
         self.epoch = 0
         self.grants: dict[str, Grant] = {}
         self.revocations: dict[str, int] = {}
+        self.browser_episode = 0
+        self.browser_id: str | None = None
+        self.browser_closed = False
+        self.browser_grants: dict[str, int] = {}
         self.lock = asyncio.Lock()
         self.proxy_process: asyncio.subprocess.Process | None = None
         self.stop = asyncio.Event()
@@ -194,6 +198,32 @@ class Supervisor:
                 blocked = True
         if blocked:
             raise Refused("input_cleanup_unconfirmed")
+        for identity in list(self.browser_grants):
+            grant = self.grants[identity]
+            if grant.state in {"revoked", "expired", "failed"}:
+                if identity == self.browser_id:
+                    self.browser_closed = True
+                del self.grants[identity]
+                del self.browser_grants[identity]
+
+    def browser_fence(self, request: dict[str, Any], *, revoke: bool) -> tuple[str, int]:
+        identity, episode = request.get("id"), request.get("episode")
+        if not isinstance(identity, str) or not re.fullmatch(r"[a-z][a-z0-9_]{7,71}", identity):
+            raise Refused("invalid_grant_id")
+        if type(episode) is not int or episode < 1:
+            raise Refused("invalid_episode")
+        if episode > self.browser_episode:
+            self.browser_episode, self.browser_id, self.browser_closed = episode, identity, revoke
+        elif episode == self.browser_episode:
+            if identity != self.browser_id:
+                raise Refused("grant_conflict")
+            if revoke:
+                self.browser_closed = True
+        elif not revoke:
+            raise Refused("grant_not_active")
+        if not revoke and self.browser_closed:
+            raise Refused("grant_not_active")
+        return identity, episode
 
     async def ensure(self, request: dict[str, Any]) -> dict[str, Any]:
         """Browser grants use absolute deadlines; Environment grant/renew keep v1 semantics."""
@@ -207,10 +237,11 @@ class Supervisor:
             or expires_at <= time.time()
         ):
             raise Refused("invalid_expiry")
-        if identity in self.revocations:
-            raise Refused("grant_not_active")
+        identity, episode = self.browser_fence(request, revoke=False)
         existing = self.grants.get(identity)
         if existing is not None:
+            if self.browser_grants.get(identity) != episode:
+                raise Refused("grant_conflict")
             if existing.state != "active" or existing.remaining() <= 0:
                 raise Refused("grant_not_active")
             if expires_at > existing.expires_at:
@@ -218,10 +249,15 @@ class Supervisor:
                 existing.expires_at = expires_at
                 self.schedule_expiry(existing)
         else:
-            await self.grant(
-                {"id": identity, "mode": "control", "epoch": self.epoch + 1, "ttl_seconds": MAX_TTL},
-                absolute_expiry=expires_at,
-            )
+            try:
+                await self.grant(
+                    {"id": identity, "mode": "control", "epoch": self.epoch + 1, "ttl_seconds": MAX_TTL},
+                    absolute_expiry=expires_at,
+                )
+            finally:
+                # A failed publication can leave a process record requiring cleanup.
+                if identity in self.grants:
+                    self.browser_grants[identity] = episode
             existing = self.grants[identity]
         if existing.remaining() <= 0:
             await self.revoke(existing, "expired")
@@ -382,11 +418,13 @@ class Supervisor:
                 raise Refused("invalid_grant_id")
             grant = self.grants.get(identity)
             if operation == "revoke_browser":
-                operation = "revoke"
-                request = {
-                    **request,
-                    "epoch": grant.epoch if grant is not None else self.revocations.get(identity, self.epoch + 1),
-                }
+                identity, episode = self.browser_fence(request, revoke=True)
+                if self.browser_grants.get(identity) == episode:
+                    assert grant is not None
+                    await self.revoke(grant)
+                    del self.grants[identity]
+                    del self.browser_grants[identity]
+                return {"id": identity, "generation": self.generation, "state": "revoked"}
             if grant is None:
                 epoch = request.get("epoch")
                 if (
