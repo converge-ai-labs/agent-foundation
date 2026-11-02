@@ -21,8 +21,8 @@ ROOT = "/home/browser/data"
 
 class Configuration(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
-    image: str = Field(default="a13n-browser:local", min_length=1, max_length=512)
-    pull_policy: Literal["never", "if_missing"] = "never"
+    image: str = Field(default="ghcr.io/converge-ai-labs/a13n-browser:latest", min_length=1, max_length=512)
+    pull_policy: Literal["never", "if_missing", "always"] = "always"
 
 
 class Docker(SelfHosted):
@@ -50,12 +50,15 @@ class Docker(SelfHosted):
         await allocation.save()
         container = await self.container(allocation)
         if container is None:
-            try:
-                image = await blocking(self.client.images.get, self.config.image)
-            except ImageNotFound:
-                if self.config.pull_policy == "never":
-                    raise BrowserProviderError("browser_image_missing", certainty="not_dispatched") from None
+            if self.config.pull_policy == "always":
                 image = await blocking(self.client.images.pull, self.config.image)
+            else:
+                try:
+                    image = await blocking(self.client.images.get, self.config.image)
+                except ImageNotFound:
+                    if self.config.pull_policy == "never":
+                        raise BrowserProviderError("browser_image_missing", certainty="not_dispatched") from None
+                    image = await blocking(self.client.images.pull, self.config.image)
             recipe = allocation.record["recipe"]
             container = await blocking(
                 self.client.containers.create,

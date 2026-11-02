@@ -22,7 +22,7 @@ async def test_docker_profile_input_and_recovery(tmp_path):
     if not image:
         pytest.skip("Requires A13N_TEST_BROWSER_DOCKER_IMAGE built from this checkout")
     identity = "browser_live_" + uuid4().hex[:16]
-    provider = Docker(tmp_path, docker.from_env(), Configuration(image=image))
+    provider = Docker(tmp_path, docker.from_env(), Configuration(image=image, pull_policy="never"))
     live = None
     connection = None
     rfb = None
@@ -73,7 +73,7 @@ async def test_docker_profile_input_and_recovery(tmp_path):
         assert await blocking(rfb.closed)
         await blocking(rfb.close)
         rfb = None
-        provider = Docker(tmp_path, docker.from_env(), Configuration(image=image))
+        provider = Docker(tmp_path, docker.from_env(), Configuration(image=image, pull_policy="never"))
         recovered = await provider.inspect(identity, live.state)
         assert recovered is not None and recovered.runtime_id == live.runtime_id
         assert any(
@@ -149,7 +149,7 @@ async def test_docker_critical_child_exit_ends_runtime(tmp_path, child):
     if not image:
         pytest.skip("Requires A13N_TEST_BROWSER_DOCKER_IMAGE built from this checkout")
     identity = "browser_live_" + uuid4().hex[:16]
-    provider = Docker(tmp_path, docker.from_env(), Configuration(image=image))
+    provider = Docker(tmp_path, docker.from_env(), Configuration(image=image, pull_policy="never"))
     try:
         live = await provider.create(identity, Recipe())
         async with provider.allocation(identity) as allocation:
@@ -219,7 +219,11 @@ async def test_selfhost_service_asset_transfer(service, runs_kit, scripted_model
     service.app.state.runtime = service.runtime
     response = await service.client.post(
         f"{service.api}/browser-providers",
-        json={"type": kind, "name": "Live Browser", "config": {"image": image} if kind == "docker" else {}},
+        json={
+            "type": kind,
+            "name": "Live Browser",
+            "config": {"image": image, "pull_policy": "never"} if kind == "docker" else {},
+        },
     )
     assert response.status_code == 201, response.text
     response = await service.client.post(
@@ -294,7 +298,7 @@ async def test_selfhost_service_asset_transfer(service, runs_kit, scripted_model
                 await blocking(rfb.close)
     finally:
         cleanup = (
-            Docker(tmp_path / "docker", docker.from_env(), Configuration(image=image))
+            Docker(tmp_path / "docker", docker.from_env(), Configuration(image=image, pull_policy="never"))
             if kind == "docker"
             else Native(tmp_path / "native", chromium)
         )
@@ -328,7 +332,8 @@ async def test_docker_scripted_model_browser_tools(service, runs_kit, scripted_m
     service.runtime = replace(service.runtime, registry=registry)
     service.app.state.runtime = service.runtime
     response = await service.client.post(
-        f"{service.api}/browser-providers", json={"type": "docker", "name": "Model Docker", "config": {"image": image}}
+        f"{service.api}/browser-providers",
+        json={"type": "docker", "name": "Model Docker", "config": {"image": image, "pull_policy": "never"}},
     )
     assert response.status_code == 201, response.text
     response = await service.client.post(
@@ -336,7 +341,7 @@ async def test_docker_scripted_model_browser_tools(service, runs_kit, scripted_m
     )
     assert response.status_code == 201, response.text
     browser = response.json()
-    provider = Docker(tmp_path / "docker", docker.from_env(), Configuration(image=image))
+    provider = Docker(tmp_path / "docker", docker.from_env(), Configuration(image=image, pull_policy="never"))
     try:
         lease, binding = await bound_run(
             service,

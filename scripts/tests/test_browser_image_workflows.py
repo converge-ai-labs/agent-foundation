@@ -58,11 +58,11 @@ def test_service_companion_image_release_tags(version, image, tmp_path):
     name = "ghcr.io/converge-ai-labs/" + image
     subprocess.run(
         ["bash", "-e", "-c", step["run"]],
-        env=dict(os.environ, IMAGE=name, VERSION=version, GITHUB_OUTPUT=str(output)),
+        env=dict(os.environ, IMAGE=name, IMAGE_NAME=image, VERSION=version, GITHUB_OUTPUT=str(output)),
         check=True,
     )
     tags = output.read_text().splitlines()[1:-1]
-    assert tags == [f"{name}:{version}"] + ([] if "-rc." in version else [f"{name}:latest"])
+    assert tags == [f"{name}:{version}"] + ([] if "-rc." in version or image == "a13n-browser" else [f"{name}:latest"])
     build = next(step for step in job["steps"] if step.get("uses", "").startswith("docker/build-push-action@"))
     assert build["with"]["file"] == "${{ matrix.file }}"
     assert "matrix.name" in build["with"]["cache-to"]
@@ -75,3 +75,30 @@ def test_browser_runtime_uses_service_locked_websocket_client():
     assert f"python3 -m pip install --no-cache-dir websockets=={version}" in dockerfile
     service = tomllib.loads((ROOT / "packages/a13n-service/pyproject.toml").read_text())
     assert "websockets>=15,<16" in service["project"]["dependencies"]
+
+
+def test_browser_latest_workflow_builds_tests_and_publishes_same_artifacts():
+    document = workflow("browser-image.yml")
+    triggers = document[True]  # PyYAML parses the YAML 1.1 key `on` as True.
+    assert {"push", "pull_request", "schedule", "workflow_dispatch"} <= triggers.keys()
+    assert triggers["push"]["branches"] == ["main"]
+    concurrency = document["concurrency"]
+    assert "'publish'" in concurrency["group"]
+    assert concurrency["cancel-in-progress"] is False
+    build = document["jobs"]["build"]
+    assert {entry["arch"] for entry in build["strategy"]["matrix"]["include"]} == {"amd64", "arm64"}
+    steps = build["steps"]
+    commands = [step.get("run", "") for step in steps]
+    build_index = next(i for i, command in enumerate(commands) if "docker build --pull --no-cache" in command)
+    smoke_index = next(i for i, command in enumerate(commands) if "make image-check-browser" in command)
+    push_index = next(i for i, command in enumerate(commands) if "docker push" in command)
+    assert build_index < smoke_index < push_index
+    assert "a13n-browser:ci" in commands[build_index] and "a13n-browser:ci" in commands[smoke_index]
+    assert "docker tag a13n-browser:ci" in commands[push_index]
+    assert "github.ref == 'refs/heads/main'" in steps[push_index]["if"]
+    publish = document["jobs"]["publish"]
+    assert publish["needs"] == "build" and "github.ref == 'refs/heads/main'" in publish["if"]
+    manifest = next(step["run"] for step in publish["steps"] if "imagetools create" in step.get("run", ""))
+    assert '"$IMAGE:$tag-amd64" "$IMAGE:$tag-arm64"' in manifest
+    assert "github.run_id" in manifest and "github.run_attempt" in manifest
+    assert "commits/main" in manifest and '"$IMAGE:latest"' in manifest

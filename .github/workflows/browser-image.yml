@@ -1,0 +1,105 @@
+name: Browser Image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/browser-image.yml'
+      - '.dockerignore'
+      - 'deploy/docker/images/browser/**'
+      - 'packages/a13n-service/a13n_service/providers/browser/runtime.py'
+      - 'packages/a13n-service/a13n_service/providers/environment/desktop_guest.py'
+      - 'packages/a13n-service/tests/test_browser_selfhost_live.py'
+      - 'LICENSE'
+  pull_request:
+    paths:
+      - '.github/workflows/browser-image.yml'
+      - '.dockerignore'
+      - 'deploy/docker/images/browser/**'
+      - 'packages/a13n-service/a13n_service/providers/browser/runtime.py'
+      - 'packages/a13n-service/a13n_service/providers/environment/desktop_guest.py'
+      - 'packages/a13n-service/tests/test_browser_selfhost_live.py'
+      - 'LICENSE'
+  schedule:
+    - cron: '17 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  IMAGE: ghcr.io/converge-ai-labs/a13n-browser
+
+concurrency:
+  group: browser-image-${{ github.event_name == 'pull_request' && github.ref || 'publish' }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Build with refreshed upstream packages
+        run: >-
+          docker build --pull --no-cache -f deploy/docker/images/browser/Dockerfile
+          --build-arg BUILD_VERSION=build-${{ github.run_id }}-${{ github.run_attempt }}
+          --build-arg BUILD_REVISION=${{ github.sha }} -t a13n-browser:ci .
+      - name: Exercise the built browser
+        run: make image-check-browser BROWSER_IMAGE=a13n-browser:ci
+      - uses: docker/login-action@v3
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Push the tested architecture image
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: |
+          tag="$IMAGE:build-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.arch }}"
+          docker tag a13n-browser:ci "$tag"
+          docker push "$tag"
+
+  publish:
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish a manifest of the tested images
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          head="$(gh api "repos/${{ github.repository }}/commits/main" --jq .sha)"
+          if [ "$head" != "${{ github.sha }}" ]; then
+            echo "Skipping stale build; main is now $head"
+            exit 0
+          fi
+          tag="build-${{ github.run_id }}-${{ github.run_attempt }}"
+          docker buildx imagetools create -t "$IMAGE:$tag" -t "$IMAGE:latest" \
+            "$IMAGE:$tag-amd64" "$IMAGE:$tag-arm64"

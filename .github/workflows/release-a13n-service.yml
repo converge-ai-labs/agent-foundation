@@ -162,12 +162,13 @@ jobs:
         id: image-tags
         env:
           IMAGE: ghcr.io/converge-ai-labs/${{ matrix.name }}
+          IMAGE_NAME: ${{ matrix.name }}
           VERSION: ${{ needs.build-python.outputs.version }}
         run: |
           {
             echo "tags<<EOF"
             echo "$IMAGE:$VERSION"
-            if [[ "$VERSION" != *-rc.* ]]; then
+            if [[ "$IMAGE_NAME" != a13n-browser && "$VERSION" != *-rc.* ]]; then
               echo "$IMAGE:latest"
             fi
             echo "EOF"
@@ -190,13 +191,14 @@ jobs:
       - name: Verify published image tags
         env:
           IMAGE: ghcr.io/converge-ai-labs/${{ matrix.name }}
+          IMAGE_NAME: ${{ matrix.name }}
           VERSION: ${{ needs.build-python.outputs.version }}
         run: |
           version_digest="$(docker buildx imagetools inspect "$IMAGE:$VERSION" --format '{{json .Manifest.Digest}}')"
           test -n "$version_digest"
           platforms="$(docker buildx imagetools inspect "$IMAGE:$VERSION" --format '{{range .Manifest.Manifests}}{{.Platform.OS}}/{{.Platform.Architecture}} {{end}}')"
           [[ "$platforms" == *linux/amd64* && "$platforms" == *linux/arm64* ]]
-          if [[ "$VERSION" != *-rc.* ]]; then
+          if [[ "$IMAGE_NAME" != a13n-browser && "$VERSION" != *-rc.* ]]; then
             latest_digest="$(docker buildx imagetools inspect "$IMAGE:latest" --format '{{json .Manifest.Digest}}')"
             test "$version_digest" = "$latest_digest"
           fi
@@ -255,6 +257,9 @@ jobs:
           sed "s|\${A13N_SERVICE_IMAGE:-ghcr.io/converge-ai-labs/a13n-service:latest}|\${A13N_SERVICE_IMAGE:-$A13N_SERVICE_IMAGE:$VERSION}|" \
             deploy/docker/compose/a13n-service.yaml > dist/a13n-service.yaml
           grep -qF "$A13N_SERVICE_IMAGE:$VERSION}" dist/a13n-service.yaml
+          sed "s|\${A13N_SERVICE_IMAGE:-ghcr.io/converge-ai-labs/a13n-service:latest}|\${A13N_SERVICE_IMAGE:-$A13N_SERVICE_IMAGE:$VERSION}|" \
+            deploy/docker/compose/a13n-service-browser.yaml > dist/a13n-service-browser.yaml
+          grep -qF "$A13N_SERVICE_IMAGE:$VERSION}" dist/a13n-service-browser.yaml
           sed "s|\${A13N_SERVICE_IMAGE:-ghcr.io/converge-ai-labs/a13n-service:dev}|\${A13N_SERVICE_IMAGE:-$A13N_SERVICE_IMAGE:$VERSION}|" \
             deploy/docker/compose/a13n-service-quickstart.yaml > dist/a13n-service-quickstart.yaml
           grep -qF "$A13N_SERVICE_IMAGE:$VERSION}" dist/a13n-service-quickstart.yaml

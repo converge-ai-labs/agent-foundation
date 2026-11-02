@@ -418,3 +418,67 @@ async def test_runtime_cdp_failure_falls_back_to_child_cleanup(monkeypatch, fail
     instance.chromium = type("Process", (), {"returncode": None})()
     instance.cdp_url = "ws://invalid"
     await instance.close_chromium()
+
+
+@pytest.mark.parametrize(
+    "policy,cached,pulls",
+    [("always", True, True), ("if_missing", True, False), ("if_missing", False, True), ("never", True, False)],
+)
+async def test_docker_image_policy_for_new_allocation(tmp_path, policy, cached, pulls):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    from a13n_service.providers.browser.docker import Configuration, Docker
+    from a13n_service.providers.browser.selfhost import Allocation
+    from docker.errors import ImageNotFound, NotFound
+
+    old = SimpleNamespace(id="old-image")
+    new = SimpleNamespace(id="new-image")
+    container = SimpleNamespace(id="container")
+    images = SimpleNamespace(
+        get=Mock(return_value=old) if cached else Mock(side_effect=ImageNotFound("missing")),
+        pull=Mock(return_value=new),
+    )
+    containers = SimpleNamespace(get=Mock(side_effect=NotFound("missing")), create=Mock(return_value=container))
+    client = SimpleNamespace(info=Mock(return_value={"ID": "daemon"}), images=images, containers=containers)
+    provider = Docker(tmp_path, client, Configuration(image="example:tag", pull_policy=policy))
+    allocation = Allocation("browser_image", tmp_path, {"recipe": {"width": 800, "height": 600}})
+    await provider.provision(allocation)
+    assert images.pull.call_count == int(pulls)
+    assert containers.create.call_args.args[0] == ("new-image" if pulls else "old-image")
+    assert allocation.record["container_id"] == "container"
+
+
+async def test_docker_retained_container_skips_pull_and_create(tmp_path):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    from a13n_service.providers.browser.docker import LABEL, Configuration, Docker
+    from a13n_service.providers.browser.selfhost import Allocation
+
+    container = SimpleNamespace(id="retained", labels={LABEL: "browser_retained"})
+    client = SimpleNamespace(info=Mock(return_value={"ID": "daemon"}), images=Mock(), containers=Mock())
+    client.containers.get.return_value = container
+    provider = Docker(tmp_path, client, Configuration())
+    allocation = Allocation("browser_retained", tmp_path, {"container_id": "retained"})
+    await provider.provision(allocation)
+    client.images.pull.assert_not_called()
+    client.containers.create.assert_not_called()
+
+
+async def test_docker_pull_failure_does_not_create(tmp_path):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    from a13n_service.providers.browser.docker import Configuration, Docker
+    from a13n_service.providers.browser.selfhost import Allocation
+    from docker.errors import NotFound
+
+    client = SimpleNamespace(info=Mock(return_value={"ID": "daemon"}), images=Mock(), containers=Mock())
+    client.containers.get.side_effect = NotFound("missing")
+    client.images.pull.side_effect = RuntimeError("registry unavailable")
+    provider = Docker(tmp_path, client, Configuration())
+    allocation = Allocation("browser_failure", tmp_path, {"recipe": {"width": 800, "height": 600}})
+    with pytest.raises(RuntimeError, match="registry unavailable"):
+        await provider.provision(allocation)
+    client.containers.create.assert_not_called()

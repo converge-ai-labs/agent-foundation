@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM python:3.13.12-slim-trixie
+FROM python:3.13-slim-trixie
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
