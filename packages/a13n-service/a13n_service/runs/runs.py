@@ -11,7 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from a13n_service.infra.db import Storage, short_session, transaction
 from a13n_service.infra.errors import ServiceError, conflict, invalid, not_found
 from a13n_service.infra.http import require_match
-from a13n_service.resources.agents.schemas import AgentRevision, apply_override
+from a13n_service.resources.agents import stored
+from a13n_service.resources.agents.schemas import AgentRevision
 from a13n_service.resources.agents.tables import AgentRevisionRow, AgentRow
 from a13n_service.runs import checkpoints, read_views
 from a13n_service.runs.checkpoints import PageRef, TailPointer
@@ -63,7 +64,7 @@ async def run_views(session: AsyncSession, runs: Sequence[RunRow]) -> list[RunVi
         else {}
     )
     return [
-        RunView.model_validate(run, context={"preserve_toolsets": True}).model_copy(
+        stored.read(RunView, run).model_copy(
             update={
                 "input": payloads.get(run.source_entry_id or ""),
                 "schedule_origin": schedule_origins.get(run.id),
@@ -89,16 +90,10 @@ async def agent(storage: Storage, actor: Principal, workspace_id: str, run_id: s
         scope = await workspace_scope(session, actor, workspace_id, "read")
         run = await get_run(session, scope.workspace_id, run_id)
         # The run's foreign key keeps its revision, and revisions are never deleted.
-        revision = AgentRevision.model_validate(
-            await session.get(AgentRevisionRow, run.agent_revision_id), context={"preserve_toolsets": True}
-        )
-    override = RunOptions.model_validate(run.options, context={"preserve_toolsets": True}).overrides
-    config = (
-        revision.config
-        if override is None
-        else apply_override(revision.config, override, validation_context={"preserve_toolsets": True})
-    )
-    return RunAgent(revision=revision, config=config)
+        revision = stored.read(AgentRevision, await session.get(AgentRevisionRow, run.agent_revision_id))
+    override = stored.read(RunOptions, run.options).overrides
+    config = stored.read_effective(revision.config, override)
+    return stored.read(RunAgent, {"revision": revision, "config": config})
 
 
 async def _summaries(session: AsyncSession, values: Sequence[RunView]) -> list[read_views.RunSummary]:

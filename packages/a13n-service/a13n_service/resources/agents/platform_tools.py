@@ -7,6 +7,7 @@ from pydantic import Field as Query
 from pydantic.experimental.missing_sentinel import MISSING
 
 from a13n_service.infra import reads
+from a13n_service.infra.errors import invalid
 from a13n_service.infra.http import PageLimit
 from a13n_service.infra.labels import Labels
 from a13n_service.platform_tools import ToolContext as PlatformContext
@@ -70,11 +71,13 @@ async def create_agent(ctx: ToolContext, *, body: AgentCreation) -> Agent:
 async def validate_agent_configuration(ctx: ToolContext, *, body: AgentValidate) -> None:
     """No content when creating a revision of the configuration would accept it, else the same `invalid_argument`
     error with the field's path relative to `config`; nothing is stored."""
-    workspace_id = ctx.workspace_id
-    actor = ctx.actor
-    runtime = ctx.runtime
     await service.validate_revision(
-        runtime.storage, actor, workspace_id, body, registry=runtime.registry, plugins=runtime.plugins
+        ctx.runtime.storage,
+        ctx.actor,
+        ctx.workspace_id,
+        body,
+        registry=ctx.runtime.registry,
+        plugins=ctx.runtime.plugins,
     )
 
 
@@ -94,13 +97,10 @@ async def list_agents(
     """Agents of the workspace. `q` matches the name or description, ignoring case; `archived` keeps only
     archived agents, or only open ones; `source=builtin` finds managed presets; the skill filters keep those
     with a revision pinning that skill or that skill revision."""
-    workspace_id = ctx.workspace_id
-    actor = ctx.actor
-    runtime = ctx.runtime
     return await service.list_agents(
-        runtime.storage,
-        actor,
-        workspace_id,
+        ctx.runtime.storage,
+        ctx.actor,
+        ctx.workspace_id,
         labels=label or [],
         q=q,
         archived=archived,
@@ -114,22 +114,18 @@ async def list_agents(
 
 
 async def get_agent(ctx: ToolContext, *, agent_id: str) -> Agent:
-    workspace_id = ctx.workspace_id
-    actor = ctx.actor
-    runtime = ctx.runtime
-    return await service.get_agent(runtime.storage, actor, workspace_id, agent_id)
+    """Read Agent metadata, its current default revision identity, and version."""
+    return await service.get_agent(ctx.runtime.storage, ctx.actor, ctx.workspace_id, agent_id)
 
 
 async def update_agent_metadata(
     ctx: ToolContext, *, agent_id: str, body: AgentMetadata, expected_version: str
 ) -> Agent:
-    workspace_id = ctx.workspace_id
-    actor = ctx.actor
-    runtime = ctx.runtime
+    """Change only supplied name, description, or labels at the observed Agent version."""
     updated = await service.update_agent(
-        runtime.storage,
-        actor,
-        workspace_id,
+        ctx.runtime.storage,
+        ctx.actor,
+        ctx.workspace_id,
         agent_id,
         AgentUpdate.model_validate(body.model_dump(exclude_unset=True)),
         if_match=expected_version,
@@ -138,31 +134,31 @@ async def update_agent_metadata(
 
 
 async def archive_agent(ctx: ToolContext, *, agent_id: str, expected_version: str) -> Agent:
-    workspace_id = ctx.workspace_id
-    actor = ctx.actor
-    runtime = ctx.runtime
+    """Archive the Agent at the observed version, preventing new execution."""
     archived = await service.set_archived(
-        runtime.storage, actor, workspace_id, agent_id, archived=True, if_match=expected_version
+        ctx.runtime.storage, ctx.actor, ctx.workspace_id, agent_id, archived=True, if_match=expected_version
     )
     return archived
 
 
 async def unarchive_agent(ctx: ToolContext, *, agent_id: str, expected_version: str) -> Agent:
-    workspace_id = ctx.workspace_id
-    actor = ctx.actor
-    runtime = ctx.runtime
+    """Restore an archived Agent at the observed version."""
     restored = await service.set_archived(
-        runtime.storage, actor, workspace_id, agent_id, archived=False, if_match=expected_version
+        ctx.runtime.storage, ctx.actor, ctx.workspace_id, agent_id, archived=False, if_match=expected_version
     )
     return restored
 
 
 async def duplicate_agent(ctx: ToolContext, *, agent_id: str, body: AgentDuplicate) -> Agent:
-    workspace_id = ctx.workspace_id
-    actor = ctx.actor
-    runtime = ctx.runtime
+    """Create a custom Agent from a revalidated source revision, retaining its configuration."""
     created = await service.duplicate_agent(
-        runtime.storage, actor, workspace_id, agent_id, body, registry=runtime.registry, plugins=runtime.plugins
+        ctx.runtime.storage,
+        ctx.actor,
+        ctx.workspace_id,
+        agent_id,
+        body,
+        registry=ctx.runtime.registry,
+        plugins=ctx.runtime.plugins,
     )
     return created
 
@@ -174,7 +170,7 @@ async def update_agent_configuration(
     expected_version: str,
     body: AgentConfigurationChanges,
     base_revision_id: str | None = None,
-    make_default: bool = True,
+    make_default: bool | None = None,
     note: Annotated[str | None, Field(max_length=2048)] = None,
 ) -> service.ConfigurationChange:
     """Publish only specified configuration changes against the version read.
@@ -183,6 +179,8 @@ async def update_agent_configuration(
     collections and structured sections replace those sections whole. Null only
     clears nullable fields. Related changes validate and publish atomically.
     The default revision is the base unless a historical base is explicitly named.
+    Supplying base_revision_id requires an explicit make_default choice; otherwise
+    make_default defaults to true.
     """
     return await service.change_configuration(
         ctx.runtime.storage,
@@ -207,15 +205,18 @@ async def list_agent_revisions(
     limit: Annotated[int | None, Query(ge=1, le=100)] = None,
     cursor: str | None = None,
 ) -> AgentRevisionPage | read_views.RevisionSummaryPage:
-    workspace_id = ctx.workspace_id
-    actor = ctx.actor
-    runtime = ctx.runtime
+    """List immutable Agent revisions with compact summaries by default."""
     if view == "compact":
         return await service.list_revision_summaries(
-            runtime.storage, actor, workspace_id, agent_id, limit=reads.page_limit(view, limit), cursor=cursor
+            ctx.runtime.storage,
+            ctx.actor,
+            ctx.workspace_id,
+            agent_id,
+            limit=reads.page_limit(view, limit),
+            cursor=cursor,
         )
     return await service.list_revisions(
-        runtime.storage, actor, workspace_id, agent_id, limit=reads.page_limit(view, limit), cursor=cursor
+        ctx.runtime.storage, ctx.actor, ctx.workspace_id, agent_id, limit=reads.page_limit(view, limit), cursor=cursor
     )
 
 
@@ -231,10 +232,8 @@ async def get_agent_revision(
     version: reads.Version = None,
     query: reads.Search = None,
 ) -> AgentRevision | read_views.RevisionSummary | reads.TextRead:
-    workspace_id = ctx.workspace_id
-    actor = ctx.actor
-    runtime = ctx.runtime
-    value = await service.get_revision(runtime.storage, actor, workspace_id, agent_id, revision_id)
+    """Read an immutable revision or a bounded configuration section; historical selections remain visible."""
+    value = await service.get_revision(ctx.runtime.storage, ctx.actor, ctx.workspace_id, agent_id, revision_id)
     if section is not None:
         return reads.read_value(
             read_views.config_section(value.config, section),
@@ -245,11 +244,9 @@ async def get_agent_revision(
             query=query,
         )
     if offset or version or query:
-        from a13n_service.infra.errors import invalid
-
         raise invalid("section", "Select a configuration section for fragment or search parameters")
     if view == "compact":
-        head = await service.get_agent(runtime.storage, actor, workspace_id, agent_id)
+        head = await service.get_agent(ctx.runtime.storage, ctx.actor, ctx.workspace_id, agent_id)
         return read_views.revision_summary(value, head.default_revision_id)
     return value
 
@@ -257,36 +254,33 @@ async def get_agent_revision(
 async def set_default_agent_revision(
     ctx: ToolContext, *, agent_id: str, revision_id: str, expected_version: str
 ) -> Agent:
-    workspace_id = ctx.workspace_id
-    actor = ctx.actor
-    runtime = ctx.runtime
+    """Revalidate and select a revision as the Agent default at the observed version."""
     updated = await service.set_default(
-        runtime.storage,
-        actor,
-        workspace_id,
+        ctx.runtime.storage,
+        ctx.actor,
+        ctx.workspace_id,
         agent_id,
         revision_id,
         if_match=expected_version,
-        registry=runtime.registry,
-        plugins=runtime.plugins,
+        registry=ctx.runtime.registry,
+        plugins=ctx.runtime.plugins,
     )
     return updated
 
 
 async def list_toolsets(ctx: ToolContext) -> ToolsetCatalog:
-    workspace_id = ctx.workspace_id
-    actor = ctx.actor
-    runtime = ctx.runtime
-    return await service.toolset_catalog(runtime.storage, actor, workspace_id, registry=runtime.registry)
+    """Read the complete deployment toolset catalog and supported configuration schemas."""
+    return await service.toolset_catalog(
+        ctx.runtime.storage, ctx.actor, ctx.workspace_id, registry=ctx.runtime.registry
+    )
 
 
 async def search_toolsets(
     ctx: ToolContext, *, query: reads.IndexQuery = None, limit: PageLimit = 10, cursor: str | None = None
 ) -> catalog_reads.CatalogIndex:
     """Search full names and descriptions; definitions are read separately by exact name."""
-    workspace_id = ctx.workspace_id
     values = await list_toolsets(ctx)
-    return read_views.toolset_index(values, workspace_id=workspace_id, query=query, limit=limit, cursor=cursor)
+    return read_views.toolset_index(values, workspace_id=ctx.workspace_id, query=query, limit=limit, cursor=cursor)
 
 
 async def get_toolset_definition(
@@ -324,11 +318,8 @@ async def compare_agent_revisions(
     query: reads.Search = None,
 ) -> reads.TextRead:
     """Versioned unified diff of two revisions of this agent, optionally limited to one configuration section."""
-    workspace_id = ctx.workspace_id
-    actor = ctx.actor
-    runtime = ctx.runtime
-    base = await service.get_revision(runtime.storage, actor, workspace_id, agent_id, base_revision_id)
-    target = await service.get_revision(runtime.storage, actor, workspace_id, agent_id, revision_id)
+    base = await service.get_revision(ctx.runtime.storage, ctx.actor, ctx.workspace_id, agent_id, base_revision_id)
+    target = await service.get_revision(ctx.runtime.storage, ctx.actor, ctx.workspace_id, agent_id, revision_id)
     return reads.read_value(
         read_views.config_diff(base.config, target.config, section),
         source=f"agents/{agent_id}/compare/{base_revision_id}/{revision_id}/{section}",

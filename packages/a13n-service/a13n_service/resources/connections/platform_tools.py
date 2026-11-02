@@ -21,7 +21,7 @@ from a13n_service.resources.connections.platform_inputs import (
     apply_changes,
     safe_connection,
 )
-from a13n_service.resources.connections.schemas import ConnectionTest, ConnectionUpdate, ToolPage
+from a13n_service.resources.connections.schemas import ConnectionTest, ToolPage
 from a13n_service.resources.runtime import Runtime
 
 type ToolContext = PlatformContext[Runtime]
@@ -42,16 +42,15 @@ async def list_mcp_servers(
 
 async def create_connection(ctx: ToolContext, *, body: ConnectionCreation) -> SafeConnection | AccessSetup:
     """Create non-secret connection settings. Complete credentials and connector setup in trusted Console configuration."""
-    runtime = ctx.runtime
     try:
         value = await service.create_connection(
-            runtime.storage,
+            ctx.runtime.storage,
             ctx.actor,
             ctx.workspace_id,
             body.request(),
-            keys=runtime.keys,
-            registry=runtime.registry,
-            policy=runtime.endpoint_policy,
+            keys=ctx.runtime.keys,
+            registry=ctx.runtime.registry,
+            policy=ctx.runtime.endpoint_policy,
         )
     except ServiceError as error:
         if error.code != "invalid_argument" or error.details.get("field") != "config.setup":
@@ -81,88 +80,65 @@ async def update_connection(
     ctx: ToolContext, *, connection_id: str, expected_version: str, body: ConnectionChanges
 ) -> SafeConnection:
     """Change only specified non-secret fields at the observed version. Endpoint/auth changes use the existing credential invalidation rules."""
-    runtime = ctx.runtime
-    current = await service.get_connection(runtime.storage, ctx.actor, ctx.workspace_id, connection_id)
+    current = await service.get_connection(ctx.runtime.storage, ctx.actor, ctx.workspace_id, connection_id)
     updated = apply_changes(current, body, expected_version)
     value = await service.update_connection(
-        runtime.storage,
+        ctx.runtime.storage,
         ctx.actor,
         ctx.workspace_id,
         connection_id,
         updated,
         if_match=expected_version,
-        keys=runtime.keys,
-        registry=runtime.registry,
-        policy=runtime.endpoint_policy,
+        keys=ctx.runtime.keys,
+        registry=ctx.runtime.registry,
+        policy=ctx.runtime.endpoint_policy,
     )
     return safe_connection(value)
 
 
-async def configure_connection_access(ctx: ToolContext, *, connection_id: str, expected_version: str) -> AccessSetup:
-    """Request trusted credential/configuration setup for this exact connection version. This Host does not collect secrets in model arguments or start browser OAuth on the Agent's behalf."""
-    runtime = ctx.runtime
-    # An empty update performs the original write authorization and version check,
-    # without changing state or inventing a parallel permission implementation.
-    current = await service.update_connection(
-        runtime.storage,
-        ctx.actor,
-        ctx.workspace_id,
-        connection_id,
-        ConnectionUpdate(),
-        if_match=expected_version,
-        keys=runtime.keys,
-        registry=runtime.registry,
-        policy=runtime.endpoint_policy,
-    )
-    return AccessSetup(connection_id=current.id, version=current.version)
-
-
 async def test_connection(ctx: ToolContext, *, connection_id: str) -> ConnectionTest:
     """Test the configured connection. External calls have effects; unknown results must be reconciled, never blindly replayed."""
-    runtime = ctx.runtime
     return await discovery.test_connection(
-        runtime.storage,
+        ctx.runtime.storage,
         ctx.actor,
         ctx.workspace_id,
         connection_id,
-        redis=runtime.redis,
-        keys=runtime.keys,
-        registry=runtime.registry,
-        policy=runtime.endpoint_policy,
-        settings=runtime.settings.providers,
+        redis=ctx.runtime.redis,
+        keys=ctx.runtime.keys,
+        registry=ctx.runtime.registry,
+        policy=ctx.runtime.endpoint_policy,
+        settings=ctx.runtime.settings.providers,
     )
 
 
 async def revoke_connection(ctx: ToolContext, *, connection_id: str, expected_version: str) -> SafeConnection:
     """Revoke access using the observed connection version and report local and remote outcomes."""
-    runtime = ctx.runtime
     result = await authorization.revoke_connection(
-        runtime.storage,
+        ctx.runtime.storage,
         ctx.actor,
         ctx.workspace_id,
         connection_id,
         if_match=expected_version,
-        keys=runtime.keys,
-        registry=runtime.registry,
-        policy=runtime.endpoint_policy,
-        settings=runtime.settings,
+        keys=ctx.runtime.keys,
+        registry=ctx.runtime.registry,
+        policy=ctx.runtime.endpoint_policy,
+        settings=ctx.runtime.settings,
     )
     return safe_connection(result)
 
 
 async def list_connection_tools(ctx: ToolContext, *, connection_id: str) -> ToolPage:
     """Discover the configured connection's tools under its current authorization."""
-    runtime = ctx.runtime
     return await discovery.list_tools(
-        runtime.storage,
+        ctx.runtime.storage,
         ctx.actor,
         ctx.workspace_id,
         connection_id,
-        redis=runtime.redis,
-        keys=runtime.keys,
-        registry=runtime.registry,
-        policy=runtime.endpoint_policy,
-        settings=runtime.settings.providers,
+        redis=ctx.runtime.redis,
+        keys=ctx.runtime.keys,
+        registry=ctx.runtime.registry,
+        policy=ctx.runtime.endpoint_policy,
+        settings=ctx.runtime.settings.providers,
     )
 
 
@@ -210,7 +186,6 @@ TOOLS = (
     definition(get_connection, group="connections", effect="read"),
     definition(list_connections, group="connections", effect="read"),
     definition(update_connection, group="connections", effect="write"),
-    definition(configure_connection_access, group="connections", effect="write"),
     definition(test_connection, group="connections", effect="write"),
     definition(revoke_connection, group="connections", effect="write"),
     definition(list_connection_tools, group="connections", effect="read"),

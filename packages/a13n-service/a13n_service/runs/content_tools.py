@@ -116,7 +116,7 @@ def _location(ctx: ToolContext) -> SecretLocation:
     return SecretLocation(None, "content_tools", "reference_v1", f"{ctx.workspace_id}/{ctx.origin or ctx.actor.id}")
 
 
-def encode_reference(ctx: ToolContext, source: Source, version: str, offset: int = 0) -> str:
+def encode_reference(ctx: ToolContext, source: Source, version: str | None, offset: int = 0) -> str:
     value = [source.model_dump(mode="json"), version, offset]
     protected = ctx.runtime.keys.protect(json.dumps(value, separators=(",", ":")).encode(), _location(ctx))
     return base64.urlsafe_b64encode(protected.model_dump_json().encode()).decode()
@@ -127,7 +127,7 @@ def value_reference(ctx: ToolContext, source: Source, value: object) -> str:
     return encode_reference(ctx, source, version)
 
 
-def unpack(ctx: ToolContext, ref: str) -> tuple[Source, str, int]:
+def unpack(ctx: ToolContext, ref: str) -> tuple[Source, str | None, int]:
     try:
         if len(ref) > 2048:
             raise ValueError("length")
@@ -138,8 +138,10 @@ def unpack(ctx: ToolContext, ref: str) -> tuple[Source, str, int]:
         source = SOURCE.validate_python(values[0])
         version, offset = values[1:]
         if (
-            not isinstance(version, str)
-            or len(version) != 64
+            not (
+                (isinstance(version, str) and len(version) == 64)
+                or (version is None and isinstance(source, ItemSource) and offset == 0)
+            )
             or not isinstance(offset, int)
             or isinstance(offset, bool)
             or offset < 0
@@ -173,7 +175,7 @@ async def item_value(ctx: ToolContext, run_id: str, item: Item) -> dict[str, obj
 
 
 async def _read(
-    ctx: ToolContext, source: Source, *, version: str, offset: int, limit: int, query: str | None
+    ctx: ToolContext, source: Source, *, version: str | None, offset: int, limit: int, query: str | None
 ) -> reads.TextRead:
     runtime, actor, workspace_id = ctx.runtime, ctx.actor, ctx.workspace_id
     if isinstance(source, ItemSource):
@@ -241,14 +243,15 @@ async def _read(
 async def read_content(ctx: ToolContext, *, reference: Handle, limit: reads.TextLimit = 4000) -> ContentRead:
     """Read bounded content from a parent result or continue it without reconstructing source paths or offsets.
 
-    Content changes fail explicitly. A handle conveys no authority; current source access is checked on every call.
+    Item discovery references bind their content version on the first read. Returned references and continuations
+    retain that version; content changes then fail explicitly. Current source access is checked on every call.
     """
     source, version, offset = unpack(ctx, reference)
     result = await _read(ctx, source, version=version, offset=offset, limit=limit, query=None)
     return ContentRead(
-        reference=encode_reference(ctx, source, version),
+        reference=encode_reference(ctx, source, result.version),
         fragment=result,
-        continuation=encode_reference(ctx, source, version, result.next_offset)
+        continuation=encode_reference(ctx, source, result.version, result.next_offset)
         if result.next_offset is not None
         else None,
     )
@@ -261,13 +264,17 @@ async def search_content(
     query: Annotated[str, Field(min_length=1, max_length=256)],
     limit: reads.TextLimit = 4000,
 ) -> ContentRead:
-    """Find the next literal match in the exact content version named by a parent or continuation reference."""
+    """Find the next literal match in bounded content, starting at the reference's position.
+
+    Item discovery references bind their version on this first read. Reuse the returned reference or continuation
+    to keep that version; changed content fails explicitly. Current source access is checked on every call.
+    """
     source, version, offset = unpack(ctx, reference)
     result = await _read(ctx, source, version=version, offset=offset, limit=limit, query=query)
     return ContentRead(
-        reference=encode_reference(ctx, source, version),
+        reference=encode_reference(ctx, source, result.version),
         fragment=result,
-        continuation=encode_reference(ctx, source, version, result.next_offset)
+        continuation=encode_reference(ctx, source, result.version, result.next_offset)
         if result.next_offset is not None
         else None,
     )

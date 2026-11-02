@@ -11,6 +11,7 @@ from typing import Annotated, Literal, Self
 from a13n_harness.capabilities import ToolReviewConfig
 from a13n_harness.compaction import BackgroundCompactionPolicy
 from a13n_harness.tools.client import ClientToolDefinition
+from a13n_harness.tools.identity import source_tool_id, source_tool_prefix
 from a13n_harness.tools.tool_search import ToolSearchConfiguration, validate_group
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints, ValidationInfo, model_validator
 from pydantic.experimental.missing_sentinel import MISSING
@@ -19,9 +20,16 @@ from pydantic_ai.usage import UsageLimits
 from a13n_service.execution_policy import ExecutionOverride
 from a13n_service.infra.ids import Key, ObjectId
 from a13n_service.infra.labels import Labels
+from a13n_service.infra.platform import PLATFORM_TOOLS
 from a13n_service.providers.model_settings import JsonSettings
 from a13n_service.resources.agents.tables import AgentSource, PresetKind
-from a13n_service.resources.agents.toolsets import ToolsetOverrides, Toolsets, default_toolsets, platform_tools
+from a13n_service.resources.agents.toolsets import (
+    PLATFORM_SOURCE,
+    ToolsetOverrides,
+    Toolsets,
+    default_toolsets,
+    platform_tools,
+)
 from a13n_service.resources.builtin_skills import BuiltinSkillName
 from a13n_service.resources.connections.schemas import ConnectionSelection
 from a13n_service.resources.memories.schemas import MemoryMounts, SessionMemorySettings
@@ -242,6 +250,20 @@ class AgentConfig(_Frozen):
         ):
             if len(values) != len(set(values)):
                 raise ValueError(f"{label} must be unique")
+        if self.reviewer is not None and not (info.context and info.context.get("preserve_toolsets")):
+            prefix = source_tool_prefix(PLATFORM_SOURCE, kind="mcp")
+            identities = {source_tool_id(PLATFORM_SOURCE, tool.key, kind="mcp") for tool in PLATFORM_TOOLS}
+            connection_prefixes = {
+                source_tool_prefix(selection.connection_id, kind="mcp") for selection in self.connection_tools
+            }
+            for selector in self.reviewer.rules:
+                if not selector.startswith(("mcp/", "mcp.")) or selector == "mcp/*":
+                    continue
+                if selector == prefix + "*" or selector in identities:
+                    continue
+                if any(selector.startswith(source) and selector != source for source in connection_prefixes):
+                    continue
+                raise ValueError("Reviewer rule references an unavailable MCP tool identity")
         if self.tool_search is not None:
             connections = {item.connection_id for item in self.connection_tools}
             plugins = {item.instance_name for item in self.plugins}

@@ -17,7 +17,8 @@ pytestmark = pytest.mark.anyio
 
 
 def test_connections_have_no_secret_input_or_implicit_provider_admission():
-    assert len(tools.TOOLS) == 11  # Ten existing operations plus explicit safe setup.
+    assert len(tools.TOOLS) == 10
+    assert "configure_connection_access" not in {tool.name for tool in tools.TOOLS}
     assert len(CONNECTOR_TOOLS) == 5 and len(PROVIDER_TOOLS) == 16
     for contract in (*tools.TOOLS, *CONNECTOR_TOOLS, *PROVIDER_TOOLS):
         schema = contract.inputs.model_json_schema()
@@ -68,11 +69,6 @@ async def test_nonsecret_edits_preserve_credentials_configuration_and_exact_vers
             body=ConnectionChanges(enabled=False),
         )
     assert stale.value.code == "precondition_failed"
-    setup = await tools.configure_connection_access(
-        ctx, connection_id=changed.id, expected_version=etag(changed.id, changed.version)
-    )
-    assert setup.status == "setup_required" and setup.version == changed.version
-    assert "private-credential" not in setup.model_dump_json()
     current = await tools.get_connection(ctx, connection_id=changed.id)
     assert current.version == changed.version
     changed_tools = await tools.update_connection(

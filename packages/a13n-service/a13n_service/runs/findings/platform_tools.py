@@ -19,20 +19,16 @@ type ToolContext = PlatformContext[Runtime]
 
 
 async def list_finding_analyses(ctx: ToolContext, *, limit: PageLimit = 20, cursor: str | None = None) -> AnalysisPage:
-    runtime = ctx.runtime
-    workspace_id = ctx.workspace_id
-    actor = ctx.actor
-    return await analysis.list_analyses(runtime, actor, workspace_id, limit=limit, cursor=cursor)
+    """List recent finding-analysis runs and their selected trace scope; continue with the returned cursor."""
+    return await analysis.list_analyses(ctx.runtime, ctx.actor, ctx.workspace_id, limit=limit, cursor=cursor)
 
 
 async def create_finding(ctx: ToolContext, *, body: FindingCreate) -> Finding:
     """Record an unconfirmed finding with evidence and a suggestion; a stable source_key makes a retry safe.
     A Run's own submission names that Run as its source; an analysis cites only selected traces it has read."""
-    runtime = ctx.runtime
-    workspace_id = ctx.workspace_id
-    actor = ctx.actor
-    origin = ctx.origin
-    return await service.create_finding(runtime.storage, actor, workspace_id, body, source_run_id=origin)
+    return await service.create_finding(
+        ctx.runtime.storage, ctx.actor, ctx.workspace_id, body, source_run_id=ctx.origin
+    )
 
 
 async def list_findings(
@@ -46,13 +42,11 @@ async def list_findings(
     limit: PageLimit = 50,
     cursor: str | None = None,
 ) -> FindingPage:
-    runtime = ctx.runtime
-    workspace_id = ctx.workspace_id
-    actor = ctx.actor
+    """Find recorded findings by agent, category, severity, assessment or closed state; continue with the returned cursor."""
     return await service.list_findings(
-        runtime.storage,
-        actor,
-        workspace_id,
+        ctx.runtime.storage,
+        ctx.actor,
+        ctx.workspace_id,
         agent_id=agent_id,
         category=category,
         severity=severity,
@@ -64,10 +58,8 @@ async def list_findings(
 
 
 async def get_finding(ctx: ToolContext, *, finding_id: str) -> Finding:
-    runtime = ctx.runtime
-    workspace_id = ctx.workspace_id
-    actor = ctx.actor
-    return await service.get_finding(runtime.storage, actor, workspace_id, finding_id)
+    """Read one recorded finding, including its evidence, suggestion and assessment."""
+    return await service.get_finding(ctx.runtime.storage, ctx.actor, ctx.workspace_id, finding_id)
 
 
 TOOLS = (

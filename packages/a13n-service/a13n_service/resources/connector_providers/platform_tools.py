@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from pydantic import Field as Query
+from pydantic import Field
 
 from a13n_service.infra import reads
 from a13n_service.infra.http import PageLimit
@@ -20,63 +20,57 @@ async def list_connector_apps(
     ctx: ToolContext,
     *,
     provider_id: str,
-    query: Annotated[str | None, Query(max_length=128)] = None,
+    query: Annotated[str | None, Field(max_length=128)] = None,
     limit: PageLimit = 50,
     cursor: str | None = None,
     refresh: bool = False,
 ) -> ConnectorAppPage:
-    runtime = ctx.runtime
-    actor = ctx.actor
-    workspace_id = ctx.workspace_id
+    """Search applications supported by a connector provider; refresh explicitly when the cached catalog is insufficient."""
     return await catalog.list_apps(
-        runtime.storage,
-        actor,
-        workspace_id,
+        ctx.runtime.storage,
+        ctx.actor,
+        ctx.workspace_id,
         provider_id,
         query=query,
         limit=limit,
         cursor=cursor,
         refresh=refresh,
-        redis=runtime.redis,
-        keys=runtime.keys,
-        registry=runtime.registry,
-        policy=runtime.endpoint_policy,
-        settings=runtime.settings.providers,
+        redis=ctx.runtime.redis,
+        keys=ctx.runtime.keys,
+        registry=ctx.runtime.registry,
+        policy=ctx.runtime.endpoint_policy,
+        settings=ctx.runtime.settings.providers,
     )
 
 
 async def get_connector_app(ctx: ToolContext, *, provider_id: str, app: str) -> ConnectorApp:
-    runtime = ctx.runtime
-    actor = ctx.actor
-    workspace_id = ctx.workspace_id
+    """Read one connector application and its required setup fields; perform confidential setup through trusted configuration."""
     return await catalog.get_app(
-        runtime.storage,
-        actor,
-        workspace_id,
+        ctx.runtime.storage,
+        ctx.actor,
+        ctx.workspace_id,
         provider_id,
         app,
-        keys=runtime.keys,
-        registry=runtime.registry,
-        policy=runtime.endpoint_policy,
-        settings=runtime.settings.providers,
+        keys=ctx.runtime.keys,
+        registry=ctx.runtime.registry,
+        policy=ctx.runtime.endpoint_policy,
+        settings=ctx.runtime.settings.providers,
     )
 
 
 async def list_connector_actions(ctx: ToolContext, *, provider_id: str, app: str) -> ConnectorActionPage:
-    runtime = ctx.runtime
-    actor = ctx.actor
-    workspace_id = ctx.workspace_id
+    """List actions available for one connector application; use exact action names when configuring a connection."""
     return await catalog.list_actions(
-        runtime.storage,
-        actor,
-        workspace_id,
+        ctx.runtime.storage,
+        ctx.actor,
+        ctx.workspace_id,
         provider_id,
         app,
-        redis=runtime.redis,
-        keys=runtime.keys,
-        registry=runtime.registry,
-        policy=runtime.endpoint_policy,
-        settings=runtime.settings.providers,
+        redis=ctx.runtime.redis,
+        keys=ctx.runtime.keys,
+        registry=ctx.runtime.registry,
+        policy=ctx.runtime.endpoint_policy,
+        settings=ctx.runtime.settings.providers,
     )
 
 
@@ -106,7 +100,7 @@ async def get_connector_action_definition(
     provider_id: str,
     app: str,
     name: reads.Names,
-    offset: Annotated[int | None, Query(ge=0)] = None,
+    offset: Annotated[int | None, Field(ge=0)] = None,
     limit: reads.TextLimit = 4000,
     version: reads.Version = None,
     query: reads.Search = None,

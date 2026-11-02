@@ -20,19 +20,15 @@ async def list_tool_executions(
     limit: PageLimit = 50,
     cursor: str | None = None,
 ) -> views.ExecutionPage:
-    runtime = ctx.runtime
-    actor = ctx.actor
-    workspace_id = ctx.workspace_id
+    """List durable tool executions in a thread, optionally restricted to one run or active state."""
     return await views.list_executions(
-        runtime, actor, workspace_id, thread_id, run_id=run_id, active=active, limit=limit, cursor=cursor
+        ctx.runtime, ctx.actor, ctx.workspace_id, thread_id, run_id=run_id, active=active, limit=limit, cursor=cursor
     )
 
 
 async def get_tool_execution(ctx: ToolContext, *, thread_id: str, execution_id: str) -> views.ExecutionView:
-    runtime = ctx.runtime
-    actor = ctx.actor
-    workspace_id = ctx.workspace_id
-    return await views.get_execution(runtime, actor, workspace_id, thread_id, execution_id)
+    """Inspect a durable tool execution and its current status; use get_tool_execution_result for retained output."""
+    return await views.get_execution(ctx.runtime, ctx.actor, ctx.workspace_id, thread_id, execution_id)
 
 
 async def get_tool_execution_result(

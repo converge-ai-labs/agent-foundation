@@ -3,7 +3,7 @@
     "effect": "write",
     "group": "agents",
     "key": "archive_agent",
-    "summary": "Archive agent"
+    "summary": "Archive the Agent at the observed version, preventing new execution."
   },
   {
     "effect": "read",
@@ -21,19 +21,19 @@
     "effect": "write",
     "group": "agents",
     "key": "duplicate_agent",
-    "summary": "Duplicate agent"
+    "summary": "Create a custom Agent from a revalidated source revision, retaining its configuration."
   },
   {
     "effect": "read",
     "group": "agents",
     "key": "get_agent",
-    "summary": "Get agent"
+    "summary": "Read Agent metadata, its current default revision identity, and version."
   },
   {
     "effect": "read",
     "group": "agents",
     "key": "get_agent_revision",
-    "summary": "Get agent revision"
+    "summary": "Read an immutable revision or a bounded configuration section; historical selections remain visible."
   },
   {
     "effect": "read",
@@ -45,7 +45,7 @@
     "effect": "read",
     "group": "agents",
     "key": "list_agent_revisions",
-    "summary": "List agent revisions"
+    "summary": "List immutable Agent revisions with compact summaries by default."
   },
   {
     "effect": "read",
@@ -57,7 +57,7 @@
     "effect": "read",
     "group": "agents",
     "key": "list_toolsets",
-    "summary": "List toolsets"
+    "summary": "Read the complete deployment toolset catalog and supported configuration schemas."
   },
   {
     "effect": "read",
@@ -69,25 +69,25 @@
     "effect": "write",
     "group": "agents",
     "key": "set_default_agent_revision",
-    "summary": "Set default agent revision"
+    "summary": "Revalidate and select a revision as the Agent default at the observed version."
   },
   {
     "effect": "write",
     "group": "agents",
     "key": "unarchive_agent",
-    "summary": "Unarchive agent"
+    "summary": "Restore an archived Agent at the observed version."
   },
   {
     "effect": "write",
     "group": "agents",
     "key": "update_agent_configuration",
-    "summary": "Publish only specified configuration changes against the version read.\n\nOmitted fields preserve the base revision, including exact Skill pins. Supplied\ncollections and structured sections replace those sections whole. Null only\nclears nullable fields. Related changes validate and publish atomically.\nThe default revision is the base unless a historical base is explicitly named."
+    "summary": "Publish only specified configuration changes against the version read.\n\nOmitted fields preserve the base revision, including exact Skill pins. Supplied\ncollections and structured sections replace those sections whole. Null only\nclears nullable fields. Related changes validate and publish atomically.\nThe default revision is the base unless a historical base is explicitly named.\nSupplying base_revision_id requires an explicit make_default choice; otherwise\nmake_default defaults to true."
   },
   {
     "effect": "write",
     "group": "agents",
     "key": "update_agent_metadata",
-    "summary": "Update agent metadata"
+    "summary": "Change only supplied name, description, or labels at the observed Agent version."
   },
   {
     "effect": "read",
@@ -105,13 +105,13 @@
     "effect": "read",
     "group": "models",
     "key": "get_media_defaults",
-    "summary": "Get media defaults"
+    "summary": "Read the deployment media-processing defaults available when authoring Agent input and output behavior."
   },
   {
     "effect": "read",
     "group": "models",
     "key": "get_model",
-    "summary": "Get model"
+    "summary": "Read a configured model by key, including its settings, provider and version before editing."
   },
   {
     "effect": "read",
@@ -123,19 +123,13 @@
     "effect": "read",
     "group": "models",
     "key": "list_models",
-    "summary": "List models"
+    "summary": "List workspace model configurations with pagination; use the returned key when selecting an Agent model."
   },
   {
     "effect": "write",
     "group": "models",
     "key": "update_model",
     "summary": "Change specified model fields against the version read; preserve all omitted settings.\n\nSupplied native settings, pricing, characteristics, headers and raw-body sections\nreplace those sections whole. Provider/API validation remains authoritative."
-  },
-  {
-    "effect": "write",
-    "group": "connections",
-    "key": "configure_connection_access",
-    "summary": "Request trusted credential/configuration setup for this exact connection version. This Host does not collect secrets in model arguments or start browser OAuth on the Agent's behalf."
   },
   {
     "effect": "write",
@@ -165,7 +159,7 @@
     "effect": "read",
     "group": "connections",
     "key": "get_connector_app",
-    "summary": "Get connector app"
+    "summary": "Read one connector application and its required setup fields; perform confidential setup through trusted configuration."
   },
   {
     "effect": "read",
@@ -183,13 +177,13 @@
     "effect": "read",
     "group": "connections",
     "key": "list_connector_actions",
-    "summary": "List connector actions"
+    "summary": "List actions available for one connector application; use exact action names when configuring a connection."
   },
   {
     "effect": "read",
     "group": "connections",
     "key": "list_connector_apps",
-    "summary": "List connector apps"
+    "summary": "Search applications supported by a connector provider; refresh explicitly when the cached catalog is insufficient."
   },
   {
     "effect": "read",
@@ -237,25 +231,25 @@
     "effect": "write",
     "group": "skills",
     "key": "create_skill",
-    "summary": "Create skill"
+    "summary": "Import a validated GitHub or uploaded Skill package and publish its initial immutable revision atomically."
   },
   {
     "effect": "read",
     "group": "skills",
     "key": "get_skill",
-    "summary": "Get skill"
+    "summary": "Read Skill metadata, its default revision and resource version before changing metadata or source."
   },
   {
     "effect": "read",
     "group": "skills",
     "key": "get_skill_revision",
-    "summary": "Get skill revision"
+    "summary": "Read the source, manifest and digest of one immutable Skill revision without changing its default selection."
   },
   {
     "effect": "read",
     "group": "skills",
     "key": "list_skill_revisions",
-    "summary": "List skill revisions"
+    "summary": "List immutable Skill revisions with pagination; use revision IDs to preserve exact Agent pins."
   },
   {
     "effect": "read",
@@ -267,13 +261,13 @@
     "effect": "write",
     "group": "skills",
     "key": "set_default_skill_revision",
-    "summary": "Set default skill revision"
+    "summary": "Select an existing Skill revision as default at the observed Skill version; existing Agent revision pins remain unchanged."
   },
   {
     "effect": "write",
     "group": "skills",
     "key": "unarchive_skill",
-    "summary": "Unarchive skill"
+    "summary": "Restore a Skill at the observed version so it can accept new revisions and new Agent pins."
   },
   {
     "effect": "write",
@@ -303,13 +297,13 @@
     "effect": "read",
     "group": "environment_templates",
     "key": "get_environment_template",
-    "summary": "Get environment template"
+    "summary": "Read a template and its provider recipe before editing; preserve its version for conditional changes."
   },
   {
     "effect": "read",
     "group": "environment_templates",
     "key": "list_environment_templates",
-    "summary": "List environment templates"
+    "summary": "List reusable environment templates and their current versions; filter by labels before selecting one."
   },
   {
     "effect": "write",
@@ -423,7 +417,7 @@
     "effect": "read",
     "group": "execution",
     "key": "get_finding",
-    "summary": "Get finding"
+    "summary": "Read one recorded finding, including its evidence, suggestion and assessment."
   },
   {
     "effect": "read",
@@ -447,7 +441,7 @@
     "effect": "read",
     "group": "execution",
     "key": "get_run_attempt",
-    "summary": "Get run attempt"
+    "summary": "Read one attempt belonging to the selected run; use list_attempt_spans for its observations."
   },
   {
     "effect": "read",
@@ -465,19 +459,19 @@
     "effect": "read",
     "group": "execution",
     "key": "get_session",
-    "summary": "Get session"
+    "summary": "Read one session and its navigation metadata in the current workspace."
   },
   {
     "effect": "read",
     "group": "execution",
     "key": "get_thread",
-    "summary": "Get thread"
+    "summary": "Read one thread and its current execution and lineage metadata."
   },
   {
     "effect": "read",
     "group": "execution",
     "key": "get_tool_execution",
-    "summary": "Get tool execution"
+    "summary": "Inspect a durable tool execution and its current status; use get_tool_execution_result for retained output."
   },
   {
     "effect": "read",
@@ -513,37 +507,37 @@
     "effect": "read",
     "group": "execution",
     "key": "list_finding_analyses",
-    "summary": "List finding analyses"
+    "summary": "List recent finding-analysis runs and their selected trace scope; continue with the returned cursor."
   },
   {
     "effect": "read",
     "group": "execution",
     "key": "list_findings",
-    "summary": "List findings"
+    "summary": "Find recorded findings by agent, category, severity, assessment or closed state; continue with the returned cursor."
   },
   {
     "effect": "read",
     "group": "execution",
     "key": "list_inbox",
-    "summary": "In inbox order."
+    "summary": "List compact inbox entries in inbox order, filtered by status or kind.\n\nUse get_inbox_entry for payload references and retain the returned cursor for the next page."
   },
   {
     "effect": "read",
     "group": "execution",
     "key": "list_run_attempts",
-    "summary": "List run attempts"
+    "summary": "List execution attempts for a run, including their status and worker ownership metadata."
   },
   {
     "effect": "read",
     "group": "execution",
     "key": "list_run_items",
-    "summary": "Discover a bounded ordinal window and ready-to-use content handles. Continue next_before/next_after even for empty filtered windows."
+    "summary": "Discover compact item summaries and lazy content references in a bounded ordinal window.\n\nRead or search a returned reference to bind its current content version, then use the returned continuation.\nContinue next_before/next_after with the same filters even for empty filtered windows."
   },
   {
     "effect": "read",
     "group": "execution",
     "key": "list_runs",
-    "summary": "List runs"
+    "summary": "Find runs by agent, thread, status and time filters; continue with the returned cursor."
   },
   {
     "effect": "read",
@@ -555,7 +549,7 @@
     "effect": "read",
     "group": "execution",
     "key": "list_sessions",
-    "summary": "List sessions"
+    "summary": "List accessible sessions with the supplied filters and cursor; use get_session for a selected session."
   },
   {
     "effect": "read",
@@ -567,19 +561,19 @@
     "effect": "read",
     "group": "execution",
     "key": "list_threads",
-    "summary": "List threads"
+    "summary": "Find threads by session, schedule occurrence, origin, text or labels; continue with the returned cursor."
   },
   {
     "effect": "read",
     "group": "execution",
     "key": "list_tool_executions",
-    "summary": "List tool executions"
+    "summary": "List durable tool executions in a thread, optionally restricted to one run or active state."
   },
   {
     "effect": "read",
     "group": "execution",
     "key": "list_trace_spans",
-    "summary": "The trace's spans."
+    "summary": "List compact spans within a selected trace, optionally filtered by status, kind or tool name.\n\nContinue with the returned cursor; use get_trace_span for content references to a selected span."
   },
   {
     "effect": "read",
@@ -591,13 +585,13 @@
     "effect": "read",
     "group": "execution",
     "key": "read_content",
-    "summary": "Read bounded content from a parent result or continue it without reconstructing source paths or offsets.\n\nContent changes fail explicitly. A handle conveys no authority; current source access is checked on every call."
+    "summary": "Read bounded content from a parent result or continue it without reconstructing source paths or offsets.\n\nItem discovery references bind their content version on the first read. Returned references and continuations\nretain that version; content changes then fail explicitly. Current source access is checked on every call."
   },
   {
     "effect": "read",
     "group": "execution",
     "key": "search_content",
-    "summary": "Find the next literal match in the exact content version named by a parent or continuation reference."
+    "summary": "Find the next literal match in bounded content, starting at the reference's position.\n\nItem discovery references bind their version on this first read. Reuse the returned reference or continuation\nto keep that version; changed content fails explicitly. Current source access is checked on every call."
   },
   {
     "effect": "read",

@@ -12,6 +12,7 @@ from a13n_service.infra.audit import record
 from a13n_service.infra.db import advisory_lock, after_commit, now, transaction
 from a13n_service.infra.errors import IDEMPOTENCY_KEY_REUSED, RETRY_AFTER, ServiceError, conflict
 from a13n_service.infra.http import require_match
+from a13n_service.resources.agents import stored
 from a13n_service.runs.accept import accept
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schedules import lifecycle, queries, service, webhooks
@@ -48,7 +49,7 @@ async def manual(
         if found is not None:
             if found.request_digest != digest:
                 raise conflict("request", request_key, IDEMPOTENCY_KEY_REUSED)
-            return Occurrence.model_validate(found), False
+            return stored.read(Occurrence, found), False
         require_match(if_match, row.id, row.version)
         service.require_editable(row)
         if row.pending_occurrence_id is not None or await queries.has_unfinished(session, row):
@@ -76,7 +77,7 @@ async def manual(
             details={"session_id": row.session_id, "occurrence_id": item.id},
         )
         await session.flush()
-        return Occurrence.model_validate(item), True
+        return stored.read(Occurrence, item), True
 
 
 async def _log(details: dict[str, object]) -> None:
@@ -138,7 +139,9 @@ async def process(runtime: Runtime, schedule_id: str) -> None:
             actor = await principal_for(session, runtime.access, item.principal_id, confinement=scope)
             await require_active_workspace(session, row.workspace_id)
             authorize(actor, scope, "run", authority=authority)
-            invocation = OccurrenceSnapshot.model_validate(item.snapshot).invocation
+            invocation = stored.require(
+                OccurrenceSnapshot, item.snapshot, kind="schedule_occurrence", id=item.id
+            ).invocation
             if row.thread_id is None:
                 thread, source = await prepare_thread(
                     session,

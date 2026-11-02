@@ -13,6 +13,7 @@ from a13n_service.infra import cursors, reads
 from a13n_service.infra.db import Storage, now, short_session, transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.http import require_match
+from a13n_service.resources.agents import stored
 from a13n_service.runs import inbox, read_views
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import (
@@ -60,17 +61,14 @@ async def list_entries(
             query = query.where(InboxEntryRow.position > position[0])
         rows = (await session.scalars(query.order_by(InboxEntryRow.position).limit(limit + 1))).all()
         if view == "compact":
-            values = [
-                read_views.entry_summary(EntryView.model_validate(row, context={"preserve_toolsets": True}))
-                for row in rows[:limit]
-            ]
+            values = [read_views.entry_summary(stored.read(EntryView, row)) for row in rows[:limit]]
             count = reads.fit_count(values)
             return read_views.EntrySummaryPage(
                 items=values[:count],
                 next_cursor=cursors.encode("inbox", owner, rows[count - 1].position) if len(rows) > count else None,
             )
         return EntryPage(
-            items=[EntryView.model_validate(row, context={"preserve_toolsets": True}) for row in rows[:limit]],
+            items=[stored.read(EntryView, row) for row in rows[:limit]],
             next_cursor=cursors.encode("inbox", owner, rows[limit - 1].position) if len(rows) > limit else None,
         )
 
@@ -79,9 +77,7 @@ async def get_entry(storage: Storage, actor: Principal, workspace_id: str, threa
     async with short_session(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "read")
         thread = await get_thread(session, scope.workspace_id, thread_id)
-        return EntryView.model_validate(
-            await inbox.get_entry(session, thread, entry_id), context={"preserve_toolsets": True}
-        )
+        return stored.read(EntryView, await inbox.get_entry(session, thread, entry_id))
 
 
 async def edit(

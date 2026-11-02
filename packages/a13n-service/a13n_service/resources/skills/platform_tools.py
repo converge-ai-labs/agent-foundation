@@ -2,8 +2,7 @@
 
 from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict
-from pydantic import Field as Query
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic.experimental.missing_sentinel import MISSING
 
 from a13n_service.infra.http import PageLimit
@@ -42,31 +41,29 @@ class SkillMetadata(BaseModel):
 
 
 async def create_skill(ctx: ToolContext, *, body: SkillCreate) -> Skill:
+    """Import a validated GitHub or uploaded Skill package and publish its initial immutable revision atomically."""
     request = ctx.request
-    workspace_id = ctx.workspace_id
-    actor = ctx.actor
-    runtime = ctx.runtime
-    github = await package_importer(request, actor, runtime, body.source)
-    result = await service.create_skill(runtime.storage, runtime.objects, github, actor, workspace_id, body)
-    return result
+    github = await package_importer(request, ctx.actor, ctx.runtime, body.source)
+    return await service.create_skill(
+        ctx.runtime.storage, ctx.runtime.objects, github, ctx.actor, ctx.workspace_id, body
+    )
 
 
 async def validate_skill_source(ctx: ToolContext, *, body: SkillValidate) -> SkillManifest:
     """The manifest the package would give a new skill or revision, checked as creation checks it; nothing is
     stored."""
     request = ctx.request
-    workspace_id = ctx.workspace_id
-    actor = ctx.actor
-    runtime = ctx.runtime
-    github = await package_importer(request, actor, runtime, body.source)
-    return await service.validate_package(runtime.storage, runtime.objects, github, actor, workspace_id, body.source)
+    github = await package_importer(request, ctx.actor, ctx.runtime, body.source)
+    return await service.validate_package(
+        ctx.runtime.storage, ctx.runtime.objects, github, ctx.actor, ctx.workspace_id, body.source
+    )
 
 
 async def list_skills(
     ctx: ToolContext,
     *,
-    label: Annotated[list[str] | None, Query()] = None,
-    q: Annotated[Search | None, Query()] = None,
+    label: Annotated[list[str] | None, Field()] = None,
+    q: Annotated[Search | None, Field()] = None,
     source: SourceKind | None = None,
     archived: bool | None = None,
     limit: PageLimit = 50,
@@ -74,13 +71,10 @@ async def list_skills(
 ) -> SkillPage:
     """Skills of the workspace. `q` matches the name or description, ignoring case; `source` the kind of
     source the default revision was read from; `archived` keeps only archived skills, or only open ones."""
-    workspace_id = ctx.workspace_id
-    actor = ctx.actor
-    runtime = ctx.runtime
     return await service.list_skills(
-        runtime.storage,
-        actor,
-        workspace_id,
+        ctx.runtime.storage,
+        ctx.actor,
+        ctx.workspace_id,
         labels=label or [],
         q=q,
         source=source,
@@ -91,49 +85,36 @@ async def list_skills(
 
 
 async def get_skill(ctx: ToolContext, *, skill_id: str) -> Skill:
-    workspace_id = ctx.workspace_id
-    actor = ctx.actor
-    runtime = ctx.runtime
-    return await service.get_skill(runtime.storage, actor, workspace_id, skill_id)
+    """Read Skill metadata, its default revision and resource version before changing metadata or source."""
+    return await service.get_skill(ctx.runtime.storage, ctx.actor, ctx.workspace_id, skill_id)
 
 
 async def update_skill_metadata(
     ctx: ToolContext, *, skill_id: str, body: SkillMetadata, expected_version: str
 ) -> Skill:
     """Name, description and labels; an archived skill changes only by unarchiving."""
-    workspace_id = ctx.workspace_id
-    actor = ctx.actor
-    runtime = ctx.runtime
-    result = await service.update_skill(
-        runtime.storage,
-        actor,
-        workspace_id,
+    return await service.update_skill(
+        ctx.runtime.storage,
+        ctx.actor,
+        ctx.workspace_id,
         skill_id,
         SkillUpdate.model_validate(body.model_dump(exclude_unset=True)),
         if_match=expected_version,
     )
-    return result
 
 
 async def archive_skill(ctx: ToolContext, *, skill_id: str, expected_version: str) -> Skill:
     """Archived skills keep their revisions readable and pinned; they refuse new revisions and new pins."""
-    workspace_id = ctx.workspace_id
-    actor = ctx.actor
-    runtime = ctx.runtime
-    result = await service.set_archived(
-        runtime.storage, actor, workspace_id, skill_id, archived=True, if_match=expected_version
+    return await service.set_archived(
+        ctx.runtime.storage, ctx.actor, ctx.workspace_id, skill_id, archived=True, if_match=expected_version
     )
-    return result
 
 
 async def unarchive_skill(ctx: ToolContext, *, skill_id: str, expected_version: str) -> Skill:
-    workspace_id = ctx.workspace_id
-    actor = ctx.actor
-    runtime = ctx.runtime
-    result = await service.set_archived(
-        runtime.storage, actor, workspace_id, skill_id, archived=False, if_match=expected_version
+    """Restore a Skill at the observed version so it can accept new revisions and new Agent pins."""
+    return await service.set_archived(
+        ctx.runtime.storage, ctx.actor, ctx.workspace_id, skill_id, archived=False, if_match=expected_version
     )
-    return result
 
 
 async def update_skill_source(
@@ -141,41 +122,40 @@ async def update_skill_source(
 ) -> service.SkillSourceChange:
     """A package whose manifest equals the default revision's creates nothing and returns that revision."""
     request = ctx.request
-    workspace_id = ctx.workspace_id
-    actor = ctx.actor
-    runtime = ctx.runtime
-    github = await package_importer(request, actor, runtime, body.source)
+    github = await package_importer(request, ctx.actor, ctx.runtime, body.source)
     return await service.change_source(
-        runtime.storage, runtime.objects, github, actor, workspace_id, skill_id, body, if_match=expected_version
+        ctx.runtime.storage,
+        ctx.runtime.objects,
+        github,
+        ctx.actor,
+        ctx.workspace_id,
+        skill_id,
+        body,
+        if_match=expected_version,
     )
 
 
 async def list_skill_revisions(
     ctx: ToolContext, *, skill_id: str, limit: PageLimit = 50, cursor: str | None = None
 ) -> SkillRevisionPage:
-    workspace_id = ctx.workspace_id
-    actor = ctx.actor
-    runtime = ctx.runtime
-    return await service.list_revisions(runtime.storage, actor, workspace_id, skill_id, limit=limit, cursor=cursor)
+    """List immutable Skill revisions with pagination; use revision IDs to preserve exact Agent pins."""
+    return await service.list_revisions(
+        ctx.runtime.storage, ctx.actor, ctx.workspace_id, skill_id, limit=limit, cursor=cursor
+    )
 
 
 async def get_skill_revision(ctx: ToolContext, *, skill_id: str, revision_id: str) -> SkillRevision:
-    workspace_id = ctx.workspace_id
-    actor = ctx.actor
-    runtime = ctx.runtime
-    return await service.get_revision(runtime.storage, actor, workspace_id, skill_id, revision_id)
+    """Read the source, manifest and digest of one immutable Skill revision without changing its default selection."""
+    return await service.get_revision(ctx.runtime.storage, ctx.actor, ctx.workspace_id, skill_id, revision_id)
 
 
 async def set_default_skill_revision(
     ctx: ToolContext, *, skill_id: str, revision_id: str, expected_version: str
 ) -> Skill:
-    workspace_id = ctx.workspace_id
-    actor = ctx.actor
-    runtime = ctx.runtime
-    result = await service.set_default_revision(
-        runtime.storage, actor, workspace_id, skill_id, revision_id, if_match=expected_version
+    """Select an existing Skill revision as default at the observed Skill version; existing Agent revision pins remain unchanged."""
+    return await service.set_default_revision(
+        ctx.runtime.storage, ctx.actor, ctx.workspace_id, skill_id, revision_id, if_match=expected_version
     )
-    return result
 
 
 TOOLS = (

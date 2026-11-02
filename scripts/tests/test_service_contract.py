@@ -71,6 +71,8 @@ def test_export_and_drift_check_work_without_sdk_directory(tmp_path: Path, monke
     contract.main()
     assert not (tmp_path / "sdk").exists()
     original = (target / "openapi.json").read_bytes()
+    # Clean checkouts need no ignored release asset for committed drift checks.
+    contract.PLATFORM_SCHEMA.unlink()
     monkeypatch.setattr("sys.argv", ["export", "--check"])
     contract.main()
     assert (target / "openapi.json").read_bytes() == original
@@ -104,10 +106,25 @@ def test_bundled_skill_schema_is_current_and_can_be_built_independently(tmp_path
     assert json.loads(contract.SKILL_SCHEMA.read_text()) == AgentConfig.model_json_schema()
     target = tmp_path / "skills/schemas/agent-config.json"
     monkeypatch.setattr(contract, "SKILL_SCHEMA", target)
+    platform_target = target.with_name("platform-tools.json")
+    monkeypatch.setattr(contract, "PLATFORM_SCHEMA", platform_target)
     monkeypatch.setattr(contract, "documents", lambda: pytest.fail("Skill packaging must not export HTTP contracts"))
     monkeypatch.setattr("sys.argv", ["export", "--skills-only"])
     contract.main()
     assert json.loads(target.read_text()) == AgentConfig.model_json_schema()
+    from a13n_service.platform_catalog import catalog
+
+    generated = json.loads(platform_target.read_text())["tools"]
+    invoked = {tool.name: tool for tool in catalog()}
+    assert {tool["name"] for tool in generated} == invoked.keys()
+    for tool in generated:
+        definition = invoked[tool["name"]]
+        assert tool["input_schema"] == definition.inputs.model_json_schema()
+        assert (tool["group"], tool["effect"], tool["description"]) == (
+            definition.group,
+            definition.effect,
+            definition.description,
+        )
     monkeypatch.setattr("sys.argv", ["export", "--skills-only", "--check"])
     contract.main()
     target.write_text("{}")

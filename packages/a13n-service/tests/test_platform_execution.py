@@ -167,3 +167,104 @@ async def test_item_navigation_resolves_retained_content_and_keeps_pages_bounded
             assert match.fragment.total_chars > 10000
             found = True
     assert found
+
+
+async def test_item_discovery_is_lazy_and_continuations_bind_first_read(service, scripted_model, runs_kit, monkeypatch):
+    from unittest.mock import AsyncMock
+
+    from a13n_service.runs import item_reads, runs
+
+    agent = await runs_kit.create_agent(service, scripted_model)
+    scripted_model.say("retained marker " + "long output " * 5000)
+    created = await runs_kit.start_thread(service, agent, "Return long output")
+    await (await runs_kit.attempt(service))
+    ctx = context(service)
+    retained = AsyncMock(wraps=runs.content)
+    selected = AsyncMock(wraps=item_reads.get_item)
+    monkeypatch.setattr(runs, "content", retained)
+    monkeypatch.setattr(item_reads, "get_item", selected)
+    page = await platform_queries.list_run_items(ctx, run_id=created["run"]["id"], limit=100)
+    selected.assert_not_awaited()
+    retained.assert_not_awaited()
+    for item in page.page.items:
+        if "retained marker" in item.text.text:
+            discovery = page.content[item.id]["all"]
+            break
+    else:
+        pytest.fail("Missing assistant output summary")
+    assert content_tools.unpack(ctx, discovery)[1] is None
+    first = await content_tools.read_content(ctx, reference=discovery, limit=200)
+    assert retained.await_count > 0
+    assert first.continuation
+    assert content_tools.unpack(ctx, first.reference)[1] == first.fragment.version
+    assert content_tools.unpack(ctx, first.continuation)[1] == first.fragment.version
+    next_read = await content_tools.read_content(ctx, reference=first.continuation, limit=200)
+    assert next_read.fragment.offset == first.fragment.next_offset
+    denied = replace(ctx, actor=Principal(ctx.actor.id, "user", ()))
+    with pytest.raises(ServiceError) as forbidden:
+        await content_tools.read_content(denied, reference=first.continuation)
+    assert forbidden.value.code in {"forbidden", "not_found"}
+
+    async def changed_content(*args, **kwargs):
+        saved = await retained(*args, **kwargs)
+        assert isinstance(saved.value, str)
+        return saved.model_copy(update={"value": saved.value + " changed after initial read"})
+
+    monkeypatch.setattr(runs, "content", changed_content)
+    for reference in (first.reference, first.continuation):
+        with pytest.raises(ServiceError) as changed:
+            await content_tools.read_content(ctx, reference=reference)
+        assert changed.value.code == "conflict"
+        assert changed.value.details["reason"] == "content_changed"
+    refreshed = await content_tools.search_content(ctx, reference=discovery, query="changed after initial read")
+    assert refreshed.fragment.match_offset is not None
+    assert refreshed.fragment.version != first.fragment.version
+    # An unbound discovery handle is valid only at the beginning, never for continuation.
+    source, _, _ = content_tools.unpack(ctx, discovery)
+    invalid = content_tools.encode_reference(ctx, source, None, 1)
+    with pytest.raises(ServiceError) as missing_version:
+        await content_tools.read_content(ctx, reference=invalid)
+    assert missing_version.value.code == "invalid_argument"
+
+
+async def test_model_schema_preparation_cache_is_attempt_local_and_rechecks_changes(monkeypatch):
+    from unittest.mock import Mock
+
+    from a13n_harness.tools.identity import ToolIdentity
+    from a13n_service.runs.platform_tools import PlatformToolset
+    from pydantic_ai import RunContext
+    from pydantic_ai.models.openai import OpenAIChatModel
+    from pydantic_ai.providers.openai import OpenAIProvider
+    from pydantic_ai.toolsets import FunctionToolset
+    from pydantic_ai.usage import RunUsage
+
+    def inspect(value: str) -> str:
+        """Inspect the provided value."""
+        return value
+
+    wrapped = FunctionToolset([inspect])
+    identities = {"inspect": ToolIdentity("test/inspect")}
+    toolset = PlatformToolset(wrapped, identities)
+    model = OpenAIChatModel("gpt-4o", provider=OpenAIProvider(api_key="test"))
+    prepared = Mock(wraps=model.prepare_request)
+    monkeypatch.setattr(model, "prepare_request", prepared)
+    ctx = RunContext(deps=None, model=model, usage=RunUsage())
+    await toolset.get_tools(ctx)
+    await toolset.get_tools(ctx)
+    assert prepared.call_count == 1
+    # Detect in-place changes, not only replacement of the definition object.
+    wrapped.tools["inspect"].function_schema.json_schema["properties"]["value"]["maxLength"] = 10
+    await toolset.get_tools(ctx)
+    await toolset.get_tools(ctx)
+    assert prepared.call_count == 2
+    other = OpenAIChatModel("gpt-4o-mini", provider=OpenAIProvider(api_key="test"))
+    other_prepared = Mock(wraps=other.prepare_request)
+    monkeypatch.setattr(other, "prepare_request", other_prepared)
+    await toolset.get_tools(replace(ctx, model=other))
+    await toolset.get_tools(replace(ctx, model=other))
+    assert other_prepared.call_count == 1
+    # Returning to a previous model and a fresh attempt both require validation.
+    await toolset.get_tools(ctx)
+    assert prepared.call_count == 3
+    await PlatformToolset(wrapped, identities).get_tools(ctx)
+    assert prepared.call_count == 4

@@ -31,17 +31,16 @@ async def get_model_provider(ctx: ToolContext, *, provider_id: str) -> Provider:
 
 async def test_model_provider(ctx: ToolContext, *, provider_id: str) -> ProviderTest:
     """Test model provider connectivity. This may make an external call and requires write approval."""
-    runtime = ctx.runtime
     return await service.test_provider(
-        runtime.storage,
+        ctx.runtime.storage,
         ctx.actor,
         ModelProviderRow,
         ctx.workspace_id,
         provider_id,
-        registry=runtime.registry,
-        keys=runtime.keys,
-        policy=runtime.endpoint_policy,
-        settings=runtime.settings.providers,
+        registry=ctx.runtime.registry,
+        keys=ctx.runtime.keys,
+        policy=ctx.runtime.endpoint_policy,
+        settings=ctx.runtime.settings.providers,
     )
 
 
@@ -63,17 +62,16 @@ async def get_environment_provider(ctx: ToolContext, *, provider_id: str) -> Pro
 
 async def test_environment_provider(ctx: ToolContext, *, provider_id: str) -> ProviderTest:
     """Test environment provider connectivity. This may make an external call and requires write approval."""
-    runtime = ctx.runtime
     return await service.test_provider(
-        runtime.storage,
+        ctx.runtime.storage,
         ctx.actor,
         EnvironmentProviderRow,
         ctx.workspace_id,
         provider_id,
-        registry=runtime.registry,
-        keys=runtime.keys,
-        policy=runtime.endpoint_policy,
-        settings=runtime.settings.providers,
+        registry=ctx.runtime.registry,
+        keys=ctx.runtime.keys,
+        policy=ctx.runtime.endpoint_policy,
+        settings=ctx.runtime.settings.providers,
     )
 
 
@@ -95,17 +93,16 @@ async def get_connector_provider(ctx: ToolContext, *, provider_id: str) -> Provi
 
 async def test_connector_provider(ctx: ToolContext, *, provider_id: str) -> ProviderTest:
     """Test connector provider connectivity. This may make an external call and requires write approval."""
-    runtime = ctx.runtime
     return await service.test_provider(
-        runtime.storage,
+        ctx.runtime.storage,
         ctx.actor,
         ConnectorProviderRow,
         ctx.workspace_id,
         provider_id,
-        registry=runtime.registry,
-        keys=runtime.keys,
-        policy=runtime.endpoint_policy,
-        settings=runtime.settings.providers,
+        registry=ctx.runtime.registry,
+        keys=ctx.runtime.keys,
+        policy=ctx.runtime.endpoint_policy,
+        settings=ctx.runtime.settings.providers,
     )
 
 
@@ -123,17 +120,16 @@ async def get_web_provider(ctx: ToolContext, *, provider_id: str) -> Provider:
 
 async def test_web_provider(ctx: ToolContext, *, provider_id: str) -> ProviderTest:
     """Test web provider connectivity. This may make an external call and requires write approval."""
-    runtime = ctx.runtime
     return await service.test_provider(
-        runtime.storage,
+        ctx.runtime.storage,
         ctx.actor,
         WebProviderRow,
         ctx.workspace_id,
         provider_id,
-        registry=runtime.registry,
-        keys=runtime.keys,
-        policy=runtime.endpoint_policy,
-        settings=runtime.settings.providers,
+        registry=ctx.runtime.registry,
+        keys=ctx.runtime.keys,
+        policy=ctx.runtime.endpoint_policy,
+        settings=ctx.runtime.settings.providers,
     )
 
 
@@ -151,32 +147,30 @@ async def get_browser_provider(ctx: ToolContext, *, provider_id: str) -> Provide
 
 async def test_browser_provider(ctx: ToolContext, *, provider_id: str) -> ProviderTest:
     """Test browser provider connectivity. This may make an external call and requires write approval."""
-    runtime = ctx.runtime
     return await service.test_provider(
-        runtime.storage,
+        ctx.runtime.storage,
         ctx.actor,
         BrowserProviderRow,
         ctx.workspace_id,
         provider_id,
-        registry=runtime.registry,
-        keys=runtime.keys,
-        policy=runtime.endpoint_policy,
-        settings=runtime.settings.providers,
+        registry=ctx.runtime.registry,
+        keys=ctx.runtime.keys,
+        policy=ctx.runtime.endpoint_policy,
+        settings=ctx.runtime.settings.providers,
     )
 
 
 async def discover_model_provider_models(ctx: ToolContext, *, provider_id: str) -> list[ProviderModel]:
     """Discover upstream model identifiers through an authorized configured provider."""
-    runtime = ctx.runtime
     return await discovery.discover_models(
-        runtime.storage,
+        ctx.runtime.storage,
         ctx.actor,
         ctx.workspace_id,
         provider_id,
-        registry=runtime.registry,
-        keys=runtime.keys,
-        policy=runtime.endpoint_policy,
-        settings=runtime.settings.providers,
+        registry=ctx.runtime.registry,
+        keys=ctx.runtime.keys,
+        policy=ctx.runtime.endpoint_policy,
+        settings=ctx.runtime.settings.providers,
         catalog=ctx.request.app.state.model_catalog,
     )
 

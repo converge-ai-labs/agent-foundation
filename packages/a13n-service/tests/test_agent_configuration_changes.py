@@ -186,3 +186,67 @@ async def test_obsolete_tool_contract_is_readable_but_cannot_be_edited_or_execut
     assert refused.value.details["reason"] == "configuration_unavailable"
     current = (await service.client.get(f"{service.api}/agents/{head['id']}")).json()
     assert current["version"] == head["version"]
+
+
+async def test_historical_base_requires_explicit_publication_choice(service):
+    head = await create_agent(service, "Explicit base", await create_model(service))
+    with pytest.raises(ServiceError) as refused:
+        await edit(service, head, {"instructions": "Historical"}, base_revision_id=head["default_revision_id"])
+    assert refused.value.code == "invalid_argument"
+    assert refused.value.details["field"] == "make_default"
+    result = await edit(
+        service, head, {"instructions": "Historical"}, base_revision_id=head["default_revision_id"], make_default=False
+    )
+    assert result.agent.default_revision_id == head["default_revision_id"]
+
+
+async def test_combined_delta_errors_expose_only_locations_and_types(service):
+    head = await create_agent(service, "Safe errors", await create_model(service))
+    with pytest.raises(ServiceError) as refused:
+        await edit(
+            service,
+            head,
+            {"tool_search": {"groups": {"private-group": {"description": "secret-value", "platform": True}}}},
+        )
+    assert refused.value.code == "invalid_argument"
+    errors = refused.value.details["errors"]
+    assert errors and all(set(item) == {"loc", "type"} for item in errors)
+    assert "secret-value" not in str(refused.value.details)
+
+
+@pytest.mark.parametrize(
+    "selector",
+    [
+        "mcp/platform/list_agents",
+        "mcp/service-business/list_agents",
+        "mcp/service-platform/create_agent_revision",
+        "mcp/service-platform/not_a_tool",
+        "mcp/service%2Dplatform/list_agents",
+    ],
+)
+def test_reviewer_obsolete_platform_rules_reject_authoring_but_remain_readable(selector):
+    from a13n_service.resources.agents import stored
+
+    value = {"model": "model", "reviewer": {"model": "model", "rules": {selector: {"on_flagged": "approval_required"}}}}
+    with pytest.raises(ValidationError):
+        AgentConfig.model_validate(value)
+    assert selector in stored.read(AgentConfig, value).reviewer.rules
+
+
+def test_reviewer_current_platform_and_connection_rules_are_accepted():
+    config = AgentConfig.model_validate(
+        {
+            "model": "model",
+            "connection_tools": [{"connection_id": "conn_aaaaaaaaaaaaaaaaaaaa"}],
+            "reviewer": {
+                "model": "model",
+                "rules": {
+                    "mcp/service-platform/list_agents": {},
+                    "mcp/service-platform/*": {},
+                    "mcp/conn_aaaaaaaaaaaaaaaaaaaa/*": {},
+                    "*": {},
+                },
+            },
+        }
+    )
+    assert len(config.reviewer.rules) == 4

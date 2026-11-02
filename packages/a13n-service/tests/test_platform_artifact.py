@@ -1,8 +1,6 @@
 """Fixed artifact selection metadata must match every contributed platform tool contract."""
 
-import json
 from dataclasses import replace
-from importlib.resources import files
 
 import pytest
 from a13n_service import platform_artifact
@@ -45,23 +43,3 @@ def test_removed_definition_cannot_leave_selectable_metadata(bundled):
 def test_permission_or_contract_drift_fails_assembly(bundled, change):
     with pytest.raises(ValueError, match="changed metadata=\\['inspect_extension'\\]"):
         platform_artifact.validate_artifact_catalog((replace(CONTRACT, **change),))
-
-
-def test_bundled_platform_schemas_match_the_invoked_definitions():
-    from a13n_service.infra.platform import PLATFORM_GROUPS
-    from a13n_service.platform_catalog import catalog
-
-    artifact = files("a13n_service").joinpath("builtin_skills/platform-operations/schemas/platform-tools.json")
-    expected = {
-        "tools": [
-            {
-                "name": tool.name,
-                "group": tool.group,
-                "effect": tool.effect,
-                "description": tool.description,
-                "input_schema": tool.inputs.model_json_schema(),
-            }
-            for tool in sorted(catalog(), key=lambda tool: (PLATFORM_GROUPS.index(tool.group), tool.name))
-        ]
-    }
-    assert json.loads(artifact.read_text()) == expected

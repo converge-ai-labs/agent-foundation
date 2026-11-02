@@ -88,7 +88,10 @@ def main() -> None:
     changed = []
     outputs = {} if args.skills_only else documents(distribution)
     outputs[SKILL_SCHEMA] = AgentConfig.model_json_schema()
-    outputs[PLATFORM_SCHEMA] = platform_schemas(distribution)
+    # The large release asset is ignored in Git, like the prepared Console.
+    # Ordinary drift checks cover committed contracts; asset checks are explicit.
+    if not args.check or args.skills_only:
+        outputs[PLATFORM_SCHEMA] = platform_schemas(distribution)
     for target, schema in outputs.items():
         if args.check:
             try:

@@ -4,7 +4,6 @@ from typing import Annotated, Literal
 
 from a13n_harness.pricing import ModelPricingEntry
 from pydantic import Field
-from pydantic import Field as Query
 from pydantic.experimental.missing_sentinel import MISSING
 
 from a13n_service.infra import reads
@@ -63,17 +62,13 @@ async def create_model(ctx: ToolContext, *, body: ModelCreation) -> Model:
 
 
 async def list_models(ctx: ToolContext, *, limit: PageLimit = 50, cursor: str | None = None) -> ModelPage:
-    workspace_id = ctx.workspace_id
-    actor = ctx.actor
-    runtime = ctx.runtime
-    return await service.list_models(runtime.storage, actor, workspace_id, limit=limit, cursor=cursor)
+    """List workspace model configurations with pagination; use the returned key when selecting an Agent model."""
+    return await service.list_models(ctx.runtime.storage, ctx.actor, ctx.workspace_id, limit=limit, cursor=cursor)
 
 
 async def get_model(ctx: ToolContext, *, key: str) -> Model:
-    workspace_id = ctx.workspace_id
-    actor = ctx.actor
-    runtime = ctx.runtime
-    return await service.get_model(runtime.storage, actor, workspace_id, key)
+    """Read a configured model by key, including its settings, provider and version before editing."""
+    return await service.get_model(ctx.runtime.storage, ctx.actor, ctx.workspace_id, key)
 
 
 async def update_model(ctx: ToolContext, *, key: str, expected_version: str, body: ModelEdit) -> Model:
@@ -106,16 +101,16 @@ async def get_model_catalog(
     *,
     provider: Annotated[
         str | None,
-        Query(pattern="^[a-z0-9][a-z0-9_-]{0,127}$", description="Exact catalog channel ID, such as openrouter."),
+        Field(pattern="^[a-z0-9][a-z0-9_-]{0,127}$", description="Exact catalog channel ID, such as openrouter."),
     ] = None,
     model: Annotated[
         str | None,
-        Query(min_length=1, max_length=256, description="Exact, case-sensitive model ID within the catalog channel."),
+        Field(min_length=1, max_length=256, description="Exact, case-sensitive model ID within the catalog channel."),
     ] = None,
     view: reads.View = "compact",
     query: reads.IndexQuery = None,
-    capability: Annotated[str | None, Query(max_length=64)] = None,
-    limit: Annotated[int | None, Query(ge=1, le=100)] = None,
+    capability: Annotated[str | None, Field(max_length=64)] = None,
+    limit: Annotated[int | None, Field(ge=1, le=100)] = None,
     cursor: str | None = None,
     section: Literal["all", "characteristics", "pricing"] | None = None,
     offset: reads.Offset = 0,
@@ -150,10 +145,8 @@ async def get_model_catalog(
 
 
 async def get_media_defaults(ctx: ToolContext) -> MediaDefaults:
-    workspace_id = ctx.workspace_id
-    actor = ctx.actor
-    runtime = ctx.runtime
-    return await media.get_media_defaults(runtime.storage, actor, workspace_id)
+    """Read the deployment media-processing defaults available when authoring Agent input and output behavior."""
+    return await media.get_media_defaults(ctx.runtime.storage, ctx.actor, ctx.workspace_id)
 
 
 TOOLS = (

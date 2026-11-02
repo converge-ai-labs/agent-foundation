@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from a13n_service.infra.errors import conflict, invalid
 from a13n_service.infra.http import require_match
 from a13n_service.resources import revisions
+from a13n_service.resources.agents import stored
 from a13n_service.resources.agents.schemas import AgentConfig
 from a13n_service.resources.agents.tables import AgentRevisionRow, AgentRow
 
@@ -33,7 +34,7 @@ async def validate_edit(session: AsyncSession, head: AgentRow | None, config: Ag
     if not editable(head):
         raise conflict(head.KIND, head.id, "builtin")
     base = await session.get_one(AgentRevisionRow, head.default_revision_id)
-    previous = AgentConfig.model_validate(base.config, context={"preserve_toolsets": True})
+    previous = stored.read(AgentConfig, base.config)
     for name in sorted(AgentConfig.model_fields.keys() - {"model", "model_settings", "instructions"}):
         if getattr(config, name) != getattr(previous, name):
             raise invalid(name, "managed preset field is read-only")

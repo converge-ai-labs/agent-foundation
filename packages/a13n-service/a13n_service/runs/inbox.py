@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from a13n_service.execution_policy import matches
 from a13n_service.infra.errors import IDEMPOTENCY_KEY_REUSED, ServiceError, conflict, invalid, not_found, rate_limited
 from a13n_service.infra.ids import new_object_id
+from a13n_service.resources.agents import stored
 from a13n_service.runs.schemas import EntryUpdate, Failure, Message, RequestContext, RunOptions, canonical_json
 from a13n_service.runs.tables import InboxEntryRow, RunRow, ThreadRow
 from a13n_service.settings import Control
@@ -355,8 +356,8 @@ def steers_into(entry: InboxEntryRow, run: RunRow, origin: RunRow | None) -> boo
         # The origin must be this run or a sealed one this run continues: its spawning call was committed before the
         # child could exist, so it is in the origin's last checkpoint.
         return origin is not None and (origin.id == run.id or origin.sealed_at is not None)
-    options = RunOptions.model_validate(entry.options)
-    accepted = RunOptions.model_validate(run.options)
+    options = stored.require(RunOptions, entry.options, kind="inbox_entry", id=entry.id)
+    accepted = stored.require(RunOptions, run.options, kind="run", id=run.id)
     configuration = accepted.configuration
     return (
         entry.delivery == "steer"

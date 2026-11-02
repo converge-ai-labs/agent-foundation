@@ -42,17 +42,13 @@ class ItemReadPage(BaseModel):
 
 
 async def list_sessions(ctx: ToolContext, *, filters: Annotated[SessionQuery, Query()]) -> SessionPage:
-    runtime = ctx.runtime
-    workspace_id = ctx.workspace_id
-    actor = ctx.actor
-    return await sessions.list_sessions(runtime.storage, actor, workspace_id, filters)
+    """List accessible sessions with the supplied filters and cursor; use get_session for a selected session."""
+    return await sessions.list_sessions(ctx.runtime.storage, ctx.actor, ctx.workspace_id, filters)
 
 
 async def get_session(ctx: ToolContext, *, session_id: str) -> SessionView:
-    runtime = ctx.runtime
-    workspace_id = ctx.workspace_id
-    actor = ctx.actor
-    return await sessions.get_session(runtime.storage, actor, workspace_id, session_id)
+    """Read one session and its navigation metadata in the current workspace."""
+    return await sessions.get_session(ctx.runtime.storage, ctx.actor, ctx.workspace_id, session_id)
 
 
 async def get_message_authors(
@@ -64,10 +60,7 @@ async def get_message_authors(
     only message entries in that session are returned. This is not an arbitrary user or member-directory lookup.
     Use returned names to identify senders in answers; retain IDs when needed for precise references.
     """
-    runtime = ctx.runtime
-    workspace_id = ctx.workspace_id
-    actor = ctx.actor
-    return await authors.message_authors(runtime.storage, actor, workspace_id, session_id, filters)
+    return await authors.message_authors(ctx.runtime.storage, ctx.actor, ctx.workspace_id, session_id, filters)
 
 
 async def list_session_threads(
@@ -80,13 +73,10 @@ async def list_session_threads(
     cursor: str | None = None,
 ) -> ThreadNavigationPage:
     """Lightweight Session navigation, oldest first, with stable per-origin positions and parent references."""
-    runtime = ctx.runtime
-    workspace_id = ctx.workspace_id
-    actor = ctx.actor
     return await threads.navigation(
-        runtime.storage,
-        actor,
-        workspace_id,
+        ctx.runtime.storage,
+        ctx.actor,
+        ctx.workspace_id,
         session_id,
         origins=origin or [],
         thread_ids=thread_id or [],
@@ -107,13 +97,11 @@ async def list_threads(
     limit: PageLimit = 50,
     cursor: str | None = None,
 ) -> ThreadPage:
-    runtime = ctx.runtime
-    workspace_id = ctx.workspace_id
-    actor = ctx.actor
+    """Find threads by session, schedule occurrence, origin, text or labels; continue with the returned cursor."""
     return await threads.list_threads(
-        runtime.storage,
-        actor,
-        workspace_id,
+        ctx.runtime.storage,
+        ctx.actor,
+        ctx.workspace_id,
         session_id=session_id,
         occurrence_id=occurrence_id,
         origins=origin or [],
@@ -126,10 +114,8 @@ async def list_threads(
 
 
 async def get_thread(ctx: ToolContext, *, thread_id: str) -> ThreadView:
-    runtime = ctx.runtime
-    workspace_id = ctx.workspace_id
-    actor = ctx.actor
-    return await threads.get(runtime.storage, actor, workspace_id, thread_id)
+    """Read one thread and its current execution and lineage metadata."""
+    return await threads.get(ctx.runtime.storage, ctx.actor, ctx.workspace_id, thread_id)
 
 
 async def list_thread_runs(
@@ -143,13 +129,10 @@ async def list_thread_runs(
     direction: Literal["asc", "desc"] = "desc",
 ) -> ThreadRunPage:
     """Page chronological history from an anchor, or rank all Thread runs by a recorded metric."""
-    runtime = ctx.runtime
-    workspace_id = ctx.workspace_id
-    actor = ctx.actor
     return await listings.list_thread_runs(
-        runtime.storage,
-        actor,
-        workspace_id,
+        ctx.runtime.storage,
+        ctx.actor,
+        ctx.workspace_id,
         thread_id,
         limit=limit,
         cursor=cursor,
@@ -168,14 +151,14 @@ async def list_inbox(
     limit: Annotated[int | None, Query(ge=1, le=100)] = None,
     cursor: str | None = None,
 ) -> EntryPage | read_views.EntrySummaryPage:
-    """In inbox order."""
-    runtime = ctx.runtime
-    workspace_id = ctx.workspace_id
-    actor = ctx.actor
+    """List compact inbox entries in inbox order, filtered by status or kind.
+
+    Use get_inbox_entry for payload references and retain the returned cursor for the next page.
+    """
     result = await entries.list_entries(
-        runtime.storage,
-        actor,
-        workspace_id,
+        ctx.runtime.storage,
+        ctx.actor,
+        ctx.workspace_id,
         thread_id,
         status=status or [],
         limit=reads.page_limit("compact", limit),
@@ -207,10 +190,8 @@ async def get_inbox_entry(
 
 
 async def list_runs(ctx: ToolContext, *, filters: Annotated[RunQuery, Query()]) -> RunPage:
-    runtime = ctx.runtime
-    workspace_id = ctx.workspace_id
-    actor = ctx.actor
-    return await listings.list_runs(runtime.storage, actor, workspace_id, filters)
+    """Find runs by agent, thread, status and time filters; continue with the returned cursor."""
+    return await listings.list_runs(ctx.runtime.storage, ctx.actor, ctx.workspace_id, filters)
 
 
 async def get_run(ctx: ToolContext, *, run_id: str) -> content.ContentView[read_views.RunSummary]:
@@ -238,7 +219,11 @@ async def list_run_items(
     state: ItemState | None = None,
     tool_name: Annotated[str | None, Field(min_length=1, max_length=256)] = None,
 ) -> ItemReadPage:
-    """Discover a bounded ordinal window and ready-to-use content handles. Continue next_before/next_after even for empty filtered windows."""
+    """Discover compact item summaries and lazy content references in a bounded ordinal window.
+
+    Read or search a returned reference to bind its current content version, then use the returned continuation.
+    Continue next_before/next_after with the same filters even for empty filtered windows.
+    """
     page = await item_reads.list_items(
         ctx.runtime,
         ctx.actor,
@@ -256,25 +241,21 @@ async def list_run_items(
     selected = []
     ordered = list(reversed(page.items)) if before is not None else page.items
     for summary in ordered:
-        item = await item_reads.get_item(ctx.runtime, ctx.actor, ctx.workspace_id, run_id, summary.id, summary.ordinal)
         refs = {
-            "all": content.value_reference(
-                ctx,
-                content.ItemSource(run_id=run_id, item_id=item.id, ordinal=item.ordinal),
-                await content.item_value(ctx, run_id, item),
+            "all": content.encode_reference(
+                ctx, content.ItemSource(run_id=run_id, item_id=summary.id, ordinal=summary.ordinal), None
             )
         }
-        projected = item_reads.summary(item)
-        proposed = {**references, item.id: refs}
+        proposed = {**references, summary.id: refs}
         if (
             selected
-            and reads.size({"run": page.run, "items": [*selected, projected], "content": proposed}) > reads.BODY_CHARS
+            and reads.size({"run": page.run, "items": [*selected, summary], "content": proposed}) > reads.BODY_CHARS
         ):
             boundary = selected[-1].ordinal
             page = page.model_copy(update={"next_before" if before is not None else "next_after": boundary})
             break
         references = proposed
-        selected.append(projected)
+        selected.append(summary)
     compact = page.model_copy(update={"items": list(reversed(selected)) if before is not None else selected})
     return ItemReadPage(page=compact, content=references)
 
@@ -307,24 +288,17 @@ async def get_run_lineage(
     ctx: ToolContext, *, run_id: str, cursor: str | None = None, limit: Annotated[int, Query(ge=1, le=50)] = 50
 ) -> RunPage:
     """The run and its ancestors, nearest first, across fork origins."""
-    runtime = ctx.runtime
-    workspace_id = ctx.workspace_id
-    actor = ctx.actor
-    return await listings.lineage(runtime.storage, actor, workspace_id, run_id, cursor=cursor, limit=limit)
+    return await listings.lineage(ctx.runtime.storage, ctx.actor, ctx.workspace_id, run_id, cursor=cursor, limit=limit)
 
 
 async def list_run_attempts(ctx: ToolContext, *, run_id: str) -> Attempts:
-    runtime = ctx.runtime
-    workspace_id = ctx.workspace_id
-    actor = ctx.actor
-    return await runs.list_attempts(runtime.storage, actor, workspace_id, run_id)
+    """List execution attempts for a run, including their status and worker ownership metadata."""
+    return await runs.list_attempts(ctx.runtime.storage, ctx.actor, ctx.workspace_id, run_id)
 
 
 async def get_run_attempt(ctx: ToolContext, *, run_id: str, attempt_id: str) -> AttemptView:
-    runtime = ctx.runtime
-    workspace_id = ctx.workspace_id
-    actor = ctx.actor
-    return await runs.get_attempt(runtime.storage, actor, workspace_id, run_id, attempt_id)
+    """Read one attempt belonging to the selected run; use list_attempt_spans for its observations."""
+    return await runs.get_attempt(ctx.runtime.storage, ctx.actor, ctx.workspace_id, run_id, attempt_id)
 
 
 TOOLS = (

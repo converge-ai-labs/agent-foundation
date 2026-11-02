@@ -34,16 +34,12 @@ async def list_attempt_spans(
     cursor: str | None = None,
 ) -> SpanPage | trace_reads.SpanReadPage:
     """The attempt's spans, including its inline child runs."""
-    runtime = ctx.runtime
-    workspace_id = ctx.workspace_id
-    actor = ctx.actor
-    origin = ctx.origin
-    await analysis.read_scope(runtime, actor, workspace_id, origin, None)
+    await analysis.read_scope(ctx.runtime, ctx.actor, ctx.workspace_id, ctx.origin, None)
     return await traces.list_attempt_spans(
-        runtime.storage,
-        runtime.traces,
-        actor,
-        workspace_id,
+        ctx.runtime.storage,
+        ctx.runtime.traces,
+        ctx.actor,
+        ctx.workspace_id,
         run_id,
         attempt_id,
         limit=reads.page_limit("compact", limit),
@@ -68,16 +64,12 @@ async def list_traces(
     cursor: str | None = None,
 ) -> SpanPage | trace_reads.SpanReadPage:
     """Trace root spans, one per attempt. A cursor keeps the window of the first page."""
-    runtime = ctx.runtime
-    workspace_id = ctx.workspace_id
-    actor = ctx.actor
-    origin = ctx.origin
-    await analysis.read_scope(runtime, actor, workspace_id, origin, None)
+    await analysis.read_scope(ctx.runtime, ctx.actor, ctx.workspace_id, ctx.origin, None)
     return await traces.list_traces(
-        runtime.storage,
-        runtime.traces,
-        actor,
-        workspace_id,
+        ctx.runtime.storage,
+        ctx.runtime.traces,
+        ctx.actor,
+        ctx.workspace_id,
         session_id=session_id,
         thread_id=thread_id,
         run_id=run_id,
@@ -99,12 +91,8 @@ async def search_traces(
     Keyset cursors bind the ordering, filters and last sort value with trace/span IDs.
     Incomplete queries fail without a partial rank.
     """
-    runtime = ctx.runtime
-    workspace_id = ctx.workspace_id
-    actor = ctx.actor
-    origin = ctx.origin
-    await analysis.read_scope(runtime, actor, workspace_id, origin, None)
-    return await trace_search.search(runtime, actor, workspace_id, filters)
+    await analysis.read_scope(ctx.runtime, ctx.actor, ctx.workspace_id, ctx.origin, None)
+    return await trace_search.search(ctx.runtime, ctx.actor, ctx.workspace_id, filters)
 
 
 async def get_trace(ctx: ToolContext, *, trace_id: TraceId) -> content.ContentView[trace_reads.SpanSummary]:
@@ -135,24 +123,23 @@ async def list_trace_spans(
     limit: Annotated[int | None, Query(ge=1, le=100)] = None,
     cursor: str | None = None,
 ) -> SpanPage | trace_reads.SpanReadPage:
-    """The trace's spans."""
-    runtime = ctx.runtime
-    workspace_id = ctx.workspace_id
-    actor = ctx.actor
-    origin = ctx.origin
-    await analysis.read_scope(runtime, actor, workspace_id, origin, trace_id)
+    """List compact spans within a selected trace, optionally filtered by status, kind or tool name.
+
+    Continue with the returned cursor; use get_trace_span for content references to a selected span.
+    """
+    await analysis.read_scope(ctx.runtime, ctx.actor, ctx.workspace_id, ctx.origin, trace_id)
     page = await traces.list_trace_spans(
-        runtime.storage,
-        runtime.traces,
-        actor,
-        workspace_id,
+        ctx.runtime.storage,
+        ctx.runtime.traces,
+        ctx.actor,
+        ctx.workspace_id,
         trace_id,
         limit=reads.page_limit("compact", limit),
         cursor=cursor,
         selection=trace_reads.Selection(view="compact", status=status, kind=kind, tool_name=tool_name),
     )
     if page.items:
-        await analysis.record_read(runtime, actor, workspace_id, origin, trace_id)
+        await analysis.record_read(ctx.runtime, ctx.actor, ctx.workspace_id, ctx.origin, trace_id)
     return page
 
 
@@ -180,10 +167,7 @@ async def get_trace_span(
 
 async def get_trace_backend(ctx: ToolContext) -> traces.TraceBackend:
     """The backend trace queries read, and how far back they find a trace."""
-    runtime = ctx.runtime
-    workspace_id = ctx.workspace_id
-    actor = ctx.actor
-    return await traces.describe_backend(runtime.storage, runtime.traces, actor, workspace_id)
+    return await traces.describe_backend(ctx.runtime.storage, ctx.runtime.traces, ctx.actor, ctx.workspace_id)
 
 
 TOOLS = (

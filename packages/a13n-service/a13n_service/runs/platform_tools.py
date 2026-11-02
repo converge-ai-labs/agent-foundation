@@ -2,7 +2,8 @@
 
 from collections.abc import AsyncGenerator, Mapping
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, replace
+from copy import deepcopy
+from dataclasses import dataclass, field, replace
 from urllib.parse import urlsplit
 
 import httpx2
@@ -13,6 +14,7 @@ from pydantic_ai.capabilities import MCP
 from pydantic_ai.exceptions import UserError
 from pydantic_ai.mcp import MCPToolset
 from pydantic_ai.models import Model, ModelRequestParameters
+from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.toolsets import AbstractToolset, DynamicToolset, ToolsetTool, WrapperToolset
 
 from a13n_service.infra.platform import PLATFORM_TOOLS, PlatformGroup
@@ -28,22 +30,36 @@ class PlatformToolset(WrapperToolset[AgentContext]):
     """Only the enabled tools, each with the identity its permission rule and default apply to."""
 
     tools: Mapping[str, ToolIdentity]
+    _checked_model: Model | None = field(default=None, init=False, repr=False)
+    _checked_tools: dict[str, ToolDefinition] = field(default_factory=dict, init=False, repr=False)
 
     async def get_tools(self, ctx: RunContext[AgentContext]) -> dict[str, ToolsetTool[AgentContext]]:
         result = {}
+        # Keep only the current model and offered definitions for this attempt-owned wrapper.
+        # A replacement model or changed schema must pass its adapter again.
+        if self._checked_model is not ctx.model:
+            self._checked_model = ctx.model if isinstance(ctx.model, Model) else None
+            self._checked_tools.clear()
+        checked = {}
         for name, tool in (await self.wrapped.get_tools(ctx)).items():
             if name in self.tools:
                 # Exercise the selected model's real adapter before offering a tool. Do not
                 # repair a schema, remove a tool, or silently select another model on failure.
+                candidate = replace(tool.tool_def, metadata=None)
                 try:
                     if isinstance(ctx.model, Model):
-                        ctx.model.prepare_request(None, ModelRequestParameters(function_tools=[tool.tool_def]))
+                        previous = self._checked_tools.get(name)
+                        if previous != candidate:
+                            ctx.model.prepare_request(None, ModelRequestParameters(function_tools=[tool.tool_def]))
+                            previous = deepcopy(candidate)
+                        checked[name] = previous
                 except (ValueError, TypeError, RecursionError, UserError) as error:
                     raise UserError(
                         f"Platform tool {name} schema is incompatible with the selected model at parameters: {error}"
                     ) from error
                 metadata = {**(tool.tool_def.metadata or {}), TOOL_IDENTITY_KEY: self.tools[name]}
                 result[name] = replace(tool, tool_def=replace(tool.tool_def, metadata=metadata))
+        self._checked_tools = checked
         return result
 
 

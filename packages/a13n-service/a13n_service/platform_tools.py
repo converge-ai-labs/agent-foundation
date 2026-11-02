@@ -99,7 +99,11 @@ class PlatformTool(Tool):
         super().__init__(
             name=contract.name,
             description=contract.description
-            + " Never automatically retry a write after an unknown outcome; read the resource to reconcile it.",
+            + (
+                " Never automatically retry a write after an unknown outcome; read the resource to reconcile it."
+                if contract.effect == "write"
+                else ""
+            ),
             parameters=contract.inputs.model_json_schema(),
             annotations=ToolAnnotations(
                 read_only_hint=contract.effect == "read",

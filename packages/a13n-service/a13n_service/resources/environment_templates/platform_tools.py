@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from pydantic import Field as Query
+from pydantic import Field
 from pydantic.experimental.missing_sentinel import MISSING
 
 from a13n_service.infra.http import PageLimit
@@ -49,23 +49,19 @@ async def create_environment_template(ctx: ToolContext, *, body: TemplateCreatio
 async def list_environment_templates(
     ctx: ToolContext,
     *,
-    label: Annotated[list[str] | None, Query()] = None,
+    label: Annotated[list[str] | None, Field()] = None,
     limit: PageLimit = 50,
     cursor: str | None = None,
 ) -> TemplatePage:
-    workspace_id = ctx.workspace_id
-    actor = ctx.actor
-    runtime = ctx.runtime
+    """List reusable environment templates and their current versions; filter by labels before selecting one."""
     return await service.list_templates(
-        runtime.storage, actor, workspace_id, labels=label or [], limit=limit, cursor=cursor
+        ctx.runtime.storage, ctx.actor, ctx.workspace_id, labels=label or [], limit=limit, cursor=cursor
     )
 
 
 async def get_environment_template(ctx: ToolContext, *, template_id: str) -> Template:
-    workspace_id = ctx.workspace_id
-    actor = ctx.actor
-    runtime = ctx.runtime
-    return await service.get_template(runtime.storage, actor, workspace_id, template_id)
+    """Read a template and its provider recipe before editing; preserve its version for conditional changes."""
+    return await service.get_template(ctx.runtime.storage, ctx.actor, ctx.workspace_id, template_id)
 
 
 async def update_environment_template(

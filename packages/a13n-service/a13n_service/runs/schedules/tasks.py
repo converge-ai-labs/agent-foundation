@@ -8,6 +8,7 @@ from a13n_service.execution_policy import ExecutionOverride
 from a13n_service.infra.http import require_match
 from a13n_service.infra.ids import ObjectId
 from a13n_service.infra.labels import Labels
+from a13n_service.resources.agents import stored
 from a13n_service.resources.agents.schemas import AgentOverride
 from a13n_service.resources.memories.schemas import MemoryMounts
 from a13n_service.runs.runtime import Runtime
@@ -112,13 +113,16 @@ def apply_changes(current: Schedule, changes: TaskChanges) -> ScheduleUpdate:
         if "agent_id" in supplied and changes.agent_id != saved.agent_id and "agent_revision_id" not in supplied:
             updated["agent_revision_id"] = None
         if changes.options is not None:
-            updated["options"] = RunOptions.model_validate(
+            updated["options"] = stored.require(
+                RunOptions,
                 {
                     **dict(saved.options),
                     **{name: getattr(changes.options, name) for name in changes.options.model_fields_set},
-                }
+                },
+                kind="schedule",
+                id=current.id,
             )
-        values["invocation"] = ScheduleInvocation.model_validate(updated)
+        values["invocation"] = stored.require(ScheduleInvocation, updated, kind="schedule", id=current.id)
     return ScheduleUpdate.model_validate(values)
 
 

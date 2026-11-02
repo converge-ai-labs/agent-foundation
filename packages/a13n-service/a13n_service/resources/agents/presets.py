@@ -10,7 +10,7 @@ from a13n_service.infra.db import Storage, transaction
 from a13n_service.infra.errors import ServiceError, conflict
 from a13n_service.providers.registry import Registry
 from a13n_service.resources import revisions
-from a13n_service.resources.agents import preset_edits
+from a13n_service.resources.agents import preset_edits, stored
 from a13n_service.resources.agents.schemas import Agent, AgentConfig, AgentCreate
 from a13n_service.resources.agents.service import agent_view, insert_head
 from a13n_service.resources.agents.tables import AgentRevisionRow, AgentRow, PresetKind
@@ -64,7 +64,7 @@ async def prepare(
         )
         await revisions.update_head(session, actor, head, {"name": name, "description": description})
         if kind in preset_edits.EDITABLE_KINDS and current is not None:
-            held = AgentConfig.model_validate(current.config, context={"preserve_toolsets": True})
+            held = stored.read(AgentConfig, current.config)
             config = configuration(held.model).model_copy(
                 update={
                     "model_settings": held.model_settings,
@@ -118,11 +118,7 @@ async def _model(
     preferred: Sequence[str],
 ) -> str:
     """The current revision's model while usable, else the most preferred usable model, else the first by key."""
-    kept = (
-        None
-        if current is None
-        else AgentConfig.model_validate(current.config, context={"preserve_toolsets": True}).model
-    )
+    kept = None if current is None else stored.read(AgentConfig, current.config).model
     rows = (
         await session.scalars(
             select(ModelRow).where(ModelRow.workspace_id == scope.workspace_id, ModelRow.enabled).order_by(ModelRow.key)

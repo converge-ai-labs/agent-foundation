@@ -21,7 +21,7 @@ from a13n_service.infra.labels import label_filter
 from a13n_service.infra.objects.interface import ObjectStore
 from a13n_service.providers.registry import Registry, web_operations
 from a13n_service.resources import revisions
-from a13n_service.resources.agents import instructions, preset_edits, read_views, toolsets
+from a13n_service.resources.agents import instructions, preset_edits, read_views, stored, toolsets
 from a13n_service.resources.agents.plugins import PluginCatalog
 from a13n_service.resources.agents.plugins import catalog as describe_plugins
 from a13n_service.resources.agents.schemas import (
@@ -111,7 +111,7 @@ async def duplicate_agent(
         if revision_id is None:
             raise not_found(AgentRevisionRow.KIND, source.id)
         revision = await _revision(session, source, revision_id)
-        config = AgentConfig.model_validate(revision.config)
+        config = stored.require(AgentConfig, revision.config, kind="agent_revision", id=revision.id)
         copy = AgentCreate(
             **body.model_dump(exclude={"revision_id"}),
             config=instructions.materialize(
@@ -292,7 +292,7 @@ async def change_configuration(
     registry: Registry,
     plugins: HarnessPluginFactoryCatalog,
     base_revision_id: str | None = None,
-    make_default: bool = True,
+    make_default: bool | None = None,
     note: str | None = None,
 ) -> ConfigurationChange:
     """Publish a typed delta against the observed head, without rereading/retrying on conflict.
@@ -304,15 +304,21 @@ async def change_configuration(
         scope = await workspace_scope(session, actor, workspace_id, "write")
         head = await resolve_agent(session, scope.workspace_id, agent_id, lock=True)
         preset_edits.require_editable(head, expected_version)
+        if base_revision_id is not None and make_default is None:
+            raise invalid("make_default", "Choose explicitly when base_revision_id is supplied")
         selected_revision_id = base_revision_id or head.default_revision_id
         assert selected_revision_id is not None  # A committed Agent always has a default.
         base = await _revision(session, head, selected_revision_id)
         previous = _selected(base).config
-        changes = AgentConfigurationChanges.model_validate(changes.model_dump(exclude_unset=True))
         try:
             config = apply_configuration_changes(previous, changes)
         except ValidationError as error:
-            raise invalid("changes", "The combined configuration is invalid") from error
+            failure = invalid("changes", "The combined configuration is invalid")
+            failure.details["errors"] = [
+                {"loc": list(item["loc"]), "type": item["type"]}
+                for item in error.errors(include_input=False, include_context=False, include_url=False)
+            ]
+            raise failure from error
         changed = tuple(
             sorted(name for name in changes.model_fields_set if getattr(previous, name) != getattr(config, name))
         )
@@ -322,7 +328,7 @@ async def change_configuration(
             actor,
             scope,
             head,
-            AgentRevisionCreate(config=config, note=note, make_default=make_default),
+            AgentRevisionCreate(config=config, note=note, make_default=True if make_default is None else make_default),
             registry=registry,
             plugins=plugins,
         )
@@ -438,9 +444,7 @@ async def list_revision_summaries(
         actor,
         AgentRow,
         AgentRevisionRow,
-        lambda head, row: read_views.revision_summary(
-            AgentRevision.model_validate(row, context={"preserve_toolsets": True}), head.default_revision_id
-        ),
+        lambda head, row: read_views.revision_summary(stored.read(AgentRevision, row), head.default_revision_id),
         workspace_id,
         agent_id,
         limit=limit,
@@ -463,7 +467,7 @@ async def list_revisions(
 
 
 def _revision_view(head: AgentRow, revision: AgentRevisionRow) -> AgentRevision:
-    view = AgentRevision.model_validate(revision, context={"preserve_toolsets": True})
+    view = stored.read(AgentRevision, revision)
     return view.model_copy(
         update={"builtin_instructions": instructions.for_preset(head.preset_kind) if head.builtin else None}
     )
@@ -486,7 +490,7 @@ async def set_default(
         head = await resolve_agent(session, scope.workspace_id, agent_id, lock=True)
         preset_edits.require_editable(head, if_match)
         revision = await _revision(session, head, revision_id)
-        config = AgentConfig.model_validate(revision.config)
+        config = stored.require(AgentConfig, revision.config, kind="agent_revision", id=revision.id)
         await validate_config(session, actor, scope, head.id, config, registry=registry, plugins=plugins)
         if revisions.set_default(head, revision, actor=actor):
             audit_row(session, actor, head, "revision.set_default", {"revision_id": revision.id})
@@ -536,10 +540,7 @@ async def load_revision(session: AsyncSession, agent_id: str, revision_id: str) 
 
 
 def _selected(revision: AgentRevisionRow) -> SelectedRevision:
-    try:
-        config = AgentConfig.model_validate(revision.config)
-    except ValidationError as error:
-        raise conflict("agent_revision", revision.id, "configuration_unavailable") from error
+    config = stored.require(AgentConfig, revision.config, kind="agent_revision", id=revision.id)
     return SelectedRevision(
         agent_id=revision.agent_id,
         revision_id=revision.id,

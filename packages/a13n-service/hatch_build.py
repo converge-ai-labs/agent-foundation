@@ -20,3 +20,12 @@ class CustomBuildHook(BuildHookInterface):
             raise RuntimeError(
                 "The Console build is missing; run `make a13n-service-assets` before building a13n-service"
             )
+        if (
+            version != "editable"
+            and not (
+                Path(self.root) / "a13n_service/builtin_skills/platform-operations/schemas/platform-tools.json"
+            ).is_file()
+        ):
+            raise RuntimeError(
+                "The platform tool schema is missing; run `make a13n-service-assets` before building a13n-service"
+            )
