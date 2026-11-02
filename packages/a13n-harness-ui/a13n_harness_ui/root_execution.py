@@ -40,6 +40,7 @@ from pydantic_ai.messages import AgentStreamEvent, FunctionToolResultEvent
 from pydantic_ai.tools import DeferredToolApprovalResult, ToolApproved
 
 from a13n_harness_ui.browser import HostBrowsers
+from a13n_harness_ui.browser_context import BrowserContextCapability
 from a13n_harness_ui.capability_runtime import production_run_bindings
 from a13n_harness_ui.compaction import BackgroundCompaction
 from a13n_harness_ui.composition import (
@@ -474,6 +475,7 @@ class RootRunExecutor:
                     _ToolPresentationCapability(retain_tool_presentation),
                     *(
                         (
+                            BrowserContextCapability(self._browsers.backend(thread_id, admission.browser_binding)),
                             BrowserUseCapability(
                                 self._browsers.backend(thread_id, admission.browser_binding),
                                 on_human_control=partial(self._browsers.handback.blocked, thread_id),

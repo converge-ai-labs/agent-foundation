@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
+import { i18n } from "../i18n";
 import { useState } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -18,8 +20,9 @@ const post = vi.hoisted(() => vi.fn());
 vi.mock("../transport/context", () => ({
   useTransport: () => ({ client: { POST: post } }),
 }));
-afterEach(() => {
+afterEach(async () => {
   cleanup();
+  await i18n.changeLanguage("en");
   vi.resetAllMocks();
 });
 const discovered = {
@@ -373,4 +376,28 @@ it("shows a platform explanation instead of unusable settings on unsupported Hos
     screen.queryByRole("combobox", { name: "Browser executable" }),
   ).toBeNull();
   expect(screen.queryByText(/Missing a program/)).toBeNull();
+});
+
+it("localizes Browser settings without rescanning or replacing a custom path draft", async () => {
+  const path = "/custom/浏览器/chrome";
+  show(`schema_version: "1"\nbrowser: {executable: "${path}"}\n`);
+  await screen.findByRole("textbox", { name: "Browser executable path" });
+  await waitFor(() =>
+    expect(screen.queryByText("Checking selected components…")).toBeNull(),
+  );
+  const calls = post.mock.calls.length;
+  const source = screen.getByTestId("source").textContent;
+  await act(async () => {
+    await i18n.changeLanguage("zh-CN");
+  });
+  expect(screen.getByText("高级浏览器设置")).toBeTruthy();
+  expect(
+    (
+      screen.getByRole("textbox", {
+        name: "浏览器可执行文件路径",
+      }) as HTMLInputElement
+    ).value,
+  ).toBe(path);
+  expect(screen.getByTestId("source").textContent).toBe(source);
+  expect(post).toHaveBeenCalledTimes(calls);
 });

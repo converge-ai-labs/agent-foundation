@@ -3633,5 +3633,9 @@
   "Lowest cost": "Lowest cost",
   "Sort by {{field}}, {{direction}}": "Sort by {{field}}, {{direction}}",
   "Others": "Others",
-  "Chart grouping": "Chart grouping"
+  "Chart grouping": "Chart grouping",
+  "Choose where your browsers run.": "Choose where your browsers run.",
+  "Check the saved browser provider's availability without creating a browser.": "Check the saved browser provider's availability without creating a browser.",
+  "Docker browser": "Docker browser",
+  "Native browser (Linux debugging)": "Native browser (Linux debugging)"
 }

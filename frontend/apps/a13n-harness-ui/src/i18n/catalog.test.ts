@@ -121,8 +121,20 @@ const surfaces = [
   "configuration/resource-choice.tsx",
   "setup/accounts.tsx",
   "setup/account-messages.ts",
+  "browser/panel.tsx",
+  "browser/desktop.tsx",
+  "browser/activity.tsx",
+  "browser/setup.tsx",
+  "browser/requirements.tsx",
+  "browser/macos-setup.tsx",
+  "browser/annotation-editor.tsx",
+  "browser/annotation-text.tsx",
+  "browser/text-input.ts",
+  "configuration/browser-fields.tsx",
+  "configuration/fields.tsx",
+  "native/workspace.tsx",
 ];
-it("keeps literal onboarding translation calls in the catalogs", () => {
+it("keeps literal onboarding and Browser translation calls in the catalogs", () => {
   const missing: string[] = [];
   for (const path of surfaces) {
     const source = readFileSync(new URL(`../${path}`, import.meta.url), "utf8");

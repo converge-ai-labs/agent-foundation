@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { ModelIcon } from "../shell/model-identity";
 import { SettingsTextField as TextField } from "../shell/settings";
 import { SettingsChoice as ChoiceField } from "../shell/settings";
@@ -35,6 +36,7 @@ export function ResourceFields({
   source: string;
   onChange: (value: string) => void;
 }) {
+  const { t } = useTranslation();
   const location = useLocation();
   const [browserOpen, setBrowserOpen] = useState(location.hash === "#browser");
   const selectors = useSelectors();
@@ -476,7 +478,7 @@ export function ResourceFields({
               open={location.hash === "#browser" || undefined}
               onToggle={(event) => setBrowserOpen(event.currentTarget.open)}
             >
-              <summary>Browser</summary>
+              <summary>{t("Browser")}</summary>
               <BrowserFields
                 source={source}
                 onChange={onChange}

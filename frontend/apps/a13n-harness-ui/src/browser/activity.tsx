@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "a13n-ui";
 import { Globe } from "@phosphor-icons/react";
@@ -17,6 +18,7 @@ export function BrowserActivity({
   reveal: () => void;
   open: () => void;
 }) {
+  const { t } = useTranslation();
   const { display } = useLiveThread(threadId);
   const activity = display.browserActivityRunId;
   const observed = useRef(activity);
@@ -45,7 +47,8 @@ export function BrowserActivity({
         open();
       }}
     >
-      <Globe /> View browser
+      <Globe />
+      {t("View browser")}
     </Button>
   );
 }

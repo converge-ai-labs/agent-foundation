@@ -3633,5 +3633,9 @@
   "Lowest cost": "费用最低",
   "Sort by {{field}}, {{direction}}": "按{{field}}排序，{{direction}}",
   "Others": "其他",
-  "Chart grouping": "图表分组"
+  "Chart grouping": "图表分组",
+  "Choose where your browsers run.": "选择浏览器的运行位置。",
+  "Check the saved browser provider's availability without creating a browser.": "检查已保存的浏览器提供方是否可用，不创建浏览器。",
+  "Docker browser": "Docker 浏览器",
+  "Native browser (Linux debugging)": "本机浏览器（Linux 调试）"
 }
