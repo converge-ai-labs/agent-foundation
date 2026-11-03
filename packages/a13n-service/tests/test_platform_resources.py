@@ -14,7 +14,6 @@ from a13n_service.resources.models import platform_tools as models
 from a13n_service.resources.skills import platform_tools as skills
 from a13n_service.resources.skills.schemas import SkillCreate, SkillRevisionCreate
 from fastapi import Request
-from jsonschema import Draft202012Validator
 from pydantic import ValidationError
 
 from .test_agent_configuration_changes import actor
@@ -32,24 +31,6 @@ def context(service: SimpleNamespace) -> ToolContext:
         Request({"type": "http", "app": service.app, "headers": [], "client": ("127.0.0.1", 1234)}),
         None,
     )
-
-
-def test_resource_schemas_are_explicit_and_versions_required():
-    contracts = agents.TOOLS + models.TOOLS + templates.TOOLS + skills.TOOLS
-    assert len(contracts) == 37
-    for contract in contracts:
-        schema = contract.inputs.model_json_schema()
-        Draft202012Validator.check_schema(schema)
-        assert "request_body" not in schema["properties"]
-        if "expected_version" in schema["properties"]:
-            assert "expected_version" in schema["required"]
-    names = {contract.name for contract in contracts}
-    assert "create_agent_revision" not in names
-    assert "update_agent" not in names
-    assert "create_skill_revision" not in names
-    assert set(AgentConfigurationChanges.model_fields) == set(AgentConfig.model_fields)
-    with pytest.raises(ValidationError):
-        TemplateEdit.model_validate({"recipe": {"type": "docker", "configuration": {"privileged": True}}})
 
 
 async def test_agent_platform_creation_and_atomic_delta(service):

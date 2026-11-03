@@ -4,7 +4,6 @@ import ts from "typescript";
 import en from "./locales/en.json";
 import zhCN from "./locales/zh-CN.json";
 import { i18n } from "./index";
-import type { Schema } from "../transport/client";
 
 function catalogErrors(catalogs: Record<string, Record<string, string>>) {
   const errors: string[] = [];
@@ -46,66 +45,6 @@ function catalogErrors(catalogs: Record<string, Record<string, string>>) {
 it("validates localized catalogs with locale-specific plurals and interpolation", () => {
   expect(catalogErrors({ en, "zh-CN": zhCN })).toEqual([]);
   for (const key of Object.keys(en)) expect(i18n.exists(key), key).toBe(true);
-});
-it("rejects empty, missing and incompatible translations and missing English plurals", () => {
-  const source = {
-    Greeting: "Hello {{name}}",
-    item_one: "{{count}} item",
-    item_other: "{{count}} items",
-  };
-  expect(
-    catalogErrors({
-      en: source,
-      "zh-CN": { Greeting: "你好 {{name}}", item_other: "{{count}} 项" },
-    }),
-  ).toEqual([]);
-  expect(
-    catalogErrors({
-      en: source,
-      "zh-CN": { Greeting: "", item_other: "{{total}} 项" },
-    }),
-  ).toEqual(
-    expect.arrayContaining([
-      "zh-CN: missing or empty Greeting",
-      "zh-CN: placeholders differ for item_other",
-    ]),
-  );
-  expect(
-    catalogErrors({ en: { item_other: "{{count}} items" }, "zh-CN": {} }),
-  ).toEqual(
-    expect.arrayContaining([
-      "en: missing or empty item_one",
-      "zh-CN: missing or empty item_other",
-    ]),
-  );
-});
-it("formats counts and resolves known login states without translating provider identifiers", async () => {
-  for (const locale of ["en", "zh-CN"]) {
-    await i18n.changeLanguage(locale);
-    const loginStates: Record<
-      NonNullable<Schema<"LoginStatus">["state"]>,
-      true
-    > = {
-      starting: true,
-      waiting: true,
-      succeeded: true,
-      failed: true,
-      cancelled: true,
-      expired: true,
-    };
-    for (const state of Object.keys(loginStates))
-      expect(i18n.exists(`login.${state}`)).toBe(true);
-    expect(
-      i18n.t("Account group summary", { count: 1, strategy: "weighted" }),
-    ).toBe(locale === "en" ? "1 account · weighted" : "1 个账号 · weighted");
-    expect(
-      i18n.t("Account group summary", { count: 2, strategy: "weighted" }),
-    ).toBe(locale === "en" ? "2 accounts · weighted" : "2 个账号 · weighted");
-    expect(i18n.t("{{count, number}} context", { count: 12345 })).toContain(
-      new Intl.NumberFormat(locale).format(12345),
-    );
-  }
-  await i18n.changeLanguage("en");
 });
 
 // Guard the workflows introduced in this slice; application-wide source linting

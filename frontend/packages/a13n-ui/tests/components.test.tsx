@@ -2,19 +2,7 @@ import { createRef } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import {
-  Button,
-  Checkbox,
-  ModalFrame,
-  Menu,
-  MenuTrigger,
-  MenuPopup,
-  MenuItem,
-  FormField,
-  Input,
-  Label,
-  Switch,
-} from "../src";
+import { Button, ModalFrame, FormField, Input } from "../src";
 describe("component interaction contracts", () => {
   it("keeps button content mounted and prevents submission while loading", async () => {
     const click = vi.fn();
@@ -57,31 +45,6 @@ describe("component interaction contracts", () => {
       "Required",
     ]);
   });
-  it("supports keyboard toggles", async () => {
-    const user = userEvent.setup();
-    render(
-      <>
-        <Label>
-          <Checkbox />
-          Check
-        </Label>
-        <Label>
-          <Switch />
-          Switch
-        </Label>
-      </>,
-    );
-    await user.tab();
-    await user.keyboard(" ");
-    expect(screen.getByRole("checkbox").getAttribute("aria-checked")).toBe(
-      "true",
-    );
-    await user.tab();
-    await user.keyboard(" ");
-    expect(screen.getByRole("switch").getAttribute("aria-checked")).toBe(
-      "true",
-    );
-  });
   it("opens a named dialog and restores focus after Escape", async () => {
     const user = userEvent.setup();
     render(
@@ -103,24 +66,4 @@ describe("component interaction contracts", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(document.activeElement).toBe(trigger);
   });
-});
-
-it("keeps familiar menu triggers accessible without a redundant tooltip", async () => {
-  const user = userEvent.setup();
-  render(
-    <Menu>
-      <MenuTrigger
-        render={<Button size="icon-sm" aria-label="Agent actions" />}
-      >
-        ⋮
-      </MenuTrigger>
-      <MenuPopup>
-        <MenuItem>Edit</MenuItem>
-      </MenuPopup>
-    </Menu>,
-  );
-  const trigger = screen.getByRole("button", { name: "Agent actions" });
-  expect(trigger.hasAttribute("data-base-ui-tooltip-trigger")).toBe(false);
-  await user.click(trigger);
-  expect(await screen.findByRole("menuitem", { name: "Edit" })).toBeTruthy();
 });

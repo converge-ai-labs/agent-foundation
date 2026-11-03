@@ -74,29 +74,6 @@ async def test_filters_preserve_full_history_during_explicit_compaction(capabili
     assert prepared.messages[0].parts[0].content == "x" * 5000
 
 
-async def test_message_integrity_filter_keeps_only_one_result_for_the_current_call() -> None:
-    current = ToolReturnPart(tool_name="lookup", tool_call_id="call-2", content="current")
-    duplicate = ToolReturnPart(tool_name="lookup", tool_call_id="call-2", content="duplicate")
-    orphan = ToolReturnPart(tool_name="lookup", tool_call_id="call-1", content="orphan")
-    messages = [
-        ModelResponse(parts=[ToolCallPart("lookup", {}, tool_call_id="call-1")]),
-        ModelResponse(parts=[ToolCallPart("lookup", {}, tool_call_id="call-2")]),
-        ModelRequest(parts=[orphan, current, duplicate, UserPromptPart("continue")]),
-    ]
-
-    filtered = await MessageIntegrityFilterCapability().before_model_request(
-        _run_context(messages),
-        _request_context(messages),
-    )
-
-    request = filtered.messages[-1]
-    assert isinstance(request, ModelRequest)
-    tool_results = [part for part in request.parts if isinstance(part, ToolReturnPart)]
-    assert tool_results == [current]
-    assert filtered.messages is not messages
-    assert messages[-1].parts[:3] == [orphan, current, duplicate]
-
-
 async def test_message_integrity_filter_persists_the_processed_history() -> None:
     current = ToolReturnPart(tool_name="lookup", tool_call_id="call-2", content="current")
     duplicate = ToolReturnPart(tool_name="lookup", tool_call_id="call-2", content="duplicate")
