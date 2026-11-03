@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { useState } from "react";
 import { Button } from "a13n-ui";
 import type { Schema } from "../transport/client";
@@ -23,6 +24,7 @@ export function CoordinatorEntry({
   selected?: Schema<"ThreadSummary">;
   selectedUpdatedAt: number;
 }) {
+  const { t } = useTranslation();
   const results = useResults();
   const [expanded, setExpanded] = useState(false);
   const owner = row.thread.thread_id;
@@ -99,16 +101,18 @@ export function CoordinatorEntry({
       {expanded && (
         <div
           className={styles.workers}
-          aria-label={`Workers for ${row.thread.title || "Coordinator"}`}
+          aria-label={t("Workers for {{title}}", {
+            title: row.thread.title || t("Coordinator"),
+          })}
         >
           {visibleRows.map((item) => (
             <ThreadRow key={item.thread.thread_id} row={item} />
           ))}
           {workers.isPending && !workers.data && (
-            <small role="status">Loading workers…</small>
+            <small role="status">{t("Loading workers…")}</small>
           )}
           {workers.isSuccess && !visibleRows.length && (
-            <small>No workers yet</small>
+            <small>{t("No workers yet")}</small>
           )}
           <ErrorNotice
             error={workers.error}
@@ -121,7 +125,7 @@ export function CoordinatorEntry({
               loading={workers.isFetchingNextPage}
               onClick={() => void workers.fetchNextPage()}
             >
-              More workers
+              {t("More workers")}
             </Button>
           )}
         </div>
