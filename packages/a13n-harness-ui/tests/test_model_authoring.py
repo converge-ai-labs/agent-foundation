@@ -25,6 +25,7 @@ def test_subscription_defaults_are_native_and_independent_of_api_presets(model_i
         "openai_reasoning_summary": "detailed",
         "openai_store": False,
         "openai_service_tier": "priority",
+        "openai_transport": "websocket",
     }
     assert codex.model_configuration == {}
     assert codex.model_characteristics.context_window_tokens == 350000
@@ -145,6 +146,14 @@ def test_prepare_preserves_explicit_native_mappings_and_empty_capabilities() -> 
     assert prepare_model(ModelRecipeRequest(connection="codex", model_id="old-model", settings={})).settings == {}
 
 
+@pytest.mark.parametrize("settings", [{}, {"openai_transport": "http"}, {"openai_transport": "websocket"}])
+def test_codex_transport_is_authored_only_for_omitted_creation_settings(settings) -> None:
+    recipe = prepare_model(ModelRecipeRequest(connection="codex", model_id="custom", settings=settings))
+    assert recipe_document(recipe)["settings"] == settings
+    created = prepare_model(ModelRecipeRequest(connection="codex", model_id="custom"))
+    assert recipe_document(created)["settings"]["openai_transport"] == "websocket"
+
+
 def test_unknown_ids_have_conservative_recommendations_and_remain_editable() -> None:
     for connection in ("codex", "grok-subscription", "openai-chat"):
         options = model_options(ModelOptionsRequest(connection=connection, model_id="custom-model"))
@@ -191,7 +200,11 @@ def test_terminal_manual_subscription_id_uses_only_offered_defaults() -> None:
         wizard.accept(answer)
     recipe = wizard.selection("/tmp")["model"]
     assert recipe["route"] == "openai-codex:old-subscription-model"
-    assert recipe["settings"] == {"openai_store": False, "openai_service_tier": "default"}
+    assert recipe["settings"] == {
+        "openai_store": False,
+        "openai_service_tier": "default",
+        "openai_transport": "websocket",
+    }
 
 
 @pytest.mark.parametrize("operation", ["setup", "add_agent", "add_model"])

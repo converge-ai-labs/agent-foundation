@@ -1,5 +1,6 @@
 {
   "Display language": "显示语言",
+  "Use WebSocket": "使用 WebSocket",
   "System": "跟随系统",
   "Log in to Harness UI": "登录 Harness UI",
   "Use the login key printed by your Harness server, not a model API key.": "使用 Harness 服务器显示的登录密钥，而非模型 API 密钥。",

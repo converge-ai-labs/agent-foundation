@@ -1,6 +1,7 @@
 {
   "Register for a notice when human Computer control ends": "Register for a notice when human Computer control ends",
   "Notify on handback": "Notify on handback",
+  "Use WebSocket": "Use WebSocket",
   "The Agent can continue other work. Closing this panel does not return control.": "The Agent can continue other work. Closing this panel does not return control.",
   "Close desktop panel": "Close desktop panel",
   "Desktop viewing and control": "Desktop viewing and control",

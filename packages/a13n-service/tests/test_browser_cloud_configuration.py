@@ -32,7 +32,7 @@ def test_cloud_credentials_preserve_environment(monkeypatch: pytest.MonkeyPatch)
 
 def test_cloud_credentials_fail_for_missing_selection_or_key(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("A13N_CLOUD_BROWSER_TEST", "invalid")
-    with pytest.raises(pytest.UsageError, match="browserbase or kernel"):
+    with pytest.raises(pytest.UsageError, match="browserbase, kernel or browser_use"):
         conftest.cloud_browser_credentials.__wrapped__()
     monkeypatch.setenv("A13N_CLOUD_BROWSER_TEST", "kernel")
     monkeypatch.delenv("KERNEL_API_KEY", raising=False)
@@ -46,7 +46,7 @@ def test_cloud_definitions_available_without_local_browser_root() -> None:
     from a13n_service.settings import Browsers
 
     definitions = {definition.type: definition for definition in builtins(Browsers(root=None))}
-    assert set(definitions) == {"browserbase", "kernel"}
+    assert set(definitions) == {"browserbase", "kernel", "browser_use"}
     for definition in definitions.values():
         definition.validate_domain()
         assert definition.credential_model is not None
@@ -57,6 +57,9 @@ def test_cloud_definitions_available_without_local_browser_root() -> None:
     kernel = definitions["kernel"]
     config = kernel.configuration_model.model_validate({"organization_id": "org"})
     assert kernel.backend_identity(config) == {"organization_id": "org", "project_id": None}
+    browser_use = definitions["browser_use"]
+    config = browser_use.configuration_model.model_validate({"project_id": "project"})
+    assert browser_use.backend_identity(config) == {"project_id": "project"}
 
 
 @pytest.mark.anyio
