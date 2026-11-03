@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { i18n } from "../i18n";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
   act,
@@ -73,8 +74,9 @@ beforeEach(() => {
     getImageData: () => ({ data: [0, 0, 0, controls.painted ? 255 : 0] }),
   } as unknown as CanvasRenderingContext2D);
 });
-afterEach(() => {
+afterEach(async () => {
   cleanup();
+  await i18n.changeLanguage("en");
   connections.length = 0;
   vi.useRealTimers();
   vi.restoreAllMocks();
@@ -463,3 +465,33 @@ it.each(["timeout", "handback", "unmount"])(
     expect(connections.every((connection) => connection.viewOnly)).toBe(true);
   },
 );
+
+it("switches language without replaying access or replacing the keyboard draft", async () => {
+  const view = await show();
+  view.update("controller-token");
+  await screen.findByText("You have control");
+  const connection = connections.at(-1)!;
+  const posts = view.post.mock.calls.length;
+  const input = screen.getByRole("textbox", {
+    name: "Remote browser keyboard input",
+  }) as HTMLTextAreaElement;
+  fireEvent.compositionStart(input);
+  input.value = "尚未提交";
+  await act(async () => {
+    await i18n.changeLanguage("zh-CN");
+  });
+  expect(screen.getByText("你已接管")).toBeTruthy();
+  expect(screen.getByRole("textbox", { name: "远程浏览器键盘输入" })).toBe(
+    input,
+  );
+  expect(input.value).toBe("尚未提交");
+  expect(view.post).toHaveBeenCalledTimes(posts);
+  expect(connection.disconnect).not.toHaveBeenCalled();
+  act(() => connection.dispatchEvent(new Event("disconnect")));
+  expect(screen.getAllByText("连接已断开")).toHaveLength(2);
+  await act(async () => {
+    await i18n.changeLanguage("en");
+  });
+  expect(screen.getAllByText("Disconnected")).toHaveLength(2);
+  expect(view.post).toHaveBeenCalledTimes(posts);
+});

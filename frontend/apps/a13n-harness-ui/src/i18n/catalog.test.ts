@@ -43,7 +43,7 @@ function catalogErrors(catalogs: Record<string, Record<string, string>>) {
   return errors;
 }
 
-it("validates onboarding catalogs with locale-specific plurals and interpolation", () => {
+it("validates localized catalogs with locale-specific plurals and interpolation", () => {
   expect(catalogErrors({ en, "zh-CN": zhCN })).toEqual([]);
   for (const key of Object.keys(en)) expect(i18n.exists(key), key).toBe(true);
 });
@@ -112,6 +112,19 @@ it("formats counts and resolves known login states without translating provider 
 // and the remaining workbench workflows are tracked separately in #1248.
 const surfaces = [
   "app.tsx",
+  "conversations/navigation.tsx",
+  "conversations/recent-navigation.tsx",
+  "conversations/draft-navigation.tsx",
+  "conversations/chat-search.tsx",
+  "conversations/archived.tsx",
+  "conversations/thread-row.tsx",
+  "conversations/coordinator-entry.tsx",
+  "conversations/delete-thread.tsx",
+  "conversations/project-order.ts",
+  "shell/sidebar.tsx",
+  "shell/workbench.tsx",
+  "shell/ui.tsx",
+  "sharing.tsx",
   "shell/startup.tsx",
   "setup/wizard.tsx",
   "setup/setup.tsx",
@@ -121,8 +134,28 @@ const surfaces = [
   "configuration/resource-choice.tsx",
   "setup/accounts.tsx",
   "setup/account-messages.ts",
+  "browser/panel.tsx",
+  "browser/desktop.tsx",
+  "browser/activity.tsx",
+  "browser/setup.tsx",
+  "browser/requirements.tsx",
+  "browser/macos-setup.tsx",
+  "browser/annotation-editor.tsx",
+  "browser/annotation-text.tsx",
+  "browser/text-input.ts",
+  "configuration/browser-fields.tsx",
+  "configuration/fields.tsx",
+  "native/workspace.tsx",
+  "conversations/composer-settings.tsx",
+  "conversations/thread-run-choices.tsx",
+  "conversations/model-controls.tsx",
+  "conversations/model-picker.tsx",
+  "conversations/thinking-picker.tsx",
+  "conversations/fast-picker.tsx",
+  "conversations/reasoning-mode-picker.tsx",
+  "conversations/model-control-messages.ts",
 ];
-it("keeps literal onboarding translation calls in the catalogs", () => {
+it("keeps literal translation calls in the catalogs", () => {
   const missing: string[] = [];
   for (const path of surfaces) {
     const source = readFileSync(new URL(`../${path}`, import.meta.url), "utf8");

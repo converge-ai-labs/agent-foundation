@@ -1,3 +1,5 @@
+import { useTranslation } from "../i18n";
+import { modelControlMessage } from "./model-control-messages";
 import { Button, ToggleGroup, ToggleGroupItem } from "a13n-ui";
 import { Check } from "@phosphor-icons/react";
 import type { Schema } from "../transport/client";
@@ -17,6 +19,7 @@ export function ThinkingPicker({
   disabled?: boolean;
   onChange: (value: Selection) => void;
 }) {
+  const { t } = useTranslation();
   const control = model?.thinking;
   const options = control?.options ?? [];
   const explicit = options.filter((item) => item.value !== null);
@@ -25,26 +28,28 @@ export function ThinkingPicker({
   const unavailable =
     value != null && (!selected || !!selected.disabled_reason);
   return (
-    <section aria-label="Thinking">
+    <section aria-label={t("Thinking")}>
       <Button
         variant="ghost"
         className={styles.choice}
-        aria-label="Use default thinking"
+        aria-label={t("Use default thinking")}
         aria-pressed={value == null}
         disabled={disabled || !!inherited?.disabled_reason}
-        title={
+        title={modelControlMessage(
           inherited?.disabled_reason ??
-          control?.default_summary ??
-          inherited?.description
-        }
+            control?.default_summary ??
+            inherited?.description ??
+            "",
+          t,
+        )}
         onClick={() => onChange(null)}
       >
-        <span>Default</span>
+        <span>{t("Default")}</span>
         {value == null && <Check aria-hidden />}
       </Button>
       {explicit.length > 0 && (
         <ToggleGroup
-          aria-label="Thinking level"
+          aria-label={t("Thinking level")}
           className={styles.levels}
           orientation="vertical"
           value={value == null ? [] : [JSON.stringify(value)]}
@@ -63,11 +68,14 @@ export function ThinkingPicker({
             <ToggleGroupItem
               key={JSON.stringify(item.value)}
               value={JSON.stringify(item.value)}
-              aria-label={item.label}
+              aria-label={modelControlMessage(item.label, t)}
               disabled={!!item.disabled_reason}
-              title={item.disabled_reason ?? item.description}
+              title={modelControlMessage(
+                item.disabled_reason ?? item.description,
+                t,
+              )}
             >
-              <span>{item.label}</span>
+              <span>{modelControlMessage(item.label, t)}</span>
               {item.value === value && <Check aria-hidden />}
             </ToggleGroupItem>
           ))}
@@ -75,12 +83,16 @@ export function ThinkingPicker({
       )}
       {unavailable && (
         <p role="alert" className={styles.hint}>
-          {selected?.disabled_reason ?? "Unavailable selection — use default."}
+          {selected?.disabled_reason != null
+            ? modelControlMessage(selected.disabled_reason, t)
+            : t("Unavailable selection — use default.")}
         </p>
       )}
       {(!control || control.reason) && (
         <p className={styles.hint}>
-          {control?.reason ?? "No thinking controls available."}
+          {control?.reason != null
+            ? modelControlMessage(control.reason, t)
+            : t("No thinking controls available.")}
         </p>
       )}
     </section>

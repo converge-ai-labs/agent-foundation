@@ -1,3 +1,5 @@
+import { useTranslation } from "../i18n";
+import { modelControlMessage } from "./model-control-messages";
 import { SettingsChoices } from "./composer-settings";
 import type { Schema } from "../transport/client";
 import styles from "./composer-settings.module.css";
@@ -30,10 +32,13 @@ export function ReasoningModePicker({
   disabled?: boolean;
   onChange: (value: Schema<"SubmitRequest">["reasoning_mode"]) => void;
 }) {
+  const { t } = useTranslation();
   return (
     <>
       <SettingsChoices
-        label="reasoning modes"
+        searchLabel={t("Search reasoning modes")}
+        searchPlaceholder={t("Search reasoning modes…")}
+        emptyLabel={t("No matching reasoning modes.")}
         value={value ?? "default"}
         disabled={disabled}
         onChange={(next) =>
@@ -42,22 +47,27 @@ export function ReasoningModePicker({
         options={[
           {
             value: "default",
-            label: "Default",
+            label: t("Default"),
           },
           {
             value: "standard",
-            label: "Standard",
+            label: t("Standard"),
             disabled: !control?.supported,
           },
-          { value: "pro", label: "Pro", disabled: !control?.supported },
+          { value: "pro", label: t("Pro"), disabled: !control?.supported },
         ]}
       />
       <p className={styles.hint}>
-        {control?.reason ??
-          "Separate from reasoning effort. Pro access, usage and speed depend on the provider."}
+        {control?.reason != null
+          ? modelControlMessage(control.reason, t)
+          : t(
+              "Separate from reasoning effort. Pro access, usage and speed depend on the provider.",
+            )}
       </p>
       {value != null && !control?.supported && (
-        <p className={styles.hint}>Unavailable selection — use default.</p>
+        <p className={styles.hint}>
+          {t("Unavailable selection — use default.")}
+        </p>
       )}
     </>
   );

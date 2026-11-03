@@ -247,7 +247,7 @@ def _registry(distribution: Distribution, config: Settings) -> Registry:
     environments = config.environments
     return Registry.of(
         offered(
-            (*distribution.providers, *builtins(config.browsers)),
+            (*distribution.providers, *builtins(config.browsers, config.providers.response_bytes)),
             allow_local=config.provisioning.local.enabled,
             docker_host=environments.docker_host,
             docker_mount_roots=environments.docker_mount_roots,

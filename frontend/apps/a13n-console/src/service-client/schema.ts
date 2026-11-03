@@ -10255,6 +10255,10 @@ export interface components {
     /** ProviderType */
     ProviderType: {
       authentication: components["schemas"]["Authentication"];
+      /** Browser Recipe Schema */
+      browser_recipe_schema?: {
+        [key: string]: components["schemas"]["JsonValue"];
+      } | null;
       /** Catalog Providers */
       catalog_providers?: string[] | null;
       /** Configuration Schema */
@@ -10304,6 +10308,8 @@ export interface components {
       supports_stop?: boolean | null;
       /** Supports Test */
       supports_test: boolean;
+      /** Supports Viewer */
+      supports_viewer?: boolean | null;
       /** Type */
       type: string;
     };

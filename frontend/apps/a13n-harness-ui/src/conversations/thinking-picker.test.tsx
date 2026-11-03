@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { Schema } from "../transport/client";
+import { i18n } from "../i18n";
 import { ThinkingPicker } from "./thinking-picker";
 import { ThreadRunChoices } from "./thread-run-choices";
 
@@ -13,9 +14,10 @@ beforeEach(() =>
     removeEventListener() {},
   })),
 );
-afterEach(() => {
+afterEach(async () => {
   cleanup();
   vi.unstubAllGlobals();
+  await i18n.changeLanguage("en");
 });
 
 const model: Schema<"ModelSummary"> = {
@@ -171,4 +173,25 @@ it("keeps inherited defaults distinct from explicit levels across catalog refres
   expect(pressed("Quick")).toBe("false");
   expect(pressed("Use default thinking")).toBe("false");
   expect(change).not.toHaveBeenCalled();
+});
+
+it("keeps opaque backend labels and stale values while localizing their recovery", async () => {
+  const change = vi.fn();
+  render(<ThinkingPicker model={model} value="max" onChange={change} />);
+  await act(() => i18n.changeLanguage("zh-CN"));
+  const inherited = screen.getByRole("button", { name: "使用默认思考设置" });
+  expect(inherited.getAttribute("title")).toBe("预算 · 8,192 token");
+  expect(inherited.getAttribute("aria-pressed")).toBe("false");
+  expect(screen.getByRole("button", { name: "Quick" })).toBeTruthy();
+  const disabled = screen.getByRole("button", { name: "Deep" });
+  expect(disabled.getAttribute("title")).toBe(
+    "Increase the output limit first",
+  );
+  expect(disabled).toHaveProperty("disabled", true);
+  expect(screen.getByRole("alert").textContent).toBe(
+    "所选项不可用，请使用默认设置。",
+  );
+  expect(change).not.toHaveBeenCalled();
+  await userEvent.click(inherited);
+  expect(change).toHaveBeenCalledExactlyOnceWith(null);
 });

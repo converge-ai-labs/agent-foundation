@@ -1,6 +1,6 @@
-import { ChoiceField, FormField, Input, Textarea } from "a13n-ui";
+import { Button, ChoiceField, FormField, Input, Textarea } from "a13n-ui";
 
-import { useState, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 
 import { useTranslation } from "react-i18next";
 import { SwitchField } from "./switch-field";
@@ -60,6 +60,15 @@ export function withSchemaValues(
       if (Object.hasOwn(field, "const")) result[key] = field.const;
       else if (result[key] === undefined && Object.hasOwn(field, "default"))
         result[key] = field.default;
+      if (field.type === "array" && Array.isArray(result[key])) {
+        result[key] = result[key].map(
+          (item) =>
+            withSchemaValues(
+              { properties: { item: field.items }, $defs: schema.$defs },
+              { item },
+            ).item,
+        );
+      }
       if (
         result[key] !== null &&
         field.type === "object" &&
@@ -218,6 +227,21 @@ export function SchemaFields({
               description={description}
             />
           );
+        if (field.type === "array" && editableArrayItem(field.items, schema))
+          return (
+            <SchemaArrayField
+              key={key}
+              label={label}
+              description={description}
+              field={field}
+              definitions={schema.$defs}
+              value={Array.isArray(current) ? current : []}
+              onChange={(next) => change(key, next)}
+              secret={secret}
+              descriptions={descriptions}
+              requireFields={requireFields}
+            />
+          );
         if (field.type === "object" && object(field.properties)) {
           if (!Object.keys(field.properties).length) return null;
           return (
@@ -336,6 +360,168 @@ export function SchemaFields({
     </div>
   );
 }
+function editableArrayItem(
+  item: unknown,
+  root: Record<string, unknown>,
+): boolean {
+  const field = fieldSchema(item, root);
+  // Alternative item types need an explicit selector, including a null choice.
+  if (Array.isArray(field.anyOf) || Array.isArray(field.oneOf)) return false;
+  return (
+    ["string", "number", "integer", "boolean"].includes(String(field.type)) ||
+    (field.type === "object" &&
+      object(field.properties) &&
+      Object.keys(field.properties).length > 0) ||
+    (field.type === "array" && editableArrayItem(field.items, root))
+  );
+}
+
+type ArrayRow = { id: number; value: unknown };
+
+/** Stable row identities keep nested drafts attached to their item after removal. */
+function SchemaArrayField({
+  label,
+  description,
+  field,
+  definitions,
+  value,
+  onChange,
+  secret,
+  descriptions,
+  requireFields,
+}: {
+  label: string;
+  description?: string;
+  field: Record<string, unknown>;
+  definitions: unknown;
+  value: unknown[];
+  onChange: (value: unknown[]) => void;
+  secret: boolean;
+  descriptions: boolean;
+  requireFields: boolean;
+}) {
+  const { t } = useTranslation();
+  const id = useId();
+  const serialized = JSON.stringify(value);
+  const [source, setSource] = useState(serialized);
+  const [rows, setRows] = useState<ArrayRow[]>(() =>
+    value.map((value, id) => ({ id, value })),
+  );
+  const [nextId, setNextId] = useState(rows.length);
+  if (source !== serialized) {
+    setSource(serialized);
+    setRows(value.map((value, id) => ({ id, value })));
+    setNextId(value.length);
+  }
+  const item = fieldSchema(field.items, { $defs: definitions });
+  const itemSchema = {
+    properties: { value: item },
+    $defs: definitions,
+    required:
+      item.type === "string" && !(Number(item.minLength) > 0) ? [] : ["value"],
+  };
+  function update(next: ArrayRow[]) {
+    setRows(next);
+    const values = next.map((row) => row.value);
+    setSource(JSON.stringify(values));
+    onChange(values);
+  }
+  return (
+    <fieldset
+      className={styles.schemaArray}
+      aria-describedby={description ? `${id}-help` : undefined}
+    >
+      <legend>{label}</legend>
+      {description && (
+        <p id={`${id}-help`} className={styles.arrayDescription}>
+          {description}
+        </p>
+      )}
+      {rows.map((row, index) => (
+        <fieldset key={row.id} className={styles.arrayItem}>
+          <legend>{t("Item {{number}}", { number: index + 1 })}</legend>
+          <SchemaFields
+            schema={
+              item.type === "object"
+                ? { ...item, $defs: definitions }
+                : itemSchema
+            }
+            value={
+              item.type === "object" && object(row.value)
+                ? row.value
+                : { value: row.value }
+            }
+            onChange={(next) =>
+              update(
+                rows.map((entry) =>
+                  entry.id === row.id
+                    ? {
+                        ...entry,
+                        value:
+                          item.type === "object"
+                            ? next
+                            : item.type === "string"
+                              ? (next.value ?? "")
+                              : next.value,
+                      }
+                    : entry,
+                ),
+              )
+            }
+            secret={secret}
+            descriptions={descriptions}
+            requireFields={requireFields}
+          />
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className={styles.arrayRemove}
+            aria-label={t("Remove item {{number}}", { number: index + 1 })}
+            disabled={
+              typeof field.minItems === "number" &&
+              rows.length <= field.minItems
+            }
+            onClick={() => update(rows.filter((entry) => entry.id !== row.id))}
+          >
+            {t("Remove")}
+          </Button>
+        </fieldset>
+      ))}
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className={styles.arrayAdd}
+        disabled={
+          typeof field.maxItems === "number" && rows.length >= field.maxItems
+        }
+        onClick={() => {
+          const initial = Object.hasOwn(item, "default")
+            ? item.default
+            : item.type === "object"
+              ? {}
+              : item.type === "array"
+                ? []
+                : item.type === "boolean"
+                  ? false
+                  : "";
+          update([
+            ...rows,
+            {
+              id: nextId,
+              value: withSchemaValues(itemSchema, { value: initial }).value,
+            },
+          ]);
+          setNextId(nextId + 1);
+        }}
+      >
+        {t("Add item")}
+      </Button>
+    </fieldset>
+  );
+}
+
 function JsonField({
   label,
   description,

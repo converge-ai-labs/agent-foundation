@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { Fragment, useEffect, useId, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { SharePanel } from "../sharing";
@@ -67,6 +68,7 @@ type Group = {
 };
 
 export function ConversationNavigation() {
+  const { t } = useTranslation();
   const projects = useProjects();
   const navigate = useNavigate();
   const match = useMatch("/threads/:threadId");
@@ -178,12 +180,12 @@ export function ConversationNavigation() {
   groups.push({
     id: "@projectless",
     scope: "projectless",
-    name: "Without a project",
+    name: t("Without a project"),
   });
   groups.push({
     id: "@unavailable",
     scope: "unavailable",
-    name: "Unavailable projects",
+    name: t("Unavailable projects"),
   });
   const activeGroup =
     selected && projects.data
@@ -215,10 +217,10 @@ export function ConversationNavigation() {
       }}
     >
       <div className={styles.navigation}>
-        <nav aria-label="Chat shortcuts" className={styles.shortcuts}>
+        <nav aria-label={t("Chat shortcuts")} className={styles.shortcuts}>
           <NavLink to="/" end className={styles.newConversationLink}>
             <Plus size={18} aria-hidden="true" />
-            <span>New</span>
+            <span>{t("New")}</span>
           </NavLink>
           <ChatSearch
             onOpen={() => {
@@ -229,13 +231,13 @@ export function ConversationNavigation() {
           <DraftNavigation />
         </nav>
         <div className={styles.navigationHeading}>
-          <span>{view === "recent" ? "Recent" : "Projects"}</span>
+          <span>{view === "recent" ? t("Recent") : t("Projects")}</span>
           <div className={styles.navigationHeadingActions}>
             <Menu>
               <MenuTrigger
                 render={<Button variant="ghost" size="icon-sm" />}
-                aria-label="Conversation display"
-                title="Conversation display"
+                aria-label={t("Conversation display")}
+                title={t("Conversation display")}
               >
                 <DotsThree />
               </MenuTrigger>
@@ -243,13 +245,13 @@ export function ConversationNavigation() {
                 <MenuRadioGroup
                   value={view}
                   onValueChange={changeView}
-                  aria-label="Display as"
+                  aria-label={t("Display as")}
                 >
                   <MenuRadioItem value="projects" closeOnClick>
-                    Projects
+                    {t("Projects")}
                   </MenuRadioItem>
                   <MenuRadioItem value="recent" closeOnClick>
-                    Conversations
+                    {t("Conversations")}
                   </MenuRadioItem>
                 </MenuRadioGroup>
               </MenuPopup>
@@ -257,8 +259,8 @@ export function ConversationNavigation() {
             <Button
               variant="ghost"
               size="icon-sm"
-              aria-label={view === "recent" ? "New chat" : "Add project"}
-              title={view === "recent" ? "New chat" : "Add project"}
+              aria-label={view === "recent" ? t("New chat") : t("Add project")}
+              title={view === "recent" ? t("New chat") : t("Add project")}
               onClick={() =>
                 view === "recent"
                   ? navigate(newConversationPath())
@@ -277,7 +279,7 @@ export function ConversationNavigation() {
           className={`${styles.threadGroups} a13n-scrollbar`}
           data-project-scroll
         >
-          {projects.isPending && <p role="status">Loading projects…</p>}
+          {projects.isPending && <p role="status">{t("Loading projects…")}</p>}
           <div hidden={view !== "projects"}>
             {groups.map((group) => (
               <ProjectGroup
@@ -362,6 +364,7 @@ function ProjectGroup({
   chatOrder: ReturnType<typeof useChatOrder>;
   drag: ReturnType<typeof useNavigationDrag>;
 }) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [markingRead, setMarkingRead] = useState(false);
   const [sharing, setSharing] = useState(false);
@@ -511,7 +514,7 @@ function ProjectGroup({
             aria-keyshortcuts={group.projectId ? "Alt+Space" : undefined}
             aria-description={
               group.projectId
-                ? "Drag to reorder, or press Alt+Space and use arrow keys."
+                ? t("Drag to reorder, or press Alt+Space and use arrow keys.")
                 : undefined
             }
             data-reordering={order.moving === group.id || undefined}
@@ -526,10 +529,12 @@ function ProjectGroup({
             {unreadCount > 0 && (
               <small
                 className={styles.resultCount}
-                aria-label={`${unreadCount} chats with new results`}
-                title="Chats with new results"
+                aria-label={t("Chats with new results count", {
+                  count: unreadCount,
+                })}
+                title={t("Chats with new results")}
               >
-                {unreadCount}
+                {t("{{count, number}}", { count: unreadCount })}
               </small>
             )}
           </TooltipTrigger>
@@ -551,14 +556,20 @@ function ProjectGroup({
                 {list.data && (
                   <p>
                     <ChatCircle size={16} />
-                    {list.data.pages[0].total} chats
+                    {t("Chat count", { count: list.data.pages[0].total })}
                   </p>
                 )}
                 {(activeRows.length > 0 || unreadCount > 0) && (
                   <p className={styles.projectSummaryActivity}>
                     {[
-                      activeRows.length > 0 && `${activeRows.length} active`,
-                      unreadCount > 0 && `${unreadCount} with new results`,
+                      activeRows.length > 0 &&
+                        t("{{count, number}} active", {
+                          count: activeRows.length,
+                        }),
+                      unreadCount > 0 &&
+                        t("{{count, number}} with new results", {
+                          count: unreadCount,
+                        }),
                     ]
                       .filter(Boolean)
                       .join(" · ")}
@@ -583,16 +594,16 @@ function ProjectGroup({
             <span
               role="status"
               className={styles.srOnly}
-              aria-label={`Updating chats in ${group.name}`}
+              aria-label={t("Updating chats in {{name}}", { name: group.name })}
             >
-              Updating…
+              {t("Updating…")}
             </span>
           )}
           {group.scope !== "unavailable" && (
             <Button
               variant="ghost"
               size="icon-sm"
-              aria-label={`New chat in ${group.name}`}
+              aria-label={t("New chat in {{name}}", { name: group.name })}
               onClick={create}
             >
               <Plus />
@@ -602,7 +613,7 @@ function ProjectGroup({
             <Menu>
               <MenuTrigger
                 render={<Button variant="ghost" size="icon-sm" />}
-                aria-label={`Actions for ${group.name}`}
+                aria-label={t("Actions for {{name}}", { name: group.name })}
               >
                 <DotsThree />
               </MenuTrigger>
@@ -617,27 +628,29 @@ function ProjectGroup({
                   }
                 >
                   <ChartBar />
-                  Usage
+                  {t("Usage")}
                 </MenuItem>
                 {unreadCount > 0 && (
                   <MenuItem
-                    aria-label={`Mark all results read in ${group.name}`}
+                    aria-label={t("Mark all results read in {{name}}", {
+                      name: group.name,
+                    })}
                     disabled={markingRead}
                     onClick={() => void markAllRead()}
                   >
                     <Check />
-                    Mark all read
+                    {t("Mark all read")}
                   </MenuItem>
                 )}
                 {group.projectId && (
                   <>
                     <MenuItem onClick={() => setSharing(true)}>
                       <ShareNetwork />
-                      Share
+                      {t("Share")}
                     </MenuItem>
                     <MenuItem onClick={rename}>
                       <PencilSimpleIcon />
-                      Rename
+                      {t("Rename")}
                     </MenuItem>
                     <MenuItem
                       onClick={() =>
@@ -647,14 +660,14 @@ function ProjectGroup({
                       }
                     >
                       <Gear />
-                      Settings
+                      {t("Settings")}
                     </MenuItem>
                     <MenuItem
                       disabled={order.ids.indexOf(group.id) === 0}
                       onClick={() => order.moveBy(group.id, -1)}
                     >
                       <ArrowUp />
-                      Move up
+                      {t("Move up")}
                     </MenuItem>
                     <MenuItem
                       disabled={
@@ -663,18 +676,18 @@ function ProjectGroup({
                       onClick={() => order.moveBy(group.id, 1)}
                     >
                       <ArrowDown />
-                      Move down
+                      {t("Move down")}
                     </MenuItem>
                     <MenuItem onClick={order.reset}>
                       <ArrowCounterClockwise />
-                      Reset order
+                      {t("Reset order")}
                     </MenuItem>
                   </>
                 )}
                 {group.scope !== "unavailable" && (
                   <MenuItem onClick={() => chatOrder.reset(group.id)}>
                     <ArrowCounterClockwise />
-                    Reset chat order
+                    {t("Reset chat order")}
                   </MenuItem>
                 )}
               </MenuPopup>
@@ -698,7 +711,7 @@ function ProjectGroup({
                 (index === recentStart && recentStart > 0)) && (
                 <div className={styles.sectionHeading}>
                   <span role="heading" aria-level={3}>
-                    {index === 0 ? "Active" : "History"}
+                    {index === 0 ? t("Active") : t("History")}
                   </span>
                 </div>
               )}
@@ -707,16 +720,23 @@ function ProjectGroup({
                   <span
                     role="heading"
                     aria-level={3}
-                    aria-label={`New results · ${unreadRows.length}`}
+                    aria-label={t("New results · {{count, number}}", {
+                      count: unreadRows.length,
+                    })}
                   >
-                    New results <small>{unreadRows.length}</small>
+                    {t("New results")}{" "}
+                    <small>
+                      {t("{{count, number}}", { count: unreadRows.length })}
+                    </small>
                   </span>
                   <Button
                     variant="ghost"
                     size="icon-sm"
                     loading={markingRead}
-                    aria-label={`Mark all results read in ${group.name}`}
-                    title="Mark all current results in this group as read"
+                    aria-label={t("Mark all results read in {{name}}", {
+                      name: group.name,
+                    })}
+                    title={t("Mark all current results in this group as read")}
                     onClick={() => void markAllRead()}
                   >
                     <Check />
@@ -754,15 +774,15 @@ function ProjectGroup({
           {expanded && !rows.length && !list.data && list.isPending && (
             <div
               role="status"
-              aria-label="Loading chats"
+              aria-label={t("Loading chats")}
               aria-busy="true"
               className={styles.initialLoading}
             >
-              <span>Loading chats…</span>
+              <span>{t("Loading chats…")}</span>
             </div>
           )}
           {list.isSuccess && !list.isPreviousData && !rows.length && (
-            <small className={styles.emptyGroup}>No chats yet</small>
+            <small className={styles.emptyGroup}>{t("No chats yet")}</small>
           )}
           <ErrorNotice error={list.error} retry={() => void list.refetch()} />
           {(hasHiddenRows || list.hasNextPage) && (
@@ -773,10 +793,12 @@ function ProjectGroup({
               loading={list.isFetchingNextPage}
               ref={showMoreRef}
               onClick={showMore}
-              aria-label={`Show more chats in ${group.name}`}
-              title={`Show more chats in ${group.name}`}
+              aria-label={t("Show more chats in {{name}}", {
+                name: group.name,
+              })}
+              title={t("Show more chats in {{name}}", { name: group.name })}
             >
-              Show more
+              {t("Show more")}
             </Button>
           )}
           {showAll && recentRows.length > 5 && (
@@ -788,9 +810,11 @@ function ProjectGroup({
                 setShowAll(false);
                 requestAnimationFrame(() => showMoreRef.current?.focus());
               }}
-              aria-label={`Show fewer chats in ${group.name}`}
+              aria-label={t("Show fewer chats in {{name}}", {
+                name: group.name,
+              })}
             >
-              Show less
+              {t("Show less")}
             </Button>
           )}
         </div>
