@@ -178,6 +178,29 @@ model_configuration:
 
 Save `key-gateway`, use the gateway's model ID and endpoint, validate, then test a request. The SDK appends version/resource paths; appending `/v1beta` or `/v1beta1` does not switch transports. `google-gla:`, `google-vertex:`, and `gemini:` are Cloud aliases. This route supplies API-key authentication, not Cloud IAM/service accounts.
 
+### OpenAI 12-hour prompt caching
+
+For a supported Responses API Model, merge these fields into its Model file:
+
+```yaml
+route: openai-responses:gpt-6-astra
+settings:
+  cache: '12h'
+```
+
+The object form is `cache: {retention: '12h'}`. Unified caching follows the installed model profile: a recognized Responses model can select 12h, Chat Completions downgrades it to 30m, and an unrecognized gateway alias can leave it unapplied. For a compatible Responses gateway whose alias is not recognized, use native options instead:
+
+```yaml
+settings:
+  openai_prompt_cache_options:
+    mode: implicit
+    ttl: '12h'
+```
+
+An explicit `openai_prompt_cache_options` or `openai_cache_instructions` setting takes precedence over unified translation, including `openai_cache_instructions: false`. Verify the gateway's support with a request. The separate `openai_prompt_cache_retention: '24h'` setting is not the 12h TTL option. Keep the Thread-derived cache key unless you deliberately need another cache-sharing policy.
+
+These settings survive captured Model recipe restoration. Correct 12h cache-write pricing still depends on upstream usage and pricing support; [issue #1387](https://github.com/converge-ai-labs/agent-foundation/issues/1387) tracks that integration.
+
 ## Gateway session affinity
 
 Use affinity when your gateway has a routing rule that reads a session header. In Add Model, select **Gateway session affinity** or enter a **Session affinity header**. The saved Model contains the header's name:

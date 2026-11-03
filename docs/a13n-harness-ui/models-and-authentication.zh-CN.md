@@ -178,6 +178,29 @@ model_configuration:
 
 保存 `key-gateway`，填写网关模型 ID 和端点，验证后测试请求。SDK 添加版本/资源路径；追加 `/v1beta` 或 `/v1beta1` 不会切换传输。`google-gla:`、`google-vertex:` 和 `gemini:` 是 Cloud 别名。该路由提供 API 密钥认证，不配置 Cloud IAM/服务账户。
 
+### OpenAI 12 小时提示缓存
+
+对于支持该功能的 Responses API Model，将以下字段合并到 Model 文件：
+
+```yaml
+route: openai-responses:gpt-6-astra
+settings:
+  cache: '12h'
+```
+
+对象形式是 `cache: {retention: '12h'}`。统一缓存遵循已安装的模型 profile：已识别的 Responses 模型可以选择 12h，Chat Completions 会降级为 30m，未识别的网关别名则可能不应用该设置。对于支持该功能、但别名未被识别的 Responses 网关，改用原生选项：
+
+```yaml
+settings:
+  openai_prompt_cache_options:
+    mode: implicit
+    ttl: '12h'
+```
+
+显式 `openai_prompt_cache_options` 或 `openai_cache_instructions` 设置优先于统一转换，包括 `openai_cache_instructions: false`。通过实际请求验证网关支持情况。独立的 `openai_prompt_cache_retention: '24h'` 设置不是 12h TTL 选项。保留由 Thread 派生的缓存键，除非你明确需要其他缓存共享策略。
+
+捕获的 Model recipe 恢复后仍保留这些设置。正确计算 12h 缓存写入费用仍依赖上游用量与定价支持；[issue #1387](https://github.com/converge-ai-labs/agent-foundation/issues/1387) 跟踪这部分集成。
+
 ## 网关会话亲和性
 
 网关已有读取会话 header 的路由规则时，可使用亲和性。在 Add Model 选择 **Gateway session affinity**，或填写 **Session affinity header**。保存的 Model 包含 header 名称：
