@@ -127,7 +127,8 @@ async def _events(executable: Any, prompt: str, **kwargs: Any) -> list[dict[str,
     return payloads
 
 
-async def test_the_first_run_gets_always_loaded_files_and_the_index_before_its_input() -> None:
+@pytest.mark.parametrize("grouped", [False, True])
+async def test_the_first_run_gets_always_loaded_files_and_the_index_before_its_input(grouped: bool) -> None:
     store = FakeFileStore({"README.md": "# How we work\nbe kind\n", "prefs/tea.md": "likes tea\n", "notes": ""})
     cursors = MemoryCursors()
     model = _Model()
@@ -136,7 +137,15 @@ async def test_the_first_run_gets_always_loaded_files_and_the_index_before_its_i
         cursors=cursors,
     )
 
-    await _build(model, capability).run("hi", bindings=RunBindings.embedded())
+    if grouped:
+        from a13n_harness.capabilities import ToolSearchCapability, ToolSearchGroup
+        from pydantic_ai.capabilities import CombinedCapability
+
+        source = CombinedCapability([capability])
+        installed = ToolSearchCapability(groups={"memory": ToolSearchGroup(source, "Memory")})
+    else:
+        installed = capability
+    await _build(model, installed).run("hi", bindings=RunBindings.embedded())
 
     texts = _texts(model.calls[0])
     [block] = _blocks(model.calls[0])

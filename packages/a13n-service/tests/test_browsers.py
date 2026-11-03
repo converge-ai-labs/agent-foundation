@@ -331,7 +331,8 @@ async def test_stop_suppression_survives_later_input(service, runs_kit, scripted
     )
 
 
-async def test_agent_native_tools_allocate_lazily_and_leave_tabs_alive(service, runs_kit, scripted_model):
+@pytest.mark.parametrize("on_demand", [False, True])
+async def test_agent_native_tools_allocate_lazily_and_leave_tabs_alive(service, runs_kit, scripted_model, on_demand):
     supplier, browser = await setup(service, runs_kit)
     lease, _ = await bound_run(
         service,
@@ -339,17 +340,25 @@ async def test_agent_native_tools_allocate_lazily_and_leave_tabs_alive(service, 
         scripted_model,
         browser,
         toolsets={"browser": {"enabled": True, "tools": {"screenshot": {"enabled": False}}}},
+        tool_search={"automatic": {}} if on_demand else None,
     )
     assert supplier.creates == 0
-    scripted_model.call("browser_tabs", {"action": "new"}, call_id="call_new")
-    scripted_model.call("browser_dialog", {"action": "inspect"}, call_id="call_dialog")
+    for name, action in (("browser_tabs", "new"), ("browser_dialog", "inspect")):
+        scripted_model.call(
+            "call_tool" if on_demand else name,
+            {"group": "browser", "tool": name, "arguments": {"action": action}} if on_demand else {"action": action},
+            call_id=f"call_{action}",
+        )
     scripted_model.say("Done")
     await execute(service.runtime, lease, AttemptControl(deadline=asyncio.get_running_loop().time() + 60))
     run = await runs_kit.get_run(service, lease.run_id)
     assert run["status"] == "completed", run.get("failure")
     request = await scripted_model.request()
     names = {tool["function"]["name"] for tool in request["tools"]}
-    assert "browser_tabs" in names and "browser_screenshot" not in names
+    assert ("browser_tabs" in names) is not on_demand
+    assert "browser_screenshot" not in names
+    assert "browser_notify_on_handback" in names
+    assert "<browser-context>" in str(request["messages"])
     assert supplier.creates == 1 and supplier.pages == {"original", "new-1"}
     assert supplier.connections and all(connection.disconnected for connection in supplier.connections)
     assert not any(method == "Target.closeTarget" for method, _, _ in supplier.protocol_calls)
@@ -456,12 +465,26 @@ async def test_run_start_during_human_control_does_not_register_a_fake_call(
     invocation.tool_call.assert_not_awaited()
 
 
-async def test_blocked_native_tool_returns_guidance_and_model_continues(service, runs_kit, scripted_model):
+@pytest.mark.parametrize("on_demand", [False, True])
+async def test_blocked_native_tool_returns_guidance_and_model_continues(service, runs_kit, scripted_model, on_demand):
     supplier, browser = await setup(service, runs_kit)
-    lease, _ = await bound_run(service, runs_kit, scripted_model, browser, toolsets={"browser": {"enabled": True}})
+    lease, _ = await bound_run(
+        service,
+        runs_kit,
+        scripted_model,
+        browser,
+        toolsets={"browser": {"enabled": True}},
+        tool_search={"automatic": {}} if on_demand else None,
+    )
     await command(service, runs_kit, browser["id"], "takeover", thread_id=lease.thread_id)
     before = len(supplier.protocol_calls)
-    scripted_model.call("browser_tabs", {"action": "new"}, call_id="call_blocked")
+    scripted_model.call(
+        "call_tool" if on_demand else "browser_tabs",
+        {"group": "browser", "tool": "browser_tabs", "arguments": {"action": "new"}}
+        if on_demand
+        else {"action": "new"},
+        call_id="call_blocked",
+    )
     scripted_model.say("I can continue unrelated work")
     await execute(service.runtime, lease, AttemptControl(deadline=asyncio.get_running_loop().time() + 60))
     run = await runs_kit.get_run(service, lease.run_id)

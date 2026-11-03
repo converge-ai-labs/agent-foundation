@@ -6,6 +6,7 @@ from fastapi import APIRouter, Query, Response
 
 from a13n_service.infra import images, reads
 from a13n_service.infra.http import IfMatch, PageLimit, download_headers, tagged
+from a13n_service.infra.ids import ObjectId
 from a13n_service.infra.platform import platform_operation
 from a13n_service.resources import catalog_reads
 from a13n_service.resources.agents import composer, read_views, service
@@ -331,8 +332,15 @@ async def set_default_agent_revision(
 
 
 @router.get("/toolsets", response_model=ToolsetCatalog, openapi_extra=platform_operation("agents", "read"))
-async def list_toolsets(workspace_id: WorkspaceId, actor: Actor, runtime: CurrentRuntime) -> ToolsetCatalog:
-    return await service.toolset_catalog(runtime.storage, actor, workspace_id, registry=runtime.registry)
+async def list_toolsets(
+    workspace_id: WorkspaceId,
+    actor: Actor,
+    runtime: CurrentRuntime,
+    connection_ids: Annotated[list[ObjectId] | None, Query(max_length=128)] = None,
+) -> ToolsetCatalog:
+    return await service.toolset_catalog(
+        runtime.storage, actor, workspace_id, registry=runtime.registry, connection_ids=tuple(connection_ids or ())
+    )
 
 
 @router.get("/plugins", response_model=PluginCatalog, openapi_extra={"x-a13n-mcp": True})

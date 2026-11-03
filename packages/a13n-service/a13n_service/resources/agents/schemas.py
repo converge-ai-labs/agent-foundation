@@ -21,14 +21,16 @@ from a13n_service.execution_policy import ExecutionOverride
 from a13n_service.infra.ids import Key, ObjectId
 from a13n_service.infra.labels import Labels
 from a13n_service.infra.platform import PLATFORM_TOOLS
+from a13n_service.infra.reads import UnavailableConfiguration
 from a13n_service.providers.model_settings import JsonSettings
 from a13n_service.resources.agents.tables import AgentSource, PresetKind
 from a13n_service.resources.agents.toolsets import (
     PLATFORM_SOURCE,
+    AutomaticToolSearch,
+    BuiltinToolsetKey,
     ToolsetOverrides,
     Toolsets,
     default_toolsets,
-    platform_tools,
 )
 from a13n_service.resources.builtin_skills import BuiltinSkillName
 from a13n_service.resources.connections.schemas import ConnectionSelection
@@ -171,7 +173,7 @@ class PluginSelection(_Frozen):
 
 class ToolSearchGroup(_Frozen):
     description: str = Field(min_length=1, max_length=512)
-    capabilities: tuple[Literal["environment", "web"], ...] = ()
+    capabilities: tuple[BuiltinToolsetKey, ...] = ()
     connections: tuple[ObjectId, ...] = Field(default=(), max_length=128)
     plugins: tuple[BoundedKey, ...] = Field(default=(), max_length=128)
     platform: bool = False
@@ -181,9 +183,12 @@ class ToolSearch(ToolSearchConfiguration):
     """Presentation of already-selected sources, composed by Harness once per agent."""
 
     groups: dict[str, ToolSearchGroup] = Field(default_factory=dict, max_length=128)
+    automatic: AutomaticToolSearch | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @model_validator(mode="after")
     def unique_sources(self) -> Self:
+        if self.automatic is not None and self.groups:
+            raise ValueError("Automatic tool discovery cannot also define custom groups")
         owners: set[tuple[str, str]] = set()
         for name, group in self.groups.items():
             validate_group(name, group.description)
@@ -272,12 +277,6 @@ class AgentConfig(_Frozen):
                     raise ValueError(f"ToolSearch group {name!r} references an unselected connection")
                 if set(group.plugins) - plugins:
                     raise ValueError(f"ToolSearch group {name!r} references an unselected plugin instance")
-                if (
-                    group.platform
-                    and not (info.context and info.context.get("preserve_toolsets"))
-                    and not platform_tools(self.toolsets)
-                ):
-                    raise ValueError(f"ToolSearch group {name!r} requires an enabled platform tool")
         return self
 
 
@@ -522,5 +521,6 @@ class AgentPage(BaseModel):
 
 
 class AgentRevisionPage(BaseModel):
+    unavailable: list[UnavailableConfiguration] = Field(default_factory=list)
     items: list[AgentRevision]
     next_cursor: str | None

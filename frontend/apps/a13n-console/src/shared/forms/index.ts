@@ -7,6 +7,7 @@ export {
   type ExecutionOverride,
 } from "./execution-fields";
 export { FileDrop } from "./file-drop";
+export { FieldHelp } from "./field-help";
 export { FormActions, JsonView, TextAreaField } from "./form";
 export { FormSection, formSectionStyles } from "./form-section";
 export {

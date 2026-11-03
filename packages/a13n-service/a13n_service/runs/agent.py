@@ -74,7 +74,7 @@ from a13n_service.providers.registry import Registry
 from a13n_service.resources.agents import definition, stored, toolsets
 from a13n_service.resources.agents.schemas import AgentConfig, AgentOverride, SubagentSelection
 from a13n_service.resources.agents.service import SelectedRevision
-from a13n_service.resources.agents.validation import connection_types, subagent_graph
+from a13n_service.resources.agents.validation import connection_info, subagent_graph
 from a13n_service.resources.models.media import workspace_media
 from a13n_service.resources.models.runtime import open_model
 from a13n_service.resources.models.service import ResolvedModel, model_settings, require_understanding, resolve_model
@@ -95,8 +95,8 @@ class ResolvedAgent:
     model: ResolvedModel
     reviewer: ResolvedModel | None
     media: Mapping[NativeInputMediaKind, ResolvedModel]
-    # The type of each selected connection, which decides the identities of its tools.
-    connection_types: Mapping[str, str]
+    # Connection types determine permission identities; names describe their discovery groups.
+    connections: Mapping[str, toolsets.ConnectionInfo]
     subagents: Mapping[str, "ResolvedSubagent"]
 
     def agents(self) -> Iterator["ResolvedAgent"]:
@@ -211,7 +211,9 @@ async def resolve(
             model=primary,
             reviewer=reviewer,
             media=await media(config),
-            connection_types=await connection_types(session, scope.workspace_id, config.connection_tools),
+            connections=await connection_info(
+                session, scope.workspace_id, [item.connection_id for item in config.connection_tools]
+            ),
             subagents=subagents,
         )
 
@@ -380,7 +382,7 @@ class _Host:
             # The revision identifies the definition, so a child run can be matched to the edge that spawned it.
             definition_id=agent.revision_id,
             capabilities=tuple(features),
-            tool_search=definition.tool_search(config, sources),
+            tool_search=definition.tool_search(config, sources, agent.connections),
             plugins=tuple(
                 self.plugins.create_plugin(
                     HarnessPluginFactoryContext(
@@ -397,7 +399,9 @@ class _Host:
         )
 
     def _permissions(self, agent: ResolvedAgent) -> ToolPermissionsCapability:
-        permissions = definition.tool_permissions(agent.config, agent.connection_types)
+        permissions = definition.tool_permissions(
+            agent.config, {id: item.type for id, item in agent.connections.items()}
+        )
         reviewer = agent.config.reviewer
         if reviewer is None or agent.reviewer is None:
             return ToolPermissionsCapability(permissions)

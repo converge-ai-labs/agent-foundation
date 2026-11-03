@@ -6,7 +6,7 @@ always builds.
 
 from collections.abc import Mapping
 from copy import deepcopy
-from typing import Any
+from typing import Any, cast
 
 from a13n_harness import AgentContext
 from a13n_harness.capabilities import ToolSearchPlan, ToolSearchSelection
@@ -20,7 +20,7 @@ from referencing.jsonschema import DRAFT202012
 
 from a13n_service.infra.errors import invalid
 from a13n_service.resources.agents import toolsets
-from a13n_service.resources.agents.schemas import AgentConfig, JsonObject, OutputSpec
+from a13n_service.resources.agents.schemas import AgentConfig, JsonObject, OutputSpec, ToolSearchGroup
 
 CLIENT_TOOLSET_ID = "a13n-service-client"
 QUESTION_TOOL = "ask_user_question"
@@ -119,23 +119,57 @@ def tool_permissions(config: AgentConfig, connection_types: Mapping[str, str]) -
     return ToolPermissions(rules=rules)
 
 
-def tool_search(config: AgentConfig, sources: Mapping[str, AbstractCapability[AgentContext]]) -> ToolSearchPlan | None:
+def tool_search(
+    config: AgentConfig,
+    sources: Mapping[str, AbstractCapability[AgentContext]],
+    connections: Mapping[str, toolsets.ConnectionInfo],
+) -> ToolSearchPlan | None:
     """Bind presentation to the same source instances the host contributes to this agent."""
     selected = config.tool_search
     if selected is None:
         return None
+    groups = selected.groups
+    if (automatic := selected.automatic) is not None:
+        groups = {}
+        active_connections = {item.connection_id for item in config.connection_tools if item.tools != ()}
+        for source in toolsets.discovery_sources(connections):
+            if source.group_name is None:
+                continue
+            if source.kind == "capabilities" and source.id in automatic.capabilities:
+                groups[source.group_name] = ToolSearchGroup(
+                    description=source.description, capabilities=(cast(toolsets.BuiltinToolsetKey, source.id),)
+                )
+            elif source.kind == "platform" and not automatic.exclude_platform:
+                groups[source.group_name] = ToolSearchGroup(description=source.description, platform=True)
+            elif (
+                source.kind == "connections"
+                and automatic.connections
+                and source.id in active_connections
+                and source.id not in automatic.exclude_connections
+            ):
+                groups[source.group_name] = ToolSearchGroup(description=source.description, connections=(source.id,))
     return ToolSearchPlan(
         config=selected.config,
-        groups={
-            name: ToolSearchSelection(
-                description=group.description,
-                capabilities=tuple(sources[source] for source in group.connections)
-                + tuple(sources[source] for source in group.capabilities if source in sources)
-                + ((sources["platform"],) if group.platform else ()),
-                plugins=group.plugins,
-            )
-            for name, group in selected.groups.items()
-        },
+        groups={name: _search_selection(config, group, sources) for name, group in groups.items()},
+    )
+
+
+def _search_selection(
+    config: AgentConfig, group: ToolSearchGroup, sources: Mapping[str, AbstractCapability[AgentContext]]
+) -> ToolSearchSelection:
+    capabilities = [sources[key] for key in group.connections]
+    tools: dict[str, frozenset[str]] = {}
+    for key, names in toolsets.discovery_members(config.toolsets, group.capabilities).items():
+        if (source := sources.get(key)) is None:
+            continue
+        capabilities.append(source)
+        if names is not None:
+            assert source.id is not None
+            tools[source.id] = names
+    if group.platform and "platform" in sources:
+        capabilities.append(sources["platform"])
+    return ToolSearchSelection(
+        description=group.description, capabilities=tuple(capabilities), plugins=group.plugins, tools=tools
     )
 
 

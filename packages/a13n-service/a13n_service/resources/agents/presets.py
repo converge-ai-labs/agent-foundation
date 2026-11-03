@@ -64,7 +64,7 @@ async def prepare(
         )
         await revisions.update_head(session, actor, head, {"name": name, "description": description})
         if kind in preset_edits.EDITABLE_KINDS and current is not None:
-            held = stored.read(AgentConfig, current.config)
+            held = stored.read(AgentConfig, current.config, kind=current.KIND, id=current.id)
             config = configuration(held.model).model_copy(
                 update={
                     "model_settings": held.model_settings,
@@ -118,7 +118,7 @@ async def _model(
     preferred: Sequence[str],
 ) -> str:
     """The current revision's model while usable, else the most preferred usable model, else the first by key."""
-    kept = None if current is None else stored.read(AgentConfig, current.config).model
+    kept = None if current is None else stored.read(AgentConfig, current.config, kind=current.KIND, id=current.id).model
     rows = (
         await session.scalars(
             select(ModelRow).where(ModelRow.workspace_id == scope.workspace_id, ModelRow.enabled).order_by(ModelRow.key)

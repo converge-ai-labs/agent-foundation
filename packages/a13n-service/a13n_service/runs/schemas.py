@@ -26,7 +26,7 @@ from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.http import PageLimit
 from a13n_service.infra.ids import ObjectId
 from a13n_service.infra.labels import Labels
-from a13n_service.infra.reads import tool_response
+from a13n_service.infra.reads import UnavailableConfiguration, tool_response
 from a13n_service.resources.agents.schemas import AgentConfig, AgentOverride, AgentRevision
 from a13n_service.resources.connections.headers import normalize_headers
 from a13n_service.resources.memories.schemas import MemoryMount, MemoryMounts, SessionMemorySettings
@@ -582,6 +582,7 @@ class EntryView(BaseModel):
 
 
 class EntryPage(BaseModel):
+    unavailable: list[UnavailableConfiguration] = Field(default_factory=list)
     items: list[EntryView]
     next_cursor: str | None
 

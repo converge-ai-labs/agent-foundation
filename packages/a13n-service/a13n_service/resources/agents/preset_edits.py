@@ -34,7 +34,7 @@ async def validate_edit(session: AsyncSession, head: AgentRow | None, config: Ag
     if not editable(head):
         raise conflict(head.KIND, head.id, "builtin")
     base = await session.get_one(AgentRevisionRow, head.default_revision_id)
-    previous = stored.read(AgentConfig, base.config)
+    previous = stored.read(AgentConfig, base.config, kind=base.KIND, id=base.id)
     for name in sorted(AgentConfig.model_fields.keys() - {"model", "model_settings", "instructions"}):
         if getattr(config, name) != getattr(previous, name):
             raise invalid(name, "managed preset field is read-only")

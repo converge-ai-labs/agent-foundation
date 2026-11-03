@@ -1477,6 +1477,13 @@
               }
             ],
             "title": "Next Cursor"
+          },
+          "unavailable": {
+            "items": {
+              "$ref": "#/components/schemas/UnavailableConfiguration"
+            },
+            "title": "Unavailable",
+            "type": "array"
           }
         },
         "required": [
@@ -2842,6 +2849,46 @@
         "title": "AuthorizationStatus",
         "type": "object"
       },
+      "AutomaticToolSearch": {
+        "additionalProperties": false,
+        "description": "Group Service-owned sources individually, following the agent's selections.",
+        "properties": {
+          "capabilities": {
+            "default": [
+              "browser",
+              "computer"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/BuiltinToolsetKey"
+            },
+            "title": "Capabilities",
+            "type": "array"
+          },
+          "connections": {
+            "default": true,
+            "title": "Connections",
+            "type": "boolean"
+          },
+          "exclude_connections": {
+            "default": [],
+            "items": {
+              "maxLength": 41,
+              "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+              "type": "string"
+            },
+            "maxItems": 128,
+            "title": "Exclude Connections",
+            "type": "array"
+          },
+          "exclude_platform": {
+            "default": false,
+            "title": "Exclude Platform",
+            "type": "boolean"
+          }
+        },
+        "title": "AutomaticToolSearch",
+        "type": "object"
+      },
       "BackgroundCompactionPolicy": {
         "additionalProperties": false,
         "description": "Host-selected overlap policy, separate from the common compaction trigger.",
@@ -3341,6 +3388,18 @@
       },
       "BuiltinSkillName": {
         "const": "platform-operations",
+        "type": "string"
+      },
+      "BuiltinToolsetKey": {
+        "enum": [
+          "files",
+          "shell",
+          "computer",
+          "browser",
+          "web",
+          "memory",
+          "assets"
+        ],
         "type": "string"
       },
       "BusyOccurrence": {
@@ -6364,6 +6423,52 @@
         "title": "DeviceUpdate",
         "type": "object"
       },
+      "DiscoverySource": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "group_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group Name"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "capabilities",
+              "platform",
+              "connections"
+            ],
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "id",
+          "display_name",
+          "description",
+          "group_name"
+        ],
+        "title": "DiscoverySource",
+        "type": "object"
+      },
       "DiskIoMetrics": {
         "additionalProperties": false,
         "properties": {
@@ -6563,6 +6668,13 @@
               }
             ],
             "title": "Next Cursor"
+          },
+          "unavailable": {
+            "items": {
+              "$ref": "#/components/schemas/UnavailableConfiguration"
+            },
+            "title": "Unavailable",
+            "type": "array"
           }
         },
         "required": [
@@ -6762,6 +6874,13 @@
               }
             ],
             "title": "Next Cursor"
+          },
+          "unavailable": {
+            "items": {
+              "$ref": "#/components/schemas/UnavailableConfiguration"
+            },
+            "title": "Unavailable",
+            "type": "array"
           }
         },
         "required": [
@@ -17119,6 +17238,13 @@
               }
             ],
             "title": "Next Cursor"
+          },
+          "unavailable": {
+            "items": {
+              "$ref": "#/components/schemas/UnavailableConfiguration"
+            },
+            "title": "Unavailable",
+            "type": "array"
           }
         },
         "required": [
@@ -18855,6 +18981,13 @@
               }
             ],
             "title": "Next Cursor"
+          },
+          "unavailable": {
+            "items": {
+              "$ref": "#/components/schemas/UnavailableConfiguration"
+            },
+            "title": "Unavailable",
+            "type": "array"
           }
         },
         "required": [
@@ -23442,6 +23575,16 @@
         "additionalProperties": false,
         "description": "Presentation of already-selected sources, composed by Harness once per agent.",
         "properties": {
+          "automatic": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AutomaticToolSearch"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "config": {
             "$ref": "#/components/schemas/ToolSearchConfig"
           },
@@ -23512,11 +23655,7 @@
           "capabilities": {
             "default": [],
             "items": {
-              "enum": [
-                "environment",
-                "web"
-              ],
-              "type": "string"
+              "$ref": "#/components/schemas/BuiltinToolsetKey"
             },
             "title": "Capabilities",
             "type": "array"
@@ -23586,6 +23725,16 @@
       "ToolsetCatalog": {
         "additionalProperties": false,
         "properties": {
+          "discovery_defaults": {
+            "$ref": "#/components/schemas/AutomaticToolSearch"
+          },
+          "discovery_sources": {
+            "items": {
+              "$ref": "#/components/schemas/DiscoverySource"
+            },
+            "title": "Discovery Sources",
+            "type": "array"
+          },
           "items": {
             "items": {
               "$ref": "#/components/schemas/ToolsetDefinition"
@@ -23595,7 +23744,9 @@
           }
         },
         "required": [
-          "items"
+          "items",
+          "discovery_defaults",
+          "discovery_sources"
         ],
         "title": "ToolsetCatalog",
         "type": "object"
@@ -23652,16 +23803,7 @@
       "ToolsetKey": {
         "anyOf": [
           {
-            "enum": [
-              "files",
-              "shell",
-              "computer",
-              "browser",
-              "web",
-              "memory",
-              "assets"
-            ],
-            "type": "string"
+            "$ref": "#/components/schemas/BuiltinToolsetKey"
           },
           {
             "$ref": "#/components/schemas/PlatformGroup"
@@ -23896,6 +24038,31 @@
           "metric"
         ],
         "title": "TypedQuery",
+        "type": "object"
+      },
+      "UnavailableConfiguration": {
+        "description": "A collection member whose stored configuration requires operator repair.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "reason": {
+            "const": "configuration_unavailable",
+            "default": "configuration_unavailable",
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "id"
+        ],
+        "title": "UnavailableConfiguration",
         "type": "object"
       },
       "UnlimitedCpuLimit": {
@@ -50964,6 +51131,28 @@
       "get": {
         "operationId": "list_toolsets",
         "parameters": [
+          {
+            "in": "query",
+            "name": "connection_ids",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "maxLength": 41,
+                    "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                    "type": "string"
+                  },
+                  "maxItems": 128,
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Connection Ids"
+            }
+          },
           {
             "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
             "in": "header",

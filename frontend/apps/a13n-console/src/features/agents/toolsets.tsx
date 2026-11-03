@@ -36,16 +36,18 @@ type Toolsets = NonNullable<AgentConfig["toolsets"]>;
 type Definition = Schema["ToolsetDefinition"];
 
 /** The built-in and platform toolsets this deployment offers. */
-export function useToolsetCatalog() {
+export function useToolsetCatalog(connectionIds: string[] = []) {
+  const selected = [...connectionIds].sort();
   const client = useClient();
   const { workspace } = useWorkspace();
   return useQuery({
-    queryKey: ["toolset-catalog", workspace.id],
+    queryKey: ["toolset-catalog", workspace.id, selected],
     queryFn: ({ signal }) =>
       client
         .workspace(workspace.id)
         .GET("/api/v1/toolsets", {
           signal,
+          params: { query: { connection_ids: selected } },
         })
         .then(data),
   });

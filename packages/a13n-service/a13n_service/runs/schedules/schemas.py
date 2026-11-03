@@ -8,6 +8,7 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validato
 from a13n_service.infra.http import PageLimit
 from a13n_service.infra.ids import ObjectId
 from a13n_service.infra.labels import Labels
+from a13n_service.infra.reads import UnavailableConfiguration
 from a13n_service.resources.memories.schemas import MemoryMounts
 from a13n_service.runs.schedules.calendar import Calendar
 from a13n_service.runs.schemas import (
@@ -139,6 +140,7 @@ class Schedule(ScheduleConfig):
 class SchedulePage(_Model):
     items: list[Schedule]
     next_cursor: str | None = None
+    unavailable: list[UnavailableConfiguration] = Field(default_factory=list)
 
 
 class ScheduleQuery(_Model):
