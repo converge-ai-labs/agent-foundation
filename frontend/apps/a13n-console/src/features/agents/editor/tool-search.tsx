@@ -1,16 +1,16 @@
-import { ChoiceField, DisclosureSection } from "a13n-ui";
+import { Checkbox, ChoiceField, DisclosureSection } from "a13n-ui";
 import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { ErrorNotice } from "../../../shared/feedback";
 import { FieldHelp } from "../../../shared/forms";
 import formStyles from "../../../shared/forms/forms.module.css";
-import type { useAgentChoices } from "../choices";
-import { displayName } from "../connections";
 import { useToolsetCatalog } from "../toolsets";
 import {
   automaticSearchGroups,
   automaticPolicy,
   searchSources,
+  toggleDiscoverySource,
+  usesToolDiscovery,
   type ToolSearchDraft,
 } from "../tool-search";
 import type { AgentDraft } from "./draft";
@@ -21,13 +21,11 @@ import styles from "./editor.module.css";
 
 export function ToolSearchSection({
   draft,
-  choices,
   readOnly,
   mark,
   error,
 }: {
   draft: AgentDraft;
-  choices: ReturnType<typeof useAgentChoices>;
   readOnly: boolean;
   mark?: ReactNode;
   error?: Error;
@@ -35,7 +33,9 @@ export function ToolSearchSection({
   const { t } = useTranslation();
   const value = draft.toolSearch;
   const [expanded, setExpanded] = useState(false);
-  const catalog = useToolsetCatalog();
+  const catalog = useToolsetCatalog(
+    draft.connections.map((item) => item.connection_id),
+  );
   if (!catalog.data)
     return catalog.error ? (
       <ErrorNotice error={catalog.error} />
@@ -49,21 +49,13 @@ export function ToolSearchSection({
       plugins: draft.plugins,
     },
     catalog.data,
-  ).map((source) => {
-    if (source.kind === "connections") {
-      const connection = choices.data?.connections.find(
-        (item) => item.id === source.id,
-      );
-      return {
-        ...source,
-        label: connection ? displayName(connection) : source.id,
-      };
-    }
-    return {
-      ...source,
-      label: source.kind === "plugins" ? source.label : t(source.label),
-    };
-  });
+  ).map((source) => ({
+    ...source,
+    label:
+      source.kind === "plugins" || source.kind === "connections"
+        ? source.label
+        : t(source.label),
+  }));
   const automatic = value.automatic != null;
   return (
     <>
@@ -111,7 +103,7 @@ export function ToolSearchSection({
             <ToolSearchSources
               draft={draft}
               sources={sources}
-              defaults={catalog.data.discovery_defaults}
+              catalog={catalog.data}
               readOnly={readOnly}
             />
             <DisclosureSection
@@ -164,6 +156,53 @@ export function ToolSearchSection({
                   }))
                 }
               />
+              {automatic &&
+                sources.some((source) => source.kind === "connections") && (
+                  <fieldset
+                    className={styles.searchSourceList}
+                    disabled={
+                      readOnly ||
+                      !(
+                        value.automatic?.connections ??
+                        catalog.data.discovery_defaults.connections
+                      )
+                    }
+                  >
+                    <legend className={styles.searchLabel}>
+                      {t("MCP connections")}
+                      <FieldHelp label={t("About connection discovery")}>
+                        {t(
+                          "Choose which connections use on-demand discovery. Unchecked connections provide tools directly. New connections follow the MCP tools setting.",
+                        )}
+                      </FieldHelp>
+                    </legend>
+                    {sources
+                      .filter((source) => source.kind === "connections")
+                      .map((source) => (
+                        <label key={source.id} className={styles.searchSource}>
+                          <Checkbox
+                            checked={usesToolDiscovery(value, source)}
+                            onCheckedChange={(checked) =>
+                              draft.setToolSearch((current) =>
+                                toggleDiscoverySource(
+                                  current,
+                                  source,
+                                  checked === true,
+                                  sources,
+                                ),
+                              )
+                            }
+                          />
+                          <span className={styles.searchSourceLabel}>
+                            {source.label}
+                          </span>
+                          {!source.available && (
+                            <small>{t("No enabled tools")}</small>
+                          )}
+                        </label>
+                      ))}
+                  </fieldset>
+                )}
               {!automatic && (
                 <ToolSearchGroups
                   draft={draft}

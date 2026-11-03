@@ -146,3 +146,69 @@ async def test_persisted_reviewer_override_is_readable_but_execution_is_classifi
             )
         assert refused.value.code == "conflict"
         assert refused.value.details["reason"] == "configuration_unavailable"
+
+
+async def test_obsolete_discovery_snapshots_return_configuration_conflicts(service, scripted_model, runs_kit):
+    schedule, agent = await schedule_for(service, scripted_model, runs_kit)
+    occurrence = await trigger(service, schedule, runs_kit)
+    run = (await runs_kit.start_thread(service, agent, "obsolete discovery"))["run"]
+    legacy = {"groups": {"legacy": {"description": "Environment tools", "capabilities": ["environment"]}}}
+    options = {"overrides": {"tool_search": legacy}}
+    async with transaction(service.runtime.storage) as session:
+        # Historical immutable rows can contain the former selector. Reading must not rewrite them.
+        await session.execute(text("SET LOCAL session_replication_role = replica"))
+        await session.execute(
+            text(
+                "UPDATE agent_revisions SET config = jsonb_set(config, '{tool_search}', CAST(:value AS jsonb)) WHERE id = :id"
+            ),
+            {"value": json.dumps(legacy), "id": agent["default_revision_id"]},
+        )
+        await session.execute(
+            text("UPDATE runs SET options = CAST(:value AS jsonb) WHERE id = :id"),
+            {"value": json.dumps(options), "id": run["id"]},
+        )
+        await session.execute(
+            text("UPDATE inbox_entries SET options = CAST(:value AS jsonb) WHERE thread_id = :id"),
+            {"value": json.dumps(options), "id": run["thread_id"]},
+        )
+        await session.execute(
+            text(
+                "UPDATE schedules SET invocation = jsonb_set(invocation, '{options}', CAST(:value AS jsonb)) WHERE id = :id"
+            ),
+            {"value": json.dumps(options), "id": schedule["id"]},
+        )
+        await session.execute(
+            text(
+                "UPDATE schedule_occurrences SET snapshot = jsonb_set(snapshot, '{invocation,options}', CAST(:value AS jsonb)) WHERE id = :id"
+            ),
+            {"value": json.dumps(options), "id": occurrence["id"]},
+        )
+    for path, kind, id in [
+        (
+            f"/agents/{agent['id']}/revisions/{agent['default_revision_id']}",
+            "agent_revision",
+            agent["default_revision_id"],
+        ),
+        (f"/agents/{agent['id']}/revisions", "agent_revision", agent["default_revision_id"]),
+        (f"/runs/{run['id']}", "run", run["id"]),
+        (f"/runs/{run['id']}/agent", "agent_revision", agent["default_revision_id"]),
+        (f"/usage/context?run_id={run['id']}", "agent_revision", agent["default_revision_id"]),
+        (f"/schedules/{schedule['id']}", "schedule", schedule["id"]),
+        ("/schedules", "schedule", schedule["id"]),
+        (f"/schedules/{schedule['id']}/occurrences/{occurrence['id']}", "schedule_occurrence", occurrence["id"]),
+    ]:
+        response = await service.client.get(service.api + path)
+        assert response.status_code == 409, (path, response.text)
+        error = response.json()["error"]
+        assert error["code"] == "conflict"
+        assert error["details"] == {"kind": kind, "id": id, "reason": "configuration_unavailable"}
+        assert "capabilities" not in response.text
+    inbox = await service.client.get(f"{service.api}/threads/{run['thread_id']}/inbox")
+    assert inbox.status_code == 409
+    assert inbox.json()["error"]["details"]["kind"] == "inbox_entry"
+    async with short_session(service.runtime.storage) as session:
+        saved = await session.scalar(
+            text("SELECT config->'tool_search' FROM agent_revisions WHERE id = :id"),
+            {"id": agent["default_revision_id"]},
+        )
+    assert saved == legacy

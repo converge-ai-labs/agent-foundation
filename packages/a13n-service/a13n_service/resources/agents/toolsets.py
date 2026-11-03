@@ -5,7 +5,9 @@ A stored selection is always complete: normalization materializes every toolset 
 with its defaults and validates each typed config, so readers never merge defaults again.
 """
 
+from collections.abc import Mapping
 from dataclasses import dataclass
+from hashlib import blake2s
 from typing import Annotated, Literal, TypedDict, cast
 
 from a13n_harness.capabilities import FILE_TOOL_KEYS, RECORD_TOOL_KEYS, FileToolKey, RecordToolKey
@@ -520,15 +522,76 @@ class AutomaticToolSearch(_Frozen):
     exclude_platform: bool = False
 
 
+class DiscoverySource(_Frozen):
+    kind: Literal["capabilities", "platform", "connections"]
+    id: str
+    display_name: str
+    description: str
+    # None denotes the connections category, rather than an individual source.
+    group_name: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class ConnectionInfo:
+    name: str
+    type: str
+
+
+def connection_discovery(connection_id: str, name: str) -> DiscoverySource:
+    """A connection's stable group identity, independent of ordering and display name."""
+    return DiscoverySource(
+        kind="connections",
+        id=connection_id,
+        display_name=name,
+        description=f"Tools from {name}.",
+        group_name="conn-" + blake2s(connection_id.encode(), digest_size=12).hexdigest(),
+    )
+
+
+def discovery_sources(connections: Mapping[str, ConnectionInfo]) -> tuple[DiscoverySource, ...]:
+    return (
+        *(
+            DiscoverySource(
+                kind="capabilities",
+                id=item.key,
+                display_name=item.display_name,
+                description=item.description,
+                group_name=item.key,
+            )
+            for item in _TOOLSETS
+            if not item.platform
+        ),
+        DiscoverySource(
+            kind="platform",
+            id="platform",
+            display_name="Platform tools",
+            description="Manage selected platform resources.",
+            group_name="platform",
+        ),
+        DiscoverySource(
+            kind="connections",
+            id="all",
+            display_name="MCP tools",
+            description="Tools from connected MCP servers.",
+            group_name=None,
+        ),
+        *(connection_discovery(id, item.name) for id, item in connections.items()),
+    )
+
+
 class ToolsetCatalog(_Frozen):
     items: tuple[ToolsetDefinition, ...]
     discovery_defaults: AutomaticToolSearch
+    discovery_sources: tuple[DiscoverySource, ...]
 
 
-def catalog(supported_web_operations: frozenset[str]) -> ToolsetCatalog:
+def catalog(
+    supported_web_operations: frozenset[str], *, connections: Mapping[str, ConnectionInfo] | None = None
+) -> ToolsetCatalog:
     return ToolsetCatalog(
         items=tuple(toolset.definition(supported_web_operations) for toolset in _TOOLSETS),
         discovery_defaults=AutomaticToolSearch(),
+        discovery_sources=discovery_sources(connections or {}),
     )
 
 
@@ -626,10 +689,6 @@ def discovery_members(
             if names:
                 members[entry.source] = (members.get(entry.source) or frozenset()) | names
     return members
-
-
-def discovery_description(key: BuiltinToolsetKey) -> str:
-    return _BY_KEY[key].description
 
 
 def permission_rules(toolsets: dict[ToolsetKey, ToolsetSelection]) -> dict[str, ToolPermissionSetting]:

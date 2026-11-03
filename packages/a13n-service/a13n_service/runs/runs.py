@@ -64,7 +64,7 @@ async def run_views(session: AsyncSession, runs: Sequence[RunRow]) -> list[RunVi
         else {}
     )
     return [
-        stored.read(RunView, run).model_copy(
+        stored.read(RunView, run, kind="run", id=run.id).model_copy(
             update={
                 "input": payloads.get(run.source_entry_id or ""),
                 "schedule_origin": schedule_origins.get(run.id),
@@ -90,10 +90,15 @@ async def agent(storage: Storage, actor: Principal, workspace_id: str, run_id: s
         scope = await workspace_scope(session, actor, workspace_id, "read")
         run = await get_run(session, scope.workspace_id, run_id)
         # The run's foreign key keeps its revision, and revisions are never deleted.
-        revision = stored.read(AgentRevision, await session.get(AgentRevisionRow, run.agent_revision_id))
-    override = stored.read(RunOptions, run.options).overrides
-    config = stored.read_effective(revision.config, override)
-    return stored.read(RunAgent, {"revision": revision, "config": config})
+        revision = stored.read(
+            AgentRevision,
+            await session.get(AgentRevisionRow, run.agent_revision_id),
+            kind="agent_revision",
+            id=run.agent_revision_id,
+        )
+    override = stored.read(RunOptions, run.options, kind="run", id=run.id).overrides
+    config = stored.read_effective(revision.config, override, run_id=run.id)
+    return stored.read(RunAgent, {"revision": revision, "config": config}, kind="run", id=run.id)
 
 
 async def _summaries(session: AsyncSession, values: Sequence[RunView]) -> list[read_views.RunSummary]:

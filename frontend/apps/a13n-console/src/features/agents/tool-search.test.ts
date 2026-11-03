@@ -41,6 +41,37 @@ const catalog: Schema["ToolsetCatalog"] = {
       },
     ],
   })),
+  discovery_sources: [
+    ...Object.entries({
+      computer: "Computer",
+      browser: "Browser",
+      files: "Files",
+      shell: "Terminal",
+      web: "Web",
+      memory: "Memory",
+      assets: "Asset",
+    }).map(([id, display_name]) => ({
+      kind: "capabilities" as const,
+      id,
+      display_name,
+      description: `${display_name} operations.`,
+      group_name: id,
+    })),
+    {
+      kind: "platform",
+      id: "platform",
+      display_name: "Platform tools",
+      description: "Platform operations.",
+      group_name: "platform",
+    },
+    {
+      kind: "connections",
+      id: "all",
+      display_name: "MCP tools",
+      description: "Connection tools.",
+      group_name: null,
+    },
+  ],
   discovery_defaults: {
     capabilities: ["computer", "browser"],
     connections: true,
@@ -54,6 +85,7 @@ const connection = (id: string): SearchSource => ({
   kind: "connections",
   id,
   label: id,
+  groupName: `server-${id}`,
   description: "Connection tools.",
   defaultDiscovery: true,
   available: true,
@@ -116,8 +148,8 @@ it("seeds custom groups including dormant selected sources, without display-name
   ]);
   expect(groups.map((group) => group.name)).toEqual([
     "computer",
-    "connection-1",
-    "connection-2",
+    "server-con_one",
+    "server-con_two",
     "platform",
   ]);
   expect(groups.every((group) => group.description.trim())).toBe(true);
@@ -136,7 +168,7 @@ it("keeps common tools direct until added and follows the catalog defaults", () 
     "browser",
     "files",
   ]);
-  const mcp = automaticSources(sources, catalog.discovery_defaults).find(
+  const mcp = automaticSources(sources, catalog).find(
     (source) => source.id === "all",
   )!;
   draft = toggleDiscoverySource(draft, mcp, false, [files]);

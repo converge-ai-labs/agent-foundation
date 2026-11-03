@@ -350,7 +350,6 @@ export function AgentEditor({
               >
                 <ToolSearchSection
                   draft={draft}
-                  choices={choices}
                   readOnly={configurationReadonly}
                   mark={mark("toolSearch")}
                   error={toolSearchValidation}

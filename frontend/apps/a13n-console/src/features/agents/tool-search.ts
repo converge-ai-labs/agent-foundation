@@ -21,6 +21,7 @@ export type SearchSource = {
   id: string;
   label: string;
   description: string;
+  groupName: string;
   defaultDiscovery: boolean;
   available: boolean;
 };
@@ -37,42 +38,46 @@ export function searchSources(
         tool.default_enabled,
     );
   return [
-    ...catalog.items
-      .filter((group) => !group.platform)
-      .map((group) => ({
-        kind: "capabilities" as const,
-        id: group.key,
-        label: group.display_name,
-        description: group.description ?? "",
+    ...catalog.discovery_sources
+      .filter(
+        (source) =>
+          source.group_name !== null &&
+          (source.kind !== "connections" ||
+            config.connection_tools?.some(
+              (item) => item.connection_id === source.id,
+            )),
+      )
+      .map((source) => ({
+        kind: source.kind,
+        id: source.id,
+        label: source.display_name,
+        description: source.description,
+        groupName: source.group_name!,
         defaultDiscovery:
-          catalog.discovery_defaults.capabilities?.includes(
-            group.key as Capability,
-          ) === true,
-        available: enabled(group),
+          source.kind === "capabilities"
+            ? catalog.discovery_defaults.capabilities?.includes(
+                source.id as Capability,
+              ) === true
+            : source.kind === "platform"
+              ? catalog.discovery_defaults.exclude_platform === false
+              : catalog.discovery_defaults.connections === true,
+        available:
+          source.kind === "capabilities"
+            ? catalog.items.some(
+                (group) => group.key === source.id && enabled(group),
+              )
+            : source.kind === "platform"
+              ? catalog.items.some((group) => group.platform && enabled(group))
+              : config.connection_tools?.find(
+                  (item) => item.connection_id === source.id,
+                )?.tools?.length !== 0,
       })),
-    {
-      kind: "platform",
-      id: "platform",
-      label: "Platform tools",
-      description: "Manage selected platform resources.",
-      defaultDiscovery: catalog.discovery_defaults.exclude_platform === false,
-      available: catalog.items.some(
-        (group) => group.platform && enabled(group),
-      ),
-    },
-    ...(config.connection_tools ?? []).map((connection) => ({
-      kind: "connections" as const,
-      id: connection.connection_id,
-      label: connection.connection_id,
-      description: `Tools from connection ${connection.connection_id}.`,
-      defaultDiscovery: catalog.discovery_defaults.connections === true,
-      available: connection.tools?.length !== 0,
-    })),
     ...(config.plugins ?? []).map((plugin) => ({
       kind: "plugins" as const,
       id: plugin.instance_name,
       label: plugin.instance_name,
       description: `Tools from plugin ${plugin.instance_name}.`,
+      groupName: "plugin",
       defaultDiscovery: false,
       available: true,
     })),
@@ -82,8 +87,11 @@ export function searchSources(
 /** Automatic discovery follows connected MCP sources as a category. */
 export function automaticSources(
   sources: SearchSource[],
-  defaults: NonNullable<ToolSearch["automatic"]>,
+  catalog: Schema["ToolsetCatalog"],
 ): SearchSource[] {
+  const connections = catalog.discovery_sources.find(
+    (source) => source.group_name === null,
+  )!;
   return [
     ...sources.filter(
       (source) => source.kind === "capabilities" || source.kind === "platform",
@@ -91,9 +99,10 @@ export function automaticSources(
     {
       kind: "connections",
       id: "all",
-      label: "MCP tools",
-      description: "Tools from connected MCP servers.",
-      defaultDiscovery: defaults.connections === true,
+      label: connections.display_name,
+      description: connections.description,
+      groupName: "",
+      defaultDiscovery: catalog.discovery_defaults.connections === true,
       available: sources.some(
         (source) => source.kind === "connections" && source.available,
       ),
@@ -136,20 +145,9 @@ export function usesToolDiscovery(
   );
 }
 
-function sourceGroup(
-  source: SearchSource,
-  sources: SearchSource[],
-): SearchGroup {
-  const connectionIndex = sources
-    .filter((item) => item.kind === "connections")
-    .findIndex((item) => item.id === source.id);
+function sourceGroup(source: SearchSource): SearchGroup {
   return {
-    name:
-      source.kind === "connections"
-        ? `connection-${connectionIndex + 1}`
-        : source.kind === "plugins"
-          ? "plugin"
-          : source.id,
+    name: source.groupName,
     description: source.description,
     ...(source.kind === "platform"
       ? { platform: true }
@@ -165,7 +163,7 @@ export function automaticSearchGroups(
 ): SearchGroup[] {
   return sources
     .filter((source) => usesToolDiscovery(search, source))
-    .map((source) => sourceGroup(source, sources));
+    .map((source) => sourceGroup(source));
 }
 
 export function automaticPolicy(
@@ -209,8 +207,20 @@ export function toggleDiscoverySource(
         ...search,
         automatic: { ...policy, exclude_platform: !checked },
       };
-    if (source.kind === "connections")
-      return { ...search, automatic: { ...policy, connections: checked } };
+    if (source.kind === "connections") {
+      if (source.id === "all")
+        return { ...search, automatic: { ...policy, connections: checked } };
+      const excluded = policy.exclude_connections ?? [];
+      return {
+        ...search,
+        automatic: {
+          ...policy,
+          exclude_connections: checked
+            ? excluded.filter((id) => id !== source.id)
+            : [...new Set([...excluded, source.id])],
+        },
+      };
+    }
     if (source.kind === "plugins") return search;
     const selected =
       policy.capabilities ??
@@ -241,7 +251,7 @@ export function toggleDiscoverySource(
             }),
       })),
     };
-  const group = sourceGroup(source, sources);
+  const group = sourceGroup(source);
   const base = group.name;
   for (
     let index = 2;

@@ -79,10 +79,10 @@ async def read_context_usage(
             and not observed.get("delegation_id")
             and observed.get("source", "agent") == "agent"
         ):
-            config = stored.read(AgentConfig, revision.config)
-            override = stored.read(RunOptions, run.options).overrides
+            config = stored.read(AgentConfig, revision.config, kind=revision.KIND, id=revision.id)
+            override = stored.read(RunOptions, run.options, kind="run", id=run.id).overrides
             if override is not None:
-                config = stored.read_effective(config, override)
+                config = stored.read_effective(config, override, run_id=run.id)
             capacity = config.model_characteristics.context_window_tokens
             if capacity is None:
                 configured_model = await session.scalar(

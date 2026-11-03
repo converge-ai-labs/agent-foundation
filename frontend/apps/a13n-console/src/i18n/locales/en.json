@@ -3690,5 +3690,9 @@
   "Choose where your browsers run.": "Choose where your browsers run.",
   "Check the saved browser provider's availability without creating a browser.": "Check the saved browser provider's availability without creating a browser.",
   "Docker browser": "Docker browser",
-  "Native browser (Linux debugging)": "Native browser"
+  "Native browser (Linux debugging)": "Native browser",
+  "MCP connections": "MCP connections",
+  "About connection discovery": "About connection discovery",
+  "Choose which connections use on-demand discovery. Unchecked connections provide tools directly. New connections follow the MCP tools setting.": "Choose which connections use on-demand discovery. Unchecked connections provide tools directly. New connections follow the MCP tools setting.",
+  "{{selected}} of {{total}} connections": "{{selected}} of {{total}} connections"
 }

@@ -146,7 +146,9 @@ async def states(session: AsyncSession, thread_ids: Sequence[str]) -> dict[str, 
     )
     open_entries: dict[str, list[EntryView]] = {}
     for entry in entries:
-        open_entries.setdefault(entry.thread_id, []).append(stored.read(EntryView, entry))
+        open_entries.setdefault(entry.thread_id, []).append(
+            stored.read(EntryView, entry, kind="inbox_entry", id=entry.id)
+        )
     return {
         thread.id: ThreadState(
             thread=ThreadView.model_validate(thread),

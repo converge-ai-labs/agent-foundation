@@ -418,16 +418,14 @@ class ToolSearchSurfaceToolset(WrapperToolset[AgentContext]):
     ) -> Any:
         tools = active_proxy_tools(ctx)
         name, values = resolve_proxy_call(tools, {"group": group, "tool": tool, "arguments": arguments})
-        manager = ctx.tool_manager
-        assert manager is not None
         if ctx.usage_limits is not None:
             projected = deepcopy(ctx.usage)
             projected.tool_calls += 2  # This outer envelope and one native target call.
             ctx.usage_limits.check_before_tool_call(projected)
         try:
-            # The envelope owns no execution slot; its target carries the barrier.
-            with manager.parallel_execution_mode("sequential"):
-                result = await forward_tool_call(ctx, name, values)
+            # The sequential envelope owns no runtime slot. The target keeps its
+            # own execution policy, including barriers for sequential tools.
+            result = await forward_tool_call(ctx, name, values)
         except ToolRetryError as exc:
             # Native target retries remain keyed by the original prepared name.
             # Re-correlate only the model-facing message; rethrowing ModelRetry

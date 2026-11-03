@@ -41,6 +41,7 @@ beforeEach(() => {
       if (url.pathname.endsWith("/toolsets"))
         return Response.json({
           items: [],
+          discovery_sources: [],
           discovery_defaults: {
             capabilities: ["computer", "browser"],
             connections: true,

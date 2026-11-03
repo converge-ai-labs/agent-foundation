@@ -61,14 +61,17 @@ async def list_entries(
             query = query.where(InboxEntryRow.position > position[0])
         rows = (await session.scalars(query.order_by(InboxEntryRow.position).limit(limit + 1))).all()
         if view == "compact":
-            values = [read_views.entry_summary(stored.read(EntryView, row)) for row in rows[:limit]]
+            values = [
+                read_views.entry_summary(stored.read(EntryView, row, kind="inbox_entry", id=row.id))
+                for row in rows[:limit]
+            ]
             count = reads.fit_count(values)
             return read_views.EntrySummaryPage(
                 items=values[:count],
                 next_cursor=cursors.encode("inbox", owner, rows[count - 1].position) if len(rows) > count else None,
             )
         return EntryPage(
-            items=[stored.read(EntryView, row) for row in rows[:limit]],
+            items=[stored.read(EntryView, row, kind="inbox_entry", id=row.id) for row in rows[:limit]],
             next_cursor=cursors.encode("inbox", owner, rows[limit - 1].position) if len(rows) > limit else None,
         )
 
@@ -77,7 +80,7 @@ async def get_entry(storage: Storage, actor: Principal, workspace_id: str, threa
     async with short_session(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "read")
         thread = await get_thread(session, scope.workspace_id, thread_id)
-        return stored.read(EntryView, await inbox.get_entry(session, thread, entry_id))
+        return stored.read(EntryView, await inbox.get_entry(session, thread, entry_id), kind="inbox_entry", id=entry_id)
 
 
 async def edit(

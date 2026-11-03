@@ -1625,7 +1625,10 @@ async def test_grouped_names_cannot_shadow_direct_tools_from_the_same_source(nam
         await agent.run("test")
 
 
-async def test_proxy_target_waits_for_prior_work_without_waiting_on_its_own_envelope(monkeypatch) -> None:
+@pytest.mark.parametrize(("prior_sequential", "target_sequential"), [(True, False), (False, True), (False, False)])
+async def test_proxy_target_keeps_its_runtime_execution_policy(
+    monkeypatch, prior_sequential, target_sequential
+) -> None:
     from a13n_harness import HarnessState
     from a13n_harness.capabilities.tool_execution import ToolExecutionCapability
     from a13n_harness.tool_execution import ToolExecutionRuntime
@@ -1640,11 +1643,17 @@ async def test_proxy_target_waits_for_prior_work_without_waiting_on_its_own_enve
         await finish.wait()
 
     runtime.admit(
-        prior, thread_id=state.thread_id, run_id="prior", tool_call_id="prior", tool_name="prior", sequential=True
+        prior,
+        thread_id=state.thread_id,
+        run_id="prior",
+        tool_call_id="prior",
+        tool_name="prior",
+        sequential=prior_sequential,
     )
     original_inline = runtime.inline
 
     async def inline(operation, *, thread_id, sequential):
+        assert sequential == target_sequential
         queued.set()
         return await original_inline(operation, thread_id=thread_id, sequential=sequential)
 
@@ -1655,6 +1664,7 @@ async def test_proxy_target_waits_for_prior_work_without_waiting_on_its_own_enve
         return "found"
 
     async def model(messages, info):
+        assert next(tool for tool in info.function_tools if tool.name == "call_tool").sequential
         if _returns(messages):
             yield "done"
         else:
@@ -1668,7 +1678,7 @@ async def test_proxy_target_waits_for_prior_work_without_waiting_on_its_own_enve
         AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=model),
-        capabilities=(ToolExecutionCapability(), _group(lookup)),
+        capabilities=(ToolExecutionCapability(), _group(Tool(lookup, sequential=target_sequential))),
     )
     await entered.wait()
     pending = asyncio.create_task(
@@ -1676,8 +1686,9 @@ async def test_proxy_target_waits_for_prior_work_without_waiting_on_its_own_enve
     )
     try:
         await asyncio.wait_for(queued.wait(), 2)
-        assert not invoked and not pending.done()
-        finish.set()
+        if prior_sequential or target_sequential:
+            assert not invoked and not pending.done()
+            finish.set()
         result = await asyncio.wait_for(pending, 2)
         assert result.output_or_raise() == "done"
         assert invoked == ["lookup"]

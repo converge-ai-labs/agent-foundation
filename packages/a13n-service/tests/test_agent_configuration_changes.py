@@ -248,7 +248,7 @@ def test_reviewer_obsolete_platform_rules_reject_authoring_but_remain_readable(s
     value = {"model": "model", "reviewer": {"model": "model", "rules": {selector: {"on_flagged": "approval_required"}}}}
     with pytest.raises(ValidationError):
         AgentConfig.model_validate(value)
-    assert selector in stored.read(AgentConfig, value).reviewer.rules
+    assert selector in stored.read(AgentConfig, value, kind="agent_revision", id="test").reviewer.rules
 
 
 def test_reviewer_current_platform_and_connection_rules_are_accepted():

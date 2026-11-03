@@ -6421,6 +6421,52 @@
         "title": "DeviceUpdate",
         "type": "object"
       },
+      "DiscoverySource": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "group_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group Name"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "capabilities",
+              "platform",
+              "connections"
+            ],
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "id",
+          "display_name",
+          "description",
+          "group_name"
+        ],
+        "title": "DiscoverySource",
+        "type": "object"
+      },
       "DiskIoMetrics": {
         "additionalProperties": false,
         "properties": {
@@ -23616,6 +23662,13 @@
           "discovery_defaults": {
             "$ref": "#/components/schemas/AutomaticToolSearch"
           },
+          "discovery_sources": {
+            "items": {
+              "$ref": "#/components/schemas/DiscoverySource"
+            },
+            "title": "Discovery Sources",
+            "type": "array"
+          },
           "items": {
             "items": {
               "$ref": "#/components/schemas/ToolsetDefinition"
@@ -23626,7 +23679,8 @@
         },
         "required": [
           "items",
-          "discovery_defaults"
+          "discovery_defaults",
+          "discovery_sources"
         ],
         "title": "ToolsetCatalog",
         "type": "object"
@@ -51286,6 +51340,28 @@
       "get": {
         "operationId": "list_toolsets",
         "parameters": [
+          {
+            "in": "query",
+            "name": "connection_ids",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "maxLength": 41,
+                    "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                    "type": "string"
+                  },
+                  "maxItems": 128,
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Connection Ids"
+            }
+          },
           {
             "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
             "in": "header",

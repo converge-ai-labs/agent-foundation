@@ -43,7 +43,7 @@ from a13n_service.resources.agents.schemas import (
     freeze_override,
 )
 from a13n_service.resources.agents.tables import AgentRevisionRow, AgentRow, PresetKind
-from a13n_service.resources.agents.validation import validate_config
+from a13n_service.resources.agents.validation import connection_info, validate_config
 from a13n_service.resources.builtin_skills import BuiltinPackage, BuiltinSkillCatalog, BuiltinSkillName
 from a13n_service.resources.rows import audit_row, given
 from a13n_service.tenancy.access import workspace_scope
@@ -444,7 +444,9 @@ async def list_revision_summaries(
         actor,
         AgentRow,
         AgentRevisionRow,
-        lambda head, row: read_views.revision_summary(stored.read(AgentRevision, row), head.default_revision_id),
+        lambda head, row: read_views.revision_summary(
+            stored.read(AgentRevision, row, kind=row.KIND, id=row.id), head.default_revision_id
+        ),
         workspace_id,
         agent_id,
         limit=limit,
@@ -467,7 +469,7 @@ async def list_revisions(
 
 
 def _revision_view(head: AgentRow, revision: AgentRevisionRow) -> AgentRevision:
-    view = stored.read(AgentRevision, revision)
+    view = stored.read(AgentRevision, revision, kind=revision.KIND, id=revision.id)
     return view.model_copy(
         update={"builtin_instructions": instructions.for_preset(head.preset_kind) if head.builtin else None}
     )
@@ -550,13 +552,15 @@ def _selected(revision: AgentRevisionRow) -> SelectedRevision:
 
 
 async def toolset_catalog(
-    storage: Storage, actor: Principal, workspace_id: str, *, registry: Registry
+    storage: Storage, actor: Principal, workspace_id: str, *, registry: Registry, connection_ids: tuple[str, ...] = ()
 ) -> toolsets.ToolsetCatalog:
     """The built-in toolsets; web tools whose operation no registered web provider type serves are unsupported."""
     async with short_session(storage) as session:
         await workspace_scope(session, actor, workspace_id, "read")
+        connections = await connection_info(session, workspace_id, connection_ids)
     return toolsets.catalog(
-        frozenset(operation for definition in registry.web.values() for operation in web_operations(definition))
+        frozenset(operation for definition in registry.web.values() for operation in web_operations(definition)),
+        connections=connections,
     )
 
 

@@ -6938,6 +6938,22 @@ export interface components {
       /** Name */
       name?: string | null;
     };
+    /** DiscoverySource */
+    DiscoverySource: {
+      /** Description */
+      description: string;
+      /** Display Name */
+      display_name: string;
+      /** Group Name */
+      group_name: string | null;
+      /** Id */
+      id: string;
+      /**
+       * Kind
+       * @enum {string}
+       */
+      kind: "capabilities" | "platform" | "connections";
+    };
     /** DiskIoMetrics */
     DiskIoMetrics: {
       /** Busy Time Ms */
@@ -12705,6 +12721,8 @@ export interface components {
     /** ToolsetCatalog */
     ToolsetCatalog: {
       discovery_defaults: components["schemas"]["AutomaticToolSearch"];
+      /** Discovery Sources */
+      discovery_sources: components["schemas"]["DiscoverySource"][];
       /** Items */
       items: components["schemas"]["ToolsetDefinition"][];
     };
@@ -22133,7 +22151,9 @@ export interface operations {
   };
   list_toolsets: {
     parameters: {
-      query?: never;
+      query?: {
+        connection_ids?: string[] | null;
+      };
       header?: {
         /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
         "X-Workspace-ID"?: string | null;

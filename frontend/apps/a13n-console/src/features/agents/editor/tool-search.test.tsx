@@ -1,7 +1,6 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
-import type { useAgentChoices } from "../choices";
 import { ToolSearchSection } from "./tool-search";
 import { buildDraftConfig, useAgentDraft } from "./draft";
 
@@ -16,6 +15,51 @@ vi.mock("react-i18next", () => ({
 vi.mock("../toolsets", () => ({
   useToolsetCatalog: () => ({
     data: {
+      discovery_sources: [
+        ...Object.entries({
+          computer: "Computer",
+          browser: "Browser",
+          files: "Files",
+          shell: "Terminal",
+          web: "Web",
+          memory: "Memory",
+          assets: "Asset",
+        }).map(([id, display_name]) => ({
+          kind: "capabilities",
+          id,
+          display_name,
+          description: `${display_name} operations.`,
+          group_name: id,
+        })),
+        {
+          kind: "platform",
+          id: "platform",
+          display_name: "Platform tools",
+          description: "Platform operations.",
+          group_name: "platform",
+        },
+        {
+          kind: "connections",
+          id: "all",
+          display_name: "MCP tools",
+          description: "Connection tools.",
+          group_name: null,
+        },
+        {
+          kind: "connections",
+          id: "con_0123456789abcdef0123",
+          display_name: "Knowledge",
+          description: "Knowledge tools.",
+          group_name: "conn-stable",
+        },
+        {
+          kind: "connections",
+          id: "con_abcdef0123456789abcd",
+          display_name: "Team docs",
+          description: "Team tools.",
+          group_name: "conn-team",
+        },
+      ],
       discovery_defaults: {
         capabilities: ["computer", "browser"],
         connections: true,
@@ -50,13 +94,6 @@ vi.mock("../toolsets", () => ({
 }));
 afterEach(cleanup);
 const id = "con_0123456789abcdef0123";
-const choices = {
-  data: {
-    connections: [
-      { id, name: "Knowledge", config: { url: "https://mcp.test" } },
-    ],
-  },
-} as ReturnType<typeof useAgentChoices>;
 
 it("preserves custom grouping behind a disclosure", async () => {
   const submit = vi.fn();
@@ -68,7 +105,7 @@ it("preserves custom grouping behind a disclosure", async () => {
     });
     return (
       <>
-        <ToolSearchSection draft={draft} choices={choices} readOnly={false} />
+        <ToolSearchSection draft={draft} readOnly={false} />
         <button
           onClick={() => {
             const result = buildDraftConfig(draft, undefined, (key) => key);
@@ -123,9 +160,7 @@ it("allows dormant platform discovery without enabling platform tools", async ()
         groups: { tools: { description: "Tools" } },
       },
     });
-    return (
-      <ToolSearchSection draft={draft} choices={choices} readOnly={false} />
-    );
+    return <ToolSearchSection draft={draft} readOnly={false} />;
   }
   const { rerender } = render(<Editor key="off" enabled={false} />);
   const user = userEvent.setup();
@@ -148,7 +183,7 @@ it("enables automatic discovery in one choice and saves without opening groups",
     });
     return (
       <>
-        <ToolSearchSection draft={draft} choices={choices} readOnly={false} />
+        <ToolSearchSection draft={draft} readOnly={false} />
         <button
           onClick={() =>
             submit(buildDraftConfig(draft, undefined, (key) => key))
@@ -235,11 +270,11 @@ it("enables automatic discovery in one choice and saves without opening groups",
               capabilities: ["files"],
             },
             platform: {
-              description: "Manage selected platform resources.",
+              description: "Platform operations.",
               platform: true,
             },
-            "connection-1": {
-              description: `Tools from connection ${id}.`,
+            "conn-stable": {
+              description: "Knowledge tools.",
               connections: [id],
             },
           },
@@ -259,7 +294,7 @@ it("shows empty discovery and reveals invalid custom fields without changing rea
       <>
         <ToolSearchSection
           draft={draft}
-          choices={choices}
+
           readOnly
           error={error}
         />
@@ -277,4 +312,66 @@ it("shows empty discovery and reveals invalid custom fields without changing rea
   expect(screen.queryByRole("textbox", { name: "Group name" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Add group" })).toBeNull();
   expect(screen.getByText("Saved")).toBeTruthy();
+});
+
+it("edits individual connection exclusions under advanced grouping and keeps them across category toggles", async () => {
+  const submit = vi.fn();
+  const excludedId = "con_abcdef0123456789abcd";
+  function Editor() {
+    const draft = useAgentDraft({
+      model: "test",
+      connection_tools: [{ connection_id: id }, { connection_id: excludedId }],
+      tool_search: { automatic: { exclude_connections: [excludedId] } },
+    });
+    return (
+      <>
+        <ToolSearchSection draft={draft} readOnly={false} />
+        <button
+          onClick={() =>
+            submit(buildDraftConfig(draft, undefined, (key) => key))
+          }
+        >
+          Save
+        </button>
+      </>
+    );
+  }
+  const user = userEvent.setup();
+  render(<Editor />);
+  expect(screen.getByText("1 of 2 connections")).toBeTruthy();
+  expect(screen.queryByRole("checkbox", { name: "Team docs" })).toBeNull();
+  await user.click(screen.getByRole("button", { name: /Advanced grouping/ }));
+  expect(
+    screen
+      .getByRole("checkbox", { name: "Knowledge" })
+      .getAttribute("aria-checked"),
+  ).toBe("true");
+  expect(
+    screen
+      .getByRole("checkbox", { name: "Team docs" })
+      .getAttribute("aria-checked"),
+  ).toBe("false");
+  await user.click(
+    screen.getByRole("button", { name: "Provide MCP tools directly" }),
+  );
+  await user.click(screen.getByRole("button", { name: "Add tool source" }));
+  await user.click(await screen.findByRole("menuitem", { name: "MCP tools" }));
+  expect(
+    screen
+      .getByRole("checkbox", { name: "Team docs" })
+      .getAttribute("aria-checked"),
+  ).toBe("false");
+  await user.click(screen.getByRole("checkbox", { name: "Team docs" }));
+  await user.click(screen.getByRole("button", { name: "Save" }));
+  expect(submit).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      ok: true,
+      config: expect.objectContaining({
+        tool_search: {
+          config: { mode: "proxy" },
+          automatic: { connections: true, exclude_connections: [] },
+        },
+      }),
+    }),
+  );
 });

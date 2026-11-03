@@ -7,27 +7,27 @@ import {
   toggleDiscoverySource,
   usesToolDiscovery,
   type SearchSource,
-  type ToolSearchDraft,
 } from "../tool-search";
+import type { Schema } from "../../../shared/api";
 import type { AgentDraft } from "./draft";
 import styles from "./editor.module.css";
 
 export function ToolSearchSources({
   draft,
   sources,
-  defaults,
+  catalog,
   readOnly,
 }: {
   draft: AgentDraft;
   sources: SearchSource[];
-  defaults: NonNullable<ToolSearchDraft["automatic"]>;
+  catalog: Schema["ToolsetCatalog"];
   readOnly: boolean;
 }) {
   const { t } = useTranslation();
   const choices =
     draft.toolSearch.automatic != null
-      ? automaticSources(sources, defaults).map((source) =>
-          source.id === "all" ? { ...source, label: t("MCP tools") } : source,
+      ? automaticSources(sources, catalog).map((source) =>
+          source.id === "all" ? { ...source, label: t(source.label) } : source,
         )
       : sources;
   const selected = choices.filter((source) =>
@@ -36,7 +36,17 @@ export function ToolSearchSources({
   const remaining = choices.filter(
     (source) => !usesToolDiscovery(draft.toolSearch, source),
   );
-  const direct = remaining.filter((source) => source.kind !== "plugins");
+  const connections = sources.filter((source) => source.kind === "connections");
+  const excluded = connections.filter(
+    (source) => !usesToolDiscovery(draft.toolSearch, source),
+  );
+  const direct = [
+    ...remaining.filter((source) => source.kind !== "plugins"),
+    ...(draft.toolSearch.automatic != null &&
+    selected.some((source) => source.id === "all")
+      ? excluded
+      : []),
+  ];
   const toggle = (source: SearchSource, checked: boolean) =>
     draft.setToolSearch((current) =>
       toggleDiscoverySource(current, source, checked, sources),
@@ -92,6 +102,14 @@ export function ToolSearchSources({
           {selected.map((source) => (
             <li key={`${source.kind}/${source.id}`}>
               <span>{source.label}</span>
+              {source.id === "all" && excluded.length > 0 && (
+                <small>
+                  {t("{{selected}} of {{total}} connections", {
+                    selected: connections.length - excluded.length,
+                    total: connections.length,
+                  })}
+                </small>
+              )}
               {!source.available && (
                 <small>
                   {t(source.id === "all" ? "No connections" : "Not enabled")}

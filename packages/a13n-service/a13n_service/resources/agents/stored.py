@@ -12,9 +12,12 @@ from a13n_service.resources.agents.schemas import AgentConfig, AgentOverride, ap
 _READ_CONTEXT: dict[str, object] = {"preserve_toolsets": True}
 
 
-def read[T: BaseModel](model: type[T], value: object) -> T:
+def read[T: BaseModel](model: type[T], value: object, *, kind: str, id: str) -> T:
     """Deserialize a stored configuration or containing view for inspection only."""
-    return model.model_validate(value, context=_READ_CONTEXT)
+    try:
+        return model.model_validate(value, context=_READ_CONTEXT)
+    except ValidationError as error:
+        raise conflict(kind, id, "configuration_unavailable") from error
 
 
 def require[T: BaseModel](model: type[T], value: object, *, kind: str, id: str) -> T:
@@ -25,9 +28,12 @@ def require[T: BaseModel](model: type[T], value: object, *, kind: str, id: str) 
         raise conflict(kind, id, "configuration_unavailable") from error
 
 
-def read_effective(config: AgentConfig, override: AgentOverride | None) -> AgentConfig:
+def read_effective(config: AgentConfig, override: AgentOverride | None, *, run_id: str) -> AgentConfig:
     """Inspect the frozen effective configuration without validating today's catalog."""
-    return config if override is None else apply_override(config, override, validation_context=_READ_CONTEXT)
+    try:
+        return config if override is None else apply_override(config, override, validation_context=_READ_CONTEXT)
+    except ValidationError as error:
+        raise conflict("run", run_id, "configuration_unavailable") from error
 
 
 def require_effective(config: AgentConfig, override: AgentOverride | None, *, revision_id: str) -> AgentConfig:

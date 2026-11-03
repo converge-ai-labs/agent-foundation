@@ -316,7 +316,7 @@ def resolved(agent_id: str, revision_id: str, selected: AgentConfig, **fields: A
         pricing=None,
         provider=cast(Any, None),
     )
-    values: dict[str, Any] = {"reviewer": None, "media": {}, "connection_types": {}, "subagents": {}} | fields
+    values: dict[str, Any] = {"reviewer": None, "media": {}, "connections": {}, "subagents": {}} | fields
     return ResolvedAgent(agent_id=agent_id, revision_id=revision_id, config=selected, model=model, **values)
 
 
@@ -514,7 +514,12 @@ async def test_service_connection_permission_overrides_native_approval(mode: str
 
     source = Capability(toolsets=[FunctionToolset([Tool(execute, requires_approval=True)], id=GITHUB)])
     selected = config(toolsets={}, connection_tools=[{"connection_id": GITHUB, "permission": mode}])
-    root = resolved(new_object_id("ap"), new_object_id("apr"), selected, connection_types={GITHUB: "github"})
+    root = resolved(
+        new_object_id("ap"),
+        new_object_id("apr"),
+        selected,
+        connections={GITHUB: toolsets.ConnectionInfo(name="GitHub", type="github")},
+    )
     executable = build(root, capabilities=lambda _: [source], plugins=PLUGINS, instrumentation=None)
 
     async def model_resolver(context, model_id):

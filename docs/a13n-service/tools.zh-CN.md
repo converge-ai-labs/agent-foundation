@@ -213,9 +213,11 @@ Grant 支持续期时，token 在使用时续期，并发调用者共享同一�
 
 在 Console 的**工具提供方式**中选择**按需发现工具**。**按需发现**列表默认包含 **Computer**、**Browser**、**Platform tools** 和 **MCP tools**。Files、Terminal、Web、Memory 和 Asset 默认直接提供。通过**添加工具来源**可将它们纳入按需发现；从列表移除来源后，其工具定义恢复为直接提供。这个设置只改变工具的提供方式，不会启用已关闭的工具，也不会改变原有权限。
 
-默认的**按来源自动分组**无需手动建组；MCP tools 会包含之后添加的连接。展开**高级分组设置**可切换到**自定义分组**，以当前选择的来源为起点。展开分组即可修改名称、描述和来源。问号提示解释各项设置。插件保留自身的工具发现方式，除非明确加入兼容的自定义分组。
+默认的**按来源自动分组**无需手动建组；MCP tools 会包含之后添加的连接。展开**高级分组设置**可排除单个 MCP 连接，或切换到**自定义分组**，以当前选择的来源为起点。展开分组即可修改名称、描述和来源。问号提示解释各项设置。插件保留自身的工具发现方式，除非明确加入兼容的自定义分组。
 
-JSON 配置使用 `"tool_search": {"automatic": {}}`。自动策略的 `capabilities` 默认为 `["browser", "computer"]`，可按需加入 `files`、`shell`（Terminal）、`web`、`memory` 或 `assets`。`connections` 默认为 true，设为 false 后所有 MCP 连接直接提供工具。`exclude_connections` 排除指定连接 ID，`exclude_platform: true` 让平台工具直接提供。使用显式 `groups` 时省略 `automatic`。请分别使用 `files`、`shell` 和 `computer`；不再接受 `environment` 和 `exclude_capabilities`。`GET /toolsets` 通过 `discovery_defaults` 返回当前自动发现策略。
+JSON 配置使用 `"tool_search": {"automatic": {}}`。自动策略的 `capabilities` 默认为 `["browser", "computer"]`，可按需加入 `files`、`shell`（Terminal）、`web`、`memory` 或 `assets`。`connections` 默认为 true，设为 false 后所有 MCP 连接直接提供工具。`exclude_connections` 排除指定连接 ID，`exclude_platform: true` 让平台工具直接提供。使用显式 `groups` 时省略 `automatic`。请分别使用 `files`、`shell` 和 `computer`；不再接受 `environment`。`GET /toolsets` 通过 `discovery_defaults` 返回当前自动发现策略，通过 `discovery_sources` 返回来源信息。传入 `connection_ids` 可以获取指定连接的描述和稳定分组名。调整连接顺序或修改名称不会改变分组名。
+
+**Service 破坏性变更：** 将发现分组 `capabilities` 中的 `environment` 替换为 `files`、`shell` 和 `computer`，或其中需要的部分。运维人员需要自行修复受影响的 Agent 版本以及 Run、Inbox 和 Schedule 中冻结的配置。Service 不会迁移或转换这些数据。读取或复用不兼容记录时，接口返回 `409 conflict`，包含 `reason: configuration_unavailable` 和受影响的资源 ID。此选择器变更不影响独立使用的 Harness 或 Harness UI 配置。
 
 以下片段将一个已选连接加入分组。替换两处 `conn_...`：
 

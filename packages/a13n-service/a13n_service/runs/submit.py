@@ -128,7 +128,7 @@ async def receipt(session: AsyncSession, thread: ThreadRow, entry: InboxEntryRow
     run = await session.get(RunRow, entry.assigned_run_id) if entry.assigned_run_id is not None else None
     return Submitted(
         thread=ThreadView.model_validate(thread),
-        entry=stored.read(EntryView, entry),
+        entry=stored.read(EntryView, entry, kind="inbox_entry", id=entry.id),
         run=await run_view(session, run) if run is not None else None,
     )
 

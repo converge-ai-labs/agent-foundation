@@ -64,16 +64,9 @@ def test_override_replaces_the_plan_and_validates_the_result() -> None:
     assert not cleared.connection_tools
 
 
-@pytest.mark.parametrize(
-    "tool_search",
-    [
-        {"automatic": {"exclude_capabilities": []}},
-        {"groups": {"tools": {"description": "Tools", "capabilities": ["environment"]}}},
-    ],
-)
-def test_discovery_rejects_removed_configuration_fields(tool_search) -> None:
+def test_discovery_rejects_removed_environment_selector() -> None:
     with pytest.raises(ValidationError):
-        config(tool_search=tool_search)
+        config(tool_search={"groups": {"tools": {"description": "Tools", "capabilities": ["environment"]}}})
 
 
 def test_automatic_groups_follow_selections_and_preserve_exclusions() -> None:
@@ -94,13 +87,24 @@ def test_automatic_groups_follow_selections_and_preserve_exclusions() -> None:
         "browser": Capability(id="browser"),
         "platform": source,
     }
-    plan = definition.tool_search(selected, sources)
+    connections = {
+        CONNECTION: toolsets.ConnectionInfo(name="Knowledge", type="mcp"),
+        added: toolsets.ConnectionInfo(name="Docs", type="mcp"),
+    }
+    plan = definition.tool_search(selected, sources, connections)
+    group = toolsets.connection_discovery(added, "Docs").group_name
     assert plan is not None
-    assert set(plan.groups) == {"connection-2", "computer", "browser", "platform"}
-    assert plan.groups["connection-2"].capabilities == (source,)
+    assert set(plan.groups) == {group, "computer", "browser", "platform"}
+    assert plan.groups[group].capabilities == (source,)
+    assert plan.groups[group].description == "Tools from Docs."
+    for selections in ([{"connection_id": added}, {"connection_id": CONNECTION}], [{"connection_id": added}]):
+        reordered = apply_override(selected, AgentOverride.model_validate({"connection_tools": selections}))
+        next_plan = definition.tool_search(reordered, sources, connections)
+        assert next_plan is not None and next_plan.groups[group] == plan.groups[group]
+    assert toolsets.connection_discovery(added, "Renamed").group_name == group
     assert all(not group.plugins for group in plan.groups.values())
     changed = apply_override(selected, AgentOverride.model_validate({"connection_tools": []}))
-    after = definition.tool_search(changed, {"environment": source})
+    after = definition.tool_search(changed, {"environment": source}, {})
     assert after is not None and set(after.groups) == {"computer", "browser", "platform"}
     assert after.groups["computer"].tools["environment"] == frozenset(
         tool.model_name
@@ -139,7 +143,9 @@ def test_plan_uses_selected_instances_and_child_has_its_own_configuration() -> N
         subagents={"helper": {"agent_id": HELPER, "revision_id": HELPER_REVISION}},
     )
     sources = {CONNECTION: connection, "platform": platform, "environment": environment}
-    plan = definition.tool_search(selected, sources)
+    plan = definition.tool_search(
+        selected, sources, {CONNECTION: toolsets.ConnectionInfo(name="Knowledge", type="mcp")}
+    )
     assert plan is not None and plan.config.mode == "proxy"
     # An unavailable optional capability is not activated by group membership.
     assert plan.groups["tools"].capabilities == (connection, environment, platform)
@@ -149,7 +155,7 @@ def test_plan_uses_selected_instances_and_child_has_its_own_configuration() -> N
         new_object_id("ap"),
         new_object_id("apr"),
         selected,
-        connection_types={CONNECTION: "mcp"},
+        connections={CONNECTION: toolsets.ConnectionInfo(name="Knowledge", type="mcp")},
         subagents={"helper": ResolvedSubagent(selected.subagents["helper"], HELPER_REVISION, "Help", child)},
     )
     executable = build(
@@ -187,10 +193,16 @@ async def test_proxy_discovery_restores_history_and_keeps_connection_permissions
         connection_tools=[{"connection_id": CONNECTION, "permission": permission}],
         tool_search={"automatic": {}} if automatic else selection().tool_search,
     )
-    root = resolved(new_object_id("ap"), new_object_id("apr"), selected, connection_types={CONNECTION: "connector"})
+    root = resolved(
+        new_object_id("ap"),
+        new_object_id("apr"),
+        selected,
+        connections={CONNECTION: toolsets.ConnectionInfo(name="Knowledge", type="connector")},
+    )
     phase = "discover"
     calls = 0
-    group = "connection-1" if automatic else "knowledge"
+    group = toolsets.connection_discovery(CONNECTION, "Knowledge").group_name if automatic else "knowledge"
+    assert group is not None
     canonical_name = f"{group.replace('_', '_u')}__lookup"
 
     async def stream(messages, info):
@@ -281,6 +293,12 @@ async def test_revision_and_host_proxy_mcp_keep_dispatch_and_live_connection_che
             },
         )
         connection_id = connection["id"]
+        catalog_response = await service.client.get(f"{service.api}/toolsets", params={"connection_ids": connection_id})
+        assert catalog_response.status_code == 200, catalog_response.text
+        descriptor = next(item for item in catalog_response.json()["discovery_sources"] if item["id"] == connection_id)
+        assert descriptor == toolsets.connection_discovery(connection_id, connection["name"]).model_dump()
+        missing = await service.client.get(f"{service.api}/toolsets", params={"connection_ids": new_object_id("conn")})
+        assert missing.status_code == 404
         model_key = await create_model(service)
         agent = await create_agent(
             service,
@@ -299,7 +317,12 @@ async def test_revision_and_host_proxy_mcp_keep_dispatch_and_live_connection_che
             },
         )
         selected = AgentConfig.model_validate(await revision_config(service, agent))
-        root = resolved(agent["id"], agent["default_revision_id"], selected, connection_types={connection_id: "mcp"})
+        root = resolved(
+            agent["id"],
+            agent["default_revision_id"],
+            selected,
+            connections={connection_id: toolsets.ConnectionInfo(name="Knowledge", type="mcp")},
+        )
         actor, workspace = admin(service), scope(service)
         run = RunRow(options={}, memory_mounts=[], mcp_headers={connection_id: {"x-trace": "proxy-search"}})
         async with short_session(service.runtime.storage) as session:
@@ -463,7 +486,9 @@ def test_split_environment_sources_and_opt_in_capabilities() -> None:
         }
     )
     sources = {"environment": source, **{key: Capability(id=key) for key in ("web", "memory", "assets")}}
-    plan = definition.tool_search(selected, sources)
+    plan = definition.tool_search(
+        selected, sources, {CONNECTION: toolsets.ConnectionInfo(name="Knowledge", type="mcp")}
+    )
     assert plan is not None and set(plan.groups) == {"files", "shell", "web", "memory", "assets"}
     assert (
         plan.groups["files"].tools["environment"]
@@ -485,5 +510,39 @@ def test_split_environment_sources_and_opt_in_capabilities() -> None:
             }
         )
     dormant = config(tool_search={"groups": {"platform": {"description": "Platform", "platform": True}}})
-    dormant_plan = definition.tool_search(dormant, {})
+    dormant_plan = definition.tool_search(dormant, {}, {})
     assert dormant_plan is not None and not dormant_plan.groups["platform"].capabilities
+
+
+@pytest.mark.parametrize("key", ["files", "shell", "computer"])
+async def test_catalog_discovery_names_match_the_dynamic_environment_surface(key) -> None:
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    from a13n_harness import AgentContext
+    from a13n_harness.environment import DynamicEnvironmentCapability, EnvironmentAction, EnvironmentPermissionSet
+    from a13n_harness.environment.advanced import BoundEnvironment
+    from pydantic_ai import RunContext
+    from pydantic_ai.models.test import TestModel
+    from pydantic_ai.usage import RunUsage
+
+    # Grant all operations to inspect the real tool surface without invoking a provider.
+    environment = Mock(spec=BoundEnvironment)
+    environment.snapshot = SimpleNamespace(
+        mounts=(SimpleNamespace(permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction))),),
+        default_mount="workspace",
+    )
+    deps = Mock(spec=AgentContext, environment=environment, run_id="catalog-contract")
+    deps._run_capability.return_value = None
+    ctx = RunContext(deps=deps, model=TestModel(), usage=RunUsage())
+    selected = config(toolsets={item: {"enabled": item == key} for item in ("files", "shell", "computer")})
+    capability = DynamicEnvironmentCapability(toolsets.environment_configuration(selected.toolsets))
+    bound = await capability.for_run(ctx)
+    native = bound.get_toolset()
+    assert native is not None
+    native = await native.for_run(ctx)
+    async with native:
+        step = await native.for_run_step(ctx)
+        prepared = await step.get_tools(ctx)
+    declared = toolsets.discovery_members(selected.toolsets, (key,))["environment"]
+    assert declared and declared == prepared.keys()
