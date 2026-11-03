@@ -653,3 +653,246 @@ async def test_browser_use_incomplete_filtered_results_are_not_absence():
         assert error.value.code == "cloud_invalid_response"
     finally:
         await provider.close()
+
+
+@pytest.mark.parametrize("status", ["active", "stopped"])
+async def test_browser_use_recovers_exact_metadata_and_verifies_identity(status):
+    from a13n_service.providers.browser.cloud import BrowserUse, BrowserUseConfiguration
+
+    item = {
+        "id": "session-1",
+        "status": status,
+        "metadata": {"a13n_allocation": "alloc-1"},
+        "timeoutAt": "2026-11-03T08:00:00Z",
+        "cdpUrl": "wss://example.com/cdp",
+    }
+    calls = []
+
+    async def handler(request):
+        calls.append(request.url.path)
+        if request.url.path == "/api/v2/billing/account":
+            return httpx2.Response(200, json={"projectId": "project"})
+        if request.url.path == "/api/v4/browsers":
+            assert request.url.params["metadata"] == "a13n_allocation=alloc-1"
+            return httpx2.Response(200, json={"items": [item], "totalItems": 1, "pageNumber": 1, "pageSize": 100})
+        return httpx2.Response(200, json=item)
+
+    provider = BrowserUse(BrowserUseConfiguration(project_id="project"), api("browser_use", handler))
+    try:
+        result = await provider.inspect("alloc-1", None)
+        assert (result.runtime_id if result else None) == ("session-1" if status == "active" else None)
+        assert calls == ["/api/v2/billing/account", "/api/v4/browsers", "/api/v4/browsers/session-1"]
+    finally:
+        await provider.close()
+
+
+@pytest.mark.parametrize(
+    "url,expected",
+    [
+        ("https://example.com/cdp/path?token=a%2Bb", "wss://example.com/cdp/path?token=a%2Bb"),
+        ("wss://example.com/cdp/path?token=a%2Bb", "wss://example.com/cdp/path?token=a%2Bb"),
+    ],
+)
+async def test_browser_use_cdp_scheme_preserves_path_and_query(url, expected):
+    from a13n_service.providers.browser.cloud import BrowserUse, BrowserUseConfiguration
+
+    provider = BrowserUse(BrowserUseConfiguration(project_id="project"), api("browser_use", lambda request: None))
+    try:
+        live = provider._live(
+            "alloc-1", {"id": "s", "status": "active", "timeoutAt": "2026-11-03T08:00:00Z", "cdpUrl": url}
+        )
+        assert live.state["cdp_url"] == expected
+    finally:
+        await provider.close()
+
+
+async def test_browser_use_connect_uses_shared_connector_and_sanitizes_errors(monkeypatch):
+    from a13n_service.providers.browser.cloud import BrowserUse, BrowserUseConfiguration, Chromium
+
+    sentinel = object()
+    seen = []
+
+    async def connect(url, *, timeout, discover):
+        seen.append((url, timeout, discover))
+        if len(seen) > 1:
+            raise ValueError(url)
+        return sentinel
+
+    monkeypatch.setattr(Chromium, "connect", connect)
+    provider = BrowserUse(BrowserUseConfiguration(project_id="project"), api("browser_use", lambda request: None))
+    url = "wss://example.com/cdp?token=fixture-secret"
+    try:
+        assert await provider.connect({"cdp_url": url}) is sentinel
+        with pytest.raises(BrowserProviderError) as error:
+            await provider.connect({"cdp_url": url})
+        assert error.value.code == "cloud_connect_failed"
+        assert "fixture-secret" not in str(error.value)
+        assert seen == [(url, 15, False), (url, 15, False)]
+    finally:
+        await provider.close()
+
+
+@pytest.mark.parametrize("mismatch", ["id", "metadata"])
+async def test_browser_use_recovery_rejects_mismatched_get(mismatch):
+    from a13n_service.providers.browser.cloud import BrowserUse, BrowserUseConfiguration
+
+    item = {"id": "session-1", "status": "active", "metadata": {"a13n_allocation": "alloc-1"}}
+
+    async def handler(request):
+        if request.url.path == "/api/v2/billing/account":
+            return httpx2.Response(200, json={"projectId": "project"})
+        if request.url.path == "/api/v4/browsers":
+            return httpx2.Response(200, json={"items": [item], "totalItems": 1, "pageNumber": 1, "pageSize": 100})
+        altered = dict(item)
+        altered[mismatch] = "other" if mismatch == "id" else {"a13n_allocation": "other"}
+        return httpx2.Response(200, json=altered)
+
+    provider = BrowserUse(BrowserUseConfiguration(project_id="project"), api("browser_use", handler))
+    try:
+        with pytest.raises(BrowserProviderError) as error:
+            await provider.inspect("alloc-1", None)
+        assert error.value.code == "cloud_identity_mismatch"
+    finally:
+        await provider.close()
+
+
+async def test_browser_use_delete_requires_stopped_after_patch():
+    from a13n_service.providers.browser.cloud import BrowserUse, BrowserUseConfiguration
+
+    calls = []
+
+    async def handler(request):
+        calls.append((request.method, request.url.path))
+        if request.url.path == "/api/v2/billing/account":
+            return httpx2.Response(200, json={"projectId": "project"})
+        return httpx2.Response(
+            200, json={"id": "session-1", "status": "active", "metadata": {"a13n_allocation": "alloc-1"}}
+        )
+
+    provider = BrowserUse(BrowserUseConfiguration(project_id="project"), api("browser_use", handler))
+    try:
+        with pytest.raises(BrowserProviderError) as error:
+            await provider.delete("alloc-1", {"id": "session-1"})
+        assert error.value.code == "cloud_delete_unresolved"
+        assert [method for method, _ in calls] == ["GET", "GET", "PATCH", "GET"]
+    finally:
+        await provider.close()
+
+
+@pytest.mark.parametrize("operation", ["inspect", "delete"])
+async def test_browser_use_wrong_project_blocks_inspect_and_delete(operation):
+    from a13n_service.providers.browser.cloud import BrowserUse, BrowserUseConfiguration
+
+    calls = []
+
+    async def handler(request):
+        calls.append((request.method, request.url.path))
+        return httpx2.Response(200, json={"projectId": "wrong"})
+
+    provider = BrowserUse(BrowserUseConfiguration(project_id="project"), api("browser_use", handler))
+    try:
+        with pytest.raises(BrowserProviderError) as error:
+            await getattr(provider, operation)("alloc-1", {"id": "session-1"})
+        assert error.value.code == "cloud_account_mismatch"
+        assert calls == [("GET", "/api/v2/billing/account")]
+    finally:
+        await provider.close()
+
+
+async def test_browser_use_rejects_create_metadata_mismatch_and_invalid_allocation():
+    from a13n_service.providers.browser.cloud import BrowserUse, BrowserUseConfiguration, BrowserUseRecipe
+
+    calls = []
+
+    async def handler(request):
+        calls.append((request.method, request.url.path))
+        if request.url.path == "/api/v2/billing/account":
+            return httpx2.Response(200, json={"projectId": "project"})
+        return httpx2.Response(201, json={"id": "s", "metadata": {"a13n_allocation": "other"}})
+
+    provider = BrowserUse(BrowserUseConfiguration(project_id="project"), api("browser_use", handler))
+    try:
+        with pytest.raises(BrowserProviderError) as error:
+            await provider.create("alloc-1", BrowserUseRecipe())
+        assert error.value.code == "cloud_identity_mismatch"
+        with pytest.raises(BrowserProviderError) as error:
+            await provider.inspect("bad=allocation", None)
+        assert error.value.code == "cloud_invalid_allocation"
+        assert calls == [
+            ("GET", "/api/v2/billing/account"),
+            ("POST", "/api/v4/browsers"),
+            ("GET", "/api/v2/billing/account"),
+        ]
+    finally:
+        await provider.close()
+
+
+async def test_browser_use_unknown_create_empty_lookup_remains_unresolved_after_release(service, runs_kit, monkeypatch):
+    from dataclasses import replace
+
+    from a13n_service.distribution import OSS
+    from a13n_service.infra.db import transaction
+    from a13n_service.providers.browser import cloud
+    from a13n_service.providers.browser.builtins import builtins
+    from a13n_service.providers.registry import Registry
+    from a13n_service.runs.browsers import lifecycle
+    from a13n_service.runs.browsers.tables import BrowserRow
+    from a13n_service.settings import Browsers
+
+    calls = []
+
+    async def handler(request):
+        calls.append((request.method, request.url.path))
+        if request.url.path == "/api/v2/billing/account":
+            return httpx2.Response(200, json={"projectId": "project"})
+        if request.method == "POST":
+            return httpx2.Response(500)
+        return httpx2.Response(200, json={"items": [], "totalItems": 0, "pageNumber": 1, "pageSize": 100})
+
+    original_init = cloud.CloudAPI.__init__
+
+    def init(self, supplier, credential, policy, **kwargs):
+        original_init(self, supplier, credential, policy, transport=httpx2.MockTransport(handler))
+
+    monkeypatch.setattr(cloud.CloudAPI, "__init__", init)
+    await runs_kit.pause_sweeps(service)
+    service.runtime = replace(service.runtime, registry=Registry.of((*OSS.providers, *builtins(Browsers(root=None)))))
+    service.app.state.runtime = service.runtime
+    account = await service.client.post(
+        f"{service.api}/browser-providers",
+        json={
+            "type": "browser_use",
+            "name": "BU",
+            "config": {"project_id": "project"},
+            "credential": {"api_key": "test"},
+        },
+    )
+    assert account.status_code == 201, account.text
+    response = await service.client.post(
+        f"{service.api}/browsers",
+        json={
+            "provider_id": account.json()["id"],
+            "name": "Browser",
+            "recipe": {},
+        },
+    )
+    assert response.status_code == 201, response.text
+    browser = response.json()
+    await lifecycle.prepare(service.runtime, browser["workspace_id"], browser["id"])
+    await lifecycle.reconcile(service.runtime, browser["workspace_id"], browser["id"])
+    assert calls.count(("GET", "/api/v4/browsers")) == 1
+    async with transaction(service.runtime.storage) as session:
+        row = await session.get_one(BrowserRow, browser["id"])
+        assert row.status == "creating" and row.create_dispatched
+        assert row.failure == "browser_provider_failed"
+        lifecycle.release_intent(row)
+        assert row.status == "deleting"
+    for expected_lookups in (2, 3):
+        await lifecycle.reconcile(service.runtime, browser["workspace_id"], browser["id"])
+        assert calls.count(("GET", "/api/v4/browsers")) == expected_lookups
+        async with transaction(service.runtime.storage) as session:
+            row = await session.get_one(BrowserRow, browser["id"])
+            assert row.status == "deleting" and row.create_dispatched
+            assert row.failure == "browser_provider_failed"
+    assert sum(method == "POST" for method, _ in calls) == 1
+    assert not any(method == "PATCH" for method, _ in calls)
