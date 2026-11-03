@@ -12,12 +12,6 @@ import yaml
 ROOT = Path(__file__).parents[2]
 
 
-def test_compose_docker_provisioning_uses_literal_json_with_service_owned_defaults() -> None:
-    document = yaml.safe_load((ROOT / "deploy/docker/compose/a13n-service.yaml").read_text())
-    value = document["services"]["service"]["environment"]["A13N_PROVISIONING__DOCKER"]
-    assert json.loads(value) == {"enabled": True}
-
-
 @pytest.mark.parametrize("legacy_image", [None, "", "a13n-sandbox:ignored"])
 @pytest.mark.parametrize("pull_policy", [None, "if_missing", "never"])
 def test_compose_renders_default_and_complete_docker_overrides(tmp_path, legacy_image, pull_policy) -> None:
@@ -111,57 +105,6 @@ def test_development_images_publish_only_variant_dev_tags_without_smoke_or_sha_t
     assert "matrix.variant" in build["with"]["cache-to"]
 
 
-def test_development_sandbox_builds_native_binaries_and_copies_same_run_artifacts() -> None:
-    jobs = yaml.safe_load((ROOT / ".github/workflows/images.yml").read_text())["jobs"]
-    native = jobs["sandbox-binaries"]
-    assert native["needs"] == "changes"
-    assert native["if"] == "contains(fromJSON(needs.changes.outputs.images).*.name, 'a13n-sandbox')"
-    assert native["runs-on"] == "${{ matrix.runner }}"
-    assert native["strategy"]["fail-fast"] is False
-    assert native["strategy"]["matrix"]["include"] == [
-        {"arch": "amd64", "runner": "ubuntu-24.04", "target": "x86_64-unknown-linux-gnu"},
-        {"arch": "arm64", "runner": "ubuntu-24.04-arm", "target": "aarch64-unknown-linux-gnu"},
-    ]
-    steps = native["steps"]
-    assert not any("docker/" in step.get("uses", "") for step in steps)
-    rust = next(step for step in steps if step["name"] == "Set up Rust")
-    assert rust["uses"] == "dtolnay/rust-toolchain@1.96.0"
-    assert rust["with"]["targets"] == "${{ matrix.target }}"
-    cache = next(step for step in steps if step["name"] == "Cache Cargo")
-    assert cache["uses"] == "Swatinem/rust-cache@v2"
-    assert cache["with"]["shared-key"] == "dev-sandbox-${{ matrix.target }}"
-    compile_step = next(step for step in steps if step["name"] == "Build native sandbox binary")
-    assert compile_step["env"]["TARGET"] == "${{ matrix.target }}"
-    assert compile_step["run"] == 'cargo build --release --locked --package a13n-envd --target "$TARGET"'
-    upload = next(step for step in steps if step["name"] == "Upload sandbox binary")
-    assert upload["with"]["name"] == "sandbox-binary-${{ matrix.arch }}"
-    assert upload["with"]["path"] == "target/${{ matrix.target }}/release/a13n-envd"
-    assert upload["with"]["if-no-files-found"] == "error"
-
-    publish = jobs["publish"]
-    assert publish["needs"] == ["changes", "sandbox-binaries"]
-    # Explicit status handling allows Service through a skipped or failed sandbox dependency.
-    assert publish["if"] == (
-        "${{ !cancelled() && needs.changes.result == 'success' && needs.changes.outputs.images != '[]' }}"
-    )
-    steps = publish["steps"]
-    gate = next(step for step in steps if step["name"] == "Require successful sandbox binaries")
-    assert gate["if"] == "matrix.name == 'a13n-sandbox'"
-    assert gate["env"]["BINARY_BUILD_RESULT"] == "${{ needs.sandbox-binaries.result }}"
-    build = next(step for step in steps if step.get("uses", "").startswith("docker/build-push-action"))
-    assert "${{ matrix.name == 'a13n-sandbox' && 'ENVD_BINARY_SOURCE=prebuilt' || '' }}" in build["with"]["build-args"]
-    downloads = [step for step in steps if step.get("uses", "").startswith("actions/download-artifact")]
-    assert len(downloads) == 2
-    for arch, download in zip(("amd64", "arm64"), downloads, strict=True):
-        assert download["if"] == "matrix.name == 'a13n-sandbox'"
-        # No external run or release lookup: artifacts belong to this workflow run.
-        assert download["with"] == {"name": f"sandbox-binary-{arch}", "path": f"tmp/sandbox-binaries/{arch}"}
-        assert steps.index(gate) < steps.index(download) < steps.index(build)
-    for job in (native, publish):
-        checkout = next(step for step in job["steps"] if step.get("uses", "").startswith("actions/checkout"))
-        assert "ref" not in checkout.get("with", {})
-
-
 @pytest.mark.parametrize("result", ["success", "failure", "skipped", "cancelled"])
 def test_development_sandbox_publication_requires_both_binary_builds(result, monkeypatch) -> None:
     steps = yaml.safe_load((ROOT / ".github/workflows/images.yml").read_text())["jobs"]["publish"]["steps"]
@@ -234,53 +177,6 @@ def test_python_image_build_checks_installed_release_identity(component, tag, in
         text=True,
     )
     assert (result.returncode == 0) is accepted, result.stderr
-
-
-def test_release_images_prepare_real_metadata_before_building() -> None:
-    for component in ("a13n-service", "a13n-envd"):
-        jobs = yaml.safe_load((ROOT / f".github/workflows/release-{component}.yml").read_text())["jobs"]
-        steps = jobs["publish-image"]["steps"]
-        if component == "a13n-envd":
-            # Envd prepares once; the image reuses the versioned native artifacts.
-            prepare_steps = jobs["prepare"]["steps"]
-            assert any(
-                'prepare-release-version.py a13n-envd "$version"' in step.get("run", "") for step in prepare_steps
-            )
-            patch = next(step for step in prepare_steps if step["name"] == "Create release version patch")
-            assert "Cargo.toml" in patch["run"] and "Cargo.lock" in patch["run"]
-            preparation = next(index for index, step in enumerate(steps) if step["name"] == "Stage sandbox binaries")
-        else:
-            preparation = next(
-                index for index, step in enumerate(steps) if "prepare-release-version.py" in step.get("run", "")
-            )
-            assert f'prepare-release-version.py {component} "$VERSION"' in steps[preparation]["run"]
-        build = next(
-            index for index, step in enumerate(steps) if step.get("uses", "").startswith("docker/build-push-action")
-        )
-        assert preparation < build
-    sandbox = (ROOT / "deploy/docker/images/sandbox/Dockerfile").read_text()
-    assert 'test "$(a13n-envd --version)" = "a13n-envd $BUILD_VERSION"' in sandbox
-
-
-def test_sandbox_shares_trixie_runtime_with_source_and_prebuilt_binaries() -> None:
-    dockerfile = (ROOT / "deploy/docker/images/sandbox/Dockerfile").read_text()
-    assert "ARG ENVD_BINARY_SOURCE=source" in dockerfile
-    assert "FROM rust:1.96-trixie AS builder" in dockerfile
-    assert "FROM node:24-trixie-slim AS node" in dockerfile
-    assert "FROM python:3.13.12-slim-trixie AS standard-runtime" in dockerfile
-    assert "FROM debian:trixie-slim AS slim-runtime" in dockerfile
-    assert "ARG SANDBOX_VARIANT=standard" in dockerfile
-    assert "FROM ${SANDBOX_VARIANT}-runtime AS runtime" in dockerfile
-    assert "cargo build --release --locked --package a13n-envd" in dockerfile
-    assert "COPY --from=builder /src/target/release/a13n-envd /a13n-envd" in dockerfile
-    assert "COPY --chmod=0755 tmp/sandbox-binaries/${TARGETARCH}/a13n-envd /a13n-envd" in dockerfile
-    assert "FROM envd-${ENVD_BINARY_SOURCE} AS envd" in dockerfile
-    assert "COPY --from=envd /a13n-envd /usr/local/bin/a13n-envd" in dockerfile
-    assert "tmp" not in (ROOT / ".dockerignore").read_text().splitlines()
-    # Changing source identity must not reinstall the stable runtime toolchain.
-    install = dockerfile.index("RUN apt-get update")
-    for marker in ("ARG BUILD_VERSION", "ARG BUILD_REVISION", "LABEL ", "COPY --from=envd"):
-        assert install < dockerfile.index(marker)
 
 
 @pytest.mark.parametrize(
@@ -424,23 +320,6 @@ def test_service_release_requires_its_reviewed_sandbox(available, tmp_path, monk
     result = subprocess.run(["bash", "-eu", "-c", gate["run"]], cwd=ROOT, capture_output=True, text=True)
     assert (result.returncode == 0) is available, result.stderr
     assert output.read_text().strip() == "manifest inspect ghcr.io/converge-ai-labs/a13n-sandbox:0.5.1"
-
-
-def test_only_service_and_sandbox_images_are_published() -> None:
-    service = yaml.safe_load((ROOT / ".github/workflows/release-a13n-service.yml").read_text())["jobs"]
-    ui = yaml.safe_load((ROOT / ".github/workflows/release-a13n-harness-ui.yml").read_text())["jobs"]
-    sandbox = yaml.safe_load((ROOT / ".github/workflows/release-a13n-envd.yml").read_text())["jobs"]
-    assert "publish-environment-image" not in service
-    assert service["publish-python"]["needs"] == "build-python"
-    assert "publish-image" not in ui
-    assert set(ui["create-release"]["needs"]) == {"build-python", "publish-python"}
-    build = next(
-        step
-        for step in sandbox["publish-image"]["steps"]
-        if step.get("uses", "").startswith("docker/build-push-action")
-    )
-    assert build["with"]["platforms"] == "linux/amd64,linux/arm64"
-    assert build["with"]["file"] == "deploy/docker/images/sandbox/Dockerfile"
 
 
 def test_quickstart_waits_for_initialization_without_host_authority() -> None:

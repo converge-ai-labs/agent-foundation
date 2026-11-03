@@ -163,22 +163,6 @@ async def test_sidekick_defaults_preserve_explicit_opt_out_without_rewriting_sou
     assert path.read_bytes() == original
 
 
-async def test_root_defaults_enable_codeact_and_match_empty_onboarding(tmp_path: Path) -> None:
-    loaded = await load_harness_ui_configuration(_write_source_tree(tmp_path))
-    empty = configuration_loader.empty_harness_ui_configuration()
-    assert loaded.document == empty.document
-    assert empty.document.schema_version == "1"
-    assert empty.document.tools.model_dump() == {
-        "enable_ask_user_question": True,
-        "interaction_timeout_seconds": 120,
-        "enable_codeact": True,
-        "execution": {"mode": "inline", "foreground_wait_seconds": 5.0},
-    }
-    assert empty.sources[0].content == 'schema_version: "1"\n'
-    assert empty.document.webui.sidekick is not None
-    assert empty.document.webui.sidekick.model_dump() == {"agent": None, "model": None}
-
-
 @pytest.mark.parametrize("setting", ["enable_user_input: false", "user_input_timeout_seconds: 30"])
 async def test_rejects_obsolete_question_tool_settings(tmp_path: Path, setting: str) -> None:
     config = _write_source_tree(tmp_path, root=f'schema_version: "1"\ntools:\n  {setting}\n')

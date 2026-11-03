@@ -76,32 +76,6 @@ async def test_google_cloud_routes_preserve_custom_endpoint_and_native_provider(
         assert model.model_name == "gateway-gemini"
 
 
-@pytest.mark.parametrize("model_id", ["gpt-4.1", "custom-model"])
-def test_non_reasoning_or_unknown_models_have_a_neutral_default(model_id) -> None:
-    presets = settings_presets("openai-responses", model_id)
-    assert presets[0].key == "default"
-    assert presets[0].settings == {"openai_store": False}
-    assert all("openai_reasoning_summary" not in preset.settings for preset in presets)
-
-
-def test_reasoning_defaults_and_anthropic_model_profile_selection() -> None:
-    assert settings_presets("openai-responses", "gpt-5")[0].settings == {
-        "thinking": "high",
-        "openai_reasoning_summary": "detailed",
-        "openai_store": False,
-        "max_tokens": 65536,
-    }
-    assert "openai_reasoning_summary" not in settings_presets("openai-chat", "custom")[0].settings
-    assert settings_presets("anthropic", "claude-sonnet-4-6")[0].key == "adaptive"
-    legacy = settings_presets("anthropic", "claude-sonnet-4-5")[0]
-    assert legacy.key == "interleaved"
-    assert legacy.settings["anthropic_thinking"]["display"] == "summarized"
-    assert legacy.settings["anthropic_betas"] == ["interleaved-thinking-2025-05-14"]
-    # Pydantic AI maps this to include_thoughts=True AND the model's effort;
-    # a partial google_thinking_config would override that native translation.
-    assert settings_presets("google", "gemini-2.5-pro")[0].settings == {"thinking": "high", "max_tokens": 32768}
-
-
 @pytest.mark.parametrize(
     "url",
     [

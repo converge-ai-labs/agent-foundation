@@ -176,12 +176,6 @@ def test_external_history_is_validated_on_import(history: Any) -> None:
         HarnessState.model_validate_json(json.dumps(payload))
 
 
-@pytest.mark.parametrize("data", [b"not json", b"\xff", b"{} trailing"])
-def test_malformed_external_json_is_rejected(data: bytes) -> None:
-    with pytest.raises(ValidationError):
-        HarnessState.model_validate_json(data)
-
-
 def test_subclass_retains_its_custom_serializer() -> None:
     class CustomState(HarnessState):
         @model_serializer

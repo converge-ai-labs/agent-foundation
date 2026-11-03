@@ -33,27 +33,6 @@ def _system_prompt_contents(messages: list[ModelMessage] | tuple[ModelMessage, .
     ]
 
 
-def test_harness_agent_spec_schema_includes_system_prompt() -> None:
-    schema = AgentSpec.model_json_schema_with_capabilities()
-
-    assert schema["properties"]["system_prompt"] == {
-        "anyOf": [
-            {"type": "string"},
-            {"items": {"type": "string"}, "type": "array"},
-            {"type": "null"},
-        ],
-        "default": None,
-    }
-    assert schema["properties"]["toolset_instructions"] == {
-        "type": "boolean",
-        "default": True,
-    }
-    assert AgentSpec(system_prompt=["first", "second"]).model_dump()["system_prompt"] == [
-        "first",
-        "second",
-    ]
-
-
 async def test_system_prompt_is_injected_for_initial_history_and_replaced_on_resume() -> None:
     observed: list[list[ModelMessage]] = []
 

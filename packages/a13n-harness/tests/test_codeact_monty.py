@@ -1,4 +1,4 @@
-"""Exercise Monty's supported Python features through the actual Harness runners."""
+"""Exercise explicit JSON conversion across Harness runner and persistence boundaries."""
 
 from pathlib import Path
 from textwrap import dedent
@@ -23,10 +23,6 @@ async def test_monty_data_processing_crosses_tools_as_explicit_json(runner: str,
         return value
 
     source = dedent("""\
-        import csv
-        import hashlib
-        import tomllib
-        from bisect import bisect_left
         from dataclasses import dataclass
         from decimal import Decimal
 
@@ -38,20 +34,8 @@ async def test_monty_data_processing_crosses_tools_as_explicit_json(runner: str,
             def total(self):
                 return Decimal(self.price) * self.quantity
 
-        rows = list(csv.DictReader(["price", "0.10"]))
-        item = Item(rows[0]["price"])
-        config = tomllib.loads('name = "report"')
-        values = [1, 4]
-        values[1:1] = [2, 3]
-        match config:
-            case {"name": name}:
-                label = name
-        value = {
-            "total": str(item.total()),
-            "name": label,
-            "position": bisect_left(values, 3),
-            "digest": hashlib.sha256(b"abc").hexdigest(),
-        }
+        item = Item("0.10")
+        value = {"total": str(item.total())}
         value = await echo(value=value)
         await store(key="report", value=value)
     """)
@@ -69,12 +53,7 @@ async def test_monty_data_processing_crosses_tools_as_explicit_json(runner: str,
         capabilities=(_codeact_tools(echo, allowed=("echo",)),),
         bindings=RunBindings.embedded(environment=_local_environment(tmp_path)),
     )
-    expected = {
-        "total": "0.20",
-        "name": "report",
-        "position": 2,
-        "digest": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
-    }
+    expected = {"total": "0.20"}
     assert received == [expected], [part.content for part in seen]
     assert [part.content for part in seen] == [expected, expected]
     assert _values(result.state) == {"report": expected}

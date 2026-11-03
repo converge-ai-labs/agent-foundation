@@ -17,30 +17,6 @@ from pydantic_ai.messages import (
 )
 
 
-def test_snapshot_and_raw_suffix_reconstruct_text_and_tool_lifecycle() -> None:
-    fold = DisplayFold("run", attempt=1)
-    events = [
-        {"type": "TEXT_MESSAGE_START", "messageId": "message", "role": "assistant"},
-        {"type": "TEXT_MESSAGE_CONTENT", "messageId": "message", "delta": "hello"},
-        {"type": "TEXT_MESSAGE_CONTENT", "messageId": "message", "delta": " world"},
-        {"type": "TEXT_MESSAGE_END", "messageId": "message"},
-        {"type": "TOOL_CALL_START", "toolCallId": "call", "toolCallName": "search"},
-        {"type": "TOOL_CALL_ARGS", "toolCallId": "call", "delta": "{}"},
-        {"type": "TOOL_CALL_END", "toolCallId": "call"},
-        {"type": "TOOL_CALL_RESULT", "toolCallId": "call", "content": "found"},
-    ]
-    for event in events:
-        restored = DisplayFold.restore(fold.export())
-        event["timestamp"] = 1000
-        batch = fold.fold([event])[0]
-        restored.fold([event])
-        assert restored.items == fold.items
-        if event["type"] == "TOOL_CALL_END":
-            assert batch.item is not None and batch.item.state == "in_progress"
-        if event["type"] == "TEXT_MESSAGE_END":
-            assert batch.item is not None and batch.item.state == "completed"
-
-
 @pytest.mark.parametrize("legacy", [False, True])
 def test_native_retry_result_remains_failed_across_snapshot_restore(legacy: bool) -> None:
     from pydantic_ai.messages import FunctionToolResultEvent, ToolReturnPart
@@ -67,16 +43,6 @@ def test_native_retry_result_remains_failed_across_snapshot_restore(legacy: bool
     assert item.content["value"] == "Invalid arguments"
     assert item.content["outcome"] == (None if legacy else "retried")
     assert DisplayFold.restore(fold.export()).items == fold.items
-
-
-def test_snapshot_is_detached_from_later_raw_events() -> None:
-    fold = DisplayFold("run")
-    fold.fold([{"type": "TEXT_MESSAGE_CONTENT", "messageId": "message", "delta": "a"}])
-    frozen = fold.export()
-    before = frozen.model_dump_json()
-    fold.fold([{"type": "TEXT_MESSAGE_CONTENT", "messageId": "message", "delta": "b"}])
-    assert frozen.model_dump_json() == before
-    assert next(iter(fold.items.values())).content["text"] == "ab"
 
 
 @pytest.mark.parametrize("chunks", [100, 1000])
@@ -155,7 +121,13 @@ def test_every_event_cut_roundtrips_normalized_state(full_content: bool) -> None
     for index, event in enumerate(events):
         event["timestamp"] = 1700000000000 + index
     uninterrupted = DisplayFold("run", attempt=2, full_content=full_content)
-    uninterrupted.fold(events)
+    for event in events:
+        changes = uninterrupted.fold([event])
+        if event["type"] == "TOOL_CALL_END":
+            assert changes[0].item is not None and changes[0].item.state == "in_progress"
+        if event["type"] == "TEXT_MESSAGE_END":
+            assert changes[0].item is not None and changes[0].item.state == "completed"
+            assert uninterrupted.items[changes[0].item.id].content["text"] == "hello world"
     expected = uninterrupted.export()
     for cut in range(len(events) + 1):
         fold = DisplayFold("run", attempt=2, full_content=full_content)
@@ -165,8 +137,9 @@ def test_every_event_cut_roundtrips_normalized_state(full_content: bool) -> None
         restored = DisplayFold.restore(DisplaySnapshot.model_validate_json(encoded))
         assert fold.export() == frozen  # Export does not synthesize an END.
         restored.fold(events[cut:])
-        assert restored.export() == expected, cut
-        assert frozen.model_dump_json() == encoded  # No mutable aliases.
+        fold.fold(events[cut:])
+        assert restored.export() == fold.export() == expected, cut
+        assert frozen.model_dump_json() == encoded  # No mutable aliases in export or restore.
 
 
 @pytest.mark.parametrize("reasoning", [False, True])

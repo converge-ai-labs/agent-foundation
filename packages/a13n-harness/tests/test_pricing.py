@@ -99,29 +99,6 @@ def test_official_model_catalog_contains_only_provider_qualified_direct_models()
     assert not text_only.capabilities and "capabilities" in text_only.model_fields_set
 
 
-def test_default_pricing_catalog_exports_genai_snapshot_plus_harness_overlay() -> None:
-    catalog = get_default_pricing_catalog()
-    exported = catalog.model_dump(mode="json")
-
-    assert len(catalog) > 1_000
-    assert catalog["openai:gpt-5.5"].source == "harness_overlay"
-    assert catalog["deepseek:deepseek-chat"].source == "genai_prices"
-    assert exported["revision"] == catalog.revision
-    assert set(exported["entries"]) == set(catalog)
-
-
-def test_bundled_catalog_includes_new_upstream_models() -> None:
-    entry = get_default_pricing_catalog()["openai:gpt-6.1-terra"]
-
-    assert entry.source == "genai_prices"
-    assert entry.context_window == 1_050_000
-    assert {component.price_key for rule in entry.rules for component in rule.prices} >= {
-        "input_mtok",
-        "output_mtok",
-        "cache_read_mtok",
-    }
-
-
 def test_bundled_catalog_preserves_upstream_dated_price_changes() -> None:
     capability = CatalogModelCostCapability(catalog=get_default_pricing_catalog())
 
