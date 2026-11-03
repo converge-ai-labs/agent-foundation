@@ -93,7 +93,14 @@ type Row = {
       notices: { id: string; source: string; text: string }[];
     }
   | { kind: "failure"; text: string }
-  | { kind: "activity"; name?: string; text: string; omitted?: boolean }
+  | {
+      kind: "activity";
+      name?: string;
+      text: string;
+      omitted?: boolean;
+      executionOutcome?: "cancelled" | "interrupt";
+      executionDefaultText?: boolean;
+    }
 );
 
 function appendInput(rows: Row[], part: InputPart, fallback: string) {
@@ -284,6 +291,8 @@ function liveRows(blocks: DisplayBlock[]): Row[] {
         id: block.id,
         kind: "activity",
         name: block.name || undefined,
+        executionOutcome: block.executionOutcome,
+        executionDefaultText: block.executionDefaultText,
         text: [block.text, block.result].filter(Boolean).join("\n"),
       });
     for (const reference of block.apps ?? []) {
@@ -532,11 +541,23 @@ function Rows({
         </details>
       ) : (
         <details className={styles.activity}>
-          <summary>{row.name ?? t("Activity")}</summary>
+          <summary>
+            {row.executionOutcome === "cancelled"
+              ? t("Execution cancelled")
+              : row.executionOutcome === "interrupt"
+                ? t("Execution suspended")
+                : (row.name ?? t("Activity"))}
+          </summary>
           <pre className={styles.code}>
             {row.omitted
               ? `${row.text}\n${t("Content omitted by the server.")}`
-              : row.text}
+              : row.executionOutcome && row.executionDefaultText
+                ? row.executionOutcome === "interrupt"
+                  ? t("A response is needed before execution can continue.")
+                  : t(
+                      "Run finished. Open its details to check follow-ups and environment results.",
+                    )
+                : row.text}
           </pre>
         </details>
       )}

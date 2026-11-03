@@ -1,6 +1,5 @@
 import { useTranslation } from "../i18n";
 import { useState } from "react";
-import { useTranslation } from "../i18n";
 import { Button, Dialog, DialogPopup, DialogTitle } from "a13n-ui";
 import {
   ArrowsOut,
@@ -28,7 +27,6 @@ export function ImagePreview({
   const { t } = useTranslation();
   const [actualSize, setActualSize] = useState(false);
   const [failedSource, setFailedSource] = useState<string>();
-  const { t } = useTranslation();
   const imageError = !!src && failedSource === src;
   return (
     <Dialog

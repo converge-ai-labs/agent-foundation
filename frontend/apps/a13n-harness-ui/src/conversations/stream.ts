@@ -43,6 +43,8 @@ export type DisplayBlock = {
   value?: unknown;
   diagnostic?: boolean;
   context?: "handoff" | "compaction";
+  executionOutcome?: "cancelled" | "interrupt";
+  executionDefaultText?: boolean;
 };
 type Payload = Record<string, unknown>;
 function object(value: unknown): value is Payload {
@@ -569,6 +571,11 @@ export class FocusDisplay {
         id: status,
         kind: "activity",
         diagnostic: failed,
+        executionOutcome:
+          !failed && (outcome === "cancelled" || outcome === "interrupt")
+            ? outcome
+            : undefined,
+        executionDefaultText: !string(payload.message),
         name:
           outcome === "cancelled"
             ? "Execution cancelled"

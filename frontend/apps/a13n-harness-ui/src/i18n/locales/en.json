@@ -1001,5 +1001,9 @@
   "Updates will resume automatically when the connection is ready.": "Updates will resume automatically when the connection is ready.",
   "Summary ready": "Summary ready",
   "Prepared": "Prepared",
-  "Completed": "Completed"
+  "Completed": "Completed",
+  "Execution cancelled": "Execution cancelled",
+  "Execution suspended": "Execution suspended",
+  "A response is needed before execution can continue.": "A response is needed before execution can continue.",
+  "Run finished. Open its details to check follow-ups and environment results.": "Run finished. Open its details to check follow-ups and environment results."
 }

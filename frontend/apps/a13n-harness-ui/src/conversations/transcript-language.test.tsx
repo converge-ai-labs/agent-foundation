@@ -9,7 +9,7 @@ import {
 } from "@testing-library/react";
 import { i18n } from "../i18n";
 import type { Schema } from "../transport/client";
-import type { DisplayBlock } from "./stream";
+import { FocusDisplay, focusFrame, type DisplayBlock } from "./stream";
 import { LiveOutput, RecoveryNotice, SavedEntry } from "./transcript";
 import { MessageText } from "./message-text";
 import { LiveConnectionStatus } from "./live-connection";
@@ -217,8 +217,85 @@ it("translates the expanded image viewer used by diagrams and attachments", asyn
   expect(screen.getByRole("button", { name: "实际大小" })).toBeTruthy();
   expect(screen.getByLabelText("下载图片")).toBeTruthy();
   expect(
-    screen.getByRole("button", { name: "放大图片到实际大小" }),
+    screen.getByRole("button", { name: "以实际大小显示图片" }),
   ).toBeTruthy();
   // The authored file name stays verbatim.
   expect(screen.getByText("chart.png")).toBeTruthy();
 });
+
+it.each([
+  [
+    "cancelled",
+    "Execution cancelled",
+    "执行已取消",
+    "Run finished. Open its details to check follow-ups and environment results.",
+    "运行已结束。打开详情以查看后续事项和环境结果。",
+  ],
+  [
+    "interrupt",
+    "Execution suspended",
+    "执行已暂停",
+    "A response is needed before execution can continue.",
+    "需要回复后才能继续执行。",
+  ],
+])(
+  "localizes reduced %s execution notices without translating payload messages",
+  async (outcome, title, translatedTitle, fallback, translatedFallback) => {
+    function blocks(message?: string) {
+      const display = new FocusDisplay();
+      display.accept(
+        focusFrame({
+          kind: "snapshot",
+          resume_cursor: null,
+          snapshot: {
+            epoch: "epoch",
+            cutover_sequence: 0,
+            thread: { thread: { thread_id: "one" }, continuation_id: null },
+            root_stream: {
+              run_id: "run",
+              base_continuation_id: null,
+              event_count: 1,
+            },
+          },
+        }),
+      );
+      display.accept(
+        focusFrame({
+          kind: "root_stream",
+          run_id: "run",
+          events: [
+            {
+              index: 0,
+              event_type: "RUN_FINISHED",
+              payload_omitted: false,
+              payload: {
+                type: "RUN_FINISHED",
+                threadId: "one",
+                runId: "run",
+                outcome: {
+                  type: outcome,
+                  interrupts: [{ id: "approval", reason: "approval" }],
+                },
+                ...(message === undefined ? {} : { message }),
+              },
+            },
+          ],
+        }),
+      );
+      return [...display.blocks.values()];
+    }
+    const view = render(<LiveOutput blocks={blocks()} gap={false} />);
+    expect(screen.getByText(title)).toBeTruthy();
+    expect(screen.getByText(fallback)).toBeTruthy();
+    await act(() => i18n.changeLanguage("zh-CN"));
+    expect(screen.getByText(translatedTitle)).toBeTruthy();
+    expect(screen.getByText(translatedFallback)).toBeTruthy();
+    view.rerender(<LiveOutput blocks={blocks(fallback)} gap={false} />);
+    expect(screen.getByText(fallback)).toBeTruthy();
+    expect(screen.queryByText(translatedFallback)).toBeNull();
+    view.rerender(
+      <LiveOutput blocks={blocks("Backend-specific message")} gap={false} />,
+    );
+    expect(screen.getByText("Backend-specific message")).toBeTruthy();
+  },
+);

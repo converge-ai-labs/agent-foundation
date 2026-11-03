@@ -993,5 +993,9 @@
   "Updates will resume automatically when the connection is ready.": "连接就绪后将自动恢复更新。",
   "Summary ready": "摘要已就绪",
   "Prepared": "已准备",
-  "Completed": "已完成"
+  "Completed": "已完成",
+  "Execution cancelled": "执行已取消",
+  "Execution suspended": "执行已暂停",
+  "A response is needed before execution can continue.": "需要回复后才能继续执行。",
+  "Run finished. Open its details to check follow-ups and environment results.": "运行已结束。打开详情以查看后续事项和环境结果。"
 }
