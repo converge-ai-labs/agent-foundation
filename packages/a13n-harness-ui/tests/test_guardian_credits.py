@@ -140,6 +140,7 @@ async def test_parent_and_default_reviewer_are_linked_on_wire_and_metered(codex,
             [Tool(shell_exec, metadata={TOOL_IDENTITY_KEY: ToolIdentity("environment.shell_exec")})]
         )
         settings = {
+            "openai_transport": "http",  # Exercise the HTTP mock for both parent and reviewer.
             "extra_headers": {"x-custom": "kept"},
             "extra_body": {"client_metadata": {"custom": "kept"}},
             "openai_service_tier": "priority",
