@@ -172,7 +172,7 @@ class SelfHosted(ABC):
             result = await self.desktop(
                 allocation,
                 {
-                    "protocol_version": 1,
+                    "protocol_version": 2,
                     "generation": current.state["viewer_generation"],
                     "operation": "ensure",
                     "id": grant_id,
@@ -197,7 +197,7 @@ class SelfHosted(ABC):
             await self.desktop(
                 allocation,
                 {
-                    "protocol_version": 1,
+                    "protocol_version": 2,
                     "generation": current.state["viewer_generation"],
                     "operation": "revoke_browser",
                     "id": grant_id,

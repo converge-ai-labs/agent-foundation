@@ -439,14 +439,22 @@ async def list_revision_summaries(
     limit: int,
     cursor: str | None,
 ) -> read_views.RevisionSummaryPage:
+    positions: dict[str, int] = {}
+
+    def summary(head: AgentRow, row: AgentRevisionRow) -> read_views.RevisionSummary | reads.UnavailableConfiguration:
+        positions[row.id] = row.number
+        return stored.batch_item(
+            lambda: read_views.revision_summary(
+                stored.read(AgentRevision, row, kind=row.KIND, id=row.id), head.default_revision_id
+            )
+        )
+
     items, following = await revisions.list_revisions(
         storage,
         actor,
         AgentRow,
         AgentRevisionRow,
-        lambda head, row: read_views.revision_summary(
-            stored.read(AgentRevision, row, kind=row.KIND, id=row.id), head.default_revision_id
-        ),
+        summary,
         workspace_id,
         agent_id,
         limit=limit,
@@ -454,8 +462,12 @@ async def list_revision_summaries(
     )
     count = reads.fit_count(items)
     if count < len(items):
-        following = cursors.encode("agent_revisions", agent_id, items[count - 1].number)
-    return read_views.RevisionSummaryPage(items=items[:count], next_cursor=following)
+        following = cursors.encode("agent_revisions", agent_id, positions[items[count - 1].id])
+    return read_views.RevisionSummaryPage(
+        items=[item for item in items[:count] if not isinstance(item, reads.UnavailableConfiguration)],
+        unavailable=[item for item in items[:count] if isinstance(item, reads.UnavailableConfiguration)],
+        next_cursor=following,
+    )
 
 
 async def list_revisions(
@@ -463,9 +475,21 @@ async def list_revisions(
 ) -> AgentRevisionPage:
     """Newest first."""
     items, next_cursor = await revisions.list_revisions(
-        storage, actor, AgentRow, AgentRevisionRow, _revision_view, workspace_id, agent_id, limit=limit, cursor=cursor
+        storage,
+        actor,
+        AgentRow,
+        AgentRevisionRow,
+        lambda head, row: stored.batch_item(lambda: _revision_view(head, row)),
+        workspace_id,
+        agent_id,
+        limit=limit,
+        cursor=cursor,
     )
-    return AgentRevisionPage(items=items, next_cursor=next_cursor)
+    return AgentRevisionPage(
+        items=[item for item in items if not isinstance(item, reads.UnavailableConfiguration)],
+        unavailable=[item for item in items if isinstance(item, reads.UnavailableConfiguration)],
+        next_cursor=next_cursor,
+    )
 
 
 def _revision_view(head: AgentRow, revision: AgentRevisionRow) -> AgentRevision:

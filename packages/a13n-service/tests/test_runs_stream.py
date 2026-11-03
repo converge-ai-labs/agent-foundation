@@ -246,26 +246,34 @@ async def test_the_attempt_end_releases_a_held_fragment(runtime: Runtime) -> Non
         assert fold.snapshot().tail.items[0].content["text"] == "Hello"
 
 
-async def test_a_streamed_reply_reaches_the_stream_coalesced(executing, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+async def test_a_streamed_reply_reaches_the_stream_coalesced(  # type: ignore[no-untyped-def]
+    settings: Settings, serve, scripted_model, runs_kit
+) -> None:
+    # Keep the test window beyond sealed()'s deadline so batching does not measure CI throughput.
+    worker = settings.worker.model_copy(update={"stream_coalesce_seconds": 60, "scan_seconds": 0.05})
+    async with serve(settings=settings.model_copy(update={"worker": worker}), role="all") as executing:
+        agent = await runs_kit.create_agent(executing, scripted_model)
+        pieces = ["tok "] * 400
+        scripted_model.say(*pieces)
+        run = await runs_kit.sealed(executing, (await runs_kit.start_thread(executing, agent, "fast"))["run"]["id"])
+
+        entries = await _entries(executing.runtime.redis, run["thread_id"])
+        # Pydantic AI's final_result event releases the first fragment; the remaining deltas merge.
+        assert _replies(_events(entries)) == [pieces[0], "".join(pieces[1:])]
+        listing = await runs_kit.items(executing, run["id"])
+        assert runs_kit.texts(listing) == [("user", "fast"), ("assistant", "".join(pieces))]
+        last_id, last_fields = [(entry_id, fields) for entry_id, fields in entries if "boundary" not in fields][-1]
+        display = await runs_kit.tail(executing, run["id"])
+        assert display.resume_after == last_id
+        assert str(display.position) == f"{last_fields['attempt']}-{last_fields['sequence']}"
+        deltas = [int(fields["sequence"]) for _, fields in entries if "boundary" not in fields]
+        assert deltas == list(range(1, len(deltas) + 1))
+
+
+async def test_a_paused_model_reply_reaches_readers_with_the_default_window(  # type: ignore[no-untyped-def]
+    executing, scripted_model, runs_kit
+) -> None:
     agent = await runs_kit.create_agent(executing, scripted_model)
-    pieces = ["tok "] * 400
-    scripted_model.say(*pieces)
-    run = await runs_kit.sealed(executing, (await runs_kit.start_thread(executing, agent, "fast"))["run"]["id"])
-
-    entries = await _entries(executing.runtime.redis, run["thread_id"])
-    replies = _replies(_events(entries))
-    assert "".join(replies) == "".join(pieces)
-    assert len(replies) <= len(pieces) // 10, replies
-    listing = await runs_kit.items(executing, run["id"])
-    assert runs_kit.texts(listing) == [("user", "fast"), ("assistant", "".join(pieces))]
-    last_id, last_fields = [(entry_id, fields) for entry_id, fields in entries if "boundary" not in fields][-1]
-    display = await runs_kit.tail(executing, run["id"])
-    assert display.resume_after == last_id
-    assert str(display.position) == f"{last_fields['attempt']}-{last_fields['sequence']}"
-    deltas = [int(fields["sequence"]) for _, fields in entries if "boundary" not in fields]
-    assert deltas == list(range(1, len(deltas) + 1))
-
-    # Text the model pauses in the middle of reaches readers within the window instead of waiting for the rest.
     next_chunk = asyncio.Event()
     scripted_model.say("Hello", " world", chunk_gate=next_chunk)
     paused = (await runs_kit.start_thread(executing, agent, "slow"))["run"]

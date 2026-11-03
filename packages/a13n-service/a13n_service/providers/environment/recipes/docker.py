@@ -8,7 +8,7 @@ from pydantic import Field, model_validator
 
 
 class DockerRecipe(DockerEnvironmentConfiguration):
-    desktop_assistance: bool = Field(default=False, title="Agent-requested desktop assistance")
+    desktop_assistance: bool = Field(default=False, title="Desktop viewing and control")
     desktop_viewer_url: str | None = Field(
         default=None,
         max_length=2048,
@@ -20,7 +20,7 @@ class DockerRecipe(DockerEnvironmentConfiguration):
     def assistance_route(self) -> Self:
         if self.desktop_assistance:
             if not self.desktop:
-                raise ValueError("Desktop assistance requires desktop=True")
+                raise ValueError("Desktop access requires desktop=True")
             route = self.desktop_viewer_url or ""
             parsed = urlsplit(route.replace("{container_id}", "container"))
             if (
@@ -36,6 +36,6 @@ class DockerRecipe(DockerEnvironmentConfiguration):
                 )
             ):
                 raise ValueError(
-                    "Desktop assistance requires a WSS route containing {container_id}; WS is allowed only on loopback"
+                    "Desktop access requires a WSS route containing {container_id}; WS is allowed only on loopback"
                 )
         return self

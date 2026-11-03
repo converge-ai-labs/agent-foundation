@@ -16,7 +16,7 @@ class DaytonaRecipe(DaytonaEnvironmentConfiguration):
     )
     desktop_assistance: bool = Field(
         default=False,
-        title="Desktop assistance and control",
+        title="Desktop viewing and control",
         description="Automatic desktops include the access supervisor; custom snapshots must provide it.",
     )
 
@@ -32,7 +32,7 @@ class DaytonaRecipe(DaytonaEnvironmentConfiguration):
         if self.snapshot == "auto" and not self.desktop:
             raise ValueError("Automatic snapshots require desktop=True")
         if self.desktop_assistance and (not self.desktop or not self.snapshot):
-            raise ValueError("Desktop assistance requires desktop=True and an operator-built snapshot")
+            raise ValueError("Desktop access requires desktop=True and an operator-built snapshot")
         return self
 
     @property

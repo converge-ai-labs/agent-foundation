@@ -354,7 +354,9 @@ class InboxEntryRow(Base):
         ),
         Index("ix_inbox_entries_pending", "thread_id", "position", postgresql_where=text("status = 'pending'")),
         Index("ix_inbox_entries_assigned", "assigned_run_id", postgresql_where=text("status = 'assigned'")),
-        CheckConstraint("kind IN ('message', 'child_result', 'tool_result', 'browser_handback')", name="kind"),
+        CheckConstraint(
+            "kind IN ('message', 'child_result', 'tool_result', 'browser_handback', 'desktop_handback')", name="kind"
+        ),
         CheckConstraint("delivery IN ('steer', 'next_run')", name="delivery"),
         CheckConstraint("status IN ('pending', 'assigned', 'consumed', 'failed', 'withdrawn')", name="status"),
         CheckConstraint("position > 0", name="position"),
@@ -519,7 +521,7 @@ class RunRow(Stamped, Base):
         ),
         CheckConstraint("revision_selection IN ('pinned', 'default', 'inherited')", name="revision_selection"),
         CheckConstraint(
-            "trigger IN ('input', 'queued', 'resume', 'child_result', 'tool_result', 'browser_handback', 'spawned')",
+            "trigger IN ('input', 'queued', 'resume', 'child_result', 'tool_result', 'browser_handback', 'desktop_handback', 'spawned')",
             name="trigger",
         ),
         CheckConstraint("lineage IN ('root', 'continue', 'fork')", name="lineage"),

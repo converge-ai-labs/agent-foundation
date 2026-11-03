@@ -4,9 +4,12 @@ Run options and Schedule snapshots embed the same configuration types, so both b
 apply recursively to their owning models. Reads never translate obsolete selections.
 """
 
+from collections.abc import Callable
+
 from pydantic import BaseModel, ValidationError
 
-from a13n_service.infra.errors import conflict
+from a13n_service.infra.errors import ServiceError, conflict
+from a13n_service.infra.reads import UnavailableConfiguration
 from a13n_service.resources.agents.schemas import AgentConfig, AgentOverride, apply_override
 
 _READ_CONTEXT: dict[str, object] = {"preserve_toolsets": True}
@@ -42,3 +45,13 @@ def require_effective(config: AgentConfig, override: AgentOverride | None, *, re
         return config if override is None else apply_override(config, override)
     except ValidationError as error:
         raise conflict("agent_revision", revision_id, "configuration_unavailable") from error
+
+
+def batch_item[T](read_item: Callable[[], T]) -> T | UnavailableConfiguration:
+    """Isolate only obsolete configuration; authorization and infrastructure failures still propagate."""
+    try:
+        return read_item()
+    except ServiceError as error:
+        if error.code != "conflict" or error.details.get("reason") != "configuration_unavailable":
+            raise
+        return UnavailableConfiguration.model_validate(error.details)

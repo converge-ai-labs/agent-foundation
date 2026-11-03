@@ -3,12 +3,13 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import and_, func, or_, select, text, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased, defer
 
 from a13n_service.infra.errors import ServiceError
+from a13n_service.infra.reads import UnavailableConfiguration
 from a13n_service.resources.agents import stored
 from a13n_service.runs.display import StreamPosition
 from a13n_service.runs.runs import run_views
@@ -31,6 +32,7 @@ class ThreadState(BaseModel):
     last_run: RunView | None
     # Pending and assigned entries, in inbox order.
     entries: list[EntryView]
+    unavailable: list[UnavailableConfiguration] = Field(default_factory=list)
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,7 +134,13 @@ async def states(session: AsyncSession, thread_ids: Sequence[str]) -> dict[str, 
     current = [thread.current_run_id for thread in threads if thread.current_run_id is not None]
     named = {*current, *(thread.last_run_id for thread in threads if thread.last_run_id is not None)}
     rows = (await session.scalars(select(RunRow).where(RunRow.id.in_(named)))).all()
-    runs = {view.id: view for view in await run_views(session, rows)}
+    views = await run_views(session, rows)
+    runs = {view.id: view for view in views if isinstance(view, RunView)}
+    unavailable: dict[str, list[UnavailableConfiguration]] = {}
+    owners = {row.id: row.thread_id for row in rows}
+    for value in views:
+        if isinstance(value, UnavailableConfiguration):
+            unavailable.setdefault(owners[value.id], []).append(value)
     # Assigned entries belong to the thread's current run, pending ones to the thread: each finds its partial index.
     entries = await session.scalars(
         select(InboxEntryRow)
@@ -146,15 +154,18 @@ async def states(session: AsyncSession, thread_ids: Sequence[str]) -> dict[str, 
     )
     open_entries: dict[str, list[EntryView]] = {}
     for entry in entries:
-        open_entries.setdefault(entry.thread_id, []).append(
-            stored.read(EntryView, entry, kind="inbox_entry", id=entry.id)
-        )
+        value = stored.batch_item(lambda entry=entry: stored.read(EntryView, entry, kind="inbox_entry", id=entry.id))
+        if isinstance(value, UnavailableConfiguration):
+            unavailable.setdefault(entry.thread_id, []).append(value)
+        else:
+            open_entries.setdefault(entry.thread_id, []).append(value)
     return {
         thread.id: ThreadState(
             thread=ThreadView.model_validate(thread),
             current_run=runs.get(thread.current_run_id or ""),
             last_run=runs.get(thread.last_run_id or ""),
             entries=open_entries.get(thread.id, []),
+            unavailable=unavailable.get(thread.id, []),
         )
         for thread in threads
     }

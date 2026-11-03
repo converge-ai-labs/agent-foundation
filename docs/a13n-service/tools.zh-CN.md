@@ -215,9 +215,9 @@ Grant 支持续期时，token 在使用时续期，并发调用者共享同一�
 
 默认的**按来源自动分组**无需手动建组；MCP tools 会包含之后添加的连接。展开**高级分组设置**可排除单个 MCP 连接，或切换到**自定义分组**，以当前选择的来源为起点。展开分组即可修改名称、描述和来源。问号提示解释各项设置。插件保留自身的工具发现方式，除非明确加入兼容的自定义分组。
 
-JSON 配置使用 `"tool_search": {"automatic": {}}`。自动策略的 `capabilities` 默认为 `["browser", "computer"]`，可按需加入 `files`、`shell`（Terminal）、`web`、`memory` 或 `assets`。`connections` 默认为 true，设为 false 后所有 MCP 连接直接提供工具。`exclude_connections` 排除指定连接 ID，`exclude_platform: true` 让平台工具直接提供。使用显式 `groups` 时省略 `automatic`。请分别使用 `files`、`shell` 和 `computer`；不再接受 `environment`。`GET /toolsets` 通过 `discovery_defaults` 返回当前自动发现策略，通过 `discovery_sources` 返回来源信息。传入 `connection_ids` 可以获取指定连接的描述和稳定分组名。调整连接顺序或修改名称不会改变分组名。
+JSON 配置使用 `"tool_search": {"automatic": {}}`。自动策略的 `capabilities` 默认为 `["browser", "computer"]`，可按需加入 `files`、`shell`（Terminal）、`web`、`memory` 或 `assets`。`connections` 默认为 true，设为 false 后所有 MCP 连接直接提供工具。`exclude_connections` 排除指定连接 ID，`exclude_platform: true` 让平台工具直接提供。使用显式 `groups` 时省略 `automatic`。请分别使用 `files`、`shell` 和 `computer`；不再接受 `environment`。`GET /toolsets` 通过 `discovery_defaults` 返回当前自动发现策略，通过 `discovery_sources` 返回来源信息。传入 `connection_ids` 可以获取指定连接的描述和稳定分组名。调整连接顺序或修改名称不会改变分组名。如果任一指定连接不存在或不属于当前工作区，目录请求返回 `404 not_found`。
 
-**Service 破坏性变更：** 将发现分组 `capabilities` 中的 `environment` 替换为 `files`、`shell` 和 `computer`，或其中需要的部分。运维人员需要自行修复受影响的 Agent 版本以及 Run、Inbox 和 Schedule 中冻结的配置。Service 不会迁移或转换这些数据。读取或复用不兼容记录时，接口返回 `409 conflict`，包含 `reason: configuration_unavailable` 和受影响的资源 ID。此选择器变更不影响独立使用的 Harness 或 Harness UI 配置。
+**Service 破坏性变更：** 将发现分组 `capabilities` 中的 `environment` 替换为 `files`、`shell` 和 `computer`，或其中需要的部分。运维人员需要自行修复受影响的 Agent 版本以及 Run、Inbox 和 Schedule 中冻结的配置。Service 不会迁移或转换这些数据。单独读取或复用不兼容记录时，接口返回 `409 conflict`，包含 `reason: configuration_unavailable` 和受影响的资源 ID。Agent 版本、Inbox 和 Schedule 列表保留正常记录，并通过 `unavailable` 列出不兼容记录；即使 `items` 为空，也应继续使用 `next_cursor` 翻页。会话的 thread 帧同样标记不兼容的 Run 和待处理条目，让其他线程继续刷新。此选择器变更不影响独立使用的 Harness 或 Harness UI 配置。
 
 以下片段将一个已选连接加入分组。替换两处 `conn_...`：
 

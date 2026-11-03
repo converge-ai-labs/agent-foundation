@@ -111,6 +111,7 @@ def test_automatic_groups_follow_selections_and_preserve_exclusions() -> None:
         for group in toolsets.catalog(frozenset()).items
         if group.key == "computer"
         for tool in group.tools
+        if tool.execution_id != toolsets.COMPUTER_NOTIFY_TOOL_ID
     )
     assert not after.groups["browser"].capabilities
     assert not after.groups["platform"].capabilities
@@ -546,3 +547,18 @@ async def test_catalog_discovery_names_match_the_dynamic_environment_surface(key
         prepared = await step.get_tools(ctx)
     declared = toolsets.discovery_members(selected.toolsets, (key,))["environment"]
     assert declared and declared == prepared.keys()
+
+
+async def test_computer_group_includes_service_handback_notifications() -> None:
+    from unittest.mock import Mock
+
+    from a13n_service.runs.environments.desktop.notify import HandbackNotifications
+
+    selected = config(toolsets={"computer": {"enabled": True}}, tool_search={"automatic": {}})
+    notifications = HandbackNotifications(Mock(), Mock())
+    plan = definition.tool_search(selected, {"computer-notify": notifications}, {})
+    assert plan is not None
+    assert plan.groups["computer"].capabilities == (notifications,)
+    assert toolsets.discovery_members(selected.toolsets, ("computer",))["computer-notify"] == {"computer_notify"}
+    disabled = config(toolsets={"computer": {"enabled": True, "tools": {"notify": {"enabled": False}}}})
+    assert "computer-notify" not in toolsets.discovery_members(disabled.toolsets, ("computer",))

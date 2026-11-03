@@ -20,7 +20,7 @@
   min-height: 0;
   min-width: 0;
 }
-.browserPane {
+.resourcePane {
   display: flex;
   flex: 0 0 48%;
   min-width: 360px;
@@ -28,14 +28,14 @@
   border-left: 1px solid var(--a13n-border-soft);
   background: var(--a13n-canvas);
 }
-.browserPane[hidden] {
+.resourcePane[hidden] {
   display: none;
 }
 @media (max-width: 1100px) {
   .sessionWorkspace {
     flex-direction: column;
   }
-  .browserPane {
+  .resourcePane {
     order: -1;
     flex: 0 1 50%;
     min-width: 0;

@@ -70,6 +70,14 @@ def digest(text: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()
 
 
+class UnavailableConfiguration(BaseModel):
+    """A collection member whose stored configuration requires operator repair."""
+
+    kind: str
+    id: str
+    reason: Literal["configuration_unavailable"] = "configuration_unavailable"
+
+
 class Preview(BaseModel):
     text: str
     truncated: bool

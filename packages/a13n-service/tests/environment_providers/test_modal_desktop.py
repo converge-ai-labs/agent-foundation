@@ -52,7 +52,7 @@ async def test_desktop_description_exposes_only_supervisor_route(monkeypatch):
     command = AsyncMock(
         return_value=access.Envelope(
             result=access.Description(
-                protocol_version=1,
+                protocol_version=2,
                 generation="a" * 32,
                 port=6081,
                 max_ttl_seconds=60,
@@ -133,7 +133,7 @@ async def test_grant_revocation_uses_supervisor_protocol(monkeypatch):
 
 
 def test_modal_aliases_share_target_lock_and_resume_gets_new_lock():
-    from a13n_service.runs.desktop_assistance.admission import target_key
+    from a13n_service.runs.environments.desktop.identity import target_key
 
     manager = management()
     original = manager.state

@@ -87,7 +87,7 @@ def install_transport(monkeypatch, handler):
 
 def description():
     return {
-        "protocol_version": 1,
+        "protocol_version": 2,
         "generation": "a" * 32,
         "port": 6081,
         "max_ttl_seconds": 60,

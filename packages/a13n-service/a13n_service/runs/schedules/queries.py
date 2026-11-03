@@ -8,6 +8,7 @@ from a13n_service.infra import cursors
 from a13n_service.infra.db import Storage, now, short_session
 from a13n_service.infra.errors import not_found
 from a13n_service.infra.labels import label_filter
+from a13n_service.infra.reads import UnavailableConfiguration
 from a13n_service.resources.agents import stored
 from a13n_service.runs.schedules.lifecycle import rule
 from a13n_service.runs.schedules.schemas import (
@@ -235,7 +236,12 @@ async def list_schedules(storage: Storage, actor: Principal, workspace_id: str, 
             limit=filters.limit,
             newest_first=True,
         )
-        return SchedulePage(items=[view(row) for row in rows], next_cursor=cursor)
+        values = [stored.batch_item(lambda row=row: view(row)) for row in rows]
+        return SchedulePage(
+            items=[value for value in values if not isinstance(value, UnavailableConfiguration)],
+            unavailable=[value for value in values if isinstance(value, UnavailableConfiguration)],
+            next_cursor=cursor,
+        )
 
 
 async def status(storage: Storage, actor: Principal, workspace_id: str, schedule_id: str) -> ScheduleStatus:

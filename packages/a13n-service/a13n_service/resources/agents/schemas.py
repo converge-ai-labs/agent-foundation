@@ -21,6 +21,7 @@ from a13n_service.execution_policy import ExecutionOverride
 from a13n_service.infra.ids import Key, ObjectId
 from a13n_service.infra.labels import Labels
 from a13n_service.infra.platform import PLATFORM_TOOLS
+from a13n_service.infra.reads import UnavailableConfiguration
 from a13n_service.providers.model_settings import JsonSettings
 from a13n_service.resources.agents.tables import AgentSource, PresetKind
 from a13n_service.resources.agents.toolsets import (
@@ -520,5 +521,6 @@ class AgentPage(BaseModel):
 
 
 class AgentRevisionPage(BaseModel):
+    unavailable: list[UnavailableConfiguration] = Field(default_factory=list)
     items: list[AgentRevision]
     next_cursor: str | None

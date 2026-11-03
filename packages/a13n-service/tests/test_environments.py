@@ -138,7 +138,7 @@ async def test_a_reserved_sandbox_is_created_by_maintenance_and_mounted_by_a_new
     submitted = await start(env, environments=mounts)
     assert submitted["run"]["environment_mounts"] == mounts
     listing = await client.get(f"{env.api}/threads/{submitted['thread']['id']}/environments")
-    assert listing.json()["items"] == mounts
+    assert listing.json()["items"] == [{**mount, "desktop_enabled": False} for mount in mounts]
     assert [item["id"] for item in (await client.get(environments)).json()["items"]] == [sandbox["id"]]
 
     # Initial mounts take the checks of mount edits, and a refused one stores nothing.
@@ -462,7 +462,7 @@ async def test_each_async_edge_applies_its_own_environment_policy(env, scripted_
         return (await env.client.get(f"{env.api}/threads/{thread_id}/environments")).json()["items"]
 
     assert await mounted(children["researcher"]) == []
-    assert await mounted(children["builder"]) == [primary]
+    assert await mounted(children["builder"]) == [{**primary, "desktop_enabled": False}]
     [dedicated] = await mounted(children["tester"])
     assert dedicated["name"] == "workspace" and dedicated["environment_id"] != primary["environment_id"]
 
@@ -1575,9 +1575,13 @@ async def test_service_executes_computer_observation_and_retains_its_screenshot(
     assert run["status"] == "completed", run
     request = await scripted_model.request()
     names = {tool["function"]["name"] for tool in request.get("tools", [])}
+    # Service owns notification registration; native operations also require mount permission.
+    assert ("computer_notify" in names) is tool_enabled
     if not (tool_enabled and mount_enabled):
         assert not calls
-        assert not any(name.startswith("computer_") for name in names)
+        assert {name for name in names if name.startswith("computer_")} == (
+            {"computer_notify"} if tool_enabled else set()
+        )
         return
     assert calls == [(None, 1280)]
     assert "computer_observe" in names and "computer_click" not in names

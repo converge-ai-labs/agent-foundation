@@ -1193,6 +1193,21 @@ def test_computer_tools_require_explicit_enablement_and_preserve_per_tool_choice
     assert "computer_zoom" in projected.computer_tools
     assert "computer_click" not in projected.computer_tools
     assert selected.toolsets["computer"].tools["type_text"].permission == "ask"
+    assert "computer_notify" not in projected.computer_tools  # Service owns this tool, not the provider.
+    assert toolsets.enabled_tool(selected.toolsets, "computer", "notify") is not None
+    disabled = config(toolsets={"computer": {"enabled": True, "tools": {"notify": {"enabled": False}}}})
+    assert toolsets.enabled_tool(disabled.toolsets, "computer", "notify") is None
+    denied = config(toolsets={"computer": {"enabled": True, "tools": {"notify": {"permission": "deny"}}}})
+    notify = next(
+        tool
+        for group in toolsets.catalog(frozenset()).items
+        if group.key == "computer"
+        for tool in group.tools
+        if tool.key == "notify"
+    )
+    assert notify.execution_id == toolsets.COMPUTER_NOTIFY_TOOL_ID
+    assert notify.model_name == "computer_notify"
+    assert denied.toolsets["computer"].tools["notify"].permission == "deny"
 
 
 def test_computer_coordinate_space_is_explicit_validated_and_preserved_in_overrides():

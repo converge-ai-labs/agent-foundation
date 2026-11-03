@@ -247,7 +247,7 @@ class Runtime:
                 await asyncio.sleep(0.05)
             port, path = endpoint.read_text().splitlines()[:2]
             self.cdp_url = f"ws://127.0.0.1:{port}{path}"
-            description = await self.guest.call(self.root / "desktop", {"protocol_version": 1, "operation": "describe"})
+            description = await self.guest.call(self.root / "desktop", {"protocol_version": 2, "operation": "describe"})
             if "error" in description:
                 raise RuntimeError("Viewer startup failed")
         async with await asyncio.start_server(

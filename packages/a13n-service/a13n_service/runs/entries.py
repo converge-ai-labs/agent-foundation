@@ -60,18 +60,24 @@ async def list_entries(
                 raise ServiceError("invalid_cursor", "Invalid collection cursor")
             query = query.where(InboxEntryRow.position > position[0])
         rows = (await session.scalars(query.order_by(InboxEntryRow.position).limit(limit + 1))).all()
+        values = [
+            stored.batch_item(lambda row=row: stored.read(EntryView, row, kind="inbox_entry", id=row.id))
+            for row in rows[:limit]
+        ]
         if view == "compact":
-            values = [
-                read_views.entry_summary(stored.read(EntryView, row, kind="inbox_entry", id=row.id))
-                for row in rows[:limit]
+            summaries = [
+                value if isinstance(value, reads.UnavailableConfiguration) else read_views.entry_summary(value)
+                for value in values
             ]
-            count = reads.fit_count(values)
+            count = reads.fit_count(summaries)
             return read_views.EntrySummaryPage(
-                items=values[:count],
+                items=[value for value in summaries[:count] if not isinstance(value, reads.UnavailableConfiguration)],
+                unavailable=[value for value in summaries[:count] if isinstance(value, reads.UnavailableConfiguration)],
                 next_cursor=cursors.encode("inbox", owner, rows[count - 1].position) if len(rows) > count else None,
             )
         return EntryPage(
-            items=[stored.read(EntryView, row, kind="inbox_entry", id=row.id) for row in rows[:limit]],
+            items=[value for value in values if not isinstance(value, reads.UnavailableConfiguration)],
+            unavailable=[value for value in values if isinstance(value, reads.UnavailableConfiguration)],
             next_cursor=cursors.encode("inbox", owner, rows[limit - 1].position) if len(rows) > limit else None,
         )
 

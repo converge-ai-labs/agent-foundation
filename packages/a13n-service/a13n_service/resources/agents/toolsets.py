@@ -31,6 +31,7 @@ from a13n_service.infra.schema import model_schema
 from a13n_service.providers.registry import WebOperation
 
 PUBLISH_ASSET_TOOL_ID = "service.publish_asset"
+COMPUTER_NOTIFY_TOOL_ID = "service.computer_notify"
 PLATFORM_SOURCE = "service-platform"
 
 type BuiltinToolsetKey = Literal["files", "shell", "computer", "browser", "web", "memory", "assets"]
@@ -127,6 +128,8 @@ class _Tool:
     default_enabled: bool = True
     operation: WebOperation | None = None
     description: str = ""
+    # Override the toolset owner for tools implemented by a different host capability.
+    source: str | None = None
     # The Harness default an `inherit` selection takes.
     default_permission: ToolPermissionMode = "allow"
 
@@ -352,6 +355,14 @@ _TOOLSETS: tuple[_Toolset, ...] = (
                 "environment.computer.write_clipboard",
                 "computer_write_clipboard",
                 description="Replace the desktop clipboard with plain text without pasting",
+            ),
+            _Tool(
+                "notify",
+                "Notify on handback",
+                COMPUTER_NOTIFY_TOOL_ID,
+                "computer_notify",
+                source="computer-notify",
+                description="Register for a notice when human Computer control ends",
             ),
         ),
         description="Observe and control an explicitly authorized desktop. Requires a compatible environment.",
@@ -683,11 +694,10 @@ def discovery_members(
         if entry.source is None:
             members[key] = None
         else:
-            names = frozenset(
-                tool.model_name for tool in entry.tools if enabled_tool(toolsets, key, tool.key) is not None
-            )
-            if names:
-                members[entry.source] = (members.get(entry.source) or frozenset()) | names
+            for tool in entry.tools:
+                if enabled_tool(toolsets, key, tool.key) is not None:
+                    source = tool.source or entry.source
+                    members[source] = (members.get(source) or frozenset()) | {tool.model_name}
     return members
 
 
@@ -734,7 +744,7 @@ def environment_configuration(toolsets: dict[ToolsetKey, ToolsetSelection]) -> D
         computer_tools=frozenset(
             tool.model_name
             for tool in _BY_KEY["computer"].tools
-            if computer is not None and computer.tools.get(tool.key, ToolSelection()).enabled
+            if tool.source is None and computer is not None and computer.tools.get(tool.key, ToolSelection()).enabled
         ),
         file_tools=frozenset(tool.model_name for tool in _BY_KEY["files"].tools if files.tools[tool.key].enabled),
         shell_tools=frozenset(tool.model_name for tool in _BY_KEY["shell"].tools if shell.tools[tool.key].enabled),
