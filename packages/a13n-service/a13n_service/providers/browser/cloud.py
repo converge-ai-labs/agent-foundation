@@ -459,9 +459,11 @@ class BrowserUse(CloudUnsupportedOperations):
         session_id, url, expires_at = item.get("id"), item.get("cdpUrl"), item.get("timeoutAt")
         if item.get("status") != "active" or not isinstance(session_id, str) or not isinstance(url, str):
             raise BrowserProviderError("cloud_session_not_ready")
+        if not isinstance(expires_at, str):
+            raise BrowserProviderError("cloud_invalid_response")
         try:
             expiry = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
-        except (AttributeError, ValueError):
+        except ValueError:
             raise BrowserProviderError("cloud_invalid_response") from None
         # Browser Use documents cdpUrl as a WebSocket endpoint, but currently returns
         # an HTTPS scheme. WebSocket upgrades use the equivalent secure scheme.

@@ -567,6 +567,23 @@ async def test_browser_use_lifecycle_and_scope():
         await provider.close()
 
 
+@pytest.mark.parametrize("timeout", [None, 123, "not-a-date"])
+async def test_browser_use_invalid_timeout_is_rejected(timeout):
+    from a13n_service.providers.browser.cloud import BrowserUse, BrowserUseConfiguration
+
+    async def handler(request):
+        return httpx2.Response(200)
+
+    provider = BrowserUse(BrowserUseConfiguration(project_id="project"), api("browser_use", handler))
+    try:
+        item = {"id": "session-1", "status": "active", "cdpUrl": "wss://example.com/cdp", "timeoutAt": timeout}
+        with pytest.raises(BrowserProviderError) as error:
+            provider._live("alloc-1", item)
+        assert error.value.code == "cloud_invalid_response"
+    finally:
+        await provider.close()
+
+
 async def test_browser_use_wrong_account_never_dispatches_create():
     from a13n_service.providers.browser.cloud import BrowserUse, BrowserUseConfiguration, BrowserUseRecipe
 
