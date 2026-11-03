@@ -13,7 +13,6 @@ import { FocusDisplay, focusFrame, type DisplayBlock } from "./stream";
 import { LiveOutput, RecoveryNotice, SavedEntry } from "./transcript";
 import { MessageText } from "./message-text";
 import { LiveConnectionStatus } from "./live-connection";
-import { ContextActivity } from "./context-activity";
 import { ImagePreview } from "../shell/image-preview";
 
 beforeEach(() =>
@@ -49,6 +48,73 @@ const saved = {
     },
   ],
 } as Schema<"TranscriptEntry">;
+
+// Replay live events through the reducer so the assertions cover the state it
+// reports to the display layer, not hand-written blocks.
+function replay(
+  events: { event_type: string; payload: Record<string, unknown> }[],
+) {
+  const display = new FocusDisplay();
+  display.accept(
+    focusFrame({
+      kind: "snapshot",
+      resume_cursor: null,
+      snapshot: {
+        epoch: "epoch-one",
+        cutover_sequence: 100,
+        thread: {
+          thread: {
+            thread_id: "thread-one",
+            created_at: "2026-09-12",
+            updated_at: "2026-09-12",
+            metadata_version: 1,
+            archived: false,
+            configuration: {
+              version: 1,
+              agent_source: { kind: "agent", id: "agent-one" },
+              environment_profile_id: "local",
+            },
+            continuation_state: "initial",
+            root_activity: { state: "inactive" },
+          },
+          continuation_id: null,
+        },
+        children: { executions: [], total: 0 },
+        recent_events: [],
+        root_stream: {
+          thread_id: "thread-one",
+          run_id: "run-one",
+          base_continuation_id: null,
+          event_count: events.length,
+        },
+      },
+    }),
+  );
+  display.accept(
+    focusFrame({
+      kind: "root_stream",
+      run_id: "run-one",
+      events: events.map((event, index) => ({
+        ...event,
+        index,
+        payload: { type: event.event_type, ...event.payload },
+        payload_omitted: false,
+      })),
+    }),
+  );
+  display.accept(focusFrame({ kind: "ready", resume_cursor: "cursor-ready" }));
+  return [...display.blocks.values()];
+}
+
+function contextEvent(payload: Record<string, unknown>) {
+  return {
+    event_type: "CUSTOM",
+    payload: {
+      name: "a13n.harness.context",
+      value: { event: { payload: { ...payload } } },
+    },
+  };
+}
 
 it("translates saved transcript chrome while preserving model content, backend part kinds and the open disclosure", async () => {
   render(<SavedEntry entry={saved} threadId="one" />);
@@ -177,31 +243,152 @@ it("translates markdown block controls and the image fallback around verbatim mo
   ).toContain("print(1)");
 });
 
-it("translates generated context phases and keeps their backend diagnostics verbatim", async () => {
+it("translates live context states from the reducer and keeps their backend diagnostics verbatim", async () => {
+  const started = replay([
+    contextEvent({ type: "handoff_started", operation_id: "handoff-one" }),
+  ]);
   const view = render(
-    <ContextActivity
-      context="compaction"
-      text=""
-      status="In progress · model_rate_limited"
-    />,
+    <LiveOutput blocks={started} gap={false} threadId="one" />,
   );
-  expect(screen.getByText("In progress · model_rate_limited")).toBeTruthy();
+  expect(screen.getByText("Summary")).toBeTruthy();
+  expect(screen.getByText("In progress")).toBeTruthy();
 
   await act(() => i18n.changeLanguage("zh-CN"));
 
-  expect(screen.getByText("进行中 · model_rate_limited")).toBeTruthy();
-  view.rerender(
-    <ContextActivity context="handoff" text="" status="Summary ready" />,
-  );
-  expect(screen.getByText("摘要已就绪")).toBeTruthy();
-  // An unrecognized backend status stays verbatim.
-  view.rerender(
-    <ContextActivity context="handoff" text="" status="Queued upstream" />,
-  );
-  expect(screen.getByText("Queued upstream")).toBeTruthy();
+  expect(screen.getByText("摘要")).toBeTruthy();
+  expect(screen.getByText("进行中")).toBeTruthy();
+  const failed = replay([
+    contextEvent({ type: "handoff_started", operation_id: "handoff-one" }),
+    contextEvent({
+      type: "handoff_failed",
+      operation_id: "handoff-one",
+      error_code: "model_rate_limited",
+      failed_phase: "summarize",
+      reason: "upstream quota exhausted",
+    }),
+  ]);
+  view.rerender(<LiveOutput blocks={failed} gap={false} threadId="one" />);
+  // The state is translated while the backend diagnostics stay verbatim.
+  expect(
+    screen.getByText(
+      "失败 · model_rate_limited · summarize · upstream quota exhausted",
+    ),
+  ).toBeTruthy();
+  const ready = replay([
+    contextEvent({ type: "compaction_started", operation_id: "compact-one" }),
+    {
+      event_type: "CUSTOM",
+      payload: {
+        name: "a13n.context.compaction_summary",
+        value: {
+          event: { operation_id: "compact-one", summary: "Keep this context" },
+        },
+      },
+    },
+    contextEvent({ type: "compaction_completed", operation_id: "compact-one" }),
+  ]);
+  view.rerender(<LiveOutput blocks={ready} gap={false} threadId="one" />);
+  expect(screen.getByText("压缩摘要")).toBeTruthy();
+  expect(screen.getByText("已完成")).toBeTruthy();
+  expect(screen.getAllByText("Keep this context").length).toBeGreaterThan(0);
 });
 
-it("translates the expanded image viewer used by diagrams and attachments", async () => {
+it("translates generated execution outcomes and subagent states while preserving backend messages", async () => {
+  const cancelled = replay([
+    {
+      event_type: "RUN_FINISHED",
+      payload: {
+        threadId: "thread-one",
+        runId: "run-one",
+        outcome: { type: "cancelled" },
+      },
+    },
+  ]);
+  const view = render(
+    <LiveOutput blocks={cancelled} gap={false} threadId="one" />,
+  );
+  expect(screen.getByText("Execution cancelled")).toBeTruthy();
+  expect(
+    screen.getByText(
+      "Run finished. Open its details to check follow-ups and environment results.",
+    ),
+  ).toBeTruthy();
+
+  await act(() => i18n.changeLanguage("zh-CN"));
+
+  expect(screen.getByText("执行已取消")).toBeTruthy();
+  expect(
+    screen.getByText("运行已结束。打开详情查看后续事项与环境结果。"),
+  ).toBeTruthy();
+  const suspended = replay([
+    {
+      event_type: "RUN_FINISHED",
+      payload: {
+        threadId: "thread-one",
+        runId: "run-one",
+        outcome: {
+          type: "interrupt",
+          interrupts: [{ id: "interrupt-one", reason: "approval_required" }],
+        },
+        message: "Approve the pending command.",
+      },
+    },
+  ]);
+  view.rerender(<LiveOutput blocks={suspended} gap={false} threadId="one" />);
+  expect(screen.getByText("执行已暂停")).toBeTruthy();
+  // A backend message replaces the generated fallback and stays verbatim.
+  expect(screen.getByText("Approve the pending command.")).toBeTruthy();
+  const interruptWithoutMessage = replay([
+    {
+      event_type: "RUN_FINISHED",
+      payload: {
+        threadId: "thread-one",
+        runId: "run-one",
+        outcome: {
+          type: "interrupt",
+          interrupts: [{ id: "interrupt-one", reason: "approval_required" }],
+        },
+      },
+    },
+  ]);
+  view.rerender(
+    <LiveOutput blocks={interruptWithoutMessage} gap={false} threadId="one" />,
+  );
+  expect(screen.getByText("需要先回复，执行才能继续。")).toBeTruthy();
+  const rawFallback = replay([
+    {
+      event_type: "RUN_FINISHED",
+      payload: {
+        threadId: "thread-one",
+        runId: "run-one",
+        outcome: { type: "cancelled" },
+        message:
+          "Run finished. Open its details to check follow-ups and environment results.",
+      },
+    },
+  ]);
+  view.rerender(<LiveOutput blocks={rawFallback} gap={false} threadId="one" />);
+  expect(
+    screen.getByText(
+      "Run finished. Open its details to check follow-ups and environment results.",
+    ),
+  ).toBeTruthy();
+  const child: DisplayBlock[] = [
+    {
+      id: "run-one:inline:child-one",
+      kind: "activity",
+      childName: "Media understanding",
+      childState: "running",
+      text: "",
+    },
+  ];
+  view.rerender(<LiveOutput blocks={child} gap={false} threadId="one" />);
+  // The subagent label is composed at display time around its backend name.
+  expect(screen.getByText("子智能体 · Media understanding")).toBeTruthy();
+  expect(screen.getByText("运行中")).toBeTruthy();
+});
+
+it("translates the expanded image viewer while keeping its open and zoom state", async () => {
   render(
     <ImagePreview
       src="data:image/png;base64,iVBORw0K"
@@ -211,91 +398,23 @@ it("translates the expanded image viewer used by diagrams and attachments", asyn
   );
   expect(screen.getByRole("button", { name: "Actual size" })).toBeTruthy();
   expect(screen.getByLabelText("Download image")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Actual size" }));
+  const image = screen.getByRole("img", { name: "chart.png" });
+  const canvas = image.closest("[data-actual-size]")!;
+  expect(canvas.getAttribute("data-actual-size")).toBe("true");
+  expect(screen.getByRole("button", { name: "Fit to screen" })).toBeTruthy();
 
   await act(() => i18n.changeLanguage("zh-CN"));
 
-  expect(screen.getByRole("button", { name: "实际大小" })).toBeTruthy();
+  // The viewer stays open and zoomed, and keeps the same image element.
+  expect(screen.getByRole("img", { name: "chart.png" })).toBe(image);
+  expect(image.getAttribute("src")).toBe("data:image/png;base64,iVBORw0K");
+  expect(canvas.getAttribute("data-actual-size")).toBe("true");
+  expect(screen.getByRole("button", { name: "适应屏幕" })).toBeTruthy();
   expect(screen.getByLabelText("下载图片")).toBeTruthy();
   expect(
-    screen.getByRole("button", { name: "以实际大小显示图片" }),
+    screen.getByRole("button", { name: "将图片缩放至适应屏幕" }),
   ).toBeTruthy();
   // The authored file name stays verbatim.
   expect(screen.getByText("chart.png")).toBeTruthy();
 });
-
-it.each([
-  [
-    "cancelled",
-    "Execution cancelled",
-    "执行已取消",
-    "Run finished. Open its details to check follow-ups and environment results.",
-    "运行已结束。打开详情以查看后续事项和环境结果。",
-  ],
-  [
-    "interrupt",
-    "Execution suspended",
-    "执行已暂停",
-    "A response is needed before execution can continue.",
-    "需要回复后才能继续执行。",
-  ],
-])(
-  "localizes reduced %s execution notices without translating payload messages",
-  async (outcome, title, translatedTitle, fallback, translatedFallback) => {
-    function blocks(message?: string) {
-      const display = new FocusDisplay();
-      display.accept(
-        focusFrame({
-          kind: "snapshot",
-          resume_cursor: null,
-          snapshot: {
-            epoch: "epoch",
-            cutover_sequence: 0,
-            thread: { thread: { thread_id: "one" }, continuation_id: null },
-            root_stream: {
-              run_id: "run",
-              base_continuation_id: null,
-              event_count: 1,
-            },
-          },
-        }),
-      );
-      display.accept(
-        focusFrame({
-          kind: "root_stream",
-          run_id: "run",
-          events: [
-            {
-              index: 0,
-              event_type: "RUN_FINISHED",
-              payload_omitted: false,
-              payload: {
-                type: "RUN_FINISHED",
-                threadId: "one",
-                runId: "run",
-                outcome: {
-                  type: outcome,
-                  interrupts: [{ id: "approval", reason: "approval" }],
-                },
-                ...(message === undefined ? {} : { message }),
-              },
-            },
-          ],
-        }),
-      );
-      return [...display.blocks.values()];
-    }
-    const view = render(<LiveOutput blocks={blocks()} gap={false} />);
-    expect(screen.getByText(title)).toBeTruthy();
-    expect(screen.getByText(fallback)).toBeTruthy();
-    await act(() => i18n.changeLanguage("zh-CN"));
-    expect(screen.getByText(translatedTitle)).toBeTruthy();
-    expect(screen.getByText(translatedFallback)).toBeTruthy();
-    view.rerender(<LiveOutput blocks={blocks(fallback)} gap={false} />);
-    expect(screen.getByText(fallback)).toBeTruthy();
-    expect(screen.queryByText(translatedFallback)).toBeNull();
-    view.rerender(
-      <LiveOutput blocks={blocks("Backend-specific message")} gap={false} />,
-    );
-    expect(screen.getByText("Backend-specific message")).toBeTruthy();
-  },
-);

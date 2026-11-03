@@ -996,6 +996,10 @@
   "Completed": "已完成",
   "Execution cancelled": "执行已取消",
   "Execution suspended": "执行已暂停",
-  "A response is needed before execution can continue.": "需要回复后才能继续执行。",
-  "Run finished. Open its details to check follow-ups and environment results.": "运行已结束。打开详情以查看后续事项和环境结果。"
+  "A response is needed before execution can continue.": "需要先回复，执行才能继续。",
+  "Run finished. Open its details to check follow-ups and environment results.": "运行已结束。打开详情查看后续事项与环境结果。",
+  "Execution failed": "执行失败",
+  "Subagent · {{name}}": "子智能体 · {{name}}",
+  "Suspended": "已暂停",
+  "Outcome: {{outcome}}.": "结果：{{outcome}}。"
 }

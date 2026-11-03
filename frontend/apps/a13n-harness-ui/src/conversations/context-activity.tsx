@@ -1,5 +1,6 @@
 import { useTranslation } from "../i18n";
 import { MessageText } from "./message-text";
+import type { ContextState } from "./stream";
 import styles from "./conversation.module.css";
 
 function preview(text: string) {
@@ -17,23 +18,24 @@ function preview(text: string) {
 export function ContextActivity({
   context,
   text,
-  status,
+  state,
+  diagnostics,
 }: {
   context: "handoff" | "compaction";
   text: string;
-  status?: string;
+  state?: ContextState;
+  diagnostics?: string[];
 }) {
   const { t } = useTranslation();
-  // The stream reducer joins a known phase with backend diagnostics; only the
-  // leading phase is application-owned text.
-  const phases: Record<string, string> = {
-    "Summary ready": t("Summary ready"),
-    Prepared: t("Prepared"),
-    Completed: t("Completed"),
-    Failed: t("Failed"),
-    "In progress": t("In progress"),
+  // The reducer reports the operation state; backend diagnostics travel beside
+  // it and keep their original values.
+  const states: Record<ContextState, string> = {
+    "summary-ready": t("Summary ready"),
+    prepared: t("Prepared"),
+    completed: t("Completed"),
+    failed: t("Failed"),
+    "in-progress": t("In progress"),
   };
-  const [phase, ...diagnostics] = (status ?? "").split(" · ");
   return (
     <details className={styles.contextActivity} data-kind={context}>
       <summary>
@@ -41,8 +43,8 @@ export function ContextActivity({
           {context === "handoff" ? t("Summary") : t("Compact Summary")}
         </span>
         <span className={styles.contextStatus}>
-          {status
-            ? [phases[phase] ?? phase, ...diagnostics].join(" · ")
+          {state
+            ? [states[state], ...(diagnostics ?? [])].join(" · ")
             : text
               ? t("Saved")
               : t("In progress")}

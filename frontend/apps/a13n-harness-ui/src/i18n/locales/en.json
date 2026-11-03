@@ -1005,5 +1005,9 @@
   "Execution cancelled": "Execution cancelled",
   "Execution suspended": "Execution suspended",
   "A response is needed before execution can continue.": "A response is needed before execution can continue.",
-  "Run finished. Open its details to check follow-ups and environment results.": "Run finished. Open its details to check follow-ups and environment results."
+  "Run finished. Open its details to check follow-ups and environment results.": "Run finished. Open its details to check follow-ups and environment results.",
+  "Execution failed": "Execution failed",
+  "Subagent · {{name}}": "Subagent · {{name}}",
+  "Suspended": "Suspended",
+  "Outcome: {{outcome}}.": "Outcome: {{outcome}}."
 }

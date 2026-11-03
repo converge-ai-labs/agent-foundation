@@ -36,7 +36,13 @@ import { FailureNotice } from "./failure-notice";
 const CurrentFailureRun = createContext<string | null | undefined>(undefined);
 export { MessageText } from "./message-text";
 import type { Schema } from "../transport/client";
-import type { DisplayBlock, FocusDisplay } from "./stream";
+import type {
+  ChildState,
+  ContextState,
+  DisplayBlock,
+  ExecutionOutcome,
+  FocusDisplay,
+} from "./stream";
 import { InputContent, type InputPart } from "./input-content";
 import { inputSource, type LocalInput } from "./local-input";
 import { DebugData } from "../shell/debug";
@@ -56,6 +62,50 @@ function useNotificationTitle() {
     source === "background_process"
       ? t("Process update")
       : t("Subagent update");
+}
+
+// Generated run, subagent and recovery chrome is translated here; backend
+// messages, part kinds and outcome values stay verbatim.
+function ActivityRow({ row }: { row: Extract<Row, { kind: "activity" }> }) {
+  const { t } = useTranslation();
+  const title = row.execution
+    ? row.execution === "cancelled"
+      ? t("Execution cancelled")
+      : row.execution === "interrupt"
+        ? t("Execution suspended")
+        : t("Execution failed")
+    : row.childName
+      ? t("Subagent · {{name}}", { name: row.childName })
+      : (row.name ?? t("Activity"));
+  const generated =
+    row.childState === "running"
+      ? t("Running")
+      : row.childState === "suspended"
+        ? t("Suspended")
+        : row.childState === "completed"
+          ? t("Completed")
+          : row.execution === "interrupt"
+            ? t("A response is needed before execution can continue.")
+            : row.execution
+              ? t(
+                  "Run finished. Open its details to check follow-ups and environment results.",
+                )
+              : "";
+  const body = [
+    row.text || generated,
+    row.recoveryOutcome &&
+      t("Outcome: {{outcome}}.", { outcome: row.recoveryOutcome }),
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return (
+    <details className={styles.activity}>
+      <summary>{title}</summary>
+      <pre className={styles.code}>
+        {row.omitted ? `${body}\n${t("Content omitted by the server.")}` : body}
+      </pre>
+    </details>
+  );
 }
 
 type PendingInteraction = { requestIds: string[]; content: ReactNode };
@@ -86,7 +136,8 @@ type Row = {
       kind: "context";
       context: "handoff" | "compaction";
       text: string;
-      status?: string;
+      state?: ContextState;
+      diagnostics?: string[];
     }
   | {
       kind: "notifications";
@@ -98,8 +149,10 @@ type Row = {
       name?: string;
       text: string;
       omitted?: boolean;
-      executionOutcome?: "cancelled" | "interrupt";
-      executionDefaultText?: boolean;
+      execution?: ExecutionOutcome;
+      recoveryOutcome?: string;
+      childName?: string;
+      childState?: ChildState;
     }
 );
 
@@ -239,7 +292,8 @@ function liveRows(blocks: DisplayBlock[]): Row[] {
         kind: "context",
         context: block.context,
         text: block.result ?? "",
-        status: block.text,
+        state: block.contextState,
+        diagnostics: block.contextDiagnostics,
       });
     } else if (systemNotice(block.metadata)) {
       rows.push({
@@ -291,9 +345,11 @@ function liveRows(blocks: DisplayBlock[]): Row[] {
         id: block.id,
         kind: "activity",
         name: block.name || undefined,
-        executionOutcome: block.executionOutcome,
-        executionDefaultText: block.executionDefaultText,
         text: [block.text, block.result].filter(Boolean).join("\n"),
+        execution: block.execution,
+        recoveryOutcome: block.recoveryOutcome,
+        childName: block.childName,
+        childState: block.childState,
       });
     for (const reference of block.apps ?? []) {
       rows.push({ id: reference.app_id, kind: "app", reference, live: true });
@@ -521,7 +577,8 @@ function Rows({
         <ContextActivity
           context={row.context}
           text={row.text}
-          status={row.status}
+          state={row.state}
+          diagnostics={row.diagnostics}
         />
       ) : row.kind === "notifications" ? (
         <details className={styles.activity}>
@@ -540,26 +597,7 @@ function Rows({
           ))}
         </details>
       ) : (
-        <details className={styles.activity}>
-          <summary>
-            {row.executionOutcome === "cancelled"
-              ? t("Execution cancelled")
-              : row.executionOutcome === "interrupt"
-                ? t("Execution suspended")
-                : (row.name ?? t("Activity"))}
-          </summary>
-          <pre className={styles.code}>
-            {row.omitted
-              ? `${row.text}\n${t("Content omitted by the server.")}`
-              : row.executionOutcome && row.executionDefaultText
-                ? row.executionOutcome === "interrupt"
-                  ? t("A response is needed before execution can continue.")
-                  : t(
-                      "Run finished. Open its details to check follow-ups and environment results.",
-                    )
-                : row.text}
-          </pre>
-        </details>
+        <ActivityRow row={row} />
       )}
     </div>
   ));
