@@ -21,6 +21,7 @@
   position: relative;
   color: var(--ink);
   text-wrap: balance;
+  scroll-margin-top: 90px;
 }
 .prose h2 {
   margin-top: 2.6em;
@@ -186,6 +187,55 @@
 .prose :is(th, td) + :is(th, td) {
   padding-left: 24px;
 }
+.table-scroll {
+  overflow-x: auto;
+  scrollbar-width: thin;
+  margin-top: 2em !important;
+  margin-bottom: 2em;
+}
+.table-scroll table {
+  min-width: 520px;
+  margin: 0;
+}
+.table-scroll :is(th, td) {
+  vertical-align: top;
+}
+.table-scroll th {
+  line-height: 1.5;
+}
+.prose details {
+  border-top: 1px solid var(--rule-2);
+  border-bottom: 1px solid var(--rule);
+  margin-top: 3em;
+}
+.prose summary {
+  position: relative;
+  padding: 22px 32px 22px 0;
+  font: 500 24px/1.2 var(--display);
+  letter-spacing: -0.025em;
+  color: var(--ink);
+  cursor: pointer;
+  list-style: none;
+}
+.prose summary::-webkit-details-marker {
+  display: none;
+}
+.prose summary::after {
+  content: "+";
+  position: absolute;
+  right: 0;
+  top: 22px;
+  color: var(--muted);
+}
+.prose details[open] summary::after {
+  content: "−";
+}
+.prose details > :not(summary) {
+  margin-top: 1.3em;
+}
+.prose details > :last-child {
+  margin-bottom: 24px;
+}
 
 /* ---- figures break out of the column; wide drawings scroll on phones
    rather than shrink their labels ---- */
@@ -207,6 +257,50 @@
 .fig-scroll {
   overflow-x: auto;
   scrollbar-width: thin;
+}
+.benchmark-comparison .selection {
+  display: none;
+}
+.benchmark-comparison .selected .selection {
+  display: initial;
+}
+.benchmark-comparison [data-result] {
+  cursor: pointer;
+}
+.benchmark-inspector {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid var(--rule);
+  font: 400 14px/1.5 var(--text);
+}
+.benchmark-inspector label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+}
+.benchmark-inspector select {
+  padding: 8px 24px 8px 10px;
+  border: 1px solid var(--rule-2);
+  border-radius: 4px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+}
+.benchmark-inspector output {
+  font: 500 13px/1.6 var(--mono);
+  color: var(--ink);
+}
+.benchmark-inspector .benchmark-note {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
 }
 .prose figcaption {
   max-width: 680px;

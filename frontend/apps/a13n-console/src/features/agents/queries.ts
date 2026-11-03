@@ -2,7 +2,7 @@ import { queryOptions, useQuery } from "@tanstack/react-query";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import type { Client } from "../../service-client";
-import { data, type Schema } from "../../shared/api";
+import { allPages, data, type Schema } from "../../shared/api";
 
 /** One Agent by ID, for a single read or for several at once. */
 export function agentQuery(
@@ -51,4 +51,29 @@ export function editableAgentRevision(
   agent: Pick<Schema["Agent"], "source" | "preset_kind" | "archived_at">,
 ) {
   return !agent.archived_at && (editableAgent(agent) || editablePreset(agent));
+}
+
+/** Exact versions available for a pinned subagent selection. */
+export function agentRevisionsQuery(
+  client: Client,
+  workspaceId: string,
+  agentId: string,
+) {
+  return queryOptions({
+    queryKey: ["agent-revisions", workspaceId, agentId],
+    enabled: !!agentId,
+    queryFn: ({ signal }) =>
+      allPages((cursor) =>
+        client
+          .workspace(workspaceId)
+          .GET("/api/v1/agents/{agent_id}/revisions", {
+            params: {
+              path: { agent_id: agentId },
+              query: { cursor, limit: 100 },
+            },
+            signal,
+          })
+          .then(data),
+      ),
+  });
 }

@@ -5,7 +5,7 @@ import { TextAreaField } from "../../../shared/forms";
 import { advancedConfig } from "../configuration";
 import type { AgentDraft } from "./draft";
 
-/** Structured output, retries, and subagents. */
+/** Structured output, retries, and other advanced fields. */
 export function AdvancedSection({
   draft,
   readOnly,

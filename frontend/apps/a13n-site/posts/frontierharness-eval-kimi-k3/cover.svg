@@ -1,0 +1,30 @@
+<svg class="benchmark-cover" viewBox="0 0 720 360" role="img" aria-label="a13n Harness with Kimi K3 on FrontierHarness Eval: 21 of 30 tasks passed, a 70 percent pass rate, with a reported median task cost of 0.41 dollars and 2.93 dollars reported cost per pass. Complete raw usage is available for 22 of 30 tasks; timing comparability is unresolved. It passed 15 of 21 selected Terminal-Bench 2.1 tasks and 6 of 9 selected DeepSWE tasks.">
+  <g class="cover-detailed">
+    <rect x="0" y="0" width="720" height="360" fill="none" />
+    <text class="fi" x="32" y="38" style="font:500 25px var(--display)">FrontierHarness Eval</text>
+    <text class="fi" x="32" y="70" style="font:400 18px var(--text)">a13n Harness × Kimi K3 · 30 selected tasks</text>
+    <path class="pf" d="M32 94H688M360 120V250M32 272H688" />
+    <text class="fi" x="32" y="138" style="font:500 24px var(--display)">Tasks passed</text>
+    <text class="fi" x="392" y="138" style="font:500 24px var(--display)">Median cost / task</text>
+    <text class="fa" x="28" y="210" style="font:500 68px var(--display);letter-spacing:-3px">21 / 30</text>
+    <text class="fi" x="388" y="210" style="font:500 68px var(--display);letter-spacing:-3px">$0.41</text>
+    <text class="fa" x="32" y="244" style="font:500 20px var(--mono)">70.0% pass rate</text>
+    <text class="fi" x="392" y="244" style="font:400 18px var(--text)">Cost per pass $2.93*</text>
+    <text class="fi" x="32" y="308" style="font:500 20px var(--display)">Terminal-Bench 2.1: 15/21</text>
+    <text class="fi" x="392" y="308" style="font:500 23px var(--display)">DeepSWE 6 / 9</text>
+    <text class="fi" x="32" y="342" style="font:400 17px var(--text)">*Known usage only. Complete: 22/30 tasks. Timing limits unverified.</text>
+  </g>
+  <g class="cover-compact">
+    <text class="fi" x="30" y="45" style="font:500 34px var(--display)">FrontierHarness Eval · Kimi K3</text>
+    <path class="pf" d="M30 65H690M360 90V250M30 265H690" />
+    <text class="fi" x="30" y="110" style="font:500 30px var(--display)">Tasks passed</text>
+    <text class="fa" x="26" y="200" style="font:500 82px var(--display);letter-spacing:-4px">21 / 30</text>
+    <text class="fi" x="30" y="240" style="font:400 28px var(--text)">70.0% pass rate</text>
+    <text class="fi" x="390" y="110" style="font:500 30px var(--display)">Median cost / task</text>
+    <text class="fi" x="386" y="200" style="font:500 82px var(--display);letter-spacing:-4px">$0.41</text>
+    <text class="fi" x="390" y="240" style="font:400 28px var(--text)">$2.93 per pass*</text>
+    <text class="fi" x="30" y="305" style="font:500 24px var(--display)">Terminal-Bench 2.1: 15/21</text>
+    <text class="fi" x="390" y="305" style="font:500 28px var(--display)">DeepSWE 6 / 9</text>
+    <text class="fi" x="30" y="345" style="font:400 23px var(--text)">*Complete usage: 22/30. Timing limits unverified.</text>
+  </g>
+</svg>

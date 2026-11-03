@@ -1,3 +1,4 @@
+import { subagentLimitsError } from "../subagents";
 import { useState } from "react";
 import { replacePluginReferences, type Plugin } from "../plugins";
 import { toolSearchConfig, toolSearchDraft } from "../tool-search";
@@ -76,6 +77,10 @@ export function useAgentDraft(
     [reviewer, setReviewer] = useState(initial.reviewer),
     [skills, setSkills] = useState(initial.skills ?? []),
     [connections, setConnections] = useState(initial.connection_tools ?? []),
+    [subagents, setSubagents] = useState(initial.subagents ?? {}),
+    [subagentMode, setSubagentMode] = useState(
+      initial.subagent_mode ?? "inline",
+    ),
     [plugins, setPlugins] = useState(initial.plugins ?? []),
     [toolSearch, setToolSearch] = useState(
       toolSearchDraft(initial.tool_search),
@@ -92,6 +97,8 @@ export function useAgentDraft(
     ? linkedBuiltinSkills(initial.builtin_skills ?? [], toolsets, catalog)
     : (initial.builtin_skills ?? []);
   const dirty =
+    subagentMode !== (initial.subagent_mode ?? "inline") ||
+    JSON.stringify(subagents) !== JSON.stringify(initial.subagents ?? {}) ||
     summarize !== (initial.summarize ?? false) ||
     JSON.stringify(backgroundCompaction) !==
       JSON.stringify(initial.background_compaction ?? {}) ||
@@ -124,6 +131,10 @@ export function useAgentDraft(
       JSON.stringify(initial.memory_mounts ?? []);
   return {
     initial,
+    subagents,
+    setSubagents,
+    subagentMode,
+    setSubagentMode,
     summarize,
     setSummarize,
     backgroundCompaction,
@@ -210,7 +221,13 @@ export type DraftBuild =
   | { ok: true; config: AgentConfig }
   | {
       ok: false;
-      stage: "model" | "reviewer" | "toolSearch" | "compaction" | "advanced";
+      stage:
+        | "model"
+        | "reviewer"
+        | "toolSearch"
+        | "compaction"
+        | "subagents"
+        | "advanced";
       error: Error;
     };
 
@@ -281,6 +298,11 @@ export function buildDraftConfig(
           : new Error(t("Invalid configuration")),
     };
   }
+  for (const child of Object.values(draft.subagents)) {
+    const message = subagentLimitsError(draft.subagentMode, child.usage_limits);
+    if (message)
+      return { ok: false, stage: "subagents", error: new Error(t(message)) };
+  }
   const threshold = draft.backgroundCompaction.blocking_threshold;
   if (threshold !== undefined && !(threshold > 0 && threshold <= 1))
     return {
@@ -316,6 +338,8 @@ export function buildDraftConfig(
             : {}),
           connection_tools: draft.connections,
           plugins: draft.plugins,
+          subagents: draft.subagents,
+          subagent_mode: draft.subagentMode,
           tool_search: proxy,
           memory_mounts: draft.memoryMounts,
           memory: draft.memory,
