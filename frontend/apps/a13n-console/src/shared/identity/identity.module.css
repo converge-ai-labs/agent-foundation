@@ -75,6 +75,13 @@
   color: var(--a13n-secondary);
   overflow: hidden;
 }
+/* Avatars already own their image/fallback surface; fill the tile instead of
+   nesting a smaller circle inside its rounded square. Glyphs keep their inset. */
+.iconTile > :global([data-slot="avatar"]) {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+}
 .iconTile[data-tone="elevated"] {
   background: var(--a13n-elevated);
   box-shadow: var(--a13n-shadow-subtle);

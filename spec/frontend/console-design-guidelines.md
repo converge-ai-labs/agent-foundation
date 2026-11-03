@@ -44,7 +44,7 @@ Narrow pages keep reading width: actions wrap below the title; search and filter
 
 Use `ResourceTable` with page scrolling, never a nested fixed-height list. Keep toolbar and pagination outside its thin rounded frame. Header: light neutral fill, 40px height, 12px medium secondary text. Rows: 52–60px, hairline separation and 3–4% hover fill.
 
-Identity leads with a 32px image, 14px medium name and one supporting line. Other cells use 13px; timestamps and identifiers use 12px secondary. Numeric comparisons align right with tabular figures; timestamps align left. Trailing overflow actions remain available on touch. Picker rows replace images with checkboxes and place selected items first.
+Identity leads with a 32px image, 14px medium name and one supporting line. Avatars inside resource icon tiles fill the tile and inherit its corner radius; glyph icons retain their inset. Other cells use 13px; timestamps and identifiers use 12px secondary. Numeric comparisons align right with tabular figures; timestamps align left. Trailing overflow actions remain available on touch. Picker rows replace images with checkboxes and place selected items first.
 
 Search and filters cover the collection, never just the loaded page: query the server or fetch the complete collection if filtering locally. Long collections paginate with count and Previous/Next.
 
@@ -59,7 +59,7 @@ Groups follow identity, connection/storage, behavior and advanced controls. Use 
 | Long text / JSON                          | Label above, full writing width; borderless soft surface with bounded internal scroll                            |
 | Choice trigger                            | Content width within readable bounds, one trailing chevron; long selected names truncate, menus may be wider     |
 
-Labels are 13px medium; help is 12px secondary. Validation names the correction without discarding input. Optional labels say “(optional)”; required fields have no asterisk. Schema fields use property names, not schema type names. Read-only long content retains its surface; short values have no box; model values retain brand, name and key.
+Labels are 13px medium; help is 12px secondary. Question-mark help controls sit immediately beside their labels, with both centered against the field control; they do not occupy the far edge of the label column. Validation names the correction without discarding input. Optional labels say “(optional)”; required fields have no asterisk. Schema fields use property names, not schema type names. Read-only long content retains its surface; short values have no box; model values retain brand, name and key.
 
 Inputs are 32px (36px below `sm`) with 8px corners. Header/toolbars use 32px controls, section/footer actions 28px, extra-small icon buttons 24px; peers share heights. Compact filters omit the visible label column. Narrow layouts stack when controls cannot fit.
 

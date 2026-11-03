@@ -1,0 +1,34 @@
+.form {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.callingName {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  column-gap: 24px;
+  row-gap: 4px;
+
+  > :global([data-slot="field-error"]) {
+    grid-column: 2;
+  }
+  > :global([data-slot="read-only-value"]) {
+    justify-self: end;
+  }
+}
+.advanced {
+  margin-top: 8px;
+
+  @media (width < 640px) {
+    --setting-column-gap: 12px;
+  }
+}
+.advanced :global([data-slot="collapsible-panel"]) > div {
+  padding: 16px;
+  border-top: 1px solid var(--a13n-border);
+
+  @media (width < 640px) {
+    padding: 14px;
+  }
+}

@@ -543,3 +543,48 @@ it("keeps summarize opt-in and preserves the context reminder policy", () => {
   act(() => draft.current.setSummarize(false));
   expect(draft.current.dirty).toBe(false);
 });
+
+it("preserves existing subagent pins and context when moving them out of advanced JSON", () => {
+  const subagents = {
+    researcher: {
+      agent_id: "ap_0123456789abcdef0123",
+      revision_id: "ar_0123456789abcdef0123",
+      context: { history: "summary" as const, task_state: "isolated" as const },
+      environment: {
+        mode: "dedicated" as const,
+        template_id: "et_0123456789abcdef0123",
+      },
+    },
+  };
+  const draft = draftFor({ subagents, subagent_mode: "inline" });
+  expect(draft.current.dirty).toBe(false);
+  expect(JSON.parse(draft.current.advanced)).not.toHaveProperty("subagents");
+  act(() => draft.current.setInstructions("Updated"));
+  expect(buildDraftConfig(draft.current, undefined, asIs)).toMatchObject({
+    ok: true,
+    config: { subagents, subagent_mode: "inline" },
+  });
+  act(() =>
+    draft.current.setSubagents({
+      researcher: {
+        ...subagents.researcher,
+        usage_limits: { total_tokens_limit: 1000 },
+      },
+    }),
+  );
+  act(() => draft.current.setSubagentMode("async"));
+  expect(buildDraftConfig(draft.current, undefined, asIs)).toMatchObject({
+    ok: false,
+    stage: "subagents",
+  });
+  expect(draft.current.subagents.researcher.usage_limits).toEqual({
+    total_tokens_limit: 1000,
+  });
+});
+
+it("starts new agents in background mode and preserves legacy inline behavior", () => {
+  expect(initialConfig().subagent_mode).toBe("async");
+  expect(draftFor({ subagent_mode: undefined }).current.subagentMode).toBe(
+    "inline",
+  );
+});
