@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import secrets
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Literal, Protocol
 
@@ -45,6 +46,8 @@ class ComputerObservation(BaseModel):
 class ComputerScreenshot:
     observation: ComputerObservation
     data: bytes
+    # Identify this capture through native model content, independently of identical pixels.
+    image_identifier: str = field(default_factory=lambda: f"screen-{secrets.token_hex(12)}")
 
 
 class ComputerRegion(BaseModel):
@@ -169,6 +172,23 @@ class ComputerClipboardWriteResult:
     receipt: EnvironmentOperationReceipt
     effect: Literal["not_executed", "executed", "partial", "unknown"]
     cleanup_complete: bool
+
+
+@dataclass(slots=True)
+class ComputerCall:
+    """A Computer request and validated result shared with the Host's admission scope."""
+
+    action: EnvironmentAction
+    observation: ComputerObservation | None = None
+    result: (
+        ComputerActionResult
+        | ComputerClipboardWriteResult
+        | ComputerScreenshot
+        | ComputerDescription
+        | ComputerClipboard
+        | ComputerZoom
+        | None
+    ) = None
 
 
 class ProviderComputerOperations(Protocol):

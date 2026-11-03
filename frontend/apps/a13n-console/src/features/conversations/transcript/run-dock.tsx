@@ -23,7 +23,6 @@ import { ForkRun } from "../fork-run";
 import { Composer, RunOptions, useRunOptions } from "../composer";
 import { useRun } from "../queries";
 import type { Resubmission } from "../resubmit";
-import { DesktopAssistance } from "./desktop-assistance";
 import { ThreadInbox } from "./inbox";
 import { ContinueWithoutFeedback } from "./continuation";
 import { PendingRequests, RunFeedback } from "./pending-request";
@@ -174,32 +173,6 @@ export function RunDock({
   return (
     <>
       <ErrorToast error={interrupt.error} />
-      {current &&
-        interactive &&
-        can("run") &&
-        !run.pending?.calls.some(
-          (call) => call.tool_name === "request_desktop_assistance",
-        ) &&
-        run.environment_mounts.some((mount) =>
-          mount.permission_ceiling?.operations?.includes(
-            "environment.computer.observe",
-          ),
-        ) && (
-          <DesktopAssistance
-            key={run.id}
-            runId={run.id}
-            mounts={run.environment_mounts
-              .filter((mount) =>
-                mount.permission_ceiling?.operations?.includes(
-                  "environment.computer.observe",
-                ),
-              )
-              .map((mount) => mount.name)}
-            canContinue={run.wait_reason === "desktop_control"}
-            onContinued={accepted}
-            onRefresh={refresh}
-          />
-        )}
 
       {/* Debug answers a wait in a card beside the runs. */}
       {feedback && level === "debug" ? (

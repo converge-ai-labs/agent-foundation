@@ -12,10 +12,14 @@ from a13n_harness.model_context import (
     ModelContextProjectionRequest,
 )
 
+from a13n_service.infra.db import Storage
+from a13n_service.runs.environments.desktop.context import project
+
 
 @dataclass(frozen=True, slots=True)
 class ModelContext:
     run_id: str
+    storage: Storage
 
     async def wrap_model_context(
         self,
@@ -24,7 +28,8 @@ class ModelContext:
         handler: ModelContextNext,
     ) -> ModelContextProjection:
         projection = await handler(request)
-        payload = json.dumps({"service_run_id": self.run_id})
+        computer = await project(self.storage, ctx.environment.dump_states())
+        payload = json.dumps({"service_run_id": self.run_id, **({"computer": computer} if computer else {})})
         return ModelContextProjection(
             blocks=(
                 *projection.blocks,

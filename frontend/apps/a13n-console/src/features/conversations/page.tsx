@@ -39,6 +39,8 @@ import { SessionList } from "./list";
 import { SessionAuthorsProvider } from "./message-authors";
 import { SessionHeader } from "./session-header";
 import { ThreadBrowserPanel } from "../browsers/thread-browser";
+import { ThreadDesktopPanel } from "./transcript/environment-desktop";
+import { isInteractive } from "./transcript/run-actions";
 import { SessionStreamProvider } from "./session-stream";
 import { useSession } from "./queries";
 import { validSpaceSelection } from "../memories/session-settings";
@@ -253,7 +255,7 @@ export function NewConversation() {
 export function SessionLayout() {
   const { t } = useTranslation();
   const { sessionId = "", threadId, runId } = useParams();
-  const { workspace } = useWorkspace();
+  const { workspace, can } = useWorkspace();
   const { search } = useLocation();
   const client = useClient(),
     cache = useQueryClient();
@@ -289,7 +291,22 @@ export function SessionLayout() {
     open: false,
   });
   const browserTrigger = useRef<HTMLButtonElement>(null);
+  const [desktopThread, setDesktopThread] = useState<string>();
+  const desktopTrigger = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    setDesktopThread(undefined);
+  }, [workspace.id, threadId]);
+  const desktopOpen =
+    desktopThread === threadId &&
+    !!threadId &&
+    can("run") &&
+    isInteractive(target, session.data) &&
+    !target?.archived_at;
   const browserOpen = browserPanel.threadId === threadId && browserPanel.open;
+  const closeDesktop = () => {
+    setDesktopThread(undefined);
+    desktopTrigger.current?.focus();
+  };
   const closeBrowser = () => {
     setBrowserPanel((current) => ({ ...current, open: false }));
     browserTrigger.current?.focus();
@@ -334,7 +351,14 @@ export function SessionLayout() {
               browserOpen={browserOpen}
               browserTriggerRef={browserTrigger}
               onToggleBrowser={() => {
+                setDesktopThread(undefined);
                 if (threadId) setBrowserPanel({ threadId, open: !browserOpen });
+              }}
+              desktopOpen={desktopOpen}
+              desktopTriggerRef={desktopTrigger}
+              onToggleDesktop={() => {
+                setBrowserPanel((current) => ({ ...current, open: false }));
+                setDesktopThread(desktopOpen ? undefined : threadId);
               }}
             />
             <div className={styles.sessionWorkspace}>
@@ -388,7 +412,7 @@ export function SessionLayout() {
                     id="session-browser"
                     aria-label={t("Browser")}
                     hidden={!browserOpen}
-                    className={styles.browserPane}
+                    className={styles.resourcePane}
                   >
                     <ThreadBrowserPanel
                       key={threadId}
@@ -398,6 +422,19 @@ export function SessionLayout() {
                     />
                   </aside>
                 )}
+              {desktopOpen && threadId && target?.session_id === sessionId && (
+                <aside
+                  id="session-desktop"
+                  aria-label={t("Desktop")}
+                  className={styles.resourcePane}
+                >
+                  <ThreadDesktopPanel
+                    key={`${workspace.id}:${threadId}`}
+                    threadId={threadId}
+                    onClose={closeDesktop}
+                  />
+                </aside>
+              )}
             </div>
           </div>
         </RunCollapseProvider>

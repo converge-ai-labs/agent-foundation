@@ -808,7 +808,7 @@ async def test_browser_retention_migration_preserves_legacy_and_refuses_lossy_ro
             with pytest.raises(DBAPIError, match="rollback_retention"):
                 with migration_connection(database, OSS) as config:
                     command.downgrade(config, "29270d0290da")
-            assert rows(database, "SELECT version_num FROM alembic_version") == [("ed5de523fc26",)]
+            assert rows(database, "SELECT version_num FROM alembic_version") == [("91abbf7b03c8",)]
         # Legacy rows retain the original idle_seconds meaning and gain no new idle policy on upgrade.
         with engine.begin() as connection:
             connection.execute(

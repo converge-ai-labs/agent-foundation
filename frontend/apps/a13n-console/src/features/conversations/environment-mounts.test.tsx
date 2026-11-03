@@ -182,6 +182,7 @@ it("lists the Thread's mounts with their working directories", async () => {
     {
       name: "reference",
       environment_id: "env_saved",
+      desktop_enabled: false,
       working_directory: "/captured",
     },
   ];
@@ -199,6 +200,7 @@ it.each(["observation", "interaction"])(
       {
         name: "workspace",
         environment_id: "env_saved",
+        desktop_enabled: false,
         working_directory: null,
         permission_ceiling: {
           operations: [
@@ -267,6 +269,7 @@ it("shows Computer permissions without offering edits to a reader", async () => 
     {
       name: "workspace",
       environment_id: "env_saved",
+      desktop_enabled: false,
       working_directory: null,
       permission_ceiling: {
         operations: [
@@ -294,6 +297,7 @@ it("checks actual desktop support without changing mount permissions", async () 
     {
       name: "workspace",
       environment_id: "env_device",
+      desktop_enabled: false,
       working_directory: null,
       permission_ceiling: { operations: ["environment.computer.observe"] },
     },
@@ -332,6 +336,7 @@ it("rechecks readiness without retaining stale success after a failed check", as
     {
       name: "workspace",
       environment_id: "env_device",
+      desktop_enabled: false,
       working_directory: null,
     },
   ];

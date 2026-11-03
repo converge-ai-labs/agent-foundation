@@ -29,6 +29,7 @@ from a13n_service.infra.schema import model_schema
 from a13n_service.providers.registry import WebOperation
 
 PUBLISH_ASSET_TOOL_ID = "service.publish_asset"
+COMPUTER_NOTIFY_TOOL_ID = "service.computer_notify"
 PLATFORM_SOURCE = "service-platform"
 
 type ToolsetKey = Literal["files", "shell", "computer", "browser", "web", "memory", "assets"] | PlatformGroup
@@ -348,6 +349,13 @@ _TOOLSETS: tuple[_Toolset, ...] = (
                 "computer_write_clipboard",
                 description="Replace the desktop clipboard with plain text without pasting",
             ),
+            _Tool(
+                "notify",
+                "Notify on handback",
+                COMPUTER_NOTIFY_TOOL_ID,
+                "computer_notify",
+                description="Register for a notice when human Computer control ends",
+            ),
         ),
         description="Observe and control an explicitly authorized desktop. Requires a compatible environment.",
         config=ComputerConfiguration,
@@ -629,7 +637,9 @@ def environment_configuration(toolsets: dict[ToolsetKey, ToolsetSelection]) -> D
         computer_tools=frozenset(
             tool.model_name
             for tool in _BY_KEY["computer"].tools
-            if computer is not None and computer.tools.get(tool.key, ToolSelection()).enabled
+            if tool.execution_id != COMPUTER_NOTIFY_TOOL_ID
+            and computer is not None
+            and computer.tools.get(tool.key, ToolSelection()).enabled
         ),
         file_tools=frozenset(tool.model_name for tool in _BY_KEY["files"].tools if files.tools[tool.key].enabled),
         shell_tools=frozenset(tool.model_name for tool in _BY_KEY["shell"].tools if shell.tools[tool.key].enabled),

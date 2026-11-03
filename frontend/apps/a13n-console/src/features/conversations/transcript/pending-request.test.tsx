@@ -325,9 +325,14 @@ it("preserves the question response and exact request after a stale-wait conflic
   expect(Object.keys(answered())).toEqual(["question"]);
 });
 
-it.each([false, true])(
-  "submits a custom human tool result or explicit failure (failure: %s)",
-  async (failed) => {
+it.each([
+  ["review_invoice", false],
+  ["review_invoice", true],
+  ["request_desktop_assistance", false],
+  ["request_desktop_assistance", true],
+] as const)(
+  "submits a custom human tool %s result or explicit failure (failure: %s)",
+  async (toolName, failed) => {
     const user = userEvent.setup();
     resumes();
     render(
@@ -340,15 +345,20 @@ it.each([false, true])(
             calls: [
               {
                 tool_call_id: "review",
-                tool_name: "review_invoice",
+                tool_name: toolName,
                 arguments: { invoice: 7 },
                 presentation: null,
               },
             ],
           }}
+          continuation={<button>Continue without feedback</button>}
         />
       </QueryClientProvider>,
     );
+    expect(
+      screen.getByRole("button", { name: "Continue without feedback" }),
+    ).toBeTruthy();
+    expect(screen.queryByText("Desktop assistance requested")).toBeNull();
     await user.click(screen.getByRole("button", { name: "Request details" }));
     expect(screen.getByText(/"invoice": 7/)).toBeTruthy();
     await user.click(screen.getByRole("combobox", { name: "Response" }));

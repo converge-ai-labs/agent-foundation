@@ -22,14 +22,14 @@ class VercelRecipe(VercelEnvironmentConfiguration):
 
     desktop_assistance: bool = Field(
         default=False,
-        title="Desktop assistance and control",
+        title="Desktop viewing and control",
         description="Automatic desktops include the access supervisor; custom snapshots must provide it.",
     )
 
     @model_validator(mode="after")
     def assistance_snapshot(self) -> Self:
         if self.desktop_assistance and (not self.desktop or not self.snapshot):
-            raise ValueError("Desktop assistance requires desktop=True and an automatic or custom snapshot")
+            raise ValueError("Desktop access requires desktop=True and an automatic or custom snapshot")
         return self
 
     @property

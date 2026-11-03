@@ -5,6 +5,9 @@ import {
   MenuPopup,
   MenuTrigger,
   SegmentedControl,
+  Tooltip,
+  TooltipTrigger,
+  TooltipPopup,
 } from "a13n-ui";
 import {
   ArrowSquareOutIcon,
@@ -52,10 +55,16 @@ export function SessionHeader({
   browserOpen = false,
   onToggleBrowser,
   browserTriggerRef,
+  desktopOpen = false,
+  onToggleDesktop,
+  desktopTriggerRef,
 }: {
   browserOpen?: boolean;
   onToggleBrowser?: () => void;
   browserTriggerRef?: Ref<HTMLButtonElement>;
+  desktopOpen?: boolean;
+  onToggleDesktop?: () => void;
+  desktopTriggerRef?: Ref<HTMLButtonElement>;
 }) {
   const { t } = useTranslation();
   const { sessionId = "", threadId = "", runId } = useParams();
@@ -181,18 +190,49 @@ export function SessionHeader({
         />
       </div>
       {thread && onToggleBrowser && (
-        <Button
-          ref={browserTriggerRef}
-          variant={browserOpen ? "secondary" : "ghost"}
-          size="sm"
-          aria-expanded={browserOpen}
-          aria-controls="session-browser"
-          onClick={onToggleBrowser}
-        >
-          <GlobeIcon size={16} aria-hidden="true" />
-          {t("Browser")}
-        </Button>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                ref={browserTriggerRef}
+                variant={browserOpen ? "secondary" : "ghost"}
+                size="icon-sm"
+                aria-label={t("Browser")}
+                aria-expanded={browserOpen}
+                aria-controls="session-browser"
+                onClick={onToggleBrowser}
+              />
+            }
+          >
+            <GlobeIcon size={16} aria-hidden="true" />
+          </TooltipTrigger>
+          <TooltipPopup>{t("Browser")}</TooltipPopup>
+        </Tooltip>
       )}
+      {thread &&
+        can("run") &&
+        isInteractive(thread, session.data) &&
+        !thread.archived_at &&
+        onToggleDesktop && (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  ref={desktopTriggerRef}
+                  variant={desktopOpen ? "secondary" : "ghost"}
+                  size="icon-sm"
+                  aria-label={t("Desktop")}
+                  aria-expanded={desktopOpen}
+                  aria-controls="session-desktop"
+                  onClick={onToggleDesktop}
+                />
+              }
+            >
+              <MonitorIcon size={16} aria-hidden="true" />
+            </TooltipTrigger>
+            <TooltipPopup>{t("Desktop")}</TooltipPopup>
+          </Tooltip>
+        )}
       <Menu>
         <MenuTrigger
           render={

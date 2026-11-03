@@ -9,6 +9,7 @@ from a13n_service.infra.outbox import Claim, Handler, settle
 from a13n_service.runs import inbox
 from a13n_service.runs.browsers import lifecycle
 from a13n_service.runs.browsers.tables import BrowserBlockedRow, BrowserRow, ThreadBrowserRow
+from a13n_service.runs.notices import StaleNotice
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.tables import InboxEntryRow, RunRow, ThreadRow
 from a13n_service.tenancy.access import principal_for
@@ -61,18 +62,6 @@ async def eligible(session: AsyncSession, runtime: Runtime, registration: Browse
             raise
         return None
     return origin
-
-
-class StaleNotice(ServiceError):
-    """An unincorporated handback lost eligibility; discard the input, not the Thread's work."""
-
-    def __init__(self, entry_id: str):
-        super().__init__(
-            "conflict",
-            "Browser handback is no longer current",
-            {"kind": "inbox_entry", "id": entry_id, "reason": "browser_notice_stale"},
-        )
-        self.entry_id = entry_id
 
 
 async def require_notice(session: AsyncSession, runtime: Runtime, entry: InboxEntryRow) -> None:

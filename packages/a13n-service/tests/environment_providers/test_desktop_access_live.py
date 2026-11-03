@@ -101,6 +101,7 @@ def desktop(request, tmp_path):
         engine = docker.from_env()
         recipe = DockerRecipe(image=image, desktop=True, execution="envd_http", pull_policy="never")
         management = DockerManagement(recipe, identity, None, DockerProviderRuntime(DockerSDKEngine(engine)))
+        box = None
         try:
             box = engine.containers.run(
                 image,
@@ -161,7 +162,9 @@ def test_readonly_controller_revocation_expiry_and_process_crash(desktop):
     generation = description.generation
 
     def grant(identity, mode, epoch, ttl=60):
-        result = call(protocol.Grant(generation=generation, id=identity, mode=mode, epoch=epoch, ttl_seconds=ttl))
+        result = call(
+            protocol.Grant(generation=generation, id=identity, mode=mode, epoch=epoch, expires_at=time.time() + ttl)
+        )
         assert isinstance(result, protocol.AccessGrant)
         return result
 
@@ -179,31 +182,36 @@ def test_readonly_controller_revocation_expiry_and_process_crash(desktop):
                     raise
                 # RFB construction sends no GUI input. Reauthorize an existing live
                 # grant before one transport retry; an expired grant must still fail.
-                call(protocol.Renew(generation=generation, id=grant.id, epoch=grant.epoch))
+                call(protocol.Renew(generation=generation, id=grant.id, epoch=grant.epoch, expires_at=time.time() + 60))
         raise AssertionError("Handshake did not complete")
 
     def cursor():
-        values = dict(
-            line.split("=", 1)
-            for line in command([*environment, "xdotool", "getmouselocation", "--shell"]).strip().splitlines()
-        )
-        return int(values["X"]), int(values["Y"])
+        return tuple(x_state()[2:])
 
     def input_state():
+        return x_state()[:2]
+
+    def x_state(position=None):
         # Query the actual X server, not the management endpoint's reported cleanup flag.
-        code = """import ctypes,json
+        code = """import ctypes,json,sys
 x=ctypes.CDLL("libX11.so.6"); p=ctypes.c_void_p; w=ctypes.c_ulong; i=ctypes.c_int
 x.XOpenDisplay.argtypes=[ctypes.c_char_p];x.XOpenDisplay.restype=p
 x.XDefaultRootWindow.argtypes=[p];x.XDefaultRootWindow.restype=w
 x.XQueryKeymap.argtypes=[p,p]
 x.XQueryPointer.argtypes=[p,w,ctypes.POINTER(w),ctypes.POINTER(w),*[ctypes.POINTER(i)]*4,ctypes.POINTER(ctypes.c_uint)]
 d=x.XOpenDisplay(None);assert d
+if len(sys.argv)>1:
+ x.XWarpPointer.argtypes=[p,w,w,i,i,ctypes.c_uint,ctypes.c_uint,i,i]
+ x.XFlush.argtypes=[p]
+ x.XWarpPointer(d,0,x.XDefaultRootWindow(d),0,0,0,0,int(sys.argv[1]),int(sys.argv[2]));x.XFlush(d)
 keys=ctypes.create_string_buffer(32);x.XQueryKeymap(d,keys)
 r,c=w(),w();coords=[i() for _ in range(4)];mask=ctypes.c_uint()
 assert x.XQueryPointer(d,x.XDefaultRootWindow(d),ctypes.byref(r),ctypes.byref(c),*(ctypes.byref(v) for v in coords),ctypes.byref(mask))
-print(json.dumps([any(keys.raw),bool(mask.value & 0x1f00)]))
+print(json.dumps([any(keys.raw),bool(mask.value & 0x1f00),coords[0].value,coords[1].value]))
 """
-        return json.loads(command([*environment, "python3", "-I", "-c", code]))
+        return json.loads(
+            command([*environment, "python3", "-I", "-c", code, *(map(str, position) if position else [])])
+        )
 
     try:
         observer = grant("view_first", "view", 1)
@@ -211,21 +219,21 @@ print(json.dumps([any(keys.raw),bool(mask.value & 0x1f00)]))
         assert view.frame()["pixel_bytes"] > 0
         with pytest.raises((AuthRejected, ConnectionClosed)):
             client(observer.model_copy(update={"password": SecretStr("invalid!")}))
-        command([*environment, "xdotool", "mousemove", "10", "10"])
+        x_state((10, 10))
         view.pointer(101, 103)
         view.send(struct.pack("!BBHI", 4, 1, 0, 0xFFE1))
         view.frame()
         assert cursor() == (10, 10)
         assert input_state() == [False, False]
-        call(protocol.Renew(generation=generation, id="view_first", epoch=1))
+        call(protocol.Renew(generation=generation, id="view_first", epoch=1, expires_at=time.time() + 60))
         controller = grant("control_first", "control", 2)
         control = client(controller, retry_handshake=True)
         control.frame()
         control.pointer(201, 203)
         control.frame()
         assert wait_cursor(cursor, (201, 203))
-        call(protocol.Renew(generation=generation, id="control_first", epoch=2))
-        call(protocol.Renew(generation=generation, id="view_first", epoch=1))
+        call(protocol.Renew(generation=generation, id="control_first", epoch=2, expires_at=time.time() + 60))
+        call(protocol.Renew(generation=generation, id="view_first", epoch=1, expires_at=time.time() + 60))
         assert grant("control_first", "control", 2).token == controller.token
         with pytest.raises(EnvironmentProviderError) as busy:
             grant("control_second", "control", 3)
@@ -240,24 +248,24 @@ print(json.dumps([any(keys.raw),bool(mask.value & 0x1f00)]))
         assert control.closed()
         with pytest.raises((ConnectionClosed, InvalidMessage, InvalidStatus, EOFError, AuthRejected)):
             client(controller)
-        call(protocol.Renew(generation=generation, id="view_first", epoch=1))
+        call(protocol.Renew(generation=generation, id="view_first", epoch=1, expires_at=time.time() + 60))
         assert view.frame()["pixel_bytes"] >= 0
         assert grant("control_first", "control", 2).token is None
         with pytest.raises(EnvironmentProviderError):
             grant("control_stale", "control", 2)
-        short = grant("control_short", "control", 4)
+        short = grant("control_short", "control", 4, ttl=8)
         expiring = client(short, retry_handshake=True)
         expiring.frame()
         expiring.send(struct.pack("!BBHI", 4, 1, 0, 0xFFE1))
         expiring.frame()
-        call(protocol.Renew(generation=generation, id="control_short", epoch=4, ttl_seconds=3))
-        time.sleep(5)
+        call(protocol.Renew(generation=generation, id="control_short", epoch=4, expires_at=time.time() + 3))
+        time.sleep(9)
         assert expiring.closed()
         assert input_state() == [False, False]
         with pytest.raises((ConnectionClosed, InvalidMessage, InvalidStatus, EOFError, AuthRejected)):
             client(short)
         with pytest.raises(EnvironmentProviderError):
-            call(protocol.Renew(generation=generation, id="control_short", epoch=4))
+            call(protocol.Renew(generation=generation, id="control_short", epoch=4, expires_at=time.time() + 60))
         assert isinstance(call(protocol.Settle(generation=generation)), protocol.Settlement)
         crash = client(grant("control_crash", "control", 5), retry_handshake=True)
         crash.frame()
@@ -267,3 +275,53 @@ print(json.dumps([any(keys.raw),bool(mask.value & 0x1f00)]))
     finally:
         for connection in clients:
             connection.close()
+
+
+@pytest.mark.timeout(1100)
+@pytest.mark.skipif(os.environ.get("A13N_TEST_DESKTOP_ACCESS_LONG") != "1", reason="Opt-in 16-minute renewal test")
+def test_controller_renews_past_fifteen_minutes_on_same_connection(desktop):
+    from .desktop_access_rfb import RFB
+
+    management, _, endpoint, _ = desktop
+
+    def call(request):
+        return asyncio.run(management.desktop_access(request))
+
+    deadline = time.monotonic() + 20
+    while True:
+        try:
+            description = call(protocol.Describe())
+            assert isinstance(description, protocol.Description)
+            break
+        except EnvironmentProviderError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(0.1)
+    grant = call(
+        protocol.Grant(
+            generation=description.generation, id="long_control", mode="control", epoch=1, expires_at=time.time() + 60
+        )
+    )
+    assert isinstance(grant, protocol.AccessGrant)
+    assert grant.token is not None and grant.password is not None
+    connection = RFB(endpoint + "?token=" + grant.token.get_secret_value(), grant.password.get_secret_value())
+    started = time.monotonic()
+    try:
+        while time.monotonic() - started <= 920:
+            renewed = call(
+                protocol.Renew(generation=description.generation, id=grant.id, epoch=1, expires_at=time.time() + 60)
+            )
+            assert isinstance(renewed, protocol.AccessGrant) and renewed.state == "active"
+            assert (renewed.id, renewed.epoch) == (grant.id, grant.epoch)
+            connection.pointer(100, 120)
+            connection.frame()
+            time.sleep(20)
+        assert time.monotonic() - started > 900
+        connection.pointer(200, 220)
+        connection.frame()
+        revoked = call(protocol.Inspect(operation="revoke", generation=description.generation, id=grant.id, epoch=1))
+        assert isinstance(revoked, protocol.AccessGrant) and revoked.state == "revoked"
+        assert connection.closed()
+        assert isinstance(call(protocol.Settle(generation=description.generation)), protocol.Settlement)
+    finally:
+        connection.close()

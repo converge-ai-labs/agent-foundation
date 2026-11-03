@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field, JsonValue
 
 from a13n_service.providers.environment.vercel_build import BuildTarget, Snapshot
 
-SOURCE_REVISION = "25bab435d27e3d30fc038bfa8d2f20e5d70cf783"
+SOURCE_REVISION = "1da9b5c08f1ed0a6095906583bef9555863eeb6a"
 RELEASE_URL = "https://github.com/converge-ai-labs/agent-foundation/releases/download/release/a13n-envd-v0.5.1/a13n-envd-0.5.1-x86_64-unknown-linux-gnu.tar.gz"
 RELEASE_SHA256 = "f2fd6eace212c2e59d2b4d6a2dc69ec010235005ad332ac1ddd1932f7bca258c"
 FILES = (
@@ -43,7 +43,7 @@ FILES = (
     (
         "packages/a13n-service/a13n_service/providers/environment/desktop_guest.py",
         "/opt/a13n-desktop-access.py",
-        "7d31432661c8199a95bed5214088a2d3589872f787ad55b28566ba9b659b9571",
+        "68f4ed23ac4729b57262738a3390e239c79db90a1010ae08bf41ed5a1e81ffb4",
     ),
 )
 

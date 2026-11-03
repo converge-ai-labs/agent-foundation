@@ -42,7 +42,7 @@ async def test_revoke_before_ensure_fences_late_call_and_new_runtime_rejects_old
     with pytest.raises(guest.Refused, match="stale_generation"):
         await instance.dispatch(
             {
-                "protocol_version": 1,
+                "protocol_version": 2,
                 "generation": previous,
                 "operation": "ensure",
                 "id": "browser_first",
@@ -53,15 +53,15 @@ async def test_revoke_before_ensure_fences_late_call_and_new_runtime_rejects_old
     assert not instance.grants
 
 
-async def test_environment_renew_keeps_relative_ttl_semantics(supervisor, monkeypatch):
+async def test_environment_renew_uses_absolute_deadline_without_shortening(supervisor, monkeypatch):
     instance, clock, _ = supervisor
     wall = [1000.0]
     monkeypatch.setattr(guest.time, "time", lambda: wall[0])
     await grant(instance)
     wall[0], clock[0] = 1010, 110
-    await request(instance, "renew", id="control_first", epoch=1, ttl_seconds=5)
-    assert instance.grants["control_first"].deadline == 115
-    assert instance.grants["control_first"].expires_at == 1015
+    await request(instance, "renew", id="control_first", epoch=1, expires_at=1015)
+    assert instance.grants["control_first"].deadline == 160
+    assert instance.grants["control_first"].expires_at == 1060
 
 
 async def test_startup_delay_does_not_extend_absolute_input_deadline(supervisor, monkeypatch):
@@ -75,10 +75,9 @@ async def test_startup_delay_does_not_extend_absolute_input_deadline(supervisor,
         await original(*args)
 
     monkeypatch.setattr(instance, "wait_ready", delayed)
-    with pytest.raises(guest.Refused, match="grant_not_active"):
+    with pytest.raises(guest.Refused, match="grant_expired"):
         await request(instance, "ensure", id="browser_first", episode=1, expires_at=1005)
-    assert instance.grants["browser_first"].state == "expired"
-    assert instance.grants["browser_first"].process.returncode is not None
+    assert "browser_first" not in instance.grants
 
 
 async def test_episode_fence_bounds_history_and_ignores_old_revokes(supervisor, monkeypatch):

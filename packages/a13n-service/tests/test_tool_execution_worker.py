@@ -219,7 +219,8 @@ async def test_uncooperative_tool_cannot_extend_worker_process_shutdown(cause):
     """)
     process = await asyncio.create_subprocess_exec(sys.executable, "-c", script, cause, stderr=asyncio.subprocess.PIPE)
     try:
-        async with asyncio.timeout(10):
+        # Include fresh-interpreter imports under parallel CI load, not only worker shutdown.
+        async with asyncio.timeout(30):
             _, stderr = await process.communicate()
         assert process.returncode == 1
         assert b"forcing process exit" in stderr
@@ -261,7 +262,8 @@ async def test_closed_tool_admission_exits_worker_with_all_slots_busy():
     """)
     process = await asyncio.create_subprocess_exec(sys.executable, "-c", script, stderr=asyncio.subprocess.PIPE)
     try:
-        async with asyncio.timeout(10):
+        # Include fresh-interpreter imports under parallel CI load, not only worker shutdown.
+        async with asyncio.timeout(30):
             _, stderr = await process.communicate()
         assert process.returncode == 1
         assert b"forcing process exit after drain" in stderr
@@ -323,7 +325,8 @@ async def test_worker_fatal_boundary_preserves_normal_shutdown(cause):
     """)
     process = await asyncio.create_subprocess_exec(sys.executable, "-c", script, cause, stderr=asyncio.subprocess.PIPE)
     try:
-        async with asyncio.timeout(10):
+        # Include fresh-interpreter imports under parallel CI load, not only worker shutdown.
+        async with asyncio.timeout(30):
             _, stderr = await process.communicate()
         assert process.returncode == (0 if cause == "shutdown" else 1), stderr.decode()
         assert (b"Worker failed; forcing process exit" in stderr) == (cause != "shutdown")

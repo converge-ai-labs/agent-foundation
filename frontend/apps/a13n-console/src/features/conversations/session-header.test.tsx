@@ -28,12 +28,15 @@ let client: Client;
 let cache: QueryClient;
 /** Sessions the Console starts carry its label; applications' do not. */
 let labels: Record<string, string>;
+let canRun = true;
+const toggleBrowser = vi.fn(),
+  toggleDesktop = vi.fn();
 vi.mock("../../auth/context", () => ({ useClient: () => client }));
 vi.mock("../../layout/workspace", () => ({
   useWorkspace: () => ({
     workspace: { id: "workspace" },
     basePath: "/workspace/design",
-    can: () => true,
+    can: (action: string) => action !== "run" || canRun,
   }),
 }));
 vi.mock("react-i18next", () => ({
@@ -111,6 +114,9 @@ beforeEach(() => {
   contextRequests = [];
   toolRequests = [];
   labels = { "a13n.console": "debug" };
+  canRun = true;
+  toggleBrowser.mockClear();
+  toggleDesktop.mockClear();
   cache = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   client = createClient({
     baseUrl: "https://service.example",
@@ -225,7 +231,10 @@ function show(
             path="/sessions/:sessionId/threads/:threadId/runs?/:runId?"
             element={
               <RunCollapseProvider>
-                <SessionHeader />
+                <SessionHeader
+                  onToggleBrowser={toggleBrowser}
+                  onToggleDesktop={toggleDesktop}
+                />
                 <Location />
                 {section && (
                   <DebugRunSection
@@ -535,3 +544,32 @@ it("keeps loaded thread names and order while the next usage page resolves new n
     ),
   );
 });
+
+it("exposes compact named Browser and Desktop actions independently of Run status", async () => {
+  show([fixtureThread({ current_run_id: null })]);
+  const user = userEvent.setup();
+  const desktop = await screen.findByRole("button", { name: "Desktop" });
+  const browser = screen.getByRole("button", { name: "Browser" });
+  expect(desktop.textContent).toBe("");
+  expect(browser.textContent).toBe("");
+  await user.click(desktop);
+  await user.click(browser);
+  expect(toggleDesktop).toHaveBeenCalledOnce();
+  expect(toggleBrowser).toHaveBeenCalledOnce();
+});
+
+it.each(["child", "external", "archived", "permission"])(
+  "withholds Desktop for %s Threads",
+  async (kind) => {
+    if (kind === "external") labels = {};
+    if (kind === "permission") canRun = false;
+    show([
+      fixtureThread({
+        ...(kind === "child" ? { origin: "child" as const } : {}),
+        ...(kind === "archived" ? { archived_at: "2026-11-01T00:00:00Z" } : {}),
+      }),
+    ]);
+    await screen.findByRole("button", { name: "Browser" });
+    expect(screen.queryByRole("button", { name: "Desktop" })).toBeNull();
+  },
+);

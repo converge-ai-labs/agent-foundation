@@ -2,12 +2,13 @@
 
 import asyncio
 from collections.abc import AsyncGenerator, Sequence
-from contextlib import AsyncExitStack, asynccontextmanager
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
 import anyio
 from a13n_harness import EnvironmentMount as HarnessMount
 from a13n_harness import RunConfiguration
+from a13n_harness.environment.computer import ComputerCall
 from a13n_harness.environment.execution import EnvironmentConnector, EnvironmentExecution
 from a13n_harness.environment.files import FileOperator
 from a13n_harness.environment.models import (
@@ -32,10 +33,9 @@ from a13n_service.resources.environment_templates.service import read_template
 from a13n_service.resources.providers.service import resolve_provider
 from a13n_service.resources.providers.tables import EnvironmentProviderRow
 from a13n_service.runs.attempts import AuthorityRevoked, Lease, LeaseLost, lock_lease
-from a13n_service.runs.desktop_assistance import admission as desktop_admission
-from a13n_service.runs.desktop_assistance.service import verify_continuation
 from a13n_service.runs.environments import external
 from a13n_service.runs.environments.adapters import Target, execution_connector, provider_identity
+from a13n_service.runs.environments.desktop import admission as desktop_admission
 from a13n_service.runs.environments.lifecycle import Operation, begin, claim_locked, dispatch
 from a13n_service.runs.environments.mounts import PRIMARY, require_usable
 from a13n_service.runs.environments.schemas import Handle
@@ -43,7 +43,7 @@ from a13n_service.runs.environments.tables import EnvironmentRow
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import EnvironmentMount
 from a13n_service.runs.skill_cache import Cache
-from a13n_service.runs.tool_executions.authority import lock_owner
+from a13n_service.runs.tool_executions.authority import lock_execution, lock_owner, prove
 from a13n_service.tenancy.authorize import ExecutionAuthority, Principal, WorkspaceScope
 
 logger = get_logger(__name__)
@@ -86,16 +86,27 @@ class Source:
 
     @asynccontextmanager
     async def operation_guard(self, action: EnvironmentAction) -> AsyncGenerator[None]:
-        async with AsyncExitStack() as stack:
-            try:
-                await stack.enter_async_context(
-                    desktop_admission.operation(self.runtime, self.lease, self.environment_id, self.state, action)
-                )
-            except (LeaseLost, AuthorityRevoked) as exc:
-                if current_execution() is not None and not execution_cleanup_active():
-                    # Authority loss cancels owned work; provider observation errors do not.
-                    raise asyncio.CancelledError from exc
-                raise
+        try:
+            if execution_cleanup_active() and action in {
+                EnvironmentAction.PROCESS_KILL,
+                EnvironmentAction.PROCESS_WAIT,
+                EnvironmentAction.PROCESS_RELEASE,
+            }:
+                record = current_execution()
+                assert record is not None
+                async with transaction(self.runtime.storage) as session:
+                    await lock_execution(session, self.lease, record.execution_id, cleanup=True)
+            else:
+                await prove(self.runtime, self.lease)
+        except (LeaseLost, AuthorityRevoked) as exc:
+            if current_execution() is not None and not execution_cleanup_active():
+                raise asyncio.CancelledError from exc
+            raise
+        yield
+
+    @asynccontextmanager
+    async def computer_guard(self, call: ComputerCall) -> AsyncGenerator[None]:
+        async with desktop_admission.operation(self.runtime, self.lease, self.mount, self.state, call):
             yield
 
     async def ensure_ready(self) -> EnvironmentConnector:
@@ -110,7 +121,6 @@ class Source:
                         self.authority,
                         self.mount,
                     )
-                    await verify_continuation(self.runtime, self.lease, prepared.target)
                     connector = await execution_connector(
                         self.runtime,
                         prepared.target,
@@ -200,7 +210,6 @@ async def _inspect(
         if environment is None:
             raise not_found("environment", environment_id)
         require_usable(environment, principal.id)
-        await desktop_admission.admit_mounts(session, [environment], execution_run_id=lease.run_id)
         if environment.template_id is None:
             # An external target is always ready; it is reached with its own endpoint and token.
             environment.last_used_at = await now(session)
@@ -293,6 +302,7 @@ async def open_mounts(
             source.mount.name: HarnessMount(
                 source=source,
                 operation_guard=source.operation_guard,
+                computer_guard=source.computer_guard,
                 permission_ceiling=source.mount.permission_ceiling,
                 working_directory=source.mount.working_directory,
                 mount_path=None if source.mount.name == PRIMARY else f"/mnt/{source.mount.name}",

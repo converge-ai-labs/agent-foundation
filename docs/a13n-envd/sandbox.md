@@ -77,7 +77,7 @@ For lifecycle management:
 
 The root desktop launcher supervises Xvfb/Openbox running as `sandbox`, creates an Xauthority cookie and disables X11 TCP listening. A required desktop process exiting fails the container. X11 supports key events; literal Unicode `type_text` is unavailable.
 
-Human access is a separate opt-in. Set `desktop_assistance: true` and provide a browser-reachable `desktop_viewer_url` routed to the container's port 6081. Service enables the image's `A13N_DESKTOP_ACCESS` supervisor; the operator supplies the viewer route and TLS. Follow [desktop assistance](../a13n-service/environments.md#agent-requested-desktop-assistance) for permissions and the handback workflow.
+Human access is a separate opt-in. Set `desktop_assistance: true` and provide a browser-reachable `desktop_viewer_url` routed to the container's port 6081. Service enables the image's `A13N_DESKTOP_ACCESS` supervisor; the operator supplies the viewer route and TLS. Follow [desktop control](../a13n-service/environments.md#desktop-access-prerequisites) for permissions and the handback workflow.
 
 ## Run with a Host
 

@@ -21,7 +21,6 @@ from a13n_service.infra.telemetry import meter
 from a13n_service.runs import checkpoints, inbox
 from a13n_service.runs.accept import advance
 from a13n_service.runs.attempts import Lease, lock_thread_lease
-from a13n_service.runs.desktop_assistance import service as desktop_assistance
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schedules.completion import complete as complete_occurrence
 from a13n_service.runs.schemas import Failure, Outcome, Sealed
@@ -144,7 +143,6 @@ async def seal(
     set_committed_value(thread, "version", version)
     set_committed_value(thread, "updated_at", updated_at)
     await inbox.release_assigned(session, thread, run, at=at)
-    await desktop_assistance.sealed(session, run, outcome.pending)
     if thread.origin == "child" and outcome.status != "waiting":
         # One result per sealed child run; the parent's delivery validates and inserts it later.
         await enqueue_once(
@@ -182,21 +180,6 @@ async def recover(
     if run.cancel_requested_at is not None:
         await seal(session, runtime, thread, run, attempt, Outcome.cancelled(), at=at)
         return
-    from a13n_service.runs.desktop_assistance.execution import request as desktop_request
-
-    if await desktop_request(session, run.id) is not None:
-        await seal(
-            session,
-            runtime,
-            thread,
-            run,
-            attempt,
-            Outcome.failed(
-                "desktop_pause_attempt_lost", "Desktop suspension could not be confirmed; execution was not retried."
-            ),
-            at=at,
-        )
-        return
     if status == "failed" and run.attempts >= run.max_attempts:
         await seal(session, runtime, thread, run, attempt, Outcome(status="failed", failure=failure), at=at)
         return
@@ -213,7 +196,7 @@ async def recover(
 async def stop(session: AsyncSession, runtime: Runtime, thread: ThreadRow, run: RunRow) -> None:
     """Cancel an active run under its thread and run locks: an accepted run seals now, a running one is asked to
     stop at its next safe boundary. A sealed run is left as it is."""
-    from a13n_service.runs.browsers.delivery import suppress
+    from a13n_service.runs.notices import suppress
 
     await suppress(session, thread.id)
     current = await now(session)

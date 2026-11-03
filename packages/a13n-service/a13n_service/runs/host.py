@@ -48,6 +48,8 @@ from a13n_service.runs.browsers.execution import open_backend
 from a13n_service.runs.browsers.schemas import BrowserBinding
 from a13n_service.runs.builtin_instructions import BuiltinInstructionsCapability
 from a13n_service.runs.calls import CallCheck
+from a13n_service.runs.environments.desktop.freshness import Freshness
+from a13n_service.runs.environments.desktop.notify import HandbackNotifications
 from a13n_service.runs.environments.mounts import PRIMARY, has_primary
 from a13n_service.runs.mcp_apps.capture import Captures
 from a13n_service.runs.memories.execution import (
@@ -175,6 +177,9 @@ class Host:
     ) -> list[AbstractCapability[AgentContext]]:
         """The agent's own host tools: its connections, platform tools, pinned skills and asset publishing."""
         features = list(self.sources(agent).values())
+        features.append(Freshness())
+        if enabled_tool(agent.config.toolsets, "computer", "notify") is not None:
+            features.append(HandbackNotifications(self.runtime, self.lease))
         if retain_tools:
             # Only conversation roots retain calls; inline children and memory organizers stay inline.
             features.append(ToolExecutionCapability(self.plan.execution.tools))
@@ -231,7 +236,7 @@ class Host:
         """`given` with what the agent binds of its own: its web backends and its media understanding."""
         return replace(
             given,
-            model_context=ModelContext(self.lease.run_id),
+            model_context=ModelContext(self.lease.run_id, self.runtime.storage),
             web=self.webs.get(agent.revision_id),
             browser_backend=self.browsers.get(agent.revision_id),
             file_media_understanding=media_understanding(agent, self.models) if agent.media else None,
