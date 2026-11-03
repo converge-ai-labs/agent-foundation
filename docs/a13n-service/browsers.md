@@ -175,7 +175,7 @@ Accepted, running or waiting runs that use the browser, unsettled calls, human c
 Call `POST /api/v1/browsers/{id}/stop` or `POST /api/v1/browsers/{id}/release` with the current browser ETag in `If-Match`.
 
 - **Stop** keeps the Docker or Native browser's ID, binding and profile. The next authorized use or `prepare` starts it again. A runtime restart advances its generation and clears old references and tab ownership; restored tabs are not reassigned by URL or title.
-- **Release** is terminal. It removes a managed browser's runtime and profile, or disconnects Service from an external browser. Service refuses release while active use makes it unsafe.
+- **Release** requests terminal retirement: Service removes a managed browser's runtime and profile, or disconnects from an external browser. Service refuses release while active use makes it unsafe. Managed cleanup can remain `deleting` until supplier termination is confirmed; release does not guarantee immediate completion.
 
 A `lost` or `deleted` browser cannot be restarted. Detach it or bind a replacement before submitting more work to the thread.
 
