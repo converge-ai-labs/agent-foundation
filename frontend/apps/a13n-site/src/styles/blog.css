@@ -143,6 +143,7 @@
 }
 .strip {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
   gap: 8px 0;
   margin-top: clamp(48px, 5vw, 72px);
@@ -161,6 +162,37 @@
   vertical-align: -1px;
   background: var(--rule-2);
 }
+.report-credit {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.strip > .report-credit::before {
+  margin-right: 4px;
+}
+.report-author {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--ink);
+  font: 500 13px/1.5 var(--text);
+}
+.report-author img {
+  display: block;
+  border-radius: 50%;
+}
+.report-label {
+  color: var(--muted);
+  font-weight: 400;
+}
+.report-source {
+  font-size: 11px;
+}
+:is(.report-author, .report-source):hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
 .cover {
   margin-top: 32px;
 }
@@ -173,6 +205,26 @@
 }
 .cover .plate :is(.pf, .pl, .pa) {
   vector-effect: none;
+}
+.plate:has(.benchmark-cover),
+.cover .plate:has(.benchmark-cover) {
+  container-type: inline-size;
+  aspect-ratio: 2 / 1;
+}
+.plate .benchmark-cover,
+.cover .plate .benchmark-cover {
+  padding: 2% 3%;
+}
+.benchmark-cover .cover-compact {
+  display: none;
+}
+@container (max-width: 600px) {
+  .benchmark-cover .cover-detailed {
+    display: none;
+  }
+  .benchmark-cover .cover-compact {
+    display: initial;
+  }
 }
 .col {
   max-width: calc(680px + 2 * var(--pad));
