@@ -17,6 +17,13 @@ import {
   type ToolView,
 } from "./tool-presentation";
 
+// Generated transcript chrome stays structured here so the display layer can
+// translate it; backend diagnostics travel beside it and stay verbatim.
+export type ContextState =
+  "summary-ready" | "prepared" | "completed" | "failed" | "in-progress";
+export type ExecutionOutcome = "cancelled" | "interrupt" | "failed";
+export type ChildState = "running" | "suspended" | "completed";
+
 export type DisplayBlock = {
   durationMs?: number;
   id: string;
@@ -43,6 +50,12 @@ export type DisplayBlock = {
   value?: unknown;
   diagnostic?: boolean;
   context?: "handoff" | "compaction";
+  contextState?: ContextState;
+  contextDiagnostics?: string[];
+  execution?: ExecutionOutcome;
+  recoveryOutcome?: string;
+  childName?: string;
+  childState?: ChildState;
 };
 type Payload = Record<string, unknown>;
 function object(value: unknown): value is Payload {
@@ -569,17 +582,13 @@ export class FocusDisplay {
         id: status,
         kind: "activity",
         diagnostic: failed,
-        name:
+        execution:
           outcome === "cancelled"
-            ? "Execution cancelled"
+            ? "cancelled"
             : outcome === "interrupt"
-              ? "Execution suspended"
-              : "Execution failed",
-        text:
-          string(payload.message) ||
-          (outcome === "interrupt"
-            ? "A response is needed before execution can continue."
-            : "Run finished. Open its details to check follow-ups and environment results."),
+              ? "interrupt"
+              : "failed",
+        text: string(payload.message),
       });
     } else if (
       type === "SUBAGENT_STARTED" ||
@@ -592,17 +601,16 @@ export class FocusDisplay {
       this.blocks.set(childKey, {
         id: childKey,
         kind: "activity",
-        name:
-          previous?.name ||
-          `Subagent · ${string(payload.name) || subagentRunId}`,
-        text:
+        childName: previous?.childName || string(payload.name) || subagentRunId,
+        childState:
           type === "SUBAGENT_STARTED"
-            ? "Running"
+            ? "running"
             : type === "SUBAGENT_ERROR"
-              ? string(payload.message)
+              ? undefined
               : object(payload.outcome) && payload.outcome.type === "suspended"
-                ? "Suspended"
-                : "Completed",
+                ? "suspended"
+                : "completed",
+        text: type === "SUBAGENT_ERROR" ? string(payload.message) : "",
         done: type !== "SUBAGENT_STARTED",
       });
     } else if (type === "CUSTOM") {
@@ -798,7 +806,8 @@ export class FocusDisplay {
       setBlock(key, {
         id: key,
         kind: "activity",
-        text: `${string(payload.warning)} Outcome: ${string(payload.outcome)}.`,
+        text: string(payload.warning),
+        recoveryOutcome: string(payload.outcome) || undefined,
         metadata: { "a13n.recovery": "context_recovery" },
       });
       return;
@@ -1108,27 +1117,31 @@ export class FocusDisplay {
         string(payload.type).startsWith("compaction_")
           ? "compaction"
           : "handoff";
+      const diagnostics = [
+        string(payload.error_code),
+        string(payload.failed_phase),
+        string(payload.reason),
+      ].filter(Boolean);
       setBlock(key, {
         id: key,
         kind: "activity",
         context,
         name: context === "compaction" ? "Compact Summary" : "Summary",
-        text: summary
-          ? previous?.text || "Summary ready"
-          : [
-              string(payload.type).endsWith("_failed")
-                ? "Failed"
-                : string(payload.type).endsWith("_completed")
-                  ? "Completed"
-                  : string(payload.type).endsWith("_prepared")
-                    ? "Prepared"
-                    : "In progress",
-              string(payload.error_code),
-              string(payload.failed_phase),
-              string(payload.reason),
-            ]
-              .filter(Boolean)
-              .join(" · "),
+        text: "",
+        contextState: summary
+          ? previous?.contextState || "summary-ready"
+          : string(payload.type).endsWith("_failed")
+            ? "failed"
+            : string(payload.type).endsWith("_completed")
+              ? "completed"
+              : string(payload.type).endsWith("_prepared")
+                ? "prepared"
+                : "in-progress",
+        contextDiagnostics: summary
+          ? previous?.contextDiagnostics
+          : diagnostics.length
+            ? diagnostics
+            : undefined,
         result: summary ? string(source.summary) : previous?.result,
       });
       return;

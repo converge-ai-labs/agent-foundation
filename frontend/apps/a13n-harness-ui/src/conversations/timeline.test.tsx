@@ -331,7 +331,8 @@ it("keeps history and an expanded summary through saved cutover and later contin
           kind: "activity",
           context: "handoff",
           name: "Summary",
-          text: "Completed",
+          text: "",
+          contextState: "completed",
           result: text,
         },
       ]}

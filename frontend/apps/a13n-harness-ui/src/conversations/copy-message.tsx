@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { useEffect, useState } from "react";
 import { Button, Tooltip, TooltipPopup, TooltipTrigger } from "a13n-ui";
 import { Check, Copy } from "@phosphor-icons/react";
@@ -11,6 +12,7 @@ export function CopyMessage({
   text: string;
   truncated?: boolean;
 }) {
+  const { t } = useTranslation();
   const [state, setState] = useState<"idle" | "copying" | "copied" | "error">(
     "idle",
   );
@@ -21,10 +23,10 @@ export function CopyMessage({
   }, [state]);
   const label =
     state === "copied"
-      ? "Copied"
+      ? t("Copied")
       : truncated
-        ? "Copy available preview"
-        : "Copy message";
+        ? t("Copy available preview")
+        : t("Copy message");
   return (
     <div className={styles.messageActions}>
       <Tooltip>
@@ -58,11 +60,11 @@ export function CopyMessage({
         <TooltipPopup>{label}</TooltipPopup>
       </Tooltip>
       <span className="sr-only" aria-live="polite">
-        {state === "copied" ? "Copied to clipboard" : ""}
+        {state === "copied" ? t("Copied to clipboard") : ""}
       </span>
       {state === "error" && (
         <small className={styles.copyError} role="alert">
-          Could not copy. Try again or select the text to copy manually.
+          {t("Could not copy. Try again or select the text to copy manually.")}
         </small>
       )}
     </div>
