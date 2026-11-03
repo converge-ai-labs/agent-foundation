@@ -8,6 +8,7 @@ from a13n_service.infra import cursors
 from a13n_service.infra.db import Storage, now, short_session
 from a13n_service.infra.errors import not_found
 from a13n_service.infra.labels import label_filter
+from a13n_service.resources.agents import stored
 from a13n_service.runs.schedules.lifecycle import rule
 from a13n_service.runs.schedules.schemas import (
     BusyOccurrence,
@@ -29,7 +30,8 @@ from a13n_service.tenancy.authorize import Principal
 
 
 def view(row: ScheduleRow) -> Schedule:
-    return Schedule.model_validate(
+    return stored.read(
+        Schedule,
         {
             "target": {
                 "mode": "thread" if row.thread_id else "new_thread",
@@ -55,7 +57,7 @@ def view(row: ScheduleRow) -> Schedule:
             "archived_at": row.archived_at,
             "schedule": rule(row),
             "stream_url": f"/api/v1/sessions/{row.session_id}/stream",
-        }
+        },
     )
 
 
@@ -273,7 +275,7 @@ async def get_occurrence(
         )
         if row is None:
             raise not_found("schedule_occurrence", occurrence_id)
-        result = Occurrence.model_validate(row)
+        result = stored.read(Occurrence, row)
         if execution:
             summaries = await execution_summaries(session, scope.workspace_id, schedule_id, [row.id])
             result = result.model_copy(update={"execution": summaries[row.id]})

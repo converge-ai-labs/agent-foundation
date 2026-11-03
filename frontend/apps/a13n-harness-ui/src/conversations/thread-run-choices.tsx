@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { ModelIdentity } from "../shell/model-identity";
 import { Button, ModalFrame } from "a13n-ui";
 import { CaretRight, Desktop } from "@phosphor-icons/react";
@@ -152,6 +153,7 @@ type RunChoiceProps = ModelControlProps & {
 };
 
 export function ThreadRunChoices(props: RunChoiceProps) {
+  const { t } = useTranslation();
   const {
     catalog,
     agentId,
@@ -171,8 +173,8 @@ export function ThreadRunChoices(props: RunChoiceProps) {
   const modelName =
     model?.name ??
     (selectedModelId
-      ? `${selectedModelId} (unavailable)`
-      : "Model unavailable");
+      ? t("{{name}} (unavailable)", { name: selectedModelId })
+      : t("Model unavailable"));
   const selectionKey = agent
     ? JSON.stringify([agent.agent_id, selectedModelId])
     : undefined;
@@ -191,8 +193,11 @@ export function ThreadRunChoices(props: RunChoiceProps) {
   return (
     <div
       className={panelStyles.identity}
-      aria-label={`Agent: ${agent?.name ?? "Default agent"}. Model: ${modelName}`}
-      title={`${agent?.name ?? "Default agent"} · ${modelName}`}
+      aria-label={t("Agent: {{agent}}. Model: {{model}}", {
+        agent: agent?.name ?? t("Default agent"),
+        model: modelName,
+      })}
+      title={`${agent?.name ?? t("Default agent")} · ${modelName}`}
     >
       <ComposerSettings
         label={<ModelIdentity model={model} name={modelName} />}
@@ -215,6 +220,7 @@ function AgentModelChoices({
   onAgentChange,
   onModelChange,
 }: RunChoiceProps) {
+  const { t } = useTranslation();
   const settings = useComposerSettings()!;
   const agent = catalog?.agents.find(
     (item) => item.agent_id === (agentId || defaultAgentId),
@@ -222,7 +228,7 @@ function AgentModelChoices({
   const inheritedModelId = defaultModelId ?? agent?.model_id;
   const agentGroups = [
     {
-      label: "Agents",
+      label: t("Agents"),
       options: [
         ...(defaultAgentId
           ? [
@@ -231,9 +237,9 @@ function AgentModelChoices({
                 label:
                   catalog?.agents.find(
                     (item) => item.agent_id === defaultAgentId,
-                  )?.name ?? "Default agent",
-                badge: "Default",
-                description: "Follow the project or app default.",
+                  )?.name ?? t("Default agent"),
+                badge: t("Default"),
+                description: t("Follow the project or app default."),
               },
             ]
           : []),
@@ -246,7 +252,7 @@ function AgentModelChoices({
           ? [
               {
                 value: agentId,
-                label: `${agentId} (unavailable)`,
+                label: t("{{name}} (unavailable)", { name: agentId }),
                 disabled: true,
               },
             ]
@@ -274,7 +280,9 @@ function AgentModelChoices({
   if (settings.page === "agent")
     return (
       <SettingsChoices
-        label="agents"
+        searchLabel={t("Search agents")}
+        searchPlaceholder={t("Search agents…")}
+        emptyLabel={t("No matching agents.")}
         options={agentGroups[0].options}
         value={agentId}
         disabled={disabled || !catalog}
@@ -289,19 +297,21 @@ function AgentModelChoices({
       {settings.page === "root" && (
         <>
           <SettingsRow
-            label="Agent"
-            value={agent?.name ?? (agentId || "Default agent")}
+            label={t("Agent")}
+            value={agent?.name ?? (agentId || t("Default agent"))}
             disabled={disabled || !catalog}
             onClick={() => settings.navigate("agent")}
           />
           <SettingsRow
-            label="Model"
+            label={t("Model")}
             value={
               <ModelIdentity
                 model={model}
                 name={
                   model?.name ??
-                  `${modelId ?? inheritedModelId ?? "Model"} (unavailable)`
+                  t("{{name}} (unavailable)", {
+                    name: modelId ?? inheritedModelId ?? t("Model"),
+                  })
                 }
               />
             }

@@ -44,6 +44,7 @@ from sqlalchemy.orm import aliased
 
 from a13n_service.infra.db import lock, short_session, transaction
 from a13n_service.infra.errors import ServiceError, conflict, invalid, not_found
+from a13n_service.resources.agents import stored
 from a13n_service.runs import inbox
 from a13n_service.runs.accept import Source, accept, delegation, start_run
 from a13n_service.runs.agent import ResolvedSubagent
@@ -165,8 +166,8 @@ class ChildRuns(SubagentOperator):
                 agent_revision_id=edge.revision_id,
                 options=RunOptions(
                     max_usage=UsageLimit(requests=limit) if limit is not None else None,
-                    configuration=RunOptions.model_validate(run.options).configuration,
-                    context=RunOptions.model_validate(run.options).context,
+                    configuration=stored.require(RunOptions, run.options, kind="run", id=run.id).configuration,
+                    context=stored.require(RunOptions, run.options, kind="run", id=run.id).context,
                 ),
             )
             entry = await inbox.append_message(
@@ -311,7 +312,7 @@ class ChildRuns(SubagentOperator):
             payload=_payload(text, text),
             agent_id=run.agent_id,
             agent_revision_id=run.agent_revision_id,
-            options=RunOptions.model_validate(run.options),
+            options=stored.require(RunOptions, run.options, kind="run", id=run.id),
         )
         entry = await inbox.append_message(
             session,

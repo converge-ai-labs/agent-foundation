@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 from a13n_service.distribution import OSS, Distribution
 from a13n_service.infra.db import transaction
-from a13n_service.infra.platform import PLATFORM_GROUPS, PLATFORM_TOOLS
+from a13n_service.infra.platform import PLATFORM_GROUPS
 from a13n_service.migrations.runner import check, migration_connection, upgrade
 from a13n_service.resources.revisions import config_digest
 from a13n_service.runs.tables import SessionRow
@@ -407,24 +407,45 @@ async def test_legacy_toolsets_and_platform_selections_are_rewritten(database, s
         digest == config_digest(stored)
         for stored, digest in rows(database, "SELECT config, digest FROM agent_revisions")
     )
-    # The guards are back on, and the rewritten rows read as current configurations.
+    # The guards are back on, and the rewritten rows remain readable as historical configurations.
     assert rows(database, "SELECT DISTINCT tgenabled FROM pg_trigger WHERE NOT tgisinternal") == [("O",)]
-    effects = {tool.key: tool.effect for tool in PLATFORM_TOOLS}
+    # This migration freezes its original API-tool vocabulary; the current business
+    # catalog deliberately removes/renames it and cannot define historical effects.
+    historical_writes = {
+        "create_agent",
+        "update_agent",
+        "archive_agent",
+        "unarchive_agent",
+        "duplicate_agent",
+        "create_agent_revision",
+        "set_default_agent_revision",
+        "create_finding",
+    }
 
     def permissions(toolset: dict) -> set[tuple[str, str]]:
-        return {(effects[key], tool["permission"]) for key, tool in toolset["tools"].items() if tool["enabled"]}
+        return {
+            ("write" if key in historical_writes else "read", tool["permission"])
+            for key, tool in toolset["tools"].items()
+            if tool["enabled"]
+        }
 
     revision = await service.client.get(f"{service.api}/agents/{agent['id']}/revisions/{agent['default_revision_id']}")
     stored = revision.json()["config"]["toolsets"]
-    assert [group for group in PLATFORM_GROUPS if stored[group]["enabled"]] == ["agents", "execution"]
-    assert permissions(stored["agents"]) == {("read", "ask"), ("write", "inherit")}
+    assert [group for group in PLATFORM_GROUPS if stored.get(group, {}).get("enabled", False)] == [
+        "agents",
+        "execution",
+    ]
+    # Historical reads preserve the migration's sparse policy, without expanding
+    # omitted defaults using the new platform catalogue.
+    assert permissions(stored["agents"]) == {("read", "ask")}
+    assert "create_agent_revision" not in stored["agents"]["tools"]
     executed = await service.client.get(f"{service.api}/runs/{run['id']}/agent")
     assert executed.status_code == 200, executed.text
     toolsets = executed.json()["config"]["toolsets"]
     assert "configuration" not in toolsets and toolsets["web"]["enabled"] is False
     # The override replaced the whole selection, so the revision's other group is off for this run.
-    assert [group for group in PLATFORM_GROUPS if toolsets[group]["enabled"]] == ["execution"]
-    assert permissions(toolsets["execution"]) == {("read", "inherit"), ("write", "allow")}
+    assert [group for group in PLATFORM_GROUPS if toolsets.get(group, {}).get("enabled", False)] == ["execution"]
+    assert permissions(toolsets["execution"]) == {("write", "allow")}
 
 
 @pytest.mark.parametrize("invalid_index", [False, True])
@@ -724,6 +745,13 @@ async def test_external_browser_migration_defaults_constraints_and_downgrade(ser
                 connection.execute(text("UPDATE browsers SET control='human' WHERE id=:id"), {"id": external["id"]})
     finally:
         engine.dispose()
+    # Exercise the external-CDP revision's guard, independently of retained-runtime policy.
+    engine = create_engine(database.url.get_secret_value())
+    try:
+        with engine.begin() as connection:
+            connection.execute(text("UPDATE browsers SET stop_after_seconds=NULL, delete_after_seconds=NULL"))
+    finally:
+        engine.dispose()
     with pytest.raises(DBAPIError, match="Browser state exists"):
         with migration_connection(database, OSS) as config:
             command.downgrade(config, "a9acb6772400")
@@ -750,3 +778,62 @@ async def test_browser_control_due_migration_roundtrip_preserves_resource_stamp(
     finally:
         engine.dispose()
     check(database, OSS)
+
+
+@pytest.mark.anyio
+async def test_browser_retention_migration_preserves_legacy_and_refuses_lossy_rollback(service, runs_kit):
+    from .test_browsers import setup
+
+    _, browser = await setup(service, runs_kit)
+    database = service.runtime.settings.database
+    engine = create_engine(database.url.get_secret_value())
+    try:
+        for fact in (
+            "stop_after_seconds=1800",
+            "delete_after_seconds=3600",
+            "runtime_id='runtime-test'",
+            "start_dispatched=true",
+            "status='stopped'",
+            "status='stopping'",
+            "status='starting'",
+        ):
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "UPDATE browsers SET status='reserved', runtime_id=NULL, start_dispatched=false, "
+                        "stop_after_seconds=NULL, delete_after_seconds=NULL"
+                    )
+                )
+                connection.execute(text(f"UPDATE browsers SET {fact}"))
+            with pytest.raises(DBAPIError, match="rollback_retention"):
+                with migration_connection(database, OSS) as config:
+                    command.downgrade(config, "29270d0290da")
+            assert rows(database, "SELECT version_num FROM alembic_version") == [("ed5de523fc26",)]
+        # Legacy rows retain the original idle_seconds meaning and gain no new idle policy on upgrade.
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "UPDATE browsers SET status='reserved', runtime_id=NULL, start_dispatched=false, "
+                    "stop_after_seconds=NULL, delete_after_seconds=NULL, idle_seconds=90"
+                )
+            )
+        query = "SELECT id, status, idle_seconds, version FROM browsers"
+        before = rows(database, query)
+        with migration_connection(database, OSS) as config:
+            command.downgrade(config, "29270d0290da")
+        assert rows(database, query) == before
+        upgrade(database, OSS)
+        assert rows(database, query) == before
+        assert rows(database, "SELECT stop_after_seconds, delete_after_seconds, start_dispatched FROM browsers") == [
+            (None, None, False)
+        ]
+        # Terminal history can be rolled back without reviving its private runtime.
+        with engine.begin() as connection:
+            connection.execute(text("UPDATE browsers SET status='deleted', runtime_id='old', stop_after_seconds=1800"))
+        with migration_connection(database, OSS) as config:
+            command.downgrade(config, "29270d0290da")
+        assert rows(database, "SELECT id, status FROM browsers") == [(browser["id"], "deleted")]
+        upgrade(database, OSS)
+        check(database, OSS)
+    finally:
+        engine.dispose()

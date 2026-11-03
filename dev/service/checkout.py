@@ -111,6 +111,8 @@ class Checkout:
             "providers": {"require_https": False},
             # Development only: `local` environments are directories on this host, with no isolation boundary.
             "provisioning.local": {"enabled": True, "root": str(self.environments)},
+            # Offer Docker browsers; allocation remains an explicit workspace operation.
+            "browsers": {"root": str(self.state / "browsers")},
             "telemetry": {"log_format": "pretty", **telemetry},
         }
 

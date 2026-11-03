@@ -62,6 +62,14 @@ TEST_INPUTS: dict[str, tuple[str, ...]] = {
         ".github/workflows/release-a13n-harness.yml",
         ".github/workflows/release-a13n-harness-ui.yml",
     ),
+    "test_browser_image_workflows.py": (
+        ".github/workflows/images.yml",
+        ".github/workflows/ci-containers.yml",
+        ".github/workflows/release-a13n-service.yml",
+        "deploy/docker/images/browser/Dockerfile",
+        "packages/a13n-service/pyproject.toml",
+        "uv.lock",
+    ),
     "test_image_workflows.py": (
         ".dockerignore",
         ".github/workflows/images.yml",

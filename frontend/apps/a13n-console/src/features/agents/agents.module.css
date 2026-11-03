@@ -788,12 +788,4 @@
   width: 16px;
   height: 16px;
   margin-left: 4px;
-  rotate: none;
-  transform: rotate(0deg);
-}
-.outlinedDisclosure
-  :is([data-slot="disclosure-surface"], [data-slot="disclosure-heading"])
-  > [data-slot="collapsible-trigger"][aria-expanded="true"]
-  > svg {
-  transform: rotate(90deg);
 }

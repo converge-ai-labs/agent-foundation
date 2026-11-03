@@ -176,7 +176,7 @@ async def test_persisted_baseline_requires_revoke_not_cancellation(service, runs
     supplier, browser = await setup(service, runs_kit)
     lease, _ = await bound_run(service, runs_kit, scripted_model, browser)
 
-    async def uncertain_grant(state, grant_id, *, expires_at):
+    async def uncertain_grant(state, grant_id, *, episode, expires_at):
         supplier.grants.add(grant_id)
         raise TimeoutError("unknown grant outcome")
 

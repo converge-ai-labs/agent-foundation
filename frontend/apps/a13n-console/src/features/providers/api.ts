@@ -2,7 +2,7 @@ import type { Client } from "../../service-client";
 import { data, ifMatch, representation, type Schema } from "../../shared/api";
 
 /** The provider kinds whose collections this client reads and writes. */
-export type ProviderKind = "environment" | "memory";
+export type ProviderKind = "environment" | "memory" | "browser";
 export type ProviderApiKind = ProviderKind | "model" | "connector" | "web";
 
 /** A workspace's providers of one kind. */

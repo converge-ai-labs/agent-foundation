@@ -104,7 +104,7 @@ description: Service 设置的每个字段，及其环境变量、类型、范�
 | `control.inbox_count`                 | `A13N_CONTROL__INBOX_COUNT`                 | 整数        | minimum=1; maximum=10000; default=128           |
 | `control.inbox_bytes`                 | `A13N_CONTROL__INBOX_BYTES`                 | 整数        | minimum=1024; maximum=16777216; default=2097152 |
 | `control.browser_control_min_seconds` | `A13N_CONTROL__BROWSER_CONTROL_MIN_SECONDS` | 整数        | minimum=1; default=60                           |
-| `control.browser_control_max_seconds` | `A13N_CONTROL__BROWSER_CONTROL_MAX_SECONDS` | 整数        | minimum=1; default=3600                         |
+| `control.browser_control_max_seconds` | `A13N_CONTROL__BROWSER_CONTROL_MAX_SECONDS` | 整数        | minimum=1; maximum=31536000; default=3600       |
 | `control.browser_control_seconds`     | `A13N_CONTROL__BROWSER_CONTROL_SECONDS`     | 整数        | minimum=1; default=300                          |
 | `control.browser_notice_seconds`      | `A13N_CONTROL__BROWSER_NOTICE_SECONDS`      | 整数        | minimum=60; maximum=604800; default=86400       |
 | `control.subscriptions`               | `A13N_CONTROL__SUBSCRIPTIONS`               | 整数        | minimum=1; maximum=1000; default=32             |
@@ -198,6 +198,16 @@ description: Service 设置的每个字段，及其环境变量、类型、范�
 | `environments.managed_count`      | `A13N_ENVIRONMENTS__MANAGED_COUNT`      | 整数          | minimum=1; maximum=100000; default=100        |
 | `environments.docker_host`        | `A13N_ENVIRONMENTS__DOCKER_HOST`        | 字符串或 null | minLength=1; maxLength=2048; default=null     |
 | `environments.docker_mount_roots` | `A13N_ENVIRONMENTS__DOCKER_MOUNT_ROOTS` | 字符串数组    | maxItems=64; default=[]                       |
+
+## `browsers`
+
+| 设置                         | 环境变量                           | 类型 / 选项   | 约束与默认值                                  |
+| ---------------------------- | ---------------------------------- | ------------- | --------------------------------------------- |
+| `browsers.operation_seconds` | `A13N_BROWSERS__OPERATION_SECONDS` | 数字          | maximum=3600; exclusiveMinimum=0; default=120 |
+| `browsers.root`              | `A13N_BROWSERS__ROOT`              | 字符串或 null | format="path"; default=null                   |
+| `browsers.native_enabled`    | `A13N_BROWSERS__NATIVE_ENABLED`    | 布尔值        | default=false                                 |
+| `browsers.native_chromium`   | `A13N_BROWSERS__NATIVE_CHROMIUM`   | 字符串        | default="chromium"                            |
+| `browsers.docker_host`       | `A13N_BROWSERS__DOCKER_HOST`       | 字符串或 null | default=null                                  |
 
 ## `provisioning`
 

@@ -1,906 +1,674 @@
 [
   {
-    "effect": "read",
-    "group": "agents",
-    "key": "list_agents",
-    "method": "GET",
-    "path": "/api/v1/agents",
-    "summary": "List Agents"
-  },
-  {
-    "effect": "write",
-    "group": "agents",
-    "key": "create_agent",
-    "method": "POST",
-    "path": "/api/v1/agents",
-    "summary": "Create Agent"
-  },
-  {
-    "effect": "read",
-    "group": "agents",
-    "key": "validate_agent",
-    "method": "POST",
-    "path": "/api/v1/agents/validate",
-    "summary": "Validate Agent"
-  },
-  {
-    "effect": "read",
-    "group": "agents",
-    "key": "get_agent",
-    "method": "GET",
-    "path": "/api/v1/agents/{agent_id}",
-    "summary": "Get Agent"
-  },
-  {
-    "effect": "write",
-    "group": "agents",
-    "key": "update_agent",
-    "method": "PATCH",
-    "path": "/api/v1/agents/{agent_id}",
-    "summary": "Update Agent"
-  },
-  {
     "effect": "write",
     "group": "agents",
     "key": "archive_agent",
-    "method": "POST",
-    "path": "/api/v1/agents/{agent_id}/archive",
-    "summary": "Archive Agent"
-  },
-  {
-    "effect": "write",
-    "group": "agents",
-    "key": "duplicate_agent",
-    "method": "POST",
-    "path": "/api/v1/agents/{agent_id}/duplicate",
-    "summary": "Duplicate Agent"
-  },
-  {
-    "effect": "read",
-    "group": "agents",
-    "key": "list_agent_revisions",
-    "method": "GET",
-    "path": "/api/v1/agents/{agent_id}/revisions",
-    "summary": "List Agent Revisions"
-  },
-  {
-    "effect": "write",
-    "group": "agents",
-    "key": "create_agent_revision",
-    "method": "POST",
-    "path": "/api/v1/agents/{agent_id}/revisions",
-    "summary": "Create Agent Revision"
-  },
-  {
-    "effect": "read",
-    "group": "agents",
-    "key": "get_agent_revision",
-    "method": "GET",
-    "path": "/api/v1/agents/{agent_id}/revisions/{revision_id}",
-    "summary": "Get Agent Revision"
+    "summary": "Archive the Agent at the observed version, preventing new execution."
   },
   {
     "effect": "read",
     "group": "agents",
     "key": "compare_agent_revisions",
-    "method": "GET",
-    "path": "/api/v1/agents/{agent_id}/revisions/{revision_id}/compare",
-    "summary": "Compare Agent Revisions"
+    "summary": "Versioned unified diff of two revisions of this agent, optionally limited to one configuration section."
   },
   {
     "effect": "write",
     "group": "agents",
-    "key": "set_default_agent_revision",
-    "method": "POST",
-    "path": "/api/v1/agents/{agent_id}/revisions/{revision_id}/set-default",
-    "summary": "Set Default Agent Revision"
+    "key": "create_agent",
+    "summary": "Create an Agent and its complete initial configuration atomically.\n\nModel and instructions are direct fields; advanced capabilities are optional."
   },
   {
     "effect": "write",
     "group": "agents",
-    "key": "unarchive_agent",
-    "method": "POST",
-    "path": "/api/v1/agents/{agent_id}/unarchive",
-    "summary": "Unarchive Agent"
+    "key": "duplicate_agent",
+    "summary": "Create a custom Agent from a revalidated source revision, retaining its configuration."
+  },
+  {
+    "effect": "read",
+    "group": "agents",
+    "key": "get_agent",
+    "summary": "Read Agent metadata, its current default revision identity, and version."
+  },
+  {
+    "effect": "read",
+    "group": "agents",
+    "key": "get_agent_revision",
+    "summary": "Read an immutable revision or a bounded configuration section; historical selections remain visible."
+  },
+  {
+    "effect": "read",
+    "group": "agents",
+    "key": "get_toolset_definition",
+    "summary": "Read up to five exact definitions. Oversized values provide a versioned fragment reference."
+  },
+  {
+    "effect": "read",
+    "group": "agents",
+    "key": "list_agent_revisions",
+    "summary": "List immutable Agent revisions with compact summaries by default."
+  },
+  {
+    "effect": "read",
+    "group": "agents",
+    "key": "list_agents",
+    "summary": "Agents of the workspace. `q` matches the name or description, ignoring case; `archived` keeps only\narchived agents, or only open ones; `source=builtin` finds managed presets; the skill filters keep those\nwith a revision pinning that skill or that skill revision."
   },
   {
     "effect": "read",
     "group": "agents",
     "key": "list_toolsets",
-    "method": "GET",
-    "path": "/api/v1/toolsets",
-    "summary": "List Toolsets"
+    "summary": "Read the complete deployment toolset catalog and supported configuration schemas."
   },
   {
     "effect": "read",
     "group": "agents",
-    "key": "define_toolsets",
-    "method": "GET",
-    "path": "/api/v1/toolsets/definitions",
-    "summary": "Define Toolsets"
+    "key": "search_toolsets",
+    "summary": "Search full names and descriptions; definitions are read separately by exact name."
+  },
+  {
+    "effect": "write",
+    "group": "agents",
+    "key": "set_default_agent_revision",
+    "summary": "Revalidate and select a revision as the Agent default at the observed version."
+  },
+  {
+    "effect": "write",
+    "group": "agents",
+    "key": "unarchive_agent",
+    "summary": "Restore an archived Agent at the observed version."
+  },
+  {
+    "effect": "write",
+    "group": "agents",
+    "key": "update_agent_configuration",
+    "summary": "Publish only specified configuration changes against the version read.\n\nOmitted fields preserve the base revision, including exact Skill pins. Supplied\ncollections and structured sections replace those sections whole. Null only\nclears nullable fields. Related changes validate and publish atomically.\nThe default revision is the base unless a historical base is explicitly named.\nSupplying base_revision_id requires an explicit make_default choice; otherwise\nmake_default defaults to true."
+  },
+  {
+    "effect": "write",
+    "group": "agents",
+    "key": "update_agent_metadata",
+    "summary": "Change only supplied name, description, or labels at the observed Agent version."
   },
   {
     "effect": "read",
     "group": "agents",
-    "key": "index_toolsets",
-    "method": "GET",
-    "path": "/api/v1/toolsets/index",
-    "summary": "Index Toolsets"
-  },
-  {
-    "effect": "read",
-    "group": "models",
-    "key": "get_media_defaults",
-    "method": "GET",
-    "path": "/api/v1/media-understanding-defaults",
-    "summary": "Get Media Defaults"
-  },
-  {
-    "effect": "read",
-    "group": "models",
-    "key": "get_model_catalog",
-    "method": "GET",
-    "path": "/api/v1/model-catalog",
-    "summary": "Get Model Catalog"
-  },
-  {
-    "effect": "read",
-    "group": "models",
-    "key": "list_models",
-    "method": "GET",
-    "path": "/api/v1/models",
-    "summary": "List Models"
+    "key": "validate_agent_configuration",
+    "summary": "No content when creating a revision of the configuration would accept it, else the same `invalid_argument`\nerror with the field's path relative to `config`; nothing is stored."
   },
   {
     "effect": "write",
     "group": "models",
     "key": "create_model",
-    "method": "POST",
-    "path": "/api/v1/models",
-    "summary": "Create Model"
+    "summary": "Create a model with direct settings and complete typed advanced configuration."
+  },
+  {
+    "effect": "read",
+    "group": "models",
+    "key": "get_media_defaults",
+    "summary": "Read the deployment media-processing defaults available when authoring Agent input and output behavior."
   },
   {
     "effect": "read",
     "group": "models",
     "key": "get_model",
-    "method": "GET",
-    "path": "/api/v1/models/{key}",
-    "summary": "Get Model"
+    "summary": "Read a configured model by key, including its settings, provider and version before editing."
+  },
+  {
+    "effect": "read",
+    "group": "models",
+    "key": "get_model_catalog",
+    "summary": "Read public model metadata and prices. Filter by provider and model to avoid a large full-catalog response.\n\nBoth filters match exactly and combine with AND; omitted filters leave that dimension unrestricted.\nNo match returns empty items with the catalog status. Refreshes always fetch the full catalog when due.\nCopy the selected item's characteristics, pricing and ref into model config, pricing and catalog_ref when saving."
+  },
+  {
+    "effect": "read",
+    "group": "models",
+    "key": "list_models",
+    "summary": "List workspace model configurations with pagination; use the returned key when selecting an Agent model."
   },
   {
     "effect": "write",
     "group": "models",
     "key": "update_model",
-    "method": "PATCH",
-    "path": "/api/v1/models/{key}",
-    "summary": "Update Model"
-  },
-  {
-    "effect": "read",
-    "group": "connections",
-    "key": "list_connections",
-    "method": "GET",
-    "path": "/api/v1/connections",
-    "summary": "List Connections"
+    "summary": "Change specified model fields against the version read; preserve all omitted settings.\n\nSupplied native settings, pricing, characteristics, headers and raw-body sections\nreplace those sections whole. Provider/API validation remains authoritative."
   },
   {
     "effect": "write",
     "group": "connections",
     "key": "create_connection",
-    "method": "POST",
-    "path": "/api/v1/connections",
-    "summary": "Create Connection"
+    "summary": "Create non-secret connection settings. Complete credentials and connector setup in trusted Console configuration."
   },
   {
     "effect": "read",
     "group": "connections",
     "key": "get_connection",
-    "method": "GET",
-    "path": "/api/v1/connections/{connection_id}",
-    "summary": "Get Connection"
-  },
-  {
-    "effect": "write",
-    "group": "connections",
-    "key": "update_connection",
-    "method": "PATCH",
-    "path": "/api/v1/connections/{connection_id}",
-    "summary": "Update Connection"
-  },
-  {
-    "effect": "write",
-    "group": "connections",
-    "key": "revoke_connection",
-    "method": "POST",
-    "path": "/api/v1/connections/{connection_id}/revoke",
-    "summary": "Revoke Connection"
-  },
-  {
-    "effect": "write",
-    "group": "connections",
-    "key": "test_connection",
-    "method": "POST",
-    "path": "/api/v1/connections/{connection_id}/test",
-    "summary": "Test Connection"
+    "summary": "Read non-secret connection settings, readiness and version before editing."
   },
   {
     "effect": "read",
     "group": "connections",
-    "key": "list_connection_tools",
-    "method": "GET",
-    "path": "/api/v1/connections/{connection_id}/tools",
-    "summary": "List Connection Tools"
+    "key": "get_connection_tool_definition",
+    "summary": "Read exact tool definitions; fragments remain bound to this authorized connection and content version."
   },
   {
     "effect": "read",
     "group": "connections",
-    "key": "define_connection_tools",
-    "method": "GET",
-    "path": "/api/v1/connections/{connection_id}/tools/definitions",
-    "summary": "Define Connection Tools"
-  },
-  {
-    "effect": "read",
-    "group": "connections",
-    "key": "index_connection_tools",
-    "method": "GET",
-    "path": "/api/v1/connections/{connection_id}/tools/index",
-    "summary": "Index Connection Tools"
-  },
-  {
-    "effect": "read",
-    "group": "connections",
-    "key": "list_connector_apps",
-    "method": "GET",
-    "path": "/api/v1/connector-providers/{provider_id}/apps",
-    "summary": "List Connector Apps"
+    "key": "get_connector_action_definition",
+    "summary": "Read up to five exact definitions. Oversized values provide a versioned fragment reference."
   },
   {
     "effect": "read",
     "group": "connections",
     "key": "get_connector_app",
-    "method": "GET",
-    "path": "/api/v1/connector-providers/{provider_id}/apps/{app}",
-    "summary": "Get Connector App"
+    "summary": "Read one connector application and its required setup fields; perform confidential setup through trusted configuration."
+  },
+  {
+    "effect": "read",
+    "group": "connections",
+    "key": "list_connection_tools",
+    "summary": "Discover the configured connection's tools under its current authorization."
+  },
+  {
+    "effect": "read",
+    "group": "connections",
+    "key": "list_connections",
+    "summary": "List connection readiness without exposing connector setup or credential values."
   },
   {
     "effect": "read",
     "group": "connections",
     "key": "list_connector_actions",
-    "method": "GET",
-    "path": "/api/v1/connector-providers/{provider_id}/apps/{app}/actions",
-    "summary": "List Connector Actions"
+    "summary": "List actions available for one connector application; use exact action names when configuring a connection."
   },
   {
     "effect": "read",
     "group": "connections",
-    "key": "define_connector_actions",
-    "method": "GET",
-    "path": "/api/v1/connector-providers/{provider_id}/apps/{app}/actions/definitions",
-    "summary": "Define Connector Actions"
-  },
-  {
-    "effect": "read",
-    "group": "connections",
-    "key": "index_connector_actions",
-    "method": "GET",
-    "path": "/api/v1/connector-providers/{provider_id}/apps/{app}/actions/index",
-    "summary": "Index Connector Actions"
+    "key": "list_connector_apps",
+    "summary": "Search applications supported by a connector provider; refresh explicitly when the cached catalog is insufficient."
   },
   {
     "effect": "read",
     "group": "connections",
     "key": "list_mcp_servers",
-    "method": "GET",
-    "path": "/api/v1/mcp-servers",
-    "summary": "List Mcp Servers"
-  },
-  {
-    "effect": "read",
-    "group": "skills",
-    "key": "list_skills",
-    "method": "GET",
-    "path": "/api/v1/skills",
-    "summary": "List Skills"
+    "summary": "Search suggested Remote MCP server definitions and their setup requirements."
   },
   {
     "effect": "write",
-    "group": "skills",
-    "key": "create_skill",
-    "method": "POST",
-    "path": "/api/v1/skills",
-    "summary": "Create Skill"
+    "group": "connections",
+    "key": "revoke_connection",
+    "summary": "Revoke access using the observed connection version and report local and remote outcomes."
   },
   {
     "effect": "read",
-    "group": "skills",
-    "key": "validate_skill",
-    "method": "POST",
-    "path": "/api/v1/skills/validate",
-    "summary": "Validate Skill"
+    "group": "connections",
+    "key": "search_connection_tools",
+    "summary": "Search names and descriptions with a cursor bound to this connection's catalog snapshot."
   },
   {
     "effect": "read",
-    "group": "skills",
-    "key": "get_skill",
-    "method": "GET",
-    "path": "/api/v1/skills/{skill_id}",
-    "summary": "Get Skill"
+    "group": "connections",
+    "key": "search_connector_actions",
+    "summary": "Search full names and descriptions; definitions are read separately by exact name."
   },
   {
     "effect": "write",
-    "group": "skills",
-    "key": "update_skill",
-    "method": "PATCH",
-    "path": "/api/v1/skills/{skill_id}",
-    "summary": "Update Skill"
+    "group": "connections",
+    "key": "test_connection",
+    "summary": "Test the configured connection. External calls have effects; unknown results must be reconciled, never blindly replayed."
+  },
+  {
+    "effect": "write",
+    "group": "connections",
+    "key": "update_connection",
+    "summary": "Change only specified non-secret fields at the observed version. Endpoint/auth changes use the existing credential invalidation rules."
   },
   {
     "effect": "write",
     "group": "skills",
     "key": "archive_skill",
-    "method": "POST",
-    "path": "/api/v1/skills/{skill_id}/archive",
-    "summary": "Archive Skill"
-  },
-  {
-    "effect": "read",
-    "group": "skills",
-    "key": "list_skill_revisions",
-    "method": "GET",
-    "path": "/api/v1/skills/{skill_id}/revisions",
-    "summary": "List Skill Revisions"
+    "summary": "Archived skills keep their revisions readable and pinned; they refuse new revisions and new pins."
   },
   {
     "effect": "write",
     "group": "skills",
-    "key": "create_skill_revision",
-    "method": "POST",
-    "path": "/api/v1/skills/{skill_id}/revisions",
-    "summary": "Create Skill Revision"
+    "key": "create_skill",
+    "summary": "Import a validated GitHub or uploaded Skill package and publish its initial immutable revision atomically."
+  },
+  {
+    "effect": "read",
+    "group": "skills",
+    "key": "get_skill",
+    "summary": "Read Skill metadata, its default revision and resource version before changing metadata or source."
   },
   {
     "effect": "read",
     "group": "skills",
     "key": "get_skill_revision",
-    "method": "GET",
-    "path": "/api/v1/skills/{skill_id}/revisions/{revision_id}",
-    "summary": "Get Skill Revision"
+    "summary": "Read the source, manifest and digest of one immutable Skill revision without changing its default selection."
+  },
+  {
+    "effect": "read",
+    "group": "skills",
+    "key": "list_skill_revisions",
+    "summary": "List immutable Skill revisions with pagination; use revision IDs to preserve exact Agent pins."
+  },
+  {
+    "effect": "read",
+    "group": "skills",
+    "key": "list_skills",
+    "summary": "Skills of the workspace. `q` matches the name or description, ignoring case; `source` the kind of\nsource the default revision was read from; `archived` keeps only archived skills, or only open ones."
   },
   {
     "effect": "write",
     "group": "skills",
     "key": "set_default_skill_revision",
-    "method": "POST",
-    "path": "/api/v1/skills/{skill_id}/revisions/{revision_id}/set-default",
-    "summary": "Set Default Skill Revision"
+    "summary": "Select an existing Skill revision as default at the observed Skill version; existing Agent revision pins remain unchanged."
   },
   {
     "effect": "write",
     "group": "skills",
     "key": "unarchive_skill",
-    "method": "POST",
-    "path": "/api/v1/skills/{skill_id}/unarchive",
-    "summary": "Unarchive Skill"
+    "summary": "Restore a Skill at the observed version so it can accept new revisions and new Agent pins."
+  },
+  {
+    "effect": "write",
+    "group": "skills",
+    "key": "update_skill_metadata",
+    "summary": "Name, description and labels; an archived skill changes only by unarchiving."
+  },
+  {
+    "effect": "write",
+    "group": "skills",
+    "key": "update_skill_source",
+    "summary": "A package whose manifest equals the default revision's creates nothing and returns that revision."
   },
   {
     "effect": "read",
-    "group": "environment_templates",
-    "key": "list_environment_templates",
-    "method": "GET",
-    "path": "/api/v1/environment-templates",
-    "summary": "List Environment Templates"
+    "group": "skills",
+    "key": "validate_skill_source",
+    "summary": "The manifest the package would give a new skill or revision, checked as creation checks it; nothing is\nstored."
   },
   {
     "effect": "write",
     "group": "environment_templates",
     "key": "create_environment_template",
-    "method": "POST",
-    "path": "/api/v1/environment-templates",
-    "summary": "Create Environment Template"
+    "summary": "Create a template using the selected provider's typed recipe and explicit lifecycle policy."
   },
   {
     "effect": "read",
     "group": "environment_templates",
     "key": "get_environment_template",
-    "method": "GET",
-    "path": "/api/v1/environment-templates/{template_id}",
-    "summary": "Get Environment Template"
+    "summary": "Read a template and its provider recipe before editing; preserve its version for conditional changes."
+  },
+  {
+    "effect": "read",
+    "group": "environment_templates",
+    "key": "list_environment_templates",
+    "summary": "List reusable environment templates and their current versions; filter by labels before selecting one."
   },
   {
     "effect": "write",
     "group": "environment_templates",
     "key": "update_environment_template",
-    "method": "PATCH",
-    "path": "/api/v1/environment-templates/{template_id}",
-    "summary": "Update Environment Template"
-  },
-  {
-    "effect": "read",
-    "group": "providers",
-    "key": "list_browser_providers",
-    "method": "GET",
-    "path": "/api/v1/browser-providers",
-    "summary": "List browser providers"
-  },
-  {
-    "effect": "read",
-    "group": "providers",
-    "key": "get_browser_provider",
-    "method": "GET",
-    "path": "/api/v1/browser-providers/{provider_id}",
-    "summary": "Get browser provider"
-  },
-  {
-    "effect": "write",
-    "group": "providers",
-    "key": "test_browser_provider",
-    "method": "POST",
-    "path": "/api/v1/browser-providers/{provider_id}/test",
-    "summary": "Test browser provider"
-  },
-  {
-    "effect": "read",
-    "group": "providers",
-    "key": "list_connector_providers",
-    "method": "GET",
-    "path": "/api/v1/connector-providers",
-    "summary": "List connector providers"
-  },
-  {
-    "effect": "read",
-    "group": "providers",
-    "key": "get_connector_provider",
-    "method": "GET",
-    "path": "/api/v1/connector-providers/{provider_id}",
-    "summary": "Get connector provider"
-  },
-  {
-    "effect": "write",
-    "group": "providers",
-    "key": "test_connector_provider",
-    "method": "POST",
-    "path": "/api/v1/connector-providers/{provider_id}/test",
-    "summary": "Test connector provider"
-  },
-  {
-    "effect": "read",
-    "group": "providers",
-    "key": "list_environment_providers",
-    "method": "GET",
-    "path": "/api/v1/environment-providers",
-    "summary": "List environment providers"
-  },
-  {
-    "effect": "read",
-    "group": "providers",
-    "key": "get_environment_provider",
-    "method": "GET",
-    "path": "/api/v1/environment-providers/{provider_id}",
-    "summary": "Get environment provider"
-  },
-  {
-    "effect": "write",
-    "group": "providers",
-    "key": "test_environment_provider",
-    "method": "POST",
-    "path": "/api/v1/environment-providers/{provider_id}/test",
-    "summary": "Test environment provider"
-  },
-  {
-    "effect": "read",
-    "group": "providers",
-    "key": "list_model_providers",
-    "method": "GET",
-    "path": "/api/v1/model-providers",
-    "summary": "List model providers"
-  },
-  {
-    "effect": "read",
-    "group": "providers",
-    "key": "get_model_provider",
-    "method": "GET",
-    "path": "/api/v1/model-providers/{provider_id}",
-    "summary": "Get model provider"
+    "summary": "Change only named template fields; preserve every omitted lifecycle value and recipe.\n\nRecipe replacement is typed and complete. Changing provider requires its new\nrecipe; no incompatible old recipe is implicitly carried across providers."
   },
   {
     "effect": "read",
     "group": "providers",
     "key": "discover_model_provider_models",
-    "method": "GET",
-    "path": "/api/v1/model-providers/{provider_id}/models",
-    "summary": "Discover Model Provider Models"
-  },
-  {
-    "effect": "write",
-    "group": "providers",
-    "key": "test_model_provider",
-    "method": "POST",
-    "path": "/api/v1/model-providers/{provider_id}/test",
-    "summary": "Test model provider"
+    "summary": "Discover upstream model identifiers through an authorized configured provider."
   },
   {
     "effect": "read",
     "group": "providers",
-    "key": "list_web_providers",
-    "method": "GET",
-    "path": "/api/v1/web-providers",
-    "summary": "List web providers"
+    "key": "get_browser_provider",
+    "summary": "Read browser provider configuration and readiness; credentials are never returned."
+  },
+  {
+    "effect": "read",
+    "group": "providers",
+    "key": "get_connector_provider",
+    "summary": "Read connector provider configuration and readiness; credentials are never returned."
+  },
+  {
+    "effect": "read",
+    "group": "providers",
+    "key": "get_environment_provider",
+    "summary": "Read environment provider configuration and readiness; credentials are never returned."
+  },
+  {
+    "effect": "read",
+    "group": "providers",
+    "key": "get_model_provider",
+    "summary": "Read model provider configuration and readiness; credentials are never returned."
   },
   {
     "effect": "read",
     "group": "providers",
     "key": "get_web_provider",
-    "method": "GET",
-    "path": "/api/v1/web-providers/{provider_id}",
-    "summary": "Get web provider"
+    "summary": "Read web provider configuration and readiness; credentials are never returned."
+  },
+  {
+    "effect": "read",
+    "group": "providers",
+    "key": "list_browser_providers",
+    "summary": "List configured browser providers and their credential readiness, without secret values."
+  },
+  {
+    "effect": "read",
+    "group": "providers",
+    "key": "list_connector_providers",
+    "summary": "List configured connector providers and their credential readiness, without secret values."
+  },
+  {
+    "effect": "read",
+    "group": "providers",
+    "key": "list_environment_providers",
+    "summary": "List configured environment providers and their credential readiness, without secret values."
+  },
+  {
+    "effect": "read",
+    "group": "providers",
+    "key": "list_model_providers",
+    "summary": "List configured model providers and their credential readiness, without secret values."
+  },
+  {
+    "effect": "read",
+    "group": "providers",
+    "key": "list_web_providers",
+    "summary": "List configured web providers and their credential readiness, without secret values."
+  },
+  {
+    "effect": "write",
+    "group": "providers",
+    "key": "test_browser_provider",
+    "summary": "Test browser provider connectivity. This may make an external call and requires write approval."
+  },
+  {
+    "effect": "write",
+    "group": "providers",
+    "key": "test_connector_provider",
+    "summary": "Test connector provider connectivity. This may make an external call and requires write approval."
+  },
+  {
+    "effect": "write",
+    "group": "providers",
+    "key": "test_environment_provider",
+    "summary": "Test environment provider connectivity. This may make an external call and requires write approval."
+  },
+  {
+    "effect": "write",
+    "group": "providers",
+    "key": "test_model_provider",
+    "summary": "Test model provider connectivity. This may make an external call and requires write approval."
   },
   {
     "effect": "write",
     "group": "providers",
     "key": "test_web_provider",
-    "method": "POST",
-    "path": "/api/v1/web-providers/{provider_id}/test",
-    "summary": "Test web provider"
-  },
-  {
-    "effect": "read",
-    "group": "execution",
-    "key": "list_finding_analyses",
-    "method": "GET",
-    "path": "/api/v1/finding-analyses",
-    "summary": "List Finding Analyses"
-  },
-  {
-    "effect": "read",
-    "group": "execution",
-    "key": "list_findings",
-    "method": "GET",
-    "path": "/api/v1/findings",
-    "summary": "List Findings"
+    "summary": "Test web provider connectivity. This may make an external call and requires write approval."
   },
   {
     "effect": "write",
     "group": "execution",
     "key": "create_finding",
-    "method": "POST",
-    "path": "/api/v1/findings",
-    "summary": "Create Finding"
+    "summary": "Record an unconfirmed finding with evidence and a suggestion; a stable source_key makes a retry safe.\nA Run's own submission names that Run as its source; an analysis cites only selected traces it has read."
   },
   {
     "effect": "read",
     "group": "execution",
     "key": "get_finding",
-    "method": "GET",
-    "path": "/api/v1/findings/{finding_id}",
-    "summary": "Get Finding"
-  },
-  {
-    "effect": "read",
-    "group": "execution",
-    "key": "list_runs",
-    "method": "GET",
-    "path": "/api/v1/runs",
-    "summary": "List Runs"
-  },
-  {
-    "effect": "read",
-    "group": "execution",
-    "key": "get_run",
-    "method": "GET",
-    "path": "/api/v1/runs/{run_id}",
-    "summary": "Get Run"
-  },
-  {
-    "effect": "read",
-    "group": "execution",
-    "key": "get_run_agent",
-    "method": "GET",
-    "path": "/api/v1/runs/{run_id}/agent",
-    "summary": "Get Run Agent"
-  },
-  {
-    "effect": "read",
-    "group": "execution",
-    "key": "list_run_attempts",
-    "method": "GET",
-    "path": "/api/v1/runs/{run_id}/attempts",
-    "summary": "List Run Attempts"
-  },
-  {
-    "effect": "read",
-    "group": "execution",
-    "key": "get_run_attempt",
-    "method": "GET",
-    "path": "/api/v1/runs/{run_id}/attempts/{attempt_id}",
-    "summary": "Get Run Attempt"
-  },
-  {
-    "effect": "read",
-    "group": "execution",
-    "key": "list_attempt_spans",
-    "method": "GET",
-    "path": "/api/v1/runs/{run_id}/attempts/{attempt_id}/trace",
-    "summary": "List Attempt Spans"
-  },
-  {
-    "effect": "read",
-    "group": "execution",
-    "key": "get_run_content",
-    "method": "GET",
-    "path": "/api/v1/runs/{run_id}/contents/{content_id}",
-    "summary": "Get Run Content"
-  },
-  {
-    "effect": "read",
-    "group": "execution",
-    "key": "list_run_items",
-    "method": "GET",
-    "path": "/api/v1/runs/{run_id}/items",
-    "summary": "List Run Items"
-  },
-  {
-    "effect": "read",
-    "group": "execution",
-    "key": "read_run_item_content",
-    "method": "GET",
-    "path": "/api/v1/runs/{run_id}/items/{item_id}/content",
-    "summary": "Read Run Item Content"
-  },
-  {
-    "effect": "read",
-    "group": "execution",
-    "key": "get_run_lineage",
-    "method": "GET",
-    "path": "/api/v1/runs/{run_id}/lineage",
-    "summary": "Get Run Lineage"
-  },
-  {
-    "effect": "read",
-    "group": "execution",
-    "key": "list_sessions",
-    "method": "GET",
-    "path": "/api/v1/sessions",
-    "summary": "List Sessions"
-  },
-  {
-    "effect": "read",
-    "group": "execution",
-    "key": "get_session",
-    "method": "GET",
-    "path": "/api/v1/sessions/{session_id}",
-    "summary": "Get Session"
-  },
-  {
-    "effect": "read",
-    "group": "execution",
-    "key": "get_message_authors",
-    "method": "GET",
-    "path": "/api/v1/sessions/{session_id}/message-authors",
-    "summary": "Get Message Authors"
-  },
-  {
-    "effect": "read",
-    "group": "execution",
-    "key": "list_session_threads",
-    "method": "GET",
-    "path": "/api/v1/sessions/{session_id}/threads",
-    "summary": "List Session Threads"
-  },
-  {
-    "effect": "read",
-    "group": "execution",
-    "key": "list_threads",
-    "method": "GET",
-    "path": "/api/v1/threads",
-    "summary": "List Threads"
-  },
-  {
-    "effect": "read",
-    "group": "execution",
-    "key": "get_thread",
-    "method": "GET",
-    "path": "/api/v1/threads/{thread_id}",
-    "summary": "Get Thread"
-  },
-  {
-    "effect": "read",
-    "group": "execution",
-    "key": "list_inbox",
-    "method": "GET",
-    "path": "/api/v1/threads/{thread_id}/inbox",
-    "summary": "List Inbox"
+    "summary": "Read one recorded finding, including its evidence, suggestion and assessment."
   },
   {
     "effect": "read",
     "group": "execution",
     "key": "get_inbox_entry",
-    "method": "GET",
-    "path": "/api/v1/threads/{thread_id}/inbox/{entry_id}",
-    "summary": "Get Inbox Entry"
+    "summary": "Read an inbox entry's disposition and references to its payload, options and failure."
   },
   {
     "effect": "read",
     "group": "execution",
-    "key": "list_thread_runs",
-    "method": "GET",
-    "path": "/api/v1/threads/{thread_id}/runs",
-    "summary": "List Thread Runs"
+    "key": "get_message_authors",
+    "summary": "Get message senders' current display names, emails, account kinds, status and avatar URLs.\n\nSupply the session ID and 1 to 100 entry IDs from the thread inbox. Requires workspace read permission;\nonly message entries in that session are returned. This is not an arbitrary user or member-directory lookup.\nUse returned names to identify senders in answers; retain IDs when needed for precise references."
   },
   {
     "effect": "read",
     "group": "execution",
-    "key": "list_tool_executions",
-    "method": "GET",
-    "path": "/api/v1/threads/{thread_id}/tool-executions",
-    "summary": "List Tool Executions"
+    "key": "get_run",
+    "summary": "Read Run status and previews with version-bound references for its complete sections."
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "get_run_attempt",
+    "summary": "Read one attempt belonging to the selected run; use list_attempt_spans for its observations."
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "get_run_configuration",
+    "summary": "Read the frozen original/effective configuration and override references. These are immutable execution facts, not editable Agent configuration."
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "get_run_lineage",
+    "summary": "The run and its ancestors, nearest first, across fork origins."
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "get_session",
+    "summary": "Read one session and its navigation metadata in the current workspace."
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "get_thread",
+    "summary": "Read one thread and its current execution and lineage metadata."
   },
   {
     "effect": "read",
     "group": "execution",
     "key": "get_tool_execution",
-    "method": "GET",
-    "path": "/api/v1/threads/{thread_id}/tool-executions/{execution_id}",
-    "summary": "Get Tool Execution"
+    "summary": "Inspect a durable tool execution and its current status; use get_tool_execution_result for retained output."
   },
   {
     "effect": "read",
     "group": "execution",
     "key": "get_tool_execution_result",
-    "method": "GET",
-    "path": "/api/v1/threads/{thread_id}/tool-executions/{execution_id}/result",
-    "summary": "Get Tool Execution Result"
-  },
-  {
-    "effect": "read",
-    "group": "execution",
-    "key": "get_trace_backend",
-    "method": "GET",
-    "path": "/api/v1/trace-backend",
-    "summary": "Get Trace Backend"
-  },
-  {
-    "effect": "read",
-    "group": "execution",
-    "key": "list_traces",
-    "method": "GET",
-    "path": "/api/v1/traces",
-    "summary": "List Traces"
-  },
-  {
-    "effect": "read",
-    "group": "execution",
-    "key": "search_traces",
-    "method": "GET",
-    "path": "/api/v1/traces/search",
-    "summary": "Search Traces"
+    "summary": "Read the retained result with a version-bound handle for continuation and literal search."
   },
   {
     "effect": "read",
     "group": "execution",
     "key": "get_trace",
-    "method": "GET",
-    "path": "/api/v1/traces/{trace_id}",
-    "summary": "Get Trace"
+    "summary": "Read a redacted observation summary and version-bound content references."
   },
   {
     "effect": "read",
     "group": "execution",
-    "key": "list_trace_spans",
-    "method": "GET",
-    "path": "/api/v1/traces/{trace_id}/spans",
-    "summary": "List Trace Spans"
+    "key": "get_trace_backend",
+    "summary": "The backend trace queries read, and how far back they find a trace."
   },
   {
     "effect": "read",
     "group": "execution",
     "key": "get_trace_span",
-    "method": "GET",
-    "path": "/api/v1/traces/{trace_id}/spans/{span_id}",
-    "summary": "Get Trace Span"
+    "summary": "Read a redacted observation summary and version-bound content references."
   },
   {
     "effect": "read",
     "group": "execution",
-    "key": "read_span_content",
-    "method": "GET",
-    "path": "/api/v1/traces/{trace_id}/spans/{span_id}/content",
-    "summary": "Read Span Content"
+    "key": "list_attempt_spans",
+    "summary": "The attempt's spans, including its inline child runs."
   },
   {
     "effect": "read",
-    "group": "schedules",
-    "key": "list_schedules",
-    "method": "GET",
-    "path": "/api/v1/schedules",
-    "summary": "List Schedules"
-  },
-  {
-    "effect": "write",
-    "group": "schedules",
-    "key": "create_schedule",
-    "method": "POST",
-    "path": "/api/v1/schedules",
-    "summary": "Create Schedule"
+    "group": "execution",
+    "key": "list_finding_analyses",
+    "summary": "List recent finding-analysis runs and their selected trace scope; continue with the returned cursor."
   },
   {
     "effect": "read",
-    "group": "schedules",
-    "key": "preview_schedule",
-    "method": "POST",
-    "path": "/api/v1/schedules/preview",
-    "summary": "Preview Schedule"
+    "group": "execution",
+    "key": "list_findings",
+    "summary": "Find recorded findings by agent, category, severity, assessment or closed state; continue with the returned cursor."
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "list_inbox",
+    "summary": "List compact inbox entries in inbox order, filtered by status or kind.\n\nUse get_inbox_entry for payload references and retain the returned cursor for the next page."
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "list_run_attempts",
+    "summary": "List execution attempts for a run, including their status and worker ownership metadata."
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "list_run_items",
+    "summary": "Discover compact item summaries and lazy content references in a bounded ordinal window.\n\nRead or search a returned reference to bind its current content version, then use the returned continuation.\nContinue next_before/next_after with the same filters even for empty filtered windows."
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "list_runs",
+    "summary": "Find runs by agent, thread, status and time filters; continue with the returned cursor."
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "list_session_threads",
+    "summary": "Lightweight Session navigation, oldest first, with stable per-origin positions and parent references."
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "list_sessions",
+    "summary": "List accessible sessions with the supplied filters and cursor; use get_session for a selected session."
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "list_thread_runs",
+    "summary": "Page chronological history from an anchor, or rank all Thread runs by a recorded metric."
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "list_threads",
+    "summary": "Find threads by session, schedule occurrence, origin, text or labels; continue with the returned cursor."
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "list_tool_executions",
+    "summary": "List durable tool executions in a thread, optionally restricted to one run or active state."
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "list_trace_spans",
+    "summary": "List compact spans within a selected trace, optionally filtered by status, kind or tool name.\n\nContinue with the returned cursor; use get_trace_span for content references to a selected span."
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "list_traces",
+    "summary": "Trace root spans, one per attempt. A cursor keeps the window of the first page."
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "read_content",
+    "summary": "Read bounded content from a parent result or continue it without reconstructing source paths or offsets.\n\nItem discovery references bind their content version on the first read. Returned references and continuations\nretain that version; content changes then fail explicitly. Current source access is checked on every call."
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "search_content",
+    "summary": "Find the next literal match in bounded content, starting at the reference's position.\n\nItem discovery references bind their version on this first read. Reuse the returned reference or continuation\nto keep that version; changed content fails explicitly. Current source access is checked on every call."
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "search_traces",
+    "summary": "Rank and filter the entire root-start window before paging. Costs sum reported span costs, not billing.\n\nProviders execute each query without a result cache; pages may reflect updates between requests.\nKeyset cursors bind the ordering, filters and last sort value with trace/span IDs.\nIncomplete queries fail without a partial rank."
   },
   {
     "effect": "write",
     "group": "schedules",
     "key": "archive_schedule",
-    "method": "DELETE",
-    "path": "/api/v1/schedules/{schedule_id}",
-    "summary": "Archive Schedule"
-  },
-  {
-    "effect": "read",
-    "group": "schedules",
-    "key": "get_schedule",
-    "method": "GET",
-    "path": "/api/v1/schedules/{schedule_id}",
-    "summary": "Get Schedule"
+    "summary": "Archive a schedule at its observed version and return its actual lifecycle state."
   },
   {
     "effect": "write",
     "group": "schedules",
-    "key": "update_schedule",
-    "method": "PATCH",
-    "path": "/api/v1/schedules/{schedule_id}",
-    "summary": "Update Schedule"
+    "key": "create_schedule",
+    "summary": "Schedule a task. State enabled delegates future execution as the creator; default paused only saves it.\n\nThe service builds and validates the invocation. Reuse an idempotency key only for identical intent."
   },
   {
     "effect": "write",
     "group": "schedules",
     "key": "dispatch_schedule",
-    "method": "POST",
-    "path": "/api/v1/schedules/{schedule_id}/dispatch",
-    "summary": "Dispatch Schedule"
+    "summary": "Accept one manual occurrence, preserving immutable task snapshot and durable replay semantics."
   },
   {
     "effect": "write",
     "group": "schedules",
     "key": "enable_schedule",
-    "method": "POST",
-    "path": "/api/v1/schedules/{schedule_id}/enable",
-    "summary": "Enable Schedule"
+    "summary": "Enable future execution of the saved task as its creator."
   },
   {
     "effect": "read",
     "group": "schedules",
-    "key": "list_schedule_occurrences",
-    "method": "GET",
-    "path": "/api/v1/schedules/{schedule_id}/occurrences",
-    "summary": "List Schedule Occurrences"
+    "key": "get_schedule",
+    "summary": "Read a schedule and its version before changing its task or lifecycle."
   },
   {
     "effect": "read",
     "group": "schedules",
     "key": "get_schedule_occurrence",
-    "method": "GET",
-    "path": "/api/v1/schedules/{schedule_id}/occurrences/{occurrence_id}",
-    "summary": "Get Schedule Occurrence"
-  },
-  {
-    "effect": "write",
-    "group": "schedules",
-    "key": "pause_schedule",
-    "method": "POST",
-    "path": "/api/v1/schedules/{schedule_id}/pause",
-    "summary": "Pause Schedule"
+    "summary": "Read one immutable occurrence snapshot with optional current execution observations."
   },
   {
     "effect": "read",
     "group": "schedules",
     "key": "get_schedule_status",
-    "method": "GET",
-    "path": "/api/v1/schedules/{schedule_id}/status",
-    "summary": "Get Schedule Status"
+    "summary": "Observe next fire, pending work and unfinished occurrences."
+  },
+  {
+    "effect": "read",
+    "group": "schedules",
+    "key": "list_schedule_occurrences",
+    "summary": "Read occurrence history with status, trigger, time, unfinished and execution-observation filters."
+  },
+  {
+    "effect": "read",
+    "group": "schedules",
+    "key": "list_schedules",
+    "summary": "List schedules using state, executor, creator, label and text filters."
+  },
+  {
+    "effect": "write",
+    "group": "schedules",
+    "key": "pause_schedule",
+    "summary": "Pause future scheduled execution without rewriting accepted occurrence snapshots."
+  },
+  {
+    "effect": "read",
+    "group": "schedules",
+    "key": "preview_schedule",
+    "summary": "Preview future firing times without creating or changing a task."
+  },
+  {
+    "effect": "write",
+    "group": "schedules",
+    "key": "update_schedule",
+    "summary": "Change only specified task fields at the observed version. Omitted invocation and execution choices survive."
   }
 ]

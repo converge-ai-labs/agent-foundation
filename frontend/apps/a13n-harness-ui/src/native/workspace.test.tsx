@@ -247,6 +247,7 @@ function setup(
         >
           Open peer repository
         </button>
+        <button onClick={() => navigate("/new")}>New chat</button>
         <button onClick={() => navigate("/threads/other")}>Another chat</button>
         <button onClick={() => navigate("/threads/current")}>
           Current chat
@@ -1764,4 +1765,85 @@ it("the sidebar toggle maximizes Chat and restores the selected resource beside 
     screen.getByRole("separator", { name: "Resize supporting panel" }),
   ).toBeTruthy();
   expect(screen.getByText("Editor /native/first.txt")).toBe(editor);
+});
+
+it("remembers each chat's supporting-panel choice across navigation and remounts", async () => {
+  setup("/threads/current");
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Close supporting panel" }),
+  );
+  expect(localStorage.getItem("a13n-harness-ui.native-panel.current")).toBe(
+    "closed",
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Another chat" }));
+  expect(
+    await screen.findByRole("button", { name: "Close supporting panel" }),
+  ).toBeTruthy();
+  // Give the other chat an explicit open choice, then return to the closed one.
+  restoreSideBySide();
+  fireEvent.click(screen.getByRole("button", { name: "Current chat" }));
+  expect(
+    await screen.findByRole("button", { name: "Open supporting panel" }),
+  ).toBeTruthy();
+  expect(localStorage.getItem("a13n-harness-ui.native-panel.other")).toBe(
+    "open",
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Open peer resource" }));
+  fireEvent.click(screen.getByRole("button", { name: "Current chat" }));
+  expect(
+    await screen.findByRole("button", { name: "Open supporting panel" }),
+  ).toBeTruthy();
+
+  cleanup();
+  setup("/threads/other");
+  expect(
+    await screen.findByRole("button", { name: "Close supporting panel" }),
+  ).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Current chat" }));
+  expect(
+    await screen.findByRole("button", { name: "Open supporting panel" }),
+  ).toBeTruthy();
+});
+
+it("keeps New chat's choice separate and uses the old global preference only as a default", async () => {
+  localStorage.setItem("a13n-harness-ui.native-panel", "closed");
+  setup("/new");
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Open supporting panel" }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Current chat" }));
+  expect(
+    await screen.findByRole("button", { name: "Open supporting panel" }),
+  ).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "New chat" }));
+  expect(
+    await screen.findByRole("button", { name: "Close supporting panel" }),
+  ).toBeTruthy();
+  expect(localStorage.getItem("a13n-harness-ui.native-panel")).toBe("closed");
+  expect(localStorage.getItem("a13n-harness-ui.native-panel.new")).toBe("open");
+  expect(
+    localStorage.getItem("a13n-harness-ui.native-panel.current"),
+  ).toBeNull();
+});
+
+it("explicit native links reopen only their destination chat's saved closed panel", async () => {
+  localStorage.setItem("a13n-harness-ui.native-panel.current", "closed");
+  localStorage.setItem("a13n-harness-ui.native-panel.other", "closed");
+  setup("/threads/other");
+  await screen.findByRole("button", { name: "Open supporting panel" });
+  fireEvent.click(screen.getByRole("button", { name: "Open peer repository" }));
+  await screen.findByText("Repository /other-repository · Diff");
+  expect(
+    screen.getByRole("button", { name: "Close supporting panel" }),
+  ).toBeTruthy();
+  expect(localStorage.getItem("a13n-harness-ui.native-panel.current")).toBe(
+    "open",
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Another chat" }));
+  expect(
+    await screen.findByRole("button", { name: "Open supporting panel" }),
+  ).toBeTruthy();
+  expect(localStorage.getItem("a13n-harness-ui.native-panel.other")).toBe(
+    "closed",
+  );
 });

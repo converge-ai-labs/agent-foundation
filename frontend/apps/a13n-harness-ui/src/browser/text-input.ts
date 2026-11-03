@@ -1,4 +1,5 @@
 import type RFB from "@novnc/novnc";
+import { i18n } from "../i18n";
 import styles from "./panel.module.css";
 
 /** Give the local IME an editable target while noVNC handles physical keys. */
@@ -15,7 +16,10 @@ export function bindTextInput({
 }) {
   const input = document.createElement("textarea");
   input.className = styles.textInput;
-  input.setAttribute("aria-label", "Remote browser keyboard input");
+  const updateLabel = () =>
+    input.setAttribute("aria-label", i18n.t("Remote browser keyboard input"));
+  updateLabel();
+  i18n.on("languageChanged", updateLabel);
   input.autocomplete = "off";
   input.autocapitalize = "off";
   input.spellcheck = false;
@@ -85,6 +89,7 @@ export function bindTextInput({
   return {
     focus,
     stop: () => {
+      i18n.off("languageChanged", updateLabel);
       root.removeEventListener("keydown", key, true);
       root.removeEventListener("keyup", key, true);
       root.removeEventListener("pointerdown", pointer);

@@ -26,7 +26,14 @@ from a13n_service.infra.http import require_match
 from a13n_service.infra.ids import KEY_MAX_LENGTH, new_object_id
 from a13n_service.providers.model_settings import check_request_headers, effective_settings
 from a13n_service.providers.registry import Registry
-from a13n_service.resources.models.schemas import Model, ModelConfig, ModelCreate, ModelPage, ModelUpdate
+from a13n_service.resources.models.schemas import (
+    Model,
+    ModelConfig,
+    ModelConfigurationChanges,
+    ModelCreate,
+    ModelPage,
+    ModelUpdate,
+)
 from a13n_service.resources.models.tables import ModelRow
 from a13n_service.resources.providers.service import ResolvedProvider, resolve_provider
 from a13n_service.resources.providers.tables import ModelProviderRow
@@ -173,11 +180,15 @@ async def update_model(
     *,
     if_match: str | None,
     registry: Registry,
+    config_changes: ModelConfigurationChanges | None = None,
 ) -> Model:
     async with transaction(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "read")
         row = await _find(session, actor, scope, key, "write", lock=True)
         require_match(if_match, row.key, row.version)
+        if config_changes is not None:
+            merged = {**row.config, **config_changes.model_dump(exclude_unset=True, mode="json")}
+            body = body.model_copy(update={"config": ModelConfig.model_validate(merged)})
         values = given(body, "name", "description", "enabled")
         if body.config is not None and (config := body.config.model_dump(mode="json")) != row.config:
             # The model spends its provider's credential.

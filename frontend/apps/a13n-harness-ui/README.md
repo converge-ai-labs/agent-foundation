@@ -1,6 +1,6 @@
 # Harness UI WebUI
 
-This private English-only React application provides collaborative chats, execution/decision controls, instance authentication, guided setup, provider-account/key management, configuration resource editing and Project readiness. It uses the public `a13n-ui` design system, with local light/dark preferences and per-tab display profiles. Console localization is unchanged.
+This private React application provides collaborative chats, execution/decision controls, instance authentication, guided setup, provider-account/key management, configuration resource editing and Project readiness. It uses the public `a13n-ui` design system, with local light/dark preferences and per-tab display profiles. Console localization is unchanged.
 
 [Harness WebUI design](../../../spec/a13n-harness-ui/webui/06-design-guidelines.md) owns presentation; [workbench interaction](../../../spec/a13n-harness-ui/webui/04-workbench-interaction.md) owns behavior and recovery.
 
@@ -74,3 +74,22 @@ pnpm --dir frontend --filter a13n-harness-ui-webui run generate:check
 Generation uses the locked Python environment without opening an App. The drift check compares temporary outputs without modifying committed files. Runtime channel decoders remain separate from generated compile-time declarations.
 
 See [browser-server operation](../../../docs/a13n-harness-ui/webui.md) and [HTTP integration](../../../docs/a13n-harness-ui/http-api.md) for backend behavior and lifecycle boundaries.
+
+## Display language
+
+Login, connection startup, guided setup, its model editor and provider-account connection controls, and setup/readiness support English and Simplified Chinese. The Agent & Model panel also localizes Agent/Model selection, search, Thinking, Speed and Reasoning mode, including known control descriptions, default summaries and unavailable-selection guidance. Workbench navigation, Project and Recent chat lists, Drafts, chat search, and Archived chat lists and deletion confirmation also support both languages, including their menus, status labels, counts and accessible text. Destination workflows such as Project configuration, sharing and collaboration settings remain separate localization work under [#1248](https://github.com/converge-ai-labs/agent-foundation/issues/1248).
+
+Choose **System**, **English**, or **简体中文** during login/setup or in General settings. The preference belongs to this viewer's browser, independently of Console. System scans browser languages in order: `en` variants select English, `zh` variants select Simplified Chinese, and no supported match selects English. Automatic resolution never saves a manual language choice. If browser storage is unavailable, a manual choice lasts for the current page session.
+
+Switching updates text and document language without remounting the application or replaying requests. Navigation retains the selected chat, Project and worker expansion, loaded history, search input and Project filter, keyboard ordering and sidebar width. Authored chat titles and excerpts remain verbatim, including titles that match interface messages; only an absent title/excerpt uses the translated fallback. The existing MCP Apps Host-context observer forwards locale changes without remounting Apps or replaying tool results. Model/user content, source, credentials, provider diagnostics, identifiers and paths retain their original values.
+
+Messages live in application-owned `src/i18n/locales/{en,zh-CN}.json`. Use `useTranslation` from `src/i18n`, whole messages with interpolation, i18next number formatting, and each language's plural categories. Shared `a13n-ui` components receive translated strings from their callers. English fallback remains available at runtime; keep both catalogs complete for every localized message. `conversations/model-control-messages.ts` translates only known application-owned control descriptors and exact budget/effort summary formats. Keep its allowlist aligned with the backend descriptor producers; unknown diagnostics, custom labels, resource names, IDs and routes remain verbatim. Selection values and capability decisions remain backend-owned.
+
+Run the focused catalog, preference and language-control checks from the repository root:
+
+```bash
+pnpm --dir frontend --filter a13n-harness-ui-webui test src/i18n src/conversations/composer-settings.test.tsx src/conversations/model-control-messages.test.ts
+pnpm --dir frontend --filter a13n-harness-ui-webui test src/conversations/navigation.test.tsx src/conversations/archived.test.tsx src/shell/sidebar.test.tsx
+```
+
+These tests also run in the existing Harness UI frontend CI suite. Catalog checks cover missing/empty values, interpolation and locale-required plurals, with invalid fixtures. Literal translation calls in localized workflows, dynamic login-state labels and model-control descriptors have focused coverage. Navigation tests also cover runtime switching during search, keyboard ordering, worker expansion, sidebar resizing and archive restoration. Agent/Model interaction checks preserve the open panel page, search input and selection, editor/undo identities, draft parameters and unresolved submission state while switching languages on desktop and mobile. Explicit false and inherited null remain distinct; changing display language neither applies selections nor replays requests. Application-wide untranslated-source detection and the remaining conversation/configuration/native-panel workflows remain follow-up work under #1248.

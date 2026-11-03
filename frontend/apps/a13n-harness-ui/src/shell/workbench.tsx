@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { UsagePage } from "../usage/page";
 import { ShareButton } from "../sharing";
 import { ModelsPage } from "../configuration/models";
@@ -128,6 +129,7 @@ function WorkbenchContent({
   forget: () => void;
   unauthorized: () => void;
 }) {
+  const { t } = useTranslation();
   const results = useResults();
   const debug = useDebug();
   const setup = useSetup();
@@ -212,7 +214,7 @@ function WorkbenchContent({
   const updateProfile = (next: Profile) => setProfile(next);
   const links = [
     ...(voiceSettings.data?.enabled
-      ? [{ to: "/live", label: "Live", icon: Waveform }]
+      ? [{ to: "/live", label: t("Live"), icon: Waveform }]
       : []),
   ];
   const navigation = (
@@ -232,7 +234,7 @@ function WorkbenchContent({
         )}
         {links.length > 0 && (
           <nav
-            aria-label="Workbench shortcuts"
+            aria-label={t("Workbench shortcuts")}
             className={styles.supportingNav}
           >
             {links.map(({ to, label, icon: Icon }) => (
@@ -256,7 +258,7 @@ function WorkbenchContent({
         <Menu>
           <MenuTrigger
             className={styles.workspaceMenu}
-            aria-label="Workspace menu"
+            aria-label={t("Workspace menu")}
           >
             <span
               className={styles.profileAvatar}
@@ -267,40 +269,42 @@ function WorkbenchContent({
             </span>
             <span className={styles.workspacePerson}>
               <strong>{profile.display_name}</strong>
-              <small>{disconnected ? "Reconnecting…" : "Your workspace"}</small>
+              <small>
+                {disconnected ? t("Reconnecting…") : t("Your workspace")}
+              </small>
             </span>
             <CaretUpDown size={16} aria-hidden="true" />
           </MenuTrigger>
           <MenuPopup side="top" align="start" className={styles.workspacePopup}>
             <MenuItem render={<Link to="/settings" />}>
               <Gear />
-              Settings
+              {t("Settings")}
             </MenuItem>
             {memoryEnabled && (
               <MenuItem render={<Link to="/memory" />}>
                 <Brain />
-                Memory
+                {t("Memory")}
               </MenuItem>
             )}
             <MenuSeparator />
             <MenuItem onClick={openPeople}>
               <Users />
-              People & profile
+              {t("People & profile")}
             </MenuItem>
             <MenuItem render={<Link to="/usage" />}>
               <ChartBar />
-              Usage
+              {t("Usage")}
             </MenuItem>
             <MenuItem render={<Link to="/archived" />}>
               <Archive />
-              Archived chats
+              {t("Archived chats")}
             </MenuItem>
             <MenuSeparator />
             <MenuItem
               onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
             >
               {theme === "dark" ? <Sun /> : <Moon />}
-              {theme === "dark" ? "Light appearance" : "Dark appearance"}
+              {theme === "dark" ? t("Light appearance") : t("Dark appearance")}
             </MenuItem>
             <MenuCheckboxItem
               checked={debug.enabled}
@@ -309,13 +313,13 @@ function WorkbenchContent({
             >
               <span className={styles.debugMenuLabel}>
                 <Bug />
-                Debug mode
+                {t("Debug mode")}
               </span>
             </MenuCheckboxItem>
             <MenuSeparator />
             <MenuItem onClick={forget}>
               <SignOut />
-              Log out
+              {t("Log out")}
             </MenuItem>
             <span className={styles.version}>
               Harness UI · {status.version}
@@ -334,11 +338,15 @@ function WorkbenchContent({
         focus={live.focus}
       />
       <a className={styles.skipLink} href="#main-content">
-        Skip to content
+        {t("Skip to content")}
       </a>
       <WorkbenchSidebar collapsed={sidebarCollapsed}>
         <header className={styles.sidebarHeader}>
-          <Link to="/" className={styles.brand} aria-label="Harness UI home">
+          <Link
+            to="/"
+            className={styles.brand}
+            aria-label={t("Harness UI home")}
+          >
             <Logo alt="" width={20} height={20} />
             <span>Harness</span>
           </Link>
@@ -347,8 +355,8 @@ function WorkbenchContent({
               ref={collapseButton}
               variant="ghost"
               size="icon-sm"
-              aria-label="Collapse navigation"
-              title="Collapse navigation"
+              aria-label={t("Collapse navigation")}
+              title={t("Collapse navigation")}
               onClick={() => {
                 setSidebarCollapsed(true);
                 requestAnimationFrame(() => expandButton.current?.focus());
@@ -376,7 +384,7 @@ function WorkbenchContent({
           }}
           side="left"
           className={styles.mobileNavigation}
-          closeProps={{ "aria-label": "Close navigation" }}
+          closeProps={{ "aria-label": t("Close navigation") }}
         >
           <header className={styles.mobileNavigationHeader}>
             <SheetTitle>Harness UI</SheetTitle>
@@ -469,8 +477,8 @@ function WorkbenchContent({
                     variant="ghost"
                     size="icon"
                     className={styles.expandNavigation}
-                    aria-label="Expand navigation"
-                    title="Expand navigation"
+                    aria-label={t("Expand navigation")}
+                    title={t("Expand navigation")}
                     onClick={() => {
                       setSidebarCollapsed(false);
                       requestAnimationFrame(() =>
@@ -486,7 +494,7 @@ function WorkbenchContent({
                   variant="ghost"
                   size="icon"
                   className={styles.mobileMenu}
-                  aria-label="Open navigation"
+                  aria-label={t("Open navigation")}
                   aria-haspopup="dialog"
                   aria-expanded={menu}
                   aria-controls={menu ? "workbench-navigation" : undefined}

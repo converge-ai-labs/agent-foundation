@@ -1,15 +1,20 @@
-import { useContext, useEffect, useReducer, useState } from "react";
+import { useContext, useEffect, useReducer, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "a13n-ui";
 import {
   ArrowClockwise,
   DownloadSimple,
   FloppyDisk,
+  MagnifyingGlass,
   TextAlignLeft,
 } from "@phosphor-icons/react";
 import { ApiError, result } from "../transport/client";
 import { useTransport } from "../transport/context";
 import { SourceEditor } from "../configuration/editor";
+import type {
+  EditorCursor,
+  SourceEditorHandle,
+} from "../configuration/editor-view";
 import { ErrorNotice } from "../shell/ui";
 import { DebugOnly } from "../shell/debug";
 import { ConfirmAction } from "../shell/confirm-action";
@@ -50,12 +55,21 @@ export function FileView({
   const [, render] = useReducer((value: number) => value + 1, 0);
   const [error, setError] = useState<unknown>(null);
   const [message, setMessage] = useState("");
-  const [wrap, setWrap] = useState(false);
+  const [wrap, setWrap] = useState(() => /\.(?:md|markdown|txt)$/i.test(path));
+  const editor = useRef<SourceEditorHandle>(null);
+  const [cursor, setCursor] = useState<EditorCursor>();
   const [imageAttempt, setImageAttempt] = useState(0);
   const [mode, setMode] = useState<"preview" | "text">(() =>
-    /\.(?:md|markdown)$/i.test(path) ? "preview" : "text",
+    /\.(?:md|markdown)$/i.test(path) && line === undefined ? "preview" : "text",
   );
+  const [textOpened, setTextOpened] = useState(mode === "text");
   const [selection, setSelection] = useState<LineRange>();
+  useEffect(() => {
+    if (line !== undefined) {
+      setMode("text");
+      setTextOpened(true);
+    }
+  }, [line]);
   const read = useQuery({
     queryKey: ["native", "text", path],
     queryFn: async ({ signal }) => {
@@ -272,22 +286,40 @@ export function FileView({
                   variant={mode === "text" ? "secondary" : "ghost"}
                   size="sm"
                   aria-pressed={mode === "text"}
-                  onClick={() => setMode("text")}
+                  onClick={() => {
+                    setMode("text");
+                    setTextOpened(true);
+                  }}
                 >
                   Text
                 </Button>
               </>
             )}
             {mode === "text" && (
-              <Button
-                size="sm"
-                variant="ghost"
-                aria-pressed={wrap}
-                onClick={() => setWrap(!wrap)}
-              >
-                <TextAlignLeft />
-                Wrap
-              </Button>
+              <>
+                <Button
+                  size="sm"
+                  variant={wrap ? "secondary" : "ghost"}
+                  aria-pressed={wrap}
+                  title="Wrap long lines"
+                  onClick={() => {
+                    setWrap(!wrap);
+                    editor.current?.focus();
+                  }}
+                >
+                  <TextAlignLeft />
+                  Wrap
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  title={`Find in file (${modifierLabel()} F)`}
+                  onClick={() => editor.current?.find()}
+                >
+                  <MagnifyingGlass />
+                  Find
+                </Button>
+              </>
             )}
           </div>
         )}
@@ -394,38 +426,44 @@ export function FileView({
         </p>
       )}
       {editable ? (
-        mode === "preview" && markdown ? (
-          <article
-            className={styles.markdownPreview}
-            aria-label="Markdown preview"
-          >
-            <MessageText text={buffer.value} />
-          </article>
-        ) : (
-          <div className={styles.editor}>
-            <SourceEditor
-              value={buffer.value}
-              language="plain"
-              filename={path}
-              line={line}
-              wrap={wrap}
-              position={buffer.position}
-              onPosition={(position) => {
-                buffer.position = position;
-              }}
-              onSave={() => void save()}
-              label={`File text: ${path}`}
-              fill
-              readOnly={symlink}
-              onSelection={setSelection}
-              onChange={(value) => {
-                buffer.value = value;
-                render();
-                onBufferChange?.();
-              }}
-            />
-          </div>
-        )
+        <>
+          {mode === "preview" && markdown && (
+            <article
+              className={styles.markdownPreview}
+              aria-label="Markdown preview"
+            >
+              <MessageText text={buffer.value} />
+            </article>
+          )}
+          {textOpened && (
+            <div className={styles.editor} hidden={mode !== "text"}>
+              <SourceEditor
+                ref={editor}
+                onCursor={setCursor}
+                value={buffer.value}
+                language="plain"
+                filename={path}
+                line={line}
+                wrap={wrap}
+                position={buffer.position}
+                onPosition={(position) => {
+                  buffer.position = position;
+                }}
+                onSave={() => void save()}
+                label={`File text: ${path}`}
+                fill
+                readOnly={symlink}
+                onSelection={setSelection}
+                onChange={(value) => {
+                  buffer.value = value;
+                  setMessage("");
+                  render();
+                  onBufferChange?.();
+                }}
+              />
+            </div>
+          )}
+        </>
       ) : media ? (
         media !== "image" || buffer.base.entry.size <= MAX_MEDIA_BYTES ? (
           <FileMedia
@@ -477,10 +515,31 @@ export function FileView({
           }
         />
         {editable && mode === "text" && (
-          <small className={styles.shortcuts}>
-            <kbd className={shell.kbd}>{modifierLabel()} G</kbd> Go to line
-            <kbd className={shell.kbd}>{modifierLabel()} S</kbd> Save
-          </small>
+          <div className={styles.editorStatus}>
+            {symlink ? (
+              <small>Read-only</small>
+            ) : (
+              buffer.dirty && <small>Unsaved</small>
+            )}
+            {cursor && (
+              <Button
+                variant="ghost"
+                size="sm"
+                aria-label={`Go to line, current line ${cursor.line}, column ${cursor.column}`}
+                title={`Go to line (${modifierLabel()} G)`}
+                onClick={() => editor.current?.goToLine()}
+              >
+                Ln {cursor.line}, Col {cursor.column}
+                {cursor.selected > 0 &&
+                  ` · ${cursor.selected.toLocaleString()} selected`}
+              </Button>
+            )}
+            {!symlink && (
+              <small className={styles.shortcuts}>
+                <kbd className={shell.kbd}>{modifierLabel()} S</kbd> Save
+              </small>
+            )}
+          </div>
         )}
       </footer>
       <details className={styles.metadata}>

@@ -30,6 +30,7 @@ from a13n_service.infra.reads import tool_response
 from a13n_service.resources.agents.schemas import AgentConfig, AgentOverride, AgentRevision
 from a13n_service.resources.connections.headers import normalize_headers
 from a13n_service.resources.memories.schemas import MemoryMount, MemoryMounts, SessionMemorySettings
+from a13n_service.runs.browsers.schemas import BrowserBinding
 from a13n_service.runs.display import Item
 from a13n_service.runs.environments.schemas import DEFAULT_MOUNT_PERMISSIONS, MAX_MOUNTS, MountCreate
 from a13n_service.runs.history import MessageHistory
@@ -598,6 +599,7 @@ class RunView(BaseModel):
     wait_reason: WaitReason | None
     pending: Pending | None
     environment_mounts: list[EnvironmentMount]
+    browser_binding: BrowserBinding | None = None
     memory_mounts: list[MemoryMount | FrozenMemoryMount]
     # The options its message chose, frozen at acceptance; a resume or child result inherits its origin's.
     options: RunOptions

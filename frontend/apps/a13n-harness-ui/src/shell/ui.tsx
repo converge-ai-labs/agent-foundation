@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { SettingsSection } from "./settings";
 import { useContext, type ReactNode, type FocusEventHandler } from "react";
 import { Button, FormField, Input } from "a13n-ui";
@@ -44,13 +45,17 @@ export function Panel({
 export function ErrorNotice({
   error,
   retry,
+  message,
   inline = false,
 }: {
   error: unknown;
   retry?: () => void;
+  /** Display text; the original error still owns recovery classification. */
+  message?: string;
   /** One quiet line for secondary content, without the notice frame. */
   inline?: boolean;
 }) {
+  const { t } = useTranslation();
   const connectionNotice = useContext(ConnectionNoticeContext);
   if (!error || (connectionNotice && isConnectionError(error))) return null;
   return (
@@ -60,11 +65,13 @@ export function ErrorNotice({
     >
       <div className={styles.errorMessage}>
         <WarningCircleIcon size={inline ? 14 : 18} aria-hidden="true" />
-        <span>{error instanceof Error ? error.message : String(error)}</span>
+        <span>
+          {message ?? (error instanceof Error ? error.message : String(error))}
+        </span>
       </div>
       {retry && (
         <Button variant="ghost" size="sm" onClick={retry}>
-          Retry
+          {t("Retry")}
         </Button>
       )}
     </div>

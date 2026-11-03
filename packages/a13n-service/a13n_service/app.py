@@ -37,9 +37,10 @@ from a13n_service.infra.objects.s3 import open_s3
 from a13n_service.infra.sweeps import require_unique, run_sweeps
 from a13n_service.infra.tasks import Tasks
 from a13n_service.infra.telemetry import open_instrumentation
-from a13n_service.mcp import WorkspaceKey, build_mcp
+from a13n_service.mcp import WorkspaceKey, build_mcp, build_platform_mcp
 from a13n_service.migrations.run_objects import require_current
 from a13n_service.migrations.runner import heads, upgrade
+from a13n_service.platform_artifact import validate_artifact_catalog
 from a13n_service.providers.environments import offered
 from a13n_service.providers.metrics import Queries
 from a13n_service.providers.registry import Registry
@@ -171,6 +172,7 @@ async def open_runtime(
 ) -> Runtime:
     from a13n_service.runs.search import initialize
 
+    validate_artifact_catalog(tuple(tool for contribute in distribution.platform_tools for tool in contribute()))
     await asyncio.to_thread(initialize)
     storage = open_storage(config.database)
     stack.push_async_callback(storage.close)
@@ -240,10 +242,12 @@ def _key_ring(encryption: Encryption) -> KeyRing:
 
 
 def _registry(distribution: Distribution, config: Settings) -> Registry:
+    from a13n_service.providers.browser.builtins import builtins
+
     environments = config.environments
     return Registry.of(
         offered(
-            distribution.providers,
+            (*distribution.providers, *builtins(config.browsers)),
             allow_local=config.provisioning.local.enabled,
             docker_host=environments.docker_host,
             docker_mount_roots=environments.docker_mount_roots,
@@ -324,6 +328,7 @@ def build_app(
                                     run_collector(runtime, kind), name=f"collector-{kind}", service=True
                                 )
                     await stack.enter_async_context(mcp.lifespan(mcp))
+                    await stack.enter_async_context(platform_mcp.lifespan(platform_mcp))
                     catalog = ModelsDevCatalog(
                         catalog_channels(runtime.registry.models.values()), runtime.endpoint_policy
                     )
@@ -400,14 +405,23 @@ def build_app(
         if serves_api:
             app.include_router(router)
     if serves_api:
+        from a13n_service.runs.browsers.tables import BrowserRow
+        from a13n_service.runs.browsers.viewer import relay as browser_viewer_relay
         from a13n_service.runs.devices.tables import DeviceRow
         from a13n_service.runs.devices.transport import install as install_device_transport
 
         if DeviceRow in distribution.tables:
             install_device_transport(app)
-        app.add_middleware(CredentialAccess, routes=api_routes)
+        if BrowserRow in distribution.tables:
+            app.add_api_websocket_route(
+                "/api/v1/browsers/{browser_id}/viewer/connect", browser_viewer_relay, name="browser_viewer_connect"
+            )
+        app.add_middleware(CredentialAccess)
         mcp = build_mcp(app, config, api_routes)
         app.mount("/api/v1/mcp", WorkspaceKey(mcp))
+        definitions = tuple(tool for contribute in distribution.platform_tools for tool in contribute())
+        platform_mcp = build_platform_mcp(app, config, definitions)
+        app.mount("/api/v1/platform-tools", WorkspaceKey(platform_mcp, internal=True))
     if serves_api and (console / "index.html").is_file():
         app.router.default = console_fallback(console, app.router.default)
     install_error_envelope(app)

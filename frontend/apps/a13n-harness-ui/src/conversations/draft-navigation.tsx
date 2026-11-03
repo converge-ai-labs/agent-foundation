@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { useRef, useState } from "react";
 import { Link, useLocation } from "react-router";
 import {
@@ -14,6 +15,7 @@ import { useUnsent } from "./unsent";
 import styles from "./conversation.module.css";
 
 export function DraftNavigation() {
+  const { t } = useTranslation();
   const { rows, loading, error, retry } = useUnsent();
   const [open, setOpen] = useState(false);
   const openingDraft = useRef(false);
@@ -30,19 +32,19 @@ export function DraftNavigation() {
         className={styles.draftsTrigger}
         aria-label={
           error
-            ? "Drafts unavailable"
+            ? t("Drafts unavailable")
             : rows.length
-              ? `Drafts ${rows.length}`
-              : "Drafts"
+              ? t("Drafts {{count, number}}", { count: rows.length })
+              : t("Drafts")
         }
       >
         <PencilSimple size={18} aria-hidden="true" />
-        <span>Drafts</span>
+        <span>{t("Drafts")}</span>
         <span className={styles.draftsCount}>
           {error ? (
-            <WarningCircle aria-label="Draft discovery unavailable" />
+            <WarningCircle aria-label={t("Draft discovery unavailable")} />
           ) : rows.length > 0 ? (
-            rows.length
+            t("{{count, number}}", { count: rows.length })
           ) : null}
         </span>
       </PopoverTrigger>
@@ -51,16 +53,22 @@ export function DraftNavigation() {
         className={styles.draftsPopup}
         finalFocus={() => !openingDraft.current}
       >
-        <PopoverTitle className={styles.draftsTitle}>Drafts</PopoverTitle>
+        <PopoverTitle className={styles.draftsTitle}>
+          {t("Drafts")}
+        </PopoverTitle>
         <PopoverDescription className={styles.draftsDescription}>
-          Shared, unsent input across projects.
+          {t("Shared, unsent input across projects.")}
         </PopoverDescription>
         <ErrorNotice error={error} retry={retry} />
         {rows.length > 0 ? (
           <ul className={`${styles.draftsList} a13n-scrollbar`}>
             {rows.map((row) => {
               const path = `/threads/${encodeURIComponent(row.thread.thread_id)}`;
-              const title = conversationTitle(row.thread);
+              const title = conversationTitle(
+                row.thread,
+                [],
+                t("Untitled chat"),
+              );
               return (
                 <li key={row.thread.thread_id}>
                   <Link
@@ -92,8 +100,8 @@ export function DraftNavigation() {
                     <small>
                       {row.project_name ??
                         (row.thread.configuration.project_id
-                          ? "Unavailable project"
-                          : "Without a project")}
+                          ? t("Unavailable project")
+                          : t("Without a project"))}
                     </small>
                   </Link>
                 </li>
@@ -102,7 +110,7 @@ export function DraftNavigation() {
           </ul>
         ) : !error ? (
           <p className={styles.draftsEmpty} role="status">
-            {loading ? "Loading drafts…" : "No unsent drafts."}
+            {loading ? t("Loading drafts…") : t("No unsent drafts.")}
           </p>
         ) : null}
       </PopoverPopup>

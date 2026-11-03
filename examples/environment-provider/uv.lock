@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.13"
 resolution-markers = [
     "python_full_version >= '3.15'",
@@ -214,6 +214,7 @@ dependencies = [
     { name = "starlette" },
     { name = "tzdata" },
     { name = "uvicorn" },
+    { name = "websockets" },
     { name = "zstandard" },
 ]
 
@@ -262,6 +263,7 @@ requires-dist = [
     { name = "starlette", specifier = ">=0.52,<2" },
     { name = "tzdata", specifier = ">=2026.3" },
     { name = "uvicorn", specifier = ">=0.35,<1" },
+    { name = "websockets", specifier = ">=15,<16" },
     { name = "zstandard", specifier = ">=0.25,<0.26" },
 ]
 

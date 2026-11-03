@@ -491,7 +491,8 @@
 .viewControls {
   display: flex;
   align-items: center;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 4px;
   order: -1;
   margin-right: auto;
 }
@@ -614,6 +615,16 @@
   gap: 12px;
   flex-wrap: wrap;
 }
+.editorStatus {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: auto;
+  color: var(--a13n-secondary);
+  font-variant-numeric: tabular-nums;
+}
 .shortcuts {
   display: flex;
   align-items: center;
@@ -643,9 +654,15 @@
   min-width: 0;
   overflow: hidden;
 }
+.editor[hidden] {
+  display: none;
+}
 .markdownPreview {
   min-width: 0;
-  padding: 8px 4px 24px;
+  padding: 8px 12px 24px;
+  width: 100%;
+  max-width: 744px;
+  margin-inline: auto;
 }
 .file > :not(.editor, .markdownPreview) {
   flex-shrink: 0;

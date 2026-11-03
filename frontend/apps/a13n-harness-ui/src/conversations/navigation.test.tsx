@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { i18n } from "../i18n";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
   act,
@@ -99,7 +100,8 @@ let pageAborted: boolean;
 let recentTitle: string;
 let recentThreads: ReturnType<typeof thread>[];
 let queryClient: QueryClient;
-beforeEach(() => {
+beforeEach(async () => {
+  await i18n.changeLanguage("en");
   localStorage.clear();
   unsentDrafts = [];
   unsentThreads = [];
@@ -371,12 +373,13 @@ beforeEach(() => {
   });
 });
 const elementFromPoint = document.elementFromPoint;
-afterEach(() => {
+afterEach(async () => {
   Object.defineProperty(document, "elementFromPoint", {
     configurable: true,
     value: elementFromPoint,
   });
   cleanup();
+  await i18n.changeLanguage("en");
   queryClient.clear();
   vi.unstubAllGlobals();
 });
@@ -423,6 +426,120 @@ const groupNames = () =>
   [...document.querySelectorAll("[data-project-key]")].map((element) =>
     element.getAttribute("aria-label"),
   );
+
+it("switches search language without losing scope, focus, loaded history or the selected chat", async () => {
+  mount("/threads/selected-old");
+  const user = userEvent.setup();
+  await screen.findByText("Recent 5");
+  await user.click(
+    screen.getByRole("button", { name: "Show more chats in One" }),
+  );
+  const older = await screen.findByRole("link", { name: "Older two" });
+  const selected = screen.getByRole("link", { name: "selected-old" });
+  await user.click(screen.getByRole("button", { name: "Search chats" }));
+  const search = screen.getByRole("searchbox", { name: "Find chats" });
+  await user.click(screen.getByRole("combobox", { name: "Project scope" }));
+  const projectSearch = screen.getByRole("combobox", { name: "Find project" });
+  await user.type(projectSearch, "Tw");
+  const beforeFilterSwitch = vi.mocked(fetch).mock.calls.length;
+  await act(() => i18n.changeLanguage("zh-CN"));
+  expect(screen.getByRole("combobox", { name: "查找项目" })).toBe(
+    projectSearch,
+  );
+  expect((projectSearch as HTMLInputElement).value).toBe("Tw");
+  expect(document.activeElement).toBe(projectSearch);
+  expect(vi.mocked(fetch).mock.calls).toHaveLength(beforeFilterSwitch);
+  await user.click(screen.getByRole("option", { name: "Two" }));
+  await user.type(search, "match");
+  const match = await screen.findByRole("link", { name: "Global match" });
+  expect(activity.at(-1)?.searchParams.get("project_id")).toBe("project-two");
+  const beforeSwitch = vi.mocked(fetch).mock.calls.length;
+  await user.keyboard("{ArrowDown}");
+  expect(document.activeElement).toBe(match);
+  await act(() => i18n.changeLanguage("en"));
+  expect(screen.getByRole("searchbox", { name: "Find chats" })).toBe(search);
+  expect((search as HTMLInputElement).value).toBe("match");
+  expect(
+    screen.getByRole("combobox", { name: "Project scope: Two" }),
+  ).toBeTruthy();
+  expect(document.activeElement).toBe(match);
+  expect(vi.mocked(fetch).mock.calls).toHaveLength(beforeSwitch);
+  await user.keyboard("{Escape}");
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(screen.getByRole("link", { name: "Older two" })).toBe(older);
+  expect(screen.getByRole("link", { name: "selected-old" })).toBe(selected);
+  expect(selected.getAttribute("aria-current")).toBe("page");
+  expect(screen.getByLabelText("Current route").textContent).toBe(
+    "/threads/selected-old",
+  );
+  await user.click(screen.getByRole("button", { name: "One" }));
+  await act(() => i18n.changeLanguage("zh-CN"));
+  expect(
+    screen.getByRole("button", { name: "One" }).getAttribute("aria-expanded"),
+  ).toBe("false");
+  expect(writes).toHaveLength(0);
+});
+
+it("translates an active keyboard reorder announcement without resetting its preview", async () => {
+  mount();
+  const handle = await screen.findByRole("button", { name: "One" });
+  fireEvent.keyDown(handle, { key: " ", altKey: true });
+  fireEvent.keyDown(handle, { key: "ArrowDown" });
+  const calls = vi.mocked(fetch).mock.calls.length;
+  await act(() => i18n.changeLanguage("zh-CN"));
+  expect(groupNames()).toEqual(["Two", "One"]);
+  expect(document.activeElement).toBe(handle);
+  expect(screen.getByRole("status", { name: "" }).textContent).toBe(
+    "项目位置：第 2 个，共 2 个。",
+  );
+  expect(vi.mocked(fetch).mock.calls).toHaveLength(calls);
+  fireEvent.keyDown(handle, { key: "Enter" });
+  expect(screen.getByRole("status", { name: "" }).textContent).toBe(
+    "项目排序已保存在此浏览器中。",
+  );
+  expect(
+    JSON.parse(localStorage.getItem("a13n-harness-ui.project-order")!),
+  ).toEqual(["project-two", "project-one"]);
+  expect(writes).toHaveLength(0);
+});
+
+it("keeps expanded workers and authored titles intact through language changes", async () => {
+  coordinators = [
+    { ...thread("Coordinator"), role: "coordinator", auto_followup: true },
+  ];
+  workerThreads = [
+    {
+      ...thread("worker-1"),
+      title: "Untitled chat",
+      coordinator_thread_id: "Coordinator",
+      role: "worker",
+    },
+  ];
+  mount("/threads/worker-1");
+  const user = userEvent.setup();
+  await user.click(
+    await screen.findByRole("button", {
+      name: "Expand workers for Coordinator",
+    }),
+  );
+  const worker = await screen.findByRole("link", { name: "Untitled chat" });
+  const coordinator = screen.getByRole("link", { name: "Coordinator" });
+  const calls = vi.mocked(fetch).mock.calls.length;
+  await act(() => i18n.changeLanguage("zh-CN"));
+  expect(screen.getByRole("link", { name: /^Coordinator\s*协调者$/ })).toBe(
+    coordinator,
+  );
+  expect(within(coordinator).getByText("Coordinator").tagName).toBe("STRONG");
+  expect(screen.getByRole("link", { name: "Untitled chat" })).toBe(worker);
+  expect(worker.getAttribute("aria-current")).toBe("page");
+  expect(
+    screen
+      .getByRole("button", { name: "收起 Coordinator 的工作聊天" })
+      .getAttribute("aria-expanded"),
+  ).toBe("true");
+  expect(vi.mocked(fetch).mock.calls).toHaveLength(calls);
+  expect(writes).toHaveLength(0);
+});
 
 it("lazily fetches five rows per expanded project and preserves each page through collapse and global search", async () => {
   mount();
@@ -1700,7 +1817,7 @@ it("counts an unread Coordinator once and retains its anchor after fresh paginat
   results.observe(unread);
   mount("/", false, results);
   const group = await screen.findByRole("region", { name: "One" });
-  expect(within(group).getByLabelText("1 chats with new results")).toBeTruthy();
+  expect(within(group).getByLabelText("1 chat with new results")).toBeTruthy();
   fireEvent.click(
     within(group).getByRole("button", { name: /^One/, expanded: false }),
   );

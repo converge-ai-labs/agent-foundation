@@ -6,8 +6,8 @@ from a13n_harness.providers.environment.docker.runtime import DockerProviderRunt
 from a13n_service.providers.environment._backend import ManagementBackend
 from a13n_service.providers.environment._backend_factory import ManagementBackendFactory
 from a13n_service.providers.environment.definition import management_definition
+from a13n_service.providers.environment.recipes.docker import DockerRecipe
 
-from .configuration import DockerRecipe
 from .management import DockerManagement
 
 

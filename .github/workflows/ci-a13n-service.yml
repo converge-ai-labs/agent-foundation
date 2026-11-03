@@ -141,7 +141,10 @@ jobs:
               files = sorted(
                   str(path) for path in root.rglob("*.py")
                   if (path.match("test_*.py") or path.match("*_test.py"))
-                  and path not in {root / "test_environments_envd.py", root / "test_monitoring_collectors_live.py"}
+                  and path not in {
+                      root / "test_environments_envd.py", root / "test_monitoring_collectors_live.py",
+                      root / "test_browser_native_live.py", root / "test_browser_selfhost_live.py",
+                  }
                   and not path.is_relative_to(root / "environment_providers")
               )
               # Weights never select tests: new files receive the current suite's median.
@@ -259,6 +262,26 @@ jobs:
             -o faulthandler_timeout=120 \
             -o faulthandler_exit_on_timeout=true \
             "${targets[@]}"
+
+      - name: Install native Browser desktop dependencies
+        if: matrix.name == 'tests-1'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb openbox xauth x11vnc websockify x11-apps x11-utils
+
+      - name: Test native Browser lifecycle and Service assets
+        if: matrix.name == 'tests-1'
+        env:
+          A13N_TEST_BROWSER_NATIVE_CHROMIUM: ${{ steps.chrome.outputs.chrome-path }}
+        run: |
+          uv run --locked pytest -q --junitxml=test-results/browser-native.xml \
+            packages/a13n-service/tests/test_browser_native_live.py \
+            'packages/a13n-service/tests/test_browser_selfhost_live.py::test_selfhost_service_asset_transfer[native]'
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+          report = ET.parse('test-results/browser-native.xml').getroot()
+          assert report.findall('.//testcase') and not report.findall('.//skipped')
+          PY
 
       - name: Test native Environment management drivers
         if: matrix.name == 'tests-1'

@@ -34,6 +34,8 @@ def test_settings_describe_only_this_checkout(checkout_root: Path) -> None:
     assert settings.providers.require_https is False
     assert settings.provisioning.local.enabled is True
     assert settings.provisioning.local.root == checkout.environments
+    assert settings.browsers.root == checkout.state / "browsers"
+    assert settings.browsers.native_enabled is False
     assert settings.telemetry.trace_config() is not None
     assert stat.S_IMODE(checkout.settings_file.stat().st_mode) == 0o600
 

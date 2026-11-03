@@ -369,3 +369,29 @@ async def test_host_tool_selection_survives_run_binding():
     await executable.run("List tools", bindings=RunBindings.embedded(browser_backend=backend))
     with pytest.raises(ValueError, match="Unknown browser tool"):
         BrowserUseCapability(enabled_tools=frozenset({"typo"}))
+
+
+@pytest.mark.parametrize("file_instructions", [None, "Upload paths use asset:<asset_id>; downloads return asset IDs."])
+async def test_host_file_instructions_survive_dynamic_run_binding(file_instructions):
+    from a13n_harness import AgentSpec, HarnessBuilder, RunBindings
+    from pydantic_ai.models.function import FunctionModel
+
+    backend = AsyncMock(spec=BrowserBackend)
+    capability = BrowserUseCapability(file_instructions=file_instructions)
+    expected = file_instructions or "absolute browser-Host paths"
+
+    async def model(messages, info):
+        description = next(tool.description for tool in info.function_tools if tool.name == "browser_files")
+        assert expected in description
+        assert expected in info.instructions
+        if file_instructions:
+            assert "absolute browser-Host paths" not in description
+            assert "absolute browser-Host paths" not in info.instructions
+            assert "Does not transfer" not in info.instructions
+        yield "Done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(), model=FunctionModel(stream_function=model), capabilities=(capability,), output_type=str
+    )
+    result = await executable.run("Check files", bindings=RunBindings.embedded(browser_backend=backend))
+    assert result.output_or_raise() == "Done"

@@ -36,6 +36,8 @@ The first command that needs an instance reserves a block of loopback ports for 
 
 One resolver, `checkout.py`, derives everything local from the instance and writes the Service's ordinary settings file, `var/dev/service.toml`: loopback listener, the Console origin as `server.public_url`, the database and Redis URLs, the object store under `var/dev/objects`, an encryption key generated once per checkout (`var/dev/encryption.key`), outbound access to loopback over plain HTTP for the scripted model, development-only `local` environments, and telemetry. Nothing in `packages/` knows about checkouts. Applications start without inherited `A13N_*` and `OTEL_*` variables, so a deployment shell can neither redirect nor break the local instance.
 
+The checkout offers the Docker Browser provider with allocation records under `var/dev/browsers`. Build its runtime with `make image-browser`, then create a Browser provider in Console with that local image name. Creating and starting Browsers is explicit; `make dev` does not allocate them. Native Browser support remains disabled. A stopped Docker Browser retains its original container and private profile; `make dev-stop` leaves Browser containers running. Delete fixture Browsers through the API or Console before resetting checkout data.
+
 Each checkout owns the Compose project `a13n-service-dev-<instance>` with its own PostgreSQL and Redis volumes. `make dev-down` stops them; `make dev-reset` deletes and recreates them. A lifecycle lock (`var/dev/lifecycle.lock`) admits one setup, reset, down or application run at a time, so a reset or down is refused while applications run; stop them first.
 
 ## Seeded state

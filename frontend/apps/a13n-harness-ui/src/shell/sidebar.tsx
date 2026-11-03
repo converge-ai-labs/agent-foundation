@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { readPreference, writePreference } from "./preferences";
 import styles from "./sidebar.module.css";
@@ -18,6 +19,7 @@ export function WorkbenchSidebar({
   collapsed: boolean;
   children: ReactNode;
 }) {
+  const { t } = useTranslation();
   const [preferredWidth, setPreferredWidth] = useState(() => {
     const saved = Number(
       readPreference("sidebar-width", String(DEFAULT_WIDTH)),
@@ -63,21 +65,23 @@ export function WorkbenchSidebar({
       className={styles.sidebar}
       hidden={collapsed}
       style={{ width }}
-      aria-label="Workbench navigation"
+      aria-label={t("Workbench navigation")}
     >
       {children}
       <div
         className={styles.resizeHandle}
         data-resizing={resizing || undefined}
         role="separator"
-        aria-label="Resize navigation"
-        aria-description="Drag or use arrow keys to resize. Double-click to reset."
+        aria-label={t("Resize navigation")}
+        aria-description={t(
+          "Drag or use arrow keys to resize. Double-click to reset.",
+        )}
         aria-controls="workbench-sidebar"
         aria-orientation="vertical"
         aria-valuemin={MIN_WIDTH}
         aria-valuemax={maximum}
         aria-valuenow={width}
-        aria-valuetext={`${width} pixels`}
+        aria-valuetext={t("{{width, number}} pixels", { width })}
         tabIndex={0}
         onPointerDown={(event) => {
           if (event.button !== 0 || !event.isPrimary || drag.current) return;

@@ -32,7 +32,10 @@ class BrowserRow(Stamped, Base):
             name="source_provider",
         ),
         CheckConstraint("source <> 'external_cdp' OR control = 'automation'", name="source_control"),
-        CheckConstraint("status IN ('reserved','creating','ready','deleting','deleted','lost')", name="status"),
+        CheckConstraint(
+            "status IN ('reserved','creating','ready','stopping','stopped','starting','deleting','deleted','lost')",
+            name="status",
+        ),
         CheckConstraint("control IN ('automation','draining','human','returning')", name="control"),
         CheckConstraint("status <> 'ready' OR handle IS NOT NULL", name="ready_handle"),
         CheckConstraint("(claim_id IS NULL) = (claim_until IS NULL)", name="claim"),
@@ -53,6 +56,8 @@ class BrowserRow(Stamped, Base):
     generation: Mapped[int] = mapped_column(default=1)
     # Allocation is attempted once; recovery inspects this same Browser identity.
     create_dispatched: Mapped[bool] = mapped_column(default=False)
+    start_dispatched: Mapped[bool] = mapped_column(default=False, server_default=text("false"))
+    runtime_id: Mapped[str | None]
     handle: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
     claim_id: Mapped[str | None]
     claim_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -60,6 +65,8 @@ class BrowserRow(Stamped, Base):
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_used_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     idle_seconds: Mapped[int | None]
+    stop_after_seconds: Mapped[int | None]
+    delete_after_seconds: Mapped[int | None]
     control: Mapped[str] = mapped_column(default="automation")
     episode: Mapped[int] = mapped_column(default=0)
     control_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -113,6 +120,16 @@ class BrowserSelectionRow(Base):
     workspace_id: Mapped[str]
     generation: Mapped[int]
     target_id: Mapped[str | None]
+
+
+class BrowserDownloadRow(Base):
+    """One canonical staged upload for each completed runtime download, shared by all authorized callers."""
+
+    __tablename__ = "browser_downloads"
+    browser_id: Mapped[str] = mapped_column(ForeignKey("browsers.id"), primary_key=True)
+    generation: Mapped[int] = mapped_column(primary_key=True)
+    guid: Mapped[str] = mapped_column(String(256), primary_key=True)
+    upload_id: Mapped[str] = mapped_column(ForeignKey("uploads.id"))
 
 
 class BrowserOperationRow(Base):

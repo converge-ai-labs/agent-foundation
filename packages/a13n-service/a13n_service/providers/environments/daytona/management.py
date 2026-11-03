@@ -22,8 +22,7 @@ from pydantic import BaseModel, Field
 
 from a13n_service.providers.environment import desktop_access as access
 from a13n_service.providers.environment.native import NativeManagement
-
-from .configuration import DaytonaRecipe
+from a13n_service.providers.environment.recipes.daytona import DaytonaRecipe
 
 
 class SignedPreview(BaseModel):

@@ -6,9 +6,9 @@ import pytest
 from a13n_harness.environment.errors import EnvironmentProviderError
 from a13n_harness.providers.environment.native.configuration import TokenCredential
 from a13n_harness.providers.environment.vercel.shared import VercelConnectionConfiguration
+from a13n_service.providers.environment.recipes.vercel import VercelRecipe
 from a13n_service.providers.environment.vercel_build import BuildTarget
 from a13n_service.providers.environments.vercel import desktop_build as build
-from a13n_service.providers.environments.vercel.configuration import VercelRecipe
 
 pytestmark = pytest.mark.anyio
 

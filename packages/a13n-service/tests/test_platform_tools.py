@@ -22,7 +22,7 @@ from sqlalchemy import delete, select, update
 from starlette.requests import Request
 from starlette.responses import Response
 
-from .mcp_support import call, client, rpc
+from .platform_support import call, client, rpc
 from .test_providers import models_endpoint
 
 pytestmark = pytest.mark.anyio
@@ -46,7 +46,7 @@ async def lease_for(service, scripted_model, runs_kit):
     agent = await runs_kit.create_agent(service, scripted_model)
     submitted = await runs_kit.start_thread(service, agent, "configure resources")
     (lease,) = await claim(service.runtime, worker_id="platform-test", worker_build="test", limit=1)
-    return lease, agent, submitted
+    return (lease, agent, submitted)
 
 
 async def authenticate_token(service, token):
@@ -89,39 +89,20 @@ async def test_run_mcp_discovery_http_scope_versions_and_audit(service, scripted
         http.headers["x-workspace-id"] = "ws_another"
         assert (await rpc(http, "tools/list")).status_code == 403
         del http.headers["x-workspace-id"]
-        read = await call(http, service, "GET", "/agents/{agent_id}", agent_id=agent["id"])
-        etag = read["headers"]["etag"]
+        read = await call(http, "get_agent", agent_id=agent["id"])
+        etag = f"{read['id']}:{read['version']}"
         changed = await call(
-            http,
-            service,
-            "PATCH",
-            "/agents/{agent_id}",
-            agent_id=agent["id"],
-            expected_version=etag,
-            request_body={"description": "from a run"},
+            http, "update_agent_metadata", agent_id=agent["id"], expected_version=etag, description="from a run"
         )
-        assert changed["status"] == 200, changed
+        assert "error" not in changed, changed
         stale = await call(
-            http,
-            service,
-            "PATCH",
-            "/agents/{agent_id}",
-            agent_id=agent["id"],
-            expected_version=etag,
-            request_body={"description": "stale"},
+            http, "update_agent_metadata", agent_id=agent["id"], expected_version=etag, description="stale"
         )
-        assert stale["status"] == 412
-        listed = await call(http, service, "GET", "/runs", agent_id=agent["id"], status="running", limit=1)
-        assert [item["id"] for item in listed["body"]["items"]] == [lease.run_id]
-        detail = await call(
-            http,
-            service,
-            "GET",
-            "/runs/{run_id}/attempts/{attempt_id}",
-            run_id=lease.run_id,
-            attempt_id=lease.attempt_id,
-        )
-        assert detail["status"] == 200 and "lease_token_hash" not in detail["body"]
+        assert stale["error"]["code"] == "precondition_failed"
+        listed = await call(http, "list_runs", agent_id=agent["id"], status="running", limit=1)
+        assert [item["id"] for item in listed["items"]] == [lease.run_id]
+        detail = await call(http, "get_run_attempt", run_id=lease.run_id, attempt_id=lease.attempt_id)
+        assert "error" not in detail and "lease_token_hash" not in detail
     async with transaction(service.runtime.storage) as session:
         event = await session.scalar(
             select(AuditEventRow).where(AuditEventRow.target_id == agent["id"], AuditEventRow.action == "agent.update")
@@ -153,7 +134,6 @@ async def test_run_provider_test_discovery_and_group_scope(service, scripted_mod
         )
         assert rejected.json()["result"]["isError"]
         assert (await http.post("/api/v1/memory-providers/mp_hidden/test")).status_code == 403
-
     token = await issue(service.runtime, lease, frozenset({"models"}))
     operation = paths["/api/v1/model-providers/{provider_id}/test"]["post"]
     async with client(service, {"secret": token}) as http:
@@ -252,30 +232,23 @@ async def test_run_query_filters_pages_and_attempt_ownership(service, scripted_m
     other = await runs_kit.start_thread(service, agent, "another run")
     token = await issue(service.runtime, lease, frozenset({"execution"}))
     async with client(service, {"secret": token}) as http:
-        first = await call(http, service, "GET", "/runs", agent_id=agent["id"], limit=1)
-        page = first["body"]
+        first = await call(http, "list_runs", agent_id=agent["id"], limit=1)
+        page = first
         assert [item["id"] for item in page["items"]] == [other["run"]["id"]]
         cursor = page["next_cursor"]
         assert cursor
-        second = await call(http, service, "GET", "/runs", agent_id=agent["id"], limit=1, cursor=cursor)
-        assert [item["id"] for item in second["body"]["items"]] == [lease.run_id]
-        assert second["body"]["next_cursor"] is None
-        changed = await call(http, service, "GET", "/runs", status="running", limit=1, cursor=cursor)
-        assert changed["status"] == 400
+        second = await call(http, "list_runs", agent_id=agent["id"], limit=1, cursor=cursor)
+        assert [item["id"] for item in second["items"]] == [lease.run_id]
+        assert second["next_cursor"] is None
+        changed = await call(http, "list_runs", status="running", limit=1, cursor=cursor)
+        assert changed["error"]["code"] == "invalid_cursor"
         timestamp = other["run"]["created_at"]
-        after = await call(http, service, "GET", "/runs", created_after=timestamp)
-        before = await call(http, service, "GET", "/runs", created_before=timestamp)
-        assert [item["id"] for item in after["body"]["items"]] == [other["run"]["id"]]
-        assert [item["id"] for item in before["body"]["items"]] == [lease.run_id]
-        wrong_parent = await call(
-            http,
-            service,
-            "GET",
-            "/runs/{run_id}/attempts/{attempt_id}",
-            run_id=other["run"]["id"],
-            attempt_id=lease.attempt_id,
-        )
-        assert wrong_parent["status"] == 404
+        after = await call(http, "list_runs", created_after=timestamp)
+        before = await call(http, "list_runs", created_before=timestamp)
+        assert [item["id"] for item in after["items"]] == [other["run"]["id"]]
+        assert [item["id"] for item in before["items"]] == [lease.run_id]
+        wrong_parent = await call(http, "get_run_attempt", run_id=other["run"]["id"], attempt_id=lease.attempt_id)
+        assert wrong_parent["error"]["code"] == "not_found"
 
 
 async def test_composer_discovers_and_calls_message_text_search(service, scripted_model, runs_kit):
@@ -300,11 +273,11 @@ async def test_composer_discovers_and_calls_message_text_search(service, scripte
                 assert properties["sort"]["enum"] == ["updated_at", "runs", "cost"]
                 assert properties["direction"]["enum"] == ["asc", "desc"]
                 filters = {"sort": "cost", "direction": "desc"}
-            result = await call(http, service, "GET", f"/{resource}", text_query="南京 故障", **filters)
-            assert result["status"] == 200, result
-            assert [row["id"] for row in result["body"]["items"]] == [matching[field]]
-            missing = await call(http, service, "GET", f"/{resource}", text_query="南京 missing", **filters)
-            assert missing["status"] == 200 and missing["body"]["items"] == []
+            result = await call(http, f"list_{resource}", text_query="南京 故障", **filters)
+            assert "error" not in result, result
+            assert [row["id"] for row in result["items"]] == [matching[field]]
+            missing = await call(http, f"list_{resource}", text_query="南京 missing", **filters)
+            assert "error" not in missing and missing["items"] == []
 
 
 async def test_new_grants_do_not_widen_accepted_run(service, scripted_model, runs_kit):
@@ -329,14 +302,12 @@ async def test_new_grants_do_not_widen_accepted_run(service, scripted_model, run
     async with client(service, {"secret": token}) as http:
         result = await call(
             http,
-            service,
-            "PATCH",
-            "/agents/{agent_id}",
+            "update_agent_metadata",
             agent_id=agent["id"],
-            expected_version=f'"{agent["id"]}:{agent["version"]}"',
-            request_body={"description": "not authorized"},
+            expected_version=f'''"{agent["id"]}:{agent["version"]}"''',
+            description="not authorized",
         )
-        assert result["status"] == 403
+        assert result["error"]["code"] == "forbidden"
 
 
 async def test_native_platform_read_and_write_review_survive_resume(skill_service, scripted_model, runs_kit, listen):
@@ -344,7 +315,7 @@ async def test_native_platform_read_and_write_review_survive_resume(skill_servic
     await runs_kit.pause_sweeps(service)
     schema = service.app.openapi()["paths"]
     read_name = tool_name(schema["/api/v1/agents"]["get"]["operationId"])
-    write_name = tool_name(schema["/api/v1/agents/{agent_id}"]["patch"]["operationId"])
+    write_name = "update_agent_metadata"
     disabled = tool_name(schema["/api/v1/agents/{agent_id}/archive"]["post"]["operationId"])
     agent = await runs_kit.create_agent(
         service,
@@ -362,8 +333,8 @@ async def test_native_platform_read_and_write_review_survive_resume(skill_servic
         write_name,
         {
             "agent_id": agent["id"],
-            "expected_version": f'"{agent["id"]}:{agent["version"]}"',
-            "request_body": {"description": "Reviewed change"},
+            "expected_version": f'''"{agent["id"]}:{agent["version"]}"''',
+            "description": "Reviewed change",
         },
         call_id="write",
     )
@@ -373,7 +344,6 @@ async def test_native_platform_read_and_write_review_survive_resume(skill_servic
         nonlocal first_request
         if first_request:
             first_request = False
-            # Cold control startup can exceed the MCP client's default 5 s initialization deadline.
             await asyncio.sleep(5.1)
         await service.app(scope, receive, send)
 
@@ -453,16 +423,15 @@ async def test_provider_probe_waits_for_review_and_returns_saved_credential_stat
         assert received[0]["authorization"] == "Bearer good"
         current = await service.client.get(f"/api/v1/model-providers/{provider['id']}")
         assert current.json() == provider
-
     model_requests = [await scripted_model.request() for _ in range(3)]
     results = {
         message["tool_call_id"]: json.loads(message["content"])
         for message in model_requests[-1]["messages"]
         if message["role"] == "tool"
     }
-    assert results["read"]["body"]["credential_configured"] is True
-    assert "credential" not in results["read"]["body"]
-    assert results["probe"]["body"] == {
+    assert results["read"]["credential_configured"] is True
+    assert "credential" not in results["read"]
+    assert {key: value for key, value in results["probe"].items() if key != "request_id"} == {
         "provider_id": provider["id"],
         "provider_version": provider["version"],
         "status": "succeeded",

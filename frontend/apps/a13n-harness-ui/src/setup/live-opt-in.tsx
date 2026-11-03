@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { SettingsRow } from "../shell/settings";
 import { Switch } from "a13n-ui";
 import type { Schema } from "../transport/client";
@@ -11,14 +12,17 @@ export function LiveOptIn({
   enabled: boolean;
   onChange: (enabled: boolean) => void;
 }) {
+  const { t } = useTranslation();
   if (model?.authentication.kind !== "codex_subscription") return null;
   return (
     <SettingsRow
-      label="Live voice"
-      description="Use your Codex subscription. Start Live to turn on the microphone."
+      label={t("Live voice")}
+      description={t(
+        "Use your Codex subscription. Start Live to turn on the microphone.",
+      )}
     >
       <Switch
-        aria-label="Enable Live voice"
+        aria-label={t("Enable Live voice")}
         checked={enabled}
         onCheckedChange={onChange}
       />

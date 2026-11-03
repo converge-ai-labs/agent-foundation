@@ -15,12 +15,13 @@ import {
   CopyIcon,
   DotsThreeOutlineVerticalIcon,
   MonitorIcon,
+  GlobeIcon,
   PencilSimpleIcon,
   SlidersHorizontalIcon,
 } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { useClient } from "../../auth/context";
-import { useState } from "react";
+import { useState, type Ref } from "react";
 import { Link, useParams } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useWorkspace } from "../../layout/workspace";
@@ -47,7 +48,15 @@ import styles from "./conversations.module.css";
  * The actions menu closes the first line, so a narrow screen keeps it beside
  * the name and moves only the view controls to a second line.
  */
-export function SessionHeader() {
+export function SessionHeader({
+  browserOpen = false,
+  onToggleBrowser,
+  browserTriggerRef,
+}: {
+  browserOpen?: boolean;
+  onToggleBrowser?: () => void;
+  browserTriggerRef?: Ref<HTMLButtonElement>;
+}) {
   const { t } = useTranslation();
   const { sessionId = "", threadId = "", runId } = useParams();
   const { basePath, can, workspace } = useWorkspace();
@@ -171,6 +180,19 @@ export function SessionHeader() {
           ]}
         />
       </div>
+      {thread && onToggleBrowser && (
+        <Button
+          ref={browserTriggerRef}
+          variant={browserOpen ? "secondary" : "ghost"}
+          size="sm"
+          aria-expanded={browserOpen}
+          aria-controls="session-browser"
+          onClick={onToggleBrowser}
+        >
+          <GlobeIcon size={16} aria-hidden="true" />
+          {t("Browser")}
+        </Button>
+      )}
       <Menu>
         <MenuTrigger
           render={

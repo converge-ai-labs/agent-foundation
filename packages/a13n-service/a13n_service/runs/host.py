@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.execution_policy import ExecutionPolicy
 from a13n_service.infra.errors import ServiceError, invalid
-from a13n_service.resources.agents import instructions
+from a13n_service.resources.agents import instructions, stored
 from a13n_service.resources.agents.schemas import SharedSkillSync
 from a13n_service.resources.agents.tables import AgentRevisionRow, AgentRow
 from a13n_service.resources.agents.toolsets import (
@@ -42,6 +42,7 @@ from a13n_service.runs.agent import ResolvedAgent, media_understanding
 from a13n_service.runs.assets import AssetsCapability
 from a13n_service.runs.attempts import Lease
 from a13n_service.runs.browsers.admission import GUIDANCE as BROWSER_GUIDANCE
+from a13n_service.runs.browsers.context import BrowserContextCapability
 from a13n_service.runs.browsers.execution import Backend as BrowserBackend
 from a13n_service.runs.browsers.execution import open_backend
 from a13n_service.runs.browsers.schemas import BrowserBinding
@@ -149,7 +150,7 @@ async def resolve_host(
     return HostPlan(
         parts,
         agent.revision_id,
-        execution=ExecutionPolicy().overlay(RunOptions.model_validate(run.options).execution),
+        execution=ExecutionPolicy().overlay(stored.require(RunOptions, run.options, kind="run", id=run.id).execution),
         memories=await resolve_memories(session, run),
         file_tools=memory_file_tools(agent.config.toolsets),
         record_tools=memory_record_tools(agent.config.toolsets),
@@ -180,6 +181,10 @@ class Host:
             # Only conversation roots retain calls; inline children and memory organizers stay inline.
             features.append(ToolExecutionCapability(self.plan.execution.tools))
         parts = self.plan.parts[agent.revision_id]
+        if agent.revision_id in self.browsers:
+            features.append(
+                BrowserContextCapability(self.runtime, self.lease, self.browsers[agent.revision_id].binding)
+            )
         if parts.builtin_instructions is not None:
             features.append(BuiltinInstructionsCapability(parts.builtin_instructions))
         skills = parts.skills
@@ -267,7 +272,16 @@ async def open_host(
                     open_backend(runtime, lease, plan.browser, check, parts.browser_tools)
                 )
                 tools[revision_id]["browser"] = BrowserUseCapability(
-                    enabled_tools=parts.browser_tools, on_human_control=lambda: BROWSER_GUIDANCE
+                    enabled_tools=parts.browser_tools,
+                    on_human_control=lambda: BROWSER_GUIDANCE,
+                    file_instructions=(
+                        "Upload workspace assets into an observed file input: action='upload', ref, "
+                        "and 1-16 paths in the form asset:<asset_id>. Host or Environment paths are not accepted. "
+                        "Only unretired assets in this workspace may be uploaded. "
+                        "action='downloads' takes no ref/paths; it publishes completed tracked downloads "
+                        "as workspace assets and returns asset IDs, never Host paths. Publication requires "
+                        "workspace write authority. File transfer requires a supporting Browser provider."
+                    ),
                 )
             if parts.assets:
                 tools[revision_id]["assets"] = AssetsCapability(runtime, lease, principal, authority)

@@ -110,7 +110,7 @@ class Supplier:
         assert method in {"Page.enable", "Runtime.enable"}, method
         return {}
 
-    async def ensure_viewer(self, state, grant_id, *, expires_at):
+    async def ensure_viewer(self, state, grant_id, *, episode, expires_at):
         if state["id"] not in self.live:
             raise ValueError("terminated allocation cannot grant input")
         if grant_id in self.revoked or (
@@ -122,7 +122,7 @@ class Supplier:
         self.viewer_deadlines[grant_id] = max(expires_at, self.viewer_deadlines.get(grant_id, expires_at))
         return ViewerGrant("https://viewer.example/secret", {}, self.viewer_deadlines[grant_id])
 
-    async def revoke_viewer(self, state, grant_id):
+    async def revoke_viewer(self, state, grant_id, *, episode):
         if self.fail_revoke:
             raise TimeoutError("still connected")
         self.revoked.add(grant_id)
@@ -132,9 +132,9 @@ class Supplier:
         pass
 
 
-async def setup(service, runs_kit):
+async def setup(service, runs_kit, *, supplier=None, supports_stop=False, **policies):
     await runs_kit.pause_sweeps(service)
-    supplier = Supplier()
+    supplier = supplier or Supplier()
 
     async def factory(config, credential, policy):
         return supplier
@@ -147,6 +147,7 @@ async def setup(service, runs_kit):
         backend_identity=lambda config: "test",
         provider_factory=factory,
         supports_viewer=True,
+        supports_stop=supports_stop,
     )
     service.runtime = replace(service.runtime, registry=Registry.of((*OSS.providers, definition)))
     service.app.state.runtime = service.runtime
@@ -155,10 +156,19 @@ async def setup(service, runs_kit):
     )
     assert response.status_code == 201, response.text
     response = await service.client.post(
-        f"{service.api}/browsers", json={"provider_id": response.json()["id"], "name": "Shared"}
+        f"{service.api}/browsers", json={"provider_id": response.json()["id"], "name": "Shared", **policies}
     )
     assert response.status_code == 201, response.text
     return supplier, response.json()
+
+
+@pytest.mark.parametrize("supports_stop", [False, True])
+async def test_browser_provider_type_exposes_stop_capability(service, runs_kit, supports_stop):
+    await setup(service, runs_kit, supports_stop=supports_stop)
+    response = await service.client.get("/api/v1/provider-types/browser")
+    assert response.status_code == 200
+    definition = next(item for item in response.json()["items"] if item["type"] == "fake_browser")
+    assert definition["supports_stop"] is supports_stop
 
 
 async def bound_run(
@@ -321,7 +331,8 @@ async def test_stop_suppression_survives_later_input(service, runs_kit, scripted
     )
 
 
-async def test_agent_native_tools_allocate_lazily_and_leave_tabs_alive(service, runs_kit, scripted_model):
+@pytest.mark.parametrize("on_demand", [False, True])
+async def test_agent_native_tools_allocate_lazily_and_leave_tabs_alive(service, runs_kit, scripted_model, on_demand):
     supplier, browser = await setup(service, runs_kit)
     lease, _ = await bound_run(
         service,
@@ -329,17 +340,25 @@ async def test_agent_native_tools_allocate_lazily_and_leave_tabs_alive(service, 
         scripted_model,
         browser,
         toolsets={"browser": {"enabled": True, "tools": {"screenshot": {"enabled": False}}}},
+        tool_search={"automatic": {}} if on_demand else None,
     )
     assert supplier.creates == 0
-    scripted_model.call("browser_tabs", {"action": "new"}, call_id="call_new")
-    scripted_model.call("browser_dialog", {"action": "inspect"}, call_id="call_dialog")
+    for name, action in (("browser_tabs", "new"), ("browser_dialog", "inspect")):
+        scripted_model.call(
+            "call_tool" if on_demand else name,
+            {"group": "browser", "tool": name, "arguments": {"action": action}} if on_demand else {"action": action},
+            call_id=f"call_{action}",
+        )
     scripted_model.say("Done")
     await execute(service.runtime, lease, AttemptControl(deadline=asyncio.get_running_loop().time() + 60))
     run = await runs_kit.get_run(service, lease.run_id)
     assert run["status"] == "completed", run.get("failure")
     request = await scripted_model.request()
     names = {tool["function"]["name"] for tool in request["tools"]}
-    assert "browser_tabs" in names and "browser_screenshot" not in names
+    assert ("browser_tabs" in names) is not on_demand
+    assert "browser_screenshot" not in names
+    assert "browser_notify_on_handback" in names
+    assert "<browser-context>" in str(request["messages"])
     assert supplier.creates == 1 and supplier.pages == {"original", "new-1"}
     assert supplier.connections and all(connection.disconnected for connection in supplier.connections)
     assert not any(method == "Target.closeTarget" for method, _, _ in supplier.protocol_calls)
@@ -446,12 +465,26 @@ async def test_run_start_during_human_control_does_not_register_a_fake_call(
     invocation.tool_call.assert_not_awaited()
 
 
-async def test_blocked_native_tool_returns_guidance_and_model_continues(service, runs_kit, scripted_model):
+@pytest.mark.parametrize("on_demand", [False, True])
+async def test_blocked_native_tool_returns_guidance_and_model_continues(service, runs_kit, scripted_model, on_demand):
     supplier, browser = await setup(service, runs_kit)
-    lease, _ = await bound_run(service, runs_kit, scripted_model, browser, toolsets={"browser": {"enabled": True}})
+    lease, _ = await bound_run(
+        service,
+        runs_kit,
+        scripted_model,
+        browser,
+        toolsets={"browser": {"enabled": True}},
+        tool_search={"automatic": {}} if on_demand else None,
+    )
     await command(service, runs_kit, browser["id"], "takeover", thread_id=lease.thread_id)
     before = len(supplier.protocol_calls)
-    scripted_model.call("browser_tabs", {"action": "new"}, call_id="call_blocked")
+    scripted_model.call(
+        "call_tool" if on_demand else "browser_tabs",
+        {"group": "browser", "tool": "browser_tabs", "arguments": {"action": "new"}}
+        if on_demand
+        else {"action": "new"},
+        call_id="call_blocked",
+    )
     scripted_model.say("I can continue unrelated work")
     await execute(service.runtime, lease, AttemptControl(deadline=asyncio.get_running_loop().time() + 60))
     run = await runs_kit.get_run(service, lease.run_id)

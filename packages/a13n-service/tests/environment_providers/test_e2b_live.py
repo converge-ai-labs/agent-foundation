@@ -22,7 +22,7 @@ from a13n_harness.environment.files import FileQueryRequest, FileTextSearchReque
 from a13n_harness.environment.models import EnvironmentError, EnvironmentState
 from a13n_harness.environment.retention import EnvironmentOutputPolicy
 from a13n_service.providers.environment.management import EnvironmentProvider
-from a13n_service.providers.environments.e2b.configuration import E2BRecipe
+from a13n_service.providers.environment.recipes.e2b import E2BRecipe
 from a13n_service.providers.environments.e2b.definition import E2B
 
 pytestmark = [

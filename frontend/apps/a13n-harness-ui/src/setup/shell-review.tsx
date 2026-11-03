@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { useQuery } from "@tanstack/react-query";
 import { SearchPicker } from "a13n-ui";
 import { connectionId } from "../configuration/model-editor";
@@ -14,6 +15,7 @@ export function ShellReviewModel({
   value: string;
   onChange: (value: string) => void;
 }) {
+  const { t } = useTranslation();
   const { client } = useTransport();
   const connections = useQuery({
     queryKey: ["model-choices"],
@@ -42,17 +44,18 @@ export function ShellReviewModel({
   return (
     <>
       <p>
-        Have a separate model review commands before they run. Each review uses
-        another model request. This doesn't sandbox commands.
+        {t(
+          "Have a separate model review commands before they run. Each review uses another model request. This doesn't sandbox commands.",
+        )}
       </p>
       <SearchPicker
-        label="Shell review model"
-        placeholder="Choose a model (optional)"
+        label={t("Shell review model")}
+        placeholder={t("Choose a model (optional)")}
         value={value}
         onValueChange={onChange}
         groups={[
           {
-            label: "Lightweight models first · same family preferred",
+            label: t("Lightweight models first · same family preferred"),
             options: candidates.map((item) => ({
               value: item.value,
               label: item.label,
@@ -60,24 +63,31 @@ export function ShellReviewModel({
             })),
           },
         ]}
-        emptyMessage="Enter a custom model ID below."
+        emptyMessage={t("Enter a custom model ID below.")}
       />
       <TextField
-        label="Review model ID (optional)"
+        label={t("Review model ID (optional)")}
         value={value}
         onChange={onChange}
-        description="Uses your main model's endpoint and API key with separate settings. Check access and review quality before relying on it."
+        description={t(
+          "Uses your main model's endpoint and API key with separate settings. Check access and review quality before relying on it.",
+        )}
       />
       {options.isError && (
         <p role="status">
-          Suggestions are unavailable. Enter a model ID or skip this step.
+          {t(
+            "Suggestions are unavailable. Enter a model ID or skip this step.",
+          )}
         </p>
       )}
       <p>
         {value.trim()
-          ? `Shell review will use ${value.trim()}. Extra-high risk commands require approval.`
-          : "No model selected — shell review will remain off."}{" "}
-        Existing command review settings are kept.
+          ? t(
+              "Shell review will use {{model}}. Extra-high risk commands require approval.",
+              { model: value.trim() },
+            )
+          : t("No model selected — shell review will remain off.")}{" "}
+        {t("Existing command review settings are kept.")}
       </p>
     </>
   );

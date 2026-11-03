@@ -116,3 +116,29 @@ it("keeps selection and editor identity across wrapping, jumps to a line, and re
   expect(restored.state.selection.main.from).toBe(4);
   expect(restored.state.selection.main.to).toBe(9);
 });
+
+it("reports cursor and selection changes without treating selection as an edit", () => {
+  const onCursor = vi.fn();
+  const onChange = vi.fn();
+  render(
+    <SourceEditor
+      value={"first\nsecond"}
+      label="Source"
+      onCursor={onCursor}
+      onChange={onChange}
+    />,
+  );
+  expect(onCursor).toHaveBeenLastCalledWith({
+    line: 1,
+    column: 1,
+    selected: 0,
+  });
+  const editor = EditorView.findFromDOM(screen.getByLabelText("Source"))!;
+  act(() => editor.dispatch({ selection: { anchor: 1, head: 9 } }));
+  expect(onCursor).toHaveBeenLastCalledWith({
+    line: 2,
+    column: 4,
+    selected: 8,
+  });
+  expect(onChange).not.toHaveBeenCalled();
+});

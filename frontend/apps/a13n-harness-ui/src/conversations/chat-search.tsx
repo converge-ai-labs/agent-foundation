@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { useRef, useState } from "react";
 import { Link } from "react-router";
 import {
@@ -25,13 +26,14 @@ import navigation from "./conversation.module.css";
 import styles from "./chat-search.module.css";
 
 export function ChatSearch({ onOpen }: { onOpen: () => void }) {
+  const { t } = useTranslation();
   const projects = useProjects();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
   const [scope, setScope] = useState("");
   const projectOptions = [
-    { value: "", label: "All projects" },
+    { value: "", label: t("All projects") },
     ...(projects.data ?? []).map((project) => ({
       value: project.project_id,
       label: project.name,
@@ -58,9 +60,12 @@ export function ChatSearch({ onOpen }: { onOpen: () => void }) {
         }
       }}
     >
-      <DialogTrigger className={navigation.homeLink} aria-label="Search chats">
+      <DialogTrigger
+        className={navigation.homeLink}
+        aria-label={t("Search chats")}
+      >
         <MagnifyingGlass size={18} aria-hidden="true" />
-        <span>Search</span>
+        <span>{t("Search")}</span>
       </DialogTrigger>
       <DialogPopup
         placement="top"
@@ -84,15 +89,17 @@ export function ChatSearch({ onOpen }: { onOpen: () => void }) {
           else links[Math.min(next, links.length - 1)]?.focus();
         }}
       >
-        <DialogTitle className={navigation.srOnly}>Search chats</DialogTitle>
+        <DialogTitle className={navigation.srOnly}>
+          {t("Search chats")}
+        </DialogTitle>
         <div className={styles.search}>
           <MagnifyingGlass size={20} aria-hidden="true" />
           <Input
             unstyled
             ref={input}
-            aria-label="Find chats"
+            aria-label={t("Find chats")}
             type="search"
-            placeholder="Search chats…"
+            placeholder={t("Search chats…")}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
@@ -120,8 +127,12 @@ export function ChatSearch({ onOpen }: { onOpen: () => void }) {
               render={<Button variant="ghost" size="icon" />}
               aria-label={
                 scope
-                  ? `Project scope: ${projectOptions.find((option) => option.value === scope)?.label ?? scope}`
-                  : "Project scope"
+                  ? t("Project scope: {{project}}", {
+                      project:
+                        projectOptions.find((option) => option.value === scope)
+                          ?.label ?? scope,
+                    })
+                  : t("Project scope")
               }
               className={scope ? styles.activeFilter : undefined}
             >
@@ -129,11 +140,11 @@ export function ChatSearch({ onOpen }: { onOpen: () => void }) {
             </ComboboxTrigger>
             <ComboboxPopup align="end" className={styles.filter}>
               <ComboboxInput
-                aria-label="Find project"
-                placeholder="Find a project…"
+                aria-label={t("Find project")}
+                placeholder={t("Find a project…")}
                 showTrigger={false}
               />
-              <ComboboxEmpty>No matching projects.</ComboboxEmpty>
+              <ComboboxEmpty>{t("No matching projects.")}</ComboboxEmpty>
               <ComboboxList>
                 {(option: { value: string; label: string }) => (
                   <ComboboxItem key={option.value} value={option}>
@@ -145,7 +156,7 @@ export function ChatSearch({ onOpen }: { onOpen: () => void }) {
           </Combobox>
           <DialogClose
             render={<Button variant="ghost" size="icon" />}
-            aria-label="Close search"
+            aria-label={t("Close search")}
           >
             <X size={18} />
           </DialogClose>
@@ -158,7 +169,7 @@ export function ChatSearch({ onOpen }: { onOpen: () => void }) {
                 setScope("");
                 input.current?.focus();
               }}
-              aria-label="Clear project filter"
+              aria-label={t("Clear project filter")}
             >
               {projects.data?.find((project) => project.project_id === scope)
                 ?.name ?? scope}
@@ -185,6 +196,7 @@ function SearchResults({
   scope: string;
   close: () => void;
 }) {
+  const { t } = useTranslation();
   const list = useThreads(query, scope || undefined);
   const rows = [
     ...new Map(
@@ -195,31 +207,36 @@ function SearchResults({
     ).values(),
   ];
   return (
-    <section aria-label="Chat search results">
+    <section aria-label={t("Chat search results")}>
       {rows.map((row) => (
         <Link
           key={row.thread.thread_id}
           to={`/threads/${encodeURIComponent(row.thread.thread_id)}`}
           className={styles.result}
-          aria-label={conversationTitle(row.thread)}
+          aria-label={conversationTitle(row.thread, [], t("Untitled chat"))}
           onClick={close}
         >
           <span>
-            <strong>{conversationTitle(row.thread)}</strong>
+            <strong>
+              {conversationTitle(row.thread, [], t("Untitled chat"))}
+            </strong>
             <small>
-              {row.project_name ?? "Without a project"}
-              {row.thread.coordinator_thread_id ? " · Coordinator worker" : ""}
+              {row.thread.coordinator_thread_id
+                ? t("{{project}} · Coordinator worker", {
+                    project: row.project_name ?? t("Without a project"),
+                  })
+                : (row.project_name ?? t("Without a project"))}
             </small>
           </span>
         </Link>
       ))}
       {list.isFetching && !list.isFetchingNextPage && (
         <p role="status" className={styles.empty}>
-          {list.data ? "Updating results…" : "Searching chats…"}
+          {list.data ? t("Updating results…") : t("Searching chats…")}
         </p>
       )}
       {list.isSuccess && !rows.length && (
-        <p className={styles.empty}>No matching chats.</p>
+        <p className={styles.empty}>{t("No matching chats.")}</p>
       )}
       <ErrorNotice error={list.error} retry={() => void list.refetch()} />
       {list.hasNextPage && (
@@ -228,7 +245,7 @@ function SearchResults({
           loading={list.isFetchingNextPage}
           onClick={() => void list.fetchNextPage()}
         >
-          Show more results
+          {t("Show more results")}
         </Button>
       )}
     </section>

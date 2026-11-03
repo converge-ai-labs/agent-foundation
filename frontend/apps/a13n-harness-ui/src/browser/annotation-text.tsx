@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "a13n-ui";
 import { Check, X } from "@phosphor-icons/react";
@@ -20,6 +21,7 @@ export function AnnotationText({
   onApply: (mark: TextMark) => void;
   onCancel: () => void;
 }) {
+  const { t } = useTranslation();
   const [value, setValue] = useState(mark.text);
   const input = useRef<HTMLTextAreaElement>(null);
   const composing = useRef(false);
@@ -47,7 +49,7 @@ export function AnnotationText({
     >
       <textarea
         ref={input}
-        aria-label="Annotation text"
+        aria-label={t("Annotation text")}
         value={value}
         style={{
           color: mark.color,
@@ -78,7 +80,7 @@ export function AnnotationText({
       <div className={styles.textActions}>
         <Button
           size="icon-sm"
-          aria-label="Apply text (Ctrl/⌘ Enter)"
+          aria-label={t("Apply text (Ctrl/⌘ Enter)")}
           onClick={apply}
         >
           <Check />
@@ -86,7 +88,7 @@ export function AnnotationText({
         <Button
           size="icon-sm"
           variant="secondary"
-          aria-label="Cancel text"
+          aria-label={t("Cancel text")}
           onClick={onCancel}
         >
           <X />

@@ -14,9 +14,15 @@ class AuthRejected(Exception):
 
 
 class RFB:
-    def __init__(self, endpoint: str, password: str):
+    def __init__(self, endpoint: str, password: str, *, subprotocols=None):
         self.buf = b""
-        self.s = connect(endpoint, subprotocols=["binary"], open_timeout=15, close_timeout=2, max_size=16 * 1024 * 1024)
+        self.s = connect(
+            endpoint,
+            subprotocols=subprotocols or ["binary"],
+            open_timeout=15,
+            close_timeout=2,
+            max_size=16 * 1024 * 1024,
+        )
         try:
             version = self.read(12)
             assert version.startswith(b"RFB 003.")

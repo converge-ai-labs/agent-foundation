@@ -48,6 +48,7 @@ dependencies = [
     "sqlalchemy[asyncio]>=2.0.41,<3",
     "starlette>=0.52,<2",
     "uvicorn>=0.35,<1",
+    "websockets>=15,<16",
     "zstandard>=0.25,<0.26",
     "tzdata>=2026.3",
     "croniter>=6,<7",

@@ -58,11 +58,13 @@ type Resource = { value: Schema["Provider"]; etag?: string };
 const categories: Record<ProviderKind, ProviderCategoryValue> = {
   environment: "environments",
   memory: "memory",
+  browser: "browsers",
 };
 
 /** The types a deployment offers for one provider kind. */
 export function useProviderTypes(kind: ProviderKind, enabled = true) {
   const client = useClient();
+  const { t } = useTranslation();
   return useQuery({
     queryKey: [`${kind}-provider-types`],
     enabled,
@@ -73,6 +75,23 @@ export function useProviderTypes(kind: ProviderKind, enabled = true) {
           signal,
         })
         .then(data),
+    // Translate the observer's presentation without changing cached server data.
+    select: (catalog) =>
+      kind === "browser"
+        ? {
+            ...catalog,
+            items: catalog.items.map((definition) => ({
+              ...definition,
+              display_name:
+                definition.display_name === "Docker browser"
+                  ? t("Docker browser")
+                  : definition.display_name ===
+                      "Native browser (Linux debugging)"
+                    ? t("Native browser (Linux debugging)")
+                    : definition.display_name,
+            })),
+          }
+        : catalog,
   });
 }
 
@@ -337,7 +356,7 @@ export function ProviderForm({
     configSchema = schema(definition?.configuration_schema),
     section = useCredentialSection(definition, configuration, basis?.value);
   const configChanged =
-    kind === "environment" &&
+    (kind === "environment" || kind === "browser") &&
     !!basis &&
     JSON.stringify(configuration) !== JSON.stringify(basis.value.config);
   function done() {
@@ -481,7 +500,7 @@ export function ProviderForm({
           retry={() => void reload()}
         />
       )}
-      {kind === "environment" ? (
+      {kind === "environment" || kind === "browser" ? (
         hasFields(configSchema) && (
           <ProviderGroup>
             <ProviderConfigurationFields

@@ -1,22 +1,29 @@
 /* Compact list chrome stays legible without enlarging on narrow windows.
    Touch hit areas and focus rings remain owned by the shared primitives. */
-@media (width < 768px) {
-  .compact :is(button, [data-slot="button"], [data-slot="input-control"]) {
-    font-size: var(--a13n-text-sm);
-  }
-  .compact :is(button, [data-slot="button"]) {
-    min-height: 32px;
-    height: 32px;
-    gap: 6px;
-  }
-  .compact [data-slot="input"] {
-    height: 30px;
-    line-height: 30px;
-  }
-  .compact :is(button, [data-slot="button"]) svg {
-    width: 14px;
-    height: 14px;
-  }
+.compact :is(button, [data-slot="button"], [data-slot="input-control"]) {
+  font-size: var(--a13n-text-sm);
+}
+.compact :is(button, [data-slot="button"]) {
+  min-height: 32px;
+  height: 32px;
+  gap: 6px;
+}
+.compact [data-slot="input"] {
+  height: 30px;
+  line-height: 30px;
+}
+.compact :is(button, [data-slot="button"]) svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* Section and footer actions share typography, but retain their 28px density. */
+.secondary {
+  composes: compact;
+}
+.secondary :is(button, [data-slot="button"]) {
+  min-height: 28px;
+  height: 28px;
 }
 
 /* Choice labels use interface typography; editable text keeps its input size. */

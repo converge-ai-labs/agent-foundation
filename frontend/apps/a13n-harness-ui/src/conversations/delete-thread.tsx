@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { useContext } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -26,6 +27,7 @@ export function DeleteThread({
   thread: Schema<"ThreadSummary">;
   close: () => void;
 }) {
+  const { t } = useTranslation();
   const transport = useTransport();
   const queries = useQueryClient();
   const navigate = useNavigate();
@@ -73,9 +75,12 @@ export function DeleteThread({
       onOpenChange={(open) => {
         if (!open && !deletion.isPending) close();
       }}
-      title="Delete chat?"
-      closeLabel="Cancel deletion"
-      description={`“${conversationTitle(thread)}” and its subagent history will be deleted for everyone. This cannot be undone. Project files and other chats are kept.`}
+      title={t("Delete chat?")}
+      closeLabel={t("Cancel deletion")}
+      description={t(
+        "“{{title}}” and its subagent history will be deleted for everyone. This cannot be undone. Project files and other chats are kept.",
+        { title: conversationTitle(thread, [], t("Untitled chat")) },
+      )}
       footer={
         <>
           <Button
@@ -83,7 +88,7 @@ export function DeleteThread({
             disabled={deletion.isPending}
             onClick={close}
           >
-            Cancel
+            {t("Cancel")}
           </Button>
           <Button
             variant="destructive"
@@ -91,7 +96,7 @@ export function DeleteThread({
             disabled={thread.root_activity.state !== "inactive"}
             onClick={() => deletion.mutate()}
           >
-            Delete chat
+            {t("Delete chat")}
           </Button>
         </>
       }

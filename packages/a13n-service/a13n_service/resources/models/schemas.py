@@ -8,6 +8,7 @@ from a13n_harness.providers.model.headers import ExtraHeaders
 from a13n_harness.spec import HarnessModelCharacteristics
 from a13n_harness.toolsets.file_media import NativeInputMediaKind
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from pydantic.experimental.missing_sentinel import MISSING
 
 from a13n_service.infra.ids import Key, ObjectId
 from a13n_service.providers.model_settings import JsonSettings
@@ -148,3 +149,18 @@ class MediaDefaults(MediaUnderstandingSelection):
 
     id: str
     version: int
+
+
+class ModelConfigurationChanges(BaseModel):
+    """Sparse model configuration; omission preserves the current value."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_name: str | MISSING = Field(default=MISSING, min_length=1, max_length=256)
+    model_api: str | MISSING = Field(default=MISSING, pattern="^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)+$", max_length=96)
+    characteristics: HarnessModelCharacteristics | MISSING = Field(default=MISSING)
+    settings: JsonSettings | MISSING = Field(default=MISSING)
+    max_tokens: int | MISSING | None = Field(default=MISSING, ge=1, le=1000000)
+    temperature: float | MISSING | None = Field(default=MISSING, ge=0, le=2)
+    top_p: float | MISSING | None = Field(default=MISSING, gt=0, le=1)
+    extra_body: JsonSettings | MISSING = Field(default=MISSING)
+    extra_headers: ExtraHeaders | MISSING = Field(default=MISSING)

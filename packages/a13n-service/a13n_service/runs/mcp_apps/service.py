@@ -23,6 +23,7 @@ from a13n_service.infra.ids import new_object_id
 from a13n_service.providers.tools import ToolDispatch
 from a13n_service.providers.tools.mcp import call_app_tool, mcp_client
 from a13n_service.providers.tools.mcp_apps import require_classic
+from a13n_service.resources.agents import stored
 from a13n_service.resources.connections.access import McpConnection, resolve_connection
 from a13n_service.resources.connections.oauth import open_mcp_client
 from a13n_service.resources.connections.service import check_caller_headers
@@ -115,7 +116,9 @@ async def _resolve(
                 raise ServiceError("forbidden", "The App tool requires a Run permission flow", {"permission": mode})
         headers = dict(run.mcp_headers.get(connection.id, {}))
         check_caller_headers(connection.id, connection.config, headers)
-        configuration = RunOptions.model_validate(run.options).configuration or RunConfiguration()
+        configuration = (
+            stored.require(RunOptions, run.options, kind="run", id=run.id).configuration or RunConfiguration()
+        )
     return _Connection(connection, headers, runtime.endpoint_policy.for_run(configuration))
 
 

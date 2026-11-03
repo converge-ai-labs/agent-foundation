@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased, defer
 
 from a13n_service.infra.errors import ServiceError
+from a13n_service.resources.agents import stored
 from a13n_service.runs.display import StreamPosition
 from a13n_service.runs.runs import run_views
 from a13n_service.runs.schemas import EntryView, RunView, ThreadView
@@ -145,7 +146,7 @@ async def states(session: AsyncSession, thread_ids: Sequence[str]) -> dict[str, 
     )
     open_entries: dict[str, list[EntryView]] = {}
     for entry in entries:
-        open_entries.setdefault(entry.thread_id, []).append(EntryView.model_validate(entry))
+        open_entries.setdefault(entry.thread_id, []).append(stored.read(EntryView, entry))
     return {
         thread.id: ThreadState(
             thread=ThreadView.model_validate(thread),

@@ -1,9 +1,17 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  render,
+  renderHook,
+  screen,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, useLocation } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ProvidersPage } from "./page";
+import { i18n } from "../../i18n";
+import { useProviderTypes } from "./kind-providers";
 
 const state = vi.hoisted(() => ({
   GET: vi.fn(),
@@ -26,9 +34,6 @@ vi.mock("../../layout/workspace", () => ({
     organizationCan: () => state.organizationWrite,
     can: () => state.manage,
   }),
-}));
-vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
 }));
 function Location() {
   return <output>{useLocation().search}</output>;
@@ -68,8 +73,9 @@ beforeEach(() => {
   );
   HTMLElement.prototype.scrollIntoView = () => {};
 });
-afterEach(() => {
+afterEach(async () => {
   cleanup();
+  await i18n.changeLanguage("en");
   vi.unstubAllGlobals();
   vi.resetAllMocks();
   state.organizationWrite = true;
@@ -99,4 +105,40 @@ it("shows workspace providers without offering mutations to a read-only member",
   mount();
   await screen.findByText("No web providers yet");
   expect(screen.queryByRole("button", { name: "Add provider" })).toBeNull();
+});
+
+it("localizes built-in browser type labels without refetching or rewriting cached definitions", async () => {
+  const cache = new QueryClient();
+  const catalog = {
+    items: [
+      { type: "docker", display_name: "Docker browser" },
+      { type: "native", display_name: "Native browser (Linux debugging)" },
+      { type: "custom", display_name: "Custom provider" },
+    ],
+  };
+  cache.setQueryData(["browser-provider-types"], catalog);
+  cache.setQueryData(["environment-provider-types"], catalog);
+  const { result } = renderHook(
+    () => ({
+      browser: useProviderTypes("browser", false),
+      environment: useProviderTypes("environment", false),
+    }),
+    {
+      wrapper: ({ children }) => (
+        <QueryClientProvider client={cache}>{children}</QueryClientProvider>
+      ),
+    },
+  );
+  expect(
+    result.current.browser.data?.items.map((item) => item.display_name),
+  ).toEqual(["Docker browser", "Native browser", "Custom provider"]);
+  await act(async () => {
+    await i18n.changeLanguage("zh-CN");
+  });
+  expect(
+    result.current.browser.data?.items.map((item) => item.display_name),
+  ).toEqual(["Docker 浏览器", "本机浏览器", "Custom provider"]);
+  expect(result.current.environment.data).toEqual(catalog);
+  expect(cache.getQueryData(["browser-provider-types"])).toEqual(catalog);
+  expect(state.GET).not.toHaveBeenCalled();
 });

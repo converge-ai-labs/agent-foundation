@@ -11,7 +11,7 @@ import pytest
 from a13n_harness import HarnessBuilder, RunBindings
 from a13n_harness.environment import DynamicEnvironmentCapability, DynamicEnvironmentConfiguration
 from a13n_harness.tools import InvocationPolicyCapability, InvocationPolicyDecision
-from a13n_service.providers.environments.e2b.configuration import E2BRecipe
+from a13n_service.providers.environment.recipes.e2b import E2BRecipe
 from a13n_service.providers.environments.e2b.definition import E2B
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.messages import ModelMessage, ModelRequest, ToolReturnPart
