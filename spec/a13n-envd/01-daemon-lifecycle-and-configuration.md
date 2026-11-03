@@ -59,7 +59,7 @@ The standard image owns an optional startup convention, not daemon behavior. Its
 
 ## Generation-Private Runtime State
 
-Runtime state contains Session bookkeeping, spool files and daemon-owned temporary data, separate from workspace files and persistent installation identity. A lifetime lock prevents two daemon processes from using the same runtime directory. On startup, remove only recognized daemon-owned stale generation data without following links into user data; unexpected content or failed deletion is reported rather than recursively treating an arbitrary directory as disposable.
+Runtime state contains Session bookkeeping, spool files and daemon-owned temporary data, separate from workspace files and persistent installation identity. First startup publishes one complete generated Device ID in the installation state directory. Concurrent starts reuse the same ID. Unreadable or invalid stored identity fails startup without changing the file. Removing the identity file allows the next start to generate a new ID. A lifetime lock prevents two daemon processes from using the same runtime directory. On startup, remove only recognized daemon-owned stale generation data without following links into user data; unexpected content or failed deletion is reported rather than recursively treating an arbitrary directory as disposable.
 
 Each generation gets fresh runtime storage. Nothing in it is a recovery checkpoint. Destination-local upload candidates remain beside their destination for atomic publication and are tracked by their owning Session/operation. The daemon never garbage-collects ordinary workspace files.
 
