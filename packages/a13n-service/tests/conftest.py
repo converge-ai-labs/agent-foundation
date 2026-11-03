@@ -84,9 +84,9 @@ def cloud_browser_credentials() -> tuple[str, SecretStr]:
     from dotenv import dotenv_values
 
     provider = os.environ.get("A13N_CLOUD_BROWSER_TEST")
-    keys = {"browserbase": "BROWSERBASE_API_KEY", "kernel": "KERNEL_API_KEY"}
+    keys = {"browserbase": "BROWSERBASE_API_KEY", "kernel": "KERNEL_API_KEY", "browser_use": "BROWSER_USE_API_KEY"}
     if provider not in keys:
-        raise pytest.UsageError("Set A13N_CLOUD_BROWSER_TEST to browserbase or kernel to run cloud tests")
+        raise pytest.UsageError("Set A13N_CLOUD_BROWSER_TEST to browserbase, kernel or browser_use to run cloud tests")
     key = keys[provider]
     value = os.environ.get(key)
     if value is None:

@@ -31,6 +31,11 @@ class KernelConfiguration(BaseModel):
     project_id: str | None = Field(default=None, min_length=1, max_length=256)
 
 
+class BrowserUseConfiguration(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    project_id: str = Field(min_length=1, max_length=256)
+
+
 class CloudCredential(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     api_key: SecretStr
@@ -47,12 +52,17 @@ class KernelRecipe(BaseModel):
     headless: bool = True
 
 
+class BrowserUseRecipe(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    timeout_minutes: int = Field(default=5, ge=1, le=240)
+
+
 class CloudAPI:
     """One authenticated client for one supplier and account."""
 
     def __init__(
         self,
-        supplier: Literal["browserbase", "kernel"],
+        supplier: Literal["browserbase", "kernel", "browser_use"],
         credential: CloudCredential,
         policy: EndpointPolicy,
         *,
@@ -61,9 +71,17 @@ class CloudAPI:
     ) -> None:
         self.supplier = supplier
         self.policy = policy
-        self.base = "https://api.browserbase.com" if supplier == "browserbase" else "https://api.onkernel.com"
+        self.base = {
+            "browserbase": "https://api.browserbase.com",
+            "kernel": "https://api.onkernel.com",
+            "browser_use": "https://api.browser-use.com",
+        }[supplier]
         key = credential.api_key.get_secret_value()
-        headers = {"X-BB-API-Key": key} if supplier == "browserbase" else {"Authorization": f"Bearer {key}"}
+        headers = {
+            "browserbase": {"X-BB-API-Key": key},
+            "kernel": {"Authorization": f"Bearer {key}"},
+            "browser_use": {"X-Browser-Use-API-Key": key},
+        }[supplier]
 
         async def check_response(response: httpx2.Response) -> None:
             bound_response(response, max_bytes)
@@ -140,7 +158,7 @@ async def _connect(api: CloudAPI, state: dict[str, JsonValue]) -> Chromium:
 
 
 class CloudUnsupportedOperations:
-    """Operations not advertised by either managed cloud provider."""
+    """Operations not advertised by managed cloud providers."""
 
     async def stop(self, allocation_id: str, state: dict[str, JsonValue]) -> LiveBrowser:
         raise NotImplementedError("Cloud browser stop is not supported")
@@ -362,6 +380,151 @@ class Kernel(CloudUnsupportedOperations):
             await self.api.request("DELETE", f"/browsers/{quote(session_id, safe='')}", allow_missing=True)
             item = await self._get(allocation_id, session_id)
         if not item.get("deleted_at"):
+            raise BrowserProviderError("cloud_delete_unresolved")
+
+    async def connect(self, state: dict[str, JsonValue]) -> Chromium:
+        return await _connect(self.api, state)
+
+    async def close(self) -> None:
+        await self.api.close()
+
+
+class BrowserUse(CloudUnsupportedOperations):
+    """Recover a standalone browser by exact allocation metadata."""
+
+    def __init__(self, config: BrowserUseConfiguration, api: CloudAPI):
+        self.config, self.api = config, api
+
+    @staticmethod
+    def _json(response: httpx2.Response) -> object:
+        try:
+            return response.json()
+        except ValueError:
+            raise BrowserProviderError("cloud_invalid_response") from None
+
+    async def _check_scope(self) -> None:
+        response = await self.api.request("GET", "/api/v2/billing/account")
+        data = self._json(response)
+        if not isinstance(data, dict) or not isinstance(data.get("projectId"), str):
+            raise BrowserProviderError("cloud_invalid_response")
+        if data["projectId"] != self.config.project_id:
+            raise BrowserProviderError("cloud_account_mismatch", certainty="not_dispatched")
+
+    @staticmethod
+    def _owned(allocation_id: str, item: dict) -> bool:
+        metadata = item.get("metadata")
+        return isinstance(metadata, dict) and metadata.get("a13n_allocation") == allocation_id
+
+    async def _find(self, allocation_id: str) -> dict | None:
+        if not re.fullmatch(r"[A-Za-z0-9_-]+", allocation_id):
+            raise BrowserProviderError("cloud_invalid_allocation", certainty="not_dispatched")
+        matches = []
+        page = 1
+        while True:
+            response = await self.api.request(
+                "GET",
+                "/api/v4/browsers",
+                params={"metadata": f"a13n_allocation={allocation_id}", "pageNumber": page, "pageSize": 100},
+            )
+            data = self._json(response)
+            if not isinstance(data, dict) or not isinstance(data.get("items"), list):
+                raise BrowserProviderError("cloud_invalid_response")
+            items = data["items"]
+            total = data.get("totalItems")
+            if (
+                not isinstance(total, int)
+                or isinstance(total, bool)
+                or total < 0
+                or data.get("pageNumber") != page
+                or data.get("pageSize") != 100
+                or len(items) != min(100, max(0, total - (page - 1) * 100))
+                or any(not isinstance(item, dict) or not self._owned(allocation_id, item) for item in items)
+            ):
+                raise BrowserProviderError("cloud_invalid_response")
+            matches.extend(items)
+            if len(matches) > 1:
+                raise BrowserProviderError("cloud_ambiguous_allocation")
+            if page * 100 >= total:
+                return matches[0] if matches else None
+            page += 1
+
+    async def _get(self, allocation_id: str, session_id: str) -> dict:
+        response = await self.api.request("GET", f"/api/v4/browsers/{quote(session_id, safe='')}")
+        item = self._json(response)
+        if not isinstance(item, dict) or item.get("id") != session_id or not self._owned(allocation_id, item):
+            raise BrowserProviderError("cloud_identity_mismatch")
+        return item
+
+    def _live(self, allocation_id: str, item: dict) -> LiveBrowser:
+        session_id, url, expires_at = item.get("id"), item.get("cdpUrl"), item.get("timeoutAt")
+        if item.get("status") != "active" or not isinstance(session_id, str) or not isinstance(url, str):
+            raise BrowserProviderError("cloud_session_not_ready")
+        if not isinstance(expires_at, str):
+            raise BrowserProviderError("cloud_invalid_response")
+        try:
+            expiry = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+        except ValueError:
+            raise BrowserProviderError("cloud_invalid_response") from None
+        # Browser Use documents cdpUrl as a WebSocket endpoint, but currently returns
+        # an HTTPS scheme. WebSocket upgrades use the equivalent secure scheme.
+        parsed = urlsplit(url)
+        if parsed.scheme == "https":
+            url = parsed._replace(scheme="wss").geturl()
+        return LiveBrowser(
+            {"id": session_id, "allocation_id": allocation_id, "cdp_url": url}, expiry, runtime_id=session_id
+        )
+
+    async def create(self, allocation_id: str, recipe: BaseModel) -> LiveBrowser:
+        if not isinstance(recipe, BrowserUseRecipe):
+            raise BrowserProviderError("cloud_invalid_recipe", certainty="not_dispatched")
+        try:
+            await self._check_scope()
+        except BrowserProviderError as exc:
+            raise BrowserProviderError(exc.code, certainty="not_dispatched") from None
+        response = await self.api.request(
+            "POST",
+            "/api/v4/browsers",
+            create=True,
+            body={
+                "metadata": {"a13n_allocation": allocation_id},
+                "timeout": recipe.timeout_minutes,
+                "proxyCountryCode": None,
+                "solveCaptchas": False,
+                "enableRecording": False,
+            },
+        )
+        item = self._json(response)
+        if not isinstance(item, dict) or not self._owned(allocation_id, item):
+            raise BrowserProviderError("cloud_identity_mismatch")
+        return self._live(allocation_id, item)
+
+    async def inspect(self, allocation_id: str, state: dict[str, JsonValue] | None) -> LiveBrowser | None:
+        await self._check_scope()
+        item = await self._find(allocation_id) if state is None else await self._get(allocation_id, str(state["id"]))
+        if item is None:
+            # An empty search does not rule out a delayed create.
+            raise BrowserProviderError("cloud_inspect_unresolved")
+        if state is None:
+            session_id = item.get("id")
+            if not isinstance(session_id, str):
+                raise BrowserProviderError("cloud_invalid_response")
+            item = await self._get(allocation_id, session_id)
+        if item.get("status") == "stopped":
+            return None
+        return self._live(allocation_id, item)
+
+    async def delete(self, allocation_id: str, state: dict[str, JsonValue] | None) -> None:
+        await self._check_scope()
+        item = await self._find(allocation_id) if state is None else await self._get(allocation_id, str(state["id"]))
+        if item is None or not isinstance(item.get("id"), str):
+            raise BrowserProviderError("cloud_delete_unresolved")
+        session_id = item["id"]
+        if state is None:
+            item = await self._get(allocation_id, session_id)
+        if item.get("status") == "active":
+            await self.api.request("PATCH", f"/api/v4/browsers/{quote(session_id, safe='')}", body={"action": "stop"})
+            item = await self._get(allocation_id, session_id)
+        if item.get("status") != "stopped":
             raise BrowserProviderError("cloud_delete_unresolved")
 
     async def connect(self, state: dict[str, JsonValue]) -> Chromium:

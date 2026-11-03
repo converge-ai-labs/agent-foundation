@@ -530,3 +530,126 @@ async def test_browserbase_confirmation_failure_does_not_recreate(service, runs_
         lifecycle.release_intent(row)
         assert row.status == "deleting"
     assert sum(method == "POST" for method, _ in calls) == 1
+
+
+async def test_browser_use_lifecycle_and_scope():
+    from a13n_service.providers.browser.cloud import BrowserUse, BrowserUseConfiguration, BrowserUseRecipe
+
+    item = {
+        "id": "session-1",
+        "status": "active",
+        "metadata": {"a13n_allocation": "alloc-1"},
+        "timeoutAt": "2026-11-03T08:00:00Z",
+        "cdpUrl": "wss://example.com/cdp?token=secret",
+    }
+    calls = []
+
+    async def handler(request):
+        calls.append((request.method, request.url.path))
+        if request.url.path == "/api/v2/billing/account":
+            return httpx2.Response(200, json={"projectId": "project"})
+        if request.method == "POST":
+            body = json.loads(request.content)
+            assert body["proxyCountryCode"] is None and body["solveCaptchas"] is False
+            return httpx2.Response(201, json=item)
+        if request.method == "PATCH":
+            item["status"] = "stopped"
+        return httpx2.Response(200, json=item)
+
+    provider = BrowserUse(BrowserUseConfiguration(project_id="project"), api("browser_use", handler))
+    try:
+        live = await provider.create("alloc-1", BrowserUseRecipe())
+        assert (await provider.inspect("alloc-1", live.state)).runtime_id == live.runtime_id
+        await provider.delete("alloc-1", live.state)
+        assert await provider.inspect("alloc-1", live.state) is None
+        assert calls.count(("POST", "/api/v4/browsers")) == 1
+    finally:
+        await provider.close()
+
+
+@pytest.mark.parametrize("timeout", [None, 123, "not-a-date"])
+async def test_browser_use_invalid_timeout_is_rejected(timeout):
+    from a13n_service.providers.browser.cloud import BrowserUse, BrowserUseConfiguration
+
+    async def handler(request):
+        return httpx2.Response(200)
+
+    provider = BrowserUse(BrowserUseConfiguration(project_id="project"), api("browser_use", handler))
+    try:
+        item = {"id": "session-1", "status": "active", "cdpUrl": "wss://example.com/cdp", "timeoutAt": timeout}
+        with pytest.raises(BrowserProviderError) as error:
+            provider._live("alloc-1", item)
+        assert error.value.code == "cloud_invalid_response"
+    finally:
+        await provider.close()
+
+
+async def test_browser_use_wrong_account_never_dispatches_create():
+    from a13n_service.providers.browser.cloud import BrowserUse, BrowserUseConfiguration, BrowserUseRecipe
+
+    calls = []
+
+    async def handler(request):
+        calls.append(request.url.path)
+        return httpx2.Response(200, json={"projectId": "wrong"})
+
+    provider = BrowserUse(BrowserUseConfiguration(project_id="project"), api("browser_use", handler))
+    try:
+        with pytest.raises(BrowserProviderError) as error:
+            await provider.create("alloc-1", BrowserUseRecipe())
+        assert error.value.code == "cloud_account_mismatch"
+        assert error.value.certainty == "not_dispatched"
+        assert calls == ["/api/v2/billing/account"]
+    finally:
+        await provider.close()
+
+
+async def test_browser_use_unresolved_and_ambiguous_metadata_are_not_deleted():
+    from a13n_service.providers.browser.cloud import BrowserUse, BrowserUseConfiguration
+
+    items = []
+    methods = []
+
+    async def handler(request):
+        methods.append(request.method)
+        if request.url.path == "/api/v2/billing/account":
+            return httpx2.Response(200, json={"projectId": "project"})
+        return httpx2.Response(200, json={"items": items, "pageNumber": 1, "pageSize": 100, "totalItems": len(items)})
+
+    provider = BrowserUse(BrowserUseConfiguration(project_id="project"), api("browser_use", handler))
+    try:
+        with pytest.raises(BrowserProviderError) as error:
+            await provider.inspect("alloc-1", None)
+        assert error.value.code == "cloud_inspect_unresolved"
+        with pytest.raises(BrowserProviderError) as error:
+            await provider.delete("alloc-1", None)
+        assert error.value.code == "cloud_delete_unresolved"
+        items.extend(
+            [
+                {"id": "s1", "metadata": {"a13n_allocation": "alloc-1"}},
+                {"id": "s2", "metadata": {"a13n_allocation": "alloc-1"}},
+            ]
+        )
+        with pytest.raises(BrowserProviderError) as error:
+            await provider.delete("alloc-1", None)
+        assert error.value.code == "cloud_ambiguous_allocation"
+        assert set(methods) == {"GET"}
+    finally:
+        await provider.close()
+
+
+async def test_browser_use_incomplete_filtered_results_are_not_absence():
+    from a13n_service.providers.browser.cloud import BrowserUse, BrowserUseConfiguration
+
+    async def handler(request):
+        if request.url.path == "/api/v2/billing/account":
+            return httpx2.Response(200, json={"projectId": "project"})
+        return httpx2.Response(200, json={"items": [], "pageNumber": 1, "pageSize": 100, "totalItems": 1})
+
+    provider = BrowserUse(BrowserUseConfiguration(project_id="project"), api("browser_use", handler))
+    try:
+        with pytest.raises(BrowserProviderError) as error:
+            await provider.inspect("alloc-1", None)
+        assert error.value.code == "cloud_invalid_response"
+    finally:
+        await provider.close()

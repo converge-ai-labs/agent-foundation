@@ -13,7 +13,11 @@ pytestmark = pytest.mark.anyio
 
 @pytest.mark.parametrize(
     ("kind", "config"),
-    [("browserbase", {"project_id": "project"}), ("kernel", {"organization_id": "org"})],
+    [
+        ("browserbase", {"project_id": "project"}),
+        ("kernel", {"organization_id": "org"}),
+        ("browser_use", {"project_id": "project"}),
+    ],
 )
 async def test_cloud_account_registration(service, kind, config):
     service.runtime = replace(service.runtime, registry=Registry.of((*OSS.providers, *builtins(Browsers(root=None)))))
@@ -22,9 +26,8 @@ async def test_cloud_account_registration(service, kind, config):
     assert response.status_code == 200
     definition = next(item for item in response.json()["items"] if item["type"] == kind)
     assert definition["supports_stop"] is False
-    assert ("timeout" if kind == "browserbase" else "timeout_seconds") in definition["browser_recipe_schema"][
-        "properties"
-    ]
+    timeout_field = {"browserbase": "timeout", "kernel": "timeout_seconds", "browser_use": "timeout_minutes"}[kind]
+    assert timeout_field in definition["browser_recipe_schema"]["properties"]
     response = await service.client.post(
         f"{service.api}/browser-providers",
         json={"type": kind, "name": "Cloud", "config": config, "credential": {"api_key": "fixture-secret"}},
