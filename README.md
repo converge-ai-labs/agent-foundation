@@ -16,6 +16,10 @@ Choose your [model](docs/a13n-service/models.md), [sandbox](docs/a13n-service/en
 
 ## Run Service
 
+[![Console showing six managed agents, their model providers, and status](.github/assets/console-managed-agents.jpg)](.github/assets/console-managed-agents.jpg)
+
+Console with fictional demo data. See [run details from a scripted demo](.github/assets/console-run-details.jpg) and [workspace usage](.github/assets/console-usage.jpg).
+
 ### Quickstart with Docker Compose
 
 Install Docker and Docker Compose, then run:
@@ -39,10 +43,6 @@ The stack runs Service, Console, PostgreSQL, and Redis. Agent environments use y
 ### Production on Kubernetes
 
 Deploy to Kubernetes with our [Helm chart](deploy/kubernetes/README.md#other-clusters). Configure API and worker replicas and shared storage for [high availability](docs/a13n-service/operations.md#process-roles).
-
-[![Console showing six managed agents, their model providers, and status](.github/assets/console-managed-agents.jpg)](.github/assets/console-managed-agents.jpg)
-
-Console with fictional demo data. See [run details from a scripted demo](.github/assets/console-run-details.jpg) and [workspace usage](.github/assets/console-usage.jpg).
 
 ## Use Harness directly
 
