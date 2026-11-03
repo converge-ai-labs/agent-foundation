@@ -175,7 +175,7 @@ Docker 和 Native 可分别设置 `stop_after_seconds` 与 `delete_after_seconds
 调用 `POST /api/v1/browsers/{id}/stop` 或 `POST /api/v1/browsers/{id}/release`，并在 `If-Match` 中携带当前浏览器 ETag。
 
 - **停止**保留 Docker 或 Native 浏览器的 ID、绑定和 profile。下次获准使用或调用 `prepare` 时重新启动。Runtime 重启会推进 generation，并清除旧引用和标签页归属；恢复的标签页不会按 URL 或标题重新分配。
-- **释放**是终结操作：删除托管浏览器的 runtime 和 profile，或断开 Service 对外部浏览器的访问。仍有活跃使用、无法安全释放时，Service 会拒绝请求。
+- **释放**请求终结资源：Service 删除托管浏览器的 runtime 和 profile，或断开与外部浏览器的连接。仍有活跃使用、无法安全释放时，Service 会拒绝请求。托管浏览器的清理可能一直保持 `deleting`，直到供应商确认会话已终止；释放请求不保证立即完成。
 
 `lost` 或 `deleted` 的浏览器无法重新启动。向 thread 提交更多工作前，先解除绑定或绑定替代浏览器。
 
