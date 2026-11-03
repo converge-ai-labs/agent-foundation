@@ -66,6 +66,14 @@ class BoundedBody(httpx2.AsyncByteStream):
         await self.stream.aclose()
 
 
+def bound_response(response: httpx2.Response, max_bytes: int) -> None:
+    """Apply the shared uncompressed response bound before the body is read."""
+    assert isinstance(response.stream, httpx2.AsyncByteStream), "an async client streams asynchronously"
+    response.stream = BoundedBody(
+        response.stream, max_bytes, encoding=response.headers.get("content-encoding", "identity")
+    )
+
+
 @asynccontextmanager
 async def open_http(
     policy: EndpointPolicy,
@@ -80,12 +88,10 @@ async def open_http(
         if before_request is not None:
             await before_request(request)
 
-    async def bound_response(response: httpx2.Response) -> None:
+    async def check_response(response: httpx2.Response) -> None:
         if after_response is not None:
             await after_response(response)
-        assert isinstance(response.stream, httpx2.AsyncByteStream), "an async client streams asynchronously"
-        encoding = response.headers.get("content-encoding", "identity")
-        response.stream = BoundedBody(response.stream, max_bytes, encoding=encoding)
+        bound_response(response, max_bytes)
 
     # Native MCP owns entry/exit; model clients start lazily on first send.
     # The outer owner also closes clients that never reached native setup.
@@ -98,7 +104,7 @@ async def open_http(
         timeout=timeout,
         follow_redirects=False,
         headers={"accept-encoding": "identity"},
-        event_hooks={"request": [check_request], "response": [bound_response]},
+        event_hooks={"request": [check_request], "response": [check_response]},
     )
     try:
         yield client

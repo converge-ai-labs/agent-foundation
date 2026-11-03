@@ -1,4 +1,7 @@
 {
+  "Managed and external browsers for your agents.": "Managed and external browsers for your agents.",
+  "Managed browser": "Managed browser",
+  "Deletes the browser. Default: 30 minutes.": "Deletes the browser. Default: 30 minutes.",
   "Close browser panel": "Close browser panel",
   "All browser tabs": "All browser tabs",
   "Browser": "Browser",
@@ -748,6 +751,7 @@
   "Actor": "Actor",
   "Not required": "Not required",
   "Add a provider before creating templates.": "Add a provider before creating templates.",
+  "Add a provider, then create browsers for your agents.": "Add a provider, then create browsers for your agents.",
   "Add a provider, then save a model alias for your agents.": "Add a provider, then save a model alias for your agents.",
   "Add an account or endpoint, then choose the models your agents can use.": "Add an account or endpoint, then choose the models your agents can use.",
   "Add existing member": "Add existing member",
@@ -3637,6 +3641,7 @@
   "Sort by {{field}}, {{direction}}": "Sort by {{field}}, {{direction}}",
   "Others": "Others",
   "Chart grouping": "Chart grouping",
+  "This browser provider does not support a viewer or human control.": "This browser provider does not support a viewer or human control.",
   "Choose where your browsers run.": "Choose where your browsers run.",
   "Check the saved browser provider's availability without creating a browser.": "Check the saved browser provider's availability without creating a browser.",
   "Docker browser": "Docker browser",
