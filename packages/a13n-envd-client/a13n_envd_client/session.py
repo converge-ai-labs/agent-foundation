@@ -208,6 +208,23 @@ class EIPDeviceConnection:
             session._finish(EIPSessionStateError("Session attachment failed"))
             raise
 
+    async def bind_open_session(self, descriptor: SessionDescriptor, *, readiness_timeout: float = 10) -> EIPSession:
+        """Adopt a Session already opened by the authenticated Host on this logical carrier.
+
+        A Host that routes execution across processes supplies the confirmed Device
+        and Session descriptors. Check their identity, boundary and live readiness
+        before exposing operations; never open or attach a second native Session.
+        """
+        _finite_timeout_ms(readiness_timeout, name="readiness_timeout")
+        self._validate_session_boundary(descriptor)
+        session = self._bind(descriptor)
+        try:
+            await session._become_ready(readiness_timeout)
+            return session
+        except BaseException:
+            await session.abort()
+            raise
+
     def _validate_session_boundary(self, descriptor: SessionDescriptor) -> None:
         if descriptor.boundary != self._descriptor.boundary:
             raise EIPProtocolError("Session execution boundary differs from its Device")
@@ -273,6 +290,18 @@ class EIPSession:
     def client(self) -> EIPClient:
         self._ensure_open()
         return self._client
+
+    @property
+    def requester(self) -> SessionRequester:
+        """Session-scoped requests and bounded transfer channels for trusted Host bridges.
+
+        Host bridges authorize each operation before using this interface. The
+        requester retains the normal correlation, admission and Session fencing;
+        it never permits Device-scoped methods or selecting another Session.
+        The EIPSession remains responsible for keepalive and final close.
+        """
+        self._ensure_open()
+        return self._requester
 
     @property
     def descriptor(self) -> SessionDescriptor:

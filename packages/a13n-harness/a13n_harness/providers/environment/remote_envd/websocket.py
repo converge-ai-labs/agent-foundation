@@ -1,9 +1,13 @@
 """External reverse WebSocket Provider with an explicit Host SDK collaborator."""
 
+from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field
+from typing import Protocol, runtime_checkable
 
 from pydantic import BaseModel
 
+from a13n_harness.environment.attachments import EIPSessionBinding
+from a13n_harness.environment.envd_policy import EnvdBoundaryRequirement, EnvdEgressConfiguration
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
 from a13n_harness.environment.errors import provider_error
 from a13n_harness.environment.models import EnvironmentState
@@ -15,7 +19,7 @@ from a13n_harness.providers.environment.remote_envd.configuration import (
     RemoteEnvdEnvironmentConfiguration,
     WebSocketEnvdConnectionConfiguration,
 )
-from a13n_harness.providers.environment.remote_envd.connections import WEBSOCKET_PROVIDER_KEY, WebSocketEnvdConnections
+from a13n_harness.providers.environment.remote_envd.connections import WEBSOCKET_PROVIDER_KEY
 from a13n_harness.providers.environment.remote_envd.environment import (
     REQUIRED_METHODS,
     RemoteEnvdExecution,
@@ -25,13 +29,30 @@ from a13n_harness.providers.environment.remote_envd.environment import (
 )
 
 
+@runtime_checkable
+class WebSocketSessionSource(Protocol):
+    """An authenticated Host opens a Session locally or through its connection owner."""
+
+    def open_session(
+        self,
+        *,
+        expected_device_id: str,
+        required_methods: frozenset[str],
+        working_directory: str | None = None,
+        timeout: float = 10,
+        egress: EnvdEgressConfiguration | None = None,
+        expected_boundary: EnvdBoundaryRequirement | None = None,
+        session_recovery: EnvdSessionRecovery | None = None,
+    ) -> AbstractAsyncContextManager[EIPSessionBinding]: ...
+
+
 @dataclass(frozen=True, slots=True)
 class WebSocketEnvdProviderRuntime:
-    connections: WebSocketEnvdConnections = field(repr=False)
+    connections: WebSocketSessionSource = field(repr=False)
     configuration: WebSocketEnvdConnectionConfiguration = field(default_factory=WebSocketEnvdConnectionConfiguration)
 
     def __post_init__(self) -> None:
-        if not isinstance(self.connections, WebSocketEnvdConnections) or not isinstance(
+        if not isinstance(self.connections, WebSocketSessionSource) or not isinstance(
             self.configuration, WebSocketEnvdConnectionConfiguration
         ):
             raise TypeError("WebSocket Envd requires a Host-owned connection SDK and validated configuration")
