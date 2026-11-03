@@ -8,15 +8,15 @@
 
 **Build and run cloud agents on your own infrastructure.**
 
-a13n brings an agent harness and managed runtime together in one open-source platform.
+a13n is an open-source managed agent service with an integrated harness. Built for long-running tasks, durable execution, and [high availability](docs/a13n-service/operations.md#process-roles).
 
 Choose your model, sandbox, search, and memory providers. Bring your own keys.
 
-[Documentation](https://a13n.dev/docs/) · [Quickstart](#quickstart) · [Slack](https://join.slack.com/t/a13n/shared_invite/zt-4embv13zr-JfXjmJQop4Y9y6K3NH0kDQ)
+[Quickstart](#quickstart) · [Connect your app](docs/a13n-service/connect-application.md) · [SDKs](docs/a13n-service/sdks.md)
 
-[![Console showing six managed agents, their model providers, and status](.github/assets/console-managed-agents.jpg)](.github/assets/console-managed-agents.jpg)
+[![Console showing a completed support analysis with its input, tool calls, and result](.github/assets/console-run-details.jpg)](.github/assets/console-run-details.jpg)
 
-*Manage agents in Console and [monitor usage across your workspace](.github/assets/console-usage.jpg). Shown with fictional demo data.*
+*Inspect agent execution in Console, from input and tool calls to the saved result. Shown with fictional demo data and a scripted model. [View workspace usage](.github/assets/console-usage.jpg).*
 
 ## Quickstart
 
@@ -28,16 +28,20 @@ curl -fL https://raw.githubusercontent.com/converge-ai-labs/agent-foundation/mai
 docker compose -f a13n-service.yaml up -d --wait --pull always
 ```
 
-Open **<http://127.0.0.1:8080>**, create your administrator account, connect a model provider, and create an agent. Use a provider API key or [sign in with ChatGPT](docs/a13n-service/models.md#chatgpt-subscription-provider) with an eligible plan.
+Open **<http://127.0.0.1:8080>**:
 
-Then [connect your application](docs/a13n-service/connect-application.md) with the HTTP API or a [Python, TypeScript, Go, or Rust SDK](docs/a13n-service/sdks.md).
+1. Create your administrator account.
+2. Open **Models → Add model**, connect a provider, and select a model. Use an API key or [sign in with ChatGPT](docs/a13n-service/models.md#chatgpt-subscription-provider) with an eligible plan.
+3. Create an agent with that model, then use **Connect to app** for its ID, Service URL, and an API key.
+
+[Connect your application](docs/a13n-service/connect-application.md) through the HTTP API or a [Python, TypeScript, Go, or Rust SDK](docs/a13n-service/sdks.md).
 
 The local stack includes Service, Console, PostgreSQL, and Redis, and uses your host Docker Engine for agent environments. See the [deployment guide](deploy/docker/compose/README.md) for a shared deployment.
 
 ## Why a13n?
 
-- **Managed agents for your applications.** Service handles execution, persistent sessions, permissions, and recovery. Call agents through the API; use Console to configure, manage, and observe them.
-- **Harness and service, built together.** Tools, Skills, memory, and subagents share one execution foundation, available as an embeddable library and a managed runtime. See our [Terminal-Bench evaluation](https://github.com/converge-ai-labs/agent-foundation/discussions/1015) and [FrontierHarness evaluation](https://github.com/converge-ai-labs/agent-foundation/discussions/1064) for results and methodology.
+- **Managed agents for your applications.** Tasks continue when clients disconnect, recover from saved progress after worker failures, and can wait for human approval. Call agents through the API; use Console to configure, manage, and observe them.
+- **Harness and service, built together.** Tools, Skills, memory, and subagents share one execution foundation. **58.06% on 62 Terminal-Bench 4.0 tasks**, versus 58.77% in published Codex results with the same model and reasoning effort. [Methodology](https://github.com/converge-ai-labs/agent-foundation/discussions/1015) · [FrontierHarness evaluation](https://github.com/converge-ai-labs/agent-foundation/discussions/1064).
 - **Your infrastructure, your providers.** Self-host the full platform under Apache 2.0. Choose providers for [models](docs/a13n-service/models.md), [sandboxes](docs/a13n-service/environments.md), [search](docs/a13n-service/tools.md#web-search-and-scrape), and [memory](docs/a13n-service/memory.md), using your own credentials.
 
 ## Explore
