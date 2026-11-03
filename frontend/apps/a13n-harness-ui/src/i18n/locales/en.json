@@ -3103,5 +3103,21 @@
   "{{message}} {{guidance}} Browser detail: {{detail}}": "{{message}} {{guidance}} Browser detail: {{detail}}",
   "Message outcome unknown. It was not resent. Check its receipt or inspect the chat.": "Message outcome unknown. It was not resent. Check its receipt or inspect the chat.",
   "Couldn't confirm your choice. Nothing was retried or changed. Check the result or close this view.": "Couldn't confirm your choice. Nothing was retried or changed. Check the result or close this view.",
-  "Result unknown. The request was not repeated.": "Result unknown. The request was not repeated."
+  "Result unknown. The request was not repeated.": "Result unknown. The request was not repeated.",
+  "Running {{count, number}} commands_one": "Running {{count, number}} command",
+  "Running {{count, number}} commands_other": "Running {{count, number}} commands",
+  "Ran {{count, number}} commands_one": "Ran {{count, number}} command",
+  "Ran {{count, number}} commands_other": "Ran {{count, number}} commands",
+  "Running {{count, number}} process operations_one": "Running {{count, number}} process operation",
+  "Running {{count, number}} process operations_other": "Running {{count, number}} process operations",
+  "Ran {{count, number}} process operations_one": "Ran {{count, number}} process operation",
+  "Ran {{count, number}} process operations_other": "Ran {{count, number}} process operations",
+  "Exploring {{count, number}} files_one": "Exploring {{count, number}} file",
+  "Exploring {{count, number}} files_other": "Exploring {{count, number}} files",
+  "Explored {{count, number}} files_one": "Explored {{count, number}} file",
+  "Explored {{count, number}} files_other": "Explored {{count, number}} files",
+  "Exploring {{count, number}} lookups_one": "Exploring {{count, number}} lookup",
+  "Exploring {{count, number}} lookups_other": "Exploring {{count, number}} lookups",
+  "Explored {{count, number}} lookups_one": "Explored {{count, number}} lookup",
+  "Explored {{count, number}} lookups_other": "Explored {{count, number}} lookups"
 }

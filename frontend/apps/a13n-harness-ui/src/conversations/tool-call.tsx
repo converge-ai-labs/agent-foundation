@@ -82,12 +82,25 @@ function activityText(
       const pending = /^(\d+) (waiting|running|need attention)$/.exec(segment);
       if (pending)
         return t(`{{count}} ${pending[2]}`, { count: Number(pending[1]) });
-      const prefix = /^(Running|Ran|Exploring|Explored) (.+)$/.exec(segment);
-      if (prefix)
-        return t("{{action}} {{details}}", {
-          action: t(prefix[1]),
-          details: activityText(prefix[2], t),
-        });
+      const phrase =
+        /^(Running|Ran|Exploring|Explored) (\d+) (command|process operation|file|lookup)s?$/.exec(
+          segment,
+        );
+      if (phrase) {
+        const keys: Record<string, string> = {
+          "Running command": "Running {{count, number}} commands",
+          "Ran command": "Ran {{count, number}} commands",
+          "Running process operation":
+            "Running {{count, number}} process operations",
+          "Ran process operation": "Ran {{count, number}} process operations",
+          "Exploring file": "Exploring {{count, number}} files",
+          "Explored file": "Explored {{count, number}} files",
+          "Exploring lookup": "Exploring {{count, number}} lookups",
+          "Explored lookup": "Explored {{count, number}} lookups",
+        };
+        const key = keys[`${phrase[1]} ${phrase[3]}`];
+        if (key) return t(key, { count: Number(phrase[2]) });
+      }
       return toolPhase(segment, t);
     })
     .join(" · ");

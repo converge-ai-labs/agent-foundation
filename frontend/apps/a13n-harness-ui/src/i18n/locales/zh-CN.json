@@ -3085,5 +3085,13 @@
   "{{message}} {{guidance}} Browser detail: {{detail}}": "{{message}} {{guidance}} 浏览器详情：{{detail}}",
   "Message outcome unknown. It was not resent. Check its receipt or inspect the chat.": "消息结果未知。消息未重新发送。请检查回执或查看聊天。",
   "Couldn't confirm your choice. Nothing was retried or changed. Check the result or close this view.": "无法确认您的选择。未重试或更改任何内容。请检查结果或关闭此视图。",
-  "Result unknown. The request was not repeated.": "结果未知。请求未重新发送。"
+  "Result unknown. The request was not repeated.": "结果未知。请求未重新发送。",
+  "Running {{count, number}} commands_other": "正在运行 {{count, number}} 条命令",
+  "Ran {{count, number}} commands_other": "已运行 {{count, number}} 条命令",
+  "Running {{count, number}} process operations_other": "正在执行 {{count, number}} 次进程操作",
+  "Ran {{count, number}} process operations_other": "已执行 {{count, number}} 次进程操作",
+  "Exploring {{count, number}} files_other": "正在查看 {{count, number}} 个文件",
+  "Explored {{count, number}} files_other": "已查看 {{count, number}} 个文件",
+  "Exploring {{count, number}} lookups_other": "正在进行 {{count, number}} 次检索",
+  "Explored {{count, number}} lookups_other": "已进行 {{count, number}} 次检索"
 }
