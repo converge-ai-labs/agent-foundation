@@ -183,8 +183,7 @@ export function UsageDetails({ usage }: { usage?: ThreadUsage }) {
   const output = tokens.get("output_tokens") ?? 0;
   const total = input + output;
   const scopes = usage.model_scopes ?? [];
-  // A null name identifies the bounded bucket of remaining models.
-  const models: (readonly [string | null, Totals])[] = scopes.length
+  const models: (readonly [string, Totals])[] = scopes.length
     ? scopes
         .filter((model) => model[scope].model_requests > 0)
         .map((model) => [model.name, model[scope]] as const)
@@ -198,7 +197,7 @@ export function UsageDetails({ usage }: { usage?: ThreadUsage }) {
               : [],
           ),
           ...(usage.other_models.model_requests
-            ? [[null, usage.other_models] as const]
+            ? [["Other models", usage.other_models] as const]
             : []),
         ]
       : [];
@@ -285,14 +284,16 @@ export function UsageDetails({ usage }: { usage?: ThreadUsage }) {
                       group.descendant === (scope === "descendants")),
                 );
                 return (
-                  <li key={name ?? "other-models"}>
+                  <li key={name}>
                     <details className={styles.modelDetails}>
                       <summary className={styles.modelHeader}>
                         <span
                           className={styles.modelName}
-                          title={name ?? t("Other models")}
+                          title={
+                            name === "Other models" ? t("Other models") : name
+                          }
                         >
-                          {name == null ? (
+                          {name === "Other models" ? (
                             t("Other models")
                           ) : (
                             <ModelIdentity name={name} />

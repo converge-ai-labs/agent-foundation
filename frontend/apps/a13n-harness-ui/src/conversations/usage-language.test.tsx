@@ -110,6 +110,76 @@ it("translates usage details while keeping model names, unknown sources and obse
   expect(screen.getByText("Token breakdown")).toBeTruthy();
 });
 
+it("keeps legacy overflow attribution when model scopes are absent", () => {
+  render(
+    <DebugProvider>
+      <UsageDetails
+        usage={{
+          ...usage,
+          groups: [
+            {
+              model: "Other models",
+              agent_instance_id: "root-agent",
+              descendant: false,
+              source: "agent",
+              totals: root,
+            },
+          ],
+        }}
+      />
+    </DebugProvider>,
+  );
+  expect(screen.getByText("Other models")).toBeTruthy();
+  expect(screen.getByText("Root · Agent requests")).toBeTruthy();
+});
+
+it("localizes the current overflow model while preserving scoped attribution", async () => {
+  const scopedUsage: Schema<"ThreadUsageView"> = {
+    ...usage,
+    model_scopes: [
+      { name: "Other models", root, descendants: root, combined: root },
+    ],
+    groups: [
+      {
+        model: "Other models",
+        agent_instance_id: "root-agent",
+        descendant: false,
+        source: "agent",
+        totals: root,
+      },
+      {
+        model: "Other models",
+        agent_instance_id: "child-agent",
+        descendant: true,
+        source: "files.media_understanding",
+        totals: root,
+      },
+    ],
+  };
+  render(
+    <LanguageProvider>
+      <LanguageChoice />
+      <DebugProvider>
+        <UsageDetails usage={scopedUsage} />
+      </DebugProvider>
+    </LanguageProvider>,
+  );
+  const row = screen.getByText("Other models").closest("details")!;
+  fireEvent.click(screen.getByText("Other models"));
+  fireEvent.click(screen.getByText("Agents and sources"));
+  expect(screen.getByText("Root · Agent requests")).toBeTruthy();
+  expect(
+    screen.getByText("Subagent · Media understanding · view"),
+  ).toBeTruthy();
+  await language("简体中文");
+  expect(screen.getByText("其他模型").closest("details")).toBe(row);
+  expect(row.open).toBe(true);
+  expect(screen.getByText("主智能体 · 智能体请求")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "子智能体" }));
+  expect(screen.queryByText("主智能体 · 智能体请求")).toBeNull();
+  expect(screen.getByText("子智能体 · 媒体理解 · 查看")).toBeTruthy();
+});
+
 it("translates the status metrics and context help without replaying usage requests", async () => {
   const queries = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Infinity } },
