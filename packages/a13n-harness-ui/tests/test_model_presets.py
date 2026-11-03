@@ -52,6 +52,63 @@ async def test_every_offered_provider_constructs_native_model_with_selected_endp
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize(
+    "route,settings,expected",
+    [
+        ("openai-responses:gpt-6-astra", {"cache": "12h"}, {"mode": "implicit", "ttl": "12h"}),
+        ("openai-responses:gpt-6-astra", {"cache": {"retention": "12h"}}, {"mode": "implicit", "ttl": "12h"}),
+        ("openai-responses:gateway-alias", {"cache": "12h"}, None),
+        (
+            "openai-responses:gateway-alias",
+            {"openai_prompt_cache_options": {"mode": "implicit", "ttl": "12h"}},
+            {"mode": "implicit", "ttl": "12h"},
+        ),
+        ("openai-chat:gpt-6-astra", {"cache": "12h"}, {"mode": "implicit", "ttl": "30m"}),
+        ("openai-responses:gpt-6-astra", {"cache": "12h", "openai_cache_instructions": False}, None),
+    ],
+)
+async def test_cache_settings_survive_recipe_restore_and_reach_native_wire(route, settings, expected, monkeypatch):
+    import json
+
+    import httpx2
+    from pydantic_ai.exceptions import ModelHTTPError
+    from pydantic_ai.messages import ModelRequest, UserPromptPart
+    from pydantic_ai.models import ModelRequestParameters
+    from pydantic_ai.settings import ModelSettings
+
+    payloads = []
+
+    async def capture(_transport, request):
+        payloads.append(json.loads(request.content))
+        return httpx2.Response(400, json={"error": {"message": "offline capture", "type": "invalid_request_error"}})
+
+    monkeypatch.setattr(httpx2.AsyncHTTPTransport, "handle_async_request", capture)
+    monkeypatch.setenv("TEST_PROVIDER_KEY", "fixture-key")
+    normalized = PydanticAiModelAdapter().validate(route=route, settings=settings, model_cfg={})
+    recipe = ResolvedModelRecipe(
+        model_id="cache-model",
+        route=route,
+        authentication=ApiKeyAuthentication(kind="api_key", env="TEST_PROVIDER_KEY"),
+        settings=normalized.settings,
+        model_configuration={"base_url": "https://provider.invalid/v1"},
+    )
+    restored = ResolvedModelRecipe.model_validate_json(recipe.model_dump_json())
+    assert restored.settings == settings
+    model = await HarnessUiModelResolver({restored.model_id: restored}).resolve(
+        restored.model_id, thread_id="thread-cache"
+    )
+    async with model:
+        with pytest.raises(ModelHTTPError):
+            await model.request(
+                [ModelRequest(parts=[UserPromptPart("hello")])],
+                cast(ModelSettings, restored.settings),
+                ModelRequestParameters(),
+            )
+    assert len(payloads) == 1
+    assert payloads[0].get("prompt_cache_options") == expected
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize("prefix", ["google-cloud", "gemini"])
 async def test_google_cloud_routes_preserve_custom_endpoint_and_native_provider(prefix, monkeypatch):
     from pydantic_ai.providers.google_cloud import GoogleCloudProvider

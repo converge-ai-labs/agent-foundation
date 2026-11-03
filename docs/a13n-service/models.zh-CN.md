@@ -201,6 +201,10 @@ curl -fsS --get "$A13N_URL/api/v1/model-catalog" \
 
 **缓存**：使用 `cache: false` 关闭库管理的缓存，或用支持的保留时长设置缓存寿命。Anthropic Messages 默认还开启 `anthropic_cache_instructions`、`anthropic_cache_tool_definitions` 和 `anthropic_cache_messages`，将标记放在内容块上以兼容网关。显式统一 `cache` 值或 provider 缓存设置（包括 `anthropic_cache`）会保留所写策略。Pydantic AI 决定 provider 专属标记的位置；是否命中以及 provider 的隐式缓存仍取决于上游。
 
+对于支持 12 小时缓存的 `openai.responses` 模型，在 **Settings JSON**（`config.settings`）中设置 `{"cache": "12h"}`，或使用 `{"cache": {"retention": "12h"}}`。Agent/运行覆盖在 `model_settings` 下使用相同结构，并遵循上述组合规则。对于支持该功能、但模型别名未被识别的网关，改用 `{"openai_prompt_cache_options": {"mode": "implicit", "ttl": "12h"}}`。使用类型化设置，不要填写 `extra_body.prompt_cache_options`。
+
+统一转换取决于已安装的模型 profile：Chat Completions 会将 12h 降级为 30m，未识别的别名则可能不应用统一缓存。显式 `openai_prompt_cache_options` 或 `openai_cache_instructions` 设置优先，包括 `openai_cache_instructions: false`。通过实际请求验证 provider 支持情况。正确计算 12h 缓存写入费用仍由 [issue #1387](https://github.com/converge-ai-labs/agent-foundation/issues/1387) 跟踪，等待上游用量与定价支持。
+
 **响应存储**：`openai.responses` 默认使用 `openai_store: false`，包括没有写入该设置的已有模型。设为 `true` 可开启，设为 `null` 则交给 provider 决定。它控制上游响应存储，不控制 Service 运行历史或其他保留策略。Agent/运行设置可以覆盖它；其他调用 API 保持自己的行为。ChatGPT 订阅 profile 仍要求关闭存储。
 
 **请求头**：请求设置中的值可读取。密钥保存在 provider 凭据或加密额外请求头中。请求设置不能覆盖认证、协议、已有 provider 请求头名称或亲和请求头，大小写不同也不允许。模型/provider 修改在后续 attempt（包括恢复）生效，请求前会重新检查设置。
