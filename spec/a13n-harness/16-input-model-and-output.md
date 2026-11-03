@@ -165,7 +165,7 @@ Resolution precedence is concrete Model, then fresh `RunModelResolver`, then Har
 
 ### Responses Transport
 
-The shared `openai.responses` provider adapter accepts native `openai_transport="http" | "websocket"`. API-key Models retain the native HTTP default; [Codex](16a-model-authentication.md#codex-request-lifecycle) supplies its own default. Effective native settings decide transport after Model and request settings merge. Pydantic AI supplies `openai_previous_response_id="auto"` for WebSocket mode only when neither a previous-response nor conversation setting is present; Harness does not inject a competing default.
+The shared `openai.responses` provider adapter accepts native `openai_transport="http" | "websocket"`. API-key and [Codex](16a-model-authentication.md#codex-request-lifecycle) Models retain the native HTTP default. Applications own explicit creation defaults in Model settings. Effective native settings decide transport after Model and request settings merge. Pydantic AI supplies `openai_previous_response_id="auto"` for WebSocket mode only when neither a previous-response nor conversation setting is present; Harness does not inject a competing default.
 
 An entered Model owns reusable connections across its model requests and tool loop. Pydantic AI owns socket leases, concurrency routing, `store=false` history metadata, incremental continuation, idle-connection replacement and HTTP fallback. A connection-establishment failure can use HTTP; a rejected handshake status retains its native error classification. An ambiguous failure after response dispatch is not transparently replayed by Harness. Explicit HTTP bypasses socket reservation. Connection reuse is process-local and is never persisted in Harness State.
 

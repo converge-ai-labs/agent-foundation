@@ -189,7 +189,7 @@ def _templates(selection: SetupSelection, *, existing_model: dict[str, object] |
             {
                 "route": "openai-codex:gpt-5.6-luna" if codex else "grok:grok-4.7",
                 "authentication": {"kind": kind},
-                "settings": {"thinking": "low"},
+                "settings": {"thinking": "low", **({"openai_transport": "websocket"} if codex else {})},
             }
         )
         resources[f"models/{reviewer}.yaml"] = {

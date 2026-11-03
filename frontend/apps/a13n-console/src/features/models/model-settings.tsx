@@ -1,4 +1,11 @@
-import { ChoiceField, FormField, Input, SettingsSection } from "a13n-ui";
+import {
+  Checkbox,
+  ChoiceField,
+  FormField,
+  Input,
+  SettingsRow,
+  SettingsSection,
+} from "a13n-ui";
 import { useTranslation } from "react-i18next";
 import { isRecord } from "../../service-client";
 import type { Schema } from "../../shared/api";
@@ -152,6 +159,18 @@ export function ModelSettingsFields({
               { value: "null", label: t("Provider default") },
             ])}
         </div>
+        {responses && (
+          <SettingsRow label={t("Use WebSocket")}>
+            <Checkbox
+              aria-label={t("Use WebSocket")}
+              disabled={invalid}
+              checked={settings.openai_transport === "websocket"}
+              onCheckedChange={(checked) =>
+                change("openai_transport", checked ? "websocket" : "http")
+              }
+            />
+          </SettingsRow>
+        )}
         {invalid && (
           <p role="status" className={styles.stepNote}>
             {t("Fix the settings JSON to use the fields above.")}

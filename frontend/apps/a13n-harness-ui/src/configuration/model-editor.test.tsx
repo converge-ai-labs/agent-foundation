@@ -208,6 +208,40 @@ function mount(initial = original, onReady = vi.fn()) {
     </MemoryRouter>,
   );
 }
+it.each([undefined, "http", "websocket"])(
+  "reflects and edits persisted WebSocket settings (%s) without losing YAML",
+  async (transport) => {
+    const initial = transport
+      ? original.replace(
+          "  temperature: 0.3",
+          `  openai_transport: ${transport}\n  temperature: 0.3`,
+        )
+      : original;
+    mount(initial);
+    const user = userEvent.setup();
+    await openDefaults(user);
+    const checkbox = screen.getByRole("checkbox", { name: "Use WebSocket" });
+    expect(checkbox.getAttribute("aria-checked")).toBe(
+      String(transport === "websocket"),
+    );
+    expect(source()).toBe(initial);
+    await user.click(checkbox);
+    expect(parse(source()).settings.openai_transport).toBe(
+      transport === "websocket" ? "http" : "websocket",
+    );
+    expect(parse(source()).settings.temperature).toBe(0.3);
+    expect(source()).toContain("# Keep custom setting");
+    fireEvent.change(screen.getByLabelText("Advanced source"), {
+      target: {
+        value: initial.replace("  temperature: 0.3", "  temperature: 0.7"),
+      },
+    });
+    expect(checkbox.getAttribute("aria-checked")).toBe(
+      String(transport === "websocket"),
+    );
+  },
+);
+
 async function openDefaults(user: ReturnType<typeof userEvent.setup>) {
   const tab = await screen.findByRole("tab", { name: "Model defaults" });
   await waitFor(() => expect(tab.hasAttribute("disabled")).toBe(false));

@@ -81,6 +81,7 @@ const definition = {
         max_tokens: { type: "integer", minimum: 1 },
         temperature: { type: "number" },
         openai_store: { anyOf: [{ type: "boolean" }, { type: "null" }] },
+        openai_transport: { enum: ["http", "websocket"] },
         openai_reasoning_summary: { enum: ["auto", "concise", "detailed"] },
         openai_text_verbosity: { enum: ["low", "medium", "high"] },
         extra_body: { type: "object" },
@@ -674,11 +675,17 @@ it("edits native defaults through fields and JSON without losing other settings"
     openai_store: true,
     thinking: "low",
     openai_text_verbosity: "low",
+    openai_transport: "websocket",
     extra_headers: { "x-existing": "keep" },
   };
   fireEvent.change(screen.getByLabelText("Settings JSON"), {
     target: { value: JSON.stringify(native) },
   });
+  expect(
+    screen
+      .getByRole("checkbox", { name: "Use WebSocket" })
+      .getAttribute("aria-checked"),
+  ).toBe("true");
   expect(
     screen.getByRole("combobox", { name: "Store response" }).textContent,
   ).toBe("On");
@@ -720,6 +727,52 @@ it("edits native defaults through fields and JSON without losing other settings"
     ),
   );
 });
+
+it.each([undefined, "http", "websocket"])(
+  "reflects and saves WebSocket transport (%s)",
+  async (transport) => {
+    const settings = transport ? { openai_transport: transport } : {};
+    const originalGet = state.GET.getMockImplementation()!;
+    state.GET.mockImplementation(async (path: string, args: unknown) =>
+      path.endsWith("{key}")
+        ? {
+            data: { ...model, config: { ...model.config, settings } },
+            response: response(),
+          }
+        : originalGet(path, args),
+    );
+    mount({ modelKey: "smart" });
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /^Advanced/ }));
+    const checkbox = screen.getByRole("checkbox", { name: "Use WebSocket" });
+    expect(checkbox.getAttribute("aria-checked")).toBe(
+      String(transport === "websocket"),
+    );
+    await user.click(checkbox);
+    const expected = transport === "websocket" ? "http" : "websocket";
+    expect(
+      JSON.parse(
+        (screen.getByLabelText("Settings JSON") as HTMLTextAreaElement).value,
+      ).openai_transport,
+    ).toBe(expected);
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() =>
+      expect(state.PATCH).toHaveBeenCalledWith(
+        `${modelsPath}/{key}`,
+        expect.objectContaining({
+          body: expect.objectContaining({
+            config: expect.objectContaining({
+              settings: expect.objectContaining({
+                openai_transport: expected,
+                extra_headers: model.config.extra_headers,
+              }),
+            }),
+          }),
+        }),
+      ),
+    );
+  },
+);
 
 it("preserves stored native settings when only the name is edited", async () => {
   const settings = {
@@ -765,6 +818,11 @@ it("keeps invalid JSON editable and rejects settings for a different API", async
   await user.click(await screen.findByRole("button", { name: /^Advanced/ }));
   const json = screen.getByLabelText("Settings JSON");
   fireEvent.change(json, { target: { value: "{" } });
+  expect(
+    screen
+      .getByRole("checkbox", { name: "Use WebSocket" })
+      .getAttribute("aria-disabled"),
+  ).toBe("true");
   expect(
     (screen.getByLabelText("Max output tokens") as HTMLInputElement).disabled,
   ).toBe(true);

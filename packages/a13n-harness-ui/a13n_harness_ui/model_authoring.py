@@ -442,6 +442,7 @@ def prepare_model(request: ModelRecipeRequest) -> ModelRecipe:
         settings = dict(preset.settings)
         if connection.id == "codex":
             settings["openai_service_tier"] = "priority"
+            settings["openai_transport"] = "websocket"
     configuration = dict(request.model_configuration)
     base_url = _base_url(connection, effective_url)
     if base_url:

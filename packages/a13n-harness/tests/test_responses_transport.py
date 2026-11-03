@@ -299,6 +299,37 @@ def test_websocket_proxy_and_tls_operator_settings(monkeypatch):
     assert _websocket_options("https://local.example/responses", None)["proxy"] is None
 
 
+@pytest.mark.parametrize("settings", [None, {}, {"openai_transport": "http"}])
+async def test_codex_uses_http_without_explicit_websocket(monkeypatch, settings):
+    from datetime import UTC, datetime, timedelta
+
+    import openai.lib._websocket as sdk
+    from a13n_harness.models.codex import CodexRequestModel
+
+    from .test_model_auth import _codex_credentials, _CodexSource
+
+    requests = []
+
+    async def forbidden_socket(*args, **kwargs):
+        pytest.fail("Codex must not select WebSocket implicitly")
+
+    async def respond(request):
+        requests.append(request)
+        return httpx2.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            content="".join(f"data: {json.dumps(event)}\n\n" for event in events()),
+        )
+
+    monkeypatch.setattr(sdk, "_WebSocketConnect", forbidden_socket)
+    source = _CodexSource(_codex_credentials(marker="initial", expires_at=datetime.now(UTC) + timedelta(hours=1)))
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as http:
+        async with CodexRequestModel("gpt-5", credential_source=source, http_client=http) as model:
+            response = await consume(model, [], settings)
+    assert len(requests) == 1
+    assert (response.provider_details or {}).get("transport") != "websocket"
+
+
 @pytest.mark.parametrize("refresh", [False, True])
 @pytest.mark.parametrize("transition", ["reuse", "token_rotation", "new_run"])
 async def test_codex_websocket_auth_and_turn_state(monkeypatch, refresh, transition):
@@ -368,7 +399,9 @@ async def test_codex_websocket_auth_and_turn_state(monkeypatch, refresh, transit
             context = RunContext(deps=None, model=model, usage=RunUsage(), run_id="run-test")
             async with model:
                 for _ in range(2):
-                    async with model.request_stream([], None, PARAMETERS, context) as response:
+                    async with model.request_stream(
+                        [], {"openai_transport": "websocket"}, PARAMETERS, context
+                    ) as response:
                         async for _ in response:
                             pass
                         assert response.get().provider_details["transport"] == "websocket"
@@ -381,7 +414,9 @@ async def test_codex_websocket_auth_and_turn_state(monkeypatch, refresh, transit
                     context = RunContext(deps=None, model=model, usage=RunUsage(), run_id="another-run")
                 if transition != "reuse":
                     for _ in range(2):
-                        async with model.request_stream([], None, PARAMETERS, context) as response:
+                        async with model.request_stream(
+                            [], {"openai_transport": "websocket"}, PARAMETERS, context
+                        ) as response:
                             async for _ in response:
                                 pass
                             assert (response.get().provider_details or {}).get("transport") != "websocket"

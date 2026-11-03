@@ -143,7 +143,6 @@ class _CodexResponsesModel(ResponsesModel):
         super().__init__(
             model_name,
             provider=provider,
-            settings=OpenAIResponsesModelSettings(openai_transport="websocket"),
             response_headers=owner._capture_handshake,
         )
 
