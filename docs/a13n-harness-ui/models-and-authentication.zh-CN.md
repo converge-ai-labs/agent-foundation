@@ -159,7 +159,7 @@ JSON 兼容请求参数放在 `settings`。嵌套对象、显式 `null` 和有�
 | `extra_headers`、`extra_body`                                                         | 原生请求扩展                      |
 | `openai_prompt_cache_key`、`openai_store`                                             | OpenAI 选项，受订阅适配器行为约束 |
 
-Responses API Model 支持 `settings.openai_transport: websocket` 或 `http`。API 密钥 Model 默认使用 HTTP，Codex 订阅 Model 默认使用 WebSocket；显式设置 `openai_transport: http` 即可使用 HTTP。Pydantic AI 管理连接复用、重连和回退；WebSocket 模式在未提供续接设置时使用原生 `openai_previous_response_id: auto`，也支持 `openai_store: false`。`model_request_transport` 自定义生命周期事件记录实际的 `http` 或 `websocket` 响应路径。连接失败可能回退到 HTTP，因此请求设置本身不能证明实际使用的传输方式。
+Responses API Model 支持 `settings.openai_transport: websocket` 或 `http`。未设置该字段的 Model 使用 HTTP。Harness UI 使用推荐默认值准备新 Codex 订阅 Model 时，会显式写入 `openai_transport: websocket`，初始化时生成的 Codex shell reviewer 也包含该设置。已有 Model 和显式提供的 settings 映射保持不变。Model 默认值中的 **使用 WebSocket** 反映已保存的配置：勾选写入 `websocket`，取消勾选写入 `http`。高级 YAML 编辑的是同一个值。Pydantic AI 管理连接复用、重连和回退；WebSocket 模式在未提供续接设置时使用原生 `openai_previous_response_id: auto`，也支持 `openai_store: false`。`model_request_transport` 自定义生命周期事件记录实际的 `http` 或 `websocket` 响应路径。连接失败可能回退到 HTTP，因此请求设置本身不能证明实际使用的传输方式。
 
 设置原样持久化，包括放在其中的秘密。使用专用凭据引用，分享前检查诊断内容。
 

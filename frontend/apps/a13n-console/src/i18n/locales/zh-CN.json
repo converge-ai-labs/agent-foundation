@@ -1,6 +1,7 @@
 {
   "Register for a notice when human Computer control ends": "登记人工 Computer 控制结束时的通知",
   "Notify on handback": "交还时通知",
+  "Use WebSocket": "使用 WebSocket",
   "The Agent can continue other work. Closing this panel does not return control.": "Agent 可以继续其他工作。关闭此面板不会交还控制权。",
   "Close desktop panel": "关闭桌面面板",
   "Desktop viewing and control": "桌面查看与控制",

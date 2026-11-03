@@ -1,5 +1,6 @@
 {
   "Display language": "Display language",
+  "Use WebSocket": "Use WebSocket",
   "System": "System",
   "Log in to Harness UI": "Log in to Harness UI",
   "Use the login key printed by your Harness server, not a model API key.": "Use the login key printed by your Harness server, not a model API key.",
