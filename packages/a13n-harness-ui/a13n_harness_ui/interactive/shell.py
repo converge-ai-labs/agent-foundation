@@ -132,7 +132,7 @@ class CliShell:
         self.inline = InlineAttachments()
         self.clipboard = AttachmentClipboard()
         self._draft_generation = 0
-        self._editing_prompt = False
+        self._editor_task: asyncio.Task[None] | None = None
         self._recoverable: Document | None = None
         self._submitted_draft: Document | None = None
         self._sending_draft: Document | None = None
@@ -342,7 +342,6 @@ class CliShell:
         except (OSError, ValueError) as error:
             self.emit(f"Could not edit prompt: {error}")
         finally:
-            self._editing_prompt = False
             self.app.invalidate()
 
     def _style(self) -> Style:
@@ -1087,9 +1086,20 @@ class CliShell:
             "c-g", filter=Condition(lambda: self.ready and self.interaction is None and self.menu_handler is None)
         )
         def external_editor(event: KeyPressEvent) -> None:
-            if not self._editing_prompt:
-                self._editing_prompt = True
-                event.app.create_background_task(self._edit_prompt())
+            if self._editor_task is not None and not self._editor_task.done():
+                return
+            editor = self._editor_task = event.app.create_background_task(self._edit_prompt())
+            application_done = event.app.future
+            assert application_done is not None
+
+            def cancel_editor(future: asyncio.Future[Any]) -> None:
+                # Application.run_async waits for in_terminal() before cancelling
+                # background tasks. Cancel at its completion signal instead, so
+                # editor cleanup can release that handoff and shutdown can finish.
+                editor.cancel()
+
+            application_done.add_done_callback(cancel_editor)
+            editor.add_done_callback(lambda task: application_done.remove_done_callback(cancel_editor))
 
         @keys.add("c-j")
         @keys.add("escape", "enter")

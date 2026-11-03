@@ -355,3 +355,53 @@ async def test_windows_cmd_editor_is_resolved_through_pathext(tmp_path, monkeypa
     monkeypatch.setenv("PATH", str(tmp_path) + os.pathsep + os.environ["PATH"])
     monkeypatch.setenv("EDITOR", "a13n-editor-fixture --wait")
     assert await edit_prompt("draft", InlineAttachments()) == "edited through cmd"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("shutdown", ["exit", "cancel", "error"])
+async def test_application_shutdown_cancels_editor_before_waiting_for_terminal(tmp_path, monkeypatch, shutdown) -> None:
+    ready = tmp_path / "editor-ready"
+    _editor(
+        tmp_path,
+        monkeypatch,
+        f"""
+import os, time
+Path({str(ready)!r}).write_text(str(os.getpid()) + '\\n' + str(path))
+time.sleep(60)
+""",
+    )
+    with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
+        shell = CliShell(CliRequest())
+        shell.ready = True
+        shell.composer.text = "keep this draft"
+        application = asyncio.create_task(shell.app.run_async())
+        pid = None
+        try:
+            async with asyncio.timeout(5):
+                while not shell.app.is_running:
+                    await asyncio.sleep(0.01)
+            pipe.send_text("\x07")
+            value = (await _until_file(ready)).splitlines()
+            pid, prompt = int(value[0]), Path(value[1])
+            assert _is_live(pid) and prompt.exists()
+            if shutdown == "cancel":
+                application.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await asyncio.wait_for(asyncio.shield(application), timeout=5)
+            elif shutdown == "error":
+                shell.app.exit(exception=RuntimeError("fixture terminal failure"))
+                with pytest.raises(RuntimeError, match="fixture terminal failure"):
+                    await asyncio.wait_for(asyncio.shield(application), timeout=5)
+            else:
+                shell.app.exit()
+                await asyncio.wait_for(asyncio.shield(application), timeout=5)
+            assert not _is_live(pid)
+            assert not prompt.exists()
+            assert shell.composer.text == "keep this draft"
+        finally:
+            if pid is not None and _is_live(pid):
+                psutil.Process(pid).kill()
+            if not application.done():
+                application.cancel()
+            await asyncio.gather(application, return_exceptions=True)
+            shell.renderer.transcript.close()
