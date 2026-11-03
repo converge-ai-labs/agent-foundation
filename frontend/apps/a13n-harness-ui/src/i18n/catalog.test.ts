@@ -72,6 +72,9 @@ const untranslatedExceptions: Record<string, string[]> = {
   "app.tsx": ["Harness"],
   "configuration/device-fields.tsx": ["/api/devices/", "/connect"],
   "configuration/envd.tsx": ["envd"],
+  "configuration/envd-fields.tsx": ["envd"],
+  "i18n/language.tsx": ["English"],
+  "shell/debug.tsx": ["undefined"],
   "configuration/fields.tsx": ["Sidekick"],
   "configuration/project-folders.tsx": ["/path/to/project"],
   "conversations/composer.tsx": ["· HEAD"],
@@ -89,6 +92,7 @@ const displayAttributes = new Set([
   "placeholder",
   "aria-label",
   "closeLabel",
+  "text",
 ]);
 function untranslatedJSX(path: string, source: string): string[] {
   const ast = ts.createSourceFile(
@@ -110,8 +114,50 @@ function untranslatedJSX(path: string, source: string): string[] {
         `${path}:${ast.getLineAndCharacterOfPosition(node.getStart()).line + 1}: ${text}`,
       );
   }
+  // Resolve only unambiguous local constants; imported and runtime data remain opaque.
+  const constants = new Map<string, ts.Expression | null>();
+  function collect(node: ts.Node) {
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.initializer &&
+      ts.isVariableDeclarationList(node.parent) &&
+      node.parent.flags & ts.NodeFlags.Const
+    ) {
+      const name = node.name.text;
+      constants.set(name, constants.has(name) ? null : node.initializer);
+    }
+    ts.forEachChild(node, collect);
+  }
+  collect(ast);
+  const resolving = new Set<string>();
   function expression(node: ts.Expression) {
-    if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node))
+    if (ts.isIdentifier(node)) {
+      const value = constants.get(node.text);
+      if (value && !resolving.has(node.text)) {
+        resolving.add(node.text);
+        expression(value);
+        resolving.delete(node.text);
+      }
+    } else if (
+      ts.isElementAccessExpression(node) &&
+      ts.isIdentifier(node.expression)
+    ) {
+      const value = constants.get(node.expression.text);
+      if (value && ts.isObjectLiteralExpression(value))
+        for (const property of value.properties)
+          if (ts.isPropertyAssignment(property))
+            expression(property.initializer);
+    } else if (ts.isTemplateExpression(node)) {
+      check(
+        node.head.text +
+          node.templateSpans.map((span) => span.literal.text).join(" "),
+        node,
+      );
+    } else if (
+      ts.isStringLiteral(node) ||
+      ts.isNoSubstitutionTemplateLiteral(node)
+    )
       check(node.text, node);
     else if (ts.isConditionalExpression(node)) {
       expression(node.whenTrue);
@@ -126,6 +172,22 @@ function untranslatedJSX(path: string, source: string): string[] {
     )
       expression(node.right);
     else if (ts.isParenthesizedExpression(node)) expression(node.expression);
+  }
+  function choiceOptions(node: ts.Expression) {
+    if (ts.isIdentifier(node)) {
+      const value = constants.get(node.text);
+      if (value && ts.isArrayLiteralExpression(value)) choiceOptions(value);
+    } else if (ts.isArrayLiteralExpression(node)) {
+      for (const option of node.elements) {
+        if (!ts.isObjectLiteralExpression(option)) continue;
+        for (const property of option.properties)
+          if (
+            ts.isPropertyAssignment(property) &&
+            property.name.getText(ast) === "label"
+          )
+            expression(property.initializer);
+      }
+    }
   }
   function toastProperties(object: ts.ObjectLiteralExpression) {
     for (const property of object.properties) {
@@ -150,6 +212,18 @@ function untranslatedJSX(path: string, source: string): string[] {
       ts.isObjectLiteralExpression(node.arguments[0])
     )
       toastProperties(node.arguments[0]);
+    if (
+      ts.isJsxAttribute(node) &&
+      node.name.getText(ast) === "options" &&
+      ts.isJsxAttributes(node.parent) &&
+      (ts.isJsxOpeningElement(node.parent.parent) ||
+        ts.isJsxSelfClosingElement(node.parent.parent)) &&
+      node.parent.parent.tagName.getText(ast) === "ChoiceField" &&
+      node.initializer &&
+      ts.isJsxExpression(node.initializer) &&
+      node.initializer.expression
+    )
+      choiceOptions(node.initializer.expression);
     if (ts.isJsxText(node)) check(node.text, node);
     if (
       ts.isJsxAttribute(node) &&
@@ -193,6 +267,13 @@ it("detects untranslated display values without flagging translated or technical
       `<><p>{t("Hello world")}</p><input placeholder={t("Search here")}/><span>{provider.name}</span>{toast.add({title: t("Task done"), description: notice.brief, actionProps: {children: t("Open chat")}})}</>`,
     ),
   ).toEqual([]);
+});
+
+it("resolves local display constants, choice labels, maps and templates", () => {
+  const bad = `const label = "Save changes"; const options = [{value: "x", label: "Choose option"}]; const labels = {x: "Waiting now"}; <><Button>{label}</Button><ChoiceField options={options}/><span>{labels[state]}</span><span>{\`Hello \${name}\`}</span><Notice text="Try again"/></>`;
+  expect(untranslatedJSX("fixture.tsx", bad)).toHaveLength(5);
+  const good = `const label = t("Save changes"); const options = [{value: "x", label: t("Choose option")}]; const labels = {x: "Waiting now"}; <><Button>{label}</Button><ChoiceField options={options}/><span>{t(labels[state])}</span><span>{provider.name}</span><Notice text={t("Try again")}/></>`;
+  expect(untranslatedJSX("fixture.tsx", good)).toEqual([]);
 });
 
 it("keeps literal translation calls in the catalogs", () => {

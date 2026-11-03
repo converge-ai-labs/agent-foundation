@@ -1645,3 +1645,88 @@ it.each(["draft", "submission"])(
     }
   },
 );
+
+it("retains input and translates a pending selected App context rejection on language change", async () => {
+  const { i18n } = await import("../i18n");
+  const { AppSession } = await import("../mcp-apps/app-session");
+  const { AppContextSelection } = await import("../mcp-apps/context-selection");
+  await i18n.changeLanguage("en");
+  const post = vi.fn();
+  const put = vi.fn().mockReturnValue(new Promise(() => {}));
+  const transport = {
+    client: { POST: post, PUT: put, GET: vi.fn() },
+  } as unknown as Transport;
+  const session = new AppSession(transport, {
+    view_id: "view-one",
+    connection_generation: "generation-one",
+    root_thread_id: "thread-one",
+    reference: {
+      app_id: "app-one",
+      thread_id: "thread-one",
+      run_id: "run-one",
+      tool_call_id: "call-one",
+      server_id: "server-one",
+      tool_name: "counter",
+    },
+  });
+  const selection = new AppContextSelection();
+  selection.register(session);
+  session.selectContext(true);
+  void session.updateContext({});
+  const draft = new ThreadDraft();
+  draft.doc.getText("text").insert(0, "Keep this draft");
+  vi.spyOn(draft, "connect").mockReturnValue({ presence() {}, close() {} });
+  const query = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  try {
+    await submitDraft(
+      draft,
+      transport,
+      "thread-one",
+      "send",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      () => selection.capture("thread-one"),
+    );
+    expect(post).not.toHaveBeenCalled();
+    expect(values(draft.doc).prompt).toBe("Keep this draft");
+    render(
+      <QueryClientProvider client={query}>
+        <TransportContext value={transport}>
+          <ComposerDrafts value={new Map([["thread-one", draft]])}>
+            <Composer
+              threadId="thread-one"
+              activity={{ state: "inactive" }}
+              canRun
+              profile={{ display_name: "Alice", color: "#2563eb" }}
+              unauthorized={() => {}}
+              reconcile={() => {}}
+            />
+          </ComposerDrafts>
+        </TransportContext>
+      </QueryClientProvider>,
+    );
+    expect(screen.getByRole("alert").textContent).toContain(
+      "Wait for the selected App context update before sending.",
+    );
+    await act(async () => {
+      await i18n.changeLanguage("zh-CN");
+    });
+    expect(screen.getByRole("alert").textContent).toContain(
+      "请等待所选 App 上下文更新完成后再发送。",
+    );
+    expect(post).not.toHaveBeenCalled();
+    expect(values(draft.doc).prompt).toBe("Keep this draft");
+  } finally {
+    cleanup();
+    query.clear();
+    await i18n.changeLanguage("en");
+  }
+});

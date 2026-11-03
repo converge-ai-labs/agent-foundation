@@ -615,6 +615,7 @@ export const SavedEntry = memo(function SavedEntry({
   threadId?: string;
 }) {
   const currentFailureRunId = useContext(CurrentFailureRun);
+  const { t } = useTranslation();
   return (
     <article className={styles.entry} data-position={entry.position}>
       <Rows
@@ -627,7 +628,10 @@ export const SavedEntry = memo(function SavedEntry({
         threadId={threadId}
         continuation={continuation}
       />
-      <DebugData label={`Transcript entry ${entry.position}`} value={entry} />
+      <DebugData
+        label={t("Transcript entry {{position}}", { position: entry.position })}
+        value={entry}
+      />
     </article>
   );
 });

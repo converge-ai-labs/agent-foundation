@@ -28,6 +28,7 @@ export const composerMessages = new Set([
   "The shared draft changed. Review your input before sending.",
   "Couldn't sync. Your input is saved here. Send again when connected.",
   "Cannot capture input.",
+  "Wait for the selected App context update before sending.",
   "The current operation is unavailable. Refresh its status.",
   "The run didn't accept your message. Your input is still saved here.",
   "Couldn't confirm delivery. Your message may already be sent and removed from the shared draft. Check the chat before sending again.",

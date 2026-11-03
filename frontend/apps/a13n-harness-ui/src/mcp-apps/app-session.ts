@@ -6,6 +6,12 @@ import type { CallToolResult } from "@modelcontextprotocol/client";
 import { result, type Schema, type Transport } from "../transport/client";
 import { AppMessage } from "./app-message";
 
+export class AppContextPendingError extends Error {
+  constructor() {
+    super("Wait for the selected App context update before sending.");
+  }
+}
+
 export type AppRequestState = {
   request: Schema<"AppToolRequest">;
   operation?: Schema<"AppOperation">;
@@ -57,10 +63,7 @@ export class AppSession {
   }
   captureContext(): Schema<"AppContextReference"> | undefined {
     if (this.closed || !this.contextState.selected) return undefined;
-    if (this.contextState.pending)
-      throw new Error(
-        "Wait for the selected App context update before sending.",
-      );
+    if (this.contextState.pending) throw new AppContextPendingError();
     return this.contextState.context?.reference;
   }
   updateContext(value: unknown): Promise<void> {

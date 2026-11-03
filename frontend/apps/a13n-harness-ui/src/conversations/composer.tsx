@@ -12,6 +12,7 @@ import {
 } from "react";
 import { modelControlRequest } from "./model-controls";
 import { useAppContextSelection } from "../mcp-apps/context-selection";
+import { AppContextPendingError } from "../mcp-apps/app-session";
 import { useMutation, useQueries, useQueryClient } from "@tanstack/react-query";
 import { Button, ModalFrame, Switch } from "a13n-ui";
 import {
@@ -213,7 +214,10 @@ export async function submitDraft(
     draft.submission = {
       kind: "rejected",
       message: error instanceof Error ? error.message : "Cannot capture input.",
-      raw: error instanceof Error && !capturing,
+      raw:
+        error instanceof Error &&
+        !capturing &&
+        !(error instanceof AppContextPendingError),
     };
     captured?.doc.destroy();
     draft.notify();

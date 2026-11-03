@@ -116,8 +116,8 @@ function ConnectDeviceSteps({
                 value={shell}
                 onValueChange={(value) => setShell(value as typeof shell)}
                 options={[
-                  { value: "posix", label: "macOS / Linux · POSIX shell" },
-                  { value: "powershell", label: "Windows · PowerShell" },
+                  { value: "posix", label: t("macOS / Linux · POSIX shell") },
+                  { value: "powershell", label: t("Windows · PowerShell") },
                 ]}
               />
               <SettingsToggle
