@@ -88,6 +88,10 @@ def test_the_toolset_catalogue_names_each_tool_once() -> None:
     catalogue = toolsets.catalog(frozenset({"search"}))
     tools = [tool for toolset in catalogue.items for tool in toolset.tools]
 
+    assert set(catalogue.discovery_defaults.capabilities) == {"computer", "browser"}
+    assert catalogue.discovery_defaults.connections
+    assert not catalogue.discovery_defaults.exclude_platform
+    assert catalogue.discovery_defaults == config(tool_search={"automatic": {}}).tool_search.automatic
     assert len({tool.execution_id for tool in tools}) == len({tool.model_name for tool in tools}) == len(tools)
     supported = {tool.execution_id: tool.deployment_supported for tool in tools}
     assert supported["web.search"] and not supported["web.scrape"] and supported["web.fetch"]
@@ -312,7 +316,7 @@ def resolved(agent_id: str, revision_id: str, selected: AgentConfig, **fields: A
         pricing=None,
         provider=cast(Any, None),
     )
-    values: dict[str, Any] = {"reviewer": None, "media": {}, "connection_types": {}, "subagents": {}} | fields
+    values: dict[str, Any] = {"reviewer": None, "media": {}, "connections": {}, "subagents": {}} | fields
     return ResolvedAgent(agent_id=agent_id, revision_id=revision_id, config=selected, model=model, **values)
 
 
@@ -510,7 +514,12 @@ async def test_service_connection_permission_overrides_native_approval(mode: str
 
     source = Capability(toolsets=[FunctionToolset([Tool(execute, requires_approval=True)], id=GITHUB)])
     selected = config(toolsets={}, connection_tools=[{"connection_id": GITHUB, "permission": mode}])
-    root = resolved(new_object_id("ap"), new_object_id("apr"), selected, connection_types={GITHUB: "github"})
+    root = resolved(
+        new_object_id("ap"),
+        new_object_id("apr"),
+        selected,
+        connections={GITHUB: toolsets.ConnectionInfo(name="GitHub", type="github")},
+    )
     executable = build(root, capabilities=lambda _: [source], plugins=PLUGINS, instrumentation=None)
 
     async def model_resolver(context, model_id):

@@ -118,6 +118,18 @@ export function agentDependencies(config: AgentConfig): AgentDependency[] {
           ? {
               tool_search: {
                 ...config.tool_search,
+                ...(config.tool_search.automatic
+                  ? {
+                      automatic: {
+                        ...config.tool_search.automatic,
+                        exclude_connections:
+                          config.tool_search.automatic.exclude_connections?.map(
+                            (id) =>
+                              id === connection.connection_id ? value : id,
+                          ),
+                      },
+                    }
+                  : {}),
                 groups: Object.fromEntries(
                   Object.entries(config.tool_search.groups ?? {}).map(
                     ([name, group]) => [

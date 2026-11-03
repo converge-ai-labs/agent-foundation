@@ -5,9 +5,9 @@ import json
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from a13n_service.infra.reads import Preview, digest, json_text, preview
+from a13n_service.infra.reads import Preview, UnavailableConfiguration, digest, json_text, preview
 from a13n_service.resources import catalog_reads
 from a13n_service.resources.agents.schemas import AgentConfig, AgentRevision
 from a13n_service.resources.agents.toolsets import ToolsetCatalog
@@ -75,6 +75,7 @@ class RevisionSummary(BaseModel):
 
 
 class RevisionSummaryPage(BaseModel):
+    unavailable: list[UnavailableConfiguration] = Field(default_factory=list)
     items: list[RevisionSummary]
     next_cursor: str | None
 

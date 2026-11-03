@@ -4,6 +4,7 @@ import { cn } from "../lib/utils";
 /** Displays a labeled value without suggesting that it can be edited. */
 export function ReadOnlyField({
   label,
+  labelAction,
   children,
   description,
   className,
@@ -11,6 +12,7 @@ export function ReadOnlyField({
   ...props
 }: Omit<ComponentProps<"div">, "children"> & {
   label: ReactNode;
+  labelAction?: ReactNode;
   children: ReactNode;
   description?: ReactNode;
   className?: string;
@@ -27,10 +29,14 @@ export function ReadOnlyField({
     >
       <div
         data-slot="read-only-label"
-        id={id}
-        className={hideLabel ? "sr-only" : "text-sm font-medium"}
+        className={
+          hideLabel
+            ? "sr-only"
+            : "flex items-center gap-1.5 text-sm font-medium"
+        }
       >
-        {label}
+        <span id={id}>{label}</span>
+        {labelAction}
       </div>
       <div
         data-slot="read-only-value"

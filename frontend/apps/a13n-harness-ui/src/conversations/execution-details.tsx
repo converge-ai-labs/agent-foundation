@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import {
   createContext,
   useContext,
@@ -32,6 +33,7 @@ export function ExecutionDetails({
   preview: string;
   children: (open: boolean) => ReactNode;
 }) {
+  const { t } = useTranslation();
   const mobile = useMediaQuery("(max-width: 700px)");
   const pauseFollowing = useContext(PauseConversationFollowing);
   const [expanded, setExpanded] = useState(false);
@@ -63,7 +65,7 @@ export function ExecutionDetails({
                 {preview}
               </span>
             )}
-            <span className={conversation.srOnly}>Work log</span>
+            <span className={conversation.srOnly}>{t("Work log")}</span>
             <CaretRight
               className={conversation.executionCaret}
               aria-hidden="true"
@@ -88,7 +90,7 @@ export function ExecutionDetails({
       <DialogTrigger className={styles.preview}>
         <span className={styles.previewHeading}>
           <span className={styles.excerpt}>{preview}</span>
-          <span className={conversation.srOnly}>Work log</span>
+          <span className={conversation.srOnly}>{t("Work log")}</span>
           <ArrowRight aria-hidden="true" />
         </span>
       </DialogTrigger>
@@ -103,14 +105,16 @@ export function ExecutionDetails({
           <header className={styles.header}>
             <DialogClose
               render={<Button variant="ghost" size="icon" />}
-              aria-label="Back to chat"
+              aria-label={t("Back to chat")}
             >
               <ArrowLeft />
             </DialogClose>
             <div>
-              <DialogTitle className={styles.title}>Work log</DialogTitle>
+              <DialogTitle className={styles.title}>
+                {t("Work log")}
+              </DialogTitle>
               <div className={styles.metrics}>
-                {complete ? "Recorded steps" : "Steps so far"}
+                {complete ? t("Recorded steps") : t("Steps so far")}
               </div>
             </div>
           </header>

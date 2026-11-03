@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import AsyncIterator, Callable, Mapping
 from dataclasses import dataclass, field, replace
@@ -535,13 +536,15 @@ async def test_proxy_keeps_target_retry_context_and_does_not_charge_envelope_bud
 
 async def test_final_directory_rejects_deferral_added_by_outer_capability() -> None:
     from a13n_harness.capabilities.tool_search import _ToolSearchSurfaceCapability
-    from a13n_harness.toolsets.tool_search import _GroupedToolset
+    from a13n_harness.toolsets.tool_search import _GroupedToolset, _ToolGroup
 
     def hidden() -> str:
         return "not loaded"
 
     source = Capability(
-        toolsets=[_GroupedToolset(FunctionToolset([hidden]), "late", "Deferred source", "late-source")],
+        toolsets=[
+            _GroupedToolset(FunctionToolset([hidden]), {None: _ToolGroup("late", "Deferred source")}, "late-source")
+        ],
         id="late-source",
         defer_loading=True,
     )
@@ -1537,3 +1540,161 @@ items = await inventory(group=second['groups'][0]['group'], detail='full')
     assert content["second"]["next_offset"] is None
     assert content["second"]["groups"] == [{"group": "gamma", "description": "gamma operations", "count": 1}]
     assert content["items"]["tools"][0]["tool"] == "lookup"
+
+
+async def test_disjoint_tool_selections_keep_unselected_tools_direct_and_bind_source_once() -> None:
+    bound = []
+    invoked = []
+
+    def read_file() -> str:
+        invoked.append("files")
+        return "file"
+
+    def terminal() -> str:
+        invoked.append("terminal")
+        return "terminal"
+
+    def computer() -> str:
+        invoked.append("computer")
+        return "desktop"
+
+    class Source(AbstractCapability):
+        id = "mixed"
+
+        async def for_run(self, ctx):
+            bound.append(ctx.deps.run_id)
+            return self
+
+        def get_toolset(self):
+            return FunctionToolset([read_file, terminal, computer], instructions="Keep the source guidance.")
+
+    source = Source()
+    plan = ToolSearchPlan(
+        groups={
+            "desktop": ToolSearchSelection(
+                "Computer", capabilities=(source,), tools={"mixed": frozenset({"computer"})}
+            ),
+            "terminal": ToolSearchSelection(
+                "Terminal", capabilities=(source,), tools={"mixed": frozenset({"terminal"})}
+            ),
+        }
+    )
+
+    def inspect(_, info):
+        names = {tool.name for tool in info.function_tools}
+        assert "read_file" in names
+        assert not names.intersection({"computer", "terminal", "desktop__computer", "terminal__terminal"})
+        assert "Keep the source guidance." in (info.instructions or "")
+
+    result, _ = await _run(
+        (source,),
+        [
+            ("call_tool", {"group": "desktop", "tool": "computer", "arguments": {}}),
+            ("read_file", {}),
+            ("call_tool", {"group": "terminal", "tool": "terminal", "arguments": {}}),
+        ],
+        inspect=inspect,
+        tool_search=plan,
+    )
+    assert result.output_or_raise() == "done"
+    assert invoked == ["computer", "files", "terminal"]
+    assert len(bound) == 1
+    with pytest.raises(ValueError, match="multiple groups"):
+        ToolSearchPlan(groups={"one": plan.groups["desktop"], "two": plan.groups["desktop"]})._compose((source,), {})
+
+
+@pytest.mark.parametrize("names", [("lookup", "items__lookup"), ("items__lookup", "lookup")])
+async def test_grouped_names_cannot_shadow_direct_tools_from_the_same_source(names: tuple[str, str]) -> None:
+    from pydantic_ai import Agent
+    from pydantic_ai.exceptions import UserError
+
+    def lookup() -> str:
+        return "found"
+
+    source = Capability(id="mixed", toolsets=[FunctionToolset([Tool(lookup, name=name) for name in names])])
+    plan = ToolSearchPlan(
+        groups={
+            "items": ToolSearchSelection("Item tools", capabilities=(source,), tools={"mixed": frozenset({"lookup"})})
+        }
+    )
+    agent = Agent(
+        FunctionModel(stream_function=lambda messages, info: _text_stream()),
+        capabilities=plan._compose((source,), {}),
+    )
+    with pytest.raises(UserError, match="conflicting tool name 'items__lookup'"):
+        await agent.run("test")
+
+
+@pytest.mark.parametrize(("prior_sequential", "target_sequential"), [(True, False), (False, True), (False, False)])
+async def test_proxy_target_keeps_its_runtime_execution_policy(
+    monkeypatch, prior_sequential, target_sequential
+) -> None:
+    from a13n_harness import HarnessState
+    from a13n_harness.capabilities.tool_execution import ToolExecutionCapability
+    from a13n_harness.tool_execution import ToolExecutionRuntime
+
+    runtime = ToolExecutionRuntime()
+    state = HarnessState.new()
+    entered, finish, queued = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    invoked = []
+
+    async def prior() -> None:
+        entered.set()
+        await finish.wait()
+
+    runtime.admit(
+        prior,
+        thread_id=state.thread_id,
+        run_id="prior",
+        tool_call_id="prior",
+        tool_name="prior",
+        sequential=prior_sequential,
+    )
+    original_inline = runtime.inline
+
+    async def inline(operation, *, thread_id, sequential):
+        assert sequential == target_sequential
+        queued.set()
+        return await original_inline(operation, thread_id=thread_id, sequential=sequential)
+
+    monkeypatch.setattr(runtime, "inline", inline)
+
+    def lookup() -> str:
+        invoked.append("lookup")
+        return "found"
+
+    async def model(messages, info):
+        assert next(tool for tool in info.function_tools if tool.name == "call_tool").sequential
+        if _returns(messages):
+            yield "done"
+        else:
+            yield {
+                0: DeltaToolCall(
+                    name="call_tool", json_args=json.dumps({"group": "crm", "tool": "lookup", "arguments": {}})
+                )
+            }
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=(ToolExecutionCapability(), _group(Tool(lookup, sequential=target_sequential))),
+    )
+    await entered.wait()
+    pending = asyncio.create_task(
+        executable.run("lookup", previous_state=state, bindings=RunBindings.embedded(tool_execution=runtime))
+    )
+    try:
+        await asyncio.wait_for(queued.wait(), 2)
+        if prior_sequential or target_sequential:
+            assert not invoked and not pending.done()
+            finish.set()
+        result = await asyncio.wait_for(pending, 2)
+        assert result.output_or_raise() == "done"
+        assert invoked == ["lookup"]
+        assert _returns(result.all_messages())[-1].content == "found"
+    finally:
+        finish.set()
+        pending.cancel()
+        await asyncio.gather(pending, return_exceptions=True)
+        await runtime.close()

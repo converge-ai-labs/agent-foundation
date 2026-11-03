@@ -3,9 +3,9 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from a13n_service.infra.reads import Preview, bounded, preview
+from a13n_service.infra.reads import Preview, UnavailableConfiguration, bounded, preview
 from a13n_service.runs.schemas import (
     EntryStatus,
     EntryView,
@@ -112,6 +112,7 @@ class EntrySummary(BaseModel):
 
 
 class EntrySummaryPage(BaseModel):
+    unavailable: list[UnavailableConfiguration] = Field(default_factory=list)
     items: list[EntrySummary]
     next_cursor: str | None
 

@@ -589,7 +589,6 @@ class _Attempt:
                         self.boundaries,
                         InputBoundary(self.boundaries, self.offers.pending_notice),
                         *host.capabilities(node, retain_tools=self.plan.retain_tools),
-                        *host.memory,
                     ]
                     if node is root
                     else host.capabilities(node)

@@ -22,7 +22,6 @@ from a13n_service.resources.agents import definition, stored, toolsets
 from a13n_service.resources.agents.schemas import AgentConfig, PluginSelection, SkillSelection, SubagentSelection
 from a13n_service.resources.agents.tables import AgentRevisionRow, AgentRow
 from a13n_service.resources.agents.toolsets import ScrapeConfiguration, SearchConfiguration
-from a13n_service.resources.connections.schemas import ConnectionSelection
 from a13n_service.resources.connections.service import validate_selection
 from a13n_service.resources.connections.tables import ConnectionRow
 from a13n_service.resources.environment_templates.service import resolve_template
@@ -280,26 +279,28 @@ def _pin(edge: SubagentSelection) -> tuple[str, str | None]:
     return edge.agent_id, edge.revision_id
 
 
-async def connection_types(
-    session: AsyncSession, workspace_id: str, selections: Sequence[ConnectionSelection]
-) -> dict[str, str]:
-    """The type of each selected connection, which decides how the Harness identifies its tools."""
-    selected = [selection.connection_id for selection in selections]
-    types = dict(
+async def connection_info(
+    session: AsyncSession, workspace_id: str, connection_ids: Sequence[str]
+) -> dict[str, toolsets.ConnectionInfo]:
+    """Selected connection metadata for permission identities and discovery, without opening transports."""
+    if not connection_ids:
+        return {}
+    rows = (
         (
             await session.execute(
-                select(ConnectionRow.id, ConnectionRow.type).where(
-                    ConnectionRow.workspace_id == workspace_id, ConnectionRow.id.in_(selected)
+                select(ConnectionRow.id, ConnectionRow.name, ConnectionRow.type).where(
+                    ConnectionRow.workspace_id == workspace_id, ConnectionRow.id.in_(connection_ids)
                 )
             )
         )
         .tuples()
         .all()
     )
-    for connection_id in selected:
-        if connection_id not in types:
+    found = {id: toolsets.ConnectionInfo(name=name, type=kind) for id, name, kind in rows}
+    for connection_id in connection_ids:
+        if connection_id not in found:
             raise not_found(ConnectionRow.KIND, connection_id)
-    return types
+    return {id: found[id] for id in connection_ids}
 
 
 async def _check_web(

@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from a13n_service.infra.db import Storage, short_session, transaction
 from a13n_service.infra.errors import ServiceError, conflict, invalid, not_found
 from a13n_service.infra.http import require_match
+from a13n_service.infra.reads import UnavailableConfiguration
 from a13n_service.resources.agents import stored
 from a13n_service.resources.agents.schemas import AgentRevision
 from a13n_service.resources.agents.tables import AgentRevisionRow, AgentRow
@@ -46,7 +47,7 @@ def newest(pointer: TailPointer | None, limit: int) -> int:
     return max(1, min(tail, count + 1 - limit))
 
 
-async def run_views(session: AsyncSession, runs: Sequence[RunRow]) -> list[RunView]:
+async def run_views(session: AsyncSession, runs: Sequence[RunRow]) -> list[RunView | UnavailableConfiguration]:
     """Views with each run's source input, which the Console shows as the request of that run."""
     schedule_origins = await origins(session, (run.id for run in runs if run.occurrence_trigger_entry_id is not None))
     sources = [run.source_entry_id for run in runs if run.source_entry_id is not None]
@@ -64,18 +65,23 @@ async def run_views(session: AsyncSession, runs: Sequence[RunRow]) -> list[RunVi
         else {}
     )
     return [
-        stored.read(RunView, run).model_copy(
-            update={
-                "input": payloads.get(run.source_entry_id or ""),
-                "schedule_origin": schedule_origins.get(run.id),
-            }
+        stored.batch_item(
+            lambda run=run: stored.read(RunView, run, kind="run", id=run.id).model_copy(
+                update={
+                    "input": payloads.get(run.source_entry_id or ""),
+                    "schedule_origin": schedule_origins.get(run.id),
+                }
+            )
         )
         for run in runs
     ]
 
 
 async def run_view(session: AsyncSession, run: RunRow) -> RunView:
-    return (await run_views(session, [run]))[0]
+    view = (await run_views(session, [run]))[0]
+    if isinstance(view, UnavailableConfiguration):
+        raise conflict(view.kind, view.id, view.reason)
+    return view
 
 
 async def get(storage: Storage, actor: Principal, workspace_id: str, run_id: str) -> RunView:
@@ -90,10 +96,15 @@ async def agent(storage: Storage, actor: Principal, workspace_id: str, run_id: s
         scope = await workspace_scope(session, actor, workspace_id, "read")
         run = await get_run(session, scope.workspace_id, run_id)
         # The run's foreign key keeps its revision, and revisions are never deleted.
-        revision = stored.read(AgentRevision, await session.get(AgentRevisionRow, run.agent_revision_id))
-    override = stored.read(RunOptions, run.options).overrides
-    config = stored.read_effective(revision.config, override)
-    return stored.read(RunAgent, {"revision": revision, "config": config})
+        revision = stored.read(
+            AgentRevision,
+            await session.get(AgentRevisionRow, run.agent_revision_id),
+            kind="agent_revision",
+            id=run.agent_revision_id,
+        )
+    override = stored.read(RunOptions, run.options, kind="run", id=run.id).overrides
+    config = stored.read_effective(revision.config, override, run_id=run.id)
+    return stored.read(RunAgent, {"revision": revision, "config": config}, kind="run", id=run.id)
 
 
 async def _summaries(session: AsyncSession, values: Sequence[RunView]) -> list[read_views.RunSummary]:

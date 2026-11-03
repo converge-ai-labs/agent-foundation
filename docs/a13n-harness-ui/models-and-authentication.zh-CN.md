@@ -159,6 +159,8 @@ JSON 兼容请求参数放在 `settings`。嵌套对象、显式 `null` 和有�
 | `extra_headers`、`extra_body`                                                         | 原生请求扩展                      |
 | `openai_prompt_cache_key`、`openai_store`                                             | OpenAI 选项，受订阅适配器行为约束 |
 
+Responses API Model 支持 `settings.openai_transport: websocket` 或 `http`。API 密钥 Model 默认使用 HTTP，Codex 订阅 Model 默认使用 WebSocket；显式设置 `openai_transport: http` 即可使用 HTTP。Pydantic AI 管理连接复用、重连和回退；WebSocket 模式在未提供续接设置时使用原生 `openai_previous_response_id: auto`，也支持 `openai_store: false`。`model_request_transport` 自定义生命周期事件记录实际的 `http` 或 `websocket` 响应路径。连接失败可能回退到 HTTP，因此请求设置本身不能证明实际使用的传输方式。
+
 设置原样持久化，包括放在其中的秘密。使用专用凭据引用，分享前检查诊断内容。
 
 Host 连接构造使用 `model_configuration`。支持的 HTTP/API 密钥路由接受不含嵌入凭据、查询或片段的 HTTP(S) `base_url`；支持本地 HTTP。未知构造字段验证失败。订阅和原生 `xai:` gRPC 要求空连接配置。

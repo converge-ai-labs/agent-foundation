@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import type { ReactNode } from "react";
 import { Button } from "a13n-ui";
 import { WarningCircle } from "@phosphor-icons/react";
@@ -8,13 +9,14 @@ import styles from "./conversation.module.css";
 
 export function FailureNotice({
   message,
-  title = "Could not finish this operation",
+  title,
   action,
 }: {
   message?: string | null;
   title?: string;
   action?: ReactNode;
 }) {
+  const { t } = useTranslation();
   if (!message) return null;
   const first = message.split("\n")[0].trim();
   const short = first.length > 240 ? `${first.slice(0, 240)}…` : first;
@@ -22,11 +24,11 @@ export function FailureNotice({
     <section role="alert" className={styles.failureNotice}>
       <WarningCircle aria-hidden="true" />
       <div>
-        <strong>{title}</strong>
-        <p>{short || "The operation failed."}</p>
+        <strong>{title ?? t("Could not finish this operation")}</strong>
+        <p>{short || t("The operation failed.")}</p>
         {message.trim() !== short && (
           <details>
-            <summary>Error details</summary>
+            <summary>{t("Error details")}</summary>
             <pre>{message}</pre>
           </details>
         )}
@@ -55,6 +57,7 @@ export function RootFailureNotice({
   retry?: () => void;
   retryDisabled?: boolean;
 }) {
+  const { t } = useTranslation();
   const operation = useOperation(threadId, receipt);
   const snapshot = display.snapshot?.root_operation;
   const current =
@@ -80,7 +83,7 @@ export function RootFailureNotice({
       ? (current.failure?.message ??
         current.outcome?.execution.failure?.message ??
         current.outcome?.continuation.failure?.message ??
-        "The operation could not finish.")
+        t("The operation could not finish."))
       : undefined;
   // A failure can leave either its own checkpoint or the previous completed
   // result selected. Neither is retry authority after context clearing.
@@ -91,7 +94,9 @@ export function RootFailureNotice({
   return (
     <FailureNotice
       title={
-        retained?.status === "unknown" ? "Execution outcome unknown" : undefined
+        retained?.status === "unknown"
+          ? t("Execution outcome unknown")
+          : undefined
       }
       message={
         live ??
@@ -106,7 +111,7 @@ export function RootFailureNotice({
         retry &&
         !contextChanged ? (
           <Button variant="outline" disabled={retryDisabled} onClick={retry}>
-            Retry
+            {t("Retry")}
           </Button>
         ) : undefined
       }

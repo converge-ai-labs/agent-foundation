@@ -1,3 +1,4 @@
+import json
 from unittest.mock import AsyncMock
 
 import pytest
@@ -72,8 +73,10 @@ async def test_human_takeover_errors_are_tool_results_and_do_not_crash_the_run()
         assert "Human control" in await tools[name].function_schema.call(args, None)
 
 
-async def test_browser_tools_compose_in_the_native_harness_model_loop():
+@pytest.mark.parametrize("grouped", [False, True])
+async def test_browser_tools_compose_in_the_native_harness_model_loop(grouped):
     from a13n_harness import AgentSpec, HarnessBuilder, RunBindings
+    from a13n_harness.capabilities import ToolSearchPlan, ToolSearchSelection
     from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 
     backend = AsyncMock(spec=BrowserBackend)
@@ -86,25 +89,31 @@ async def test_browser_tools_compose_in_the_native_harness_model_loop():
     async def model(messages, info):
         nonlocal calls
         calls += 1
-        assert "browser_observe" in {tool.name for tool in info.function_tools}
+        names = {tool.name for tool in info.function_tools}
+        assert ("browser_observe" in names) is (not grouped)
+
+        def call(name, arguments, call_id):
+            if grouped:
+                arguments = {"group": "browser", "tool": name, "arguments": arguments}
+                name = "call_tool"
+            return {0: DeltaToolCall(name=name, json_args=json.dumps(arguments), tool_call_id=call_id)}
+
         if calls == 1:
-            yield {0: DeltaToolCall(name="browser_observe", json_args="{}", tool_call_id="observe")}
+            yield call("browser_observe", {}, "observe")
             return
         if calls == 2:
-            yield {
-                0: DeltaToolCall(
-                    name="browser_act",
-                    json_args='{"action":{"kind":"click","target":{"kind":"ref","ref":"e1"}}}',
-                    tool_call_id="click",
-                )
-            }
+            yield call("browser_act", {"action": {"kind": "click", "target": {"kind": "ref", "ref": "e1"}}}, "click")
             return
         yield "Done"
 
+    browser = BrowserUseCapability()
     executable = HarnessBuilder().build(
         AgentSpec(),
         model=FunctionModel(stream_function=model),
-        capabilities=(BrowserUseCapability(),),
+        capabilities=(browser,),
+        tool_search=ToolSearchPlan(groups={"browser": ToolSearchSelection("Browser", capabilities=(browser,))})
+        if grouped
+        else None,
         output_type=str,
     )
     result = await executable.run("Click Continue", bindings=RunBindings.embedded(browser_backend=backend))

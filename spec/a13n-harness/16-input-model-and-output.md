@@ -163,6 +163,14 @@ Resolution precedence is concrete Model, then fresh `RunModelResolver`, then Har
 
 `RunBindings` supplies a fresh resolver for each logical Harness run. The same resolver and `AgentContext` are shared by all internal recovery attempts. Pydantic's `ModelResolutionContext` carries the effective Agent dependencies and native resolution semantics. Freshness applies to current-run authority, credentials, policy, and affinity; the callable may reference a Host-owned concurrency-safe provider client whose lifecycle is broader than the run.
 
+### Responses Transport
+
+The shared `openai.responses` provider adapter accepts native `openai_transport="http" | "websocket"`. API-key Models retain the native HTTP default; [Codex](16a-model-authentication.md#codex-request-lifecycle) supplies its own default. Effective native settings decide transport after Model and request settings merge. Pydantic AI supplies `openai_previous_response_id="auto"` for WebSocket mode only when neither a previous-response nor conversation setting is present; Harness does not inject a competing default.
+
+An entered Model owns reusable connections across its model requests and tool loop. Pydantic AI owns socket leases, concurrency routing, `store=false` history metadata, incremental continuation, idle-connection replacement and HTTP fallback. A connection-establishment failure can use HTTP; a rejected handshake status retains its native error classification. An ambiguous failure after response dispatch is not transparently replayed by Harness. Explicit HTTP bypasses socket reservation. Connection reuse is process-local and is never persisted in Harness State.
+
+The adapter validates the actual Responses WebSocket endpoint through any supplied Host endpoint policy before connecting, with `ws`/`wss` mapped to HTTP(S) for policy evaluation. It refuses redirects and honors the Host's standard environment proxy routing and outbound TLS setting. An optional Host response-byte budget bounds each WebSocket message and the cumulative received response bytes; bounded connections use one native response lane, with concurrent requests following native HTTP fallback. The [transport event](12-events-observability-and-usage.md#first-party-event-contracts) reports the delivered transport rather than the requested preference.
+
 ### Automatic Request Affinity
 
 Every built Agent includes one mandatory final model-request Capability. Immediately before each upstream request, after effective settings and every earlier request hook have been applied, it copy-on-write adds eligible, enabled defaults from the active Thread:

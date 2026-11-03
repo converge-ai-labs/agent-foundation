@@ -19,7 +19,7 @@ from a13n_harness.capabilities.tool_execution import ToolExecutionCapability
 from a13n_harness.capabilities.web import WebBinding
 from a13n_harness.environment.advanced import EnvironmentRuntime, create_environment_runtime
 from a13n_harness.tools import ToolIdentity
-from pydantic_ai.capabilities import AbstractCapability
+from pydantic_ai.capabilities import AbstractCapability, CombinedCapability
 from pydantic_ai.models import Model
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -80,11 +80,14 @@ class _Parts:
     host_skills: bool
     builtin_instructions: str | None
     browser_tools: frozenset[str]
+    assets: bool
+    computer_notify: bool
 
 
 @dataclass(frozen=True, slots=True)
 class HostPlan:
     parts: Mapping[str, _Parts]
+    root_revision_id: str
     execution: ExecutionPolicy
     memories: tuple[PlannedMemory, ...]
     # The root agent's enabled memory tools of each kind.
@@ -145,9 +148,12 @@ async def resolve_host(
             host_skills=host_skills,
             builtin_instructions=instructions.for_preset(builtin.get(node.revision_id)),
             browser_tools=enabled_tools(config.toolsets, "browser"),
+            computer_notify=enabled_tool(config.toolsets, "computer", "notify") is not None,
+            assets=enabled_tool(config.toolsets, "assets", "publish") is not None,
         )
     return HostPlan(
         parts,
+        agent.revision_id,
         execution=ExecutionPolicy().overlay(stored.require(RunOptions, run.options, kind="run", id=run.id).execution),
         memories=await resolve_memories(session, run),
         file_tools=memory_file_tools(agent.config.toolsets),
@@ -168,8 +174,6 @@ class Host:
     tools: Mapping[str, Mapping[str, AbstractCapability[AgentContext]]]
     webs: Mapping[str, WebBinding]
     browsers: Mapping[str, BrowserBackend]
-    # The root agent's file and record memory capabilities, for the kinds the run mounts.
-    memory: tuple[AbstractCapability[AgentContext], ...]
     environment: EnvironmentRuntime
 
     def capabilities(
@@ -178,8 +182,6 @@ class Host:
         """The agent's own host tools: its connections, platform tools, pinned skills and asset publishing."""
         features = list(self.sources(agent).values())
         features.append(Freshness())
-        if enabled_tool(agent.config.toolsets, "computer", "notify") is not None:
-            features.append(HandbackNotifications(self.runtime, self.lease))
         if retain_tools:
             # Only conversation roots retain calls; inline children and memory organizers stay inline.
             features.append(ToolExecutionCapability(self.plan.execution.tools))
@@ -187,20 +189,6 @@ class Host:
         if agent.revision_id in self.browsers:
             features.append(
                 BrowserContextCapability(self.runtime, self.lease, self.browsers[agent.revision_id].binding)
-            )
-            features.append(
-                BrowserUseCapability(
-                    enabled_tools=parts.browser_tools,
-                    on_human_control=lambda: BROWSER_GUIDANCE,
-                    file_instructions=(
-                        "Upload workspace assets into an observed file input: action='upload', ref, "
-                        "and 1-16 paths in the form asset:<asset_id>. Host or Environment paths are not accepted. "
-                        "Only unretired assets in this workspace may be uploaded. "
-                        "action='downloads' takes no ref/paths; it publishes completed tracked downloads "
-                        "as workspace assets and returns asset IDs, never Host paths. Publication requires "
-                        "workspace write authority. File transfer requires a supporting Browser provider."
-                    ),
-                )
             )
         if parts.builtin_instructions is not None:
             features.append(BuiltinInstructionsCapability(parts.builtin_instructions))
@@ -224,12 +212,10 @@ class Host:
                     prove_lease=partial(prove, self.runtime, self.lease),
                 )
             )
-        if enabled_tool(agent.config.toolsets, "assets", "publish") is not None:
-            features.append(AssetsCapability(self.runtime, self.lease, self.principal, self.authority))
         return features
 
     def sources(self, agent: ResolvedAgent) -> Mapping[str, AbstractCapability[AgentContext]]:
-        """Already-opened connection and platform sources available for explicit grouping."""
+        """Already-constructed host sources, shared by direct and grouped presentation."""
         return self.tools[agent.revision_id]
 
     def bindings(self, agent: ResolvedAgent, given: RunBindings) -> RunBindings:
@@ -290,6 +276,22 @@ async def open_host(
                 browsers[revision_id] = await stack.enter_async_context(
                     open_backend(runtime, lease, plan.browser, check, parts.browser_tools)
                 )
+                tools[revision_id]["browser"] = BrowserUseCapability(
+                    enabled_tools=parts.browser_tools,
+                    on_human_control=lambda: BROWSER_GUIDANCE,
+                    file_instructions=(
+                        "Upload workspace assets into an observed file input: action='upload', ref, "
+                        "and 1-16 paths in the form asset:<asset_id>. Host or Environment paths are not accepted. "
+                        "Only unretired assets in this workspace may be uploaded. "
+                        "action='downloads' takes no ref/paths; it publishes completed tracked downloads "
+                        "as workspace assets and returns asset IDs, never Host paths. Publication requires "
+                        "workspace write authority. File transfer requires a supporting Browser provider."
+                    ),
+                )
+            if parts.computer_notify:
+                tools[revision_id]["computer-notify"] = HandbackNotifications(runtime, lease)
+            if parts.assets:
+                tools[revision_id]["assets"] = AssetsCapability(runtime, lease, principal, authority)
             if parts.web is not None:
                 webs[revision_id] = await stack.enter_async_context(
                     open_web(parts.web, check, runtime=runtime, configuration=configuration)
@@ -314,7 +316,9 @@ async def open_host(
                 configuration=configuration,
             )
         )
-        memory = tuple(capability for capability in (files, records) if capability is not None)
+        memory = [capability for capability in (files, records) if capability is not None]
+        if memory:
+            tools[plan.root_revision_id]["memory"] = CombinedCapability(memory)
         yield Host(
             runtime,
             lease,
@@ -326,7 +330,6 @@ async def open_host(
             tools,
             webs,
             browsers,
-            memory,
             _environment(environments, platform_mounts, command_environment=plan.execution.environment),
         )
 

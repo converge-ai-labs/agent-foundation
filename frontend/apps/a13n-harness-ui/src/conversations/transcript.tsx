@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import {
   memo,
   createContext,
@@ -35,7 +36,13 @@ import { FailureNotice } from "./failure-notice";
 const CurrentFailureRun = createContext<string | null | undefined>(undefined);
 export { MessageText } from "./message-text";
 import type { Schema } from "../transport/client";
-import type { DisplayBlock, FocusDisplay } from "./stream";
+import type {
+  ChildState,
+  ContextState,
+  DisplayBlock,
+  ExecutionOutcome,
+  FocusDisplay,
+} from "./stream";
 import { InputContent, type InputPart } from "./input-content";
 import { inputSource, type LocalInput } from "./local-input";
 import { DebugData } from "../shell/debug";
@@ -48,8 +55,57 @@ function systemNotice(metadata?: Record<string, unknown> | null) {
     : undefined;
 }
 
-function notificationTitle(source: string) {
-  return source === "background_process" ? "Process update" : "Subagent update";
+// Known steering sources; unknown sources keep their backend value.
+function useNotificationTitle() {
+  const { t } = useTranslation();
+  return (source: string) =>
+    source === "background_process"
+      ? t("Process update")
+      : t("Subagent update");
+}
+
+// Generated run, subagent and recovery chrome is translated here; backend
+// messages, part kinds and outcome values stay verbatim.
+function ActivityRow({ row }: { row: Extract<Row, { kind: "activity" }> }) {
+  const { t } = useTranslation();
+  const title = row.execution
+    ? row.execution === "cancelled"
+      ? t("Execution cancelled")
+      : row.execution === "interrupt"
+        ? t("Execution suspended")
+        : t("Execution failed")
+    : row.childName
+      ? t("Subagent · {{name}}", { name: row.childName })
+      : (row.name ?? t("Activity"));
+  const generated =
+    row.childState === "running"
+      ? t("Running")
+      : row.childState === "suspended"
+        ? t("Suspended")
+        : row.childState === "completed"
+          ? t("Completed")
+          : row.execution === "interrupt"
+            ? t("A response is needed before execution can continue.")
+            : row.execution
+              ? t(
+                  "Run finished. Open its details to check follow-ups and environment results.",
+                )
+              : "";
+  const body = [
+    row.text || generated,
+    row.recoveryOutcome &&
+      t("Outcome: {{outcome}}.", { outcome: row.recoveryOutcome }),
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return (
+    <details className={styles.activity}>
+      <summary>{title}</summary>
+      <pre className={styles.code}>
+        {row.omitted ? `${body}\n${t("Content omitted by the server.")}` : body}
+      </pre>
+    </details>
+  );
 }
 
 type PendingInteraction = { requestIds: string[]; content: ReactNode };
@@ -80,14 +136,24 @@ type Row = {
       kind: "context";
       context: "handoff" | "compaction";
       text: string;
-      status?: string;
+      state?: ContextState;
+      diagnostics?: string[];
     }
   | {
       kind: "notifications";
       notices: { id: string; source: string; text: string }[];
     }
   | { kind: "failure"; text: string }
-  | { kind: "activity"; name: string; text: string }
+  | {
+      kind: "activity";
+      name?: string;
+      text: string;
+      omitted?: boolean;
+      execution?: ExecutionOutcome;
+      recoveryOutcome?: string;
+      childName?: string;
+      childState?: ChildState;
+    }
 );
 
 function appendInput(rows: Row[], part: InputPart, fallback: string) {
@@ -175,9 +241,8 @@ function savedRows(
           id,
           kind: "activity",
           name: part.kind,
-          text:
-            (part.text ?? JSON.stringify(part.value, null, 2)) +
-            (part.value_omitted ? "\nContent omitted by the server." : ""),
+          text: part.text ?? JSON.stringify(part.value, null, 2),
+          omitted: part.value_omitted ?? undefined,
         });
       for (const reference of part.mcp_apps ?? []) {
         rows.push({ id: reference.app_id, kind: "app", reference });
@@ -227,7 +292,8 @@ function liveRows(blocks: DisplayBlock[]): Row[] {
         kind: "context",
         context: block.context,
         text: block.result ?? "",
-        status: block.text,
+        state: block.contextState,
+        diagnostics: block.contextDiagnostics,
       });
     } else if (systemNotice(block.metadata)) {
       rows.push({
@@ -278,8 +344,12 @@ function liveRows(blocks: DisplayBlock[]): Row[] {
       rows.push({
         id: block.id,
         kind: "activity",
-        name: block.name || "Activity",
+        name: block.name || undefined,
         text: [block.text, block.result].filter(Boolean).join("\n"),
+        execution: block.execution,
+        recoveryOutcome: block.recoveryOutcome,
+        childName: block.childName,
+        childState: block.childState,
       });
     for (const reference of block.apps ?? []) {
       rows.push({ id: reference.app_id, kind: "app", reference, live: true });
@@ -405,6 +475,7 @@ function Reasoning({
 }: {
   segments: { id: string; text: string; durationMs?: number }[];
 }) {
+  const { t } = useTranslation();
   const duration = executionTime(
     segments.every((segment) => segment.durationMs != null)
       ? segments.reduce((total, segment) => total + segment.durationMs!, 0)
@@ -418,15 +489,17 @@ function Reasoning({
       onToggle={(event) => setOpen(event.currentTarget.open)}
     >
       <summary>
-        Thought
+        {t("Thought")}
         {duration && (
-          <span className={styles.executionDuration}>for {duration}</span>
+          <span className={styles.executionDuration}>
+            {t("for {{duration}}", { duration })}
+          </span>
         )}
         <CaretRight aria-hidden="true" className={styles.reasoningCaret} />
       </summary>
       <section
         className={styles.reasoningBody}
-        aria-label="Thought content"
+        aria-label={t("Thought content")}
         tabIndex={0}
       >
         {segments.map((segment) => (
@@ -448,6 +521,8 @@ function Rows({
   continuation?: boolean;
   output?: Extract<Row, { kind: "assistant" }>[];
 }) {
+  const { t } = useTranslation();
+  const notificationTitle = useNotificationTitle();
   const copyText = output
     .map((row) => row.text)
     .filter(Boolean)
@@ -474,7 +549,7 @@ function Rows({
       ) : row.kind === "origin" ? (
         <div className={styles.assistantMessage}>
           <header>
-            Subagent output <small>{row.childId}</small>
+            {t("Subagent output")} <small>{row.childId}</small>
           </header>
         </div>
       ) : row.kind === "thinking" ? (
@@ -489,7 +564,7 @@ function Rows({
         <section className={styles.assistantMessage}>
           <MessageText text={row.text} />
           {row.truncated && (
-            <small>Saved preview truncated by the server.</small>
+            <small>{t("Saved preview truncated by the server.")}</small>
           )}
           {row === output.at(-1) && copyText.trim() && (
             <CopyMessage
@@ -502,14 +577,15 @@ function Rows({
         <ContextActivity
           context={row.context}
           text={row.text}
-          status={row.status}
+          state={row.state}
+          diagnostics={row.diagnostics}
         />
       ) : row.kind === "notifications" ? (
         <details className={styles.activity}>
           <summary>
             {row.notices.length === 1
               ? notificationTitle(row.notices[0].source)
-              : `System updates · ${row.notices.length}`}
+              : t("System update count", { count: row.notices.length })}
           </summary>
           {row.notices.map((notice) => (
             <div key={notice.id}>
@@ -521,10 +597,7 @@ function Rows({
           ))}
         </details>
       ) : (
-        <details className={styles.activity}>
-          <summary>{row.name}</summary>
-          <pre className={styles.code}>{row.text}</pre>
-        </details>
+        <ActivityRow row={row} />
       )}
     </div>
   ));
@@ -926,6 +999,7 @@ function TurnSegments({
   loading?: boolean;
   failed?: boolean;
 }) {
+  const { t } = useTranslation();
   const rows = usePresentedRows(questionRows(sourceRows, pending), !missing);
   const mountedExecution = useRef(new Set<string>());
   const complete =
@@ -1051,16 +1125,16 @@ function TurnSegments({
               role="status"
             >
               {loading ? (
-                "Loading turn…"
+                t("Loading turn…")
               ) : failed && retry ? (
                 <>
-                  Turn could not be fully loaded.{" "}
+                  {t("Turn could not be fully loaded.")}{" "}
                   <button type="button" onClick={retry}>
-                    Retry loading turn
+                    {t("Retry loading turn")}
                   </button>
                 </>
               ) : (
-                "Turn history is incomplete."
+                t("Turn history is incomplete.")
               )}
             </div>
           );
@@ -1106,17 +1180,20 @@ function ExecutionSegment({
   threadId: string;
   complete: boolean;
 }) {
+  const { t } = useTranslation();
   const latest = rows.at(-1);
   const latestTool = latest?.kind === "tools" ? latest.tools.at(-1) : undefined;
   const toolInfo = latestTool ? describeTool(latestTool) : undefined;
   const duration = executionTime(durationMs);
   const preview = complete
-    ? `Worked${duration ? ` for ${duration}` : ""}`
+    ? duration
+      ? t("Worked for {{duration}}", { duration })
+      : t("Worked")
     : toolInfo
       ? `${toolInfo.label} ${toolInfo.summary}${toolInfo.phase === "Result received" ? "" : ` · ${toolInfo.phase}`}`
       : latest?.kind === "thinking"
-        ? "Thought"
-        : "View the available execution steps";
+        ? t("Thought")
+        : t("View the available execution steps");
   return (
     <ExecutionDetails complete={complete} preview={preview}>
       {(open) => (
@@ -1138,6 +1215,7 @@ function ExecutionReader({
   complete: boolean;
   children: ReactNode;
 }) {
+  const { t } = useTranslation();
   const reader = useRef<HTMLDivElement>(null);
   const follow = useRef(!complete);
   const anchor = useRef<ReadingAnchor | undefined>(undefined);
@@ -1153,7 +1231,7 @@ function ExecutionReader({
       ref={reader}
       hidden={!open}
       role="region"
-      aria-label="Work log"
+      aria-label={t("Work log")}
       tabIndex={0}
       data-execution-reader
       className={`${styles.executionContent} a13n-scrollbar`}
@@ -1193,6 +1271,7 @@ export function RecoveryNotice({
 }: {
   recovery: FocusDisplay["recovery"];
 }) {
+  const { t } = useTranslation();
   if (!recovery) return null;
   return (
     <div
@@ -1203,21 +1282,23 @@ export function RecoveryNotice({
       <ArrowClockwise aria-hidden="true" />
       <span>
         {recovery.state === "retrying"
-          ? "Reconnecting to model…"
+          ? t("Reconnecting to model…")
           : recovery.state === "resumed"
-            ? "Model connection restored"
-            : "Model reconnection ended"}
-        {` · ${recovery.retries} ${recovery.retries === 1 ? "retry" : "retries"}`}
+            ? t("Model connection restored")
+            : t("Model reconnection ended")}
+        {` · ${t("Retry count", { count: recovery.retries })}`}
       </span>
     </div>
   );
 }
 
 function GapNotice() {
+  const { t } = useTranslation();
   return (
     <p role="status">
-      Some live updates are missing. Check saved history and run details for the
-      full result.
+      {t(
+        "Some live updates are missing. Check saved history and run details for the full result.",
+      )}
     </p>
   );
 }
@@ -1233,9 +1314,13 @@ export function LiveOutput({
   gap: boolean;
   threadId?: string;
 }) {
+  const { t } = useTranslation();
   const rows = liveRows(blocks);
   return (
-    <section className={styles.liveOutput} aria-label="Current unsaved output">
+    <section
+      className={styles.liveOutput}
+      aria-label={t("Current unsaved output")}
+    >
       {rows.length > 0 && label && <small>{label}</small>}
       <Rows rows={rows} threadId={threadId} />
       {gap && <GapNotice />}

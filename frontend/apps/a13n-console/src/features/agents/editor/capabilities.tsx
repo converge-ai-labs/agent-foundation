@@ -37,6 +37,8 @@ import { OptionsRefresh } from "../../../shared/forms/options-refresh";
 import styles from "./editor.module.css";
 import type { ReviewTarget } from "../reviewer";
 import type { AgentDraft } from "./draft";
+import { usesToolDiscovery } from "../tool-search";
+import { useToolsetCatalog } from "../toolsets";
 import { BuiltinSkillRows } from "./builtin-skills";
 import {
   MediaUnderstandingFields,
@@ -229,6 +231,7 @@ export function ConnectionsSection({
   const { t } = useTranslation();
   const { basePath } = useWorkspace();
   const cache = useQueryClient();
+  const catalog = useToolsetCatalog();
   const available = choices.data?.connections ?? [];
   const selected = new Set(draft.connections.map((item) => item.connection_id));
   return (
@@ -315,11 +318,13 @@ export function ConnectionsSection({
               )}
               selection={selection}
               discovery={
-                draft.toolSearch.mode !== "direct" &&
-                draft.toolSearch.groups.some((group) =>
-                  group.connections?.includes(selection.connection_id),
-                )
-                  ? draft.toolSearch.mode
+                usesToolDiscovery(draft.toolSearch, {
+                  kind: "connections",
+                  id: selection.connection_id,
+                  defaultDiscovery:
+                    catalog.data?.discovery_defaults.connections === true,
+                })
+                  ? "proxy"
                   : undefined
               }
               readOnly={readOnly}

@@ -6,6 +6,7 @@ import pytest
 from a13n_service.infra.errors import ServiceError
 from a13n_service.resources.agents.schemas import AgentConfig, AgentConfigurationChanges, apply_configuration_changes
 from a13n_service.resources.agents.service import change_configuration
+from a13n_service.resources.agents.toolsets import platform_tools
 from a13n_service.tenancy.authorize import BUILT_IN_ROLES, Grant, Principal
 from pydantic import ValidationError
 
@@ -200,13 +201,30 @@ async def test_historical_base_requires_explicit_publication_choice(service):
     assert result.agent.default_revision_id == head["default_revision_id"]
 
 
+async def test_configuration_delta_preserves_inactive_platform_discovery(service):
+    head = await create_agent(service, "Inactive source", await create_model(service), toolsets={})
+    changed = await edit(
+        service,
+        head,
+        {"tool_search": {"groups": {"platform": {"description": "Platform tools", "platform": True}}}},
+    )
+    assert changed.status == "published"
+    assert changed.changed_fields == ("tool_search",)
+    assert changed.revision.config.tool_search.groups["platform"].platform
+    assert not platform_tools(changed.revision.config.toolsets)
+
+
 async def test_combined_delta_errors_expose_only_locations_and_types(service):
     head = await create_agent(service, "Safe errors", await create_model(service))
     with pytest.raises(ServiceError) as refused:
         await edit(
             service,
             head,
-            {"tool_search": {"groups": {"private-group": {"description": "secret-value", "platform": True}}}},
+            {
+                "tool_search": {
+                    "groups": {"private-group": {"description": "secret-value", "plugins": ["private-plugin"]}}
+                }
+            },
         )
     assert refused.value.code == "invalid_argument"
     errors = refused.value.details["errors"]
@@ -230,7 +248,7 @@ def test_reviewer_obsolete_platform_rules_reject_authoring_but_remain_readable(s
     value = {"model": "model", "reviewer": {"model": "model", "rules": {selector: {"on_flagged": "approval_required"}}}}
     with pytest.raises(ValidationError):
         AgentConfig.model_validate(value)
-    assert selector in stored.read(AgentConfig, value).reviewer.rules
+    assert selector in stored.read(AgentConfig, value, kind="agent_revision", id="test").reviewer.rules
 
 
 def test_reviewer_current_platform_and_connection_rules_are_accepted():

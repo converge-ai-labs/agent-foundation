@@ -60,6 +60,7 @@ export function FormField({
       <ReadOnlyField
         data-field-layout={props["data-field-layout"]}
         label={label}
+        labelAction={labelAction}
         hideLabel={hideLabel}
         description={description}
         className={typeof className === "string" ? className : undefined}

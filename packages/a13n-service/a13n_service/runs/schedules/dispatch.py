@@ -49,7 +49,7 @@ async def manual(
         if found is not None:
             if found.request_digest != digest:
                 raise conflict("request", request_key, IDEMPOTENCY_KEY_REUSED)
-            return stored.read(Occurrence, found), False
+            return stored.read(Occurrence, found, kind="schedule_occurrence", id=found.id), False
         require_match(if_match, row.id, row.version)
         service.require_editable(row)
         if row.pending_occurrence_id is not None or await queries.has_unfinished(session, row):
@@ -77,7 +77,7 @@ async def manual(
             details={"session_id": row.session_id, "occurrence_id": item.id},
         )
         await session.flush()
-        return stored.read(Occurrence, item), True
+        return stored.read(Occurrence, item, kind="schedule_occurrence", id=item.id), True
 
 
 async def _log(details: dict[str, object]) -> None:
