@@ -762,6 +762,7 @@ async def test_authorization_and_private_devices(env) -> None:  # type: ignore[n
     device = f"env_{uuid4().hex}"
     async with transaction(env.runtime.storage) as session:
         target = EnvironmentRow(
+            kind="external_http",
             id=device,
             organization_id=env.tenant.organization_id,
             workspace_id=env.tenant.workspace_id,

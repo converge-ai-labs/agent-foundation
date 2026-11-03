@@ -27,8 +27,9 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from a13n_service.infra.db import Base, Stamped, identity_guarded, rules
 
-STATUSES = ("reserved", "creating", "starting", "ready", "stopping", "stopped", "deleting", "deleted")
+STATUSES = ("reserved", "creating", "starting", "ready", "stopping", "stopped", "deleting", "deleted", "disabled")
 OPERATIONS = "('creating', 'starting', 'stopping', 'deleting')"
+CLIENT_IDENTITY = text("kind = 'client_envd' AND status <> 'deleted'")
 
 
 class EnvironmentRow(Stamped, Base):
@@ -48,6 +49,8 @@ class EnvironmentRow(Stamped, Base):
             name="fk_environments_metrics_data_source",
         ),
         CheckConstraint(f"status IN {STATUSES}", name="status"),
+        CheckConstraint("kind IN ('managed', 'external_http', 'client_envd')", name="kind"),
+        CheckConstraint("status <> 'disabled' OR kind = 'client_envd'", name="disabled"),
         CheckConstraint(
             "template_id IS NULL OR status NOT IN ('ready', 'starting', 'stopping', 'stopped') OR handle IS NOT NULL",
             name="handle",
@@ -66,16 +69,28 @@ class EnvironmentRow(Stamped, Base):
             name="lease",
         ),
         # External targets are connect-only: never created, started, stopped or destroyed by the Service.
-        CheckConstraint("template_id IS NOT NULL OR status IN ('ready', 'deleted')", name="connect_only"),
+        CheckConstraint("kind = 'managed' OR status IN ('ready', 'disabled', 'deleted')", name="connect_only"),
         # Managed instances come from a template of a provider; external targets are only a device at an endpoint.
-        CheckConstraint("(template_id IS NULL) = (provider_id IS NULL)", name="managed"),
         CheckConstraint(
-            "(template_id IS NULL) = (device_id IS NOT NULL) AND (template_id IS NULL) = (endpoint IS NOT NULL)"
-            " AND (template_id IS NOT NULL OR (provider_identity IS NULL AND handle IS NULL))",
+            "(kind = 'managed') = (template_id IS NOT NULL) AND (template_id IS NULL) = (provider_id IS NULL)",
+            name="managed",
+        ),
+        CheckConstraint(
+            "(kind <> 'managed') = (device_id IS NOT NULL) AND (kind = 'external_http') = (endpoint IS NOT NULL)"
+            " AND (kind = 'managed' OR (provider_identity IS NULL AND handle IS NULL))"
+            " AND (kind <> 'client_envd' OR owner_principal_id IS NOT NULL)",
             name="external",
         ),
         # The tombstone of an external target drops its token.
-        CheckConstraint("(token IS NOT NULL) = (template_id IS NULL AND status <> 'deleted')", name="token"),
+        CheckConstraint("(token IS NOT NULL) = (kind = 'external_http' AND status <> 'deleted')", name="token"),
+        Index(
+            "uq_environments_client_identity",
+            "workspace_id",
+            "owner_principal_id",
+            "device_id",
+            unique=True,
+            postgresql_where=CLIENT_IDENTITY,
+        ),
         # Only a ready managed sandbox is renewed.
         CheckConstraint(
             "(renew_at IS NULL AND expires_at IS NULL) OR (status = 'ready' AND template_id IS NOT NULL)",
@@ -98,11 +113,22 @@ class EnvironmentRow(Stamped, Base):
         ),
         rules(
             identity_guarded("environments"),
+            # Older Control replicas omit kind when inserting their two supported target shapes.
+            "CREATE FUNCTION classify_legacy_environment() RETURNS trigger LANGUAGE plpgsql AS $$"
+            " BEGIN IF NEW.template_id IS NOT NULL THEN NEW.kind := 'managed';"
+            " ELSIF NEW.endpoint IS NOT NULL THEN NEW.kind := 'external_http'; END IF; RETURN NEW; END $$",
+            "CREATE TRIGGER classify_legacy_environment BEFORE INSERT ON environments FOR EACH ROW"
+            " WHEN (NEW.kind IS NULL) EXECUTE FUNCTION classify_legacy_environment()",
+            "CREATE TRIGGER guard_environment_target BEFORE UPDATE ON environments FOR EACH ROW"
+            " WHEN (ROW(OLD.kind, OLD.device_id, OLD.owner_principal_id)"
+            " IS DISTINCT FROM ROW(NEW.kind, NEW.device_id, NEW.owner_principal_id))"
+            " EXECUTE FUNCTION refuse_mutation()",
             # Renewals reschedule themselves every few minutes without changing what a client sees.
             unversioned=("renew_at", "expires_at"),
         ),
     )
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(24), default="managed")
     organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"))
     workspace_id: Mapped[str]
     # NULL only for external targets, which no provider account reaches.

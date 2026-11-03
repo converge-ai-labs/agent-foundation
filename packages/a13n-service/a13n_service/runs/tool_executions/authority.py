@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hmac
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
@@ -46,7 +47,9 @@ async def lock_execution(
     return run, row, current
 
 
-async def lock_owner(session: AsyncSession, runtime: Runtime, lease: Lease) -> tuple[RunRow, Principal]:
+async def lock_owner(
+    session: AsyncSession, runtime: Runtime, lease: Lease, *, cleanup: bool = False
+) -> tuple[RunRow, Principal]:
     """Fence a dispatch under its attempt or retained execution and observe current authority once."""
     record = current_execution()
     if record is None:
@@ -54,14 +57,21 @@ async def lock_owner(session: AsyncSession, runtime: Runtime, lease: Lease) -> t
         if run.cancel_requested_at is not None:
             raise LeaseLost()
     else:
-        run, _, _ = await lock_execution(session, lease, record.execution_id)
+        run, _, _ = await lock_execution(session, lease, record.execution_id, cleanup=cleanup)
     return run, await authorize_execution(session, runtime.access, run)
 
 
-async def prove(runtime: Runtime, lease: Lease) -> Principal:
+async def prove(runtime: Runtime, lease: Lease, *, cleanup: bool = False) -> Principal:
     async with transaction(runtime.storage) as session:
-        _, principal = await lock_owner(session, runtime, lease)
+        _, principal = await lock_owner(session, runtime, lease, cleanup=cleanup)
         return principal
+
+
+@dataclass(frozen=True, slots=True)
+class ControlGrant:
+    principal: Principal
+    workspace_id: str
+    mount: EnvironmentMount
 
 
 async def authorize_control(
@@ -72,7 +82,8 @@ async def authorize_control(
     thread_id: str,
     environment_id: str,
     actions: frozenset[EnvironmentAction],
-) -> None:
+    cleanup: bool = False,
+) -> ControlGrant:
     """Recheck a trusted worker's caller snapshot immediately before native dispatch.
 
     The sending worker proves its token and holds current Environment guards.
@@ -81,7 +92,9 @@ async def authorize_control(
     """
     run = await session.get(RunRow, caller.run_id)
     current = await now(session)
-    if run is None or run.thread_id != thread_id or run.cancel_requested_at is not None:
+    if run is None or run.thread_id != thread_id:
+        raise LeaseLost()
+    if run.cancel_requested_at is not None and not (cleanup and caller.execution_id):
         raise LeaseLost()
     if caller.execution_id is None:
         attempt = await session.get(AttemptRow, caller.attempt_id)
@@ -103,16 +116,17 @@ async def authorize_control(
             or execution.attempt_id != caller.attempt_id
             or execution.worker_id != caller.worker_id
             or execution.completed_at is not None
-            or execution.cancel_requested_at is not None
+            or (execution.cancel_requested_at is not None and not cleanup)
             or execution.lease_expires_at <= current
         ):
             raise LeaseLost()
-    await authorize_execution(session, runtime.access, run)
-    mounts = [EnvironmentMount.model_validate(value) for value in run.environment_mounts]
-    if not any(
-        mount.environment_id == environment_id and actions <= mount.permission_ceiling.operations for mount in mounts
-    ):
-        raise LeaseLost()
+    principal = await authorize_execution(session, runtime.access, run)
+    for value in run.environment_mounts:
+        if value["environment_id"] == environment_id:
+            mount = EnvironmentMount.model_validate(value)
+            if actions <= mount.permission_ceiling.operations:
+                return ControlGrant(principal, run.workspace_id, mount)
+    raise LeaseLost()
 
 
 async def heartbeat(runtime: Runtime, worker_id: str) -> tuple[tuple[tuple[str, str], ...], set[str]]:

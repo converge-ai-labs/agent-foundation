@@ -64,6 +64,7 @@ const STATUSES = [
   "stopping",
   "stopped",
   "deleting",
+  "disabled",
 ] as const;
 
 /** The environments that exist right now, with their lifecycle state. */
@@ -122,6 +123,7 @@ export function EnvironmentInstances() {
     templates.data?.map((template) => [template.id, template]),
   );
   function templateName(item: Schema["EnvironmentView"]) {
+    if (item.kind === "client_envd") return t("Client computer");
     if (!item.template_id) return t("External environment");
     const template = templateById.get(item.template_id);
     if (template) return template.name;
@@ -190,9 +192,11 @@ export function EnvironmentInstances() {
                 ),
               },
               {
-                label: t("Provider"),
+                label: t("Source"),
                 render: (item) => {
                   // An external target is reached at its own endpoint.
+                  if (item.kind === "client_envd")
+                    return <span>{item.device_id}</span>;
                   if (item.endpoint) return <span>{item.endpoint}</span>;
                   const provider = item.provider_id
                     ? providerById.get(item.provider_id)

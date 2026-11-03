@@ -92,9 +92,16 @@ class MetricsApplication(BaseModel):
     applied_at: datetime | None = None
 
 
+class ClientConnectionObservation(BaseModel):
+    state: Literal["offline", "connecting", "online", "unknown"]
+    observed_at: datetime
+
+
 class EnvironmentView(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: str
+    kind: Literal["managed", "external_http", "client_envd"]
+    client_connection: ClientConnectionObservation | None = None
     organization_id: str
     workspace_id: str
     # NULL for an external target.

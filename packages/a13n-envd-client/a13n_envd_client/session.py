@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import math
 import secrets
+from collections.abc import Awaitable, Callable
 from importlib.metadata import PackageNotFoundError, version
 from types import TracebackType
 
@@ -208,7 +209,13 @@ class EIPDeviceConnection:
             session._finish(EIPSessionStateError("Session attachment failed"))
             raise
 
-    async def bind_open_session(self, descriptor: SessionDescriptor, *, readiness_timeout: float = 10) -> EIPSession:
+    async def bind_open_session(
+        self,
+        descriptor: SessionDescriptor,
+        *,
+        readiness_timeout: float = 10,
+        owner_current: Callable[[], Awaitable[bool]] | None = None,
+    ) -> EIPSession:
         """Adopt a Session already opened by the authenticated Host on this logical carrier.
 
         A Host that routes execution across processes supplies the confirmed Device
@@ -218,8 +225,11 @@ class EIPDeviceConnection:
         _finite_timeout_ms(readiness_timeout, name="readiness_timeout")
         self._validate_session_boundary(descriptor)
         session = self._bind(descriptor)
+        session._host_binding = True
+        session._owner_current = owner_current
         try:
-            await session._become_ready(readiness_timeout)
+            # The authenticated owner already maintains native Session liveness.
+            await session._become_ready(readiness_timeout, keepalive=False)
             return session
         except BaseException:
             await session.abort()
@@ -281,6 +291,9 @@ class EIPSession:
         self._client = EIPClient(requester)
         self._descriptor = descriptor
         self._ready = False
+        self._host_binding = False
+        self._owner_current: Callable[[], Awaitable[bool]] | None = None
+        self._detached = False
         self._closed = False
         self._error: BaseException | None = None
         self._close_task: asyncio.Task[None] | None = None
@@ -308,6 +321,27 @@ class EIPSession:
         return self._descriptor
 
     @property
+    def detached(self) -> bool:
+        return self._detached
+
+    def detach_host_binding(self) -> None:
+        """Release only this logical binding after the Host confirms loss of its carrier.
+
+        Native processes and transfers remain subject to daemon disconnect/idle
+        policy. This is neither a successful remote close nor permission to replay.
+        """
+        if not self._host_binding:
+            raise EIPSessionStateError("Only a Host-owned logical binding can detach locally")
+        self._detached = True
+        self._finish()
+
+    async def prepare_close(self) -> bool:
+        """Whether native cleanup still belongs to this carrier."""
+        if not self._closed and self._owner_current is not None and not await self._owner_current():
+            self.detach_host_binding()
+        return not self._detached
+
+    @property
     def device_descriptor(self) -> DeviceDescriptor:
         """The connected target's metadata, without issuing another request."""
         return self._device.descriptor
@@ -324,12 +358,13 @@ class EIPSession:
     def session_id(self) -> str:
         return self._descriptor.session_id
 
-    async def _become_ready(self, timeout: float) -> None:
+    async def _become_ready(self, timeout: float, *, keepalive: bool = True) -> None:
         result = await self.readiness(timeout=timeout)
         if not result.ready:
             raise EIPSessionStateError("Session is not ready")
         self._ready = True
-        self._keepalive_task = asyncio.create_task(self._keepalive(), name="eip-session-keepalive")
+        if keepalive:
+            self._keepalive_task = asyncio.create_task(self._keepalive(), name="eip-session-keepalive")
 
     async def _keepalive(self) -> None:
         interval = self._descriptor.lifecycle.idle_timeout_ms / 3000
@@ -447,6 +482,8 @@ class EIPSession:
         )
 
     async def close(self) -> None:
+        if not await self.prepare_close():
+            return
         if self._close_task is None:
             if self._closed:
                 if self._error is not None:

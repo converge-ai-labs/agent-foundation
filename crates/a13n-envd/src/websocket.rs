@@ -373,6 +373,7 @@ async fn serve_connection(
         return Err(ConnectionFailure::Transient);
     }
 
+    eprintln!("Reverse WebSocket initialized. Press Ctrl+C to disconnect.");
     let mut requests = JoinSet::new();
     let mut ping_interval = tokio::time::interval(PING_INTERVAL);
     ping_interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
@@ -521,6 +522,7 @@ async fn serve_connection(
         requests,
     )
     .await;
+    eprintln!("Reverse WebSocket disconnected.");
     outcome
 }
 

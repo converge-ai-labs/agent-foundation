@@ -1,4 +1,12 @@
 {
+  "Client computer": "Client computer",
+  "Registered": "Registered",
+  "Registration": "Registration",
+  "Connection checked": "Connection checked",
+  "state.online": "Online",
+  "state.offline": "Offline",
+  "state.connecting": "Connecting",
+  "state.unknown": "Unknown",
   "Register for a notice when human Computer control ends": "Register for a notice when human Computer control ends",
   "Notify on handback": "Notify on handback",
   "The Agent can continue other work. Closing this panel does not return control.": "The Agent can continue other work. Closing this panel does not return control.",

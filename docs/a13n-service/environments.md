@@ -13,7 +13,7 @@ Three resources connect the workflow:
 | Template     | Image, resources, environment variables and idle policy | A recipe for new managed instances |
 | Thread mount | An instance, name, directory and permissions            | Later runs can use that instance   |
 
-For a computer you already operate, [register its Envd endpoint](#register-an-external-target) instead. Service connects to that computer; you own its lifecycle. Every accepted run captures its mounts and permissions, so changes apply to later runs.
+For a computer you already operate, [connect Envd outbound](#connect-a-client-computer), or [register its HTTP endpoint](#register-an-external-target) if Service can reach it directly. You own its lifecycle. Every accepted run captures its mounts and permissions, so changes apply to later runs.
 
 ## Workspace provisioning
 
@@ -139,6 +139,35 @@ Service verifies the device, stores the token encrypted, and returns a `ready` i
 To rotate the token or move the endpoint, `PATCH /api/v1/environments/{id}` with the environment's ETag. Include the token when changing the endpoint. Service verifies that the new connection reaches the same device; another device is refused with `provider_device_mismatch`. Deleting the registration forgets its token and leaves the computer running.
 
 Worker recovery makes a best-effort attempt to reuse a checkpointed Envd Session. A closed or expired Session requires a fresh one. Recovery does not restore run-local process references or output observations; inspect current state before retrying an uncertain command. Normal cleanup closes the Session, and later runs use separate Sessions.
+
+### Connect a client computer
+
+Use this path when Envd can make an outbound connection to Control but Workers cannot dial the computer. You can register the environment and mount it on a thread before starting Envd.
+
+1. As the workspace principal that will run the agent, send `POST /api/v1/client-environments?workspace_id=…` with the installation's persistent device ID, an existing directory and the permitted actions. For example:
+
+   ```json
+   {
+     "device_id": "dev-example",
+     "name": "Laptop",
+     "default_working_directory": "/Users/example/project",
+     "permission_ceiling": {"operations": ["environment.file.list", "environment.file.read_text"]}
+   }
+   ```
+
+2. Save `client.environment.id` and put the returned `token` in a private local credential file (mode `0600` on Unix). The first registration returns 201; registering the same installation again returns 200 and no token. Keep a separate environment ID and token file for each Service origin, account and workspace. Use the explicit `rotate-credential` API with the current Environment ETag if the token is lost. The device ID identifies an installation, not physical hardware. Copying both the ID and the token copies the installation's access.
+
+3. Run Envd with the same device ID and its normal local access policy. Set `A13N_ENVD_TRANSPORT=reverse_websocket`, `A13N_ENVD_REVERSE_WS_URL` to the Control `wss://` origin plus the returned `connection_path`, and `A13N_ENVD_REVERSE_WS_CREDENTIAL_FILE` to the token file. [Envd configuration](../a13n-envd/configuration.md) describes the runtime directory, installation identity and local permission settings. Do not put the token in the URL.
+
+4. [Mount the environment on the thread](#mount-environments-on-a-thread). A run keeps the directory and permissions selected at acceptance. `ready` means selectable; the first actual tool use checks the connection, opens a Session and verifies the directory. Device connection alone never mounts it on a run.
+
+Use the `device-id` in Envd’s installation state directory, or have the installer generate and save an ID and supply the same value to registration and `A13N_ENVD_DEVICE_ID`. When Computer Use is enabled, Envd checks desktop permissions locally. Registration runs no test command, and a successful handshake does not prove that a particular executable is installed.
+
+An offline tool reports that it did not dispatch. After such a failure, the next normal agent iteration can report that the selected mount has reconnected. Recovery does not repeat the command. On a process-capable mount, one agent `shell_exec` starts the process and waits briefly. The agent can later use `shell_info` or `shell_wait` with the returned reference. A wait timeout does not kill the process. If a reply is lost after dispatch, the result is unknown.
+
+The Instances page shows when the connection state was checked. An offline computer remains registered. Envd prints when its connection initializes or closes. Press Ctrl+C in its terminal to disconnect.
+
+For multiple Control replicas, set `A13N_CLIENT_ENVIRONMENTS__TRANSFER_ORIGIN` on each replica to its own HTTPS origin reachable by Workers. A single Control can use `server.control_url` or `server.public_url`. This stream carries binary files and screenshots; the device credential never goes to Workers.
 
 ### Stop, rename and delete
 

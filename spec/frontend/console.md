@@ -106,6 +106,8 @@ Template creation has a dedicated page combining runtime selection, Provider con
 
 When reusing an existing managed instance or external target, new-conversation options and the add-mount form offer an optional working directory. Empty means the provider default; switching the selected instance clears the previous path. The field explains existing environment-local paths, Local's instance-root mapping and shared machine resources. Thread mount details display the selected instance and explicit directory. Selecting a template does not offer an existing-directory choice.
 
+Client computer instances show their installation ID and the last observed connection state separately from registration status. Details include the observation time. Missing coordination data displays as unknown.
+
 HTTP envd registration is connect-only: endpoint, credential and working-directory binding, with bounded discovery where supported. Registered environments have no managed create/start/stop/destroy controls. The [Environment contract](../a13n-service/06-environments.md) owns safe lifecycle actions and authority; Console renders only actions that the selected backend/resource actually supports.
 
 ## Skills

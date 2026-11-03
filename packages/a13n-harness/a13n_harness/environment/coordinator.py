@@ -1252,6 +1252,9 @@ class CompositeBoundEnvironment(BoundEnvironment):
                         frozenset({family}),
                     )
                     yield entered
+            except EnvironmentError as exc:
+                exc.details.setdefault("mount", entered.public.name)
+                raise
             except TimeoutError as exc:
                 raise EnvironmentError(
                     "Environment operation timed out.",

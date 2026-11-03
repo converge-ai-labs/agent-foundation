@@ -96,6 +96,7 @@ async def test_binding_is_conditional_and_prevents_source_deletion(service) -> N
     async with transaction(service.runtime.storage) as session:
         session.add(
             EnvironmentRow(
+                kind="external_http",
                 id=environment_id,
                 organization_id=tenant.organization_id,
                 workspace_id=tenant.workspace_id,

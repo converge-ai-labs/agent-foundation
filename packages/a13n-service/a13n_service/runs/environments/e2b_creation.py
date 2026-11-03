@@ -12,9 +12,9 @@ from a13n_service.infra.http import require_match
 from a13n_service.resources.providers.service import resolve_provider
 from a13n_service.resources.providers.tables import EnvironmentProviderRow
 from a13n_service.runs.environments import daytona_snapshots, e2b_templates, lifecycle, modal_images, vercel_snapshots
+from a13n_service.runs.environments.access import audit, find
 from a13n_service.runs.environments.adapters import provider_identity
 from a13n_service.runs.environments.schemas import EnvironmentView, Handle
-from a13n_service.runs.environments.service import _audit, _find
 from a13n_service.runs.environments.tables import EnvironmentRow
 from a13n_service.runs.runtime import Runtime
 from a13n_service.tenancy.access import workspace_scope
@@ -59,7 +59,7 @@ def _retryable(row: EnvironmentRow) -> bool:
 async def progress(runtime: Runtime, actor: Principal, workspace_id: str, identity: str) -> CreationProgress | None:
     async with short_session(runtime.storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "read")
-        row = await _find(session, scope, identity)
+        row = await find(session, scope, identity)
         handle = Handle.model_validate(row.handle) if row.handle else None
         if not _automatic(row, handle):
             return None
@@ -134,7 +134,7 @@ async def retry(
     async with transaction(runtime.storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "write")
         authorize(actor, scope, "run")
-        row = await _find(session, scope, identity, lock=True)
+        row = await find(session, scope, identity, lock=True)
         require_match(if_match, row.id, row.version)
         handle = Handle.model_validate(row.handle) if row.handle else None
         if not _automatic(row, handle) or not _retryable(row):
@@ -168,5 +168,5 @@ async def retry(
                 row.handle = handle.model_copy(update={"vercel_desktop_snapshot": key}).model_dump(mode="json")
         await lifecycle.begin(session, row, "creating")
         await session.flush()
-        _audit(session, actor, row, "retry_creation")
+        audit(session, actor, row, "retry_creation")
         return EnvironmentView.model_validate(row)

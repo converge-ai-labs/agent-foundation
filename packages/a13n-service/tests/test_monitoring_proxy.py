@@ -54,6 +54,7 @@ async def external_row(service, source_id, *, owner_id=None, endpoint="http://12
     environment_id = new_object_id("env")
     async with transaction(service.runtime.storage) as session:
         row = EnvironmentRow(
+            kind="external_http",
             id=environment_id,
             organization_id=tenant.organization_id,
             workspace_id=tenant.workspace_id,

@@ -13,7 +13,7 @@ description: 为文件和命令任务创建工作空间、复用已有机器，�
 | 模板     | 镜像、资源、环境变量和空闲策略 | 用于创建托管实例的配方     |
 | 线程挂载 | 实例、名称、目录和权限         | 后续运行可以使用该实例     |
 
-已有自行维护的计算机时，改为[注册其 Envd 端点](#register-an-external-target)。Service 负责连接，计算机的生命周期由你管理。每次接收运行都会固定其挂载和权限，因此修改对后续运行生效。
+已有自行维护的计算机时，可以让 Envd 主动连接 Control（见下文“连接客户端电脑”）；如果 Service 可以直连电脑，也可以注册其 HTTP 端点。计算机的生命周期由你管理。每次接收运行都会固定其挂载和权限，因此修改对后续运行生效。
 
 ## 工作空间自动配置
 
@@ -139,6 +139,37 @@ Service 验证设备，加密保存 token，并返回 `ready` 实例。使用注
 轮换 token 或迁移端点时，向 `PATCH /api/v1/environments/{id}` 提交环境 ETag。修改端点时同时提交 token。Service 验证新连接仍指向同一设备；设备不同时以 `provider_device_mismatch` 拒绝。删除注册会忘记 token，计算机继续运行。
 
 Worker 恢复会尽力复用检查点中的 Envd 会话。会话已关闭或过期时需要新建。恢复不会还原运行内的进程引用或输出观测；重试结果不确定的命令前，先检查当前状态。正常清理会关闭会话，后续运行使用独立会话。
+
+### 连接客户端电脑
+
+当 Envd 能主动连接 Control，但 Worker 无法直接访问这台电脑时，使用客户端环境。设备离线时也可以登记环境并挂载到线程。
+
+1. 使用将来执行 run 的工作空间账号调用 `POST /api/v1/client-environments?workspace_id=…`。传入安装时保存在本地的设备 ID、电脑上已有的目录，以及允许的操作。例如：
+
+   ```json
+   {
+     "device_id": "dev-example",
+     "name": "我的电脑",
+     "default_working_directory": "/Users/example/project",
+     "permission_ceiling": {"operations": ["environment.file.list", "environment.file.read_text"]}
+   }
+   ```
+
+2. 保存响应里的 `client.environment.id`，并把 `token` 写入仅当前用户可读的本地凭据文件（Unix 权限 `0600`）。首次登记返回 201；重复登记同一安装返回 200，不返回旧 token。丢失凭据时，使用当前 Environment ETag 调用 `rotate-credential`。设备 ID 标识的是安装实例，不验证物理硬件；如果 ID 和 token 一起被复制，另一台电脑也可以使用该身份。
+
+   按 Service 地址、账号和工作空间分别保存环境 ID 与 token 文件，切换账号时使用对应登记。
+
+3. 使用同一设备 ID 和本地访问策略启动 Envd。设置 `A13N_ENVD_TRANSPORT=reverse_websocket`，将 `A13N_ENVD_REVERSE_WS_URL` 设为 Control 的 `wss://` 地址加上响应的 `connection_path`，将 `A13N_ENVD_REVERSE_WS_CREDENTIAL_FILE` 指向凭据文件。[Envd 配置](../a13n-envd/configuration.md)介绍了运行目录、安装身份和本地权限设置。不要将 token 放进 URL。
+
+4. 将环境挂载到线程。run 接受时固定目录和权限。`ready` 仅表示可选择；首次实际使用时才检查连接、打开 Session 并验证工作目录。设备上线不会自动加入任何 run。
+
+客户端可复用 Envd 安装状态目录中的 `device-id`。如果安装器负责生成并保存 ID，请在登记和启动时使用相同的值（Envd 支持 `A13N_ENVD_DEVICE_ID`）。启用 Computer Use 时，Envd 会在本机检查桌面权限。注册不会运行测试命令，握手成功也不能保证某个程序已安装。
+
+离线时工具会说明本次操作未派发。只有当前 run 已感知过连接失败，后续正常的 agent 循环才会提示该挂载恢复连接。恢复不会重试旧命令。长命令应先启动进程，再使用句柄查询或等待；单次等待到期不会终止进程。命令派发后若丢失回复，结果未知。
+
+在实例详情中可以查看连接状态及检查时间。电脑离线时仍保留登记。envd 会在终端提示连接初始化成功或断开，按 Ctrl+C 可停止连接。
+
+部署多个 Control 副本时，在每个副本上设置 `A13N_CLIENT_ENVIRONMENTS__TRANSFER_ORIGIN`，指向 Worker 可直接访问该副本的 HTTPS 地址。单个 Control 也可使用 `server.control_url` 或 `server.public_url`。文件和截图通过这个连接传输；Worker 不接收设备凭据。
 
 ### 停止、重命名与删除
 

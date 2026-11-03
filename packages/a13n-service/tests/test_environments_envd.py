@@ -626,3 +626,197 @@ async def test_checkpointed_sessions_are_recovered_only_within_the_same_run(
         await second
     assert (await runs_kit.get_run(service, run_id))["status"] == "completed"
     assert (await saved_state()).envd_sessions == {}
+
+
+@pytest.mark.parametrize("reconnect", ["resume", "expired", "restart"])
+async def test_client_environment_runs_on_reverse_daemon_and_streams_files(
+    service, tmp_path, scripted_model, runs_kit, monkeypatch, reconnect
+):
+    from contextlib import AsyncExitStack
+
+    from a13n_service.app import open_runtime
+    from a13n_service.distribution import OSS
+    from a13n_service.runs.claim import claim
+    from a13n_service.runs.environments.clients.observations import Incarnation
+    from a13n_service.runs.environments.clients.worker import Target
+    from a13n_service.runs.environments.schemas import DEFAULT_MOUNT_PERMISSIONS
+
+    from .client_envd_support import (
+        check_client_revocation,
+        check_interrupted_upload,
+        check_long_client_command,
+        check_lost_start_reply,
+        check_retained_client_process,
+        check_screen_stream,
+        check_stale_client_request,
+        check_wrong_device,
+        following_tool_results,
+        interrupt_control_subscription,
+    )
+    from .conftest import listening
+
+    workspace = (tmp_path / "client-project").resolve()
+    workspace.mkdir()
+    permissions = DEFAULT_MOUNT_PERMISSIONS.model_dump(mode="json")
+    permissions["operations"].append("environment.computer.observe")
+    created = await service.client.post(
+        f"{service.api}/client-environments",
+        json={
+            "device_id": "device-client",
+            "name": "My computer",
+            "default_working_directory": str(workspace),
+            "permission_ceiling": permissions,
+        },
+    )
+    assert created.status_code == 201, created.text
+    identity = created.json()["client"]["environment"]["id"]
+    token_file = tmp_path / "attachment-token"
+    token_file.write_text(created.json()["token"])
+    token_file.chmod(0o600)
+    agent = await runs_kit.create_agent(service, scripted_model)
+    mount = [{"name": "workspace", "environment_id": identity, "permission_ceiling": permissions}]
+    # This run and its directory are accepted before the Device has connected.
+    first = await runs_kit.start_thread(service, agent, "Write the proof file", environments=mount)
+    assert await service.runtime.client_connections.presence(identity) is None
+    async with listening(service.app) as origin, AsyncExitStack() as stack:
+        settings = service.runtime.settings
+        monkeypatch.setitem(
+            settings.__dict__,
+            "client_environments",
+            settings.client_environments.model_copy(update={"allow_loopback_ws": True, "transfer_origin": origin}),
+        )
+        worker = await open_runtime(stack, OSS, settings, executes=True)
+        assert worker.client_connections is not service.runtime.client_connections
+        decision = asyncio.Event()
+        next_decision = asyncio.Event()
+        finish = asyncio.Event()
+        scripted_model.call("shell_exec", {"command": "touch missed"}, call_id="call_offline")
+        scripted_model.call("shell_exec", {"command": "touch cached"}, call_id="call_cached", gate=decision)
+        scripted_model.call("shell_exec", {"command": "echo reverse-ok > proof.txt"}, call_id="call_reverse")
+        scripted_model.call("shell_exec", {"command": "touch stale"}, call_id="call_stale", gate=next_decision)
+        scripted_model.call("shell_exec", {"command": "echo again >> proof.txt"}, call_id="call_again")
+        scripted_model.say("Done", gate=finish)
+        running = await runs_kit.attempt(service, runtime=worker)
+        await scripted_model.request()
+        offline = await scripted_model.request()
+        assert "client_offline" in json.dumps(offline["messages"])
+
+        async def launch():
+            return await asyncio.create_subprocess_exec(
+                BINARY,
+                env={
+                    "PATH": os.environ["PATH"],
+                    "A13N_ENVD_DEVICE_ID": "device-client",
+                    "A13N_ENVD_RUNTIME_DIR": str(tmp_path / "daemon-state"),
+                    "A13N_ENVD_TRANSPORT": "reverse_websocket",
+                    "A13N_ENVD_REVERSE_WS_URL": origin.replace("http://", "ws://") + created.json()["connection_path"],
+                    "A13N_ENVD_REVERSE_WS_CREDENTIAL_FILE": str(token_file),
+                    "A13N_ENVD_CONFIG_JSON": json.dumps(
+                        {
+                            "default_working_directory": str(workspace),
+                            "full_control": True,
+                            "disconnect_grace_ms": 80 if reconnect == "expired" else 30000,
+                        }
+                    ),
+                },
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.PIPE,
+            )
+
+        process = await launch()
+        try:
+            async with asyncio.timeout(10):
+                while await worker.client_connections.presence(identity) is None:
+                    assert process.returncode is None
+                    await asyncio.sleep(0.02)
+            assert not service.runtime.client_sessions.scopes
+            decision.set()
+            recovered = await scripted_model.request()
+            notice = "Client mount workspace has reconnected."
+            assert json.dumps(recovered["messages"]).count(notice) == 1
+            after = await scripted_model.request()
+            assert notice not in following_tool_results(after)
+            owner = service.runtime.client_connections.entries[identity]
+            (scope,) = service.runtime.client_sessions.scopes.values()
+            before = (scope.session.generation, scope.session.session_id)
+            assert owner.carrier is not None
+            if reconnect == "restart":
+                process.terminate()
+                await asyncio.wait_for(process.communicate(), 5)
+                process = await launch()
+            elif reconnect == "resume":
+                await interrupt_control_subscription(service, owner, monkeypatch)
+            else:
+                await owner.carrier.close()
+            async with asyncio.timeout(10):
+                while True:
+                    fresh = await worker.client_connections.presence(identity)
+                    if fresh is not None and fresh.epoch != owner.epoch:
+                        break
+                    await asyncio.sleep(0.02)
+            if reconnect == "expired":
+                # Deliberately exceed the configured native disconnect grace period.
+                await asyncio.sleep(0.12)
+            next_decision.set()
+            again = await scripted_model.request()
+            assert notice in following_tool_results(again)
+            await scripted_model.request()
+            (reopened,) = service.runtime.client_sessions.scopes.values()
+            after_session = (reopened.session.generation, reopened.session.session_id)
+            assert (after_session == before) == (reconnect == "resume")
+            assert (after_session[0] != before[0]) == (reconnect == "restart")
+            finish.set()
+            await asyncio.wait_for(running, 30)
+            run = await runs_kit.get_run(service, first["run"]["id"])
+            assert run["status"] == "completed", run["failure"]
+            assert (workspace / "proof.txt").read_text().splitlines() == ["reverse-ok", "again"]
+            assert not any((workspace / path).exists() for path in ("missed", "cached", "stale"))
+            assert not service.runtime.client_sessions.scopes
+
+            if reconnect != "resume":
+                return
+
+            # Exercise both binary directions through the same connector under a
+            # fresh run lease. The payload is larger than a Pub/Sub control envelope.
+            second = await runs_kit.start_thread(service, agent, "Transfer a file", environments=mount)
+            (lease,) = await claim(worker, worker_id="stream-worker", worker_build="test", limit=1)
+            assert lease.run_id == second["run"]["id"]
+            incarnation = Incarnation("device-client")
+            connector = Target(identity, "device-client", str(workspace), "workspace").connector(
+                worker, lease, None, incarnation
+            )
+            payload = bytes(range(256)) * 20000
+
+            async def chunks():
+                for offset in range(0, len(payload), 65536):
+                    yield payload[offset : offset + 65536]
+
+            async with await connector.open() as execution:
+                files = execution.operations.files
+                assert files is not None
+                path = str(workspace / "binary.dat")
+                result = await files.write_bytes_stream(path, chunks(), mode="create")
+                assert result.bytes_written == len(payload)
+                assert b"".join([chunk async for chunk in files.read_bytes_stream(path)]) == payload
+                await check_screen_stream(service, incarnation.session, workspace, origin, monkeypatch)
+                await check_interrupted_upload(files, workspace)
+                await check_long_client_command(execution, workspace)
+                await check_lost_start_reply(execution, workspace, worker, monkeypatch)
+                await check_stale_client_request(service, worker, workspace)
+            assert not service.runtime.client_sessions.scopes
+            assert (workspace / "binary.dat").read_bytes() == payload
+            await check_retained_client_process(service, worker, runs_kit, scripted_model, agent, mount, workspace)
+            await check_wrong_device(service, origin, identity)
+            await check_client_revocation(service, worker, origin, created, identity)
+        finally:
+            decision.set()
+            next_decision.set()
+            finish.set()
+            if not running.done():
+                running.cancel()
+            await asyncio.gather(running, return_exceptions=True)
+            if process.returncode is None:
+                process.terminate()
+            _, stderr = await asyncio.wait_for(process.communicate(), 5)
+            assert token_file.read_bytes() not in stderr
+            assert b"Reverse WebSocket initialized." in stderr

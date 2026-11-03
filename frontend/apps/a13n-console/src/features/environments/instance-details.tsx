@@ -95,7 +95,11 @@ export function EnvironmentPanel({
     enabled: open,
     // The outstanding lifecycle operation settles in the background.
     refetchInterval: (query) =>
-      query.state.data?.value.operation_id ? 2000 : false,
+      query.state.data?.value.operation_id
+        ? 2000
+        : environment.kind === "client_envd"
+          ? 15_000
+          : false,
   });
   // An external target has no provider: it is reached at its own endpoint.
   const provider = useQuery({
@@ -295,6 +299,25 @@ export function EnvironmentPanel({
                       <CopyableId value={value.device_id} />
                     </Fact>
                   )}
+                  {value.client_connection && (
+                    <>
+                      <Fact label={t("Registration")}>
+                        <StatePill
+                          state={value.status}
+                          label={
+                            value.status === "ready"
+                              ? t("Registered")
+                              : undefined
+                          }
+                        />
+                      </Fact>
+                      <Fact label={t("Connection checked")}>
+                        <Timestamp
+                          value={value.client_connection.observed_at}
+                        />
+                      </Fact>
+                    </>
+                  )}
                   <Fact label={t("Activity")}>
                     {value.last_used_at ? (
                       <Timestamp value={value.last_used_at} />
@@ -328,7 +351,13 @@ export function EnvironmentPanel({
                 <h3>{t("Source")}</h3>
                 <dl className={styles.facts}>
                   <Fact label={t("Ownership")}>
-                    {t(value.template_id ? "Managed" : "External")}
+                    {t(
+                      value.kind === "client_envd"
+                        ? "Client computer"
+                        : value.template_id
+                          ? "Managed"
+                          : "External",
+                    )}
                   </Fact>
                   {value.endpoint ? (
                     <Fact label={t("Endpoint")}>

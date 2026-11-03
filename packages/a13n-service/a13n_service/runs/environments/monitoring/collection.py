@@ -79,7 +79,7 @@ async def selected(
     status: Status = "not_ready" if environment.status != "ready" else "unsupported"
     provider_inputs = None
     if environment.status == "ready":
-        if environment.template_id is None:
+        if environment.kind == "external_http":
             target = Target(environment.id, external.account(environment), {}, None)
         elif environment.provider_id is not None:
             provider_row = await session.get(EnvironmentProviderRow, environment.provider_id)

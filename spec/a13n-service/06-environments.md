@@ -19,13 +19,15 @@ Monitoring selection, collection and query authority are owned by [Environment m
 
 ```
 environments   (env_)
-  id  organization_id  workspace_id  provider_id NULL  provider_identity NULL  template_id NULL
+  id  kind  organization_id  workspace_id  provider_id NULL  provider_identity NULL  template_id NULL
   device_id NULL  endpoint NULL  token NULL  owner_principal_id NULL  name  status  handle NULL  generation
   metrics_data_source_id NULL  metrics_labels  metrics_launch NULL  metrics_application NULL
   operation_id NULL  operation_started_at NULL  operation_deadline NULL
   lease_owner NULL  lease_token_hash NULL  lease_expires_at NULL
   failure NULL  last_used_at NULL  renew_at NULL  expires_at NULL  created_by_id  version  created_at  updated_at
-  status IN ('reserved', 'creating', 'starting', 'ready', 'stopping', 'stopped', 'deleting', 'deleted')
+  kind IN ('managed', 'external_http', 'client_envd')
+  status IN ('reserved', 'creating', 'starting', 'ready', 'stopping', 'stopped', 'deleting', 'deleted', 'disabled')
+  CHECK (status <> 'disabled' OR kind = 'client_envd')
   CHECK (status <> 'reserved' OR (handle IS NULL AND provider_identity IS NULL AND failure IS NULL))
   CHECK (template_id IS NULL OR status NOT IN ('ready', 'starting', 'stopping', 'stopped')
          OR handle IS NOT NULL)
@@ -34,15 +36,21 @@ environments   (env_)
   CHECK (operation_deadline IS NULL OR operation_id IS NOT NULL)
   CHECK (lease_owner, lease_token_hash, lease_expires_at all set or all NULL,
          and set only with operation_id)
-  CHECK (template_id IS NOT NULL OR status IN ('ready', 'deleted'))
-  CHECK ((template_id IS NULL) = (provider_id IS NULL))
-  CHECK ((template_id IS NULL) = (device_id IS NOT NULL)
-         AND (template_id IS NULL) = (endpoint IS NOT NULL)
-         AND (template_id IS NOT NULL OR (provider_identity IS NULL AND handle IS NULL)))
-  CHECK ((token IS NOT NULL) = (template_id IS NULL AND status <> 'deleted'))
+  CHECK (kind = 'managed' OR status IN ('ready', 'disabled', 'deleted'))
+  CHECK ((kind = 'managed') = (template_id IS NOT NULL) AND (template_id IS NULL) = (provider_id IS NULL))
+  CHECK ((kind <> 'managed') = (device_id IS NOT NULL)
+         AND (kind = 'external_http') = (endpoint IS NOT NULL)
+         AND (kind = 'managed' OR (provider_identity IS NULL AND handle IS NULL))
+         AND (kind <> 'client_envd' OR owner_principal_id IS NOT NULL))
+  CHECK ((token IS NOT NULL) = (kind = 'external_http' AND status <> 'deleted'))
+  UNIQUE (workspace_id, owner_principal_id, device_id) WHERE kind = 'client_envd' AND status <> 'deleted'
   CHECK ((renew_at IS NULL AND expires_at IS NULL) OR (status = 'ready' AND template_id IS NOT NULL))
   UNIQUE (operation_id) WHERE operation_id IS NOT NULL
   INDEX (renew_at) WHERE renew_at IS NOT NULL
+
+client_environment_settings
+  environment_id PRIMARY KEY REFERENCES environments(id)
+  token_hash NULL  credential_version > 0  default_working_directory  permission_ceiling JSONB  description NULL
 
 thread_environments
   thread_id  environment_id  organization_id  workspace_id  name  working_directory NULL  permission_ceiling JSONB  created_at
@@ -50,11 +58,11 @@ thread_environments
   UNIQUE (thread_id, environment_id)
 ```
 
-A `reserved` managed instance has a durable identity and selected template/provider but no native target, operation, claim, failure, or renewal schedule. Reservation is not a queued create. A **managed** instance has a template and its provider; an **external target** has neither, nor a handle or provider identity, and holds only the `device_id`, `endpoint` and `token` of the envd daemon it reaches ([external targets](#external-targets)). A target belongs to the principal that registered it (`owner_principal_id`); managed instances have no owner. The instance references its provider by `(workspace_id, provider_id)`, so the database refuses a provider of another workspace ([04](04-resources.md#provider-resources)), and identity columns never change.
+A `reserved` managed instance has a durable identity and selected template/provider but no native target, operation, claim, failure, or renewal schedule. Reservation is not a queued create. A **managed** instance has a template and its provider. An **external HTTP target** has neither, nor a handle or provider identity, and holds the `device_id`, `endpoint` and `token` of the envd daemon it reaches ([external targets](#external-targets)). A **client environment** also has no provider or template; its registered device connects outbound to Control and its separate settings hold a connection-token hash ([client environments](#client-environments)). A target belongs to the principal that registered it (`owner_principal_id`); managed instances have no owner. The instance references its provider by `(workspace_id, provider_id)`, so the database refuses a provider of another workspace ([04](04-resources.md#provider-resources)), and identity columns never change.
 
 - `handle` is `{recipe, state, credential_version, e2b_desktop_template?}`: the recipe a managed instance was built from, the provider's portable state for reaching it, and the version of the provider credential that last reached it, which is its encryption envelope's nonce and changes whenever the credential is written.
 - `provider_identity` is `{type, backend}`, the provider type and non-secret backend locator the handle is meaningful in. It is frozen when a managed instance's create operation is first claimed; NULL means the create was never claimed.
-- `token` is a target's credential, encrypted for its own row and column; the tombstone drops it.
+- `token` is an external HTTP target's credential, encrypted for its own row and column; the tombstone drops it.
 - `failure` is `{code, message, certainty, permanent, operation_id, at}`: the last error of the outstanding operation or, on a ready instance, of its last [renewal](#renewal), whose `operation_id` is NULL. `certainty` is `not_dispatched`, `known` or `unknown` (the call may have taken effect); `permanent` failures refuse new use until the cause is fixed or the instance is deleted. An unknown outcome is never permanent. A provider error's `message` is its category's safe message with the provider and error code, such as `Environment provider operation was denied (e2b, provider_denied).`; when the provider's schema refuses the recipe, it adds up to five fields with the schema's reasons. It never contains input values or upstream text.
 - `renew_at` is when the next [renewal](#renewal) of a ready sandbox whose type ends sandboxes unless renewed is due, and `expires_at` the expiry its provider last reported. Changes confined to them keep the version, so renewing leaves the ETag unchanged.
 - The view shows everything except `handle`, `provider_identity`, `token`, `generation`, `operation_deadline`, `renew_at`, `expires_at` and the lease columns.
@@ -195,7 +203,7 @@ Each readiness request waits at most `environments.wait_seconds`, measured from 
 
 Both preparation before the run and first-use preparation reuse the same begin, claim, perform, and publish lifecycle. Management I/O and waiting hold no database session or transaction. The source returns a fixed-target connector only after required lifecycle success and fenced state publication, with current authorized credentials. Library connection opening and reconnection never create, start, resume, replace, or renew an instance. Harness opens and owns the resulting execution. `workspace` appears at `/workspace` and is the default; other mounts appear at `/mnt/{name}`.
 
-A mount that can no longer be used fails its dependent execution with `environment_unavailable`. A readiness timeout is `unavailable` (reason `environment_not_ready`): the attempt fails and the run recovers within `max_attempts`. These Service failures retain their cause through Harness and reach worker classification even when raised during input, Skill materialization, or a tool; they are not converted into a model retry that bypasses attempt policy ([05](05-runs.md#failure-semantics)). Cancellation stops the attempt's wait at once; drain yields a handoff without charging the attempt. A dispatched operation retains its durable identity and known or unknown outcome for recovery. Cancelling a wait never reverts an instance to `reserved` or deletes it.
+Client connectivity failures at a tool boundary follow the recoverable behavior below. Other mounts that can no longer be used fail their dependent execution with `environment_unavailable`. A readiness timeout is `unavailable` (reason `environment_not_ready`): the attempt fails and the run recovers within `max_attempts`. These Service failures retain their cause through Harness and reach worker classification even when raised during input, Skill materialization, or a tool; they are not converted into a model retry that bypasses attempt policy ([05](05-runs.md#failure-semantics)). Cancellation stops the attempt's wait at once; drain yields a handoff without charging the attempt. A dispatched operation retains its durable identity and known or unknown outcome for recovery. Cancelling a wait never reverts an instance to `reserved` or deletes it.
 
 `working_directory` selects the mount's default directory and route root; omission preserves the provider default. On first activation, the opened Environment execution checks an explicit directory outside a database transaction: it must exist, be a directory, and be listable. It is never created or replaced with a default. Failure identifies the environment, mount, path, and safe underlying reason, closes the acquired Environment execution, and fails preparation without recording an instance lifecycle failure or preventing other Threads from using valid directories. Providers without file operations reject explicit selection; later filesystem changes can still make operations fail.
 
@@ -207,7 +215,7 @@ Harness opens and closes Environment execution scopes, including on binding fail
 
 For Envd-backed execution, a running checkpoint records each activated mount's target locator, Envd Session descriptor and requested working directory as private attachment hints. External HTTP and managed Docker, E2B and Daytona Envd routes use the same per-mount recovery input; native execution produces no hint. A replacement attempt of the same run uses those hints after rechecking current authority, credentials and device identity. A matching live Session is attached; an unavailable Session, changed target or generation, or incompatible directory selection opens a fresh Session. Authentication, transport and protocol failures remain failures. Controlled-egress Sessions are opened with current policy resolution. Hints stay outside portable `EnvironmentState` and Harness state, are omitted from sealing checkpoints, and are never inherited by successor runs, forks or async children.
 
-Recovery preserves normal close and abort cleanup. It does not extend Session lifetime or fence another client: delayed cleanup by an old worker can close an attached Session, after which operations fail without automatic replay. Run-local process references and output observations are not restored by Session attachment. Providers use the shared [transport-neutral Session acquisition contract](../a13n-harness/08b-environment-providers.md#envd-session-recovery). Service currently admits external HTTP targets; reverse-WebSocket admission and routing remain outside this execution path.
+Recovery preserves normal close and abort cleanup. It does not extend Session lifetime or fence another client: delayed cleanup by an old worker can close an attached Session, after which operations fail without automatic replay. Run-local process references and output observations are not restored by Session attachment. Providers use the shared [transport-neutral Session acquisition contract](../a13n-harness/08b-environment-providers.md#envd-session-recovery). Client environments use the same EIP Session rules through the Control-owned carrier and Service routing described below.
 
 ## External targets
 
@@ -218,6 +226,63 @@ An external target is an envd daemon someone else operates, reached over HTTP(S)
 Every later connection, whether a run's or a verification's, builds its Environment connector from the row's endpoint, device and revealed token, checks the endpoint policy before dialing and expects the stored device. A daemon that is another device refuses to initialize, which the adapter reports as the permanent `provider_device_mismatch`. `PATCH …/environments/{id}` with a `token`, and a new `endpoint` if it moves (a new endpoint always comes with its token), repeats the verification with the stored device outside any transaction, then stores both, and a new name if one is given, under the same `If-Match` precondition. A daemon that is another device is `conflict` (`provider_device_mismatch`); any other refusal is `conflict` on the environment or `unavailable`, as for registration. A token without a new endpoint replaces the token only. An endpoint without a token is `invalid_argument` on `token`; for a managed instance, a new endpoint is `invalid_argument` on `endpoint` and a token alone on `token`; for a deleted target either is `conflict` (`environment_deleted`).
 
 The Service never creates, starts, stops or destroys a target, and maintenance never touches it. `ready` means selectable, not currently reachable: an unreachable target fails preparation of the runs that mount it. Deleting a target only removes the Service's access; the tombstone keeps the `device_id` and endpoint and drops the token. A timeout or broken connection after dispatch does not authorize replaying an unknown command; the EIP Session and operation-identity checks of the shared client apply.
+
+## Client environments
+
+A `client_envd` environment identifies one registered installation owned by a principal in one workspace. Registration and connection are independent: a client environment can be registered, selected and mounted while offline. Its `status` is `ready`, `disabled` or `deleted`; `ready` means eligible for use, never proof of connectivity. It has no provider lifecycle operation. Connecting never creates an environment, changes a run's selected mounts or grants new operations.
+
+### Identity and credentials
+
+The client generates a random installation `device_id` once and persists it locally. Server registration creates the `env_` identity and binds it to that device, workspace and owner. These bindings and `kind` are immutable. A launcher selects a separate environment ID and credential file for each Service origin, owner and workspace. Switching accounts keeps the installation ID and changes the registration used for the connection. A self-reported device ID is an expected identity, not cryptographic proof of a physical computer: copying the device ID and its dedicated credential copies the installation's access. Ordinary reconnects reuse both identifiers; deleting local identity and registering again creates a new installation. EIP `generation` distinguishes daemon incarnations independently of the persistent device ID.
+
+`client_environment_settings` has exactly one row per client environment. It holds the dedicated token's hash, positive `credential_version`, default working directory, operation permission ceiling, optional declared capabilities and optional description. Raw tokens are returned only when created or explicitly rotated, never from reads or repeated registration. Credential version advances on rotation, revocation and status transitions, including disable followed immediately by enable. An old carrier cannot retain authority across these transitions. Deletion removes the hash and keeps the tombstone's device binding.
+
+| API under `/api/v1`                                               | Contract                                                                                                                                                                                                                                                                                                                                                               |
+| ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /client-environments?workspace_id=…`                        | `write`; registers `{device_id, name, default_working_directory, permission_ceiling?, declared_capabilities?, description?}` without connecting. First creation returns 201 with a token; repeat registration for the same nondeleted workspace/owner/device binding returns 200 without a token or configuration changes. Concurrent requests converge on one record. |
+| `GET /client-environments/{id}?workspace_id=…`                    | `read`; returns the environment, configuration, credential version and whether a credential exists; exposes no secret.                                                                                                                                                                                                                                                 |
+| `PATCH /client-environments/{id}/status?workspace_id=…`           | Owner or workspace administrator, `write` and `If-Match`; selects `ready` or `disabled`. A deleted registration cannot be enabled.                                                                                                                                                                                                                                     |
+| `POST /client-environments/{id}/rotate-credential?workspace_id=…` | Same management authority and precondition; issues a new credential and invalidates old carriers.                                                                                                                                                                                                                                                                      |
+| `POST /client-environments/{id}/revoke-credential?workspace_id=…` | Same management authority and precondition; removes connection access.                                                                                                                                                                                                                                                                                                 |
+| `WSS /client-environments/{id}/connect`                           | Dedicated bearer token in `Authorization` and `eip.v1` subprotocol; rejects browser Origins and query credentials. No user login or monitoring-device credential substitutes for this credential.                                                                                                                                                                      |
+
+Registration and credential responses are `no-store`. Administrative credential and status operations are excluded from MCP; the read operation is admitted. Renaming and deletion use the ordinary Environment APIs. Only the owning principal may execute the environment, even if an administrator manages its registration.
+
+### Connection ownership
+
+Control authenticates in a short database scope, then claims an expiring Redis connection owner before accepting the WebSocket. A valid owner rejects a second connection, including one presenting the same credential and device ID. Disconnect or lease expiration permits a new claim with a new connection epoch. Cleanup, presence publication and renewal compare that epoch; an old handler cannot overwrite or delete its successor's presence.
+
+Control initiates EIP `initialize` over the accepted socket, with the registered device ID as its expectation. It validates the negotiated protocol, device identity, generation and limits. This does not run commands or open a Session. Online presence is published only after successful initialization. Initialization failure releases the connection; a WebSocket upgrade alone is not readiness. Heartbeats renew ownership and recheck current registration, credential version and owner authority, independently of tool requests. Authority or coordination uncertainty retires the carrier. Redis presence expires and is not a durable Environment status. Workspace list and detail reads include a timestamped connection observation for client instances: offline, connecting, online or unknown if coordination is unavailable. The read opens no Session.
+
+### Execution and recovery
+
+Run acceptance freezes the selected client environments, resolves an omitted mount directory from registration settings, and intersects mount permissions with the registration ceiling and any explicitly declared capabilities. Declarations narrow the offered actions and do not grant authority or prove native support. First dependent use acquires a fixed-target Service connector through the owning Control; it opens an independent EIP Session, checks readiness and validates the frozen directory. Harness receives normal Environment operation interfaces and has no PostgreSQL or Redis dependency. Initialization and reconnect never widen the run's frozen authority.
+
+Control rechecks run or retained-execution ownership, the frozen mount, current registration permissions, connection epoch and Session ownership before each native dispatch. Existing monitoring registrations and carriers confer no execution authority. An unrelated client's connection changes have no effect on a run that did not select it.
+
+Disconnect alone does not add model context. A dependent tool invocation reports a connection failure as a tool result and records that this run observed the failure. Only a run with such a pending failure receives one recovery notice, on its next natural root model-request boundary after current presence is verified. Ordinary command failures and confirmed operation timeouts do not create pending connection failures. A later successful tool result supersedes an unconsumed recovery notice. Online events never start a new model request, wake a completed run or replay a command.
+
+At that boundary, after the previous tool batch completes, a mount whose initial activation failed solely because the client was offline may be replaced by an inert mount with the same environment, device, directory and permissions, once cleanup is complete. This discards the cached failed activation task. Replacement does not open a Session; the next dependent access does. One connection epoch does not repeatedly replace the same failed mount. Permission, identity, protocol and incomplete-cleanup failures do not qualify. A notice reports restored connectivity and an opportunity to retry, not proven execution readiness.
+
+Already activated mounts follow Session continuity checks. Reconnection may attach only the same authorized device generation and Session; expired Sessions or restarted daemons cannot lend their old handles to a fresh Session. No unfinished transfer or command is replayed. Background processes survive only within the native Session's lifetime and a valid run or retained execution scope. Session keepalive is independent of individual request waits, but ends when that execution ownership is lost.
+
+### Routed requests and long commands
+
+Worker sends bounded control requests through Redis Pub/Sub to the Control that owns the connection, after confirming its reply subscription. Each request binds a unique request ID, environment, connection epoch, caller run/attempt/worker, execution scope, operation, parameters and deadline. Proxy request IDs remain distinct from real EIP operation IDs. Control validates supported operations and their parameters; this is not an unrestricted EIP forwarding endpoint. Requests and results may be lost; mutations are sent once and are never automatically replayed.
+
+Queueing consumes the request deadline. Native operation deadlines leave time for cleanup and forwarding; Control's response wait ends before Worker's outer deadline. Both roles bound concurrent work, message sizes and waits. Cancellation and close retain admission when ordinary operation capacity is full. No database session is held during transport, command execution or waiting. A late response can only satisfy its original outstanding request.
+
+| Evidence                                           | Meaning and handling                                                                                                                                                                                                                             |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Confirmed offline or rejection before dispatch     | No operation was dispatched; return a recoverable tool failure.                                                                                                                                                                                  |
+| Explicit `process.wait` timeout from envd          | This wait ended without observing completion. Retain the process handle; do not kill, restart or declare the device offline. A current running-state claim requires an inspection result.                                                        |
+| Worker or Control response wait times out          | Outcome unknown; end this reply wait without claiming the command stopped. Do not replay a mutation.                                                                                                                                             |
+| `process.start` reply lost                         | Preserve the original EIP operation ID; a separate bounded `receipt.get` in the same Session/generation may recover execution stage and outcome. A receipt alone does not return a process handle. Missing evidence does not prove nonexecution. |
+| `shell.exec` reaches its native operation deadline | Preserve native termination and cleanup semantics; never silently convert it into a background task.                                                                                                                                             |
+
+Long commands use explicit process start and bounded wait/inspect calls. On a process-capable mount a single agent `shell_exec` starts the command and waits for the Host-configured foreground interval. A retained execution tracks completion after returning an execution reference. The agent may choose `shell_info` or `shell_wait` for a subsequent observation; routing does not extend one request indefinitely. Command wall time, individual wait duration, transport response deadline and Session lifetime remain independent limits.
+
+Large files and screenshots use a bounded internal Worker-to-owning-Control streaming endpoint and the existing EIP binary transfer. Stream admission binds the authorized execution scope, transfer handle, direction, size and deadline; it does not accept an arbitrary file path or expose device credentials in a URL. Transfer interruption releases uncommitted resources and reports failure or unknown commit outcome. Full file bodies are never serialized into Redis control messages.
 
 ## Provider contract
 
