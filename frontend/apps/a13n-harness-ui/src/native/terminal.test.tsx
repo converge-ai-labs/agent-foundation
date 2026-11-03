@@ -10,6 +10,7 @@ import {
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
+import { i18n } from "../i18n";
 import { TransportContext } from "../transport/context";
 import type { Schema, Transport } from "../transport/client";
 import TerminalScreen from "./terminal-screen";
@@ -656,4 +657,27 @@ it("cycles only the current Project's sessions without creating or ending them",
   expect(select).toHaveBeenLastCalledWith("terminal-two");
   expect(f.post).not.toHaveBeenCalled();
   expect(f.remove).not.toHaveBeenCalled();
+});
+
+it("focuses the new-terminal control in Chinese when no session is active", async () => {
+  await i18n.changeLanguage("zh-CN");
+  const f = setup([]);
+  render(
+    <TerminalPanel
+      visible
+      directory="/native/code"
+      projectId="project-one"
+      selected=""
+      select={vi.fn()}
+      unauthorized={vi.fn()}
+    />,
+    { wrapper: f.Wrapper },
+  );
+  expect(document.activeElement).toBe(
+    screen.getByRole("button", { name: "新建终端" }),
+  );
+  await act(() => i18n.changeLanguage("en"));
+  expect(document.activeElement).toBe(
+    screen.getByRole("button", { name: "New terminal" }),
+  );
 });

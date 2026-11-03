@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { useTranslation } from "../i18n";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, ModalFrame } from "a13n-ui";
 import { Plus, ArrowClockwise, Trash } from "@phosphor-icons/react";
@@ -11,6 +12,9 @@ import styles from "./terminal.module.css";
 
 export type TerminalRequest = { cwd: string; projectId: string };
 
+const blockedTerminalAction = new Error(
+  "Check the previous terminal action before opening another terminal.",
+);
 const TerminalScreen = lazy(() => import("./terminal-screen"));
 export function TerminalPanel({
   visible,
@@ -37,9 +41,10 @@ export function TerminalPanel({
   threadId?: string;
   openFile?: (path: string, line?: number) => void;
 }) {
+  const { t } = useTranslation();
   const { client } = useTransport();
   const shortcuts = terminalShortcutLabels();
-  const panel = useRef<HTMLElement>(null);
+  const newTerminal = useRef<HTMLButtonElement>(null);
   const queries = useQueryClient();
   const currentProject = useRef(projectId);
   currentProject.current = projectId;
@@ -79,10 +84,7 @@ export function TerminalPanel({
       );
   }, [activeId]);
   useEffect(() => {
-    if (visible && !activeId)
-      panel.current
-        ?.querySelector<HTMLElement>('[aria-label="New terminal"]')
-        ?.focus();
+    if (visible && !activeId) newTerminal.current?.focus();
   }, [visible, activeId]);
   useEffect(() => {
     onActive?.(visible ? activeId : "");
@@ -135,11 +137,7 @@ export function TerminalPanel({
       return;
     handledRequest.current = request;
     if (pending || attempted) {
-      setError(
-        new Error(
-          "Check the previous terminal action before opening another terminal.",
-        ),
-      );
+      setError(blockedTerminalAction);
       return;
     }
     void create(request.cwd);
@@ -166,7 +164,6 @@ export function TerminalPanel({
   };
   return (
     <section
-      ref={panel}
       onKeyDownCapture={(event) => {
         if (!visible || event.defaultPrevented) return;
         const action = terminalShortcut(event.nativeEvent);
@@ -186,24 +183,30 @@ export function TerminalPanel({
       }}
       hidden={!visible}
       className={styles.panel}
-      aria-label="Shared native terminals"
+      aria-label={t("Shared native terminals")}
     >
       <header className={styles.header}>
-        <strong>Terminal{projectName ? ` · ${projectName}` : ""}</strong>
+        <strong>
+          {t("Terminal")}
+          {projectName ? ` · ${projectName}` : ""}
+        </strong>
         <div className={styles.actions}>
           <TerminalAction
-            label="New terminal"
+            ref={newTerminal}
+            label={t("New terminal")}
             shortcut={shortcuts.create}
             disabled={pending || attempted || !projectId || !directory}
             description={
-              directory ? `Start in ${directory}` : "Open a project chat first"
+              directory
+                ? t("Start in {{directory}}", { directory })
+                : t("Open a project chat first")
             }
             onClick={() => void create()}
           >
             <Plus />
           </TerminalAction>
           <TerminalAction
-            label="Refresh terminal sessions"
+            label={t("Refresh terminal sessions")}
             onClick={() => {
               refresh();
               setAttempted(false);
@@ -214,8 +217,8 @@ export function TerminalPanel({
           </TerminalAction>
           {active && (
             <TerminalAction
-              label="End session"
-              description="Closes this terminal for everyone"
+              label={t("End session")}
+              description={t("Closes this terminal for everyone")}
               onClick={() => {
                 setError(null);
                 setAttempted(false);
@@ -238,15 +241,23 @@ export function TerminalPanel({
             size="sm"
             variant={selected === item.terminal_id ? "outline" : "ghost"}
             aria-pressed={selected === item.terminal_id}
-            title={`${item.cwd} · ${item.terminal_id} · Switch sessions: ${shortcuts.previous} / ${shortcuts.next}`}
+            title={t(
+              "{{cwd}} · {{id}} · Switch sessions: {{previous}} / {{next}}",
+              {
+                cwd: item.cwd,
+                id: item.terminal_id,
+                previous: shortcuts.previous,
+                next: shortcuts.next,
+              },
+            )}
             onClick={() => select(item.terminal_id)}
           >
-            {item.cwd.split(/[\\/]/).filter(Boolean).at(-1) || "Terminal"}
+            {item.cwd.split(/[\\/]/).filter(Boolean).at(-1) || t("Terminal")}
             {projectSessions.filter((session) => session.cwd === item.cwd)
               .length > 1
               ? ` · ${index + 1}`
               : ""}
-            {item.state === "exited" ? " · Exited" : ""}
+            {item.state === "exited" ? ` · ${t("Exited")}` : ""}
           </Button>
         ))}
       </div>
@@ -256,7 +267,9 @@ export function TerminalPanel({
             <span>
               {active
                 ? active.cwd
-                : "This terminal is no longer listed. Refresh to check its status."}
+                : t(
+                    "This terminal is no longer listed. Refresh to check its status.",
+                  )}
             </span>
           </div>
         </>
@@ -264,17 +277,21 @@ export function TerminalPanel({
         <div className={styles.empty}>
           <h3>
             {!projectId
-              ? "No project selected"
+              ? t("No project selected")
               : projectSessions.length
-                ? "Choose a terminal"
-                : "Open a terminal"}
+                ? t("Choose a terminal")
+                : t("Open a terminal")}
           </h3>
           <p>
             {selected && sessions.isSuccess
-              ? "This terminal belongs to another project. Open a chat in that project to view it."
+              ? t(
+                  "This terminal belongs to another project. Open a chat in that project to view it.",
+                )
               : projectId
-                ? "Start a terminal in this project's folder, or open an existing session."
-                : "Open a chat in a project to see its terminals."}
+                ? t(
+                    "Start a terminal in this project's folder, or open an existing session.",
+                  )
+                : t("Open a chat in a project to see its terminals.")}
           </p>
         </div>
       )}
@@ -284,7 +301,7 @@ export function TerminalPanel({
           className={styles.retainedScreen}
           hidden={!visible || id !== activeId}
         >
-          <Suspense fallback={<p>Loading terminal…</p>}>
+          <Suspense fallback={<p>{t("Loading terminal…")}</p>}>
             <TerminalScreen
               id={id}
               visible={visible && id === activeId}
@@ -300,11 +317,21 @@ export function TerminalPanel({
           </Suspense>
         </div>
       ))}
-      <ErrorNotice error={error} />
+      <ErrorNotice
+        error={error}
+        message={
+          error === blockedTerminalAction
+            ? t(
+                "Check the previous terminal action before opening another terminal.",
+              )
+            : undefined
+        }
+      />
       {attempted && error != null && !closing && (
         <p role="status">
-          Couldn't confirm the result. Refresh the session list before starting
-          another terminal.
+          {t(
+            "Couldn't confirm the result. Refresh the session list before starting another terminal.",
+          )}
         </p>
       )}
       <ModalFrame
@@ -314,9 +341,11 @@ export function TerminalPanel({
             setClosing(null);
           }
         }}
-        title="End this terminal session?"
-        description="Ends this session and its jobs for everyone. To keep it running, close only the panel."
-        closeLabel="Cancel"
+        title={t("End this terminal session?")}
+        description={t(
+          "Ends this session and its jobs for everyone. To keep it running, close only the panel.",
+        )}
+        closeLabel={t("Cancel")}
         footer={
           <>
             <Button
@@ -324,23 +353,33 @@ export function TerminalPanel({
               disabled={pending}
               onClick={() => setClosing(null)}
             >
-              Cancel
+              {t("Cancel")}
             </Button>
             <Button
               variant="destructive"
               disabled={pending || attempted}
               onClick={() => void close()}
             >
-              {pending ? "Waiting…" : "End session"}
+              {pending ? t("Waiting…") : t("End session")}
             </Button>
           </>
         }
       >
-        <ErrorNotice error={error} />
+        <ErrorNotice
+          error={error}
+          message={
+            error === blockedTerminalAction
+              ? t(
+                  "Check the previous terminal action before opening another terminal.",
+                )
+              : undefined
+          }
+        />
         {attempted && error != null && (
           <p role="status">
-            Couldn't confirm the result. Nothing was retried. Close this dialog
-            and refresh the session list before continuing.
+            {t(
+              "Couldn't confirm the result. Nothing was retried. Close this dialog and refresh the session list before continuing.",
+            )}
           </p>
         )}
       </ModalFrame>

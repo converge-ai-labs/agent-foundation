@@ -301,7 +301,7 @@ it("observes Memory with the shared Thread viewer and scoped files without mount
   );
 });
 
-it("keeps a public startup shell instead of flashing login while checking a retained key", async () => {
+it("avoids a redundant startup screen or login flash while checking a retained key", async () => {
   localStorage.setItem("a13n-harness-ui.api-key", "retained-key");
   window.history.replaceState(
     null,
@@ -323,7 +323,7 @@ it("keeps a public startup shell instead of flashing login while checking a reta
     }),
   );
   render(<BrowserApp />);
-  expect(screen.getByText("Connecting to Harness UI…")).toBeTruthy();
+  expect(screen.queryByText("Connecting to Harness UI…")).toBeNull();
   expect(screen.queryByLabelText("API key")).toBeNull();
   expect(screen.queryByLabelText("Name")).toBeNull();
   expect(requests).toEqual(["/api/status"]);

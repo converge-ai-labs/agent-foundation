@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import styles from "../shell/workbench.module.css";
 import { SettingsTextField as TextField } from "../shell/settings";
 import { SettingsChoice as ChoiceField } from "../shell/settings";
@@ -25,6 +26,7 @@ export function useEnvdStatus() {
 }
 
 export function ExecutionDefaultsFields({ source, onChange }: FieldsProps) {
+  const { t } = useTranslation();
   const runtime = useEnvdStatus();
   const selectors = useSelectors();
   const profiles =
@@ -53,16 +55,18 @@ export function ExecutionDefaultsFields({ source, onChange }: FieldsProps) {
     <>
       <SettingsSection variant="grouped">
         <SettingsRow
-          label="Runtime"
-          description="Direct runs on this host without downloading a runtime."
+          label={t("Runtime")}
+          description={t(
+            "Direct runs on this host without downloading a runtime.",
+          )}
         >
           <ChoiceField
-            label="Runtime"
+            label={t("Runtime")}
             hideLabel
             className={styles.settingControl}
             value={custom ? selected : direct ? "direct" : "envd"}
             options={[
-              { value: "direct", label: "Direct" },
+              { value: "direct", label: t("Direct") },
               { value: "envd", label: "envd" },
               ...profiles.map((item) => ({
                 value: item.profile_id,
@@ -86,24 +90,28 @@ export function ExecutionDefaultsFields({ source, onChange }: FieldsProps) {
         </SettingsRow>
         {!custom && (
           <SettingsRow
-            label="Permissions"
+            label={t("Permissions")}
             description={
               direct
-                ? "Commands use the server's account, with file and network access."
-                : "Sandbox limits file and process access to the allowed workspace."
+                ? t(
+                    "Commands use the server's account, with file and network access.",
+                  )
+                : t(
+                    "Sandbox limits file and process access to the allowed workspace.",
+                  )
             }
           >
             {direct ? (
-              <span>Full Control</span>
+              <span>{t("Full Control")}</span>
             ) : (
               <ChoiceField
-                label="Permissions"
+                label={t("Permissions")}
                 hideLabel
                 className={styles.settingControl}
                 value={sandbox ? "sandbox" : "full-control"}
                 options={[
-                  { value: "full-control", label: "Full Control" },
-                  { value: "sandbox", label: "Sandbox" },
+                  { value: "full-control", label: t("Full Control") },
+                  { value: "sandbox", label: t("Sandbox") },
                 ]}
                 onValueChange={(value) =>
                   choose(
@@ -118,11 +126,13 @@ export function ExecutionDefaultsFields({ source, onChange }: FieldsProps) {
         )}
         {!custom && !direct && !sandbox && (
           <SettingsRow
-            label="Computer Use"
-            description="Let agents using this default see and control this computer's desktop."
+            label={t("Computer Use")}
+            description={t(
+              "Let agents using this default see and control this computer's desktop.",
+            )}
           >
             <Switch
-              aria-label="Computer Use"
+              aria-label={t("Computer Use")}
               checked={desktop}
               disabled={!desktop && !runtime.data?.computer_use}
               onCheckedChange={(enabled) =>
@@ -134,20 +144,22 @@ export function ExecutionDefaultsFields({ source, onChange }: FieldsProps) {
       </SettingsSection>
       {custom ? (
         <p>
-          Custom profile: <code>{selected}</code>. Change its configuration in
-          Profiles & extensions.
+          {t(
+            "Custom profile: {{name}}. Change its configuration in Profiles & extensions.",
+            { name: selected },
+          )}
         </p>
       ) : direct ? null : (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-muted/30 p-4 text-sm">
           <div>
             <p>
               {ready
-                ? "envd checked on this host"
-                : "Prepare envd before running with this default."}
+                ? t("envd checked on this host")
+                : t("Prepare envd before running with this default.")}
             </p>
             <p className="text-muted-foreground">
               {!runtime.data?.computer_use && !sandbox
-                ? "Desktop access is disabled in Runtime settings. "
+                ? t("Desktop access is disabled in Runtime settings. ")
                 : ""}
             </p>
           </div>
@@ -155,7 +167,7 @@ export function ExecutionDefaultsFields({ source, onChange }: FieldsProps) {
             className="shrink-0 font-medium underline underline-offset-4"
             to="/settings/environments?tab=runtime"
           >
-            Manage local runtime →
+            {t("Manage local runtime →")}
           </Link>
         </div>
       )}
@@ -165,6 +177,7 @@ export function ExecutionDefaultsFields({ source, onChange }: FieldsProps) {
 }
 
 export function EnvdConfigurationFields({ source, onChange }: FieldsProps) {
+  const { t } = useTranslation();
   const runtime = useEnvdStatus();
   const document = readDocument(source);
   const configured = document?.get("envd") != null;
@@ -199,18 +212,20 @@ export function EnvdConfigurationFields({ source, onChange }: FieldsProps) {
     <>
       <SettingsSection variant="grouped">
         <SettingsRow
-          label="Runtime source"
-          description="Automatically downloads the envd version required by Harness."
+          label={t("Runtime source")}
+          description={t(
+            "Automatically downloads the envd version required by Harness.",
+          )}
         >
           <ChoiceField
-            label="Runtime source"
+            label={t("Runtime source")}
             hideLabel
             className={styles.settingControl}
             disabled={!runtime.data}
             value={custom ? "custom" : "managed"}
             options={[
-              { value: "managed", label: "Managed release" },
-              { value: "custom", label: "Custom executable" },
+              { value: "managed", label: t("Managed release") },
+              { value: "custom", label: t("Custom executable") },
             ]}
             onValueChange={(value) =>
               update({
@@ -222,32 +237,36 @@ export function EnvdConfigurationFields({ source, onChange }: FieldsProps) {
         </SettingsRow>
         {custom && (
           <TextField
-            label="Executable path"
+            label={t("Executable path")}
             value={executable}
             onChange={(value) => update({ executable: value })}
-            description="Full path to a13n-envd on this server. You must install and update it yourself."
+            description={t(
+              "Full path to a13n-envd on this server. You must install and update it yourself.",
+            )}
           />
         )}
         <SettingsRow
-          label="Metrics collection"
-          description="How often Harness collects metrics. This also sets sampling for its local envd runtime. Other runtimes keep their own interval. Restart Harness UI to apply."
+          label={t("Metrics collection")}
+          description={t(
+            "How often Harness collects metrics. This also sets sampling for its local envd runtime. Other runtimes keep their own interval. Restart Harness UI to apply.",
+          )}
         >
           <ChoiceField
-            label="Metrics collection interval"
+            label={t("Metrics collection interval")}
             hideLabel
             className={styles.settingControl}
             disabled={!runtime.data}
             value={String(interval)}
             options={[
-              { value: "10", label: "Every 10 seconds" },
-              { value: "30", label: "Every 30 seconds" },
-              { value: "60", label: "Every minute" },
+              { value: "10", label: t("Every 10 seconds") },
+              { value: "30", label: t("Every 30 seconds") },
+              { value: "60", label: t("Every minute") },
               ...([10, 30, 60].includes(interval)
                 ? []
                 : [
                     {
                       value: String(interval),
-                      label: `Every ${interval} seconds`,
+                      label: t("Every {{count}} seconds", { count: interval }),
                     },
                   ]),
             ]}
@@ -257,11 +276,13 @@ export function EnvdConfigurationFields({ source, onChange }: FieldsProps) {
           />
         </SettingsRow>
         <SettingsRow
-          label="Desktop capability"
-          description="Allow desktop controls on this server. Each agent still needs a profile with desktop access."
+          label={t("Desktop capability")}
+          description={t(
+            "Allow desktop controls on this server. Each agent still needs a profile with desktop access.",
+          )}
         >
           <Switch
-            aria-label="Desktop capability"
+            aria-label={t("Desktop capability")}
             checked={computer}
             disabled={!runtime.data}
             onCheckedChange={(enabled) => update({ computer_use: enabled })}

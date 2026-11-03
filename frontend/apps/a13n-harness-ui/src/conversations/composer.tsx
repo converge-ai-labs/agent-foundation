@@ -1005,13 +1005,6 @@ export function Composer({
             )}
           </p>
         )}
-        {showSyncStatus && draft.status !== "Connected" && (
-          <p role="status" className={styles.composerConnection}>
-            {t("{{status}} · your edits are still in this tab", {
-              status: composerMessage(draft.status, t),
-            })}
-          </p>
-        )}
         {draft.replacement && (
           <div role="alert" className={styles.warning}>
             <p>

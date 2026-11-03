@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { SettingsRow, SettingsSection } from "./settings";
 import {
   createContext,
@@ -67,6 +68,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
   );
 }
 function NotificationState({ children }: { children: ReactNode }) {
+  const { t } = useTranslation();
   const frame = useRef<HTMLDivElement>(null);
   useEffect(
     () => (frame.current ? fitVisualViewport(frame.current) : undefined),
@@ -84,7 +86,10 @@ function NotificationState({ children }: { children: ReactNode }) {
   };
   const [permission, setPermission] = useState(notificationPermission);
   const [requesting, setRequesting] = useState(false);
-  const [error, setError] = useState("");
+  const [error, updateError] = useState<{ text: string; raw?: boolean }>({
+    text: "",
+  });
+  const setError = (text: string, raw = false) => updateError({ text, raw });
   const [testStatus, setTestStatus] = useState("");
   const [background, setBackground] = useState<Background>(() =>
     pushSubscriptionId() ? "checking" : "disabled",
@@ -233,6 +238,7 @@ function NotificationState({ children }: { children: ReactNode }) {
           failure instanceof Error
             ? failure.message
             : "Notification setup failed. Check this site's browser settings.",
+          failure instanceof Error,
         );
       }
     } finally {
@@ -324,6 +330,7 @@ function NotificationState({ children }: { children: ReactNode }) {
             failure instanceof Error
               ? failure.message
               : "Background notification test failed.",
+            failure instanceof Error,
           );
         });
       return;
@@ -333,8 +340,8 @@ function NotificationState({ children }: { children: ReactNode }) {
     enabled,
     permission,
     requesting,
-    error,
-    testStatus,
+    error: error.text ? (error.raw ? error.text : t(error.text)) : "",
+    testStatus: testStatus ? t(testStatus) : "",
     background,
     setEnabled,
     request,
@@ -374,15 +381,24 @@ const backgroundLabels: Record<Background, string> = {
   error: "Subscription needs attention",
 };
 function PermissionDescription({ permission }: { permission: Permission }) {
+  const { t } = useTranslation();
   return (
     <>
       {permission === "install-required"
-        ? "Add Harness to your Home Screen and open it there to enable alerts. Requires iOS or iPadOS 16.4 or later."
+        ? t(
+            "Add Harness to your Home Screen and open it there to enable alerts. Requires iOS or iPadOS 16.4 or later.",
+          )
         : permission === "denied"
-          ? "Allow notifications in this site's browser settings or the Home Screen app's system settings."
+          ? t(
+              "Allow notifications in this site's browser settings or the Home Screen app's system settings.",
+            )
           : permission === "unavailable"
-            ? "Use a supported browser on HTTPS or localhost. In-app notices remain available."
-            : "Get alerts when an agent finishes, fails, or needs your input."}
+            ? t(
+                "Use a supported browser on HTTPS or localhost. In-app notices remain available.",
+              )
+            : t(
+                "Get alerts when an agent finishes, fails, or needs your input.",
+              )}
     </>
   );
 }
@@ -427,31 +443,36 @@ export function NotificationSettings({
 }: {
   embedded?: boolean;
 }) {
+  const { t } = useTranslation();
   const notifications = useNotifications()!;
   const pushReady =
     notifications.enabled &&
     notifications.permission === "granted" &&
     supportsPush();
   const backgroundLabel = pushSubscriptionId()
-    ? "Reconnect background notifications"
-    : "Enable background notifications";
+    ? t("Reconnect background notifications")
+    : t("Enable background notifications");
   return (
     <div className={styles.settings}>
       {!embedded && (
         <PageHeader
-          title="Notifications"
-          description="Task results and requests for your input on this browser."
+          title={t("Notifications")}
+          description={t(
+            "Task results and requests for your input on this browser.",
+          )}
         />
       )}
       <SettingsSection
         variant="grouped"
-        title={embedded ? "Notifications" : undefined}
+        title={embedded ? t("Notifications") : undefined}
       >
         <SettingsRow
-          label="Enable browser notifications"
+          label={t("Enable browser notifications")}
           stackOnNarrow={false}
           controlId="desktop-notifications"
-          description="Alerts from every chat in this browser. Previews may appear on your lock screen."
+          description={t(
+            "Alerts from every chat in this browser. Previews may appear on your lock screen.",
+          )}
         >
           <Switch
             id="desktop-notifications"
@@ -460,7 +481,7 @@ export function NotificationSettings({
           />
         </SettingsRow>
         <SettingsRow
-          label="Browser permission"
+          label={t("Browser permission")}
           description={
             notifications.permission !== "granted" && (
               <PermissionDescription permission={notifications.permission} />
@@ -469,7 +490,7 @@ export function NotificationSettings({
         >
           <div className={styles.state}>
             <span className={styles.status}>
-              {permissionLabels[notifications.permission]}
+              {t(permissionLabels[notifications.permission])}
             </span>
             {notifications.enabled &&
               notifications.permission === "default" && (
@@ -478,24 +499,30 @@ export function NotificationSettings({
                   onClick={() => void notifications.request()}
                   loading={notifications.requesting}
                 >
-                  Enable alerts
+                  {t("Enable alerts")}
                 </Button>
               )}
           </div>
         </SettingsRow>
         <SettingsRow
-          label="Background delivery"
+          label={t("Background delivery")}
           description={
             notifications.background === "enabled"
-              ? "Alerts stay active for six hours after your last visit on this device."
+              ? t(
+                  "Alerts stay active for six hours after your last visit on this device.",
+                )
               : notifications.permission !== "granted"
-                ? "Needs notification permission. In-app notices remain available."
-                : "Without working push delivery, only in-app notices are available while WebUI is open."
+                ? t(
+                    "Needs notification permission. In-app notices remain available.",
+                  )
+                : t(
+                    "Without working push delivery, only in-app notices are available while WebUI is open.",
+                  )
           }
         >
           <div className={styles.state}>
             <span className={styles.status}>
-              {backgroundLabels[notifications.background]}
+              {t(backgroundLabels[notifications.background])}
             </span>
             {pushReady && (
               <Button
@@ -506,18 +533,18 @@ export function NotificationSettings({
                 }
                 aria-label={backgroundLabel}
               >
-                {pushSubscriptionId() ? "Reconnect" : "Enable"}
+                {pushSubscriptionId() ? t("Reconnect") : t("Enable")}
               </Button>
             )}
           </div>
         </SettingsRow>
         <SettingsRow
-          label="Test notification"
-          description="Send an alert to check delivery on this device."
+          label={t("Test notification")}
+          description={t("Send an alert to check delivery on this device.")}
         >
           <Button
             variant="outline"
-            aria-label="Send test notification"
+            aria-label={t("Send test notification")}
             disabled={
               !notifications.enabled ||
               notifications.permission !== "granted" ||
@@ -526,7 +553,7 @@ export function NotificationSettings({
             }
             onClick={notifications.test}
           >
-            Send test
+            {t("Send test")}
           </Button>
         </SettingsRow>
       </SettingsSection>
@@ -541,27 +568,33 @@ export function NotificationSettings({
         </p>
       )}
       <details className={styles.details}>
-        <summary>Delivery help</summary>
+        <summary>{t("Delivery help")}</summary>
         <p>
-          Keep the server running and connected to your browser's push service.
+          {t(
+            "Keep the server running and connected to your browser's push service.",
+          )}
         </p>
         <ul>
           <li>
-            iPhone / iPad: in Safari, choose Share → Add to Home Screen. Enable
-            notifications in the installed app.
+            {t(
+              "iPhone / iPad: in Safari, choose Share → Add to Home Screen. Enable notifications in the installed app.",
+            )}
           </li>
           <li>
-            Android: allow notifications for this site and Chrome. Battery
-            limits, force-stop and Do Not Disturb may block alerts.
+            {t(
+              "Android: allow notifications for this site and Chrome. Battery limits, force-stop and Do Not Disturb may block alerts.",
+            )}
           </li>
           <li>
-            Delivery stays active for six hours after a visible visit. Missed
-            alerts are not replayed.
+            {t(
+              "Delivery stays active for six hours after a visible visit. Missed alerts are not replayed.",
+            )}
           </li>
         </ul>
         <p>
-          In-app notices still work without permission. System alerts may also
-          appear for the chat you are viewing.
+          {t(
+            "In-app notices still work without permission. System alerts may also appear for the chat you are viewing.",
+          )}
         </p>
       </details>
     </div>

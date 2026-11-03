@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useState, type ReactNode } from "react";
 import { Button, LogoAnimation } from "a13n-ui";
+import { useTranslation } from "../i18n";
 import styles from "./opening.module.css";
 
 // Only the first observation gates presentation. Refreshes must not hide the
@@ -23,6 +24,7 @@ export function ConversationOpening({
   onContinue: () => void;
   children: ReactNode;
 }) {
+  const { t } = useTranslation();
   const [slow, setSlow] = useState(false);
   useEffect(() => {
     if (ready) return;
@@ -47,9 +49,9 @@ export function ConversationOpening({
           </div>
           {slow && (
             <div className={styles.recovery}>
-              <p>Taking longer than usual. Your input is still here.</p>
+              <p>{t("Taking longer than usual. Your input is still here.")}</p>
               <Button variant="ghost" size="sm" onClick={onContinue}>
-                Open chat
+                {t("Open chat")}
               </Button>
             </div>
           )}

@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { ModelIdentity } from "../shell/model-identity";
 import { useContext, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -60,6 +61,7 @@ export function NewResourceButton({
   variant?: "default" | "outline" | "ghost";
   initial?: Record<string, unknown>;
 }) {
+  const { t } = useTranslation();
   const drafts = useContext(DraftContext);
   const navigate = useNavigate();
   return (
@@ -83,7 +85,13 @@ export function NewResourceButton({
     >
       <Plus />
       {label ??
-        `Add ${inlineLabel(resourceKinds.find((item) => item.value === kind)!.label)}`}
+        t("Add {{resource}}", {
+          resource: t(
+            inlineLabel(
+              resourceKinds.find((item) => item.value === kind)!.label,
+            ),
+          ),
+        })}
     </Button>
   );
 }
@@ -95,6 +103,7 @@ export function DraftLinks({
   kinds?: ResourceKind[];
   search?: string;
 }) {
+  const { t } = useTranslation();
   const drafts = useContext(DraftContext);
   const sources = useSources();
   return (
@@ -127,7 +136,7 @@ export function DraftLinks({
               </strong>
               <small>{path}</small>
             </div>
-            <span>Unsaved draft</span>
+            <span>{t("Unsaved draft")}</span>
           </Link>
         ))}
     </div>
@@ -147,6 +156,7 @@ export function SourcesPage({
   description?: string;
   headingLevel?: 1 | 2;
 }) {
+  const { t } = useTranslation();
   const sources = useSources();
   const selectors = useSelectors();
   const root = useRootConfiguration(kinds?.includes("agent"));
@@ -201,7 +211,7 @@ export function SourcesPage({
   ) : (
     <Button onClick={() => setCreating(true)}>
       <Plus />
-      Add configuration
+      {t("Add configuration")}
     </Button>
   );
   return (
@@ -214,9 +224,15 @@ export function SourcesPage({
         .join(" ")}
     >
       <PageHeader
-        title={title}
+        title={
+          title === "Configuration files" ? t("Configuration files") : title
+        }
         level={headingLevel}
-        description={description}
+        description={
+          description === "The YAML and Markdown files behind every setting."
+            ? t(description)
+            : description
+        }
         actions={addAction}
       />
       <div className={layout.collection}>
@@ -224,7 +240,12 @@ export function SourcesPage({
           <div className={layout.toolbar}>
             {!!listed?.length && (
               <SearchField
-                label={`Search ${inlineLabel(title)}`}
+                label={t("Search {{name}}", {
+                  name:
+                    title === "Configuration files"
+                      ? t("configuration files")
+                      : inlineLabel(title),
+                })}
                 value={search}
                 onChange={setSearch}
               />
@@ -238,7 +259,7 @@ export function SourcesPage({
             void selectors.refetch();
           }}
         />
-        {sources.isPending && <p role="status">Loading resources…</p>}
+        {sources.isPending && <p role="status">{t("Loading resources…")}</p>}
         <DraftLinks kinds={kinds} search={search} />
         <div className={styles.resourceList}>
           {visible?.map((source) => (
@@ -266,7 +287,7 @@ export function SourcesPage({
                           name={names.get(model) ?? model}
                         />
                       ) : (
-                        "No model selected"
+                        t("No model selected")
                       );
                     })
                   ) : kinds ? (
@@ -292,12 +313,12 @@ export function SourcesPage({
               {source.resource_kind === "agent" &&
                 source.resource_ids.includes(
                   root.configuration?.defaults?.agent,
-                ) && <span className={styles.tag}>Default</span>}
+                ) && <span className={styles.tag}>{t("Default")}</span>}
               {!source.writable && (
-                <span className={styles.tag}>Read only</span>
+                <span className={styles.tag}>{t("Read only")}</span>
               )}
               {source.writable && !source.content_available && (
-                <span className={styles.tag}>Connection hidden</span>
+                <span className={styles.tag}>{t("Connection hidden")}</span>
               )}
               {!kinds && (
                 <span className={styles.kind}>
@@ -308,7 +329,9 @@ export function SourcesPage({
           ))}
         </div>
         {!!listed?.length && !visible?.length && (
-          <EmptyList>No matching {inlineLabel(title)}.</EmptyList>
+          <EmptyList>
+            {t("No matching {{name}}.", { name: t(inlineLabel(title)) })}
+          </EmptyList>
         )}
         {kinds && listed?.length === 0 && (
           <p
@@ -316,25 +339,27 @@ export function SourcesPage({
               headingLevel === 2 ? layout.emptySection : styles.emptyList
             }
           >
-            No {inlineLabel(title)} yet. Add one to get started.
+            {t("No {{name}} yet. Add one to get started.", {
+              name: t(inlineLabel(title)),
+            })}
           </p>
         )}
         {sources.data && !kinds && !sources.data.sources.length && (
-          <Panel title="No saved configuration">
-            <p>Finish setup before adding configurations.</p>
-            <Link to="/setup">Open setup</Link>
+          <Panel title={t("No saved configuration")}>
+            <p>{t("Finish setup before adding configurations.")}</p>
+            <Link to="/setup">{t("Open setup")}</Link>
           </Panel>
         )}
       </div>
       <ModalFrame
         open={creating}
         onOpenChange={setCreating}
-        title="Add configuration"
-        closeLabel="Close"
+        title={t("Add configuration")}
+        closeLabel={t("Close")}
         footer={
           <>
             <Button variant="outline" onClick={() => setCreating(false)}>
-              Cancel
+              {t("Cancel")}
             </Button>
             <Button
               disabled={!/^[a-z][a-z0-9]*(?:-[a-z0-9]+)+$/.test(id)}
@@ -371,17 +396,20 @@ export function SourcesPage({
                 setCreating(false);
               }}
             >
-              Continue
+              {t("Continue")}
             </Button>
           </>
         }
       >
         <div className={styles.stack}>
           <ChoiceField
-            label="Type"
+            label={t("Type")}
             layout="stacked"
             value={kind}
-            options={resourceKinds}
+            options={resourceKinds.map((item) => ({
+              ...item,
+              label: t(item.label),
+            }))}
             onValueChange={(value) => {
               const choice = resourceKinds.find(
                 (item) => item.value === value,
@@ -394,7 +422,9 @@ export function SourcesPage({
             label="ID"
             value={id}
             onChange={setId}
-            description="Use the resource prefix and a lowercase hyphenated name."
+            description={t(
+              "Use the resource prefix and a lowercase hyphenated name.",
+            )}
           />
         </div>
       </ModalFrame>
@@ -425,6 +455,7 @@ export function SourceDocument({
   embedded?: boolean;
   section?: "envd" | "execution" | "connections";
 }) {
+  const { t } = useTranslation();
   const { client } = useTransport();
   const queries = useQueryClient();
   const drafts = useContext(DraftContext);
@@ -582,24 +613,28 @@ export function SourceDocument({
           {!embedded && (
             <Link className={styles.back} to={back}>
               <ArrowLeft />
-              {backLabel}
+              {t(backLabel)}
             </Link>
           )}
           <PageHeader
             level={mediaOnly || section ? 2 : 1}
             description={
               mediaOnly
-                ? "Used when your main model can't read this media."
+                ? t("Used when your main model can't read this media.")
                 : section === "envd"
-                  ? "Server-wide settings. Save and restart Harness UI to apply."
+                  ? t(
+                      "Server-wide settings. Save and restart Harness UI to apply.",
+                    )
                   : section === "execution"
-                    ? "Used by new chats unless the project sets its own defaults."
+                    ? t(
+                        "Used by new chats unless the project sets its own defaults.",
+                      )
                     : undefined
             }
             title={
               title ||
               (isNew
-                ? `Add ${resourceLabel}`
+                ? t("Add {{resource}}", { resource: t(resourceLabel) })
                 : String(
                     readDocument(draft?.content ?? "")?.get("name") ||
                       mcpName ||
@@ -612,7 +647,7 @@ export function SourceDocument({
               source.data.resource_kind !== "root" && (
                 <Menu>
                   <MenuTrigger
-                    aria-label="More configuration actions"
+                    aria-label={t("More configuration actions")}
                     render={<Button variant="ghost" size="icon" />}
                   >
                     <DotsThree />
@@ -623,7 +658,7 @@ export function SourceDocument({
                       onClick={() => setDeleting(true)}
                     >
                       <Trash />
-                      Delete
+                      {t("Delete")}
                     </MenuItem>
                   </MenuPopup>
                 </Menu>
@@ -636,11 +671,12 @@ export function SourceDocument({
       {external && (
         <div className={styles.notice}>
           <p>
-            This file changed elsewhere. Your edits are kept. Saving will
-            replace the newer file.
+            {t(
+              "This file changed elsewhere. Your edits are kept. Saving will replace the newer file.",
+            )}
           </p>
           <Button variant="outline" onClick={() => setReplacing(true)}>
-            Reload saved
+            {t("Reload saved")}
           </Button>
         </div>
       )}
@@ -651,13 +687,13 @@ export function SourceDocument({
         ))}
       {source.data && !source.data.content_available && !draft?.replacement && (
         <details className={layout.groupDisclosure}>
-          <summary>Server connection</summary>
-          <Panel title="Saved connection details are hidden">
+          <summary>{t("Server connection")}</summary>
+          <Panel title={t("Saved connection details are hidden")}>
             <p>
-              Tool selections are saved separately. Replacing the connection
-              overwrites the whole file, including{" "}
-              {source.data.resource_ids.join(", ")}. Existing secrets and
-              unknown fields cannot be recovered here.
+              {t(
+                "Tool selections are saved separately. Replacing the connection overwrites the whole file, including {{ids}}. Existing secrets and unknown fields cannot be recovered here.",
+                { ids: source.data.resource_ids.join(", ") },
+              )}
             </p>
             {writable && (
               <Button
@@ -671,7 +707,7 @@ export function SourceDocument({
                   })
                 }
               >
-                Replace file
+                {t("Replace file")}
               </Button>
             )}
           </Panel>
@@ -715,7 +751,7 @@ export function SourceDocument({
                   path.endsWith(".md")
                 }
               >
-                <summary>Advanced configuration</summary>
+                <summary>{t("Advanced configuration")}</summary>
                 <div className={styles.sourceAdvanced}>
                   {readDocument(draft!.content)?.has("kind") && (
                     <TextField
@@ -723,7 +759,7 @@ export function SourceDocument({
                       value={String(
                         readDocument(draft!.content)?.get("id") ?? "",
                       )}
-                      description="Changing this ID can break references."
+                      description={t("Changing this ID can break references.")}
                       onChange={(id) =>
                         update({
                           ...draft!,
@@ -734,8 +770,8 @@ export function SourceDocument({
                   )}
                   <section className={styles.sourceCode}>
                     <header>
-                      <h3>Configuration file</h3>
-                      <p>Use credential references for API keys.</p>
+                      <h3>{t("Configuration file")}</h3>
+                      <p>{t("Use credential references for API keys.")}</p>
                     </header>
                     <SourceEditor
                       value={draft!.content}
@@ -748,7 +784,7 @@ export function SourceDocument({
                     disabled={save.isPending}
                     onClick={() => validate.mutate(draft!.content)}
                   >
-                    Check settings
+                    {t("Check settings")}
                   </Button>
                 </div>
               </details>
@@ -756,12 +792,12 @@ export function SourceDocument({
         </div>
       )}
       {!dirty && !isNew && !validate.error && !save.error && notice && (
-        <p role="status">{notice}</p>
+        <p role="status">{t(notice)}</p>
       )}
       {canEdit && (isNew || dirty || validate.error || save.error) && (
         <footer
           className={styles.editorActions}
-          aria-label="Configuration actions"
+          aria-label={t("Configuration actions")}
         >
           {(validate.error || save.error) && (
             <div className={styles.editorError}>
@@ -769,8 +805,8 @@ export function SourceDocument({
             </div>
           )}
           <div className={styles.editorState}>
-            {dirty && <span>Unsaved changes</span>}
-            {notice && <small role="status">{notice}</small>}
+            {dirty && <span>{t("Unsaved changes")}</span>}
+            {notice && <small role="status">{t(notice)}</small>}
           </div>
           <div className={styles.actions}>
             {isNew ? (
@@ -778,12 +814,12 @@ export function SourceDocument({
                 key={path}
                 trigger={
                   <Button variant="ghost" disabled={save.isPending}>
-                    Cancel
+                    {t("Cancel")}
                   </Button>
                 }
-                title="Discard draft?"
-                description={`Changes to ${path} will be lost.`}
-                confirmLabel="Discard draft"
+                title={t("Discard draft?")}
+                description={t("Changes to {{path}} will be lost.", { path })}
+                confirmLabel={t("Discard draft")}
                 destructive
                 onConfirm={() => {
                   drafts.delete(path);
@@ -796,7 +832,7 @@ export function SourceDocument({
                 disabled={!dirty || save.isPending}
                 onClick={() => setReplacing(true)}
               >
-                {mediaOnly ? "Discard" : "Cancel"}
+                {mediaOnly ? t("Discard") : t("Cancel")}
               </Button>
             )}
             <Button
@@ -804,7 +840,7 @@ export function SourceDocument({
               disabled={!dirty || (kind === "model" && !modelReady)}
               onClick={() => save.mutate(draft!.content)}
             >
-              {isNew ? "Create" : "Save"}
+              {isNew ? t("Create") : t("Save")}
             </Button>
           </div>
         </footer>
@@ -817,20 +853,23 @@ export function SourceDocument({
       <ModalFrame
         open={deleting}
         onOpenChange={setDeleting}
-        title="Delete this configuration?"
-        description={`This deletes ${path} and every resource defined in it. References must be removed first. Unsaved edits will be discarded.`}
-        closeLabel="Close confirmation"
+        title={t("Delete this configuration?")}
+        description={t(
+          "This deletes {{path}} and every resource defined in it. References must be removed first. Unsaved edits will be discarded.",
+          { path },
+        )}
+        closeLabel={t("Close confirmation")}
         footer={
           <>
             <Button variant="outline" onClick={() => setDeleting(false)}>
-              Cancel
+              {t("Cancel")}
             </Button>
             <Button
               variant="destructive"
               loading={remove.isPending}
               onClick={() => remove.mutate()}
             >
-              Delete
+              {t("Delete")}
             </Button>
           </>
         }
@@ -840,13 +879,15 @@ export function SourceDocument({
       <ModalFrame
         open={replacing}
         onOpenChange={setReplacing}
-        title="Discard this local draft?"
-        description="Reload the saved file? Your unsaved edits will be lost."
-        closeLabel="Close confirmation"
+        title={t("Discard this local draft?")}
+        description={t(
+          "Reload the saved file? Your unsaved edits will be lost.",
+        )}
+        closeLabel={t("Close confirmation")}
         footer={
           <>
             <Button variant="outline" onClick={() => setReplacing(false)}>
-              Keep editing
+              {t("Keep editing")}
             </Button>
             <Button
               onClick={() => {
@@ -860,7 +901,7 @@ export function SourceDocument({
                 setReplacing(false);
               }}
             >
-              Reload saved
+              {t("Reload saved")}
             </Button>
           </>
         }

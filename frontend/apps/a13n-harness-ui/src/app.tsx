@@ -230,7 +230,8 @@ function OwnerApp() {
                         </VoiceProvider>
                       </NotificationsProvider>
                     </BrowserRouter>
-                  ) : access !== "login" ? (
+                  ) : access === "checking" && attempt === 0 ? null : access !==
+                    "login" ? (
                     <Startup
                       error={error}
                       connecting={connecting}

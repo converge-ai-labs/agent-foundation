@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "../i18n";
 import { TextField } from "../shell/ui";
 import type { Schema } from "../transport/client";
 import type { DecisionResponse } from "./decision-inputs";
@@ -11,6 +12,7 @@ export function QuestionInput({
   request: Schema<"StructuredQuestionRequestView">;
   onChange: (response: DecisionResponse | undefined) => void;
 }) {
+  const { t } = useTranslation();
   const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
   const answer = (question: string, value: string | string[]) => {
     const next = { ...answers, [question]: value };
@@ -69,7 +71,7 @@ export function QuestionInput({
             </label>
           ))}
           <TextField
-            label="Or write your own answer"
+            label={t("Or write your own answer")}
             value={
               typeof answers[question.question] === "string" &&
               !question.options.some(

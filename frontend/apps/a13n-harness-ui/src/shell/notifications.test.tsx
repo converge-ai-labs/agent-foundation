@@ -24,6 +24,7 @@ import {
 import { TransportContext } from "../transport/context";
 import * as push from "./push";
 import { writePreference } from "./preferences";
+import { i18n } from "../i18n";
 
 let permission: NotificationPermission;
 let request: ReturnType<typeof vi.fn>;
@@ -148,6 +149,39 @@ it("requires explicit background opt-in for granted permission and suppresses pa
   await screen.findByText("Not enabled");
   expect(push.disablePush).toHaveBeenCalled();
   transport.close();
+});
+
+it("switches the retained test status without replaying subscription or test requests", async () => {
+  permission = "granted";
+  const transport = createTransport("fixture-key", vi.fn());
+  vi.spyOn(push, "supportsPush").mockReturnValue(true);
+  const enable = vi.spyOn(push, "enablePush").mockImplementation(async () => {
+    writePreference("notifications.push-subscription", "subscription-one");
+  });
+  const test = vi.spyOn(push, "testPush").mockResolvedValue();
+  mount("/settings#notifications", transport);
+  try {
+    fireEvent.click(
+      screen.getByRole("button", { name: "Enable background notifications" }),
+    );
+    await screen.findByText("Enabled on this device");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Send test notification" }),
+    );
+    await screen.findByText(/Test accepted by the push service/);
+    const subscriptions = enable.mock.calls.length;
+    await act(async () => {
+      await i18n.changeLanguage("zh-CN");
+    });
+    expect(screen.getByText(/推送服务已接受测试/)).toBeTruthy();
+    expect(enable).toHaveBeenCalledTimes(subscriptions);
+    expect(test).toHaveBeenCalledTimes(1);
+  } finally {
+    await act(async () => {
+      await i18n.changeLanguage("en");
+    });
+    transport.close();
+  }
 });
 
 it("schedules cleanup even when a first opt-in has not returned its subscription ID", async () => {

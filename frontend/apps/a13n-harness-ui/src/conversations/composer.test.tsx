@@ -522,13 +522,9 @@ it.each([false, true])(
         draft.notify();
       });
       await act(() => vi.advanceTimersByTimeAsync(700));
-      if (local) expect(screen.queryByRole("status")).toBeNull();
-      else
-        expect(
-          screen
-            .getByText("Disconnected · your edits are still in this tab")
-            .getAttribute("role"),
-        ).toBe("status");
+      expect(
+        screen.queryByText("Disconnected · your edits are still in this tab"),
+      ).toBeNull();
     } finally {
       view.unmount();
       query.clear();

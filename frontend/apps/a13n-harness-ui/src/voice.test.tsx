@@ -10,6 +10,7 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { i18n } from "./i18n";
 import { createTransport } from "./transport/client";
 import { TransportContext } from "./transport/context";
 import { VoiceIndicator, VoicePage, VoiceProvider } from "./voice";
@@ -216,3 +217,34 @@ it.each(["starting", "connecting", "active"] as const)(
     expect(screen.queryByRole("link", { name: "Open Live chat" })).toBeNull();
   },
 );
+
+it("changes language during a call without restarting it or changing captions", async () => {
+  mount();
+  const start = await screen.findByRole("button", { name: "Start voice" });
+  await waitFor(() =>
+    expect((start as HTMLButtonElement).disabled).toBe(false),
+  );
+  fireEvent.click(start);
+  act(() =>
+    publish({
+      status: "active",
+      snapshot: {
+        status: "active",
+        enabled: true,
+        user_text: "Original caption",
+        transcript: [],
+      },
+    }),
+  );
+  fireEvent.click(screen.getByRole("link", { name: "Open Live chat" }));
+  await act(async () => {
+    await i18n.changeLanguage("zh-CN");
+  });
+  expect(screen.getByRole("button", { name: "停止语音" })).toBeTruthy();
+  expect(screen.getByText("Original caption")).toBeTruthy();
+  expect(voice.start).toHaveBeenCalledTimes(1);
+  expect(voice.stop).not.toHaveBeenCalled();
+  await act(async () => {
+    await i18n.changeLanguage("en");
+  });
+});

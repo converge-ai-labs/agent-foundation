@@ -493,6 +493,27 @@
   line-height: 20px;
   font-size: 13px;
   font-variant-numeric: tabular-nums;
+  order: 1;
+}
+/* Keep the activity count at a stable trailing edge while the row menu and
+   star exchange visibility. Other status markers stay between it and the title. */
+.threadRow:has(.coordinatorActivity) .threadLink,
+.threadRow:has(.coordinatorActivity):is(
+    :hover,
+    :focus-within,
+    :has([data-popup-open])
+  )
+  .threadLink {
+  padding-inline-end: 32px;
+}
+.threadRow:has(.coordinatorActivity) .threadStar {
+  position: absolute;
+  inset-inline-end: 32px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .threadRow:has(.coordinatorActivity) .threadStar {
+    inset-inline-end: 0;
+  }
 }
 .resultDot {
   width: 7px;
@@ -1513,8 +1534,8 @@ dl.detailGrid > .detailLongRow dd {
   margin-block: 8px 0;
   padding-inline: 8px 4px;
   color: var(--harness-log-text);
-  font-size: 14px;
-  font-weight: 500;
+  font-size: 12px;
+  font-weight: 400;
 }
 .sectionHeading:first-child {
   margin-block-start: 0;
@@ -1532,6 +1553,8 @@ dl.detailGrid > .detailLongRow dd {
 .showMore {
   margin: 4px 0 0 8px;
   color: var(--harness-log-text);
+  font-size: 12px;
+  font-weight: 400;
 }
 
 /* Attachment identities live in the editor text; widgets are their presentation. */

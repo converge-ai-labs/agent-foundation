@@ -2,6 +2,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import {
   cleanup,
+  act,
   render,
   screen,
   fireEvent,
@@ -17,7 +18,61 @@ import {
 import { LiveOutput, SavedEntry } from "./transcript";
 import type { Schema } from "../transport/client";
 import { DebugProvider } from "../shell/debug";
+import { i18n } from "../i18n";
 afterEach(cleanup);
+
+it("switches edit evidence labels without closing the disclosure or translating recorded content", async () => {
+  await i18n.changeLanguage("en");
+  render(
+    <ToolCall
+      tool={{
+        id: "locale-edit",
+        name: "edit",
+        edit: {
+          file_path: "/tmp/a",
+          before: "user before",
+          after: "user after",
+        },
+        result: "server result",
+      }}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: /Edit/ }));
+  expect(screen.getByText("Applied edit")).toBeTruthy();
+  await act(() => i18n.changeLanguage("zh-CN"));
+  expect(screen.getByText("已应用的编辑")).toBeTruthy();
+  expect(screen.getByText("-user before")).toBeTruthy();
+  expect(screen.getByText("+user after")).toBeTruthy();
+  expect(screen.getByText("server result")).toBeTruthy();
+  await act(() => i18n.changeLanguage("en"));
+  expect(screen.getByText("Applied edit")).toBeTruthy();
+});
+
+it("localizes tool activity without translating tool names or recorded content when the language changes", async () => {
+  await i18n.changeLanguage("en");
+  render(
+    <>
+      <ToolActivity
+        tools={[
+          {
+            id: "read",
+            name: "view",
+            input: { file_path: "/tmp/user file" },
+            result: { content: "server text" },
+          },
+        ]}
+      />
+      <ToolCall tool={{ id: "unknown", name: "Edit", result: "user result" }} />
+    </>,
+  );
+  fireEvent.click(screen.getByRole("button", { name: /Explored 1 file/ }));
+  await act(() => i18n.changeLanguage("zh-CN"));
+  expect(screen.getByRole("button", { name: /已探索 1 个文件/ })).toBeTruthy();
+  expect(screen.getByText("server text")).toBeTruthy();
+  expect(screen.getByText("Edit")).toBeTruthy();
+  expect(screen.getByText("/tmp/user file")).toBeTruthy();
+  await act(() => i18n.changeLanguage("en"));
+});
 
 it("pairs loaded calls with results once, retaining page-edge results and repeated call IDs", () => {
   const entries = [
