@@ -124,6 +124,27 @@ it("updates the toast viewport accessible name when the language changes", async
   expect(screen.getByRole("region", { name: "通知" })).toBeTruthy();
   await act(() => i18n.changeLanguage("en"));
 });
+it("relocalizes a retained suspended notice without replaying it", async () => {
+  await act(() => i18n.changeLanguage("en"));
+  mount("/threads/thread-other");
+  event = notice("retained", "suspended");
+  fireEvent.click(screen.getByText("Emit"));
+  const title = await screen.findByText("Your input is needed · UI polish");
+  const action = screen.getByRole("button", { name: "Open chat" });
+  try {
+    await act(() => i18n.changeLanguage("zh-CN"));
+    expect(screen.getByText("需要你的输入 · UI polish")).toBe(title);
+    expect(screen.getByRole("button", { name: "打开聊天" })).toBe(action);
+    expect(screen.getByText("Which project should I update?")).toBeTruthy();
+    fireEvent.click(screen.getByText("Emit"));
+    expect(screen.getAllByText("需要你的输入 · UI polish")).toHaveLength(1);
+    fireEvent.click(action);
+    expect(screen.getByText("/threads/thread-1")).toBeTruthy();
+  } finally {
+    await act(() => i18n.changeLanguage("en"));
+  }
+});
+
 it("updates the permission prompt when the language changes without dismissing it", async () => {
   mount();
   expect(await screen.findByText("Get task notifications")).toBeTruthy();

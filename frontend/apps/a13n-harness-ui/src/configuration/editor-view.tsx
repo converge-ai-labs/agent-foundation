@@ -128,6 +128,7 @@ export function SourceEditor({
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<EditorView | null>(null);
   const wrapMode = useRef(new Compartment());
+  const contentAttributes = useRef(new Compartment());
   const cursor = useRef(onCursor);
   cursor.current = onCursor;
   useImperativeHandle(
@@ -188,7 +189,12 @@ export function SourceEditor({
         basicSetup,
         EditorView.editable.of(!readOnly),
         EditorState.readOnly.of(readOnly),
-        EditorView.contentAttributes.of({ "aria-label": label, tabindex: "0" }),
+        contentAttributes.current.of(
+          EditorView.contentAttributes.of({
+            "aria-label": label,
+            tabindex: "0",
+          }),
+        ),
         EditorView.updateListener.of((update) => {
           if (
             update.docChanged &&
@@ -340,7 +346,14 @@ export function SourceEditor({
     };
     // External values are synchronized below without replacing editor state on typing.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [label, readOnly, language, filename, fill, extensions]);
+  }, [readOnly, language, filename, fill, extensions]);
+  useEffect(() => {
+    editor.current?.dispatch({
+      effects: contentAttributes.current.reconfigure(
+        EditorView.contentAttributes.of({ "aria-label": label, tabindex: "0" }),
+      ),
+    });
+  }, [label]);
   useEffect(() => {
     editor.current?.dispatch({
       effects: wrapMode.current.reconfigure(

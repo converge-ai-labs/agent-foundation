@@ -31,6 +31,47 @@ import styles from "./notifications.module.css";
 type Permission = NotificationPermission | "unavailable" | "install-required";
 type Background = "disabled" | "checking" | "enabled" | "error";
 type SummaryEvent = Schema<"SummaryInvalidation">;
+type NoticeStatus = Schema<"RootOperationNotice">["status"];
+
+function NoticeTitle({
+  status,
+  name,
+}: {
+  status: NoticeStatus;
+  name?: string;
+}) {
+  const { t } = useTranslation();
+  const state = {
+    completed: t("Task completed"),
+    failed: t("Task failed"),
+    suspended: t("Your input is needed"),
+    goal_verified: t("Goal verified by the Agent"),
+    goal_incomplete: t("Goal not verified"),
+  }[status];
+  return (
+    <>
+      {state} ·{" "}
+      {Array.from(name || t("Chat"))
+        .slice(0, 80)
+        .join("")}
+    </>
+  );
+}
+
+function NoticeActionLabel() {
+  const { t } = useTranslation();
+  return (
+    <>
+      <span className="sr-only">{t("Open chat")}</span>
+      <span aria-hidden="true" className={styles.desktopLabel}>
+        {t("Open chat")}
+      </span>
+      <span aria-hidden="true" className={styles.mobileLabel}>
+        {t("Open")}
+      </span>
+    </>
+  );
+}
 const ENABLED = "notifications.enabled";
 const PROMPT_DISMISSED = "notifications.prompt-dismissed";
 export function notificationPermission(): Permission {
@@ -118,10 +159,9 @@ function NotificationState({ children }: { children: ReactNode }) {
     navigate,
     toast,
     background,
-    t,
     viewedThread,
   });
-  current.current = { enabled, navigate, toast, background, viewedThread, t };
+  current.current = { enabled, navigate, toast, background, viewedThread };
   useEffect(() => {
     alive.current = true;
     const refresh = () => {
@@ -285,22 +325,11 @@ function NotificationState({ children }: { children: ReactNode }) {
         threadId,
         "detail",
       ]);
-      const name =
-        detail?.thread.title ||
-        detail?.thread.excerpt?.first_input ||
-        current.current.t("Chat");
-      const state = {
-        completed: current.current.t("Task completed"),
-        failed: current.current.t("Task failed"),
-        suspended: current.current.t("Your input is needed"),
-        goal_verified: current.current.t("Goal verified by the Agent"),
-        goal_incomplete: current.current.t("Goal not verified"),
-      }[notice.status];
-      const title = `${state} · ${Array.from(name).slice(0, 80).join("")}`;
+      const name = detail?.thread.title || detail?.thread.excerpt?.first_input;
       const path = `/threads/${encodeURIComponent(threadId)}`;
       current.current.toast.add({
         id,
-        title,
+        title: <NoticeTitle status={notice.status} name={name} />,
         description: notice.brief,
         type:
           notice.status === "failed"
@@ -311,17 +340,7 @@ function NotificationState({ children }: { children: ReactNode }) {
               : "success",
         timeout: notice.status === "suspended" ? 0 : 8000,
         actionProps: {
-          children: (
-            <>
-              <span className={styles.desktopLabel}>
-                {current.current.t("Open chat")}
-              </span>
-              <span className={styles.mobileLabel}>
-                {current.current.t("Open")}
-              </span>
-            </>
-          ),
-          "aria-label": current.current.t("Open chat"),
+          children: <NoticeActionLabel />,
           onClick: () => current.current.navigate(path),
         },
       });
