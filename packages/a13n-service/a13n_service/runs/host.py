@@ -19,7 +19,7 @@ from a13n_harness.capabilities.tool_execution import ToolExecutionCapability
 from a13n_harness.capabilities.web import WebBinding
 from a13n_harness.environment.advanced import EnvironmentRuntime, create_environment_runtime
 from a13n_harness.tools import ToolIdentity
-from pydantic_ai.capabilities import AbstractCapability
+from pydantic_ai.capabilities import AbstractCapability, CombinedCapability
 from pydantic_ai.models import Model
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -83,6 +83,7 @@ class _Parts:
 @dataclass(frozen=True, slots=True)
 class HostPlan:
     parts: Mapping[str, _Parts]
+    root_revision_id: str
     execution: ExecutionPolicy
     memories: tuple[PlannedMemory, ...]
     # The root agent's enabled memory tools of each kind.
@@ -147,6 +148,7 @@ async def resolve_host(
         )
     return HostPlan(
         parts,
+        agent.revision_id,
         execution=ExecutionPolicy().overlay(RunOptions.model_validate(run.options).execution),
         memories=await resolve_memories(session, run),
         file_tools=memory_file_tools(agent.config.toolsets),
@@ -167,8 +169,6 @@ class Host:
     tools: Mapping[str, Mapping[str, AbstractCapability[AgentContext]]]
     webs: Mapping[str, WebBinding]
     browsers: Mapping[str, BrowserBackend]
-    # The root agent's file and record memory capabilities, for the kinds the run mounts.
-    memory: tuple[AbstractCapability[AgentContext], ...]
     environment: EnvironmentRuntime
 
     def capabilities(
@@ -295,7 +295,9 @@ async def open_host(
                 configuration=configuration,
             )
         )
-        memory = tuple(capability for capability in (files, records) if capability is not None)
+        memory = [capability for capability in (files, records) if capability is not None]
+        if memory:
+            tools[plan.root_revision_id]["memory"] = CombinedCapability(memory)
         yield Host(
             runtime,
             lease,
@@ -307,7 +309,6 @@ async def open_host(
             tools,
             webs,
             browsers,
-            memory,
             _environment(environments, platform_mounts, command_environment=plan.execution.environment),
         )
 

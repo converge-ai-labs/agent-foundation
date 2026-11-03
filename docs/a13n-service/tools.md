@@ -215,7 +215,7 @@ Select **Discover tools on demand** under **Tool availability** in Console. The 
 
 **Group by source** works without creating groups. MCP tools follows newly attached connections. Expand **Advanced grouping** to choose **Custom groups**, starting from your current source selection. Expand a group to edit its name, description or sources. Question-mark tooltips explain each setting. Plugins keep their own discovery settings unless explicitly included in a compatible custom group.
 
-In JSON, use `"tool_search": {"automatic": {}}`. Automatic `capabilities` defaults to `["computer", "browser"]`; add `files`, `shell` (Terminal), `web`, `memory` or `assets` as needed. `connections` defaults to true; set it to false to keep all MCP connections direct. `exclude_connections` excludes specific connection IDs, and `exclude_platform: true` keeps platform tools direct. Omit `automatic` to use explicit `groups`. The legacy custom `environment` selector still covers Files, Terminal and Computer together; new configurations can select them independently.
+In JSON, use `"tool_search": {"automatic": {}}`. Automatic `capabilities` defaults to `["browser", "computer"]`; add `files`, `shell` (Terminal), `web`, `memory` or `assets` as needed. `connections` defaults to true; set it to false to keep all MCP connections direct. `exclude_connections` excludes specific connection IDs, and `exclude_platform: true` keeps platform tools direct. Omit `automatic` to use explicit `groups`. Use separate `files`, `shell` and `computer` selectors; `environment` and `exclude_capabilities` are not accepted. `GET /toolsets` returns the current automatic policy as `discovery_defaults`.
 
 This fragment groups a selected connection. Replace `conn_...` in both places:
 

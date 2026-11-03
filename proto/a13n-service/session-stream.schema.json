@@ -548,11 +548,11 @@
       "properties": {
         "capabilities": {
           "default": [
-            "computer",
-            "browser"
+            "browser",
+            "computer"
           ],
           "items": {
-            "$ref": "#/$defs/ToolSearchCapability"
+            "$ref": "#/$defs/BuiltinToolsetKey"
           },
           "title": "Capabilities",
           "type": "array"
@@ -584,6 +584,18 @@
     },
     "BuiltinSkillName": {
       "const": "platform-operations",
+      "type": "string"
+    },
+    "BuiltinToolsetKey": {
+      "enum": [
+        "files",
+        "shell",
+        "computer",
+        "browser",
+        "web",
+        "memory",
+        "assets"
+      ],
       "type": "string"
     },
     "CallResult": {
@@ -3903,18 +3915,6 @@
       "title": "ToolSearch",
       "type": "object"
     },
-    "ToolSearchCapability": {
-      "enum": [
-        "files",
-        "shell",
-        "computer",
-        "browser",
-        "web",
-        "memory",
-        "assets"
-      ],
-      "type": "string"
-    },
     "ToolSearchConfig": {
       "additionalProperties": false,
       "description": "Names and bounded discovery settings for one Agent's proxy surface.",
@@ -3970,15 +3970,7 @@
         "capabilities": {
           "default": [],
           "items": {
-            "anyOf": [
-              {
-                "$ref": "#/$defs/ToolSearchCapability"
-              },
-              {
-                "const": "environment",
-                "type": "string"
-              }
-            ]
+            "$ref": "#/$defs/BuiltinToolsetKey"
           },
           "title": "Capabilities",
           "type": "array"
@@ -4048,16 +4040,7 @@
     "ToolsetKey": {
       "anyOf": [
         {
-          "enum": [
-            "files",
-            "shell",
-            "computer",
-            "browser",
-            "web",
-            "memory",
-            "assets"
-          ],
-          "type": "string"
+          "$ref": "#/$defs/BuiltinToolsetKey"
         },
         {
           "$ref": "#/$defs/PlatformGroup"

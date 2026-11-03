@@ -5,7 +5,59 @@ import {
   toolSearchDraft,
   usesToolDiscovery,
   toggleDiscoverySource,
+  searchSources,
+  automaticSources,
+  type SearchSource,
 } from "./tool-search";
+import type { Schema } from "../../shared/api";
+
+const catalog: Schema["ToolsetCatalog"] = {
+  items: Object.entries({
+    computer: "Computer",
+    browser: "Browser",
+    files: "Files",
+    shell: "Terminal",
+    web: "Web",
+    memory: "Memory",
+    assets: "Asset",
+  }).map(([key, display_name]) => ({
+    key: key as Schema["ToolsetDefinition"]["key"],
+    display_name,
+    config_schema: {},
+    description: `${display_name} operations.`,
+    default_enabled: true,
+    tools: [
+      {
+        key: "use",
+        display_name: "Use",
+        execution_id: `${key}.use`,
+        model_name: `${key}_use`,
+        default_enabled: true,
+        default_permission: "allow",
+        config_schema: {},
+        supported_permissions: ["inherit"],
+        resource_selector: null,
+        deployment_supported: true,
+      },
+    ],
+  })),
+  discovery_defaults: {
+    capabilities: ["computer", "browser"],
+    connections: true,
+    exclude_connections: [],
+    exclude_platform: false,
+  },
+};
+const sources = searchSources({}, catalog);
+const findSource = (id: string) => sources.find((source) => source.id === id)!;
+const connection = (id: string): SearchSource => ({
+  kind: "connections",
+  id,
+  label: id,
+  description: "Connection tools.",
+  defaultDiscovery: true,
+  available: true,
+});
 
 it("round-trips automatic mode and follows source changes without opting excluded sources back in", () => {
   const draft = toolSearchDraft({
@@ -19,19 +71,19 @@ it("round-trips automatic mode and follows source changes without opting exclude
   expect(saved?.automatic).toEqual({ exclude_connections: ["con_excluded"] });
   expect(saved?.config?.max_results).toBe(3);
   const reopened = toolSearchDraft(saved);
+  expect(usesToolDiscovery(reopened, connection("con_new"))).toBe(true);
+  expect(usesToolDiscovery(reopened, connection("con_excluded"))).toBe(false);
   expect(
-    usesToolDiscovery(reopened, { kind: "connections", id: "con_new" }),
-  ).toBe(true);
-  expect(
-    usesToolDiscovery(reopened, { kind: "connections", id: "con_excluded" }),
+    usesToolDiscovery(reopened, {
+      kind: "plugins",
+      id: "custom",
+      defaultDiscovery: false,
+    }),
   ).toBe(false);
-  expect(usesToolDiscovery(reopened, { kind: "plugins", id: "custom" })).toBe(
-    false,
-  );
   expect(toolSearchConfig({ ...reopened, mode: "direct" }, [])).toBeUndefined();
 });
 
-it("keeps legacy and explicitly empty group plans custom", () => {
+it("keeps explicitly empty group plans custom", () => {
   const plans: Parameters<typeof toolSearchDraft>[0][] = [
     { groups: {} },
     {
@@ -56,16 +108,11 @@ it("seeds custom groups including dormant selected sources, without display-name
     mode: "proxy" as const,
   };
   const groups = automaticSearchGroups(draft, [
-    {
-      kind: "capabilities",
-      id: "computer",
-      label: "Computer",
-      available: true,
-    },
-    { kind: "capabilities", id: "web", label: "Web", available: true },
-    { kind: "connections", id: "con_one", label: "Same name", available: true },
-    { kind: "connections", id: "con_two", label: "Same name", available: true },
-    { kind: "platform", id: "platform", label: "Platform", available: false },
+    findSource("computer"),
+    findSource("web"),
+    connection("con_one"),
+    connection("con_two"),
+    findSource("platform"),
   ]);
   expect(groups.map((group) => group.name)).toEqual([
     "computer",
@@ -76,38 +123,39 @@ it("seeds custom groups including dormant selected sources, without display-name
   expect(groups.every((group) => group.description.trim())).toBe(true);
 });
 
-it("keeps common tools direct until added, and migrates legacy environment membership without merging sources", () => {
+it("keeps common tools direct until added and follows the catalog defaults", () => {
   let draft = toolSearchDraft({ automatic: {} });
   for (const id of ["files", "shell", "web", "memory", "assets"])
-    expect(usesToolDiscovery(draft, { kind: "capabilities", id })).toBe(false);
+    expect(usesToolDiscovery(draft, findSource(id))).toBe(false);
   for (const id of ["computer", "browser"])
-    expect(usesToolDiscovery(draft, { kind: "capabilities", id })).toBe(true);
-  const files = {
-    kind: "capabilities" as const,
-    id: "files",
-    label: "Files",
-    available: true,
-  };
-  draft = toggleDiscoverySource(draft, files, true, [files]);
+    expect(usesToolDiscovery(draft, findSource(id))).toBe(true);
+  const files = findSource("files");
+  draft = toggleDiscoverySource(draft, files, true, sources);
   expect(toolSearchConfig(draft, [])?.automatic?.capabilities).toEqual([
     "computer",
     "browser",
     "files",
   ]);
-  const mcp = {
-    kind: "connections" as const,
-    id: "all",
-    label: "MCP",
-    available: false,
-  };
+  const mcp = automaticSources(sources, catalog.discovery_defaults).find(
+    (source) => source.id === "all",
+  )!;
   draft = toggleDiscoverySource(draft, mcp, false, [files]);
-  expect(
-    usesToolDiscovery(draft, { kind: "connections", id: "con_later" }),
-  ).toBe(false);
-  const legacy = toolSearchDraft({
-    groups: {
-      tools: { description: "Environment", capabilities: ["environment"] },
+  expect(usesToolDiscovery(draft, connection("con_later"))).toBe(false);
+  const changedCatalog = {
+    ...catalog,
+    discovery_defaults: {
+      ...catalog.discovery_defaults,
+      capabilities: ["files" as const],
     },
-  });
-  expect(legacy.groups[0].capabilities).toEqual(["files", "shell", "computer"]);
+  };
+  const changedSources = searchSources({}, changedCatalog);
+  const defaults = toolSearchDraft({ automatic: {} });
+  expect(
+    changedSources
+      .filter(
+        (source) =>
+          source.kind === "capabilities" && usesToolDiscovery(defaults, source),
+      )
+      .map((source) => source.id),
+  ).toEqual(["files"]);
 });

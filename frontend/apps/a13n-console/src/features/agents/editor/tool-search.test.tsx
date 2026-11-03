@@ -16,12 +16,28 @@ vi.mock("react-i18next", () => ({
 vi.mock("../toolsets", () => ({
   useToolsetCatalog: () => ({
     data: {
+      discovery_defaults: {
+        capabilities: ["computer", "browser"],
+        connections: true,
+        exclude_connections: [],
+        exclude_platform: false,
+      },
       items: [
-        {
-          key: "files",
-          default_enabled: true,
-          tools: [{ key: "view", default_enabled: true }],
-        },
+        ...Object.entries({
+          computer: "Computer",
+          browser: "Browser",
+          files: "Files",
+          shell: "Terminal",
+          web: "Web",
+          memory: "Memory",
+          assets: "Asset",
+        }).map(([key, display_name]) => ({
+          key,
+          display_name,
+          description: `${display_name} operations.`,
+          default_enabled: key === "files",
+          tools: [{ key: "use", default_enabled: true }],
+        })),
         {
           key: "execution",
           default_enabled: false,
@@ -211,10 +227,13 @@ it("enables automatic discovery in one choice and saves without opening groups",
           config: { mode: "proxy" },
           groups: {
             browser: {
-              description: "Use browser tools.",
+              description: "Browser operations.",
               capabilities: ["browser"],
             },
-            files: { description: "Use files tools.", capabilities: ["files"] },
+            files: {
+              description: "Files operations.",
+              capabilities: ["files"],
+            },
             platform: {
               description: "Manage selected platform resources.",
               platform: true,

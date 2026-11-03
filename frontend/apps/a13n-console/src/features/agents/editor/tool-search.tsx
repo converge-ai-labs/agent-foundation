@@ -36,13 +36,19 @@ export function ToolSearchSection({
   const value = draft.toolSearch;
   const [expanded, setExpanded] = useState(false);
   const catalog = useToolsetCatalog();
+  if (!catalog.data)
+    return catalog.error ? (
+      <ErrorNotice error={catalog.error} />
+    ) : (
+      <p role="status">{t("Loading…")}</p>
+    );
   const sources = searchSources(
     {
       toolsets: draft.toolsets,
       connection_tools: draft.connections,
       plugins: draft.plugins,
     },
-    catalog.data?.items ?? [],
+    catalog.data,
   ).map((source) => {
     if (source.kind === "connections") {
       const connection = choices.data?.connections.find(
@@ -105,6 +111,7 @@ export function ToolSearchSection({
             <ToolSearchSources
               draft={draft}
               sources={sources}
+              defaults={catalog.data.discovery_defaults}
               readOnly={readOnly}
             />
             <DisclosureSection

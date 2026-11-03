@@ -127,6 +127,36 @@ async def test_each_run_gets_context_as_of_the_cursor_its_thread_committed(servi
     assert await cursors(service, third.json()["run"]["id"]) == {memory["id"]: "4"}
 
 
+async def test_grouped_memory_keeps_context_and_dispatches_through_the_host_source(
+    service, scripted_model, runs_kit
+) -> None:  # type: ignore[no-untyped-def]
+    memory = await team_memory(service)
+    agent = await runs_kit.create_agent(
+        service,
+        scripted_model,
+        tool_search={"automatic": {"capabilities": ["memory"], "connections": False, "exclude_platform": True}},
+    )
+    scripted_model.call(
+        "call_tool",
+        {"group": "memory", "tool": "memory_file_view", "arguments": {"memory": "team", "path": "notes/tea.md"}},
+        call_id="call_memory",
+    )
+    scripted_model.say("Read")
+    started = await runs_kit.start_thread(service, agent, "read the tea note", memories=[mount(memory)])
+    await asyncio.wait_for(await runs_kit.attempt(service), timeout=20)
+
+    run_id = started["run"]["id"]
+    run = await runs_kit.get_run(service, run_id)
+    assert run["status"] == "completed", run
+    first, second = await scripted_model.request(), await scripted_model.request()
+    assert FULL in text(first) and "Indent with tabs." in text(first)
+    assert "call_tool" in tool_names(first)
+    assert not any(name.startswith("memory_file_") for name in tool_names(first))
+    assert "Oolong" in tool_result(second, "call_memory")
+    assert text(second).count(BLOCK) == 1
+    assert await cursors(service, run_id) == {memory["id"]: "2"}
+
+
 async def test_a_mount_and_the_toolset_limit_the_offered_tools(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
     memory = await team_memory(service)
     model = await runs_kit.create_model(service, scripted_model)

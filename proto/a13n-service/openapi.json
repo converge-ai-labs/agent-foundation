@@ -2884,11 +2884,11 @@
         "properties": {
           "capabilities": {
             "default": [
-              "computer",
-              "browser"
+              "browser",
+              "computer"
             ],
             "items": {
-              "$ref": "#/components/schemas/ToolSearchCapability"
+              "$ref": "#/components/schemas/BuiltinToolsetKey"
             },
             "title": "Capabilities",
             "type": "array"
@@ -3364,6 +3364,18 @@
       },
       "BuiltinSkillName": {
         "const": "platform-operations",
+        "type": "string"
+      },
+      "BuiltinToolsetKey": {
+        "enum": [
+          "files",
+          "shell",
+          "computer",
+          "browser",
+          "web",
+          "memory",
+          "assets"
+        ],
         "type": "string"
       },
       "BusyOccurrence": {
@@ -23388,18 +23400,6 @@
         "title": "ToolSearch",
         "type": "object"
       },
-      "ToolSearchCapability": {
-        "enum": [
-          "files",
-          "shell",
-          "computer",
-          "browser",
-          "web",
-          "memory",
-          "assets"
-        ],
-        "type": "string"
-      },
       "ToolSearchConfig": {
         "additionalProperties": false,
         "description": "Names and bounded discovery settings for one Agent's proxy surface.",
@@ -23455,15 +23455,7 @@
           "capabilities": {
             "default": [],
             "items": {
-              "anyOf": [
-                {
-                  "$ref": "#/components/schemas/ToolSearchCapability"
-                },
-                {
-                  "const": "environment",
-                  "type": "string"
-                }
-              ]
+              "$ref": "#/components/schemas/BuiltinToolsetKey"
             },
             "title": "Capabilities",
             "type": "array"
@@ -23533,6 +23525,9 @@
       "ToolsetCatalog": {
         "additionalProperties": false,
         "properties": {
+          "discovery_defaults": {
+            "$ref": "#/components/schemas/AutomaticToolSearch"
+          },
           "items": {
             "items": {
               "$ref": "#/components/schemas/ToolsetDefinition"
@@ -23542,7 +23537,8 @@
           }
         },
         "required": [
-          "items"
+          "items",
+          "discovery_defaults"
         ],
         "title": "ToolsetCatalog",
         "type": "object"
@@ -23599,16 +23595,7 @@
       "ToolsetKey": {
         "anyOf": [
           {
-            "enum": [
-              "files",
-              "shell",
-              "computer",
-              "browser",
-              "web",
-              "memory",
-              "assets"
-            ],
-            "type": "string"
+            "$ref": "#/components/schemas/BuiltinToolsetKey"
           },
           {
             "$ref": "#/components/schemas/PlatformGroup"

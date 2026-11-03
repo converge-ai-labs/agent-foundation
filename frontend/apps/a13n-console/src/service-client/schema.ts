@@ -5680,11 +5680,11 @@ export interface components {
       /**
        * Capabilities
        * @default [
-       *       "computer",
-       *       "browser"
+       *       "browser",
+       *       "computer"
        *     ]
        */
-      capabilities?: components["schemas"]["ToolSearchCapability"][];
+      capabilities?: components["schemas"]["BuiltinToolsetKey"][];
       /**
        * Connections
        * @default true
@@ -5881,6 +5881,9 @@ export interface components {
     };
     /** @constant */
     BuiltinSkillName: "platform-operations";
+    /** @enum {string} */
+    BuiltinToolsetKey:
+      "files" | "shell" | "computer" | "browser" | "web" | "memory" | "assets";
     /** BusyOccurrence */
     BusyOccurrence: {
       /** Entry Id */
@@ -12573,9 +12576,6 @@ export interface components {
         [key: string]: components["schemas"]["ToolSearchGroup"];
       };
     };
-    /** @enum {string} */
-    ToolSearchCapability:
-      "files" | "shell" | "computer" | "browser" | "web" | "memory" | "assets";
     /**
      * ProxyToolSearchConfig
      * @description Names and bounded discovery settings for one Agent's proxy surface.
@@ -12629,9 +12629,7 @@ export interface components {
        * Capabilities
        * @default []
        */
-      capabilities?: (
-        components["schemas"]["ToolSearchCapability"] | "environment"
-      )[];
+      capabilities?: components["schemas"]["BuiltinToolsetKey"][];
       /**
        * Connections
        * @default []
@@ -12666,6 +12664,7 @@ export interface components {
     };
     /** ToolsetCatalog */
     ToolsetCatalog: {
+      discovery_defaults: components["schemas"]["AutomaticToolSearch"];
       /** Items */
       items: components["schemas"]["ToolsetDefinition"][];
     };
@@ -12694,15 +12693,7 @@ export interface components {
       tools: components["schemas"]["ToolDefinition"][];
     };
     ToolsetKey:
-      | (
-          | "files"
-          | "shell"
-          | "computer"
-          | "browser"
-          | "web"
-          | "memory"
-          | "assets"
-        )
+      | components["schemas"]["BuiltinToolsetKey"]
       | components["schemas"]["PlatformGroup"];
     /** ToolsetSelection */
     ToolsetSelection: {

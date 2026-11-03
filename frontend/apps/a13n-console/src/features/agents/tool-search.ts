@@ -15,18 +15,19 @@ export interface ToolSearchDraft {
 type Capability = NonNullable<
   NonNullable<ToolSearch["automatic"]>["capabilities"]
 >[number];
-const defaultCapabilities: Capability[] = ["computer", "browser"];
 
 export type SearchSource = {
   kind: "capabilities" | "connections" | "plugins" | "platform";
   id: string;
   label: string;
+  description: string;
+  defaultDiscovery: boolean;
   available: boolean;
 };
 
 export function searchSources(
   config: Pick<AgentConfig, "toolsets" | "connection_tools" | "plugins">,
-  catalog: readonly Schema["ToolsetDefinition"][],
+  catalog: Schema["ToolsetCatalog"],
 ): SearchSource[] {
   const enabled = (group: Schema["ToolsetDefinition"]) =>
     (config.toolsets?.[group.key]?.enabled ?? group.default_enabled) &&
@@ -36,43 +37,53 @@ export function searchSources(
         tool.default_enabled,
     );
   return [
-    ...Object.entries({
-      computer: "Computer",
-      browser: "Browser",
-      files: "Files",
-      shell: "Terminal",
-      web: "Web",
-      memory: "Memory",
-      assets: "Asset",
-    }).map(([id, label]) => ({
-      kind: "capabilities" as const,
-      id,
-      label,
-      available: catalog.some((group) => group.key === id && enabled(group)),
-    })),
+    ...catalog.items
+      .filter((group) => !group.platform)
+      .map((group) => ({
+        kind: "capabilities" as const,
+        id: group.key,
+        label: group.display_name,
+        description: group.description ?? "",
+        defaultDiscovery:
+          catalog.discovery_defaults.capabilities?.includes(
+            group.key as Capability,
+          ) === true,
+        available: enabled(group),
+      })),
     {
       kind: "platform",
       id: "platform",
       label: "Platform tools",
-      available: catalog.some((group) => group.platform && enabled(group)),
+      description: "Manage selected platform resources.",
+      defaultDiscovery: catalog.discovery_defaults.exclude_platform === false,
+      available: catalog.items.some(
+        (group) => group.platform && enabled(group),
+      ),
     },
     ...(config.connection_tools ?? []).map((connection) => ({
       kind: "connections" as const,
       id: connection.connection_id,
       label: connection.connection_id,
+      description: `Tools from connection ${connection.connection_id}.`,
+      defaultDiscovery: catalog.discovery_defaults.connections === true,
       available: connection.tools?.length !== 0,
     })),
     ...(config.plugins ?? []).map((plugin) => ({
       kind: "plugins" as const,
       id: plugin.instance_name,
       label: plugin.instance_name,
+      description: `Tools from plugin ${plugin.instance_name}.`,
+      defaultDiscovery: false,
       available: true,
     })),
   ];
 }
 
 /** Automatic discovery follows connected MCP sources as a category. */
-export function automaticSources(sources: SearchSource[]): SearchSource[] {
+export function automaticSources(
+  sources: SearchSource[],
+  defaults: NonNullable<ToolSearch["automatic"]>,
+): SearchSource[] {
   return [
     ...sources.filter(
       (source) => source.kind === "capabilities" || source.kind === "platform",
@@ -81,6 +92,8 @@ export function automaticSources(sources: SearchSource[]): SearchSource[] {
       kind: "connections",
       id: "all",
       label: "MCP tools",
+      description: "Tools from connected MCP servers.",
+      defaultDiscovery: defaults.connections === true,
       available: sources.some(
         (source) => source.kind === "connections" && source.available,
       ),
@@ -101,21 +114,25 @@ export function groupHasSource(
 
 export function usesToolDiscovery(
   search: ToolSearchDraft,
-  source: Pick<SearchSource, "kind" | "id">,
+  source: Pick<SearchSource, "kind" | "id" | "defaultDiscovery">,
 ): boolean {
   if (search.mode === "direct") return false;
   if (search.automatic == null)
     return search.groups.some((group) => groupHasSource(group, source));
   if (source.kind === "plugins") return false;
-  if (source.kind === "platform") return !search.automatic.exclude_platform;
+  if (source.kind === "platform")
+    return search.automatic.exclude_platform == null
+      ? source.defaultDiscovery
+      : !search.automatic.exclude_platform;
   if (source.kind === "connections")
     return (
-      search.automatic.connections !== false &&
+      (search.automatic.connections ?? source.defaultDiscovery) &&
       (source.id === "all" ||
         !search.automatic.exclude_connections?.includes(source.id))
     );
-  return (search.automatic.capabilities ?? defaultCapabilities).includes(
-    source.id as Capability,
+  return (
+    search.automatic.capabilities?.includes(source.id as Capability) ??
+    source.defaultDiscovery
   );
 }
 
@@ -133,12 +150,7 @@ function sourceGroup(
         : source.kind === "plugins"
           ? "plugin"
           : source.id,
-    description:
-      source.kind === "connections"
-        ? `Tools from connection ${source.id}.`
-        : source.kind === "platform"
-          ? "Manage selected platform resources."
-          : `Use ${source.id} tools.`,
+    description: source.description,
     ...(source.kind === "platform"
       ? { platform: true }
       : source.kind === "capabilities"
@@ -200,7 +212,11 @@ export function toggleDiscoverySource(
     if (source.kind === "connections")
       return { ...search, automatic: { ...policy, connections: checked } };
     if (source.kind === "plugins") return search;
-    const selected = policy.capabilities ?? defaultCapabilities;
+    const selected =
+      policy.capabilities ??
+      sources
+        .filter((item) => item.kind === "capabilities" && item.defaultDiscovery)
+        .map((item) => item.id as Capability);
     return {
       ...search,
       automatic: {
@@ -244,15 +260,6 @@ export function toolSearchDraft(
     groups: Object.entries(value?.groups ?? {}).map(([name, group]) => ({
       name,
       ...group,
-      ...(group.capabilities?.includes("environment")
-        ? {
-            capabilities: group.capabilities.flatMap((key) =>
-              key === "environment"
-                ? (["files", "shell", "computer"] as const)
-                : [key],
-            ),
-          }
-        : {}),
     })),
     config: value?.config,
     automatic: value == null ? {} : (value.automatic ?? null),

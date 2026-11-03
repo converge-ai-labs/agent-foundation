@@ -134,7 +134,7 @@ def tool_search(config: AgentConfig, sources: Mapping[str, AbstractCapability[Ag
             if automatic.connections and item.connection_id not in automatic.exclude_connections and item.tools != ()
         }
         for key in automatic.capabilities:
-            groups[key] = ToolSearchGroup(description=f"Use {key} tools.", capabilities=(key,))
+            groups[key] = ToolSearchGroup(description=toolsets.discovery_description(key), capabilities=(key,))
         if not automatic.exclude_platform:
             groups["platform"] = ToolSearchGroup(description="Manage selected platform resources.", platform=True)
     return ToolSearchPlan(
@@ -148,17 +148,13 @@ def _search_selection(
 ) -> ToolSearchSelection:
     capabilities = [sources[key] for key in group.connections]
     tools: dict[str, frozenset[str]] = {}
-    environment_names: set[str] = set()
-    for key in group.capabilities:
-        if key in ("files", "shell", "computer"):
-            environment_names.update(toolsets.tool_names(config.toolsets, key))
-        elif key in sources:
-            capabilities.append(sources[key])
-    if environment_names and "environment" in sources and "environment" not in group.capabilities:
-        environment = sources["environment"]
-        assert environment.id is not None
-        capabilities.append(environment)
-        tools[environment.id] = frozenset(environment_names)
+    for key, names in toolsets.discovery_members(config.toolsets, group.capabilities).items():
+        if (source := sources.get(key)) is None:
+            continue
+        capabilities.append(source)
+        if names is not None:
+            assert source.id is not None
+            tools[source.id] = names
     if group.platform and "platform" in sources:
         capabilities.append(sources["platform"])
     return ToolSearchSelection(

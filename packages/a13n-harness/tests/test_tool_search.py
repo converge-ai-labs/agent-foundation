@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import AsyncIterator, Callable, Mapping
 from dataclasses import dataclass, field, replace
@@ -535,13 +536,15 @@ async def test_proxy_keeps_target_retry_context_and_does_not_charge_envelope_bud
 
 async def test_final_directory_rejects_deferral_added_by_outer_capability() -> None:
     from a13n_harness.capabilities.tool_search import _ToolSearchSurfaceCapability
-    from a13n_harness.toolsets.tool_search import _GroupedToolset
+    from a13n_harness.toolsets.tool_search import _GroupedToolset, _ToolGroup
 
     def hidden() -> str:
         return "not loaded"
 
     source = Capability(
-        toolsets=[_GroupedToolset(FunctionToolset([hidden]), "late", "Deferred source", "late-source")],
+        toolsets=[
+            _GroupedToolset(FunctionToolset([hidden]), {None: _ToolGroup("late", "Deferred source")}, "late-source")
+        ],
         id="late-source",
         defer_loading=True,
     )
@@ -1612,3 +1615,89 @@ async def test_disjoint_tool_selections_keep_unselected_tools_direct_and_bind_so
     assert len(bound) == 1
     with pytest.raises(ValueError, match="multiple groups"):
         ToolSearchPlan(groups={"one": plan.groups["desktop"], "two": plan.groups["desktop"]})._compose((source,), {})
+
+
+@pytest.mark.parametrize("names", [("lookup", "items__lookup"), ("items__lookup", "lookup")])
+async def test_grouped_names_cannot_shadow_direct_tools_from_the_same_source(names: tuple[str, str]) -> None:
+    from pydantic_ai import Agent
+    from pydantic_ai.exceptions import UserError
+
+    def lookup() -> str:
+        return "found"
+
+    source = Capability(id="mixed", toolsets=[FunctionToolset([Tool(lookup, name=name) for name in names])])
+    plan = ToolSearchPlan(
+        groups={
+            "items": ToolSearchSelection("Item tools", capabilities=(source,), tools={"mixed": frozenset({"lookup"})})
+        }
+    )
+    agent = Agent(
+        FunctionModel(stream_function=lambda messages, info: _text_stream()),
+        capabilities=plan._compose((source,), {}),
+    )
+    with pytest.raises(UserError, match="conflicting tool name 'items__lookup'"):
+        await agent.run("test")
+
+
+async def test_proxy_target_waits_for_prior_work_without_waiting_on_its_own_envelope(monkeypatch) -> None:
+    from a13n_harness import HarnessState
+    from a13n_harness.capabilities.tool_execution import ToolExecutionCapability
+    from a13n_harness.tool_execution import ToolExecutionRuntime
+
+    runtime = ToolExecutionRuntime()
+    state = HarnessState.new()
+    entered, finish, queued = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    invoked = []
+
+    async def prior() -> None:
+        entered.set()
+        await finish.wait()
+
+    runtime.admit(
+        prior, thread_id=state.thread_id, run_id="prior", tool_call_id="prior", tool_name="prior", sequential=True
+    )
+    original_inline = runtime.inline
+
+    async def inline(operation, *, thread_id, sequential):
+        queued.set()
+        return await original_inline(operation, thread_id=thread_id, sequential=sequential)
+
+    monkeypatch.setattr(runtime, "inline", inline)
+
+    def lookup() -> str:
+        invoked.append("lookup")
+        return "found"
+
+    async def model(messages, info):
+        if _returns(messages):
+            yield "done"
+        else:
+            yield {
+                0: DeltaToolCall(
+                    name="call_tool", json_args=json.dumps({"group": "crm", "tool": "lookup", "arguments": {}})
+                )
+            }
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=(ToolExecutionCapability(), _group(lookup)),
+    )
+    await entered.wait()
+    pending = asyncio.create_task(
+        executable.run("lookup", previous_state=state, bindings=RunBindings.embedded(tool_execution=runtime))
+    )
+    try:
+        await asyncio.wait_for(queued.wait(), 2)
+        assert not invoked and not pending.done()
+        finish.set()
+        result = await asyncio.wait_for(pending, 2)
+        assert result.output_or_raise() == "done"
+        assert invoked == ["lookup"]
+        assert _returns(result.all_messages())[-1].content == "found"
+    finally:
+        finish.set()
+        pending.cancel()
+        await asyncio.gather(pending, return_exceptions=True)
+        await runtime.close()

@@ -48,7 +48,6 @@ from a13n_harness.providers.endpoint_policy import EndpointPolicyError
 from a13n_harness.usage import without_usage
 from a13n_logging import exception_details, get_logger
 from pydantic import JsonValue
-from pydantic_ai.capabilities import CombinedCapability
 from pydantic_ai.messages import ModelMessage, TextContent, UserContent
 from pydantic_ai.usage import UsageLimits
 from sqlalchemy import select
@@ -593,7 +592,6 @@ class _Attempt:
         if not root.config.lazy_environment and not await self._prepare_environments():
             return None
         async with resources(lease, self._open_resources()) as host, AsyncExitStack() as stack:
-            memory = CombinedCapability(host.memory) if host.memory else None
             executable = agent.build(
                 root,
                 capabilities=lambda node: (
@@ -602,7 +600,6 @@ class _Attempt:
                         InputBoundary(self.boundaries, self.offers.pending_notice),
                         *([ExecutionFence(runtime, lease)] if self.desktop_enabled else []),
                         *host.capabilities(node, retain_tools=self.plan.retain_tools),
-                        *([memory] if memory is not None else []),
                         *(
                             [DesktopAssistanceCapability(runtime, lease, self.plan.principal)]
                             if enabled_tools(root.config.toolsets, "computer")
@@ -612,10 +609,7 @@ class _Attempt:
                     if node is root
                     else host.capabilities(node)
                 ),
-                tool_sources=lambda node: {
-                    **host.sources(node),
-                    **({"memory": memory} if node is root and memory is not None else {}),
-                },
+                tool_sources=host.sources,
                 child_bindings=host.bindings,
                 operators=self._operator,
                 plugins=runtime.plugins,

@@ -65,19 +65,15 @@ def test_override_replaces_the_plan_and_validates_the_result() -> None:
 
 
 @pytest.mark.parametrize(
-    "excluded,expected",
+    "tool_search",
     [
-        ([], ("files", "shell", "computer", "web")),
-        (["environment"], ("web",)),
-        (["web"], ("files", "shell", "computer")),
+        {"automatic": {"exclude_capabilities": []}},
+        {"groups": {"tools": {"description": "Tools", "capabilities": ["environment"]}}},
     ],
 )
-def test_legacy_automatic_revisions_preserve_their_source_scope(excluded, expected) -> None:
-    selected = config(tool_search={"automatic": {"exclude_capabilities": excluded}})
-    assert selected.tool_search is not None and selected.tool_search.automatic is not None
-    assert selected.tool_search.automatic.capabilities == expected
-    assert "exclude_capabilities" not in selected.model_dump_json()
-    assert AgentConfig.model_validate_json(selected.model_dump_json()) == selected
+def test_discovery_rejects_removed_configuration_fields(tool_search) -> None:
+    with pytest.raises(ValidationError):
+        config(tool_search=tool_search)
 
 
 def test_automatic_groups_follow_selections_and_preserve_exclusions() -> None:
@@ -123,7 +119,7 @@ def test_plan_uses_selected_instances_and_child_has_its_own_configuration() -> N
 
     connection = Capability(tools=[lambda: "connection"])
     platform = Capability(tools=[lambda: "platform"])
-    environment = Capability(tools=[lambda: "environment"])
+    environment = Capability(tools=[lambda: "environment"], id="environment")
     selected = config(
         connection_tools=[{"connection_id": CONNECTION}],
         plugins=[{"instance_name": "audit", "plugin_key": "test.audit"}],
@@ -136,7 +132,7 @@ def test_plan_uses_selected_instances_and_child_has_its_own_configuration() -> N
                     "connections": [CONNECTION],
                     "plugins": ["audit"],
                     "platform": True,
-                    "capabilities": ["environment", "web"],
+                    "capabilities": ["files", "shell", "computer", "web"],
                 }
             },
         },
@@ -469,15 +465,21 @@ def test_split_environment_sources_and_opt_in_capabilities() -> None:
     sources = {"environment": source, **{key: Capability(id=key) for key in ("web", "memory", "assets")}}
     plan = definition.tool_search(selected, sources)
     assert plan is not None and set(plan.groups) == {"files", "shell", "web", "memory", "assets"}
-    assert plan.groups["files"].tools["environment"] == toolsets.tool_names(selected.toolsets, "files")
-    assert plan.groups["shell"].tools["environment"] == toolsets.tool_names(selected.toolsets, "shell")
+    assert (
+        plan.groups["files"].tools["environment"]
+        == toolsets.discovery_members(selected.toolsets, ("files",))["environment"]
+    )
+    assert (
+        plan.groups["shell"].tools["environment"]
+        == toolsets.discovery_members(selected.toolsets, ("shell",))["environment"]
+    )
     assert plan.groups["memory"].capabilities == (sources["memory"],)
     plan._compose(tuple(sources.values()), {})
     with pytest.raises(ValidationError, match="multiple groups"):
         config(
             tool_search={
                 "groups": {
-                    "old": {"description": "Old", "capabilities": ["environment"]},
+                    "one": {"description": "One", "capabilities": ["files"]},
                     "new": {"description": "New", "capabilities": ["files"]},
                 }
             }

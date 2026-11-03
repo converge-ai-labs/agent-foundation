@@ -6,7 +6,7 @@ with its defaults and validates each typed config, so readers never merge defaul
 """
 
 from dataclasses import dataclass
-from typing import Annotated, Literal, TypedDict
+from typing import Annotated, Literal, TypedDict, cast
 
 from a13n_harness.capabilities import FILE_TOOL_KEYS, RECORD_TOOL_KEYS, FileToolKey, RecordToolKey
 from a13n_harness.capabilities.web import (
@@ -31,7 +31,8 @@ from a13n_service.providers.registry import WebOperation
 PUBLISH_ASSET_TOOL_ID = "service.publish_asset"
 PLATFORM_SOURCE = "platform"
 
-type ToolsetKey = Literal["files", "shell", "computer", "browser", "web", "memory", "assets"] | PlatformGroup
+type BuiltinToolsetKey = Literal["files", "shell", "computer", "browser", "web", "memory", "assets"]
+type ToolsetKey = BuiltinToolsetKey | PlatformGroup
 ToolKey = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]{0,63}$")]
 JsonObject = dict[str, JsonValue]
 SupportedPermission = Literal["inherit", "allow", "ask", "deny", "review"]
@@ -114,10 +115,6 @@ class ToolsetDefinition(_Frozen):
     tools: tuple[ToolDefinition, ...]
 
 
-class ToolsetCatalog(_Frozen):
-    items: tuple[ToolsetDefinition, ...]
-
-
 @dataclass(frozen=True, slots=True)
 class _Tool:
     key: str
@@ -159,6 +156,9 @@ class _Toolset:
     description: str = ""
     config: type[BaseModel] = EmptyConfiguration
     platform: bool = False
+    # Resource ownership may span several independently discoverable toolsets.
+    source: str | None = None
+    discover_by_default: bool = False
 
     def definition(self, supported_operations: frozenset[str]) -> ToolsetDefinition:
         return ToolsetDefinition(
@@ -215,6 +215,7 @@ _TOOLSETS: tuple[_Toolset, ...] = (
             )
         ),
         description="Native browser tools on the Thread's managed Browser binding.",
+        discover_by_default=True,
     ),
     _Toolset(
         "files",
@@ -240,6 +241,7 @@ _TOOLSETS: tuple[_Toolset, ...] = (
             _Tool("grep", "Search files", "filesystem.grep", "grep", description="Search file contents"),
         ),
         description="Read, write, and organize files.",
+        source="environment",
     ),
     _Toolset(
         "shell",
@@ -269,6 +271,7 @@ _TOOLSETS: tuple[_Toolset, ...] = (
             ),
         ),
         description="Run commands and manage processes.",
+        source="environment",
     ),
     _Toolset(
         "computer",
@@ -351,6 +354,8 @@ _TOOLSETS: tuple[_Toolset, ...] = (
         ),
         description="Observe and control an explicitly authorized desktop. Requires a compatible environment.",
         config=ComputerConfiguration,
+        source="environment",
+        discover_by_default=True,
     ),
     _Toolset(
         "web",
@@ -504,8 +509,27 @@ _TOOLSETS: tuple[_Toolset, ...] = (
 _BY_KEY = {toolset.key: toolset for toolset in _TOOLSETS}
 
 
+class AutomaticToolSearch(_Frozen):
+    """Group Service-owned sources individually, following the agent's selections."""
+
+    capabilities: tuple[BuiltinToolsetKey, ...] = tuple(
+        cast(BuiltinToolsetKey, toolset.key) for toolset in _TOOLSETS if toolset.discover_by_default
+    )
+    connections: bool = True
+    exclude_connections: tuple[ObjectId, ...] = Field(default=(), max_length=128)
+    exclude_platform: bool = False
+
+
+class ToolsetCatalog(_Frozen):
+    items: tuple[ToolsetDefinition, ...]
+    discovery_defaults: AutomaticToolSearch
+
+
 def catalog(supported_web_operations: frozenset[str]) -> ToolsetCatalog:
-    return ToolsetCatalog(items=tuple(toolset.definition(supported_web_operations) for toolset in _TOOLSETS))
+    return ToolsetCatalog(
+        items=tuple(toolset.definition(supported_web_operations) for toolset in _TOOLSETS),
+        discovery_defaults=AutomaticToolSearch(),
+    )
 
 
 def normalize_toolsets(value: dict[ToolsetKey, ToolsetSelection]) -> dict[ToolsetKey, ToolsetSelection]:
@@ -566,11 +590,26 @@ def model_names(toolsets: dict[ToolsetKey, ToolsetSelection]) -> frozenset[str]:
     return frozenset(tool.model_name for tool, _ in _enabled(toolsets))
 
 
-def tool_names(toolsets: dict[ToolsetKey, ToolsetSelection], key: ToolsetKey) -> frozenset[str]:
-    """Enabled model-facing names within one catalogue source."""
-    return frozenset(
-        tool.model_name for tool in _BY_KEY[key].tools if enabled_tool(toolsets, key, tool.key) is not None
-    )
+def discovery_members(
+    toolsets: dict[ToolsetKey, ToolsetSelection], selected: tuple[BuiltinToolsetKey, ...]
+) -> dict[str, frozenset[str] | None]:
+    """Map logical sources to their existing runtime owner, selecting names only for shared owners."""
+    members: dict[str, frozenset[str] | None] = {}
+    for key in selected:
+        entry = _BY_KEY[key]
+        if entry.source is None:
+            members[key] = None
+        else:
+            names = frozenset(
+                tool.model_name for tool in entry.tools if enabled_tool(toolsets, key, tool.key) is not None
+            )
+            if names:
+                members[entry.source] = (members.get(entry.source) or frozenset()) | names
+    return members
+
+
+def discovery_description(key: BuiltinToolsetKey) -> str:
+    return _BY_KEY[key].description
 
 
 def permission_rules(toolsets: dict[ToolsetKey, ToolsetSelection]) -> dict[str, ToolPermissionSetting]:

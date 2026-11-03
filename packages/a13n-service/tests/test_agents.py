@@ -98,6 +98,10 @@ def test_the_toolset_catalogue_names_each_tool_once() -> None:
         "assets",
         *PLATFORM_GROUPS,
     ]
+    assert set(catalogue.discovery_defaults.capabilities) == {"computer", "browser"}
+    assert catalogue.discovery_defaults.connections
+    assert not catalogue.discovery_defaults.exclude_platform
+    assert catalogue.discovery_defaults == config(tool_search={"automatic": {}}).tool_search.automatic
     assert len({tool.execution_id for tool in tools}) == len({tool.model_name for tool in tools}) == len(tools)
     supported = {tool.execution_id: tool.deployment_supported for tool in tools}
     assert supported["web.search"] and not supported["web.scrape"] and supported["web.fetch"]

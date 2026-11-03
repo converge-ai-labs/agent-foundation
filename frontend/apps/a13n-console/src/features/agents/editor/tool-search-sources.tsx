@@ -7,6 +7,7 @@ import {
   toggleDiscoverySource,
   usesToolDiscovery,
   type SearchSource,
+  type ToolSearchDraft,
 } from "../tool-search";
 import type { AgentDraft } from "./draft";
 import styles from "./editor.module.css";
@@ -14,16 +15,18 @@ import styles from "./editor.module.css";
 export function ToolSearchSources({
   draft,
   sources,
+  defaults,
   readOnly,
 }: {
   draft: AgentDraft;
   sources: SearchSource[];
+  defaults: NonNullable<ToolSearchDraft["automatic"]>;
   readOnly: boolean;
 }) {
   const { t } = useTranslation();
   const choices =
     draft.toolSearch.automatic != null
-      ? automaticSources(sources).map((source) =>
+      ? automaticSources(sources, defaults).map((source) =>
           source.id === "all" ? { ...source, label: t("MCP tools") } : source,
         )
       : sources;
