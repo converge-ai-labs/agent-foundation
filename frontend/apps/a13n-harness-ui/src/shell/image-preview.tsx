@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { useState } from "react";
 import { Button, Dialog, DialogPopup, DialogTitle } from "a13n-ui";
 import {
@@ -23,6 +24,7 @@ export function ImagePreview({
   error?: unknown;
   retry?: () => void;
 }) {
+  const { t } = useTranslation();
   const [actualSize, setActualSize] = useState(false);
   const [failedSource, setFailedSource] = useState<string>();
   const imageError = !!src && failedSource === src;
@@ -35,7 +37,7 @@ export function ImagePreview({
     >
       <DialogPopup
         className={styles.viewer}
-        closeProps={{ "aria-label": "Close image preview" }}
+        closeProps={{ "aria-label": t("Close image preview") }}
       >
         <header className={styles.header}>
           <DialogTitle className={styles.title}>{name}</DialogTitle>
@@ -47,23 +49,24 @@ export function ImagePreview({
               onClick={() => setActualSize(!actualSize)}
             >
               {actualSize ? <ArrowsOut /> : <MagnifyingGlassPlus />}
-              {actualSize ? "Fit to screen" : "Actual size"}
+              {actualSize ? t("Fit to screen") : t("Actual size")}
             </Button>
             {src && (
-              <a href={src} download={name} aria-label="Download image">
+              <a href={src} download={name} aria-label={t("Download image")}>
                 <DownloadSimple />
-                Download
+                {t("Download")}
               </a>
             )}
           </div>
         </header>
         <div className={styles.canvas} data-actual-size={actualSize}>
-          {loading && <p role="status">Loading image…</p>}
+          {loading && <p role="status">{t("Loading image…")}</p>}
           <ErrorNotice error={error} retry={retry} />
           {imageError && (
             <p role="alert">
-              This image cannot be previewed. Download the original to inspect
-              it.
+              {t(
+                "This image cannot be previewed. Download the original to inspect it.",
+              )}
             </p>
           )}
           {src && !imageError && (
@@ -71,7 +74,9 @@ export function ImagePreview({
               type="button"
               className={styles.imageButton}
               aria-label={
-                actualSize ? "Fit image to screen" : "Zoom image to actual size"
+                actualSize
+                  ? t("Fit image to screen")
+                  : t("Zoom image to actual size")
               }
               onClick={() => setActualSize(!actualSize)}
             >

@@ -4,6 +4,11 @@ import ts from "typescript";
 import en from "./locales/en.json";
 import zhCN from "./locales/zh-CN.json";
 import { i18n } from "./index";
+import type { Schema } from "../transport/client";
+import {
+  composerMessages,
+  stopOutcomeMessages,
+} from "../conversations/composer-messages";
 
 function catalogErrors(catalogs: Record<string, Record<string, string>>) {
   const errors: string[] = [];
@@ -47,7 +52,7 @@ it("validates localized catalogs with locale-specific plurals and interpolation"
   for (const key of Object.keys(en)) expect(i18n.exists(key), key).toBe(true);
 });
 
-// Guard the workflows introduced in this slice; application-wide source linting
+// Guard the localized workflows; application-wide source linting
 // and the remaining workbench workflows are tracked separately in #1248.
 const surfaces = [
   "app.tsx",
@@ -93,6 +98,14 @@ const surfaces = [
   "conversations/fast-picker.tsx",
   "conversations/reasoning-mode-picker.tsx",
   "conversations/model-control-messages.ts",
+  "conversations/composer.tsx",
+  "conversations/composer-editor.tsx",
+  "conversations/composer-attachments.ts",
+  "conversations/composer-messages.ts",
+  "conversations/task-options.tsx",
+  "conversations/clear-context.tsx",
+  "shell/confirm-action.tsx",
+  "shell/image-preview.tsx",
 ];
 it("keeps literal translation calls in the catalogs", () => {
   const missing: string[] = [];
@@ -119,6 +132,92 @@ it("keeps literal translation calls in the catalogs", () => {
             `${path}:${ast.getLineAndCharacterOfPosition(node.pos).line + 1}: ${key}`,
           );
       }
+      ts.forEachChild(node, visit);
+    }
+    visit(ast);
+  }
+  expect(missing).toEqual([]);
+});
+
+it("keeps retained composer feedback and terminal stop outcomes in both catalogs", () => {
+  for (const key of [
+    ...composerMessages,
+    ...Object.values(stopOutcomeMessages),
+  ]) {
+    expect(Object.hasOwn(en, key), key).toBe(true);
+    expect(Object.hasOwn(zhCN, key), key).toBe(true);
+  }
+});
+
+it("covers literal feedback at its draft and composer sources, not only existing allowlist entries", () => {
+  const missing: string[] = [];
+  for (const file of [
+    "composer.tsx",
+    "draft.ts",
+    "new-draft.ts",
+    "new-conversation.tsx",
+    "conversation.tsx",
+  ]) {
+    const source = readFileSync(
+      new URL(`../conversations/${file}`, import.meta.url),
+      "utf8",
+    );
+    const ast = ts.createSourceFile(
+      file,
+      source,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TSX,
+    );
+    // Inspect value branches only: condition literals and raw error expressions
+    // are not application messages. Runtime recovery tests cover their wiring.
+    function check(value: ts.Node) {
+      if (
+        ts.isStringLiteral(value) &&
+        value.text &&
+        !composerMessages.has(value.text)
+      ) {
+        missing.push(
+          `${file}:${ast.getLineAndCharacterOfPosition(value.getStart()).line + 1}: ${value.text}`,
+        );
+      } else if (ts.isConditionalExpression(value)) {
+        check(value.whenTrue);
+        check(value.whenFalse);
+      } else if (
+        ts.isBinaryExpression(value) &&
+        [
+          ts.SyntaxKind.BarBarToken,
+          ts.SyntaxKind.QuestionQuestionToken,
+        ].includes(value.operatorToken.kind)
+      ) {
+        check(value.left);
+        check(value.right);
+      } else if (ts.isParenthesizedExpression(value)) {
+        check(value.expression);
+      }
+    }
+    function visit(node: ts.Node) {
+      if (
+        ts.isBinaryExpression(node) &&
+        node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+        ts.isPropertyAccessExpression(node.left) &&
+        node.left.name.text === "error"
+      )
+        check(node.right);
+      if (
+        ts.isPropertyAssignment(node) &&
+        ts.isIdentifier(node.name) &&
+        node.name.text === "message"
+      )
+        check(node.initializer);
+      if (
+        ts.isJsxAttribute(node) &&
+        node.name.getText() === "unavailableReason" &&
+        node.initializer &&
+        ts.isJsxExpression(node.initializer) &&
+        node.initializer.expression
+      )
+        check(node.initializer.expression);
       ts.forEachChild(node, visit);
     }
     visit(ast);

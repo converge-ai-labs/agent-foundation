@@ -25,6 +25,7 @@ import {
   newConversationPath,
 } from "./new-conversation";
 import { NewDraftStore } from "./new-draft";
+import { i18n } from "../i18n";
 import { ConversationPage } from "./conversation";
 import { ConversationNavigation } from "./navigation";
 import { LiveThreadsProvider } from "./live-threads";
@@ -383,8 +384,9 @@ beforeEach(() => {
     }),
   );
 });
-afterEach(() => {
+afterEach(async () => {
   cleanup();
+  await i18n.changeLanguage("en");
   creations.dispose();
   queries.clear();
   for (const draft of drafts.values()) {
@@ -1080,6 +1082,23 @@ it("keeps an uncertain submission blocked after reload rather than replaying inp
   reload();
   await screen.findByText(/Your message may already be sent\. Open the chat/);
   expect(creations.current!.composer.submission.kind).toBe("unknown");
+  const restored = creations.current!.composer;
+  const textbox = screen.getByRole("textbox", { name: "Shared prompt" });
+  const originalReads = reads.length;
+  const originalWrites = writes.length;
+  await act(() => i18n.changeLanguage("zh-CN"));
+  await screen.findByText("你的消息可能已发送。再次发送前，请打开聊天确认。");
+  expect(screen.getByRole("textbox", { name: "共享输入" })).toBe(textbox);
+  expect(textbox.textContent).toBe("Build this");
+  expect(creations.current!.composer).toBe(restored);
+  expect(restored.submission.kind).toBe("unknown");
+  expect(screen.getByRole("button", { name: "发送" })).toHaveProperty(
+    "disabled",
+    true,
+  );
+  expect(reads).toHaveLength(originalReads);
+  expect(writes).toHaveLength(originalWrites);
+  await act(() => i18n.changeLanguage("en"));
   fireEvent.click(screen.getByRole("link", { name: "New in second project" }));
   await screen.findByText("Project changes are paused");
   expect(creations.current!.defaults.project_id).toBe("project-one");
@@ -1094,6 +1113,37 @@ it("keeps an uncertain submission blocked after reload rather than replaying inp
     screen.getByRole("textbox", { name: "Shared prompt" }).textContent,
   ).toBe("Build this");
   expect(writes).toHaveLength(2);
+});
+
+it("translates browser draft persistence errors without losing input or retrying writes", async () => {
+  mount();
+  await fill();
+  const composer = creations.current!.composer;
+  const textbox = screen.getByRole("textbox", { name: "Message" });
+  const save = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+    throw new Error("Storage full");
+  });
+  act(() => composer.doc.getText("text").insert(0, "Keep "));
+  await screen.findByText(
+    "Couldn't save the draft. Keep this tab open to keep your input.",
+  );
+  const attempts = save.mock.calls.length;
+  const originalReads = reads.length;
+  await act(() => i18n.changeLanguage("zh-CN"));
+  await screen.findByText("无法保存草稿。请保持此标签页打开，以保留输入。");
+  expect(screen.getByRole("textbox", { name: "消息" })).toBe(textbox);
+  expect(textbox.textContent).toBe("Keep Build this");
+  expect(save).toHaveBeenCalledTimes(attempts);
+  expect(reads).toHaveLength(originalReads);
+  expect(writes).toHaveLength(0);
+  save.mockRestore();
+  act(() => composer.doc.getText("text").insert(0, "Saved "));
+  await waitFor(() =>
+    expect(
+      screen.queryByText("无法保存草稿。请保持此标签页打开，以保留输入。"),
+    ).toBeNull(),
+  );
+  expect(values(composer.doc).prompt).toBe("Saved Keep Build this");
 });
 
 it("retains staged files across project switches and explicitly requires reattachment after reload", async () => {
@@ -2593,6 +2643,19 @@ it("blocks unavailable owners rather than silently creating an independent threa
       .disabled,
   ).toBe(true);
   expect(writes).toHaveLength(0);
+  const textbox = screen.getByRole("textbox", { name: "Message" });
+  const originalReads = reads.length;
+  await act(() => i18n.changeLanguage("zh-CN"));
+  await screen.findByText("协调者必须在此项目中可用。请重试或移除指派。");
+  expect(screen.getByRole("textbox", { name: "消息" })).toBe(textbox);
+  expect(textbox.textContent).toBe("Build this");
+  expect(screen.getByRole("button", { name: "发送" })).toHaveProperty(
+    "disabled",
+    true,
+  );
+  expect(reads).toHaveLength(originalReads);
+  expect(writes).toHaveLength(0);
+  await act(() => i18n.changeLanguage("en"));
   fireEvent.click(
     screen.getByRole("button", { name: "Remove Coordinator assignment" }),
   );
