@@ -26,6 +26,10 @@ A conversation is a root Thread with saved history and settings. Each execution 
 
 Use Ctrl+J or Alt+Enter for a newline. Pasting multiline text leaves it in the draft until you send it.
 
+Press **Ctrl+G** in the ordinary prompt composer to edit the draft in your preferred editor. Harness UI uses `VISUAL`, or `EDITOR` when `VISUAL` is unset or blank; set one before launching, for example `EDITOR=nano a13n-harness-ui` or `VISUAL='code --wait' a13n-harness-ui`. The editor runs on the CLI Host, including over SSH. Save and close it to return to the composer, then press Enter when ready to send. Editing never submits or cancels Agent work.
+
+Long pasted text opens expanded. Attachments appear as readable markers: keep each marker unchanged and exactly once; you can move it with its surrounding text. Invalid markers or editor failures preserve the original draft. Temporary prompt files are private and removed after editing. Ctrl+G is unavailable in approval, question, and menu inputs.
+
 ### Choose an Agent or Model
 
 While idle, use `/agent` or `/model` to open a picker. Run `/status` afterward to check the effective selection.

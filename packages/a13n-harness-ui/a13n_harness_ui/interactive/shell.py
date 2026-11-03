@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from anyio import CancelScope
-from prompt_toolkit.application import Application
+from prompt_toolkit.application import Application, in_terminal
 from prompt_toolkit.buffer import Buffer
 from prompt_toolkit.completion import CompleteEvent, Completer, Completion
 from prompt_toolkit.document import Document
@@ -47,6 +47,7 @@ from .attachments import add_images, clipboard_images, read_attachment
 from .commands import CommandRegistry, Invocation
 from .composer import ComposerWindow, wrapped_height
 from .diagnostics import exception_report, pending_task_warning
+from .external_editor import edit_prompt
 from .history import HistoryBrowser
 from .inline_attachments import (
     AttachmentBuffer,
@@ -131,6 +132,7 @@ class CliShell:
         self.inline = InlineAttachments()
         self.clipboard = AttachmentClipboard()
         self._draft_generation = 0
+        self._editing_prompt = False
         self._recoverable: Document | None = None
         self._submitted_draft: Document | None = None
         self._sending_draft: Document | None = None
@@ -319,6 +321,27 @@ class CliShell:
         if expanded is not None:
             text, position = expanded
             buffer.document = Document(text, position)
+
+    async def _edit_prompt(self) -> None:
+        buffer = self.composer.buffer
+        original = buffer.document
+        generation = self._draft_generation
+        try:
+            async with in_terminal():
+                edited = await edit_prompt(self.pastes.expand(original.text), self.inline)
+            # Background admission recovery or attachment acquisition can change the
+            # draft while terminal input belongs to the editor. Never overwrite it.
+            if buffer.text != original.text or self._draft_generation != generation:
+                self.emit("The draft changed while the editor was open. Editor changes were not applied.")
+                return
+            if edited != original.text:
+                buffer.save_to_undo_stack()
+                buffer.document = Document(edited, len(edited))
+        except (OSError, ValueError) as error:
+            self.emit(f"Could not edit prompt: {error}")
+        finally:
+            self._editing_prompt = False
+            self.app.invalidate()
 
     def _style(self) -> Style:
         rules = prompt_toolkit_style_rules(self.renderer.transcript.theme)
@@ -562,6 +585,7 @@ class CliShell:
             hints = [
                 "Ctrl+T history",
                 "Ctrl+O details",
+                "Ctrl+G editor",
                 "F2 tasks",
                 "/notes",
                 "Esc select" if self.mouse else "Esc scroll",
@@ -1056,6 +1080,14 @@ class CliShell:
                 event.app.create_background_task(self.cancel())
                 return
             event.app.create_background_task(self.cancel())
+
+        @keys.add(
+            "c-g", filter=Condition(lambda: self.ready and self.interaction is None and self.menu_handler is None)
+        )
+        def external_editor(event: KeyPressEvent) -> None:
+            if not self._editing_prompt:
+                self._editing_prompt = True
+                event.app.create_background_task(self._edit_prompt())
 
         @keys.add("c-j")
         @keys.add("escape", "enter")

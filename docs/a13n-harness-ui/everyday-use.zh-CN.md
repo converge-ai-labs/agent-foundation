@@ -26,6 +26,10 @@ a13n-harness-ui
 
 Ctrl+J 或 Alt+Enter 用于换行。粘贴多行文本后，文本会留在草稿中，直到你发送。
 
+在普通提示词输入框中按 **Ctrl+G**，使用你配置的编辑器编辑草稿。Harness UI 优先使用 `VISUAL`，未设置或为空时使用 `EDITOR`；启动前设置其中一个，例如 `EDITOR=nano a13n-harness-ui` 或 `VISUAL='code --wait' a13n-harness-ui`。编辑器在运行 CLI 的 Host 上启动，SSH 场景也一样。保存并关闭编辑器后返回输入框，确认后再按 Enter 发送。编辑不会提交输入或取消 Agent 工作。
+
+折叠的长文本会展开。附件显示为可读标记：每个标记必须保持原样且只出现一次，可以随周围文本移动。标记无效或编辑器失败时保留原草稿。临时提示词文件限制访问权限，并在编辑结束后删除。审批、问答卡片和菜单输入不支持 Ctrl+G。
+
 ### 选择 Agent 或 Model
 
 空闲时用 `/agent` 或 `/model` 打开选择器。选择后运行 `/status`，确认实际生效的设置。
