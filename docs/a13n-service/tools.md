@@ -211,7 +211,11 @@ Save the revision, start a run, and ask for a document search. Inspect the tool 
 
 ### Grouped tool discovery
 
-For a large tool collection, select **Grouped proxy search** under **Tool discovery** in Console. Add a group and select its sources. Grouping changes how the model finds tools; first enable and configure those sources normally.
+Select **Discover tools on demand** under **Tool availability** in Console. The **On-demand tools** list starts with **Computer**, **Browser**, **Platform tools** and **MCP tools**. Files, Terminal, Web, Memory and Asset stay directly available. Use **Add tool source** to include any of them in discovery, or remove a source to provide its definitions directly. This selection changes presentation only: disabled tools stay disabled and existing permissions still apply.
+
+**Group by source** works without creating groups. MCP tools follows newly attached connections. Expand **Advanced grouping** to choose **Custom groups**, starting from your current source selection. Expand a group to edit its name, description or sources. Question-mark tooltips explain each setting. Plugins keep their own discovery settings unless explicitly included in a compatible custom group.
+
+In JSON, use `"tool_search": {"automatic": {}}`. Automatic `capabilities` defaults to `["computer", "browser"]`; add `files`, `shell` (Terminal), `web`, `memory` or `assets` as needed. `connections` defaults to true; set it to false to keep all MCP connections direct. `exclude_connections` excludes specific connection IDs, and `exclude_platform: true` keeps platform tools direct. Omit `automatic` to use explicit `groups`. The legacy custom `environment` selector still covers Files, Terminal and Computer together; new configurations can select them independently.
 
 This fragment groups a selected connection. Replace `conn_...` in both places:
 

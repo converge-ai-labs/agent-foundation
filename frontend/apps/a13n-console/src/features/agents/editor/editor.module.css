@@ -114,17 +114,168 @@
   min-width: 0;
 }
 
-.searchGroup {
+.searchFields {
+  display: grid;
+  gap: 0;
+}
+.searchFields .searchMode [data-slot="field-label-row"] {
+  justify-content: flex-start;
+  gap: 4px;
+}
+.advancedBody [data-slot="tool-discovery-fields"] > .searchAdvanced {
+  padding: 0;
+  border: 0;
+  border-top: 1px solid var(--a13n-border);
+  border-radius: 0;
+}
+.searchAdvanced
+  > [data-slot="disclosure-surface"]
+  > [data-slot="collapsible-panel"]
+  > div {
+  gap: 16px;
+  padding: 16px 20px 20px 28px;
+  border-top: 1px solid var(--a13n-border);
+  background: var(--a13n-surface);
+}
+.searchGroup [data-slot="disclosure-heading"] {
+  gap: 0;
+  padding-right: 12px;
+}
+.searchGroup [data-slot="disclosure-heading"]:hover {
+  background: var(--a13n-hover);
+}
+.searchFields
+  .searchGroup
+  [data-slot="disclosure-heading"]
+  > [data-slot="collapsible-trigger"]:is(:hover, :active) {
+  background: transparent;
+}
+.searchGroup [data-slot="disclosure-heading"] > [data-slot="button"] {
+  color: var(--a13n-secondary);
+}
+.searchGroup
+  [data-slot="disclosure-heading"]
+  > [data-slot="collapsible-trigger"] {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+}
+.searchGroups {
+  display: grid;
+  gap: 12px;
+  padding-top: 16px;
+  border-top: 1px solid var(--a13n-border);
+}
+.searchGroup
+  > [data-slot="disclosure-surface"]
+  > [data-slot="collapsible-panel"]
+  > div {
+  gap: 0;
+  padding: 0;
+}
+.searchGroupBody {
   display: grid;
   gap: 16px;
   padding: 16px;
-  background: transparent;
+  border-top: 1px solid var(--a13n-border);
+  background: var(--a13n-canvas);
+}
+.searchGroupBody [data-slot="field-label-row"] {
+  justify-content: flex-start;
+  gap: 4px;
+}
+.searchGroupBody textarea {
+  min-height: 60px;
+}
+.searchLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 500;
+  font-size: var(--a13n-text-sm);
+}
+.searchSourceList {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.searchSourceList legend {
+  margin-bottom: 8px;
 }
 .searchSource {
   display: flex;
   align-items: center;
   gap: 10px;
+  padding: 8px 0;
   overflow-wrap: anywhere;
+}
+.searchSourceLabel {
+  min-width: 0;
+  flex: 1;
+}
+.searchSource small {
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+  font-weight: 400;
+  text-align: right;
+}
+.searchScope {
+  display: grid;
+  gap: 12px;
+}
+.searchSelectedSources {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.searchSelectedSources > li {
+  display: flex;
+  align-items: center;
+  min-height: 38px;
+  gap: 12px;
+  font-size: var(--a13n-text-sm);
+}
+.searchSelectedSources > li + li {
+  border-top: 1px solid var(--a13n-border);
+}
+.searchSelectedSources > li > span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.searchSelectedSources small {
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+}
+.searchDirect {
+  padding-top: 12px;
+  border-top: 1px solid var(--a13n-border);
+}
+.searchDirect p {
+  margin: 4px 0 0;
+  font-size: var(--a13n-text-xs);
+  color: var(--a13n-secondary);
+  line-height: 20px;
+}
+.searchPluginNote {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+}
+.searchEmpty {
+  margin: 0;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+  line-height: 18px;
+}
+.searchEmpty {
+  padding: 16px;
+  border-radius: 8px;
+  background: var(--a13n-surface);
 }
 
 .mediaTrigger {
@@ -196,7 +347,7 @@
    its larger mobile defaults. Preserve their touch target height. */
 .advancedBody
   :is(
-    [data-slot="button"],
+    [data-a13n-button],
     [data-slot="select-trigger"],
     [data-slot="select-button"],
     [data-slot="input-control"],
@@ -217,18 +368,25 @@
   font-size: var(--a13n-text-xs);
   line-height: 18px;
 }
-.searchFooter {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-}
-.searchFooter p {
-  margin: 0;
-  font-size: var(--a13n-text-xs);
-  line-height: 18px;
-  color: var(--a13n-secondary);
-}
-.searchFooter button {
-  flex: none;
+
+@media (max-width: 640px) {
+  .advancedBody
+    .searchFields
+    .searchMode[data-slot="field"]:has(
+      > [data-slot="select-trigger"][role="combobox"]
+    ) {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .advancedBody .searchFields .searchMode > [data-slot="select-trigger"] {
+    width: 100%;
+    max-width: none;
+  }
+  .searchAdvanced
+    > [data-slot="disclosure-surface"]
+    > [data-slot="collapsible-panel"]
+    > div {
+    padding: 16px;
+  }
 }

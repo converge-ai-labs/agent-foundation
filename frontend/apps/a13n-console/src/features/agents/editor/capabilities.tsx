@@ -37,6 +37,7 @@ import { OptionsRefresh } from "../../../shared/forms/options-refresh";
 import styles from "./editor.module.css";
 import type { ReviewTarget } from "../reviewer";
 import type { AgentDraft } from "./draft";
+import { usesToolDiscovery } from "../tool-search";
 import { BuiltinSkillRows } from "./builtin-skills";
 import {
   MediaUnderstandingFields,
@@ -315,11 +316,11 @@ export function ConnectionsSection({
               )}
               selection={selection}
               discovery={
-                draft.toolSearch.mode !== "direct" &&
-                draft.toolSearch.groups.some((group) =>
-                  group.connections?.includes(selection.connection_id),
-                )
-                  ? draft.toolSearch.mode
+                usesToolDiscovery(draft.toolSearch, {
+                  kind: "connections",
+                  id: selection.connection_id,
+                })
+                  ? "proxy"
                   : undefined
               }
               readOnly={readOnly}

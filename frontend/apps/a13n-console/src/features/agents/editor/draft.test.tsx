@@ -498,7 +498,7 @@ it("saves plugin edits and updates only the renamed or removed discovery members
         groups: {
           lookup: {
             plugins: ["renamed", "other"],
-            capabilities: ["environment"],
+            capabilities: ["files", "shell", "computer"],
           },
         },
       },
@@ -512,7 +512,10 @@ it("saves plugin edits and updates only the renamed or removed discovery members
       plugins: [other],
       tool_search: {
         groups: {
-          lookup: { plugins: ["other"], capabilities: ["environment"] },
+          lookup: {
+            plugins: ["other"],
+            capabilities: ["files", "shell", "computer"],
+          },
         },
       },
     },

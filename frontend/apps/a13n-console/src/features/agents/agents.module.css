@@ -747,7 +747,9 @@
   background: var(--a13n-canvas);
   overflow: hidden;
 }
-.outlinedDisclosure [data-slot="disclosure-surface"] > button {
+.outlinedDisclosure
+  :is([data-slot="disclosure-surface"], [data-slot="disclosure-heading"])
+  > [data-slot="collapsible-trigger"] {
   width: 100%;
   min-height: 48px;
   margin: 0;
@@ -762,8 +764,8 @@
 }
 /* Card headers keep their edges and hover fill while pressed. */
 .outlinedDisclosure
-  [data-slot="disclosure-surface"]
-  > button:is(:hover, :active) {
+  :is([data-slot="disclosure-surface"], [data-slot="disclosure-heading"])
+  > [data-slot="collapsible-trigger"]:is(:hover, :active) {
   background: var(--a13n-hover);
 }
 
@@ -777,7 +779,10 @@
   border-radius: 0;
 }
 
-.outlinedDisclosure [data-slot="disclosure-surface"] > button > svg {
+.outlinedDisclosure
+  :is([data-slot="disclosure-surface"], [data-slot="disclosure-heading"])
+  > [data-slot="collapsible-trigger"]
+  > svg {
   order: 1;
   flex: none;
   width: 16px;
@@ -787,8 +792,8 @@
   transform: rotate(0deg);
 }
 .outlinedDisclosure
-  [data-slot="disclosure-surface"]
-  > button[aria-expanded="true"]
+  :is([data-slot="disclosure-surface"], [data-slot="disclosure-heading"])
+  > [data-slot="collapsible-trigger"][aria-expanded="true"]
   > svg {
   transform: rotate(90deg);
 }

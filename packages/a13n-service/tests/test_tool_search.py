@@ -1,11 +1,12 @@
 """Service selects presentation; Harness owns discovery and local invocation."""
 
+import json
 from typing import Any
 
 import pytest
 from a13n_harness import DeferredToolResume, RunBindings
 from a13n_service.infra.ids import new_object_id
-from a13n_service.resources.agents import definition
+from a13n_service.resources.agents import definition, toolsets
 from a13n_service.resources.agents.schemas import AgentConfig, AgentOverride, apply_override
 from a13n_service.runs.agent import build
 from pydantic import ValidationError
@@ -42,7 +43,6 @@ def test_configuration_preserves_defaults_and_validates_membership() -> None:
         ({"tools": {"description": " "}}, "non-blank"),
         ({"tools": {"description": "Tools", "connections": [new_object_id("con")]}}, "unselected connection"),
         ({"tools": {"description": "Tools", "plugins": ["missing"]}}, "unselected plugin"),
-        ({"tools": {"description": "Tools", "platform": True}}, "enabled platform tool"),
         (
             {name: {"description": "Tools", "connections": [CONNECTION]} for name in ("one", "two")},
             "multiple groups",
@@ -62,6 +62,60 @@ def test_override_replaces_the_plan_and_validates_the_result() -> None:
         apply_override(selected, AgentOverride(connection_tools=()))
     cleared = apply_override(selected, AgentOverride.model_validate({"connection_tools": [], "tool_search": {}}))
     assert not cleared.connection_tools
+
+
+@pytest.mark.parametrize(
+    "excluded,expected",
+    [
+        ([], ("files", "shell", "computer", "web")),
+        (["environment"], ("web",)),
+        (["web"], ("files", "shell", "computer")),
+    ],
+)
+def test_legacy_automatic_revisions_preserve_their_source_scope(excluded, expected) -> None:
+    selected = config(tool_search={"automatic": {"exclude_capabilities": excluded}})
+    assert selected.tool_search is not None and selected.tool_search.automatic is not None
+    assert selected.tool_search.automatic.capabilities == expected
+    assert "exclude_capabilities" not in selected.model_dump_json()
+    assert AgentConfig.model_validate_json(selected.model_dump_json()) == selected
+
+
+def test_automatic_groups_follow_selections_and_preserve_exclusions() -> None:
+    added = new_object_id("con")
+    source = Capability(tools=[lambda: "source"], id="environment")
+    selected = config(
+        connection_tools=[{"connection_id": CONNECTION}, {"connection_id": added}],
+        tool_search={"automatic": {"exclude_connections": [CONNECTION], "capabilities": ["computer", "browser"]}},
+        plugins=[{"instance_name": "audit", "plugin_key": "test.audit"}],
+        toolsets={"agents": {"enabled": True}, "computer": {"enabled": True}},
+    )
+    selected = AgentConfig.model_validate_json(selected.model_dump_json())
+    sources = {
+        CONNECTION: source,
+        added: source,
+        "environment": source,
+        "web": source,
+        "browser": Capability(id="browser"),
+        "platform": source,
+    }
+    plan = definition.tool_search(selected, sources)
+    assert plan is not None
+    assert set(plan.groups) == {"connection-2", "computer", "browser", "platform"}
+    assert plan.groups["connection-2"].capabilities == (source,)
+    assert all(not group.plugins for group in plan.groups.values())
+    changed = apply_override(selected, AgentOverride.model_validate({"connection_tools": []}))
+    after = definition.tool_search(changed, {"environment": source})
+    assert after is not None and set(after.groups) == {"computer", "browser", "platform"}
+    assert after.groups["computer"].tools["environment"] == frozenset(
+        tool.model_name
+        for group in toolsets.catalog(frozenset()).items
+        if group.key == "computer"
+        for tool in group.tools
+    )
+    assert not after.groups["browser"].capabilities
+    assert not after.groups["platform"].capabilities
+    with pytest.raises(ValidationError, match="cannot also define custom groups"):
+        config(tool_search={"automatic": {}, "groups": {"custom": {"description": "Custom"}}})
 
 
 def test_plan_uses_selected_instances_and_child_has_its_own_configuration() -> None:
@@ -121,7 +175,10 @@ def test_plan_uses_selected_instances_and_child_has_its_own_configuration() -> N
 
 
 @pytest.mark.parametrize("permission", ["allow", "ask", "deny"])
-async def test_proxy_discovery_restores_history_and_keeps_connection_permissions(permission: str) -> None:
+@pytest.mark.parametrize("automatic", [False, True])
+async def test_proxy_discovery_restores_history_and_keeps_connection_permissions(
+    permission: str, automatic: bool
+) -> None:
     effects = []
 
     def lookup(value: int) -> int:
@@ -132,30 +189,34 @@ async def test_proxy_discovery_restores_history_and_keeps_connection_permissions
     selected = config(
         toolsets={},
         connection_tools=[{"connection_id": CONNECTION, "permission": permission}],
-        tool_search=selection().tool_search,
+        tool_search={"automatic": {}} if automatic else selection().tool_search,
     )
     root = resolved(new_object_id("ap"), new_object_id("apr"), selected, connection_types={CONNECTION: "connector"})
     phase = "discover"
     calls = 0
+    group = "connection-1" if automatic else "knowledge"
+    canonical_name = f"{group.replace('_', '_u')}__lookup"
 
     async def stream(messages, info):
         nonlocal calls
         tools = {tool.name: tool for tool in info.function_tools}
         assert "load_capability" not in tools
-        assert "call_tool" in tools and "knowledge__lookup" not in tools
+        assert "call_tool" in tools and canonical_name not in tools
         if calls == 0:
             calls += 1
             if phase == "discover":
                 yield {
                     0: DeltaToolCall(
-                        name="describe_tool", json_args='{"group":"knowledge","tool":"lookup"}', tool_call_id="search"
+                        name="describe_tool",
+                        json_args=json.dumps({"group": group, "tool": "lookup"}),
+                        tool_call_id="search",
                     )
                 }
             else:
                 yield {
                     0: DeltaToolCall(
                         name="call_tool",
-                        json_args='{"group":"knowledge","tool":"lookup","arguments":{"value":4}}',
+                        json_args=json.dumps({"group": group, "tool": "lookup", "arguments": {"value": 4}}),
                         tool_call_id="invoke",
                     )
                 }
@@ -187,7 +248,7 @@ async def test_proxy_discovery_restores_history_and_keeps_connection_permissions
         [request] = pending.approvals
         assert request.model_call.tool_name == "call_tool"
         assert request.model_call.tool_call_id == "invoke"
-        assert request.target_call.tool_name == "knowledge__lookup"
+        assert request.target_call.tool_name == canonical_name
         assert request.target_call.args_as_dict() == {"value": 4}
         state = type(result.state).model_validate_json(result.state.model_dump_json())
         result = await executable.run(
@@ -392,3 +453,35 @@ async def test_plugin_tools_compose_once_for_proxy_search(monkeypatch) -> None:
 def test_search_config_rejects_conflicting_branches(value) -> None:
     with pytest.raises(ValidationError):
         config(tool_search=value)
+
+
+def test_split_environment_sources_and_opt_in_capabilities() -> None:
+    source = Capability(id="environment")
+    selected = config(
+        tool_search={
+            "automatic": {
+                "capabilities": ["files", "shell", "web", "memory", "assets"],
+                "connections": False,
+                "exclude_platform": True,
+            }
+        }
+    )
+    sources = {"environment": source, **{key: Capability(id=key) for key in ("web", "memory", "assets")}}
+    plan = definition.tool_search(selected, sources)
+    assert plan is not None and set(plan.groups) == {"files", "shell", "web", "memory", "assets"}
+    assert plan.groups["files"].tools["environment"] == toolsets.tool_names(selected.toolsets, "files")
+    assert plan.groups["shell"].tools["environment"] == toolsets.tool_names(selected.toolsets, "shell")
+    assert plan.groups["memory"].capabilities == (sources["memory"],)
+    plan._compose(tuple(sources.values()), {})
+    with pytest.raises(ValidationError, match="multiple groups"):
+        config(
+            tool_search={
+                "groups": {
+                    "old": {"description": "Old", "capabilities": ["environment"]},
+                    "new": {"description": "New", "capabilities": ["files"]},
+                }
+            }
+        )
+    dormant = config(tool_search={"groups": {"platform": {"description": "Platform", "platform": True}}})
+    dormant_plan = definition.tool_search(dormant, {})
+    assert dormant_plan is not None and not dormant_plan.groups["platform"].capabilities

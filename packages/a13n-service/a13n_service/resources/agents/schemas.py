@@ -20,7 +20,7 @@ from a13n_service.infra.ids import Key, ObjectId
 from a13n_service.infra.labels import Labels
 from a13n_service.providers.model_settings import JsonSettings
 from a13n_service.resources.agents.tables import AgentSource, PresetKind
-from a13n_service.resources.agents.toolsets import ToolsetOverrides, Toolsets, default_toolsets, platform_tools
+from a13n_service.resources.agents.toolsets import ToolsetOverrides, Toolsets, default_toolsets
 from a13n_service.resources.builtin_skills import BuiltinSkillName
 from a13n_service.resources.connections.schemas import ConnectionSelection
 from a13n_service.resources.memories.schemas import MemoryMounts, SessionMemorySettings
@@ -160,26 +160,65 @@ class PluginSelection(_Frozen):
     config: JsonObject = Field(default_factory=dict)
 
 
+type ToolSearchCapability = Literal["files", "shell", "computer", "browser", "web", "memory", "assets"]
+
+
 class ToolSearchGroup(_Frozen):
     description: str = Field(min_length=1, max_length=512)
-    capabilities: tuple[Literal["environment", "web"], ...] = ()
+    # The legacy environment selector still means files, shell and computer together.
+    capabilities: tuple[ToolSearchCapability | Literal["environment"], ...] = ()
     connections: tuple[ObjectId, ...] = Field(default=(), max_length=128)
     plugins: tuple[BoundedKey, ...] = Field(default=(), max_length=128)
     platform: bool = False
+
+
+class AutomaticToolSearch(_Frozen):
+    """Group Service-owned sources individually, following the agent's selections."""
+
+    capabilities: tuple[ToolSearchCapability, ...] = ("computer", "browser")
+    connections: bool = True
+    exclude_connections: tuple[ObjectId, ...] = Field(default=(), max_length=128)
+    exclude_platform: bool = False
+
+    @model_validator(mode="before")
+    @classmethod
+    def legacy_sources(cls, value: object) -> object:
+        # Immutable revisions from the exclusion-based policy must remain readable.
+        if not isinstance(value, dict) or "exclude_capabilities" not in value:
+            return value
+        value = dict(value)
+        excluded = value.pop("exclude_capabilities")
+        if not isinstance(excluded, list | tuple) or any(key not in ("environment", "web") for key in excluded):
+            raise ValueError("Legacy capability exclusions must contain environment or web")
+        if "capabilities" in value:
+            raise ValueError("Use capabilities without legacy exclude_capabilities")
+        value["capabilities"] = [
+            key
+            for key in ("files", "shell", "computer", "web")
+            if ("web" if key == "web" else "environment") not in excluded
+        ]
+        return value
 
 
 class ToolSearch(ToolSearchConfiguration):
     """Presentation of already-selected sources, composed by Harness once per agent."""
 
     groups: dict[str, ToolSearchGroup] = Field(default_factory=dict, max_length=128)
+    automatic: AutomaticToolSearch | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @model_validator(mode="after")
     def unique_sources(self) -> Self:
+        if self.automatic is not None and self.groups:
+            raise ValueError("Automatic tool discovery cannot also define custom groups")
         owners: set[tuple[str, str]] = set()
         for name, group in self.groups.items():
             validate_group(name, group.description)
             sources = [
-                *(("capability", source) for source in group.capabilities),
+                *(
+                    ("capability", expanded)
+                    for source in group.capabilities
+                    for expanded in (("files", "shell", "computer") if source == "environment" else (source,))
+                ),
                 *(("connection", source) for source in group.connections),
                 *(("plugin", source) for source in group.plugins),
                 *([("platform", "platform")] if group.platform else []),
@@ -249,8 +288,6 @@ class AgentConfig(_Frozen):
                     raise ValueError(f"ToolSearch group {name!r} references an unselected connection")
                 if set(group.plugins) - plugins:
                     raise ValueError(f"ToolSearch group {name!r} references an unselected plugin instance")
-                if group.platform and not platform_tools(self.toolsets):
-                    raise ValueError(f"ToolSearch group {name!r} requires an enabled platform tool")
         return self
 
 

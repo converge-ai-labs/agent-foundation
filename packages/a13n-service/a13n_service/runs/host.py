@@ -77,6 +77,7 @@ class _Parts:
     host_skills: bool
     builtin_instructions: str | None
     browser_tools: frozenset[str]
+    assets: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -142,6 +143,7 @@ async def resolve_host(
             host_skills=host_skills,
             builtin_instructions=instructions.for_preset(builtin.get(node.revision_id)),
             browser_tools=enabled_tools(config.toolsets, "browser"),
+            assets=enabled_tool(config.toolsets, "assets", "publish") is not None,
         )
     return HostPlan(
         parts,
@@ -178,10 +180,6 @@ class Host:
             # Only conversation roots retain calls; inline children and memory organizers stay inline.
             features.append(ToolExecutionCapability(self.plan.execution.tools))
         parts = self.plan.parts[agent.revision_id]
-        if agent.revision_id in self.browsers:
-            features.append(
-                BrowserUseCapability(enabled_tools=parts.browser_tools, on_human_control=lambda: BROWSER_GUIDANCE)
-            )
         if parts.builtin_instructions is not None:
             features.append(BuiltinInstructionsCapability(parts.builtin_instructions))
         skills = parts.skills
@@ -204,12 +202,10 @@ class Host:
                     prove_lease=partial(prove, self.runtime, self.lease),
                 )
             )
-        if enabled_tool(agent.config.toolsets, "assets", "publish") is not None:
-            features.append(AssetsCapability(self.runtime, self.lease, self.principal, self.authority))
         return features
 
     def sources(self, agent: ResolvedAgent) -> Mapping[str, AbstractCapability[AgentContext]]:
-        """Already-opened connection and platform sources available for explicit grouping."""
+        """Already-constructed host sources, shared by direct and grouped presentation."""
         return self.tools[agent.revision_id]
 
     def bindings(self, agent: ResolvedAgent, given: RunBindings) -> RunBindings:
@@ -270,6 +266,11 @@ async def open_host(
                 browsers[revision_id] = await stack.enter_async_context(
                     open_backend(runtime, lease, plan.browser, check, parts.browser_tools)
                 )
+                tools[revision_id]["browser"] = BrowserUseCapability(
+                    enabled_tools=parts.browser_tools, on_human_control=lambda: BROWSER_GUIDANCE
+                )
+            if parts.assets:
+                tools[revision_id]["assets"] = AssetsCapability(runtime, lease, principal, authority)
             if parts.web is not None:
                 webs[revision_id] = await stack.enter_async_context(
                     open_web(parts.web, check, runtime=runtime, configuration=configuration)

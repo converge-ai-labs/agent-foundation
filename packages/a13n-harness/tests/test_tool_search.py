@@ -1551,3 +1551,64 @@ def test_search_configuration_defaults_to_proxy_and_roundtrips() -> None:
         encoded = adapter.dump_python(config, mode="json")
         Draft202012Validator(adapter.json_schema()).validate(encoded)
         assert adapter.validate_python(encoded) == config
+
+
+async def test_disjoint_tool_selections_keep_unselected_tools_direct_and_bind_source_once() -> None:
+    bound = []
+    invoked = []
+
+    def read_file() -> str:
+        invoked.append("files")
+        return "file"
+
+    def terminal() -> str:
+        invoked.append("terminal")
+        return "terminal"
+
+    def computer() -> str:
+        invoked.append("computer")
+        return "desktop"
+
+    class Source(AbstractCapability):
+        id = "mixed"
+
+        async def for_run(self, ctx):
+            bound.append(ctx.deps.run_id)
+            return self
+
+        def get_toolset(self):
+            return FunctionToolset([read_file, terminal, computer], instructions="Keep the source guidance.")
+
+    source = Source()
+    plan = ToolSearchPlan(
+        groups={
+            "desktop": ToolSearchSelection(
+                "Computer", capabilities=(source,), tools={"mixed": frozenset({"computer"})}
+            ),
+            "terminal": ToolSearchSelection(
+                "Terminal", capabilities=(source,), tools={"mixed": frozenset({"terminal"})}
+            ),
+        }
+    )
+
+    def inspect(_, info):
+        names = {tool.name for tool in info.function_tools}
+        assert "read_file" in names
+        assert not names.intersection({"computer", "terminal", "desktop__computer", "terminal__terminal"})
+        assert "Keep the source guidance." in (info.instructions or "")
+
+    result, _ = await _run(
+        (source,),
+        [
+            ("call_tool", {"group": "desktop", "tool": "computer", "arguments": {}}),
+            ("read_file", {}),
+            ("call_tool", {"group": "terminal", "tool": "terminal", "arguments": {}}),
+        ],
+        inspect=inspect,
+        tool_search=plan,
+    )
+    assert result.output_or_raise() == "done"
+    assert invoked == ["computer", "files", "terminal"]
+    assert len(bound) == 1
+    with pytest.raises(ValueError, match="multiple groups"):
+        ToolSearchPlan(groups={"one": plan.groups["desktop"], "two": plan.groups["desktop"]})._compose((source,), {})

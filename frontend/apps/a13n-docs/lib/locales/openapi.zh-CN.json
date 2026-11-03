@@ -604,5 +604,6 @@
   "Delete Model Provider": "删除模型 provider",
   "Delete Web Provider": "删除 Web provider",
   "Filter by Run execution identity; requires workspace admin.": "按 Run 执行身份筛选；需要工作空间管理员权限。",
-  "List Usage Members": "列出成员用量"
+  "List Usage Members": "列出成员用量",
+  "Group Service-owned sources individually, following the agent's selections.": "按 agent 的选择，自动为 Service 管理的各工具来源分组。"
 }

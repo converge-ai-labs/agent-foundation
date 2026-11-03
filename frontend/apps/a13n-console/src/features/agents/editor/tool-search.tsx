@@ -1,13 +1,22 @@
-import formStyles from "../../../shared/forms/forms.module.css";
-import { Button, Checkbox, ChoiceField, FormField, Input } from "a13n-ui";
-import type { ReactNode } from "react";
+import { ChoiceField, DisclosureSection } from "a13n-ui";
+import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { ErrorNotice } from "../../../shared/feedback";
+import { FieldHelp } from "../../../shared/forms";
+import formStyles from "../../../shared/forms/forms.module.css";
 import type { useAgentChoices } from "../choices";
 import { displayName } from "../connections";
 import { useToolsetCatalog } from "../toolsets";
-import type { SearchGroup, ToolSearchDraft } from "../tool-search";
+import {
+  automaticSearchGroups,
+  automaticPolicy,
+  searchSources,
+  type ToolSearchDraft,
+} from "../tool-search";
 import type { AgentDraft } from "./draft";
+import agentStyles from "../agents.module.css";
+import { ToolSearchGroups } from "./tool-search-groups";
+import { ToolSearchSources } from "./tool-search-sources";
 import styles from "./editor.module.css";
 
 export function ToolSearchSection({
@@ -25,223 +34,148 @@ export function ToolSearchSection({
 }) {
   const { t } = useTranslation();
   const value = draft.toolSearch;
-  const groups = value.groups;
+  const [expanded, setExpanded] = useState(false);
   const catalog = useToolsetCatalog();
-  const platformSelected = !!catalog.data?.items.some(
-    (group) =>
-      group.platform &&
-      (draft.toolsets[group.key]?.enabled ?? group.default_enabled) &&
-      group.tools.some(
-        (tool) =>
-          draft.toolsets[group.key]?.tools?.[tool.key]?.enabled ??
-          tool.default_enabled,
-      ),
-  );
-  const sources = [
-    ...(["environment", "web"] as const).map((id) => ({
-      kind: "capabilities" as const,
-      id,
-      label: id === "environment" ? t("Environment tools") : t("Web tools"),
-      available: true,
-    })),
-    ...draft.connections.map(({ connection_id }) => {
+  const sources = searchSources(
+    {
+      toolsets: draft.toolsets,
+      connection_tools: draft.connections,
+      plugins: draft.plugins,
+    },
+    catalog.data?.items ?? [],
+  ).map((source) => {
+    if (source.kind === "connections") {
       const connection = choices.data?.connections.find(
-        (item) => item.id === connection_id,
+        (item) => item.id === source.id,
       );
       return {
-        kind: "connections" as const,
-        id: connection_id,
-        label: connection ? displayName(connection) : connection_id,
-        available: true,
+        ...source,
+        label: connection ? displayName(connection) : source.id,
       };
-    }),
-    ...draft.plugins.map((plugin) => ({
-      kind: "plugins" as const,
-      id: plugin.instance_name,
-      label: plugin.instance_name,
-      available: true,
-    })),
-    {
-      kind: "platform" as const,
-      id: "platform",
-      label: t("Selected platform tools"),
-      available: platformSelected,
-    },
-  ];
-  function update(index: number, change: Partial<SearchGroup>) {
-    draft.setToolSearch((current) => ({
-      ...current,
-      groups: current.groups.map((group, i) =>
-        i === index ? { ...group, ...change } : group,
-      ),
-    }));
-  }
-  function selected(group: SearchGroup, source: (typeof sources)[number]) {
-    return source.kind === "platform"
-      ? group.platform === true
-      : (group[source.kind] as readonly string[] | undefined)?.includes(
-          source.id,
-        ) === true;
-  }
+    }
+    return {
+      ...source,
+      label: source.kind === "plugins" ? source.label : t(source.label),
+    };
+  });
+  const automatic = value.automatic != null;
   return (
     <>
       {mark}
-      <div data-slot="tool-discovery-fields" className="grid gap-4">
+      <div data-slot="tool-discovery-fields" className={styles.searchFields}>
         <ChoiceField
           popupClassName={formStyles.compactChoicePopup}
           label={t("Mode")}
+          className={styles.searchMode}
           readOnly={readOnly}
           value={value.mode}
+          labelAction={
+            <FieldHelp label={t("About tool availability")}>
+              <p>
+                {t(
+                  "Provide tools directly: the model receives tool definitions for direct use.",
+                )}
+              </p>
+              <p className="mt-2">
+                {t(
+                  "Discover tools on demand: the model looks up tools and reads their parameters when needed, then calls them through a shared entry point.",
+                )}
+              </p>
+            </FieldHelp>
+          }
           options={[
-            { value: "direct", label: t("Default") },
-            { value: "proxy", label: t("Search groups") },
+            { value: "direct", label: t("Provide tools directly") },
+            { value: "proxy", label: t("Discover tools on demand") },
           ]}
           onValueChange={(mode) =>
             draft.setToolSearch((current) => ({
               ...current,
               mode: mode as ToolSearchDraft["mode"],
+              automatic:
+                mode === "proxy" &&
+                !current.groups.length &&
+                current.automatic == null
+                  ? {}
+                  : current.automatic,
             }))
           }
-          description={t(
-            value.mode === "proxy"
-              ? "Search groups to find tools when needed."
-              : "Use each source’s tool settings.",
-          )}
         />
-        {value.mode !== "direct" && (
+        {value.mode === "proxy" && (
           <>
-            {groups.map((group, index) => (
-              <div key={index} className={styles.searchGroup}>
-                <div className={styles.searchGroupHeading}>
-                  <strong>{group.name || t("New group")}</strong>
-                  {!readOnly && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      aria-label={t("Remove group {{name}}", {
-                        name: group.name,
-                      })}
-                      onClick={() =>
-                        draft.setToolSearch((current) => ({
-                          ...current,
-                          groups: current.groups.filter((_, i) => i !== index),
-                        }))
-                      }
-                    >
-                      {t("Remove")}
-                    </Button>
-                  )}
-                </div>
-                <div className={styles.grid}>
-                  <FormField
-                    label={t("Group name")}
-                    description={t(
-                      "Used in tool names, such as knowledge__lookup.",
+            <ToolSearchSources
+              draft={draft}
+              sources={sources}
+              readOnly={readOnly}
+            />
+            <DisclosureSection
+              className={`${agentStyles.outlinedDisclosure} ${styles.searchAdvanced}`}
+              title={t("Advanced grouping")}
+              summary={
+                expanded || error
+                  ? undefined
+                  : automatic
+                    ? t("Grouped by source")
+                    : t("Custom groups")
+              }
+              open={expanded || !!error}
+              onOpenChange={setExpanded}
+            >
+              <ChoiceField
+                label={t("Grouping")}
+                className={styles.searchMode}
+                value={automatic ? "automatic" : "custom"}
+                readOnly={readOnly}
+                labelAction={
+                  <FieldHelp label={t("About grouping")}>
+                    <p>
+                      {t(
+                        "Group by source creates one discovery group for each selected source.",
+                      )}
+                    </p>
+                    <p className="mt-2">
+                      {t(
+                        "Custom groups let you organize related sources yourself, with a name and description for each group.",
+                      )}
+                    </p>
+                  </FieldHelp>
+                }
+                options={[
+                  { value: "automatic", label: t("Group by source") },
+                  { value: "custom", label: t("Custom groups") },
+                ]}
+                onValueChange={(grouping) =>
+                  draft.setToolSearch((current) => ({
+                    ...current,
+                    automatic:
+                      grouping === "automatic"
+                        ? automaticPolicy(current, sources)
+                        : null,
+                    groups:
+                      grouping === "custom" && current.automatic != null
+                        ? automaticSearchGroups(current, sources)
+                        : current.groups,
+                  }))
+                }
+              />
+              {!automatic && (
+                <ToolSearchGroups
+                  draft={draft}
+                  sources={sources}
+                  readOnly={readOnly}
+                  error={error}
+                />
+              )}
+              {!!draft.plugins.length && (
+                <div className={styles.searchPluginNote}>
+                  <span>{t("Plugins use their own settings")}</span>
+                  <FieldHelp label={t("About plugin discovery")}>
+                    {t(
+                      "Plugins keep their own discovery settings. Use custom groups to include compatible plugins.",
                     )}
-                  >
-                    <Input
-                      readOnly={readOnly}
-                      value={group.name}
-                      maxLength={32}
-                      onChange={(event) =>
-                        update(index, { name: event.target.value })
-                      }
-                    />
-                  </FormField>
-                  <FormField label={t("Group description")}>
-                    <Input
-                      readOnly={readOnly}
-                      value={group.description}
-                      maxLength={512}
-                      onChange={(event) =>
-                        update(index, { description: event.target.value })
-                      }
-                    />
-                  </FormField>
+                  </FieldHelp>
                 </div>
-                <fieldset
-                  disabled={readOnly}
-                  className="fieldset-reset grid gap-2"
-                >
-                  <legend className="mb-2 text-sm font-medium">
-                    {t("Tool sources")}
-                  </legend>
-                  {sources.map((source) => (
-                    <label
-                      key={`${source.kind}/${source.id}`}
-                      className={styles.searchSource}
-                    >
-                      <Checkbox
-                        checked={selected(group, source)}
-                        disabled={
-                          !source.available ||
-                          groups.some(
-                            (other, i) =>
-                              i !== index && selected(other, source),
-                          )
-                        }
-                        onCheckedChange={(checked) =>
-                          update(
-                            index,
-                            source.kind === "platform"
-                              ? { platform: checked === true }
-                              : {
-                                  [source.kind]: checked
-                                    ? [...(group[source.kind] ?? []), source.id]
-                                    : (group[source.kind] ?? []).filter(
-                                        (id) => id !== source.id,
-                                      ),
-                                },
-                          )
-                        }
-                      />
-                      <span>{source.label}</span>
-                    </label>
-                  ))}
-                </fieldset>
-              </div>
-            ))}
-            {(!readOnly || !groups.length) && (
-              <div className={styles.searchFooter}>
-                {!groups.length && (
-                  <p>{t("Add a group and select its tool sources.")}</p>
-                )}
-                {!readOnly && (
-                  <>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        let name = "tools";
-                        for (
-                          let index = 2;
-                          groups.some((group) => group.name === name);
-                          index++
-                        )
-                          name = `tools${index}`;
-                        draft.setToolSearch((current) => ({
-                          ...current,
-                          groups: [
-                            ...current.groups,
-                            {
-                              name,
-                              description: "",
-                              connections: [],
-                              plugins: [],
-                              platform: false,
-                            },
-                          ],
-                        }));
-                      }}
-                    >
-                      {t("Add group")}
-                    </Button>
-                  </>
-                )}
-              </div>
-            )}
+              )}
+            </DisclosureSection>
           </>
         )}
         <ErrorNotice error={error} />

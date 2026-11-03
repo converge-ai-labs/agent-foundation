@@ -2878,6 +2878,46 @@
         "title": "AuthorizationStatus",
         "type": "object"
       },
+      "AutomaticToolSearch": {
+        "additionalProperties": false,
+        "description": "Group Service-owned sources individually, following the agent's selections.",
+        "properties": {
+          "capabilities": {
+            "default": [
+              "computer",
+              "browser"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/ToolSearchCapability"
+            },
+            "title": "Capabilities",
+            "type": "array"
+          },
+          "connections": {
+            "default": true,
+            "title": "Connections",
+            "type": "boolean"
+          },
+          "exclude_connections": {
+            "default": [],
+            "items": {
+              "maxLength": 41,
+              "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+              "type": "string"
+            },
+            "maxItems": 128,
+            "title": "Exclude Connections",
+            "type": "array"
+          },
+          "exclude_platform": {
+            "default": false,
+            "title": "Exclude Platform",
+            "type": "boolean"
+          }
+        },
+        "title": "AutomaticToolSearch",
+        "type": "object"
+      },
       "BackgroundCompactionPolicy": {
         "additionalProperties": false,
         "description": "Host-selected overlap policy, separate from the common compaction trigger.",
@@ -23323,6 +23363,16 @@
         "additionalProperties": false,
         "description": "Presentation of already-selected sources, composed by Harness once per agent.",
         "properties": {
+          "automatic": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AutomaticToolSearch"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "config": {
             "$ref": "#/components/schemas/ToolSearchConfig"
           },
@@ -23337,6 +23387,18 @@
         },
         "title": "ToolSearch",
         "type": "object"
+      },
+      "ToolSearchCapability": {
+        "enum": [
+          "files",
+          "shell",
+          "computer",
+          "browser",
+          "web",
+          "memory",
+          "assets"
+        ],
+        "type": "string"
       },
       "ToolSearchConfig": {
         "additionalProperties": false,
@@ -23393,11 +23455,15 @@
           "capabilities": {
             "default": [],
             "items": {
-              "enum": [
-                "environment",
-                "web"
-              ],
-              "type": "string"
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ToolSearchCapability"
+                },
+                {
+                  "const": "environment",
+                  "type": "string"
+                }
+              ]
             },
             "title": "Capabilities",
             "type": "array"

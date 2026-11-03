@@ -5673,6 +5673,35 @@ export interface components {
       subject?: string | null;
     };
     /**
+     * AutomaticToolSearch
+     * @description Group Service-owned sources individually, following the agent's selections.
+     */
+    AutomaticToolSearch: {
+      /**
+       * Capabilities
+       * @default [
+       *       "computer",
+       *       "browser"
+       *     ]
+       */
+      capabilities?: components["schemas"]["ToolSearchCapability"][];
+      /**
+       * Connections
+       * @default true
+       */
+      connections?: boolean;
+      /**
+       * Exclude Connections
+       * @default []
+       */
+      exclude_connections?: string[];
+      /**
+       * Exclude Platform
+       * @default false
+       */
+      exclude_platform?: boolean;
+    };
+    /**
      * BackgroundCompactionPolicy
      * @description Host-selected overlap policy, separate from the common compaction trigger.
      */
@@ -12537,12 +12566,16 @@ export interface components {
      * @description Presentation of already-selected sources, composed by Harness once per agent.
      */
     ToolSearch: {
+      automatic?: components["schemas"]["AutomaticToolSearch"] | null;
       config?: components["schemas"]["ToolSearchConfig"];
       /** Groups */
       groups?: {
         [key: string]: components["schemas"]["ToolSearchGroup"];
       };
     };
+    /** @enum {string} */
+    ToolSearchCapability:
+      "files" | "shell" | "computer" | "browser" | "web" | "memory" | "assets";
     /**
      * ProxyToolSearchConfig
      * @description Names and bounded discovery settings for one Agent's proxy surface.
@@ -12596,7 +12629,9 @@ export interface components {
        * Capabilities
        * @default []
        */
-      capabilities?: ("environment" | "web")[];
+      capabilities?: (
+        components["schemas"]["ToolSearchCapability"] | "environment"
+      )[];
       /**
        * Connections
        * @default []

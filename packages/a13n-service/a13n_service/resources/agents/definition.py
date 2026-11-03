@@ -20,7 +20,7 @@ from referencing.jsonschema import DRAFT202012
 
 from a13n_service.infra.errors import invalid
 from a13n_service.resources.agents import toolsets
-from a13n_service.resources.agents.schemas import AgentConfig, JsonObject, OutputSpec
+from a13n_service.resources.agents.schemas import AgentConfig, JsonObject, OutputSpec, ToolSearchGroup
 
 CLIENT_TOOLSET_ID = "a13n-service-client"
 QUESTION_TOOL = "ask_user_question"
@@ -124,18 +124,45 @@ def tool_search(config: AgentConfig, sources: Mapping[str, AbstractCapability[Ag
     selected = config.tool_search
     if selected is None:
         return None
+    groups = selected.groups
+    if (automatic := selected.automatic) is not None:
+        groups = {
+            f"connection-{index + 1}": ToolSearchGroup(
+                description=f"Tools from connection {item.connection_id}.", connections=(item.connection_id,)
+            )
+            for index, item in enumerate(config.connection_tools)
+            if automatic.connections and item.connection_id not in automatic.exclude_connections and item.tools != ()
+        }
+        for key in automatic.capabilities:
+            groups[key] = ToolSearchGroup(description=f"Use {key} tools.", capabilities=(key,))
+        if not automatic.exclude_platform:
+            groups["platform"] = ToolSearchGroup(description="Manage selected platform resources.", platform=True)
     return ToolSearchPlan(
         config=selected.config,
-        groups={
-            name: ToolSearchSelection(
-                description=group.description,
-                capabilities=tuple(sources[source] for source in group.connections)
-                + tuple(sources[source] for source in group.capabilities if source in sources)
-                + ((sources["platform"],) if group.platform else ()),
-                plugins=group.plugins,
-            )
-            for name, group in selected.groups.items()
-        },
+        groups={name: _search_selection(config, group, sources) for name, group in groups.items()},
+    )
+
+
+def _search_selection(
+    config: AgentConfig, group: ToolSearchGroup, sources: Mapping[str, AbstractCapability[AgentContext]]
+) -> ToolSearchSelection:
+    capabilities = [sources[key] for key in group.connections]
+    tools: dict[str, frozenset[str]] = {}
+    environment_names: set[str] = set()
+    for key in group.capabilities:
+        if key in ("files", "shell", "computer"):
+            environment_names.update(toolsets.tool_names(config.toolsets, key))
+        elif key in sources:
+            capabilities.append(sources[key])
+    if environment_names and "environment" in sources and "environment" not in group.capabilities:
+        environment = sources["environment"]
+        assert environment.id is not None
+        capabilities.append(environment)
+        tools[environment.id] = frozenset(environment_names)
+    if group.platform and "platform" in sources:
+        capabilities.append(sources["platform"])
+    return ToolSearchSelection(
+        description=group.description, capabilities=tuple(capabilities), plugins=group.plugins, tools=tools
     )
 
 

@@ -72,6 +72,7 @@ class _GroupedToolset(WrapperToolset[AgentContext]):
     group: str
     group_description: str
     source_label: str
+    tool_names: frozenset[str] | None = None
 
     @property
     def label(self) -> str:
@@ -87,6 +88,9 @@ class _GroupedToolset(WrapperToolset[AgentContext]):
     async def get_tools(self, ctx: RunContext[AgentContext]) -> dict[str, ToolsetTool[AgentContext]]:
         result: dict[str, ToolsetTool[AgentContext]] = {}
         for name, tool in (await self.wrapped.get_tools(ctx)).items():
+            if self.tool_names is not None and name not in self.tool_names:
+                result[name] = tool
+                continue
             from a13n_harness.tools.identity import identify_tool
 
             tool = identify_tool(tool)
@@ -126,12 +130,19 @@ class _GroupedToolset(WrapperToolset[AgentContext]):
     async def get_instructions(
         self, ctx: RunContext[AgentContext]
     ) -> str | InstructionPart | Sequence[str | InstructionPart] | None:
+        if self.tool_names is not None and any(
+            name not in self.tool_names and proxy_membership(tool.tool_def) is None
+            for name, tool in (await self.wrapped.get_tools(ctx)).items()
+        ):
+            return await self.wrapped.get_instructions(ctx)
         # Proxy source guidance is returned with discovery, not eagerly for every tool.
         return None
 
     async def call_tool(
         self, name: str, tool_args: dict[str, Any], ctx: RunContext[AgentContext], tool: ToolsetTool[AgentContext]
     ) -> Any:
+        if self.tool_names is not None and (not isinstance(tool, _GroupTool) or tool.toolset is not self):
+            return await self.wrapped.call_tool(name, tool_args, ctx, tool)
         if not isinstance(tool, _GroupTool):
             raise TypeError("_GroupedToolset received a tool it does not own")
         source = tool.source_tool

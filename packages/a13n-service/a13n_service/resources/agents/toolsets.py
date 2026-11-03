@@ -485,7 +485,7 @@ _TOOLSETS: tuple[_Toolset, ...] = (
     ),
     _Toolset(
         "assets",
-        "Asset publication",
+        "Asset",
         False,
         (_Tool("publish", "Publish asset", PUBLISH_ASSET_TOOL_ID, "publish_asset", description="Publish an asset"),),
         description="Publish files as agent assets.",
@@ -564,6 +564,13 @@ def _enabled(toolsets: dict[ToolsetKey, ToolsetSelection]) -> list[tuple[_Tool, 
 def model_names(toolsets: dict[ToolsetKey, ToolsetSelection]) -> frozenset[str]:
     """The names the model sees for the enabled built-in tools."""
     return frozenset(tool.model_name for tool, _ in _enabled(toolsets))
+
+
+def tool_names(toolsets: dict[ToolsetKey, ToolsetSelection], key: ToolsetKey) -> frozenset[str]:
+    """Enabled model-facing names within one catalogue source."""
+    return frozenset(
+        tool.model_name for tool in _BY_KEY[key].tools if enabled_tool(toolsets, key, tool.key) is not None
+    )
 
 
 def permission_rules(toolsets: dict[ToolsetKey, ToolsetSelection]) -> dict[str, ToolPermissionSetting]:

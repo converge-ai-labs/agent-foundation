@@ -21,6 +21,7 @@ export interface ChoiceOption {
 }
 export function ChoiceField({
   label,
+  labelAction,
   placeholder,
   options,
   value,
@@ -39,6 +40,7 @@ export function ChoiceField({
   "data-field-layout": layout,
 }: {
   label: string;
+  labelAction?: ReactNode;
   placeholder?: string;
   options: readonly ChoiceOption[];
   value?: string;
@@ -65,6 +67,7 @@ export function ChoiceField({
         data-field-kind="choice"
         data-field-layout={layout}
         label={label}
+        labelAction={labelAction}
         hideLabel={hideLabel}
         description={description}
         className={className}
@@ -83,6 +86,7 @@ export function ChoiceField({
     <FormField
       data-field-layout={layout}
       label={label}
+      labelAction={labelAction}
       hideLabel={hideLabel || variant === "filter"}
       description={description}
       error={error}

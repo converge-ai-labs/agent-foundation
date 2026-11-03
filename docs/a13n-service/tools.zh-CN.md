@@ -211,7 +211,11 @@ Grant 支持续期时，token 在使用时续期，并发调用者共享同一�
 
 ### 分组工具发现
 
-工具较多时，在 Console 的工具发现区域选择分组代理搜索。添加分组并选择来源。分组改变模型查找工具的方式；请先按普通方式启用并配置这些来源。
+在 Console 的**工具提供方式**中选择**按需发现工具**。**按需发现**列表默认包含 **Computer**、**Browser**、**Platform tools** 和 **MCP tools**。Files、Terminal、Web、Memory 和 Asset 默认直接提供。通过**添加工具来源**可将它们纳入按需发现；从列表移除来源后，其工具定义恢复为直接提供。这个设置只改变工具的提供方式，不会启用已关闭的工具，也不会改变原有权限。
+
+默认的**按来源自动分组**无需手动建组；MCP tools 会包含之后添加的连接。展开**高级分组设置**可切换到**自定义分组**，以当前选择的来源为起点。展开分组即可修改名称、描述和来源。问号提示解释各项设置。插件保留自身的工具发现方式，除非明确加入兼容的自定义分组。
+
+JSON 配置使用 `"tool_search": {"automatic": {}}`。自动策略的 `capabilities` 默认为 `["computer", "browser"]`，可按需加入 `files`、`shell`（Terminal）、`web`、`memory` 或 `assets`。`connections` 默认为 true，设为 false 后所有 MCP 连接直接提供工具。`exclude_connections` 排除指定连接 ID，`exclude_platform: true` 让平台工具直接提供。使用显式 `groups` 时省略 `automatic`。旧自定义配置中的 `environment` 仍同时包含 Files、Terminal 和 Computer；新配置可以分别选择它们。
 
 以下片段将一个已选连接加入分组。替换两处 `conn_...`：
 
@@ -233,7 +237,7 @@ Grant 支持续期时，token 在使用时续期，并发调用者共享同一�
 
 分组接受已选的 `connections`、按实例名引用的 `plugins`、`capabilities`（`environment`、`web`），以及代表已启用平台工具的 `platform: true`。每个来源最多属于一个分组。名称以字母开头，最多包含 32 个字母、数字、下划线或连字符，不能包含 `__`。
 
-未分组来源仍直接暴露。需要审批后恢复的工具应保持直接暴露；`client_tools` 保留外部调用协议。每个子 agent 使用自身修订版本的分组。运行覆盖会替换整个 `tool_search` 块；`groups: {}` 关闭分组。可选 `config`、控制工具名称和分页限制参阅 [Harness ToolSearch](../a13n-harness/tool-search.md)。
+未分组来源仍直接暴露。`client_tools` 保留外部调用协议。每个子 agent 使用自身修订版本的分组。运行覆盖会替换整个 `tool_search` 块；`groups: {}` 关闭分组。可选 `config`、控制工具名称和分页限制参阅 [Harness ToolSearch](../a13n-harness/tool-search.md)。
 
 ### 调用方请求头
 
