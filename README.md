@@ -16,6 +16,8 @@ Choose your [model](docs/a13n-service/models.md), [sandbox](docs/a13n-service/en
 
 ## Run Service
 
+### Quickstart with Docker Compose
+
 Install Docker and Docker Compose, then run:
 
 ```bash
@@ -32,7 +34,11 @@ Open <http://127.0.0.1:8080>:
 
 Call the agent from your application through the [HTTP API](docs/a13n-service/connect-application.md) or a [Python, TypeScript, Go, or Rust SDK](docs/a13n-service/sdks.md).
 
-The stack runs Service, Console, PostgreSQL, and Redis. Agent environments use your host Docker Engine. See the [deployment guide](deploy/docker/compose/README.md) for configuration and [multi-instance setup](docs/a13n-service/operations.md#process-roles) for high availability.
+The stack runs Service, Console, PostgreSQL, and Redis. Agent environments use your host Docker Engine. See the [Compose guide](deploy/docker/compose/README.md) for configuration.
+
+### Production on Kubernetes
+
+Deploy to Kubernetes with our [Helm chart](deploy/kubernetes/README.md#other-clusters). Configure API and worker replicas and shared storage for [high availability](docs/a13n-service/operations.md#process-roles).
 
 [![Console showing six managed agents, their model providers, and status](.github/assets/console-managed-agents.jpg)](.github/assets/console-managed-agents.jpg)
 
