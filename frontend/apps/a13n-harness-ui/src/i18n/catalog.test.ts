@@ -114,6 +114,8 @@ const surfaces = [
   "conversations/composer-messages.ts",
   "conversations/task-options.tsx",
   "conversations/clear-context.tsx",
+  "conversations/composer-status.tsx",
+  "conversations/usage-details.tsx",
   "shell/confirm-action.tsx",
   "shell/image-preview.tsx",
 ];
