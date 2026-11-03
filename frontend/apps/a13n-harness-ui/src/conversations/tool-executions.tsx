@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowClockwise } from "@phosphor-icons/react";
@@ -16,7 +17,16 @@ function Execution({
   item: Schema<"ToolExecutionView">;
   refresh: () => void;
 }) {
+  const { t } = useTranslation();
   const { client } = useTransport();
+  const statusLabels = {
+    queued: t("Queued"),
+    running: t("Running"),
+    succeeded: t("Succeeded"),
+    failed: t("Failed"),
+    cancelled: t("Cancelled"),
+    lost: t("Lost"),
+  } satisfies Record<Schema<"ToolExecutionView">["status"], string>;
   const cancel = useMutation({
     mutationFn: () =>
       result(
@@ -48,37 +58,38 @@ function Execution({
                   : "secondary"
             }
           >
-            {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
+            {statusLabels[item.status]}
           </Badge>
         </summary>
         <div className={styles.executionBody}>
           <dl>
             <DebugOnly>
               <div>
-                <dt>Execution</dt>
+                <dt>{t("Execution")}</dt>
                 <dd>{item.execution_id}</dd>
               </div>
               <div>
-                <dt>Run</dt>
+                <dt>{t("Run")}</dt>
                 <dd>{item.run_id}</dd>
               </div>
             </DebugOnly>
             <div>
-              <dt>Result</dt>
+              <dt>{t("Result")}</dt>
               <dd>
                 {item.delivery_acknowledged
-                  ? "Received by agent"
+                  ? t("Received by agent")
                   : item.result_available
-                    ? "Available to agent"
-                    : "Not available"}
+                    ? t("Available to agent")
+                    : t("Not available")}
               </dd>
             </div>
           </dl>
           <ErrorNotice error={cancel.error} />
           {cancel.isSuccess && (
             <p role="status">
-              Cancellation requested. The status will update when the tool
-              stops.
+              {t(
+                "Cancellation requested. The status will update when the tool stops.",
+              )}
             </p>
           )}
           {item.available_actions?.includes("cancel") && (
@@ -89,7 +100,7 @@ function Execution({
               disabled={cancel.isSuccess}
               onClick={() => cancel.mutate()}
             >
-              Cancel execution
+              {t("Cancel execution")}
             </Button>
           )}
         </div>
@@ -105,6 +116,7 @@ export function ToolExecutions({
   threadId: string;
   rootThreadId?: string;
 }) {
+  const { t } = useTranslation();
   const { client } = useTransport();
   const queries = useQueryClient();
   const [offset, setOffset] = useState(0);
@@ -126,17 +138,18 @@ export function ToolExecutions({
     void queries.invalidateQueries({ queryKey: key });
   };
   return (
-    <section aria-label="Tool calls">
+    <section aria-label={t("Tool calls")}>
       <div className={styles.panelToolbar}>
-        <span>Tool calls</span>
-        <HelpTip label="About tool calls">
-          Tools used in this app session. Viewing a result keeps it available to
-          the agent.
+        <span>{t("Tool calls")}</span>
+        <HelpTip label={t("About tool calls")}>
+          {t(
+            "Tools used in this app session. Viewing a result keeps it available to the agent.",
+          )}
         </HelpTip>
         <Button
           variant="ghost"
           size="icon-sm"
-          aria-label="Refresh tool calls"
+          aria-label={t("Refresh tool calls")}
           loading={page.isFetching}
           onClick={refresh}
         >
@@ -144,10 +157,10 @@ export function ToolExecutions({
         </Button>
       </div>
       <ErrorNotice error={page.error} retry={refresh} />
-      {page.isPending && <p role="status">Loading tool executions…</p>}
+      {page.isPending && <p role="status">{t("Loading tool executions…")}</p>}
       {page.data?.length === 0 && (
         <p className={styles.emptyState}>
-          {offset > 0 ? "No more tool calls." : "No tool calls yet."}
+          {offset > 0 ? t("No more tool calls.") : t("No tool calls yet.")}
         </p>
       )}
       <ul className={styles.tasks}>
@@ -163,7 +176,7 @@ export function ToolExecutions({
             disabled={offset === 0 || page.isFetching}
             onClick={() => setOffset(offset - 20)}
           >
-            Previous
+            {t("Previous")}
           </Button>
           <Button
             variant="ghost"
@@ -171,7 +184,7 @@ export function ToolExecutions({
             disabled={page.data?.length !== 20 || page.isFetching}
             onClick={() => setOffset(offset + 20)}
           >
-            Next
+            {t("Next")}
           </Button>
         </div>
       )}

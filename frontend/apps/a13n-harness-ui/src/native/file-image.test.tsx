@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -9,6 +10,7 @@ import {
   within,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { i18n } from "../i18n";
 import { TransportContext } from "../transport/context";
 import {
   ApiError,
@@ -393,4 +395,22 @@ it("aborts replaced access requests and ignores late signed URLs", async () => {
   await waitFor(() => expect(screen.queryByAltText("screen.png")).toBeNull());
   expect(screen.getByAltText("next.png").getAttribute("src")).toBe(source);
   expect(f.create).not.toHaveBeenCalled();
+});
+
+it("updates a retained preview error when the language changes without requesting access again", async () => {
+  await i18n.changeLanguage("en");
+  const f = fixture();
+  render(f.tree());
+  const image = await loaded();
+  fireEvent.error(image);
+  await screen.findByText(/This image cannot be previewed/);
+  await act(() => i18n.changeLanguage("zh-CN"));
+  expect(screen.getByText(/无法预览此图片/)).toBeTruthy();
+  expect(f.post).toHaveBeenCalledTimes(1);
+  expect(f.post.mock.calls[0]![1].body).toMatchObject({
+    path: "/code/screen.png",
+    expected_revision: "first",
+  });
+  await act(() => i18n.changeLanguage("en"));
+  expect(screen.getByText(/This image cannot be previewed/)).toBeTruthy();
 });

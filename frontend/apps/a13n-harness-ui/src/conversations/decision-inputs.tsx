@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "../i18n";
 import { Button, ChoiceField, FormField, Textarea } from "a13n-ui";
 import type { Schema } from "../transport/client";
 import { DecisionEvidence, argumentsObject, record } from "./decision-evidence";
@@ -66,6 +67,7 @@ function ApprovalInput({
   onChange: Change;
   onSubmit?: (response: DecisionResponse) => void;
 }) {
+  const { t } = useTranslation();
   const [choice, setChoice] = useState("");
   const [reason, setReason] = useState("");
   const [argumentsText, setArgumentsText] = useState(() =>
@@ -75,7 +77,7 @@ function ApprovalInput({
       2,
     ),
   );
-  const [error, setError] = useState("");
+  const [error, setError] = useState<"arguments" | "result" | "">("");
   const canApprove = !request.arguments_omitted;
   const canEdit = canApprove && request.override_allowed === true;
   function response(
@@ -109,7 +111,7 @@ function ApprovalInput({
         override_arguments: parsed as Record<string, Schema<"JsonValue">>,
       };
     } catch {
-      setError("Enter a valid JSON object for replacement arguments.");
+      setError("arguments");
     }
   }
   function update(value: string, content = argumentsText, denial = reason) {
@@ -121,7 +123,7 @@ function ApprovalInput({
     if (next) onSubmit?.(next);
   }
   const reasonField = (
-    <FormField label="Reason (optional)">
+    <FormField label={t("Reason (optional)")}>
       <Textarea
         rows={2}
         value={reason}
@@ -136,27 +138,29 @@ function ApprovalInput({
   return (
     <section
       className={styles.request}
-      aria-label={`Approval for ${request.tool_name}`}
+      aria-label={t("Approval for {{tool}}", { tool: request.tool_name })}
     >
       <DecisionEvidence request={request} />
       {!onSubmit && (
         <ChoiceField
-          label="Approval"
+          label={t("Approval")}
           value={choice}
           onValueChange={(value) => update(value)}
           options={[
-            { value: "", label: "Choose a response" },
+            { value: "", label: t("Choose a response") },
             ...(canApprove
-              ? [{ value: "approve", label: "Approve once" }]
+              ? [{ value: "approve", label: t("Approve once") }]
               : []),
-            ...(canEdit ? [{ value: "override", label: "Approve edits" }] : []),
-            { value: "deny", label: "Deny" },
+            ...(canEdit
+              ? [{ value: "override", label: t("Approve edits") }]
+              : []),
+            { value: "deny", label: t("Deny") },
           ]}
         />
       )}
       {onSubmit ? (
         <details className={styles.denialReason}>
-          <summary>Add a reason for denying</summary>
+          <summary>{t("Add a reason for denying")}</summary>
           {reasonField}
         </details>
       ) : choice === "deny" ? (
@@ -164,9 +168,13 @@ function ApprovalInput({
       ) : null}
       {choice === "override" && (
         <JsonEditor
-          label="Replacement arguments (JSON object)"
+          label={t("Replacement arguments (JSON object)")}
           value={argumentsText}
-          error={error}
+          error={
+            error === "arguments"
+              ? t("Enter a valid JSON object for replacement arguments.")
+              : undefined
+          }
           onChange={(value) => {
             setArgumentsText(value);
             update("override", value);
@@ -180,10 +188,10 @@ function ApprovalInput({
             disabled={!canApprove || (choice === "override" && !!error)}
             onClick={() => send(choice === "override" ? "override" : "approve")}
           >
-            {choice === "override" ? "Approve edits" : "Approve once"}
+            {choice === "override" ? t("Approve edits") : t("Approve once")}
           </Button>
           <Button type="button" variant="outline" onClick={() => send("deny")}>
-            Deny
+            {t("Deny")}
           </Button>
           {canEdit && (
             <Button
@@ -191,14 +199,15 @@ function ApprovalInput({
               variant="ghost"
               onClick={() => update(choice === "override" ? "" : "override")}
             >
-              {choice === "override" ? "Keep original" : "Edit arguments"}
+              {choice === "override" ? t("Keep original") : t("Edit arguments")}
             </Button>
           )}
         </div>
       )}
       <p className={styles.hint}>
-        Approval is for this request only. To ask for a different action, deny
-        it and add a reason.
+        {t(
+          "Approval is for this request only. To ask for a different action, deny it and add a reason.",
+        )}
       </p>
     </section>
   );
@@ -211,10 +220,11 @@ function ExternalInput({
   request: Schema<"ExternalRequestView">;
   onChange: Change;
 }) {
+  const { t } = useTranslation();
   const [choice, setChoice] = useState("");
   const [content, setContent] = useState("");
   const [reason, setReason] = useState("");
-  const [error, setError] = useState("");
+  const [error, setError] = useState<"arguments" | "result" | "">("");
   function update(value: string, result = content, denial = reason) {
     setChoice(value);
     setError("");
@@ -234,7 +244,7 @@ function ExternalInput({
           result: JSON.parse(result),
         });
       } catch {
-        if (result.trim()) setError("Enter a valid JSON result.");
+        if (result.trim()) setError("result");
         onChange(undefined);
       }
     } else onChange(undefined);
@@ -242,25 +252,29 @@ function ExternalInput({
   return (
     <section
       className={styles.request}
-      aria-label={`External result for ${request.tool_name}`}
+      aria-label={t("External result for {{tool}}", {
+        tool: request.tool_name,
+      })}
     >
       <DecisionEvidence request={request} />
-      <p>Enter the tool's result. The tool won't run in your browser.</p>
+      <p>{t("Enter the tool's result. The tool won't run in your browser.")}</p>
       <ChoiceField
-        label="External result"
+        label={t("External result")}
         value={choice}
         onValueChange={(value) => update(value)}
         options={[
-          { value: "", label: "Choose a response" },
-          { value: "result", label: "Provide a result" },
-          { value: "deny", label: "Deny" },
+          { value: "", label: t("Choose a response") },
+          { value: "result", label: t("Provide a result") },
+          { value: "deny", label: t("Deny") },
         ]}
       />
       {choice === "result" && (
         <JsonEditor
-          label="Result (JSON)"
+          label={t("Result (JSON)")}
           value={content}
-          error={error}
+          error={
+            error === "result" ? t("Enter a valid JSON result.") : undefined
+          }
           onChange={(value) => {
             setContent(value);
             update(choice, value);
@@ -268,7 +282,7 @@ function ExternalInput({
         />
       )}
       {choice === "deny" && (
-        <FormField label="Reason (optional)">
+        <FormField label={t("Reason (optional)")}>
           <Textarea
             rows={2}
             value={reason}

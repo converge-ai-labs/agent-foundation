@@ -6,10 +6,16 @@ import type { CallToolResult } from "@modelcontextprotocol/client";
 import { result, type Schema, type Transport } from "../transport/client";
 import { AppMessage } from "./app-message";
 
+export class AppContextPendingError extends Error {
+  constructor() {
+    super("Wait for the selected App context update before sending.");
+  }
+}
+
 export type AppRequestState = {
   request: Schema<"AppToolRequest">;
   operation?: Schema<"AppOperation">;
-  uncertain?: string;
+  uncertain?: { kind: "decision" } | { kind: "result"; cause: unknown };
   deciding?: boolean;
   submittedDecision?: boolean;
 };
@@ -57,10 +63,7 @@ export class AppSession {
   }
   captureContext(): Schema<"AppContextReference"> | undefined {
     if (this.closed || !this.contextState.selected) return undefined;
-    if (this.contextState.pending)
-      throw new Error(
-        "Wait for the selected App context update before sending.",
-      );
+    if (this.contextState.pending) throw new AppContextPendingError();
     return this.contextState.context?.reference;
   }
   updateContext(value: unknown): Promise<void> {
@@ -171,9 +174,7 @@ export class AppSession {
       state?.submittedDecision !== undefined;
     this.update(key, {
       operation,
-      uncertain: unconfirmedDecision
-        ? "Couldn't confirm your choice. Nothing was retried or changed. Check the result or close this view."
-        : undefined,
+      uncertain: unconfirmedDecision ? { kind: "decision" } : undefined,
       deciding: false,
     });
     const pending = this.pending.get(key);
@@ -213,7 +214,7 @@ export class AppSession {
       if (!this.closed)
         this.update(key, {
           deciding: false,
-          uncertain: `Result unknown. The request was not repeated. ${error instanceof Error ? error.message : String(error)}`,
+          uncertain: { kind: "result", cause: error },
         });
     }
   }

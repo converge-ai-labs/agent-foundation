@@ -1,4 +1,5 @@
 import { expect, it } from "vitest";
+import { i18n } from "../i18n";
 import {
   changeLocalRoots,
   invalidEnvironments,
@@ -186,4 +187,24 @@ it("shows readable directory choices while keeping routing identities internal",
   expect(changeLocalRoots({ local_roots: ["/one", "/two"] }, ["/two"])).toEqual(
     { local_roots: ["/two"], default_environment: "workspace-0" },
   );
+});
+
+it("localizes environment summaries and directory choices without changing paths or aliases", async () => {
+  await i18n.changeLanguage("zh-CN");
+  try {
+    expect(
+      environmentSummary({
+        local_roots: Array.from({ length: 12 }, (_, i) => `/path/${i}`),
+      }),
+    ).toBe("本地 · 12 个目录");
+    expect(environmentSummary({ environment_bindings: [remote] })).toBe(
+      "1 个环境 · 1 个目录",
+    );
+    expect(workingDirectories({ local_roots: ["/home/example"] })).toEqual([
+      { value: "workspace", label: "本地 · /home/example" },
+      { value: "thread-files", label: "本地 · 聊天文件" },
+    ]);
+  } finally {
+    await i18n.changeLanguage("en");
+  }
 });

@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import {
   SettingsChoice as ChoiceField,
   SettingsTextField as TextField,
@@ -79,20 +80,21 @@ function WindowUsage({
   window: Pick<Schema<"UsageWindow">, "used_percent" | "reset_at">;
   label: string;
 }) {
+  const { t } = useTranslation();
   const remaining = Math.max(0, Math.min(100, 100 - window.used_percent));
   return (
     <div className={styles.meter}>
       <div className={styles.meterHeading}>
         <span>{label}</span>
         <span>
-          <strong>{Math.round(remaining)}%</strong> left
+          {t("{{percent}}% left", { percent: Math.round(remaining) })}
         </span>
       </div>
       <meter
         min={0}
         max={100}
         value={remaining}
-        aria-label={`${label} remaining`}
+        aria-label={t("{{label}} remaining", { label })}
       />
       <span
         className={styles.quotaDetail}
@@ -101,8 +103,10 @@ function WindowUsage({
         }
       >
         {window.reset_at > 0
-          ? `Resets ${quotaTime(window.reset_at * 1000, true)}`
-          : "Reset time unavailable"}
+          ? t("Resets {{time}}", {
+              time: quotaTime(window.reset_at * 1000, true),
+            })
+          : t("Reset time unavailable")}
       </span>
     </div>
   );
@@ -115,6 +119,7 @@ function LimitUsage({
   limits: Schema<"UsageLimits"> | null | undefined;
   label: string;
 }) {
+  const { t } = useTranslation();
   const windows = [limits?.primary_window, limits?.secondary_window].filter(
     (window) => window != null,
   );
@@ -129,10 +134,10 @@ function LimitUsage({
             label={windowLabel(window.limit_window_seconds)}
           />
         ))}
-        {!windows.length && <span>Usage windows unavailable</span>}
+        {!windows.length && <span>{t("Usage windows unavailable")}</span>}
       </div>
       {limits && (!limits.allowed || limits.limit_reached) && (
-        <span>Included allowance unavailable</span>
+        <span>{t("Included allowance unavailable")}</span>
       )}
     </div>
   );
@@ -143,26 +148,28 @@ function VoucherSummary({
 }: {
   usage: Schema<"CodexUsage"> | null | undefined;
 }) {
+  const { t } = useTranslation();
   const vouchers = voucherSummary(usage);
   return (
     <div className={styles.voucherSummary}>
       <span className={styles.summaryItem}>
         <TicketIcon size={15} aria-hidden />
-        Reset vouchers ·{" "}
         {vouchers.count === null
-          ? "Unavailable"
-          : `${vouchers.count} available`}
+          ? t("Reset vouchers · Unavailable")
+          : t("Reset vouchers · {{count}} available", {
+              count: vouchers.count,
+            })}
       </span>
       {vouchers.expiresAt !== null && (
         <span className={styles.quotaDetail}>
-          Expires {quotaTime(vouchers.expiresAt)}
+          {t("Expires {{time}}", { time: quotaTime(vouchers.expiresAt) })}
         </span>
       )}
       {vouchers.count !== null &&
         vouchers.count > 0 &&
-        vouchers.expiresAt === null && <span>Expiry not provided</span>}
+        vouchers.expiresAt === null && <span>{t("Expiry not provided")}</span>}
       {usage?.reset_unavailable && (
-        <span>Voucher details could not be refreshed</span>
+        <span>{t("Voucher details could not be refreshed")}</span>
       )}
     </div>
   );
@@ -175,6 +182,7 @@ export function AccountUsage({
   view: AccountView;
   onVouchers?: () => void;
 }) {
+  const { t } = useTranslation();
   const observed = view.usage.usage;
   const usage = observed && "account_id" in observed ? observed : null;
   if (view.account.provider === "grok" || observed?.provider === "grok") {
@@ -204,43 +212,48 @@ export function AccountUsage({
       ))}
       {monthly && (
         <div className={styles.quotaGroup}>
-          <WindowUsage window={monthly} label="Monthly credit limit" />
+          <WindowUsage window={monthly} label={t("Monthly credit limit")} />
           <span>
-            {monthly.used} / {monthly.limit} credits used · {monthly.remaining}{" "}
-            remaining
+            {t("{{used}} / {{limit}} credits used · {{remaining}} remaining", {
+              used: monthly.used,
+              limit: monthly.limit,
+              remaining: monthly.remaining,
+            })}
           </span>
         </div>
       )}
       {usage?.spend_control?.reached && (
-        <span>Workspace spending limit reached</span>
+        <span>{t("Workspace spending limit reached")}</span>
       )}
       <div className={styles.balanceSummary}>
         <div className={styles.balanceCell}>
           <VoucherSummary usage={usage} />
           {onVouchers && (
             <Button variant="ghost" size="sm" onClick={onVouchers}>
-              View vouchers <CaretRightIcon />
+              {t("View vouchers")}
+              <CaretRightIcon />
             </Button>
           )}
         </div>
         {usage?.credits && (
           <div className={styles.balanceCell}>
             <span className={styles.summaryItem}>
-              <WalletIcon size={15} aria-hidden /> Rechargeable credits
+              <WalletIcon size={15} aria-hidden />
+              {t("Rechargeable credits")}
             </span>
             <strong
               className={styles.balanceValue}
               title={usage.credits.balance ?? undefined}
             >
               {usage.credits.unlimited
-                ? "Unlimited"
+                ? t("Unlimited")
                 : usage.credits.balance != null
                   ? Number(usage.credits.balance).toLocaleString(undefined, {
                       maximumFractionDigits: 2,
                     })
                   : usage.credits.has_credits
-                    ? "Available"
-                    : "None"}
+                    ? t("Available")
+                    : t("None")}
             </strong>
           </div>
         )}
@@ -251,12 +264,15 @@ export function AccountUsage({
 }
 
 function UsageFreshness({ snapshot }: { snapshot: Schema<"UsageSnapshot"> }) {
+  const { t } = useTranslation();
   return (
     <span className={styles.quotaDetail}>
-      {snapshot.error ? "Refresh failed · " : ""}
+      {snapshot.error ? t("Refresh failed · ") : ""}
       {snapshot.observed_at
-        ? `Updated ${quotaTime(snapshot.observed_at * 1000)}`
-        : "Not refreshed yet"}
+        ? t("Updated {{time}}", {
+            time: quotaTime(snapshot.observed_at * 1000),
+          })
+        : t("Not refreshed yet")}
     </span>
   );
 }
@@ -278,6 +294,7 @@ function SubscriptionAccountRow({
   onEnable: () => void;
   onVouchers?: () => void;
 }) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const { account, authentication } = view;
   const usageAvailable = authentication.usable || !!view.usage.usage;
@@ -294,10 +311,10 @@ function SubscriptionAccountRow({
               data-connected={account.enabled && authentication.usable}
             >
               {!account.enabled
-                ? "Paused"
+                ? t("Paused")
                 : authentication.usable
-                  ? "Connected"
-                  : "Sign-in required"}
+                  ? t("Connected")
+                  : t("Sign-in required")}
             </span>
             {usage && "plan_type" in usage && usage.plan_type !== "unknown" && (
               <span className={styles.plan}>{usage.plan_type}</span>
@@ -309,12 +326,12 @@ function SubscriptionAccountRow({
             <Button
               variant="ghost"
               size="sm"
-              aria-label={`Usage for ${account.name}`}
+              aria-label={t("Usage for {{name}}", { name: account.name })}
               aria-expanded={expanded}
               onClick={() => setExpanded(!expanded)}
             >
               <span className={styles.allowanceSummary}>
-                {allowance || "Usage"}
+                {allowance || t("Usage")}
               </span>
               <CaretRightIcon
                 className={expanded ? styles.expanded : undefined}
@@ -323,11 +340,11 @@ function SubscriptionAccountRow({
           )}
           {!account.enabled ? (
             <Button variant="outline" size="sm" onClick={onEnable}>
-              Enable
+              {t("Enable")}
             </Button>
           ) : !authentication.usable ? (
             <Button variant="outline" size="sm" onClick={onSignIn}>
-              Sign in
+              {t("Sign in")}
             </Button>
           ) : null}
           {children}
@@ -336,7 +353,7 @@ function SubscriptionAccountRow({
       {expanded && usageAvailable && (
         <div className={styles.usageDetails}>
           <div className={styles.usageToolbar}>
-            <span>Usage & allowance</span>
+            <span>{t("Usage & allowance")}</span>
             <Button
               variant="ghost"
               size="sm"
@@ -344,7 +361,7 @@ function SubscriptionAccountRow({
               onClick={onRefresh}
             >
               <ArrowsClockwiseIcon />
-              Refresh
+              {t("Refresh")}
             </Button>
           </div>
           <AccountUsage view={view} onVouchers={onVouchers} />
@@ -363,6 +380,7 @@ export function SubscriptionAccounts({
   connections: Schema<"AccountConnection">[];
   renderConnection: (connection: Schema<"AccountConnection">) => ReactNode;
 }) {
+  const { t } = useTranslation();
   const { client } = useTransport();
   const queries = useQueryClient();
   const catalog = useSubscriptions();
@@ -487,10 +505,10 @@ export function SubscriptionAccounts({
     (item) => item.provider === activeLogin.data?.provider,
   );
   return (
-    <section className={styles.section} aria-label="Subscription accounts">
+    <section className={styles.section} aria-label={t("Subscription accounts")}>
       <div className={styles.listToolbar}>
         <SearchField
-          label="Search accounts"
+          label={t("Search accounts")}
           value={filter}
           onChange={setFilter}
         />
@@ -503,7 +521,7 @@ export function SubscriptionAccounts({
           }}
         >
           <PlusIcon aria-hidden="true" />
-          Add account
+          {t("Add account")}
         </Button>
       </div>
       <ErrorNotice
@@ -518,8 +536,9 @@ export function SubscriptionAccounts({
         (pendingAccount || pendingConnection) && (
           <div className={styles.row} role="status">
             <span>
-              Sign-in in progress ·{" "}
-              {pendingAccount?.name ?? pendingConnection?.label}
+              {t("Sign-in in progress · {{name}}", {
+                name: pendingAccount?.name ?? pendingConnection?.label,
+              })}
             </span>
             <Button
               variant="outline"
@@ -529,11 +548,11 @@ export function SubscriptionAccounts({
                   setConnectionLogin(pendingConnection);
               }}
             >
-              Continue sign-in
+              {t("Continue sign-in")}
             </Button>
           </div>
         )}
-      {catalog.isPending && <p role="status">Loading accounts…</p>}
+      {catalog.isPending && <p role="status">{t("Loading accounts…")}</p>}
       <div className={styles.rows}>
         {(["codex", "grok"] as const).map((provider) => {
           const providerAccounts = accounts.filter(
@@ -548,7 +567,9 @@ export function SubscriptionAccounts({
             <section
               key={provider}
               className={styles.providerSection}
-              aria-label={`${provider === "codex" ? "Codex" : "Grok"} accounts`}
+              aria-label={t("{{provider}} accounts", {
+                provider: provider === "codex" ? "Codex" : "Grok",
+              })}
             >
               <header className={styles.providerHeading}>
                 <BrandIcon
@@ -557,8 +578,11 @@ export function SubscriptionAccounts({
                 />
                 <h3>{provider === "codex" ? "Codex" : "Grok"}</h3>
                 <span>
-                  {providerAccounts.length}{" "}
-                  {providerAccounts.length === 1 ? "account" : "accounts"}
+                  {providerAccounts.length === 1
+                    ? t("1 account")
+                    : t("{{count}} accounts", {
+                        count: providerAccounts.length,
+                      })}
                 </span>
               </header>
               <div className={styles.accountList}>
@@ -588,7 +612,7 @@ export function SubscriptionAccounts({
                             <Button
                               variant="ghost"
                               size="icon-sm"
-                              aria-label="Manage account"
+                              aria-label={t("Manage account")}
                             />
                           }
                         >
@@ -597,7 +621,7 @@ export function SubscriptionAccounts({
                         <MenuPopup align="end">
                           <MenuItem onClick={() => setLogin(account)}>
                             <KeyIcon />
-                            Sign-in & logout
+                            {t("Sign-in & logout")}
                           </MenuItem>
                           <MenuItem
                             onClick={() => {
@@ -606,7 +630,7 @@ export function SubscriptionAccounts({
                             }}
                           >
                             <PencilSimpleIcon />
-                            Rename
+                            {t("Rename")}
                           </MenuItem>
                           <MenuItem
                             disabled={update.isPending}
@@ -618,12 +642,12 @@ export function SubscriptionAccounts({
                             }
                           >
                             {account.enabled ? <PauseIcon /> : <PlayIcon />}
-                            {account.enabled ? "Pause" : "Enable"}
+                            {account.enabled ? t("Pause") : t("Enable")}
                           </MenuItem>
                           {account.provider === "codex" && (
                             <MenuItem onClick={() => setReset(account)}>
                               <TicketIcon />
-                              Reset voucher…
+                              {t("Reset voucher…")}
                             </MenuItem>
                           )}
                           <MenuItem
@@ -634,7 +658,7 @@ export function SubscriptionAccounts({
                             onClick={() => refresh.mutate(account.id)}
                           >
                             <ArrowsClockwiseIcon />
-                            Refresh usage
+                            {t("Refresh usage")}
                           </MenuItem>
                           <MenuSeparator />
                           <MenuItem
@@ -642,7 +666,7 @@ export function SubscriptionAccounts({
                             onClick={() => setDeleting(account)}
                           >
                             <TrashIcon />
-                            Delete…
+                            {t("Delete…")}
                           </MenuItem>
                         </MenuPopup>
                       </Menu>
@@ -663,7 +687,9 @@ export function SubscriptionAccounts({
             <section
               key={connection.provider}
               className={styles.providerSection}
-              aria-label={`${connection.label} accounts`}
+              aria-label={t("{{provider}} accounts", {
+                provider: connection.label,
+              })}
             >
               <header className={styles.providerHeading}>
                 <BrandIcon
@@ -673,24 +699,26 @@ export function SubscriptionAccounts({
                   size={20}
                 />
                 <h3>{connection.label}</h3>
-                <span>1 account</span>
+                <span>{t("1 account")}</span>
               </header>
               <div className={styles.accountList}>
                 <article className={styles.accountCard}>
                   <header className={styles.accountHeader}>
                     <div className={styles.accountIdentity}>
                       <div className={styles.identity}>
-                        <strong>{status.account_id ?? "Server account"}</strong>
+                        <strong>
+                          {status.account_id ?? t("Server account")}
+                        </strong>
                         <span className={styles.accountMeta}>
                           <span
                             className={styles.status}
                             data-connected={status.usable}
                           >
                             {status.usable
-                              ? "Connected"
+                              ? t("Connected")
                               : status.required_action === "refresh"
-                                ? "Refreshes on first use"
-                                : "Sign-in required"}
+                                ? t("Refreshes on first use")
+                                : t("Sign-in required")}
                           </span>
                         </span>
                       </div>
@@ -699,11 +727,11 @@ export function SubscriptionAccounts({
                       variant="ghost"
                       onClick={() => setConnectionLogin(connection)}
                     >
-                      Manage account
+                      {t("Manage account")}
                     </Button>
                   </header>
                   <details className={styles.legacyUsage}>
-                    <summary>Usage & allowance</summary>
+                    <summary>{t("Usage & allowance")}</summary>
                     {connection.provider === "copilot" ? (
                       <CopilotAllowance
                         identity={`${status.source_id ?? ""}:${status.account_id ?? ""}`}
@@ -724,16 +752,17 @@ export function SubscriptionAccounts({
           !connected.length &&
           !singleAccounts.some((item) => item.isPending) && (
             <EmptyList>
-              No accounts connected. Add an account to get started.
+              {t("No accounts connected. Add an account to get started.")}
             </EmptyList>
           )}
       </div>
       {!!catalog.data?.adoption && (
         <details className={`${styles.migration} ${layout.disclosure}`}>
-          <summary>Import existing CLI logins</summary>
+          <summary>{t("Import existing CLI logins")}</summary>
           <p>
-            Imported once on first startup. CLI files stay unchanged. Signing
-            out or deleting an account won't import it again.
+            {t(
+              "Imported once on first startup. CLI files stay unchanged. Signing out or deleting an account won't import it again.",
+            )}
           </p>
           {Object.entries(catalog.data.adoption).map(([key, value]) => (
             <p key={key}>
@@ -751,8 +780,8 @@ export function SubscriptionAccounts({
             setEditing(null);
           }
         }}
-        title={editing ? "Rename account" : "Add account"}
-        closeLabel="Close"
+        title={editing ? t("Rename account") : t("Add account")}
+        closeLabel={t("Close")}
         footer={
           <>
             <Button
@@ -763,7 +792,7 @@ export function SubscriptionAccounts({
                 setEditing(null);
               }}
             >
-              Cancel
+              {t("Cancel")}
             </Button>
             <Button
               loading={create.isPending || update.isPending}
@@ -789,7 +818,7 @@ export function SubscriptionAccounts({
                 }
               }}
             >
-              {editing ? "Save name" : "Continue"}
+              {editing ? t("Save name") : t("Continue")}
             </Button>
           </>
         }
@@ -798,7 +827,7 @@ export function SubscriptionAccounts({
           <ErrorNotice error={create.error || update.error} />
           {!editing && (
             <ChoiceField
-              label="Provider"
+              label={t("Provider")}
               layout="stacked"
               value={provider}
               onValueChange={(value) =>
@@ -812,14 +841,15 @@ export function SubscriptionAccounts({
           )}
           {editing || namedProvider ? (
             <ModalTextField
-              label="Account name"
+              label={t("Account name")}
               value={name}
               onChange={setName}
             />
           ) : (
             <p>
-              This provider shares one account across the server. Continue to
-              manage it.
+              {t(
+                "This provider shares one account across the server. Continue to manage it.",
+              )}
             </p>
           )}
         </div>
@@ -829,8 +859,8 @@ export function SubscriptionAccounts({
         onOpenChange={(open) => {
           if (!open) setConnectionLogin(null);
         }}
-        title={connectionLogin?.label ?? "Sign in"}
-        closeLabel="Done"
+        title={connectionLogin?.label ?? t("Sign in")}
+        closeLabel={t("Done")}
       >
         {connectionLogin && renderConnection(connectionLogin)}
       </ModalFrame>
@@ -839,8 +869,8 @@ export function SubscriptionAccounts({
         onOpenChange={(open) => {
           if (!open) setLogin(null);
         }}
-        title={login?.name ?? "Sign in"}
-        closeLabel="Done"
+        title={login?.name ?? t("Sign in")}
+        closeLabel={t("Done")}
       >
         {login && renderLogin(login)}
       </ModalFrame>
@@ -849,9 +879,11 @@ export function SubscriptionAccounts({
         onOpenChange={(open) => {
           if (!open) setDeleting(null);
         }}
-        title={`Delete ${deleting?.name ?? "account"}?`}
-        description="Remove this saved account? Future requests can't use it, even through saved groups. Original CLI files are kept."
-        closeLabel="Close"
+        title={t("Delete {{name}}?", { name: deleting?.name ?? t("account") })}
+        description={t(
+          "Remove this saved account? Future requests can't use it, even through saved groups. Original CLI files are kept.",
+        )}
+        closeLabel={t("Close")}
         footer={
           <>
             <Button
@@ -859,14 +891,14 @@ export function SubscriptionAccounts({
               disabled={remove.isPending}
               onClick={() => setDeleting(null)}
             >
-              Cancel
+              {t("Cancel")}
             </Button>
             <Button
               variant="destructive"
               loading={remove.isPending}
               onClick={() => deleting && remove.mutate(deleting)}
             >
-              Delete account
+              {t("Delete account")}
             </Button>
           </>
         }
@@ -879,6 +911,7 @@ export function SubscriptionAccounts({
 }
 
 export function AccountGroups() {
+  const { t } = useTranslation();
   const catalog = useSubscriptions();
   const [params, setParams] = useSearchParams();
   const [filter, setFilter] = useState("");
@@ -901,28 +934,28 @@ export function AccountGroups() {
       />
     );
   return (
-    <section className={styles.section} aria-label="Account groups">
+    <section className={styles.section} aria-label={t("Account groups")}>
       <ErrorNotice error={catalog.error} />
-      {catalog.isPending && <p role="status">Loading groups…</p>}
+      {catalog.isPending && <p role="status">{t("Loading groups…")}</p>}
       {id && !catalog.isPending && !group && (
-        <p role="status">Group not found.</p>
+        <p role="status">{t("Group not found.")}</p>
       )}
       <div className={styles.listToolbar}>
         {!catalog.data?.groups.length && (
           <p className={styles.help}>
-            Combine accounts from the same provider.
+            {t("Combine accounts from the same provider.")}
           </p>
         )}
         {!!catalog.data?.groups.length && (
           <SearchField
-            label="Search groups"
+            label={t("Search groups")}
             value={filter}
             onChange={setFilter}
           />
         )}
         <Button onClick={() => setParams({ tab: "groups", group: "new" })}>
           <PlusIcon aria-hidden="true" />
-          Add group
+          {t("Add group")}
         </Button>
       </div>
       <div className={styles.rows}>
@@ -932,11 +965,12 @@ export function AccountGroups() {
               <strong>{item.name}</strong>
               <span>
                 {item.provider} ·{" "}
-                {item.strategy === "weighted" ? "By weight" : "In order"} ·{" "}
-                {item.accounts?.length ?? 0} accounts
+                {item.strategy === "weighted" ? t("By weight") : t("In order")}{" "}
+                ·{" "}
+                {t("{{count}} accounts", { count: item.accounts?.length ?? 0 })}
                 {item.allow_credits
-                  ? " · Credits allowed"
-                  : " · Included allowance only"}
+                  ? ` · ${t("Credits allowed")}`
+                  : ` · ${t("Included allowance only")}`}
               </span>
               <div className={styles.members}>
                 {item.accounts?.map((member) => {
@@ -945,7 +979,7 @@ export function AccountGroups() {
                   );
                   return (
                     <span key={member.account}>
-                      {view?.account.name ?? "Deleted account"}
+                      {view?.account.name ?? t("Deleted account")}
                       {compactAllowance(view?.usage.usage) &&
                         ` · ${compactAllowance(view?.usage.usage)}`}
                       {item.strategy === "weighted"
@@ -960,15 +994,15 @@ export function AccountGroups() {
               variant="ghost"
               onClick={() => setParams({ tab: "groups", group: item.id })}
             >
-              Manage group
+              {t("Manage group")}
             </Button>
           </article>
         ))}
         {!catalog.isPending && !groups.length && (
           <p className={layout.emptySection}>
             {catalog.data?.groups.length
-              ? "No matching groups."
-              : "No account groups yet."}
+              ? t("No matching groups.")
+              : t("No account groups yet.")}
           </p>
         )}
       </div>
@@ -983,6 +1017,7 @@ function ResetVoucher({
   account: Account;
   close: () => void;
 }) {
+  const { t } = useTranslation();
   const { client } = useTransport();
   const queries = useQueryClient();
   const [selection, setSelection] = useState<{
@@ -1030,19 +1065,23 @@ function ResetVoucher({
       }}
       title={
         redeem.isSuccess
-          ? `Voucher result · ${account.name}`
+          ? t("Voucher result · {{name}}", { name: account.name })
           : selection
-            ? `Use voucher · ${account.name}?`
-            : `Reset vouchers · ${account.name}`
+            ? t("Use voucher · {{name}}?", { name: account.name })
+            : t("Reset vouchers · {{name}}", { name: account.name })
       }
       description={
         redeem.isSuccess
           ? undefined
           : selection
-            ? "This consumes one voucher to reset this account’s included allowance."
-            : "Use a voucher to reset your included allowance. Earliest expiry first."
+            ? t(
+                "This consumes one voucher to reset this account’s included allowance.",
+              )
+            : t(
+                "Use a voucher to reset your included allowance. Earliest expiry first.",
+              )
       }
-      closeLabel="Close"
+      closeLabel={t("Close")}
       footer={
         selection &&
         !redeem.isSuccess && (
@@ -1053,14 +1092,14 @@ function ResetVoucher({
               disabled={!redeem.isIdle}
               onClick={() => setSelection(null)}
             >
-              Cancel
+              {t("Cancel")}
             </Button>
             <Button
               disabled={redeem.isPending}
               loading={redeem.isPending}
               onClick={() => redeem.mutate()}
             >
-              {redeem.isError ? "Retry use voucher" : "Use voucher"}
+              {redeem.isError ? t("Retry use voucher") : t("Use voucher")}
             </Button>
           </>
         )
@@ -1069,7 +1108,7 @@ function ResetVoucher({
       <div className={styles.form}>
         <ErrorNotice error={vouchers.error || redeem.error} />
         {vouchers.isPending && (
-          <p role="status">Checking available vouchers…</p>
+          <p role="status">{t("Checking available vouchers…")}</p>
         )}
         {vouchers.data?.reset_unavailable && (
           <p>{vouchers.data.reset_unavailable}</p>
@@ -1077,12 +1116,12 @@ function ResetVoucher({
         {!selection && !redeem.isSuccess && (
           <>
             {vouchers.data?.reset_credits && !available.length && (
-              <p>No available reset vouchers.</p>
+              <p>{t("No available reset vouchers.")}</p>
             )}
             {!!available.length && (
               <ul
                 className={styles.voucherList}
-                aria-label="Available reset vouchers"
+                aria-label={t("Available reset vouchers")}
               >
                 {available.map((item) => (
                   <li key={item.id} className={styles.voucherRow}>
@@ -1097,7 +1136,7 @@ function ResetVoucher({
                         })
                       }
                     >
-                      Use
+                      {t("Use")}
                     </Button>
                   </li>
                 ))}
@@ -1111,14 +1150,17 @@ function ResetVoucher({
               <VoucherDetails voucher={selection.voucher} />
             </div>
             <p className={styles.quotaDetail}>
-              Account: {account.name} · {selection.accountId}
+              {t("Account: {{name}} · {{id}}", {
+                name: account.name,
+                id: selection.accountId,
+              })}
             </p>
           </>
         )}
         {redeem.isSuccess && (
           <p role="status">
             {redeem.data.code.replaceAll("_", " ")} ·{" "}
-            {redeem.data.windows_reset} windows reset
+            {t("{{count}} windows reset", { count: redeem.data.windows_reset })}
           </p>
         )}
       </div>
@@ -1127,14 +1169,17 @@ function ResetVoucher({
 }
 
 function VoucherDetails({ voucher }: { voucher: Schema<"ResetCredit"> }) {
+  const { t } = useTranslation();
   return (
     <div className={styles.voucherDetails}>
-      <strong>{voucher.title || "Reset voucher"}</strong>
+      <strong>{voucher.title || t("Reset voucher")}</strong>
       {voucher.description && <p>{voucher.description}</p>}
       <span>
         {voucher.expires_at
-          ? `Expires ${quotaTime(Date.parse(voucher.expires_at))}`
-          : "Expiry not provided"}
+          ? t("Expires {{time}}", {
+              time: quotaTime(Date.parse(voucher.expires_at)),
+            })
+          : t("Expiry not provided")}
       </span>
     </div>
   );
@@ -1149,6 +1194,7 @@ function GroupEditor({
   accounts: AccountView[];
   close: () => void;
 }) {
+  const { t } = useTranslation();
   const { client } = useTransport();
   const queries = useQueryClient();
   const [draft, setDraft] = useState<Group>(
@@ -1216,31 +1262,32 @@ function GroupEditor({
   }
   const busy = save.isPending || remove.isPending;
   return (
-    <section className={styles.groupDetail} aria-label="Group details">
+    <section className={styles.groupDetail} aria-label={t("Group details")}>
       <Button
         variant="ghost"
         className={styles.back}
         onClick={close}
         disabled={busy}
       >
-        <ArrowLeftIcon /> Account groups
+        <ArrowLeftIcon />
+        {t("Account groups")}
       </Button>
       <header className={styles.heading}>
         <div>
-          <h2>{initial ? initial.name : "New account group"}</h2>
-          <p>Choose accounts for future runs.</p>
+          <h2>{initial ? initial.name : t("New account group")}</h2>
+          <p>{t("Choose accounts for future runs.")}</p>
         </div>
       </header>
       <ErrorNotice error={sources.error || save.error || remove.error} />
       <fieldset className={styles.groupFields} disabled={!writable || busy}>
         <SettingsSection>
           <TextField
-            label="Group name"
+            label={t("Group name")}
             value={draft.name}
             onChange={(name) => setDraft({ ...draft, name })}
           />
           <ChoiceField
-            label="Provider"
+            label={t("Provider")}
             value={draft.provider}
             disabled={!!initial}
             onValueChange={(provider) =>
@@ -1257,7 +1304,7 @@ function GroupEditor({
             ]}
           />
           <ChoiceField
-            label="Scheduling"
+            label={t("Scheduling")}
             value={draft.strategy ?? "ordered"}
             onValueChange={(strategy) =>
               setDraft({
@@ -1268,43 +1315,48 @@ function GroupEditor({
             options={[
               {
                 value: "ordered",
-                label: "In order",
+                label: t("In order"),
               },
               {
                 value: "weighted",
-                label: "By weight",
+                label: t("By weight"),
               },
             ]}
           />
           {draft.provider === "codex" && (
             <ChoiceField
-              label="Rechargeable credits"
+              label={t("Rechargeable credits")}
               value={draft.allow_credits ? "allow" : "deny"}
               onValueChange={(value) =>
                 setDraft({ ...draft, allow_credits: value === "allow" })
               }
               options={[
-                { value: "deny", label: "Included allowance only" },
+                { value: "deny", label: t("Included allowance only") },
                 {
                   value: "allow",
-                  label: "Allow extra credits",
+                  label: t("Allow extra credits"),
                 },
               ]}
             />
           )}
           {draft.provider === "codex" && draft.allow_credits && (
             <p className={styles.help}>
-              Uses credits after the included allowance. Usage may go slightly
-              over the limit.
+              {t(
+                "Uses credits after the included allowance. Usage may go slightly over the limit.",
+              )}
             </p>
           )}
         </SettingsSection>
         <SettingsSection
-          title="Accounts"
+          title={t("Accounts")}
           description={
             draft.strategy === "weighted"
-              ? "Higher weights get more runs. A run keeps its account while it remains eligible."
-              : "Tries accounts from top to bottom. Put your preferred account first."
+              ? t(
+                  "Higher weights get more runs. A run keeps its account while it remains eligible.",
+                )
+              : t(
+                  "Tries accounts from top to bottom. Put your preferred account first.",
+                )
           }
         >
           <FormField
@@ -1312,8 +1364,8 @@ function GroupEditor({
             hideLabel
             label={
               draft.strategy === "weighted"
-                ? "Members and weights"
-                : "Members in selection order"
+                ? t("Members and weights")
+                : t("Members in selection order")
             }
           >
             <div className={styles.form}>
@@ -1322,11 +1374,13 @@ function GroupEditor({
                   <span className={styles.memberNumber}>{index + 1}</span>
                   <span>
                     {accounts.find((item) => item.account.id === member.account)
-                      ?.account.name ?? "Deleted account"}
+                      ?.account.name ?? t("Deleted account")}
                   </span>
                   {draft.strategy === "weighted" && (
                     <Input
-                      aria-label={`Weight for member ${index + 1}`}
+                      aria-label={t("Weight for member {{number}}", {
+                        number: index + 1,
+                      })}
                       type="number"
                       min={1}
                       max={1000}
@@ -1348,7 +1402,7 @@ function GroupEditor({
                     disabled={index === 0}
                     onClick={() => move(index, -1)}
                   >
-                    Up
+                    {t("Up")}
                   </Button>
                   <Button
                     variant="ghost"
@@ -1356,7 +1410,7 @@ function GroupEditor({
                     disabled={index === members.length - 1}
                     onClick={() => move(index, 1)}
                   >
-                    Down
+                    {t("Down")}
                   </Button>
                   <Button
                     variant="ghost"
@@ -1365,21 +1419,23 @@ function GroupEditor({
                       setMembers(members.filter((_, i) => i !== index))
                     }
                   >
-                    Remove
+                    {t("Remove")}
                   </Button>
                 </div>
               ))}
               {!members.length && (
                 <p>
                   {availableMembers.length
-                    ? "Choose the accounts this group can use."
-                    : "Connect an account in Subscription accounts before using this group."}
+                    ? t("Choose the accounts this group can use.")
+                    : t(
+                        "Connect an account in Subscription accounts before using this group.",
+                      )}
                 </p>
               )}
               {availableMembers.length > 0 && (
                 <ChoiceField
-                  label="Add member"
-                  placeholder="Choose an account"
+                  label={t("Add member")}
+                  placeholder={t("Choose an account")}
                   value=""
                   onValueChange={(account) => {
                     if (account)
@@ -1395,7 +1451,9 @@ function GroupEditor({
           </FormField>
           {!writable && (
             <p>
-              This group is read-only here. Edit its configuration file instead.
+              {t(
+                "This group is read-only here. Edit its configuration file instead.",
+              )}
             </p>
           )}
         </SettingsSection>
@@ -1403,8 +1461,8 @@ function GroupEditor({
       <div className={styles.editorFooter}>
         <p className={styles.help}>
           {JSON.stringify(draft) !== JSON.stringify(initial)
-            ? "Unsaved changes"
-            : "Saved configuration"}
+            ? t("Unsaved changes")
+            : t("Saved configuration")}
         </p>
         <div className={styles.actions}>
           {initial && (
@@ -1414,11 +1472,11 @@ function GroupEditor({
               loading={remove.isPending}
               onClick={() => setDeleteConfirm(true)}
             >
-              Delete group…
+              {t("Delete group…")}
             </Button>
           )}
           <Button variant="outline" disabled={busy} onClick={close}>
-            Cancel
+            {t("Cancel")}
           </Button>
           <Button
             loading={save.isPending}
@@ -1430,7 +1488,7 @@ function GroupEditor({
             }
             onClick={() => save.mutate()}
           >
-            Save
+            {t("Save")}
           </Button>
         </div>
       </div>
@@ -1439,9 +1497,11 @@ function GroupEditor({
         onOpenChange={(open) => {
           if (!busy) setDeleteConfirm(open);
         }}
-        title="Delete account group?"
-        description="Update models that reference this group before deleting it."
-        closeLabel="Close"
+        title={t("Delete account group?")}
+        description={t(
+          "Update models that reference this group before deleting it.",
+        )}
+        closeLabel={t("Close")}
         footer={
           <>
             <Button
@@ -1449,7 +1509,7 @@ function GroupEditor({
               disabled={busy}
               onClick={() => setDeleteConfirm(false)}
             >
-              Cancel
+              {t("Cancel")}
             </Button>
             <Button
               variant="destructive"
@@ -1457,7 +1517,7 @@ function GroupEditor({
               disabled={!writable || save.isPending}
               onClick={() => remove.mutate()}
             >
-              Delete group
+              {t("Delete group")}
             </Button>
           </>
         }

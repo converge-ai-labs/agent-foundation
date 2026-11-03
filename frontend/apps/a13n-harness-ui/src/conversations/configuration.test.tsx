@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { i18n } from "../i18n";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
@@ -76,12 +77,20 @@ it("previews Project environments without applying until the reviewed action is 
   const apply = await screen.findByRole("button", {
     name: "Apply environments",
   });
+  expect(apply).toBeTruthy();
   expect(post).not.toHaveBeenCalled();
   expect(get).toHaveBeenCalledWith(
     "/api/threads/{thread_id}/project-environments",
     { params: { path: { thread_id: "thread-one" } } },
   );
-  await user.click(apply);
+  await act(async () => {
+    await i18n.changeLanguage("zh-CN");
+  });
+  expect(screen.getByText("更改前 · 版本 3")).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "应用环境" }));
+  await act(async () => {
+    await i18n.changeLanguage("en");
+  });
   await waitFor(() => expect(reconcile).toHaveBeenCalledTimes(1));
   expect(post).toHaveBeenCalledWith(
     "/api/threads/{thread_id}/project-environments",

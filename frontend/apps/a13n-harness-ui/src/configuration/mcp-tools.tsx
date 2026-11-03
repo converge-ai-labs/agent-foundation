@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { useContext, useEffect, useId, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Checkbox, Input } from "a13n-ui";
@@ -12,6 +13,7 @@ import styles from "./mcp-tools.module.css";
 type ToolDraft = { tools: string[] | null; digest: string };
 
 export function McpTools({ serverId }: { serverId: string }) {
+  const { t } = useTranslation();
   const { client } = useTransport();
   const cache = useQueryClient();
   const drafts = useContext(DraftContext);
@@ -90,8 +92,8 @@ export function McpTools({ serverId }: { serverId: string }) {
       .map((name) => ({
         name,
         description: descriptors
-          ? "No longer provided by this server."
-          : "Load tools to view its description.",
+          ? t("No longer provided by this server.")
+          : t("Load tools to view its description."),
         input_schema: {},
         unavailable: !!descriptors,
       })),
@@ -104,24 +106,24 @@ export function McpTools({ serverId }: { serverId: string }) {
   );
   return (
     <div className={styles.editor}>
-      <SettingsSection title="Tool access">
+      <SettingsSection title={t("Tool access")}>
         <ErrorNotice error={settings.error} />
         {settings.isPending ? (
-          <p className={styles.note}>Loading settings…</p>
+          <p className={styles.note}>{t("Loading settings…")}</p>
         ) : (
           settings.data && (
             <SettingsChoice
-              label="Available tools"
+              label={t("Available tools")}
               value={tools === null ? "all" : "selected"}
               disabled={save.isPending || discovery.isFetching}
               description={
                 tools === null
-                  ? "Includes new tools added by this server."
-                  : "New tools stay disabled until selected."
+                  ? t("Includes new tools added by this server.")
+                  : t("New tools stay disabled until selected.")
               }
               options={[
-                { value: "all", label: "All tools" },
-                { value: "selected", label: "Selected tools" },
+                { value: "all", label: t("All tools") },
+                { value: "selected", label: t("Selected tools") },
               ]}
               onValueChange={async (value) => {
                 if (value === "all") {
@@ -137,18 +139,21 @@ export function McpTools({ serverId }: { serverId: string }) {
         )}
       </SettingsSection>
       {settings.data && (
-        <section aria-label="Tools" className={styles.inventory}>
+        <section aria-label={t("Tools")} className={styles.inventory}>
           <div className={styles.heading}>
             <h3>
-              Tools{" "}
+              {t("Tools")}{" "}
               <span>
                 {tools === null
                   ? descriptors
-                    ? `${descriptors.length} available`
-                    : "All enabled"
+                    ? t("{{count}} available", { count: descriptors.length })
+                    : t("All enabled")
                   : descriptors
-                    ? `${tools.filter((name) => names.has(name)).length} of ${descriptors.length} enabled`
-                    : `${tools.length} enabled`}
+                    ? t("{{enabled}} of {{total}} enabled", {
+                        enabled: tools.filter((name) => names.has(name)).length,
+                        total: descriptors.length,
+                      })
+                    : t("{{count}} enabled", { count: tools.length })}
               </span>
             </h3>
             <Button
@@ -157,13 +162,13 @@ export function McpTools({ serverId }: { serverId: string }) {
               onClick={() => discovery.refetch()}
             >
               <ArrowClockwise aria-hidden="true" />
-              {descriptors ? "Refresh" : "Load tools"}
+              {descriptors ? t("Refresh") : t("Load tools")}
             </Button>
           </div>
           <div className={styles.toolbar}>
             <Input
-              aria-label="Search tools"
-              placeholder="Search tools…"
+              aria-label={t("Search tools")}
+              placeholder={t("Search tools…")}
               value={search}
               onChange={(event) => setSearch(event.target.value)}
             />
@@ -183,7 +188,7 @@ export function McpTools({ serverId }: { serverId: string }) {
                     ])
                   }
                 >
-                  {search ? "Select results" : "Select all"}
+                  {search ? t("Select results") : t("Select all")}
                 </Button>
                 <Button
                   variant="ghost"
@@ -199,7 +204,7 @@ export function McpTools({ serverId }: { serverId: string }) {
                     )
                   }
                 >
-                  {search ? "Clear results" : "Clear"}
+                  {search ? t("Clear results") : t("Clear")}
                 </Button>
               </div>
             )}
@@ -208,7 +213,7 @@ export function McpTools({ serverId }: { serverId: string }) {
           <div
             className={`${styles.list} a13n-scrollbar`}
             role="region"
-            aria-label="Available MCP tools"
+            aria-label={t("Available MCP tools")}
             tabIndex={0}
           >
             {filtered.map((tool) => (
@@ -230,15 +235,15 @@ export function McpTools({ serverId }: { serverId: string }) {
               <p className={styles.empty}>
                 {descriptors
                   ? search
-                    ? "No matching tools."
-                    : "This server has no tools."
-                  : "Load tools to choose which ones to enable."}
+                    ? t("No matching tools.")
+                    : t("This server has no tools.")
+                  : t("Load tools to choose which ones to enable.")}
               </p>
             )}
           </div>
           {tools?.length === 0 && (
             <p className={styles.note}>
-              No tools enabled. The connection is kept.
+              {t("No tools enabled. The connection is kept.")}
             </p>
           )}
           <ErrorNotice error={save.error} />
@@ -253,14 +258,14 @@ export function McpTools({ serverId }: { serverId: string }) {
                   save.reset();
                 }}
               >
-                Reload saved selection
+                {t("Reload saved selection")}
               </Button>
             )}
           <div className={styles.footer}>
             <span role="status">
               {saved
-                ? "Saved for subsequent runs."
-                : "Applies to all agents using this server."}
+                ? t("Saved for subsequent runs.")
+                : t("Applies to all agents using this server.")}
             </span>
             <div>
               {draft && (
@@ -273,7 +278,7 @@ export function McpTools({ serverId }: { serverId: string }) {
                     save.reset();
                   }}
                 >
-                  Cancel
+                  {t("Cancel")}
                 </Button>
               )}
               <Button
@@ -281,7 +286,7 @@ export function McpTools({ serverId }: { serverId: string }) {
                 loading={save.isPending}
                 onClick={() => save.mutate()}
               >
-                Save
+                {t("Save")}
               </Button>
             </div>
           </div>
@@ -302,6 +307,7 @@ function ToolRow({
   disabled: boolean;
   onChange: (checked: boolean) => void;
 }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const id = useId();
   return (
@@ -317,17 +323,17 @@ function ToolRow({
           <span className={styles.toolCopy}>
             <span className={styles.toolName}>{tool.name}</span>
             {tool.unavailable && (
-              <span className={styles.unavailable}>Unavailable</span>
+              <span className={styles.unavailable}>{t("Unavailable")}</span>
             )}
             <span className={styles.toolDescription}>
-              {tool.description || "No description provided."}
+              {tool.description || t("No description provided.")}
             </span>
           </span>
           <CaretRight aria-hidden="true" />
         </button>
         <div className={styles.toolCheck}>
           <Checkbox
-            aria-label={`Enable ${tool.name}`}
+            aria-label={t("Enable {{name}}", { name: tool.name })}
             checked={checked}
             disabled={disabled}
             onCheckedChange={(value) => onChange(!!value)}
@@ -336,8 +342,8 @@ function ToolRow({
       </div>
       {open && (
         <div className={styles.detail} id={id}>
-          <p>{tool.description || "No description provided."}</p>
-          <h4>Parameters</h4>
+          <p>{tool.description || t("No description provided.")}</p>
+          <h4>{t("Parameters")}</h4>
           <pre>{JSON.stringify(tool.input_schema, null, 2)}</pre>
         </div>
       )}

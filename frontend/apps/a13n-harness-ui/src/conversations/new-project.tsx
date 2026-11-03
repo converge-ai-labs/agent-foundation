@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button, ModalFrame } from "a13n-ui";
@@ -19,6 +20,7 @@ export function NewProject({
   close: () => void;
   created: (id: string) => void;
 }) {
+  const { t } = useTranslation();
   const { client } = useTransport();
   const queries = useQueryClient();
   const [id] = useState(() => `project-${crypto.randomUUID()}`);
@@ -73,8 +75,8 @@ export function NewProject({
   return (
     <ModalFrame
       open
-      title="Add project"
-      closeLabel="Close"
+      title={t("Add project")}
+      closeLabel={t("Close")}
       onOpenChange={(open) => {
         if (!open && !save.isPending) close();
       }}
@@ -86,7 +88,7 @@ export function NewProject({
           if (name.trim() && validRoots && !save.isPending) save.mutate();
         }}
       >
-        <TextField label="Project name" value={name} onChange={setName} />
+        <TextField label={t("Project name")} value={name} onChange={setName} />
         <EnvironmentsEditor
           requireWorkspace
           value={environments}
@@ -101,14 +103,14 @@ export function NewProject({
             disabled={save.isPending}
             onClick={close}
           >
-            Cancel
+            {t("Cancel")}
           </Button>
           <Button
             type="submit"
             loading={save.isPending}
             disabled={!name.trim() || !validRoots}
           >
-            Add project
+            {t("Add project")}
           </Button>
         </div>
       </form>

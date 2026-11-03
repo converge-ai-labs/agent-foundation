@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { useMemo, useState } from "react";
 import { Decoration, EditorView, GutterMarker, gutter } from "@codemirror/view";
 import { EditorState } from "@codemirror/state";
@@ -42,6 +43,7 @@ export function PatchEditor({
   disabled: boolean;
   openLine?: (line: number) => void;
 }) {
+  const { t } = useTranslation();
   const text = value.text ?? "";
   const [range, setRange] = useState<LineRange>();
   const lines = useMemo(() => patchLines(text), [text]);
@@ -104,12 +106,12 @@ export function PatchEditor({
   return (
     <>
       <div className={styles.diffSummary}>
-        <span title="Unified diff">
+        <span title={t("Unified diff")}>
           {value.comparison === "staged"
-            ? "HEAD → index"
+            ? t("HEAD → index")
             : value.comparison === "unstaged"
-              ? "Index → worktree"
-              : "New file"}
+              ? t("Index → worktree")
+              : t("New file")}
         </span>
         <span className={styles.addedCount}>
           +{lines.filter((line) => line.kind === "addition").length}
@@ -117,12 +119,12 @@ export function PatchEditor({
         <span className={styles.deletedCount}>
           −{lines.filter((line) => line.kind === "deletion").length}
         </span>
-        <nav aria-label="Review changed lines">
+        <nav aria-label={t("Review changed lines")}>
           <Button
             size="icon-sm"
             variant="ghost"
-            aria-label="Previous change"
-            title="Previous change"
+            aria-label={t("Previous change")}
+            title={t("Previous change")}
             disabled={hunk <= 0}
             onClick={() => setHunk(hunk - 1)}
           >
@@ -131,8 +133,8 @@ export function PatchEditor({
           <Button
             size="icon-sm"
             variant="ghost"
-            aria-label="Next change"
-            title="Next change"
+            aria-label={t("Next change")}
+            title={t("Next change")}
             disabled={hunk >= hunks.length - 1}
             onClick={() => setHunk(hunk + 1)}
           >
@@ -146,7 +148,7 @@ export function PatchEditor({
             disabled={disabled}
             onClick={() => openLine(lines[range.start_line - 1]!.newLine!)}
           >
-            Open selected line
+            {t("Open selected line")}
           </Button>
         )}
       </div>
@@ -159,14 +161,16 @@ export function PatchEditor({
           readOnly
           wrap={false}
           extensions={extensions}
-          label="Git patch with old and new file line numbers"
+          label={t("Git patch with old and new file line numbers")}
           onSelection={setRange}
         />
       </div>
       {range && (
         <small className={styles.path}>
-          Selected patch lines {range.start_line}–{range.end_line} (including
-          headers)
+          {t("Selected patch lines {{start}}–{{end}} (including headers)", {
+            start: range.start_line,
+            end: range.end_line,
+          })}
         </small>
       )}
       <CaptureContext

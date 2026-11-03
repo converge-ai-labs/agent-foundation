@@ -1,4 +1,5 @@
 import { useContext } from "react";
+import { useTranslation } from "../i18n";
 import { Link, useLocation } from "react-router";
 import {
   ArrowLeft,
@@ -16,16 +17,21 @@ import { readDocument } from "./documents";
 import styles from "../shell/workbench.module.css";
 import layout from "./settings.module.css";
 
-const sections = [
-  { path: "/settings", label: "General", icon: SlidersHorizontal },
-  { path: "/settings/agents", label: "Agents", icon: HeadCircuit },
-  { path: "/settings/models", label: "Models", icon: Cube },
-  { path: "/settings/environments", label: "Environments", icon: Monitor },
-  { path: "/settings/accounts", label: "Accounts & API keys", icon: Key },
-  { path: "/settings/connections", label: "Connections", icon: Plug },
-  { path: "/settings/resources", label: "Configuration files", icon: FileCode },
-];
 export function SettingsNavigation({ backTo }: { backTo: string }) {
+  const { t } = useTranslation();
+  const sections = [
+    { path: "/settings", label: t("General"), icon: SlidersHorizontal },
+    { path: "/settings/agents", label: t("Agents"), icon: HeadCircuit },
+    { path: "/settings/models", label: t("Models"), icon: Cube },
+    { path: "/settings/environments", label: t("Environments"), icon: Monitor },
+    { path: "/settings/accounts", label: t("Accounts & API keys"), icon: Key },
+    { path: "/settings/connections", label: t("Connections"), icon: Plug },
+    {
+      path: "/settings/resources",
+      label: t("Configuration files"),
+      icon: FileCode,
+    },
+  ];
   const location = useLocation();
   const sources = useSources();
   const drafts = useContext(DraftContext);
@@ -58,12 +64,12 @@ export function SettingsNavigation({ backTo }: { backTo: string }) {
     <div className={styles.settingsNavigation}>
       <Link className={styles.backToChats} to={backTo}>
         <ArrowLeft size={16} />
-        Back to chats
+        {t("Back to chats")}
       </Link>
-      <h2 className={styles.settingsNavigationTitle}>Settings</h2>
+      <h2 className={styles.settingsNavigationTitle}>{t("Settings")}</h2>
       <nav
         className={`${styles.settingsNav} a13n-scrollbar`}
-        aria-label="Settings sections"
+        aria-label={t("Settings sections")}
       >
         {sections.map(({ path, label, icon: Icon }) => {
           const active =

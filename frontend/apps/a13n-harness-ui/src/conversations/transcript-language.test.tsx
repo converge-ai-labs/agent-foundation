@@ -10,7 +10,12 @@ import {
 import { i18n } from "../i18n";
 import type { Schema } from "../transport/client";
 import { FocusDisplay, focusFrame, type DisplayBlock } from "./stream";
-import { LiveOutput, RecoveryNotice, SavedEntry } from "./transcript";
+import {
+  ConversationTranscript,
+  LiveOutput,
+  RecoveryNotice,
+  SavedEntry,
+} from "./transcript";
 import { MessageText } from "./message-text";
 import { LiveConnectionStatus } from "./live-connection";
 import { ImagePreview } from "../shell/image-preview";
@@ -417,4 +422,44 @@ it("translates the expanded image viewer while keeping its open and zoom state",
   ).toBeTruthy();
   // The authored file name stays verbatim.
   expect(screen.getByText("chart.png")).toBeTruthy();
+});
+
+it("translates an incomplete saved execution preview without changing its open reader or payload", async () => {
+  await i18n.changeLanguage("en");
+  const entry = {
+    position: 0,
+    message_kind: "response",
+    parts: [
+      {
+        kind: "tool_call",
+        tool_name: "view",
+        tool_call_id: "read-one",
+        value: { file_path: "/tmp/Read" },
+      },
+    ],
+  } as Schema<"TranscriptEntry">;
+  render(
+    <ConversationTranscript
+      entries={[entry]}
+      turns={[
+        { turn_id: "one", input_position: 0, end_position: 1, preview: "" },
+      ]}
+      blocks={[]}
+      localInputs={[]}
+      threadId="one"
+    />,
+  );
+  const heading = screen.getByRole("button", {
+    name: /Read.*\/tmp\/Read.*No result recorded.*Work log/,
+  });
+  fireEvent.click(heading);
+  expect(heading.getAttribute("aria-expanded")).toBe("true");
+  await act(() => i18n.changeLanguage("zh-CN"));
+  expect(
+    screen.getByRole("button", {
+      name: /读取.*\/tmp\/Read.*未记录结果.*工作日志/,
+    }),
+  ).toBe(heading);
+  expect(heading.getAttribute("aria-expanded")).toBe("true");
+  expect(heading.textContent).toContain("/tmp/Read");
 });

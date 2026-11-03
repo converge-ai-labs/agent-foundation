@@ -242,6 +242,24 @@ it.each([undefined, "http", "websocket"])(
   },
 );
 
+it("changes the WebSocket label without changing the edited model draft", async () => {
+  mount();
+  const user = userEvent.setup();
+  await openDefaults(user);
+  await user.click(screen.getByRole("checkbox", { name: "Use WebSocket" }));
+  const draft = source();
+  await act(async () => {
+    await i18n.changeLanguage("zh-CN");
+  });
+  expect(
+    screen
+      .getByRole("checkbox", { name: "使用 WebSocket" })
+      .getAttribute("aria-checked"),
+  ).toBe("true");
+  expect(source()).toBe(draft);
+  expect(parse(source()).settings.openai_transport).toBe("websocket");
+});
+
 async function openDefaults(user: ReturnType<typeof userEvent.setup>) {
   const tab = await screen.findByRole("tab", { name: "Model defaults" });
   await waitFor(() => expect(tab.hasAttribute("disabled")).toBe(false));

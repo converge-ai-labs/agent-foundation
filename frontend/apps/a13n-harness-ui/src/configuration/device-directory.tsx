@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "a13n-ui";
@@ -27,7 +28,7 @@ export function DeviceDirectory({
   deviceId,
   value,
   onChange,
-  label = "Working directory",
+  label,
 }: {
   deviceId: string;
   value: string;
@@ -35,6 +36,7 @@ export function DeviceDirectory({
   label?: string;
 }) {
   const { client } = useTransport();
+  const { t } = useTranslation();
   const info = useDeviceInfo(deviceId);
   const [location, setLocation] = useState<{ path: string; offset: number }>();
   const directories = useQuery({
@@ -60,12 +62,14 @@ export function DeviceDirectory({
   const open = (path: string) => setLocation({ path, offset: 0 });
   const defaultPath = info.data?.default_working_directory;
   return (
-    <section className="flex flex-col gap-3" aria-label="Device directory">
+    <section className="flex flex-col gap-3" aria-label={t("Device directory")}>
       <TextField
-        label={label}
+        label={label ?? t("Working directory")}
         value={value}
         onChange={onChange}
-        description="Enter a full path on the device. This folder does not restrict access to other files."
+        description={t(
+          "Enter a full path on the device. This folder does not restrict access to other files.",
+        )}
       />
       <div className="flex flex-wrap gap-2">
         <Button
@@ -75,7 +79,7 @@ export function DeviceDirectory({
           disabled={!info.data?.available || !defaultPath}
           onClick={() => onChange(defaultPath!)}
         >
-          Use Device default
+          {t("Use Device default")}
         </Button>
         {info.data?.available && info.data.directory_discovery && (
           <Button
@@ -85,16 +89,17 @@ export function DeviceDirectory({
             onClick={() => open(value || defaultPath!)}
           >
             <FolderIcon />
-            Browse directories
+            {t("Browse directories")}
           </Button>
         )}
       </div>
-      {info.isFetching && <p role="status">Checking Device…</p>}
+      {info.isFetching && <p role="status">{t("Checking Device…")}</p>}
       {info.data && !info.data.available && (
         <div>
           <p role="status">
-            Device offline. Keep or enter a folder path, or remove it from the
-            selection.
+            {t(
+              "Device offline. Keep or enter a folder path, or remove it from the selection.",
+            )}
           </p>
           <Button
             type="button"
@@ -103,12 +108,12 @@ export function DeviceDirectory({
             loading={info.isFetching}
             onClick={() => void info.refetch()}
           >
-            Retry connection
+            {t("Retry connection")}
           </Button>
         </div>
       )}
       {info.data?.available && !info.data.directory_discovery && (
-        <p>Folder browsing is off. Use the default or enter a path.</p>
+        <p>{t("Folder browsing is off. Use the default or enter a path.")}</p>
       )}
       <ErrorNotice error={info.error} retry={() => void info.refetch()} />
       {location && (
@@ -123,14 +128,16 @@ export function DeviceDirectory({
               variant="ghost"
               onClick={() => setLocation(undefined)}
             >
-              Close browser
+              {t("Close browser")}
             </Button>
           </div>
           <ErrorNotice
             error={directories.error}
             retry={() => void directories.refetch()}
           />
-          {directories.isFetching && <p role="status">Loading directories…</p>}
+          {directories.isFetching && (
+            <p role="status">{t("Loading directories…")}</p>
+          )}
           {page && (
             <>
               <div className="flex flex-wrap gap-2">
@@ -141,7 +148,7 @@ export function DeviceDirectory({
                   disabled={!page.parent_path}
                   onClick={() => open(page.parent_path!)}
                 >
-                  Parent directory
+                  {t("Parent directory")}
                 </Button>
                 <Button
                   type="button"
@@ -151,7 +158,7 @@ export function DeviceDirectory({
                     setLocation(undefined);
                   }}
                 >
-                  Choose folder
+                  {t("Choose folder")}
                 </Button>
               </div>
               <div className="max-h-64 overflow-y-auto">
@@ -167,7 +174,7 @@ export function DeviceDirectory({
                     {entry.name}
                   </Button>
                 ))}
-                {!page.entries?.length && <p>No subdirectories.</p>}
+                {!page.entries?.length && <p>{t("No subdirectories.")}</p>}
               </div>
               <div className="flex justify-between gap-2">
                 <Button
@@ -177,7 +184,7 @@ export function DeviceDirectory({
                   disabled={location.offset === 0}
                   onClick={() => open(location.path)}
                 >
-                  First page
+                  {t("First page")}
                 </Button>
                 {page.next_offset != null && (
                   <Button
@@ -191,7 +198,7 @@ export function DeviceDirectory({
                       })
                     }
                   >
-                    Next page
+                    {t("Next page")}
                   </Button>
                 )}
               </div>

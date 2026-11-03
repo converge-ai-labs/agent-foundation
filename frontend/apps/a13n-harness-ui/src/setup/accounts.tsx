@@ -662,6 +662,7 @@ export function ProviderAccount({
 }
 
 export function AccountsPage() {
+  const { t } = useTranslation();
   const [params] = useSearchParams();
   const tab = params.get("tab") ?? "accounts";
   const { client } = useTransport();
@@ -673,12 +674,12 @@ export function AccountsPage() {
   return (
     <div className={accountStyles.page}>
       <PageHeader
-        title="Accounts & API keys"
-        description="Connect the accounts and API keys your models use."
+        title={t("Accounts & API keys")}
+        description={t("Connect the accounts and API keys your models use.")}
       />
       <nav
         className={`${accountStyles.tabs} a13n-scrollbar`}
-        aria-label="Account settings"
+        aria-label={t("Account settings")}
       >
         {[
           ["accounts", "Subscription accounts"],
@@ -690,7 +691,7 @@ export function AccountsPage() {
             to={`?tab=${value}`}
             aria-current={tab === value ? "page" : undefined}
           >
-            {label}
+            {t(label)}
           </Link>
         ))}
       </nav>

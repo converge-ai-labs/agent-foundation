@@ -1,4 +1,5 @@
 import { useTranslation } from "../i18n";
+import { errorMessage } from "../i18n/error-message";
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -51,7 +52,7 @@ export function BrowserPanel({
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, []);
-  const [error, setError] = useState("");
+  const [error, setError] = useState<{ cause: unknown } | null>(null);
   const [authority, setAuthority] = useState<{
     threadId: string;
     binding: string;
@@ -115,7 +116,7 @@ export function BrowserPanel({
   ) => {
     if (!threadId || busy) return;
     setPending(kind);
-    setError("");
+    setError(null);
     await queries.cancelQueries({ queryKey: ["browser", threadId] });
     try {
       const path = {
@@ -169,7 +170,7 @@ export function BrowserPanel({
         setAuthority(null);
       }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError({ cause });
       if (kind === "start" || kind === "reset") void preparation.refetch();
       void refresh();
     } finally {
@@ -181,7 +182,7 @@ export function BrowserPanel({
   ) => {
     if (!threadId || !session?.session_id || !controlToken || busy) return;
     setPending("viewport");
-    setError("");
+    setError(null);
     await queries.cancelQueries({ queryKey: ["browser", threadId] });
     try {
       const value = await result(
@@ -196,7 +197,7 @@ export function BrowserPanel({
       );
       queries.setQueryData(["browser", threadId], value);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError({ cause });
       void refresh();
     } finally {
       setPending("");
@@ -405,7 +406,11 @@ export function BrowserPanel({
     <section className={styles.panel} aria-label={t("Host browser")}>
       {!needsHelp && (error || state.error || session?.error) && (
         <p className={styles.notice} role="alert">
-          {error || state.error?.message || session?.error}
+          {error
+            ? errorMessage(error.cause, t)
+            : state.error
+              ? errorMessage(state.error, t)
+              : session?.error}
         </p>
       )}
       {ready ? (
@@ -469,7 +474,12 @@ export function BrowserPanel({
         <BrowserSetup
           setup={preparation.data}
           loading={preparation.isFetching}
-          error={error || session?.error || preparation.error?.message || ""}
+          error={
+            error
+              ? errorMessage(error.cause, t)
+              : session?.error ||
+                (preparation.error ? errorMessage(preparation.error, t) : "")
+          }
           retry={() => void command("start")}
         />
       ) : state.isError ? (

@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { useContext, useRef, useState } from "react";
 import {
   keepPreviousData,
@@ -69,6 +70,7 @@ export function Files({
   open: (path: string) => void;
   refresh: () => void;
 }) {
+  const { t } = useTranslation();
   const { client } = useTransport();
   const queries = useQueryClient();
   const buffers = useContext(FileBuffers);
@@ -120,8 +122,8 @@ export function Files({
   return (
     <div className={styles.stack}>
       {!!dirty.length && (
-        <div className={styles.buffers} aria-label="Local unsaved files">
-          <small>Private drafts · saved in this tab</small>
+        <div className={styles.buffers} aria-label={t("Local unsaved files")}>
+          <small>{t("Private drafts · saved in this tab")}</small>
           {dirty.map(([name]) => (
             <Button
               key={name}
@@ -129,7 +131,7 @@ export function Files({
               size="sm"
               onClick={() => open(name)}
             >
-              {basename(name)} · Unsaved
+              {t("{{name}} · Unsaved", { name: basename(name) })}
             </Button>
           ))}
         </div>
@@ -138,8 +140,8 @@ export function Files({
         <>
           <div className={styles.directoryToolbar}>
             <SearchField
-              label="Filter loaded files in this directory"
-              placeholder="Filter files…"
+              label={t("Filter loaded files in this directory")}
+              placeholder={t("Filter files…")}
               value={filter}
               onChange={setFilter}
             />
@@ -149,7 +151,7 @@ export function Files({
                   <Button
                     size="icon-sm"
                     variant="ghost"
-                    aria-label="Add file or folder"
+                    aria-label={t("Add file or folder")}
                   />
                 }
               >
@@ -157,16 +159,16 @@ export function Files({
               </MenuTrigger>
               <MenuPopup align="end">
                 <MenuItem onClick={() => setOperation({ kind: "new-file" })}>
-                  <FilePlus /> New file
+                  <FilePlus /> {t("New file")}
                 </MenuItem>
                 <MenuItem
                   onClick={() => setOperation({ kind: "new-directory" })}
                 >
-                  <FolderPlus /> New folder
+                  <FolderPlus /> {t("New folder")}
                 </MenuItem>
                 <MenuSeparator />
                 <MenuItem onClick={() => setOperation({ kind: "upload" })}>
-                  <UploadSimple /> Upload files
+                  <UploadSimple /> {t("Upload files")}
                 </MenuItem>
               </MenuPopup>
             </Menu>
@@ -176,7 +178,7 @@ export function Files({
                   <Button
                     size="icon-sm"
                     variant="ghost"
-                    aria-label="Folder actions"
+                    aria-label={t("Folder actions")}
                   />
                 }
               >
@@ -184,11 +186,11 @@ export function Files({
               </MenuTrigger>
               <MenuPopup align="end">
                 <MenuItem onClick={() => copyPath(directory)}>
-                  <Copy /> Copy folder path
+                  <Copy /> {t("Copy folder path")}
                 </MenuItem>
                 {openTerminal && (
                   <MenuItem onClick={() => openTerminal(directory)}>
-                    <TerminalWindow /> Open terminal here
+                    <TerminalWindow /> {t("Open terminal here")}
                   </MenuItem>
                 )}
                 {git.feature && (
@@ -198,7 +200,7 @@ export function Files({
                       checked={hideIgnored}
                       onCheckedChange={setHideIgnored}
                     >
-                      Hide Git-ignored entries
+                      {t("Hide Git-ignored entries")}
                     </MenuCheckboxItem>
                   </>
                 )}
@@ -207,13 +209,14 @@ export function Files({
           </div>
           {listing.hasNextPage && (
             <small>
-              Searching loaded files only. Load more to include the rest of this
-              folder.
+              {t(
+                "Searching loaded files only. Load more to include the rest of this folder.",
+              )}
             </small>
           )}
           {copyError && (
             <small role="status">
-              Copy unavailable. Select the file path to copy it.
+              {t("Copy unavailable. Select the file path to copy it.")}
             </small>
           )}
           <ErrorNotice
@@ -226,31 +229,35 @@ export function Files({
           />
           {listing.isFetching && (
             <small role="status" className={styles.directoryLoading}>
-              Reading directory…
+              {t("Reading directory…")}
             </small>
           )}
           {git.feature && (git.discovery.error || git.status.error) && (
             <small>
-              Git status couldn't be loaded. Showing files without status
-              filters.
+              {t(
+                "Git status couldn't be loaded. Showing files without status filters.",
+              )}
             </small>
           )}
           {git.status.hasNextPage && (
             <small>
-              Git status is shown for loaded files only. Open Changes to see
-              more.
+              {t(
+                "Git status is shown for loaded files only. Open Changes to see more.",
+              )}
             </small>
           )}
           {!listing.isPlaceholderData &&
             listing.data?.pages[0]?.resolved_path !== directory &&
             listing.data && (
               <small>
-                Resolved directory: {listing.data.pages[0]!.resolved_path}
+                {t("Resolved directory: {{path}}", {
+                  path: listing.data.pages[0]!.resolved_path,
+                })}
               </small>
             )}
           <div
             className={styles.fileList}
-            aria-label="Directory entries"
+            aria-label={t("Directory entries")}
             aria-busy={listing.isFetching}
             inert={listing.isPlaceholderData}
           >
@@ -295,11 +302,11 @@ export function Files({
                       <span>{basename(entry.path)}</span>
                       <small>
                         {change
-                          ? gitChangeLabel(change)
+                          ? gitChangeLabel(change, t)
                           : entry.kind === "file"
                             ? `${entry.size.toLocaleString()} B`
                             : entry.kind === "symlink"
-                              ? "Link"
+                              ? t("Link")
                               : null}
                       </small>
                       {entry.kind === "directory" && (
@@ -312,7 +319,9 @@ export function Files({
                           <Button
                             size="icon-sm"
                             variant="ghost"
-                            aria-label={`Actions for ${basename(entry.path)}`}
+                            aria-label={t("Actions for {{name}}", {
+                              name: basename(entry.path),
+                            })}
                             className={styles.fileActions}
                           />
                         }
@@ -323,18 +332,18 @@ export function Files({
                         <MenuGroup>
                           {entry.kind === "symlink" && (
                             <MenuGroupLabel>
-                              {entry.kind}
+                              {t("symlink")}
                               {entry.link_target
                                 ? ` → ${entry.link_target}`
                                 : ""}
                             </MenuGroupLabel>
                           )}
                           <MenuItem onClick={() => copyPath(entry.path)}>
-                            <Copy /> Copy path
+                            <Copy /> {t("Copy path")}
                           </MenuItem>
                           {openTerminal && entry.kind === "directory" && (
                             <MenuItem onClick={() => openTerminal(entry.path)}>
-                              <TerminalWindow /> Open terminal here
+                              <TerminalWindow /> {t("Open terminal here")}
                             </MenuItem>
                           )}
                           <MenuItem
@@ -342,7 +351,7 @@ export function Files({
                               setOperation({ kind: "move", entry })
                             }
                           >
-                            <PencilSimple /> Rename or move
+                            <PencilSimple /> {t("Rename or move")}
                           </MenuItem>
                           {entry.kind === "file" && (
                             <MenuItem
@@ -350,7 +359,7 @@ export function Files({
                                 setOperation({ kind: "replace", entry })
                               }
                             >
-                              <UploadSimple /> Upload replacement
+                              <UploadSimple /> {t("Upload replacement")}
                             </MenuItem>
                           )}
                           <MenuSeparator />
@@ -360,7 +369,7 @@ export function Files({
                               setOperation({ kind: "delete", entry })
                             }
                           >
-                            <Trash /> Delete
+                            <Trash /> {t("Delete")}
                           </MenuItem>
                         </MenuGroup>
                       </MenuPopup>
@@ -374,9 +383,11 @@ export function Files({
                 basename(entry.path)
                   .toLowerCase()
                   .includes(filter.toLowerCase()),
-              ) && <p className={styles.empty}>No matching loaded files.</p>}
+              ) && (
+                <p className={styles.empty}>{t("No matching loaded files.")}</p>
+              )}
             {!entries.length && listing.isSuccess && !listing.error && (
-              <p className={styles.empty}>This directory is empty.</p>
+              <p className={styles.empty}>{t("This directory is empty.")}</p>
             )}
           </div>
           {listing.hasNextPage && (
@@ -386,7 +397,7 @@ export function Files({
               disabled={listing.isFetching}
               onClick={() => void listing.fetchNextPage()}
             >
-              Load more files
+              {t("Load more files")}
             </Button>
           )}
         </>
@@ -398,19 +409,21 @@ export function Files({
         }}
         title={
           operation?.kind === "delete"
-            ? "Delete file or folder"
+            ? t("Delete file or folder")
             : operation?.kind === "move"
-              ? "Rename or move"
+              ? t("Rename or move")
               : operation?.kind === "replace"
-                ? "Replace file from upload"
+                ? t("Replace file from upload")
                 : operation?.kind === "upload"
-                  ? "Upload to server"
+                  ? t("Upload to server")
                   : operation?.kind === "new-directory"
-                    ? "Create folder"
-                    : "Create file"
+                    ? t("Create folder")
+                    : t("Create file")
         }
-        description="These are files on the server, outside the agent's environment."
-        closeLabel="Close"
+        description={t(
+          "These are files on the server, outside the agent's environment.",
+        )}
+        closeLabel={t("Close")}
       >
         {operation && (
           <FileOperation
@@ -432,6 +445,8 @@ export function Files({
     </div>
   );
 }
+class FileOperationError extends Error {}
+
 export function FileOperation({
   operation,
   directory,
@@ -445,6 +460,7 @@ export function FileOperation({
   done: (target?: string) => void;
   cancel?: () => void;
 }) {
+  const { t } = useTranslation();
   const { client, fetch } = useTransport();
   const focusedName = useRef(false);
   const [name, setName] = useState(
@@ -508,7 +524,7 @@ export function FileOperation({
         );
       else {
         if (!upload || upload.size > 10 * 1024 * 1024)
-          throw new Error("Choose a file no larger than 10 MiB.");
+          throw new FileOperationError("Choose a file no larger than 10 MiB.");
         await fetch(
           `/api/host/files/content?${new URLSearchParams({ path: destination, ...(operation.kind === "replace" ? { expected_revision: operation.entry.revision } : {}) })}`,
           {
@@ -537,14 +553,26 @@ export function FileOperation({
       {"entry" in operation && operation.kind !== "move" && (
         <div className={styles.path}>
           {operation.entry.path}
-          <DebugId label="Observed revision" value={operation.entry.revision} />
+          <DebugId
+            label={t("Observed revision")}
+            value={operation.entry.revision}
+          />
         </div>
       )}
       {operation.kind === "delete" ? (
         <>
           <p>
-            Permanently delete this {operation.entry.kind} for everyone using
-            the server? Unsaved editor text is kept.
+            {t(
+              "Permanently delete this {{kind}} for everyone using the server? Unsaved editor text is kept.",
+              {
+                kind:
+                  operation.entry.kind === "directory"
+                    ? t("directory")
+                    : operation.entry.kind === "symlink"
+                      ? t("symlink")
+                      : t("file"),
+              },
+            )}
           </p>
           {operation.entry.kind === "directory" && (
             <label className={styles.check}>
@@ -552,19 +580,20 @@ export function FileOperation({
                 checked={recursive}
                 onCheckedChange={(checked) => setRecursive(checked === true)}
               />
-              Recursively delete this folder and its contents
+              {t("Recursively delete this folder and its contents")}
             </label>
           )}
         </>
       ) : operation.kind === "replace" ? (
         <p>
-          Replace this shared file with your upload? Your unsaved edits are
-          kept. Replacement is blocked if the file has changed.
+          {t(
+            "Replace this shared file with your upload? Your unsaved edits are kept. Replacement is blocked if the file has changed.",
+          )}
         </p>
       ) : (
         <>
           <TextField
-            label="Name"
+            label={t("Name")}
             value={name}
             onChange={setName}
             onFocus={(event) => {
@@ -580,15 +609,17 @@ export function FileOperation({
             }}
           />
           <details className={layout.details}>
-            <summary>Folder · {basename(folder)}</summary>
+            <summary>
+              {t("Folder · {{name}}", { name: basename(folder) })}
+            </summary>
             <div>
               <TextField
-                label="Destination folder"
+                label={t("Destination folder")}
                 value={folder}
                 onChange={setFolder}
               />
               <p className={styles.operationHint}>
-                Use an absolute server path.
+                {t("Use an absolute server path.")}
               </p>
             </div>
           </details>
@@ -596,7 +627,7 @@ export function FileOperation({
       )}
       {(operation.kind === "upload" || operation.kind === "replace") && (
         <label className={styles.stack}>
-          Upload file (up to 10 MiB)
+          {t("Upload file (up to 10 MiB)")}
           <input
             type="file"
             onChange={(event) => {
@@ -610,21 +641,31 @@ export function FileOperation({
       {operation.kind !== "delete" && operation.kind !== "replace" && (
         <p className={styles.operationHint}>
           {operation.kind === "new-directory"
-            ? "Choose a name that isn't already in this folder."
-            : "Existing files aren't replaced. Use a different name or Upload replacement."}
+            ? t("Choose a name that isn't already in this folder.")
+            : t(
+                "Existing files aren't replaced. Use a different name or Upload replacement.",
+              )}
         </p>
       )}
       {operation.kind === "delete" && recursive && (
         <p>
-          Some files may already be deleted. Refresh before trying another
-          action.
+          {t(
+            "Some files may already be deleted. Refresh before trying another action.",
+          )}
         </p>
       )}
-      <ErrorNotice error={error} />
+      <ErrorNotice
+        error={
+          error instanceof FileOperationError
+            ? new Error(t("Choose a file no larger than 10 MiB."))
+            : error
+        }
+      />
       {error != null && (
         <p>
-          The change may already be done. Close this dialog and refresh the
-          files before trying another action.
+          {t(
+            "The change may already be done. Close this dialog and refresh the files before trying another action.",
+          )}
         </p>
       )}
       <div className={`${styles.actions} justify-end`} data-a13n-form-actions>
@@ -635,7 +676,7 @@ export function FileOperation({
             disabled={pending}
             onClick={cancel}
           >
-            Cancel
+            {t("Cancel")}
           </Button>
         )}
         <Button
@@ -653,14 +694,14 @@ export function FileOperation({
           }
         >
           {operation.kind === "delete"
-            ? "Confirm delete"
+            ? t("Confirm delete")
             : operation.kind === "move"
-              ? "Save"
+              ? t("Save")
               : operation.kind === "replace"
-                ? "Replace file"
+                ? t("Replace file")
                 : operation.kind === "upload"
-                  ? "Upload file"
-                  : "Create"}
+                  ? t("Upload file")
+                  : t("Create")}
         </Button>
       </div>
     </form>

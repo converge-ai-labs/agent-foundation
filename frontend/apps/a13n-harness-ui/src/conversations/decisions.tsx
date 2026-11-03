@@ -8,6 +8,7 @@ import {
 import { createPortal } from "react-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Button } from "a13n-ui";
+import { useTranslation } from "../i18n";
 import { useTransport } from "../transport/context";
 import { ApiError, result, type Schema } from "../transport/client";
 import { ErrorNotice } from "../shell/ui";
@@ -79,6 +80,7 @@ export function DecisionForm({
   batch: Schema<"DecisionBatchView">;
   reconcile: () => void;
 }) {
+  const { t } = useTranslation();
   const { client } = useTransport();
   const { tracker: results } = useResults();
   const [responses, setResponses] = useState<Partial<Record<string, Response>>>(
@@ -133,17 +135,21 @@ export function DecisionForm({
     send.mutate(supplied);
   }
   return (
-    <section className={styles.decision} aria-label="Pending decisions">
-      <h2>Your response is needed</h2>
+    <section className={styles.decision} aria-label={t("Pending decisions")}>
+      <h2>{t("Your response is needed")}</h2>
       <p>
-        Answer below or send a message to continue. Unanswered requests are
-        denied.
+        {t(
+          "Answer below or send a message to continue. Unanswered requests are denied.",
+        )}
       </p>
       {remaining !== null && (
         <p role="status" aria-live="off">
           {expired
-            ? "Time to respond has ended. Waiting for the result."
-            : `${remaining}s left. Work continues without unsubmitted answers or approvals when time expires, even if you leave.`}
+            ? t("Time to respond has ended. Waiting for the result.")
+            : t(
+                "{{count, number}} seconds left. Work continues without unsubmitted answers or approvals when time expires, even if you leave.",
+                { count: remaining },
+              )}
         </p>
       )}
       <form
@@ -189,14 +195,15 @@ export function DecisionForm({
         <ErrorNotice error={send.error} />
         {send.isSuccess && (
           <p role="status">
-            Response accepted; execution has not been confirmed.{" "}
-            <DebugId label="Operation" value={send.data.receipt_id} />
+            {t("Response accepted; execution has not been confirmed.")}{" "}
+            <DebugId label={t("Operation")} value={send.data.receipt_id} />
           </p>
         )}
         {unknown && (
           <p role="status">
-            Couldn't confirm delivery. Refresh the request to check. Your
-            response won't be resent automatically.
+            {t(
+              "Couldn't confirm delivery. Refresh the request to check. Your response won't be resent automatically.",
+            )}
           </p>
         )}
         <div className={styles.decisionActions}>
@@ -206,15 +213,15 @@ export function DecisionForm({
               disabled={unknown || expired || send.isSuccess || send.isError}
               loading={send.isPending}
             >
-              Submit responses
+              {t("Submit responses")}
             </Button>
           )}
           <Button type="button" variant="ghost" onClick={reconcile}>
-            Refresh request
+            {t("Refresh request")}
           </Button>
         </div>
         <p className={styles.settingsHint}>
-          Another participant may respond first.
+          {t("Another participant may respond first.")}
         </p>
       </form>
     </section>

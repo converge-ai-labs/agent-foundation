@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import activityStyles from "./work-inspector.module.css";
 import { useThreadWork, workCaption } from "./work";
 import { TaskList, NoteList } from "./work-lists";
@@ -50,6 +51,7 @@ export function ConversationDetails({
   actionsContainer?: HTMLElement | null;
   reconcile: () => void;
 }) {
+  const { t } = useTranslation();
   const root = useRef<HTMLDivElement>(null);
   const [tab, setTab] = useState("execution");
   // Activity owns the latest process-local terminal receipt. Focus snapshots only
@@ -72,10 +74,10 @@ export function ConversationDetails({
           ?.scrollTo({ top: 0 });
       }}
     >
-      <TabsList variant="underline" aria-label="Chat details">
-        <TabsTab value="execution">Activity</TabsTab>
-        <TabsTab value="configuration">Configuration</TabsTab>
-        <TabsTab value="context">Tasks & usage</TabsTab>
+      <TabsList variant="underline" aria-label={t("Chat details")}>
+        <TabsTab value="execution">{t("Activity")}</TabsTab>
+        <TabsTab value="configuration">{t("Configuration")}</TabsTab>
+        <TabsTab value="context">{t("Tasks & usage")}</TabsTab>
       </TabsList>
       <TabsPanel value="execution">
         <>
@@ -84,7 +86,7 @@ export function ConversationDetails({
             retry={() => void activity.refetch()}
           />
           {!receipt && !readOnly && activity.isPending ? (
-            <p role="status">Loading activity…</p>
+            <p role="status">{t("Loading activity…")}</p>
           ) : !receipt && !row && activity.hasNextPage ? null : (
             <Operation
               threadId={threadId}
@@ -97,13 +99,13 @@ export function ConversationDetails({
               loading={activity.isFetchingNextPage}
               onClick={() => void activity.fetchNextPage()}
             >
-              Load earlier
+              {t("Load earlier")}
             </Button>
           )}
           <Children threadId={threadId} reconcile={reconcile} />
           {!readOnly && management && (
             <details className={layout.details}>
-              <summary>Chat management</summary>
+              <summary>{t("Chat management")}</summary>
               {management}
             </details>
           )}
@@ -130,11 +132,33 @@ function Operation({
   threadId: string;
   receipt?: string | null;
 }) {
+  const { t } = useTranslation();
+  const statuses = {
+    preparing: t("Preparing"),
+    running: t("Running"),
+    completed: t("Completed"),
+    suspended: t("Suspended"),
+    failed: t("Failed"),
+    cancelled: t("Cancelled"),
+  } satisfies Record<Schema<"RootOperationStatus">, string>;
+  const executionStatuses = {
+    completed: t("completed"),
+    failed: t("failed"),
+    cancelled: t("cancelled"),
+    suspended: t("suspended"),
+  } satisfies Record<Schema<"RootExecutionView">["status"], string>;
+  const continuationStatuses = {
+    selected: t("selected"),
+    not_available: t("not available"),
+    failed: t("failed"),
+  } satisfies Record<Schema<"ContinuationSelectionView">["status"], string>;
   const operation = useOperation(threadId, receipt);
   if (!receipt)
     return (
       <p>
-        Run controls are unavailable after a server restart. History is kept.
+        {t(
+          "Run controls are unavailable after a server restart. History is kept.",
+        )}
       </p>
     );
   const data = operation.data;
@@ -144,51 +168,51 @@ function Operation({
         error={operation.error}
         retry={() => void operation.refetch()}
       />
-      {operation.isPending && <p role="status">Loading run…</p>}
+      {operation.isPending && <p role="status">{t("Loading run…")}</p>}
       {data && (
         <>
-          <SettingsSection title="Latest run">
-            <SettingsRow label="Status">
-              <span>
-                {data.status.charAt(0).toUpperCase() + data.status.slice(1)}
-              </span>
+          <SettingsSection title={t("Latest run")}>
+            <SettingsRow label={t("Status")}>
+              <span>{statuses[data.status]}</span>
             </SettingsRow>
-            <SettingsRow label="Started">
+            <SettingsRow label={t("Started")}>
               <span>
                 {data.started_at
                   ? new Date(data.started_at).toLocaleString()
-                  : "Preparing"}
+                  : t("Preparing")}
               </span>
             </SettingsRow>
-            <SettingsRow label="Completed">
+            <SettingsRow label={t("Completed")}>
               <span>
                 {data.completed_at
                   ? new Date(data.completed_at).toLocaleString()
-                  : "Not completed"}
+                  : t("Not completed")}
               </span>
             </SettingsRow>
           </SettingsSection>
-          <DebugId label="Operation receipt" value={receipt} />
+          <DebugId label={t("Operation receipt")} value={receipt} />
           {data.failure && <p role="alert">{data.failure.message}</p>}
           {data.outcome && (
             <>
               <details className={layout.details}>
-                <summary>Run outcome</summary>
+                <summary>{t("Run outcome")}</summary>
                 <SettingsSection>
-                  <SettingsRow label="Model result">
+                  <SettingsRow label={t("Model result")}>
                     <span>
-                      {data.outcome.execution.status.replaceAll("_", " ")}
+                      {executionStatuses[data.outcome.execution.status]}
                     </span>
                   </SettingsRow>
-                  <SettingsRow label="Saved context">
+                  <SettingsRow label={t("Saved context")}>
                     <span>
-                      {data.outcome.continuation.status.replaceAll("_", " ")}
+                      {continuationStatuses[data.outcome.continuation.status]}
                     </span>
                   </SettingsRow>
-                  <SettingsRow label="Environment changes">
+                  <SettingsRow label={t("Environment changes")}>
                     <span>
-                      {data.outcome.environment.published} published ·{" "}
-                      {data.outcome.environment.failed} failed
+                      {t("{{published}} published · {{failed}} failed", {
+                        published: data.outcome.environment.published,
+                        failed: data.outcome.environment.failed,
+                      })}
                     </span>
                   </SettingsRow>
                 </SettingsSection>
@@ -205,7 +229,7 @@ function Operation({
                   </p>
                 ))}
               <DebugData
-                label="Execution, continuation and Environment outcomes"
+                label={t("Execution, continuation and Environment outcomes")}
                 value={data.outcome}
               />
             </>
@@ -244,13 +268,14 @@ export function Children({
   reconcile: () => void;
   display?: FocusDisplay;
 }) {
+  const { t } = useTranslation();
   const children = useChildExecutions(threadId);
   return (
     <section
       className={`${styles.children} ${display ? activityStyles.children : ""}`}
     >
-      {!display && <h3>Subagents</h3>}
-      {children.isPending && <p role="status">Loading subagents…</p>}
+      {!display && <h3>{t("Subagents")}</h3>}
+      {children.isPending && <p role="status">{t("Loading subagents…")}</p>}
       <ErrorNotice
         error={children.error}
         retry={() => void children.refetch()}
@@ -266,7 +291,9 @@ export function Children({
           />
         ))}
       {children.data?.pages[0].total === 0 && (
-        <p className={activityStyles.emptyState}>No subagent executions.</p>
+        <p className={activityStyles.emptyState}>
+          {t("No subagent executions.")}
+        </p>
       )}
       {children.hasNextPage && (
         <Button
@@ -274,7 +301,7 @@ export function Children({
           loading={children.isFetchingNextPage}
           onClick={() => void children.fetchNextPage()}
         >
-          Load more
+          {t("Load more")}
         </Button>
       )}
     </section>
@@ -289,6 +316,14 @@ export function Child({
   reconcile: () => void;
   live?: FocusDisplay;
 }) {
+  const { t } = useTranslation();
+  const childStatuses = {
+    running: t("running"),
+    succeeded: t("succeeded"),
+    failed: t("failed"),
+    cancelled: t("cancelled"),
+    lost: t("lost"),
+  } satisfies Record<Schema<"ChildExecutionView">["persisted_status"], string>;
   const { client, shareId } = useTransport();
   const [open, setOpen] = useState(false);
   const [showTools, setShowTools] = useState(false);
@@ -347,27 +382,30 @@ export function Child({
       onToggle={(event) => setOpen(event.currentTarget.open)}
     >
       <summary>
-        {child.subagent_name} · {child.persisted_status}
+        {child.subagent_name} · {childStatuses[child.persisted_status]}
         {child.persisted_status === "running" &&
         child.local_status === "unavailable"
-          ? " · control unavailable"
+          ? ` · ${t("control unavailable")}`
           : ""}
       </summary>
       {open && (
         <>
-          <DebugId label="Execution" value={child.execution_id} />
-          <DebugData label="Execution segment" value={child.segment_index} />
+          <DebugId label={t("Execution")} value={child.execution_id} />
+          <DebugData
+            label={t("Execution segment")}
+            value={child.segment_index}
+          />
           <dl className={styles.detailGrid}>
             <div>
-              <dt>Started</dt>
+              <dt>{t("Started")}</dt>
               <dd>{new Date(child.created_at).toLocaleString()}</dd>
             </div>
             <div>
-              <dt>Completed</dt>
+              <dt>{t("Completed")}</dt>
               <dd>
                 {child.completed_at
                   ? new Date(child.completed_at).toLocaleString()
-                  : "Not completed"}
+                  : t("Not completed")}
               </dd>
             </div>
           </dl>
@@ -377,7 +415,7 @@ export function Child({
               open={showTools}
               onToggle={(event) => setShowTools(event.currentTarget.open)}
             >
-              <summary>Tool calls</summary>
+              <summary>{t("Tool calls")}</summary>
               {showTools && (
                 <ToolExecutions
                   threadId={child.child_thread_id}
@@ -394,7 +432,9 @@ export function Child({
               <div className={styles.childControls}>
                 {child.available_actions?.includes("steer") && (
                   <TextField
-                    label={`Instruction for ${child.subagent_name}`}
+                    label={t("Instruction for {{name}}", {
+                      name: child.subagent_name,
+                    })}
                     value={instruction}
                     onChange={setInstruction}
                     disabled={pending || unknown}
@@ -407,7 +447,7 @@ export function Child({
                       disabled={!instruction.trim() || pending || unknown}
                       onClick={() => control.mutate("steer")}
                     >
-                      Guide subagent
+                      {t("Guide subagent")}
                     </Button>
                   )}
                   {child.available_actions?.includes("cancel") && (
@@ -416,7 +456,7 @@ export function Child({
                       disabled={pending || unknown}
                       onClick={() => control.mutate("cancel")}
                     >
-                      Stop subagent
+                      {t("Stop subagent")}
                     </Button>
                   )}
                 </div>
@@ -425,9 +465,9 @@ export function Child({
           {!shareId && unknown && (
             <div className={styles.warning}>
               <p>
-                Couldn't confirm delivery. The subagent may already have
-                received your instruction. It is still saved here; nothing was
-                resent.
+                {t(
+                  "Couldn’t confirm delivery. The subagent may already have received your instruction. It is still saved here; nothing was resent.",
+                )}
               </p>
               <div className={styles.childControlActions}>
                 <Button
@@ -436,7 +476,7 @@ export function Child({
                     reconcile();
                   }}
                 >
-                  Refresh status
+                  {t("Refresh status")}
                 </Button>
                 <Button
                   variant="ghost"
@@ -449,7 +489,7 @@ export function Child({
                     control.reset();
                   }}
                 >
-                  Allow new action
+                  {t("Allow new action")}
                 </Button>
               </div>
             </div>
@@ -457,8 +497,8 @@ export function Child({
           {controlState.outcome && !unknown && (
             <p role="status">
               {controlState.outcome.accepted
-                ? "Control accepted."
-                : "This execution did not accept the control."}
+                ? t("Control accepted.")
+                : t("This execution did not accept the control.")}
             </p>
           )}
         </>
@@ -473,6 +513,7 @@ function ChildPresentation({
   child: Schema<"ChildExecutionView">;
   live?: FocusDisplay;
 }) {
+  const { t } = useTranslation();
   const { client } = useTransport();
   const inspection = useQuery({
     queryKey: [
@@ -523,18 +564,18 @@ function ChildPresentation({
     <LiveOutput
       blocks={content}
       gap={live?.gap ?? false}
-      label="Current observed output"
+      label={t("Current observed output")}
     />
   ) : activity?.output_preview ? (
     <section>
-      <small>Activity preview · not a saved result</small>
+      <small>{t("Activity preview · not a saved result")}</small>
       <MessageText text={activity?.output_preview} />
       {activity?.output_truncated && (
-        <p>Some activity is outside this preview.</p>
+        <p>{t("Some activity is outside this preview.")}</p>
       )}
     </section>
   ) : (
-    <p>No output available yet.</p>
+    <p>{t("No output available yet.")}</p>
   );
   const running = child.persisted_status === "running";
   return (
@@ -544,7 +585,7 @@ function ChildPresentation({
         retry={() => void inspection.refetch()}
       />
       {inspection.isPending && !activity && (
-        <p role="status">Loading activity…</p>
+        <p role="status">{t("Loading activity…")}</p>
       )}
       <LiveOutput blocks={tools} gap={false} />
       {(
@@ -564,7 +605,7 @@ function ChildPresentation({
           <AppCard key={reference.app_id} reference={reference} />
         ))}
       {!!activity?.dropped_tool_calls && (
-        <small>Earlier tools are outside this activity window.</small>
+        <small>{t("Earlier tools are outside this activity window.")}</small>
       )}
       <ChildSavedOutputs
         threadId={child.parent_thread_id}
@@ -578,6 +619,7 @@ function ChildPresentation({
   );
 }
 function ContextDetails({ threadId }: { threadId: string }) {
+  const { t } = useTranslation();
   const work = useThreadWork(threadId, { tasks: true, notes: true });
   const tasks = { ...work.tasks, data: work.tasks.data?.tasks.page };
   const notes = { ...work.notes, data: work.notes.data?.notes.page };
@@ -597,27 +639,27 @@ function ContextDetails({ threadId }: { threadId: string }) {
       <section>
         <h3>
           <span>
-            Tasks{" "}
+            {t("Tasks")}{" "}
             <span className={styles.settingsHint}>
               ·{" "}
               {work.stale
-                ? "Stale"
+                ? t("Stale")
                 : tasks.isPending
-                  ? "Loading…"
+                  ? t("Loading…")
                   : !tasks.data || tasks.data.available === false
-                    ? "Unavailable"
+                    ? t("Unavailable")
                     : `${tasks.data.tasks?.length ?? 0}`}
             </span>
           </span>
         </h3>
         <p className={styles.settingsHint}>
-          {workCaption(work.tasks.data, work.stale, tasks.isFetching)}
+          {workCaption(t, work.tasks.data, work.stale, tasks.isFetching)}
         </p>
         {!tasks.data ? (
           <p>
             {tasks.isPending
-              ? "Loading tasks…"
-              : "Task observation unavailable."}
+              ? t("Loading tasks…")
+              : t("Task observation unavailable.")}
           </p>
         ) : (
           <TaskList page={tasks.data} />
@@ -626,63 +668,69 @@ function ContextDetails({ threadId }: { threadId: string }) {
       <section>
         <h3>
           <span>
-            Notes{" "}
+            {t("Notes")}{" "}
             <span className={styles.settingsHint}>
               ·{" "}
               {work.stale
-                ? "Stale"
+                ? t("Stale")
                 : notes.isPending
-                  ? "Loading…"
+                  ? t("Loading…")
                   : !notes.data
-                    ? "Unavailable"
+                    ? t("Unavailable")
                     : `${notes.data.notes?.length ?? 0}`}
             </span>
           </span>
         </h3>
         <p className={styles.settingsHint}>
-          {workCaption(work.notes.data, work.stale, notes.isFetching)}
+          {workCaption(t, work.notes.data, work.stale, notes.isFetching)}
         </p>
         {!notes.data ? (
           <p>
             {notes.isPending
-              ? "Loading notes…"
-              : "Note observation unavailable."}
+              ? t("Loading notes…")
+              : t("Note observation unavailable.")}
           </p>
         ) : (
           <NoteList page={notes.data} />
         )}
       </section>
       <section>
-        <h3>Usage</h3>
+        <h3>{t("Usage")}</h3>
         {usage.isPending ? (
-          <p role="status">Loading usage…</p>
+          <p role="status">{t("Loading usage…")}</p>
         ) : (
           <UsageDetails usage={usage.data} />
         )}
-        <DebugData label="Usage and recent runs" value={usage.data ?? null} />
+        <DebugData
+          label={t("Usage and recent runs")}
+          value={usage.data ?? null}
+        />
       </section>
       <details className={layout.details}>
-        <summary>Context</summary>
+        <summary>{t("Context")}</summary>
         <ContextUsageDetails
           used={context.data?.latest_request_tokens}
           capacity={context.data?.context_window}
         />
-        <DebugId label="Chat ID" value={threadId} />
+        <DebugId label={t("Chat ID")} value={threadId} />
         {(context.data?.model_id || context.data?.thinking_summary) && (
           <SettingsSection>
             {context.data.model_id && (
-              <SettingsRow label="Model">
+              <SettingsRow label={t("Model")}>
                 <span>{context.data.model_id}</span>
               </SettingsRow>
             )}
             {context.data.thinking_summary && (
-              <SettingsRow label="Thinking">
+              <SettingsRow label={t("Thinking")}>
                 <span>{context.data.thinking_summary}</span>
               </SettingsRow>
             )}
           </SettingsSection>
         )}
-        <DebugData label="Context usage data" value={context.data ?? null} />
+        <DebugData
+          label={t("Context usage data")}
+          value={context.data ?? null}
+        />
       </details>
     </div>
   );

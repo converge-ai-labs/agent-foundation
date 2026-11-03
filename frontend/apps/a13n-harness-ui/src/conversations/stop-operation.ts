@@ -9,8 +9,8 @@ export type StopRequest = {
   attempt: number;
   phase: "requesting" | "waiting" | "uncertain" | "rejected";
   message: string;
-  /** Raw rejection detail is kept separate from the application-owned prefix. */
-  rejection?: string;
+  /** Preserve the source of rejection details for render-time localization. */
+  rejection?: ApiError;
   outcome?: Schema<"RootOperationStatus">;
 };
 
@@ -127,7 +127,7 @@ export function useStopOperation(
       const rejected =
         error instanceof ApiError && error.status >= 400 && error.status < 500;
       next.phase = rejected ? "rejected" : "uncertain";
-      if (rejected) next.rejection = error.message;
+      if (rejected) next.rejection = error;
       next.message = rejected
         ? `Stop was not accepted. ${error.message}`
         : "Couldn't confirm the stop request. Checking whether the run stopped; the request hasn't been resent.";

@@ -480,7 +480,7 @@ it("switches language without replaying access or replacing the keyboard draft",
   await act(async () => {
     await i18n.changeLanguage("zh-CN");
   });
-  expect(screen.getByText("你已接管")).toBeTruthy();
+  expect(screen.getByText("你拥有控制权")).toBeTruthy();
   expect(screen.getByRole("textbox", { name: "远程浏览器键盘输入" })).toBe(
     input,
   );
@@ -488,10 +488,36 @@ it("switches language without replaying access or replacing the keyboard draft",
   expect(view.post).toHaveBeenCalledTimes(posts);
   expect(connection.disconnect).not.toHaveBeenCalled();
   act(() => connection.dispatchEvent(new Event("disconnect")));
-  expect(screen.getAllByText("连接已断开")).toHaveLength(2);
+  expect(screen.getAllByText("已断开")).toHaveLength(2);
   await act(async () => {
     await i18n.changeLanguage("en");
   });
   expect(screen.getAllByText("Disconnected")).toHaveLength(2);
   expect(view.post).toHaveBeenCalledTimes(posts);
+});
+
+it("keeps a third-party clipboard error raw across language changes", async () => {
+  vi.spyOn(document, "hasFocus").mockReturnValue(true);
+  const view = await show();
+  view.update("controller-a");
+  const input = await screen.findByRole("textbox", {
+    name: "Remote browser keyboard input",
+  });
+  await waitFor(() => expect(connections).toHaveLength(2));
+  connections[1].clipboardPasteFrom.mockImplementation(() => {
+    throw new Error(
+      "Clipboard text exceeds 64 Ki characters. Nothing was transferred.",
+    );
+  });
+  fireEvent.compositionStart(input);
+  fireEvent.compositionEnd(input, { data: "example" });
+  const message =
+    "Clipboard text exceeds 64 Ki characters. Nothing was transferred.";
+  await screen.findByText(message);
+  const requests = view.post.mock.calls.length;
+  await act(async () => {
+    await i18n.changeLanguage("zh-CN");
+  });
+  expect(screen.getByText(message)).toBeTruthy();
+  expect(view.post).toHaveBeenCalledTimes(requests);
 });

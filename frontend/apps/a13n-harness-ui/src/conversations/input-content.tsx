@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useTranslation } from "../i18n";
 import { Button } from "a13n-ui";
 import { Link } from "react-router";
 import { ArrowUpRight, CaretDown, Chats } from "@phosphor-icons/react";
@@ -59,6 +60,7 @@ function Attachment({
   attachment: Schema<"ThreadAttachment">;
   related: InputPart[];
 }) {
+  const { t, i18n } = useTranslation();
   const transport = useTransport();
   const image = attachment.media_type.startsWith("image/");
   const [preview, setPreview] = useState(false);
@@ -83,7 +85,7 @@ function Attachment({
           type="button"
           className={styles.imageAttachment}
           onClick={() => setPreview(true)}
-          aria-label={`Preview ${attachment.name}`}
+          aria-label={t("Preview {{name}}", { name: attachment.name })}
         >
           <AttachmentThumbnail threadId={threadId} attachment={attachment} />
           <strong>{attachment.name}</strong>
@@ -92,7 +94,7 @@ function Attachment({
       <details>
         <summary>
           {image ? (
-            "Attachment details"
+            t("Attachment details")
           ) : (
             <>
               <AttachmentThumbnail
@@ -105,11 +107,14 @@ function Attachment({
         </summary>
         <div className={styles.inputAttachmentDetails}>
           <small>
-            {attachment.media_type} · {attachment.size.toLocaleString()} bytes
+            {attachment.media_type} ·{" "}
+            {t("{{size}} bytes", {
+              size: attachment.size.toLocaleString(i18n.language),
+            })}
           </small>
           {attachment.source && (
             <details>
-              <summary>Source and revision</summary>
+              <summary>{t("Source and revision")}</summary>
               <pre className={styles.code}>
                 {JSON.stringify(attachment.source, null, 2)}
               </pre>
@@ -117,7 +122,7 @@ function Attachment({
           )}
           {url ? (
             <a href={url} download={attachment.name}>
-              Download original bytes
+              {t("Download original bytes")}
             </a>
           ) : (
             <Button
@@ -147,11 +152,11 @@ function Attachment({
                   });
               }}
             >
-              Prepare download
+              {t("Prepare download")}
             </Button>
           )}
           <details className={styles.rawSource}>
-            <summary>What the model sees</summary>
+            <summary>{t("What the model sees")}</summary>
             {related.map((item, offset) => (
               <pre key={offset} className={styles.code}>
                 {item.text || JSON.stringify(item.value, null, 2)}
@@ -172,6 +177,7 @@ function Attachment({
   );
 }
 function Media({ part }: { part: InputPart }) {
+  const { t } = useTranslation();
   let content = part.value;
   if (content === undefined && part.text) {
     try {
@@ -183,7 +189,7 @@ function Media({ part }: { part: InputPart }) {
   if (!object(content))
     return (
       <pre className={styles.code}>
-        {part.text || "Media content unavailable."}
+        {part.text || t("Media content unavailable.")}
       </pre>
     );
   const url =
@@ -193,19 +199,19 @@ function Media({ part }: { part: InputPart }) {
   return (
     <div className={styles.attachmentCard}>
       <strong>
-        {typeof content.kind === "string" ? content.kind : "Media"}
+        {typeof content.kind === "string" ? content.kind : t("Media")}
       </strong>
       <small>
         {typeof content.media_type === "string"
           ? content.media_type
-          : "Media reference"}
+          : t("Media reference")}
       </small>
       {url ? (
         <a href={url} target="_blank" rel="noopener noreferrer">
-          Open media source
+          {t("Open media source")}
         </a>
       ) : (
-        <p>Media bytes are not embedded in this transcript.</p>
+        <p>{t("Media bytes are not embedded in this transcript.")}</p>
       )}
     </div>
   );
@@ -260,6 +266,7 @@ export function InputContent({
   threadId?: string;
   renderText: (text: string) => ReactNode;
 }) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const contentId = useId();
   const guest = useGuestAccess();
@@ -302,7 +309,7 @@ export function InputContent({
             <span
               key={span.start}
               className={skillStyles.chip}
-              title={`Skill: ${span.name}`}
+              title={t("Skill: {{name}}", { name: span.name })}
               data-skill={span.name}
             >
               {points.slice(span.start, span.end).join("")}
@@ -334,7 +341,7 @@ export function InputContent({
           <header>
             {source && guest ? (
               <span className={styles.threadSource}>
-                From thread · {source.title || source.id}
+                {t("From thread")} · {source.title || source.id}
               </span>
             ) : source ? (
               <Link
@@ -343,10 +350,14 @@ export function InputContent({
                 title={
                   source.title ? `${source.title} · ${source.id}` : source.id
                 }
-                aria-label={`From thread ${source.title || source.id}`}
+                aria-label={t("From thread {{name}}", {
+                  name: source.title || source.id,
+                })}
               >
                 <Chats size={16} aria-hidden="true" />
-                <span className={styles.threadSourceLabel}>From thread</span>
+                <span className={styles.threadSourceLabel}>
+                  {t("From thread")}
+                </span>
                 <span className={styles.threadSourceName}>
                   {source.title || source.id}
                 </span>
@@ -371,7 +382,7 @@ export function InputContent({
           <button
             type="button"
             className={styles.threadMessageToggle}
-            aria-label="Message details"
+            aria-label={t("Message details")}
             aria-expanded={expanded}
             aria-controls={contentId}
             onClick={() => setExpanded(!expanded)}
@@ -382,7 +393,7 @@ export function InputContent({
               </span>
             )}
             <span className={styles.threadMessageToggleLabel}>
-              {expanded ? "Show less" : "Show message"}
+              {expanded ? t("Show less") : t("Show message")}
               <CaretDown size={14} aria-hidden="true" />
             </span>
           </button>

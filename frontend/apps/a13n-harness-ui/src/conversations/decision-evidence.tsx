@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "../i18n";
 import { Badge, Button } from "a13n-ui";
 import type { Schema } from "../transport/client";
 import styles from "./decisions.module.css";
@@ -54,7 +55,18 @@ export function decisionEvidence(request: Request) {
 }
 
 export function DecisionEvidence({ request }: { request: Request }) {
+  const { t } = useTranslation();
   const evidence = decisionEvidence(request);
+  const risk =
+    evidence.risk === "low"
+      ? t("risk level: low")
+      : evidence.risk === "medium"
+        ? t("risk level: medium")
+        : evidence.risk === "high"
+          ? t("risk level: high")
+          : evidence.risk === "extra_high"
+            ? t("risk level: extra high")
+            : evidence.risk;
   const args = argumentsObject(request.arguments);
   const command = evidence.shell ? text(args?.command) : undefined;
   // Never include shell environment values in a raw-argument fallback.
@@ -73,10 +85,10 @@ export function DecisionEvidence({ request }: { request: Request }) {
       <div className={styles.heading}>
         <h3>
           {evidence.shell
-            ? "Shell command approval"
+            ? t("Shell command approval")
             : request.kind === "approval"
-              ? "Tool approval"
-              : "External result required"}
+              ? t("Tool approval")
+              : t("External result required")}
         </h3>
         {(evidence.risk || evidence.shell) && (
           <Badge
@@ -87,51 +99,57 @@ export function DecisionEvidence({ request }: { request: Request }) {
             }
           >
             {evidence.risk
-              ? `Risk: ${evidence.risk.replaceAll("_", " ")}`
-              : "Risk assessment unavailable"}
+              ? t("Risk: {{risk}}", { risk })
+              : t("Risk assessment unavailable")}
           </Badge>
         )}
       </div>
       <span className={styles.tool}>{request.tool_name}</span>
       {evidence.reason && <p className={styles.reason}>{evidence.reason}</p>}
-      {evidence.target && <p>Target: {evidence.target}</p>}
+      {evidence.target && (
+        <p>{t("Target: {{target}}", { target: evidence.target })}</p>
+      )}
       {request.metadata_omitted && (
-        <p role="note">Some review context was omitted by the server.</p>
+        <p role="note">{t("Some review context was omitted by the server.")}</p>
       )}
       {request.arguments_omitted ? (
         <p role="note">
-          Arguments omitted by the server.
+          {t("Arguments omitted by the server.")}
           {request.kind === "approval" &&
-            "The full request couldn't be loaded. You can't approve it yet."}
+            t("The full request couldn't be loaded. You can't approve it yet.")}
         </p>
       ) : command ? (
         <>
           <div className={styles.heading}>
-            <span>Command</span>
+            <span>{t("Command")}</span>
             <CopyCommand command={command} />
           </div>
           <pre className={styles.code}>
             <code>{command}</code>
           </pre>
           <dl className={styles.context}>
-            <dt>Working directory</dt>
-            <dd>{text(args?.cwd) ?? "Not specified"}</dd>
+            <dt>{t("Working directory")}</dt>
+            <dd>{text(args?.cwd) ?? t("Not specified")}</dd>
             {text(args?.alias) && (
               <>
-                <dt>Environment mount</dt>
+                <dt>{t("Environment mount")}</dt>
                 <dd>{text(args?.alias)}</dd>
               </>
             )}
             {environment && Object.keys(environment).length > 0 && (
               <>
-                <dt>Environment variables</dt>
-                <dd>{Object.keys(environment).join(", ")} (values hidden)</dd>
+                <dt>{t("Environment variables")}</dt>
+                <dd>
+                  {t("{{variables}} (values hidden)", {
+                    variables: Object.keys(environment).join(", "),
+                  })}
+                </dd>
               </>
             )}
           </dl>
           {rest && Object.keys(rest).length > 0 && (
             <details>
-              <summary>More settings</summary>
+              <summary>{t("More settings")}</summary>
               <pre className={styles.code}>{JSON.stringify(rest, null, 2)}</pre>
             </details>
           )}
@@ -145,7 +163,7 @@ export function DecisionEvidence({ request }: { request: Request }) {
       )}
       {Object.keys(evidence.context).length > 0 && (
         <details>
-          <summary>Additional context</summary>
+          <summary>{t("Additional context")}</summary>
           <pre className={styles.code}>
             {JSON.stringify(evidence.context, null, 2)}
           </pre>
@@ -156,7 +174,8 @@ export function DecisionEvidence({ request }: { request: Request }) {
 }
 
 function CopyCommand({ command }: { command: string }) {
-  const [status, setStatus] = useState("");
+  const { t } = useTranslation();
+  const [status, setStatus] = useState<"copied" | "failed" | "">("");
   return (
     <Button
       type="button"
@@ -166,14 +185,18 @@ function CopyCommand({ command }: { command: string }) {
         void (async () => {
           try {
             await copyText(command);
-            setStatus("Copied");
+            setStatus("copied");
           } catch {
-            setStatus("Copy failed");
+            setStatus("failed");
           }
         })();
       }}
     >
-      {status || "Copy command"}
+      {status === "copied"
+        ? t("Copied")
+        : status === "failed"
+          ? t("Copy failed")
+          : t("Copy command")}
     </Button>
   );
 }

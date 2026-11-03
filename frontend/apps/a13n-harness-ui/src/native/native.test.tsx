@@ -2,6 +2,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import userEvent from "@testing-library/user-event";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -16,6 +17,7 @@ import { ApiError, type Schema, type Transport } from "../transport/client";
 import { ComposerDrafts } from "../conversations/composer";
 import { ThreadDraft, values } from "../conversations/draft";
 import { CaptureContext } from "./capture";
+import { i18n } from "../i18n";
 import { FileBuffers, FileBuffer } from "./buffer";
 import { FileView } from "./file-view";
 import { NativeWorkspace } from "./workspace";
@@ -594,4 +596,51 @@ it("adds the exact editor selection in one deliberate action without sending a m
       },
     ],
   ]);
+});
+
+it("keeps capture range and local error while switching languages", async () => {
+  const f = fixture();
+  await i18n.changeLanguage("en");
+  render(<CaptureContext source={{ file }} threadId="thread-a" />, {
+    wrapper: f.Wrapper,
+  });
+  fireEvent.click(screen.getByLabelText("Choose line range"));
+  fireEvent.change(screen.getByLabelText("First line"), {
+    target: { value: "2" },
+  });
+  fireEvent.click(screen.getByText("Attach selection"));
+  await screen.findByText(/Enter start and end line numbers/);
+  await act(() => i18n.changeLanguage("zh-CN"));
+  expect(screen.getByText(/请输入从 1 开始的起止行号/)).toBeTruthy();
+  expect((screen.getByLabelText("首行") as HTMLInputElement).value).toBe("2");
+  expect(f.post).not.toHaveBeenCalled();
+  await act(() => i18n.changeLanguage("en"));
+  expect(screen.getByText(/Enter start and end line numbers/)).toBeTruthy();
+});
+
+it("switches file-operation language without losing the destination or changing request paths", async () => {
+  const f = fixture();
+  const user = userEvent.setup();
+  f.put.mockResolvedValue({ data: {} });
+  render(
+    <FileOperation
+      operation={{ kind: "new-file" }}
+      directory="/code"
+      refresh={vi.fn()}
+      done={vi.fn()}
+    />,
+    { wrapper: f.Wrapper },
+  );
+  await user.type(screen.getByLabelText("Name"), "raw-file.txt");
+  await act(() => i18n.changeLanguage("zh-CN"));
+  expect((screen.getByLabelText("名称") as HTMLInputElement).value).toBe(
+    "raw-file.txt",
+  );
+  await user.click(screen.getByRole("button", { name: "创建" }));
+  await waitFor(() =>
+    expect(f.put).toHaveBeenCalledWith("/api/host/files/text", {
+      body: { path: "/code/raw-file.txt", text: "" },
+    }),
+  );
+  await act(() => i18n.changeLanguage("en"));
 });

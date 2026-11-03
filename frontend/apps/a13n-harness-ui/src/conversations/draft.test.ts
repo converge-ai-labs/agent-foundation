@@ -433,3 +433,21 @@ it.each([false, true])(
     server.destroy();
   },
 );
+
+it("marks server synchronization diagnostics as raw even when they match local copy", () => {
+  vi.stubGlobal("window", { location: { origin: "http://localhost" } });
+  const socket = mockWebSocket();
+  const draft = new ThreadDraft();
+  const connection = draft.connect(
+    createTransport("key", () => {}),
+    "thread-one",
+    () => {},
+  );
+  socket().open();
+  socket().message({ error: { message: "Draft synchronization rejected." } });
+  expect(draft.error).toBe("Draft synchronization rejected.");
+  expect(draft.errorRaw).toBe(true);
+  draft.doc.getText("text").insert(0, "retry");
+  expect(draft.errorRaw).toBe(false);
+  connection.close();
+});

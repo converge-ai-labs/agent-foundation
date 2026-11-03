@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { SettingsTextField as TextField } from "../shell/settings";
 import { SettingsChoice as ChoiceField } from "../shell/settings";
 import { SettingsRow, SettingsSection } from "../shell/settings";
@@ -11,6 +12,7 @@ export function DeviceFields({
   source: string;
   onChange: (source: string) => void;
 }) {
+  const { t } = useTranslation();
   const document = readDocument(source)!;
   const text = (path: string[]) => String(document.getIn(path) ?? "");
   const set = (path: string[], value: unknown) =>
@@ -21,24 +23,26 @@ export function DeviceFields({
     return (
       <SettingsSection
         variant="grouped"
-        title="Paired Device"
-        description="This device is approved. Its credential is saved on the device; you don't need to enter it here."
+        title={t("Paired Device")}
+        description={t(
+          "This device is approved. Its credential is saved on the device; you don't need to enter it here.",
+        )}
       >
-        <SettingsRow label="Device ID">
+        <SettingsRow label={t("Device ID")}>
           <span>{text(["device_id"])}</span>
         </SettingsRow>
         <SettingsRow
-          label="Connection"
+          label={t("Connection")}
           description={
             document.getIn(["authentication", "revoked"])
-              ? "This credential can no longer connect."
-              : "Check or revoke this connection in Environments."
+              ? t("This credential can no longer connect.")
+              : t("Check or revoke this connection in Environments.")
           }
         >
           <span>
             {document.getIn(["authentication", "revoked"])
-              ? "Revoked"
-              : "Registered"}
+              ? t("Revoked")
+              : t("Registered")}
           </span>
         </SettingsRow>
       </SettingsSection>
@@ -47,17 +51,21 @@ export function DeviceFields({
   return (
     <SettingsSection
       variant="grouped"
-      title="Device connection"
-      description="Save the connection here. Choose folders in each project or chat."
+      title={t("Device connection")}
+      description={t(
+        "Save the connection here. Choose folders in each project or chat.",
+      )}
     >
       <TextField
-        label="Device ID"
+        label={t("Device ID")}
         value={text(["device_id"])}
         onChange={(value) => set(["device_id"], value)}
-        description="The device_id set in envd, separate from the configuration ID above."
+        description={t(
+          "The device_id set in envd, separate from the configuration ID above.",
+        )}
       />
       <ChoiceField
-        label="Transport"
+        label={t("Transport")}
         value={carrier}
         onValueChange={(kind) =>
           set(["transport"], {
@@ -66,32 +74,36 @@ export function DeviceFields({
           })
         }
         options={[
-          { value: "http", label: "HTTP · connect to envd" },
+          { value: "http", label: t("HTTP · connect to envd") },
           {
             value: "websocket",
-            label: "WebSocket · envd connects to this server",
+            label: t("WebSocket · envd connects to this server"),
           },
         ]}
       />
       {carrier === "http" ? (
         <TextField
-          label="Device endpoint"
+          label={t("Device endpoint")}
           value={text(["transport", "configuration", "endpoint"])}
           onChange={(value) =>
             set(["transport", "configuration", "endpoint"], value)
           }
-          description="The envd HTTP origin, for example https://device.example.com."
+          description={t(
+            "The envd HTTP origin, for example https://device.example.com.",
+          )}
         />
       ) : (
         <SettingsRow
-          label="Server connection"
-          description="Configure envd with this path and the referenced credential."
+          label={t("Server connection")}
+          description={t(
+            "Configure envd with this path and the referenced credential.",
+          )}
         >
           <span>/api/devices/{text(["id"])}/connect</span>
         </SettingsRow>
       )}
       <ChoiceField
-        label="Credential source"
+        label={t("Credential source")}
         value={storedKey ? "stored" : "env"}
         onValueChange={(value) =>
           set(
@@ -102,13 +114,15 @@ export function DeviceFields({
           )
         }
         options={[
-          { value: "env", label: "Server environment variable" },
-          { value: "stored", label: "Saved API key reference" },
+          { value: "env", label: t("Server environment variable") },
+          { value: "stored", label: t("Saved API key reference") },
         ]}
       />
       <TextField
         label={
-          storedKey ? "Saved credential reference" : "Environment variable"
+          storedKey
+            ? t("Saved credential reference")
+            : t("Environment variable")
         }
         value={text(["authentication", storedKey ? "credential_ref" : "env"])}
         onChange={(value) =>
@@ -117,7 +131,9 @@ export function DeviceFields({
             [storedKey ? "credential_ref" : "env"]: value,
           })
         }
-        description="Enter a key reference, not the key itself. Manage saved keys in Accounts & API keys."
+        description={t(
+          "Enter a key reference, not the key itself. Manage saved keys in Accounts & API keys.",
+        )}
       />
     </SettingsSection>
   );

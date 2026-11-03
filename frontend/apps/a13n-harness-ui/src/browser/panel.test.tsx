@@ -11,7 +11,8 @@ import {
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TransportContext } from "../transport/context";
-import type { Transport } from "../transport/client";
+import { ApiError, type Transport } from "../transport/client";
+import { i18n } from "../i18n";
 import { BrowserPanel } from "./panel";
 vi.mock("./desktop", () => ({
   Desktop: ({
@@ -145,6 +146,24 @@ function show({
 async function openBrowser() {
   fireEvent.click(await screen.findByRole("button", { name: "Open browser" }));
 }
+it.each([true, false])(
+  "retains browser command error provenance across language switches (local: %s)",
+  async (local) => {
+    const { client } = show();
+    await screen.findByTestId("stream");
+    const raw = "Request failed (500).";
+    client.POST.mockRejectedValueOnce(new ApiError(raw, 500, undefined, local));
+    fireEvent.click(screen.getByRole("button", { name: "Take control" }));
+    expect((await screen.findByRole("alert")).textContent).toBe(raw);
+    await act(() => i18n.changeLanguage("zh-CN"));
+    expect(screen.getByRole("alert").textContent).toBe(
+      local ? i18n.t("Request failed ({{status}}).", { status: 500 }) : raw,
+    );
+    expect(client.POST).toHaveBeenCalledTimes(1);
+    await act(() => i18n.changeLanguage("en"));
+  },
+);
+
 it("opens and closes conversation tabs without an enable switch", async () => {
   const { client } = show({ status: "enabled" });
   await openBrowser();

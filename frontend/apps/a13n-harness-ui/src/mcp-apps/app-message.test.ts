@@ -45,7 +45,7 @@ it("captures the exact message and only reads its receipt after a lost confirmed
   POST.mockRejectedValue(new Error("lost"));
   GET.mockRejectedValue(new Error("offline"));
   await messages.confirm();
-  expect(messages.getSnapshot()?.uncertain).toContain("not resent");
+  expect(messages.getSnapshot()?.uncertain).toBe(true);
   await messages.confirm();
   expect(POST).toHaveBeenCalledTimes(1);
   expect(POST.mock.calls[0][1].body.content[0].text).toBe("Original message");

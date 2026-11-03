@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { HelpTip } from "../shell/help-tip";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
@@ -36,11 +37,11 @@ import { GoalStatus } from "./goal-status";
 import styles from "./work-inspector.module.css";
 
 const activityViews = {
-  tasks: { label: "Tasks", Icon: ListChecks },
-  notes: { label: "Notes", Icon: Notebook },
-  children: { label: "Subagents", Icon: UsersThree },
-  processes: { label: "Processes", Icon: Terminal },
-  tools: { label: "Tools", Icon: Wrench },
+  tasks: { Icon: ListChecks },
+  notes: { Icon: Notebook },
+  children: { Icon: UsersThree },
+  processes: { Icon: Terminal },
+  tools: { Icon: Wrench },
 };
 type ActivityView = keyof typeof activityViews;
 
@@ -73,6 +74,14 @@ export function WorkInspector({
   activity?: Schema<"RootActivityView">;
   onUseGoal?: () => void;
 }) {
+  const { t } = useTranslation();
+  const labels: Record<ActivityView, string> = {
+    tasks: t("Tasks"),
+    notes: t("Notes"),
+    children: t("Subagents"),
+    processes: t("Processes"),
+    tools: t("Tools"),
+  };
   const guest = useGuestAccess();
   const debug = useDebug();
   const [tab, setTab] = useState<"goal" | ActivityView | null>(null);
@@ -110,7 +119,7 @@ export function WorkInspector({
   ).filter((key) => !guest || (key !== "processes" && key !== "tools"));
   const key = tab && tab !== "goal" ? tab : "tasks";
   return (
-    <div className={styles.strip} aria-label="Work inspection">
+    <div className={styles.strip} aria-label={t("Work inspection")}>
       {(goal || active) && (
         <div className={styles.summary}>
           {goal && (
@@ -145,7 +154,8 @@ export function WorkInspector({
       >
         <div className={styles.shortcuts}>
           {tabs.map((item) => {
-            const { label, Icon } = activityViews[item];
+            const { Icon } = activityViews[item];
+            const label = labels[item];
             return (
               <DialogTrigger
                 key={item}
@@ -155,12 +165,14 @@ export function WorkInspector({
                     ? undefined
                     : styles.secondaryShortcut
                 }
-                aria-label={`Inspect ${label.toLowerCase()}`}
+                aria-label={t("Inspect {{activity}}", {
+                  activity: label.toLowerCase(),
+                })}
                 title={
                   item === "children"
-                    ? "Subagents · active executions"
+                    ? t("Subagents · active executions")
                     : item === "processes"
-                      ? "Processes · observed running processes"
+                      ? t("Processes · observed running processes")
                       : undefined
                 }
                 onClick={(event) => {
@@ -181,14 +193,18 @@ export function WorkInspector({
               ref={moreTrigger}
               render={<Button variant="ghost" size="sm" />}
               className={styles.more}
-              aria-label="More activity"
+              aria-label={t("More activity")}
             >
-              Activity
+              {t("Activity")}
               {!guest && running > 0 && (
                 <span
                   className={styles.backgroundActivity}
-                  aria-label={`${running} observed running processes`}
-                  title={`${running} observed running processes`}
+                  aria-label={t("{{count}} observed running processes", {
+                    count: running,
+                  })}
+                  title={t("{{count}} observed running processes", {
+                    count: running,
+                  })}
                 >
                   <Terminal />
                   <span>{running}</span>
@@ -201,7 +217,8 @@ export function WorkInspector({
               finalFocus={tab !== null ? false : undefined}
             >
               {tabs.map((item) => {
-                const { label, Icon } = activityViews[item];
+                const { Icon } = activityViews[item];
+                const label = labels[item];
                 return (
                   <MenuItem
                     key={item}
@@ -231,12 +248,15 @@ export function WorkInspector({
         >
           <div className={styles.heading}>
             <DialogTitle ref={heading} tabIndex={-1}>
-              Chat activity
+              {t("Chat activity")}
             </DialogTitle>
-            <HelpTip label="About activity">
+            <HelpTip label={t("About activity")}>
               {key === "processes" &&
-                "Recent processes from this chat and its subagents. Other server processes are not shown. "}
+                t(
+                  "Recent processes from this chat and its subagents. Other server processes are not shown. ",
+                )}
               {workCaption(
+                t,
                 key === "notes" ? work.notes.data : work.tasks.data,
                 work.stale || !connected,
                 work.summary.isFetching,
@@ -245,22 +265,25 @@ export function WorkInspector({
             </HelpTip>
             <DialogClose
               render={<Button variant="ghost" size="icon-sm" />}
-              aria-label="Close activity"
+              aria-label={t("Close activity")}
             >
               <X />
             </DialogClose>
           </div>
           <div className={styles.activityLayout}>
-            <div className={styles.tabs} aria-label="Activity views">
+            <div className={styles.tabs} aria-label={t("Activity views")}>
               {tabs.map((item) => {
-                const { label, Icon } = activityViews[item];
+                const { Icon } = activityViews[item];
+                const label = labels[item];
                 const count = counts[item];
                 return (
                   <Button
                     key={item}
                     variant="ghost"
                     size="sm"
-                    aria-label={`Inspect ${label.toLowerCase()}`}
+                    aria-label={t("Inspect {{activity}}", {
+                      activity: label.toLowerCase(),
+                    })}
                     aria-pressed={key === item}
                     onClick={() => setTab(item)}
                   >
@@ -273,9 +296,7 @@ export function WorkInspector({
             </div>
             <div className={styles.inspectorBody}>
               {key !== "tools" && (
-                <h3 className={styles.panelTitle}>
-                  {activityViews[key].label}
-                </h3>
+                <h3 className={styles.panelTitle}>{labels[key]}</h3>
               )}
               {key === "tasks" && (
                 <>
@@ -284,9 +305,11 @@ export function WorkInspector({
                     retry={() => void saved.refetch()}
                   />
                   {!page && saved.isPending && (
-                    <Loading label="Loading tasks" />
+                    <Loading label={t("Loading tasks")} />
                   )}
-                  {!saved.isPending && !page && <p>Task state unavailable.</p>}
+                  {!saved.isPending && !page && (
+                    <p>{t("Task state unavailable.")}</p>
+                  )}
                   <TaskList page={page} />
                 </>
               )}
@@ -306,9 +329,11 @@ export function WorkInspector({
                     error={work.notes.error}
                     retry={() => void work.notes.refetch()}
                   />
-                  {work.notes.isPending && <Loading label="Loading notes" />}
+                  {work.notes.isPending && (
+                    <Loading label={t("Loading notes")} />
+                  )}
                   {!work.notes.isPending && !work.notes.data?.notes.page && (
-                    <p>Notes unavailable.</p>
+                    <p>{t("Notes unavailable.")}</p>
                   )}
                   <NoteList page={work.notes.data?.notes.page} />
                 </>
@@ -319,8 +344,10 @@ export function WorkInspector({
                     ((summary.children.active ?? 0) > 0 ||
                       (summary.children.unavailable ?? 0) > 0) && (
                       <p className={styles.caption}>
-                        {summary.children.active ?? 0} active ·{" "}
-                        {summary.children.unavailable ?? 0} unavailable
+                        {t("{{active}} active · {{unavailable}} unavailable", {
+                          active: summary.children.active ?? 0,
+                          unavailable: summary.children.unavailable ?? 0,
+                        })}
                       </p>
                     )}
                   <Children

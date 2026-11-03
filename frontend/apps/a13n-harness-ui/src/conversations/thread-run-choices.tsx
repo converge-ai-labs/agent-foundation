@@ -35,6 +35,7 @@ export function RunEnvironments({
   onChange: (value: Schema<"EnvironmentSelectionPatch"> | undefined) => void;
   disabled: boolean;
 }) {
+  const { t } = useTranslation();
   const [editing, setEditing] = useState<Schema<"EnvironmentSelectionPatch">>();
   useTaskOptionsDialog(editing !== undefined);
   const roots = value?.local_roots ?? configuration?.local_roots ?? [];
@@ -64,7 +65,7 @@ export function RunEnvironments({
       <Button
         type="button"
         variant="ghost"
-        aria-label="Use chat defaults"
+        aria-label={t("Use chat defaults")}
         className={panelStyles.resetAction}
         disabled={disabled}
         onClick={() => {
@@ -72,15 +73,15 @@ export function RunEnvironments({
           closeEditor();
         }}
       >
-        Reset to defaults
+        {t("Reset to defaults")}
       </Button>
       <div className={panelStyles.confirmActions}>
         <Button type="button" variant="outline" onClick={closeEditor}>
-          Cancel
+          {t("Cancel")}
         </Button>
         <Button
           type="button"
-          aria-label="Use for next run"
+          aria-label={t("Use for next run")}
           disabled={disabled || invalid || !editing}
           onClick={() => {
             if (!editing || disabled) return;
@@ -88,7 +89,7 @@ export function RunEnvironments({
             closeEditor();
           }}
         >
-          Apply
+          {t("Apply")}
         </Button>
       </div>
     </>
@@ -98,7 +99,7 @@ export function RunEnvironments({
       value={editing}
       profiles={catalog?.environments}
       inheritedProfile={configuration?.environment_profile_id}
-      inheritLabel="Use chat default"
+      inheritLabel={t("Use chat default")}
       onChange={(patch) => setEditing({ ...editing, ...patch })}
     />
   );
@@ -109,16 +110,18 @@ export function RunEnvironments({
         variant="ghost"
         size="sm"
         disabled={disabled || !configuration}
-        aria-label="Environments"
+        aria-label={t("Environments")}
         title={summary}
         className={panelStyles.optionAction}
         onClick={beginEditing}
       >
         <Desktop aria-hidden />
         <span className={panelStyles.optionCopy}>
-          <span>Environment</span>
+          <span>{t("Environment")}</span>
           <small className={panelStyles.environmentLabel}>
-            {bindings.length ? `${bindings.length} remote` : "Local"}
+            {bindings.length
+              ? t("{{count}} remote", { count: bindings.length })
+              : t("Local")}
           </small>
         </span>
         <CaretRight aria-hidden="true" size={14} />
@@ -128,9 +131,9 @@ export function RunEnvironments({
         onOpenChange={(open) => {
           if (!open) setEditing(undefined);
         }}
-        title="Environments"
-        closeLabel="Close"
-        description="Applies to upcoming runs in this tab."
+        title={t("Environments")}
+        closeLabel={t("Close")}
+        description={t("Applies to upcoming runs in this tab.")}
         footer={footer}
       >
         <fieldset className="min-w-0" disabled={disabled}>

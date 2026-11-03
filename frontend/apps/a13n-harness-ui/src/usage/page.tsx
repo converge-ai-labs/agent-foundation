@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { ModelIdentity } from "../shell/model-identity";
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router";
@@ -21,22 +22,25 @@ import {
 } from "./state";
 import styles from "./usage.module.css";
 
-const number = (value: number) => value.toLocaleString();
 function Count({ value }: { value: number }) {
+  const { i18n } = useTranslation();
+  const locale = i18n.resolvedLanguage ?? "en";
+  const number = (value: number) => value.toLocaleString(locale);
   return (
     <span title={number(value)} aria-label={number(value)}>
-      {compactNumber(value)}
+      {compactNumber(value, locale)}
     </span>
   );
 }
 function Cost({ totals }: { totals: Schema<"ConsumptionTotals"> }) {
+  const { t, i18n } = useTranslation();
   const exact =
     totals.model_cost_usd === null
-      ? "Unknown"
+      ? t("Unknown")
       : `$${totals.model_cost_usd}${totals.unknown_model_costs ? "+" : ""}`;
   return (
     <span title={exact} aria-label={exact}>
-      {estimatedCost(totals)}
+      {estimatedCost(totals, true, i18n.resolvedLanguage ?? "en")}
     </span>
   );
 }
@@ -48,6 +52,9 @@ const options = (items: Schema<"UsageOption">[] = []) =>
   }));
 
 export function UsagePage() {
+  const { t, i18n } = useTranslation();
+  const locale = i18n.resolvedLanguage ?? "en";
+  const number = (value: number) => value.toLocaleString(locale);
   const [params, setParams] = useSearchParams();
   const { client } = useTransport();
   const filters = usageFilters(params);
@@ -98,8 +105,8 @@ export function UsagePage() {
       ? "none"
       : "all";
   const projectOptions = [
-    { value: "all", label: "All projects" },
-    { value: "none", label: "No project" },
+    { value: "all", label: t("All projects") },
+    { value: "none", label: t("No project") },
     ...(data?.projects ?? []).map((item) => ({
       value: `project:${item.key}`,
       label: item.label,
@@ -108,10 +115,10 @@ export function UsagePage() {
   if (!projectOptions.some((item) => item.value === project))
     projectOptions.push({
       value: project,
-      label: filters.project_id ?? "No project",
+      label: filters.project_id ?? t("No project"),
     });
   const threadOptions = [
-    { value: "all", label: "All chats" },
+    { value: "all", label: t("All chats") },
     ...options(data?.threads),
   ];
   if (
@@ -120,7 +127,7 @@ export function UsagePage() {
   )
     threadOptions.push({ value: filters.thread_id, label: filters.thread_id });
   const modelOptions = [
-    { value: "all", label: "All models" },
+    { value: "all", label: t("All models") },
     ...options(data?.models),
   ];
   if (
@@ -132,8 +139,8 @@ export function UsagePage() {
   return (
     <div className={styles.page}>
       <PageHeader
-        title="Usage"
-        description="Tokens and estimated model cost across your chats."
+        title={t("Usage")}
+        description={t("Tokens and estimated model cost across your chats.")}
         actions={
           <Button
             variant="ghost"
@@ -141,19 +148,19 @@ export function UsagePage() {
             onClick={() => void query.refetch()}
           >
             <ArrowClockwise />
-            Refresh
+            {t("Refresh")}
           </Button>
         }
       />
       <div className={styles.filters}>
         <ChoiceField
-          label="Period"
+          label={t("Period")}
           value={params.get("range") ?? "30"}
           options={[
-            { value: "7", label: "Last 7 days" },
-            { value: "30", label: "Last 30 days" },
-            { value: "90", label: "Last 90 days" },
-            { value: "custom", label: "Custom dates" },
+            { value: "7", label: t("Last 7 days") },
+            { value: "30", label: t("Last 30 days") },
+            { value: "90", label: t("Last 90 days") },
+            { value: "custom", label: t("Custom dates") },
           ]}
           onValueChange={(value) =>
             change({
@@ -164,12 +171,12 @@ export function UsagePage() {
           }
         />
         <div className={styles.picker}>
-          <span>Project</span>
+          <span>{t("Project")}</span>
           <SearchPicker
-            label="Project"
-            placeholder="All projects"
-            emptyMessage="No projects found"
-            groups={[{ label: "Projects", options: projectOptions }]}
+            label={t("Project")}
+            placeholder={t("All projects")}
+            emptyMessage={t("No projects found")}
+            groups={[{ label: t("Projects"), options: projectOptions }]}
             value={project}
             onValueChange={(value) =>
               change({
@@ -190,18 +197,19 @@ export function UsagePage() {
           onClick={() => setMoreFilters(!moreFilters)}
         >
           <SlidersHorizontal />
-          Filters{extraFilters ? ` · ${extraFilters}` : ""}
+          {t("Filters")}
+          {extraFilters ? ` · ${extraFilters}` : ""}
         </Button>
       </div>
       {moreFilters && (
         <div className={styles.extraFilters} id="usage-more-filters">
           <div className={styles.picker}>
-            <span>Chat</span>
+            <span>{t("Chat")}</span>
             <SearchPicker
-              label="Chat"
-              placeholder="All chats"
-              emptyMessage="No chats found"
-              groups={[{ label: "Chats", options: threadOptions }]}
+              label={t("Chat")}
+              placeholder={t("All chats")}
+              emptyMessage={t("No chats found")}
+              groups={[{ label: t("Chats"), options: threadOptions }]}
               value={filters.thread_id ?? "all"}
               onValueChange={(value) =>
                 change({ thread_id: value === "all" ? undefined : value })
@@ -209,12 +217,12 @@ export function UsagePage() {
             />
           </div>
           <div className={styles.picker}>
-            <span>Model</span>
+            <span>{t("Model")}</span>
             <SearchPicker
-              label="Model"
-              placeholder="All models"
-              emptyMessage="No models in this period"
-              groups={[{ label: "Recorded models", options: modelOptions }]}
+              label={t("Model")}
+              placeholder={t("All models")}
+              emptyMessage={t("No models in this period")}
+              groups={[{ label: t("Recorded models"), options: modelOptions }]}
               value={filters.model ?? "all"}
               onValueChange={(value) =>
                 change({ model: value === "all" ? undefined : value })
@@ -226,87 +234,105 @@ export function UsagePage() {
       {params.get("range") === "custom" && (
         <div className={styles.dates}>
           <TextField
-            label="From (UTC)"
+            label={t("From (UTC)")}
             type="date"
             value={filters.start}
             onChange={(value) => change({ start: value })}
           />
           <TextField
-            label="Through (UTC)"
+            label={t("Through (UTC)")}
             type="date"
             value={shiftDay(filters.end, -1)}
             onChange={(value) => change({ end: shiftDay(value, 1) })}
           />
         </div>
       )}
-      {invalid && <p role="alert">{invalid}</p>}
+      {invalid && <p role="alert">{t(invalid)}</p>}
       <ErrorNotice error={query.error} retry={() => void query.refetch()} />
       <p className={styles.freshness} role="status">
         {query.isFetching
           ? data
-            ? "Updating · showing previous results…"
-            : "Loading recorded usage…"
+            ? t("Updating · showing previous results…")
+            : t("Loading recorded usage…")
           : query.isError && data
-            ? "Update failed · showing previous results"
+            ? t("Update failed · showing previous results")
             : data
-              ? `As of ${new Date(data.as_of).toLocaleString()} · UTC days`
+              ? t("As of {{time}} · UTC days", {
+                  time: new Date(data.as_of).toLocaleString(locale),
+                })
               : ""}
       </p>
       {data && !invalid && (
         <div aria-busy={query.isFetching} className={styles.results}>
           <dl className={styles.summary}>
             <div>
-              <dt>Estimated cost</dt>
+              <dt>{t("Estimated cost")}</dt>
               <dd>
                 <Cost totals={data.summary} />
                 <small>
                   USD ·{" "}
                   {data.summary.unknown_model_costs
-                    ? `${number(data.summary.unknown_model_costs)} unknown-cost requests`
-                    : "Recorded prices"}
+                    ? t("{{count}} unknown-cost requests", {
+                        count: data.summary.unknown_model_costs,
+                      })
+                    : t("Recorded prices")}
                 </small>
               </dd>
             </div>
             <div>
-              <dt>Total tokens</dt>
+              <dt>{t("Total tokens")}</dt>
               <dd>
                 <Count value={data.summary.total_tokens} />
-                <small>
-                  <Count value={data.summary.input_tokens} /> input ·{" "}
-                  <Count value={data.summary.output_tokens} /> output
+                <small
+                  title={t("{{input}} input · {{output}} output", {
+                    input: number(data.summary.input_tokens),
+                    output: number(data.summary.output_tokens),
+                  })}
+                  aria-label={t("{{input}} input · {{output}} output", {
+                    input: number(data.summary.input_tokens),
+                    output: number(data.summary.output_tokens),
+                  })}
+                >
+                  {t("{{input}} input · {{output}} output", {
+                    input: compactNumber(data.summary.input_tokens, locale),
+                    output: compactNumber(data.summary.output_tokens, locale),
+                  })}
                 </small>
               </dd>
             </div>
             <div>
-              <dt>Model requests</dt>
+              <dt>{t("Model requests")}</dt>
               <dd>
                 <Count value={data.summary.model_requests} />
               </dd>
             </div>
           </dl>
           <DailyChart key={`${data.start}:${data.end}`} days={data.daily} />
-          <section className={styles.breakdown} aria-label="Usage breakdown">
+          <section
+            className={styles.breakdown}
+            aria-label={t("Usage breakdown")}
+          >
             <div className={styles.sectionHeader}>
-              <h2>Breakdown</h2>
+              <h2>{t("Breakdown")}</h2>
               <div className={styles.breakdownControls}>
                 <SegmentedControl
-                  label="Group by"
+                  label={t("Group by")}
                   value={filters.group_by ?? "project"}
                   onValueChange={(value) => change({ group_by: value })}
                   options={[
-                    { value: "project", label: "Projects" },
-                    { value: "thread", label: "Chats" },
-                    { value: "model", label: "Models" },
+                    { value: "project", label: t("Projects") },
+                    { value: "thread", label: t("Chats") },
+                    { value: "model", label: t("Models") },
                   ]}
                 />
                 <ChoiceField
-                  label="Sort"
+                  label={t("Sort")}
                   variant="filter"
                   value={filters.order_by ?? "tokens"}
                   onValueChange={(value) => change({ order_by: value })}
                   options={[
-                    { value: "tokens", label: "Most tokens" },
-                    { value: "cost", label: "Highest cost" },
+                    { value: "tokens", label: t("Most tokens") },
+                    { value: "cost", label: t("Highest cost") },
                   ]}
                 />
                 <Button
@@ -315,14 +341,14 @@ export function UsagePage() {
                   aria-pressed={tokenDetails}
                   onClick={() => setTokenDetails(!tokenDetails)}
                 >
-                  Token details
+                  {t("Token details")}
                 </Button>
               </div>
             </div>
             <div
               className={styles.tableScroll}
               role="region"
-              aria-label="Usage breakdown table"
+              aria-label={t("Usage breakdown table")}
               tabIndex={0}
             >
               <table className={styles.table}>
@@ -330,19 +356,24 @@ export function UsagePage() {
                   <tr>
                     <th scope="col">
                       {filters.group_by === "model"
-                        ? "Model"
+                        ? t("Model")
                         : filters.group_by === "thread"
-                          ? "Chat"
-                          : "Project"}
+                          ? t("Chat")
+                          : t("Project")}
                     </th>
                     {[
-                      "Requests",
-                      "Tokens",
+                      t("Requests"),
+                      t("Tokens"),
                       ...(tokenDetails
-                        ? ["Input", "Output", "Cache read", "Cache write"]
+                        ? [
+                            t("Input"),
+                            t("Output"),
+                            t("Cache read"),
+                            t("Cache write"),
+                          ]
                         : []),
-                      "Est. cost",
-                      ...(tokenDetails ? ["Unknown cost"] : []),
+                      t("Est. cost"),
+                      ...(tokenDetails ? [t("Unknown cost")] : []),
                     ].map((label) => (
                       <th scope="col" key={label}>
                         {label}
@@ -358,7 +389,9 @@ export function UsagePage() {
                           <button
                             disabled={query.isPlaceholderData}
                             onClick={() => narrow(group)}
-                            title={`Filter to ${group.label}`}
+                            title={t("Filter to {{name}}", {
+                              name: group.label,
+                            })}
                           >
                             {filters.group_by === "model" ? (
                               <ModelIdentity name={group.label} />
@@ -369,8 +402,10 @@ export function UsagePage() {
                           {group.thread_id && (
                             <Link
                               to={`/threads/${encodeURIComponent(group.thread_id)}`}
-                              aria-label={`Open chat: ${group.label}`}
-                              title="Open chat"
+                              aria-label={t("Open chat: {{name}}", {
+                                name: group.label,
+                              })}
+                              title={t("Open chat")}
                             >
                               <ArrowUpRight size={16} />
                             </Link>
@@ -414,14 +449,18 @@ export function UsagePage() {
             </div>
             {!data.group_count && (
               <p className={styles.empty}>
-                No model usage recorded for these filters.
+                {t("No model usage recorded for these filters.")}
               </p>
             )}
             <footer className={styles.pagination}>
               <span>
                 {data.group_count
-                  ? `${Math.min(offset + 1, data.group_count)}–${Math.min(offset + pageSize, data.group_count)} of ${number(data.group_count)} groups`
-                  : "0 groups"}
+                  ? t("{{start}}–{{end}} of {{total}} groups", {
+                      start: Math.min(offset + 1, data.group_count),
+                      end: Math.min(offset + pageSize, data.group_count),
+                      total: number(data.group_count),
+                    })
+                  : t("0 groups")}
               </span>
               <div>
                 <Button
@@ -435,7 +474,7 @@ export function UsagePage() {
                     )
                   }
                 >
-                  Previous
+                  {t("Previous")}
                 </Button>
                 <Button
                   variant="ghost"
@@ -448,25 +487,27 @@ export function UsagePage() {
                     change({ offset: String(offset + pageSize) }, true)
                   }
                 >
-                  Next
+                  {t("Next")}
                 </Button>
               </div>
             </footer>
           </section>
           <details className={styles.note}>
-            <summary>About these estimates</summary>
+            <summary>{t("About these estimates")}</summary>
             <p>
-              Estimated model cost, not a bill or subscription charge. + means
-              some prices are missing from the subtotal.
+              {t(
+                "Estimated model cost, not a bill or subscription charge. + means some prices are missing from the subtotal.",
+              )}
             </p>
             <p>
-              Includes saved chats, archived chats, Memory, Live voice,
-              subagents and supporting model calls. Older usage may be missing.
+              {t(
+                "Includes saved chats, archived chats, Memory, Live voice, subagents and supporting model calls. Older usage may be missing.",
+              )}
             </p>
             <p>
-              Usage follows each main chat's current project. Each record is
-              counted on the day of its latest response, not as tokens stream
-              in. Cache tokens are already included in the totals.
+              {t(
+                "Usage follows each main chat's current project. Each record is counted on the day of its latest response, not as tokens stream in. Cache tokens are already included in the totals.",
+              )}
             </p>
           </details>
         </div>
@@ -476,6 +517,9 @@ export function UsagePage() {
 }
 
 function DailyChart({ days }: { days: Schema<"UsageDay">[] }) {
+  const { t, i18n } = useTranslation();
+  const locale = i18n.resolvedLanguage ?? "en";
+  const number = (value: number) => value.toLocaleString(locale);
   const [metric, setMetric] = useState("tokens");
   const [selected, setSelected] = useState(
     Math.max(
@@ -490,35 +534,48 @@ function DailyChart({ days }: { days: Schema<"UsageDay">[] }) {
   const maximum = Math.max(...days.map(value), 0);
   const description = (day: Schema<"UsageDay">, exact = false) =>
     !day.totals.model_requests
-      ? "No records"
+      ? t("No records")
       : metric === "tokens"
-        ? `${exact ? number(day.totals.total_tokens) : compactNumber(day.totals.total_tokens)} tokens`
-        : `${estimatedCost(day.totals, !exact)}${day.totals.unknown_model_costs ? ` · ${number(day.totals.unknown_model_costs)} unknown-cost requests` : ""}`;
+        ? t("{{value}} tokens", {
+            value: exact
+              ? number(day.totals.total_tokens)
+              : compactNumber(day.totals.total_tokens, locale),
+          })
+        : `${estimatedCost(day.totals, !exact, locale)}${day.totals.unknown_model_costs ? ` · ${t("{{count}} unknown-cost requests", { count: day.totals.unknown_model_costs })}` : ""}`;
   const current = days[selected];
   return (
-    <section className={styles.trend} aria-label="Daily usage">
+    <section className={styles.trend} aria-label={t("Daily usage")}>
       <div className={styles.sectionHeader}>
-        <h2>Daily usage</h2>
+        <h2>{t("Daily usage")}</h2>
         <SegmentedControl
-          label="Chart metric"
+          label={t("Chart metric")}
           value={metric}
           onValueChange={setMetric}
           options={[
-            { value: "tokens", label: "Tokens" },
-            { value: "cost", label: "Cost" },
+            { value: "tokens", label: t("Tokens") },
+            { value: "cost", label: t("Cost") },
           ]}
         />
         <span
           className={styles.chartReadout}
           title={current ? description(current, true) : undefined}
         >
-          {current ? `${current.day} · ${description(current)}` : "No records"}
+          {current
+            ? `${current.day} · ${description(current)}`
+            : t("No records")}
         </span>
       </div>
       <div className={styles.chartScale}>
         {metric === "tokens"
-          ? `${compactNumber(maximum)} tokens`
-          : `$${maximum >= 1000 ? compactNumber(maximum) : maximum.toLocaleString(undefined, { maximumFractionDigits: 4 })} known`}
+          ? t("{{value}} tokens", { value: compactNumber(maximum, locale) })
+          : t("${{value}} known", {
+              value:
+                maximum >= 1000
+                  ? compactNumber(maximum, locale)
+                  : maximum.toLocaleString(locale, {
+                      maximumFractionDigits: 4,
+                    }),
+            })}
       </div>
       <div className={styles.chartScroll}>
         <div className={styles.bars} style={{ minWidth: days.length * 6 }}>

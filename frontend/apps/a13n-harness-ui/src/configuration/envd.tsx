@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { SettingsRow, SettingsSection } from "../shell/settings";
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -11,13 +12,14 @@ import styles from "../shell/workbench.module.css";
 import layout from "./runtime.module.css";
 
 export function RuntimePage({ embedded = false }: { embedded?: boolean }) {
+  const { t } = useTranslation();
   const sources = useSources();
   const root = sources.data?.sources.find(
     (item) => item.resource_kind === "root",
   );
   return (
     <div className={layout.page}>
-      {!embedded && <PageHeader title="Local runtime" />}
+      {!embedded && <PageHeader title={t("Local runtime")} />}
       <EnvdRuntime />
       {sources.isPending ? (
         <Skeleton className="h-64 w-full" />
@@ -26,7 +28,7 @@ export function RuntimePage({ embedded = false }: { embedded?: boolean }) {
           <SourceDocument
             key={root.relative_path}
             path={root.relative_path}
-            title="Configuration"
+            title={t("Configuration")}
             embedded
             section="envd"
           />
@@ -40,6 +42,18 @@ export function RuntimePage({ embedded = false }: { embedded?: boolean }) {
 
 type Action = "execution" | "desktop" | "restart" | "reinstall" | "stop";
 type Confirmation = "restart" | "reinstall" | "stop";
+class RuntimePreparationError extends Error {
+  constructor(
+    readonly kind: "cancelled" | "sandbox",
+    readonly detail = "",
+  ) {
+    super(
+      kind === "cancelled"
+        ? "Preparation cancelled. Check again to continue."
+        : `Runtime ready. Sandbox: ${detail}`,
+    );
+  }
+}
 const confirmationLabels = {
   restart: "Restart runtime",
   reinstall: "Reinstall & restart",
@@ -47,6 +61,7 @@ const confirmationLabels = {
 };
 
 export function EnvdRuntime() {
+  const { t } = useTranslation();
   const { client } = useTransport();
   const queries = useQueryClient();
   const runtime = useEnvdStatus();
@@ -103,11 +118,11 @@ export function EnvdRuntime() {
         );
         pending.signal.throwIfAborted();
         if (!sandbox.ready)
-          throw new Error(`Runtime ready. Sandbox: ${sandbox.message}`);
+          throw new RuntimePreparationError("sandbox", sandbox.message);
         return "Runtime and Sandbox ready.";
       } catch (error) {
         if (pending.signal.aborted)
-          throw new Error("Preparation cancelled. Check again to continue.");
+          throw new RuntimePreparationError("cancelled");
         throw error;
       } finally {
         setCheckingSandbox(false);
@@ -124,29 +139,45 @@ export function EnvdRuntime() {
     !!state?.preparing ||
     (!!state && state.phase !== "idle");
   const blocked = !state || busy || state.restart_required;
+  const displayedError = runtime.error || action.error || state?.error;
+  const errorMessage =
+    displayedError instanceof RuntimePreparationError
+      ? displayedError.kind === "cancelled"
+        ? t("Preparation cancelled. Check again to continue.")
+        : t("Runtime ready. Sandbox: {{message}}", {
+            message: displayedError.detail,
+          })
+      : undefined;
   const progress = checkingSandbox
-    ? "Checking Sandbox isolation…"
+    ? t("Checking Sandbox isolation…")
     : state?.phase === "downloading"
-      ? `Downloading envd · ${((state.downloaded_bytes ?? 0) / 1048576).toFixed(1)} MB${state.total_bytes ? ` / ${(state.total_bytes / 1048576).toFixed(1)} MB` : ""}`
+      ? t("Downloading envd · {{downloaded}} MB{{total}}", {
+          downloaded: ((state.downloaded_bytes ?? 0) / 1048576).toFixed(1),
+          total: state.total_bytes
+            ? ` / ${(state.total_bytes / 1048576).toFixed(1)} MB`
+            : "",
+        })
       : state?.phase === "verifying"
-        ? "Verifying runtime…"
+        ? t("Verifying runtime…")
         : action.variables === "stop"
-          ? "Stopping runtimes…"
-          : "Preparing runtime and checking readiness…";
+          ? t("Stopping runtimes…")
+          : t("Preparing runtime and checking readiness…");
   return (
     <>
       <div className={layout.statusBlock}>
         <SettingsSection
           variant="grouped"
-          title="Local runtime"
-          description={state?.host ?? "Loading host…"}
+          title={t("Local runtime")}
+          description={state?.host ?? t("Loading host…")}
         >
           <SettingsRow
             label="envd"
             description={
               state?.source === "custom"
-                ? "Custom executable · managed on this host"
-                : `Managed by Harness UI · ${state?.required_version ?? "loading version…"}`
+                ? t("Custom executable · managed on this host")
+                : t("Managed by Harness UI · {{version}}", {
+                    version: state?.required_version ?? t("loading version…"),
+                  })
             }
           >
             <div className={layout.controls}>
@@ -154,14 +185,14 @@ export function EnvdRuntime() {
                 variant={state?.running_devices ? "success" : "neutral"}
               >
                 {!state
-                  ? "Loading…"
+                  ? t("Loading…")
                   : state.running_devices
-                    ? `${state.running_devices} running`
+                    ? t("{{count}} running", { count: state.running_devices })
                     : state.installed
-                      ? "Installed · stopped"
+                      ? t("Installed · stopped")
                       : updateAvailable
-                        ? "Update required"
-                        : "Not installed"}
+                        ? t("Update required")
+                        : t("Not installed")}
               </StatusPill>
 
               <Button
@@ -171,14 +202,14 @@ export function EnvdRuntime() {
                 onClick={() => action.mutate("execution")}
               >
                 {action.isPending && action.variables === "execution"
-                  ? "Preparing…"
+                  ? t("Preparing…")
                   : state?.running_devices
-                    ? "Check"
+                    ? t("Check")
                     : state?.installed
-                      ? "Start"
+                      ? t("Start")
                       : updateAvailable
-                        ? "Update & start"
-                        : "Install & start"}
+                        ? t("Update & start")
+                        : t("Install & start")}
               </Button>
               {!!state?.instances?.length && (
                 <>
@@ -188,7 +219,7 @@ export function EnvdRuntime() {
                     disabled={blocked}
                     onClick={() => setConfirmation("restart")}
                   >
-                    Restart
+                    {t("Restart")}
                   </Button>
                   <Button
                     size="sm"
@@ -196,7 +227,7 @@ export function EnvdRuntime() {
                     disabled={busy}
                     onClick={() => setConfirmation("stop")}
                   >
-                    Stop
+                    {t("Stop")}
                   </Button>
                 </>
               )}
@@ -206,7 +237,7 @@ export function EnvdRuntime() {
                   variant="ghost"
                   onClick={() => controller.current?.abort()}
                 >
-                  Cancel preparation
+                  {t("Cancel preparation")}
                 </Button>
               )}
             </div>
@@ -215,59 +246,77 @@ export function EnvdRuntime() {
         {!state?.installed && state && (
           <p className={layout.hint}>
             {updateAvailable
-              ? `Update envd to ${state.required_version} for this Harness UI version.`
-              : "Install envd to check Full Control and Sandbox automatically."}
+              ? t("Update envd to {{version}} for this Harness UI version.", {
+                  version: state.required_version,
+                })
+              : t(
+                  "Install envd to check Full Control and Sandbox automatically.",
+                )}
           </p>
         )}
         {busy && (
           <p role="status" className={layout.hint}>
             {progress}
             {action.variables === "desktop" &&
-              "Approve the permission prompt on this computer. This may take two minutes."}
+              t(
+                "Approve the permission prompt on this computer. This may take two minutes.",
+              )}
           </p>
         )}
         {notice && (
           <p role="status" className={layout.hint}>
-            {notice}
+            {t(notice)}
           </p>
         )}
         <ErrorNotice
-          error={runtime.error || action.error || state?.error}
+          error={displayedError}
+          message={errorMessage}
           retry={() => void runtime.refetch()}
         />
         {state?.restart_required && (
           <div role="status" className={styles.notice}>
-            <strong>Restart Harness UI to apply saved configuration</strong>
+            <strong>
+              {t("Restart Harness UI to apply saved configuration")}
+            </strong>
             <p>
-              Restart the server with the same launch command to load these
-              settings.
+              {t(
+                "Restart the server with the same launch command to load these settings.",
+              )}
             </p>
           </div>
         )}
       </div>
       <SettingsSection
         variant="grouped"
-        title="Capabilities"
-        description="Full Control and Sandbox are checked together."
+        title={t("Capabilities")}
+        description={t("Full Control and Sandbox are checked together.")}
       >
         <SettingsRow
-          label="Full Control"
-          description="File and command access. Checked when the runtime starts."
+          label={t("Full Control")}
+          description={t(
+            "File and command access. Checked when the runtime starts.",
+          )}
         >
           {readiness("environment-envd")}
         </SettingsRow>
         <SettingsRow
-          label="Sandbox"
-          description="Checked automatically, including each project's workspace."
+          label={t("Sandbox")}
+          description={t(
+            "Checked automatically, including each project's workspace.",
+          )}
         >
           {readiness("environment-sandbox")}
         </SettingsRow>
         <SettingsRow
-          label="Computer Use"
+          label={t("Computer Use")}
           description={
             state?.computer_use
-              ? "Screen observation and input require permission on this host."
-              : "Turn on Desktop capability below, save, and restart Harness UI."
+              ? t(
+                  "Screen observation and input require permission on this host.",
+                )
+              : t(
+                  "Turn on Desktop capability below, save, and restart Harness UI.",
+                )
           }
         >
           {state?.computer_use ? (
@@ -279,31 +328,35 @@ export function EnvdRuntime() {
                 disabled={blocked}
                 onClick={() => action.mutate("desktop")}
               >
-                Check permissions
+                {t("Check permissions")}
               </Button>
             </div>
           ) : (
-            <StatusPill>Disabled</StatusPill>
+            <StatusPill>{t("Disabled")}</StatusPill>
           )}
         </SettingsRow>
       </SettingsSection>
       <SettingsSection
         variant="grouped"
-        title="Version & updates"
-        description="The envd version selected by this Harness UI installation."
+        title={t("Version & updates")}
+        description={t(
+          "The envd version selected by this Harness UI installation.",
+        )}
       >
         <SettingsRow
-          label="Required version"
+          label={t("Required version")}
           description={
             state?.source === "custom"
-              ? "Update the executable on this server, then restart the runtime."
+              ? t(
+                  "Update the executable on this server, then restart the runtime.",
+                )
               : state?.installed
-                ? "Reinstall this version and restart envd."
-                : "Downloaded when you install or update envd."
+                ? t("Reinstall this version and restart envd.")
+                : t("Downloaded when you install or update envd.")
           }
         >
           <div className={layout.controls}>
-            <span>{state?.required_version ?? "Unavailable"}</span>
+            <span>{state?.required_version ?? t("Unavailable")}</span>
             {state?.source === "managed" &&
               state.installed &&
               state.required_version &&
@@ -314,13 +367,13 @@ export function EnvdRuntime() {
                   disabled={blocked}
                   onClick={() => setConfirmation("reinstall")}
                 >
-                  Reinstall…
+                  {t("Reinstall…")}
                 </Button>
               )}
           </div>
         </SettingsRow>
         {!!state?.cached_versions?.length && (
-          <SettingsRow label="Cached versions">
+          <SettingsRow label={t("Cached versions")}>
             <span>{state.cached_versions.join(", ")}</span>
           </SettingsRow>
         )}
@@ -332,21 +385,25 @@ export function EnvdRuntime() {
         }}
         title={
           confirmation === "stop"
-            ? "Stop all local envd runtimes?"
+            ? t("Stop all local envd runtimes?")
             : confirmation === "reinstall"
-              ? "Reinstall the compatible envd release?"
-              : "Restart local envd?"
+              ? t("Reinstall the compatible envd release?")
+              : t("Restart local envd?")
         }
         description={
           confirmation === "stop"
-            ? "Interrupts local envd commands in all chats. Workspace files are kept."
-            : "Closes local envd sessions in all chats, then checks Full Control and Sandbox. Files are kept."
+            ? t(
+                "Interrupts local envd commands in all chats. Workspace files are kept.",
+              )
+            : t(
+                "Closes local envd sessions in all chats, then checks Full Control and Sandbox. Files are kept.",
+              )
         }
-        closeLabel="Close confirmation"
+        closeLabel={t("Close confirmation")}
         footer={
           <>
             <Button variant="outline" onClick={() => setConfirmation(null)}>
-              Cancel
+              {t("Cancel")}
             </Button>
             <Button
               variant="destructive"
@@ -355,16 +412,19 @@ export function EnvdRuntime() {
                 setConfirmation(null);
               }}
             >
-              {confirmation ? confirmationLabels[confirmation] : "Confirm"}
+              {confirmation
+                ? t(confirmationLabels[confirmation])
+                : t("Confirm")}
             </Button>
           </>
         }
       >
         {confirmation === "reinstall" && (
           <p>
-            Downloads release {state?.required_version}. If download or
-            verification fails, runtimes remain stopped and the previous
-            executable is kept.
+            {t(
+              "Downloads release {{version}}. If download or verification fails, runtimes remain stopped and the previous executable is kept.",
+              { version: state?.required_version },
+            )}
           </p>
         )}
       </ModalFrame>
@@ -378,29 +438,34 @@ export function EnvdRuntime() {
       <StatusPill
         variant={checked ? (checked.ready ? "success" : "warning") : "neutral"}
       >
-        {checked ? (checked.ready ? "Checked" : "Not ready") : "Not checked"}
+        {checked
+          ? checked.ready
+            ? t("Checked")
+            : t("Not ready")
+          : t("Not checked")}
       </StatusPill>
     );
   }
 }
 
 function RuntimeDetails() {
+  const { t } = useTranslation();
   const { data: state } = useEnvdStatus();
   return (
     <details className={styles.details}>
-      <summary>Installation details</summary>
+      <summary>{t("Installation details")}</summary>
       <dl className={layout.metadata}>
-        <dt>Verified managed release</dt>
-        <dd>{state?.verified_version ?? "Not verified"}</dd>
-        <dt>Active executable</dt>
-        <dd>{state?.executable ?? "Not installed"}</dd>
+        <dt>{t("Verified managed release")}</dt>
+        <dd>{state?.verified_version ?? t("Not verified")}</dd>
+        <dt>{t("Active executable")}</dt>
+        <dd>{state?.executable ?? t("Not installed")}</dd>
       </dl>
       {state?.instances?.map((instance) => (
         <div key={instance.device_id} className={styles.resourceRow}>
           <div className="min-w-0">
             <strong>
-              {instance.sandbox ? "Sandbox" : "Full Control"}
-              {instance.computer_use ? " · Computer Use" : ""}
+              {instance.sandbox ? t("Sandbox") : t("Full Control")}
+              {instance.computer_use ? ` · ${t("Computer Use")}` : ""}
             </strong>
             <small className="break-all">{instance.device_id}</small>
             {instance.roots.map((root) => (
@@ -410,7 +475,7 @@ function RuntimeDetails() {
             ))}
           </div>
           <StatusPill variant={instance.running ? "success" : "neutral"}>
-            {instance.running ? "Running" : "Not running"}
+            {instance.running ? t("Running") : t("Not running")}
           </StatusPill>
         </div>
       ))}

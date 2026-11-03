@@ -63,3 +63,30 @@ it("supports keyboard opening and removes the stack when disconnected", async ()
   rerender(<ParticipantAvatars participants={[]} threadTitle="Chat" />);
   expect(screen.queryByRole("button")).toBeNull();
 });
+
+it("changes language without closing the presence popover or translating participant names", async () => {
+  const { i18n } = await import("../i18n");
+  const user = userEvent.setup();
+  try {
+    render(
+      <ParticipantAvatars
+        participants={[participant("own", { display_name: "Anonymous" })]}
+        ownId="own"
+        threadTitle="My chat"
+      />,
+    );
+    await user.click(
+      screen.getByRole("button", { name: "1 person online in My chat" }),
+    );
+    await screen.findByText("People here");
+    await i18n.changeLanguage("zh-CN");
+    await screen.findByText("在场人员");
+    expect(screen.getByText("Anonymous")).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "My chat 中有 1 人在线" }),
+    ).toBeTruthy();
+  } finally {
+    cleanup();
+    await i18n.changeLanguage("en");
+  }
+});

@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { useQuery, useInfiniteQuery } from "@tanstack/react-query";
 import { Button } from "a13n-ui";
+import { useTranslation } from "../i18n";
 import { ApiError, result, type Schema } from "../transport/client";
 import { useTransport } from "../transport/context";
 import { ErrorNotice } from "../shell/ui";
@@ -75,6 +76,7 @@ function CompleteChildOutput({
   first: Schema<"SavedOutputView">;
   rootThreadId: string;
 }) {
+  const { t } = useTranslation();
   const { client } = useTransport();
   const output = useInfiniteQuery({
     queryKey: ["child-final-text", rootThreadId, outputKey(first.target)],
@@ -96,12 +98,15 @@ function CompleteChildOutput({
   });
   const text = output.data.pages.map((page) => page.text).join("");
   return (
-    <section className={styles.childAnswer} aria-label="Latest saved result">
-      <header>Latest saved result</header>
+    <section
+      className={styles.childAnswer}
+      aria-label={t("Latest saved result")}
+    >
+      <header>{t("Latest saved result")}</header>
       <MessageText text={text} />
       {output.hasNextPage && (
         <small>
-          Showing part of the saved result. Load more to read it all.
+          {t("Showing part of the saved result. Load more to read it all.")}
         </small>
       )}
       <ErrorNotice error={output.error} />
@@ -111,7 +116,7 @@ function CompleteChildOutput({
           loading={output.isFetchingNextPage}
           onClick={() => void output.fetchNextPage()}
         >
-          Load more result
+          {t("Load more result")}
         </Button>
       )}
     </section>

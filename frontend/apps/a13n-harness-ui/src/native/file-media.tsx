@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { useEffect, useRef, useState } from "react";
 import { ArrowsOut } from "@phosphor-icons/react";
 import { useTransport } from "../transport/context";
@@ -8,6 +9,10 @@ import { basename } from "./buffer";
 import type { MediaKind } from "./media-kind";
 import { fileTransfer } from "./file-transfer";
 import styles from "./file-image.module.css";
+
+class PreviewError {
+  constructor(readonly reason: "decode" | "changed" | "expired") {}
+}
 
 /** The parent keys this view by requested path, reviewed revision and refresh. */
 export function FileMedia({
@@ -21,6 +26,7 @@ export function FileMedia({
   retry: () => void;
   kind: MediaKind;
 }) {
+  const { t } = useTranslation();
   const transport = useTransport();
   const [src, setSrc] = useState<string>();
   const [error, setError] = useState<unknown>();
@@ -57,11 +63,10 @@ export function FileMedia({
     };
   }, [src, error]);
   const name = basename(path);
-  const label = `${kind[0].toUpperCase()}${kind.slice(1)}`;
+  const label =
+    kind === "image" ? t("image") : kind === "audio" ? t("audio") : t("video");
   const decodeError = () => {
-    const failure = new Error(
-      `This ${kind} cannot be previewed. The browser may not support its codec. Download the original to inspect it.`,
-    );
+    const failure = new PreviewError("decode");
     if (!src) {
       setError(failure);
       return;
@@ -76,34 +81,55 @@ export function FileMedia({
       (error: unknown) => {
         if (signal?.aborted) return;
         if (error instanceof ApiError && error.status === 409)
-          setError(
-            new Error(
-              "File content changed. Retry to review the current file.",
-            ),
-          );
+          setError(new PreviewError("changed"));
         else if (error instanceof ApiError && error.status === 403)
-          setError(
-            new Error(
-              "File access expired or failed. Try again to renew access.",
-            ),
-          );
+          setError(new PreviewError("expired"));
         else setError(error);
       },
     );
   };
   return (
-    <section className={styles.preview} aria-label={`${label} preview`}>
+    <section
+      className={styles.preview}
+      aria-label={
+        kind === "image"
+          ? t("Image preview")
+          : kind === "audio"
+            ? t("Audio preview")
+            : t("Video preview")
+      }
+    >
       {(!src || (kind === "image" ? !dimensions : !ready)) && !error && (
-        <p role="status">Loading {kind}…</p>
+        <p role="status">{t("Loading {{kind}}…", { kind: label })}</p>
       )}
-      <ErrorNotice error={error} retry={retry} />
+      <ErrorNotice
+        error={
+          error instanceof PreviewError
+            ? new Error(
+                error.reason === "decode"
+                  ? t(
+                      "This {{kind}} cannot be previewed. The browser may not support its codec. Download the original to inspect it.",
+                      { kind: label },
+                    )
+                  : error.reason === "changed"
+                    ? t(
+                        "File content changed. Retry to review the current file.",
+                      )
+                    : t(
+                        "File access expired or failed. Try again to renew access.",
+                      ),
+              )
+            : error
+        }
+        retry={retry}
+      />
       {src && !error && (
         <>
           {kind === "image" ? (
             <button
               type="button"
               className={styles.canvas}
-              aria-label={`Expand image: ${name}`}
+              aria-label={t("Expand image: {{name}}", { name })}
               disabled={!dimensions}
               onClick={() => setExpanded(true)}
             >
@@ -129,7 +155,7 @@ export function FileMedia({
               src={src}
               controls
               preload="metadata"
-              aria-label={`Audio preview: ${name}`}
+              aria-label={t("Audio preview: {{name}}", { name })}
               onError={decodeError}
               onLoadedMetadata={() => setReady(true)}
             />
@@ -142,7 +168,7 @@ export function FileMedia({
               controls
               preload="metadata"
               playsInline
-              aria-label={`Video preview: ${name}`}
+              aria-label={t("Video preview: {{name}}", { name })}
               onError={decodeError}
               onLoadedMetadata={() => setReady(true)}
             />
@@ -151,7 +177,7 @@ export function FileMedia({
             <div className={styles.caption}>
               <span>{dimensions}</span>
               <span>
-                <ArrowsOut aria-hidden="true" /> Click image to expand
+                <ArrowsOut aria-hidden="true" /> {t("Click image to expand")}
               </span>
             </div>
           )}

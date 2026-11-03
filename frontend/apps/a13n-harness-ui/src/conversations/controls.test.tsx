@@ -479,10 +479,10 @@ it("shows the server deadline despite clock skew and refetches at expiry without
     { wrapper: harness({ POST }) },
   );
   try {
-    expect(screen.getByText(/2s left/)).toBeTruthy();
+    expect(screen.getByText(/2 seconds left/)).toBeTruthy();
     fireEvent.click(screen.getByRole("radio", { name: "Left Choose left" }));
     act(() => vi.advanceTimersByTime(1000));
-    expect(screen.getByText(/1s left/)).toBeTruthy();
+    expect(screen.getByText(/1 second left/)).toBeTruthy();
     // A second participant/refetch sees the same deadline, not another full window.
     view.rerender(
       <DecisionForm
@@ -536,7 +536,7 @@ it("unmounting a timed form never sends a response and a restored untimed batch 
       <DecisionForm threadId="one" batch={batch} reconcile={reconcile} />,
       { wrapper },
     );
-    expect(screen.queryByText(/s left/)).toBeNull();
+    expect(screen.queryByText(/seconds? left/)).toBeNull();
     fireEvent.click(screen.getByRole("radio", { name: "Left Choose left" }));
     expect(
       (

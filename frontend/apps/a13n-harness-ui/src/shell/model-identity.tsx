@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { BrandIcon, modelBrand } from "a13n-ui";
 import type { Schema } from "../transport/client";
 import styles from "./model-identity.module.css";
@@ -24,10 +25,11 @@ export function ModelIdentity({
   model?: Schema<"ModelSummary">;
   name?: string;
 }) {
+  const { t } = useTranslation();
   return (
     <span className={styles.identity}>
       <ModelIcon model={model} name={name} />
-      <span>{name ?? model?.name ?? "Model"}</span>
+      <span>{name ?? model?.name ?? t("Model")}</span>
     </span>
   );
 }

@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "a13n-ui";
@@ -13,6 +14,8 @@ import {
   type LineRange,
 } from "./buffer";
 import styles from "./native.module.css";
+
+class CaptureError extends Error {}
 
 export const ReturnToChat = createContext<() => void>(() => {});
 
@@ -61,6 +64,7 @@ export function CaptureContext({
   selection?: LineRange;
   compact?: boolean;
 }) {
+  const { t } = useTranslation();
   const transport = useTransport();
   const returnToChat = useContext(ReturnToChat);
   const currentThread = useRef(threadId);
@@ -94,28 +98,37 @@ export function CaptureContext({
     setMessage("");
     try {
       if (!draft.synchronized || draft.replacement)
-        throw new Error(
+        throw new CaptureError(
           "Reconnect the chat's shared input before capturing context.",
         );
       if (attachmentSelections(draft.doc).length >= 8)
-        throw new Error("Remove an attachment first (limit: eight).");
+        throw new CaptureError("Remove an attachment first (limit: eight).");
       const incarnation = draft.draftId;
+      let selectedRange = selectedLines;
+      if (!selectedRange && range) {
+        try {
+          selectedRange = lineRange(start, end);
+        } catch (cause) {
+          if (cause instanceof Error) throw new CaptureError(cause.message);
+          throw cause;
+        }
+      }
       const captured = await captureSource(
         transport,
         threadId,
         source,
-        selectedLines ?? (range ? lineRange(start, end) : undefined),
+        selectedRange,
       );
       if (
         !draft.synchronized ||
         draft.draftId !== incarnation ||
         draft.replacement
       )
-        throw new Error(
+        throw new CaptureError(
           "The shared draft changed. Rejoin it before attaching this content.",
         );
       if (attachmentSelections(draft.doc).length >= 8)
-        throw new Error(
+        throw new CaptureError(
           "The draft already has eight attachments. Remove one to add this content.",
         );
       const attachment = captured.attachment;
@@ -136,11 +149,34 @@ export function CaptureContext({
       setPending(false);
     }
   };
+  const localErrors: Record<string, string> = {
+    "Reconnect the chat's shared input before capturing context.": t(
+      "Reconnect the chat's shared input before capturing context.",
+    ),
+    "Remove an attachment first (limit: eight).": t(
+      "Remove an attachment first (limit: eight).",
+    ),
+    "The shared draft changed. Rejoin it before attaching this content.": t(
+      "The shared draft changed. Rejoin it before attaching this content.",
+    ),
+    "The draft already has eight attachments. Remove one to add this content.":
+      t(
+        "The draft already has eight attachments. Remove one to add this content.",
+      ),
+    "Enter start and end line numbers, starting at 1. The end can't come before the start.":
+      t(
+        "Enter start and end line numbers, starting at 1. The end can't come before the start.",
+      ),
+  };
+  const displayedError =
+    error instanceof CaptureError && localErrors[error.message]
+      ? new Error(localErrors[error.message])
+      : error;
   if (compact)
     return (
       <section
         className={styles.compactCapture}
-        aria-label="Capture reviewed context"
+        aria-label={t("Capture reviewed context")}
       >
         <Button
           variant="outline"
@@ -149,14 +185,23 @@ export function CaptureContext({
           onClick={() => void capture(rangesSupported ? selection : undefined)}
           loading={pending}
         >
-          Add to chat
+          {t("Add to chat")}
         </Button>
-        {message && <small role="status">{message}</small>}
-        <ErrorNotice error={error} />
+        {message && (
+          <small role="status">
+            {message === "Added to chat."
+              ? t("Added to chat.")
+              : t("Added to the chat. Review it before sending.")}
+          </small>
+        )}
+        <ErrorNotice error={displayedError} />
       </section>
     );
   return (
-    <section className={styles.capture} aria-label="Capture reviewed context">
+    <section
+      className={styles.capture}
+      aria-label={t("Capture reviewed context")}
+    >
       <div className={styles.actions}>
         <Button
           variant={selection ? "ghost" : "outline"}
@@ -165,7 +210,7 @@ export function CaptureContext({
           onClick={() => void capture()}
           loading={pending}
         >
-          {range ? "Attach selection" : "Add to message"}
+          {range ? t("Attach selection") : t("Add to message")}
         </Button>
         {rangesSupported && (
           <label className={styles.check}>
@@ -174,7 +219,7 @@ export function CaptureContext({
               checked={range}
               onChange={(event) => setRange(event.target.checked)}
             />
-            Choose line range
+            {t("Choose line range")}
           </label>
         )}
         {rangesSupported && selection && (
@@ -184,19 +229,19 @@ export function CaptureContext({
             disabled={!threadId || disabled || pending}
             onClick={() => void capture(selection)}
           >
-            Attach selection
+            {t("Attach selection")}
           </Button>
         )}
       </div>
       {range && (
         <div className={styles.range}>
           <TextField
-            label={"diff" in source ? "First patch line" : "First line"}
+            label={"diff" in source ? t("First patch line") : t("First line")}
             value={start}
             onChange={setStart}
           />
           <TextField
-            label="Last line (inclusive)"
+            label={t("Last line (inclusive)")}
             value={end}
             onChange={setEnd}
           />
@@ -204,29 +249,34 @@ export function CaptureContext({
       )}
       {text && !rangesSupported && (
         <small>
-          This file uses unusual line breaks. Attach the whole file so the
-          selection stays accurate.
+          {t(
+            "This file uses unusual line breaks. Attach the whole file so the selection stays accurate.",
+          )}
         </small>
       )}
       <small>
         {threadId
-          ? "Adds a saved copy to this chat; it does not send a message."
-          : "Open a chat to add file context."}
+          ? t("Adds a saved copy to this chat; it does not send a message.")
+          : t("Open a chat to add file context.")}
       </small>
       {disabled && (
         <small>
-          Save and refresh the file before attaching its saved content.
+          {t("Save and refresh the file before attaching its saved content.")}
         </small>
       )}
       {message && (
         <div className={styles.actions}>
-          <p role="status">{message}</p>
+          <p role="status">
+            {message === "Added to chat."
+              ? t("Added to chat.")
+              : t("Added to the chat. Review it before sending.")}
+          </p>
           <Button size="sm" variant="ghost" onClick={returnToChat}>
-            Return to chat
+            {t("Return to chat")}
           </Button>
         </div>
       )}
-      <ErrorNotice error={error} />
+      <ErrorNotice error={displayedError} />
     </section>
   );
 }

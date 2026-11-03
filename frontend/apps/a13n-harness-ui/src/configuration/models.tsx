@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { ModelIdentity } from "../shell/model-identity";
 import { useContext, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -25,7 +26,10 @@ import management from "./management.module.css";
 import layout from "./settings.module.css";
 import styles from "../shell/workbench.module.css";
 
+class ModelLocalError extends Error {}
+
 export function ModelsPage() {
+  const { t } = useTranslation();
   const selectors = useSelectors();
   const sources = useSources();
   const { client } = useTransport();
@@ -44,20 +48,26 @@ export function ModelsPage() {
       kind: (typeof mediaKinds)[number];
       modelId: string;
     }) => {
-      if (!root?.writable) throw new Error("Global settings are read-only.");
+      if (!root?.writable)
+        throw new ModelLocalError("Global settings are read-only.");
       const path = root.relative_path;
       const draft = drafts.get(path);
       if (draft && draft.content !== draft.base)
-        throw new Error("Save or discard your global settings changes first.");
+        throw new ModelLocalError(
+          "Save or discard your global settings changes first.",
+        );
       const saved = await result(
         client.GET("/api/configuration/sources/{relative_path}", {
           params: { path: { relative_path: path } },
         }),
       );
-      if (!saved.content) throw new Error("Couldn't load global settings.");
+      if (!saved.content)
+        throw new ModelLocalError("Couldn't load global settings.");
       const current = drafts.get(path);
       if (current && current.content !== current.base)
-        throw new Error("Save or discard your global settings changes first.");
+        throw new ModelLocalError(
+          "Save or discard your global settings changes first.",
+        );
       const value =
         selectors.data?.media_understanding?.[kind] === modelId
           ? null
@@ -94,7 +104,9 @@ export function ModelsPage() {
         }),
       );
       if (!saved.content)
-        throw new Error("This model source is unavailable for cloning.");
+        throw new ModelLocalError(
+          "This model source is unavailable for cloning.",
+        );
       const id = `model-${crypto.randomUUID().slice(0, 8)}`;
       const content = updateDocument(
         updateDocument(saved.content, ["id"], id),
@@ -121,8 +133,8 @@ export function ModelsPage() {
   return (
     <div className={layout.collectionPage}>
       <PageHeader
-        title="Models"
-        description="Choose the models your agents can use."
+        title={t("Models")}
+        description={t("Choose the models your agents can use.")}
         actions={
           <AddModelButton
             variant="default"
@@ -133,7 +145,7 @@ export function ModelsPage() {
       <div className={layout.collection}>
         <div className={layout.toolbar}>
           <SearchField
-            label="Search models"
+            label={t("Search models")}
             value={search}
             onChange={setSearch}
           />
@@ -142,10 +154,20 @@ export function ModelsPage() {
           error={
             selectors.error || sources.error || clone.error || setDefault.error
           }
+          message={(() => {
+            const error =
+              selectors.error ||
+              sources.error ||
+              clone.error ||
+              setDefault.error;
+            return error instanceof ModelLocalError
+              ? t(error.message)
+              : undefined;
+          })()}
         />
         <DraftLinks kinds={["model"]} search={search} />
         {selectors.isPending && (
-          <div role="status" aria-label="Loading models">
+          <div role="status" aria-label={t("Loading models")}>
             <Skeleton className="h-20 w-full" />
           </div>
         )}
@@ -184,14 +206,14 @@ export function ModelsPage() {
                         model.model_id,
                     ) && (
                       <small>
-                        Default:{" "}
+                        {t("Default:")}{" "}
                         {mediaKinds
                           .filter(
                             (kind) =>
                               selectors.data?.media_understanding?.[kind] ===
                               model.model_id,
                           )
-                          .map((kind) => mediaLabels[kind])
+                          .map((kind) => t(mediaLabels[kind]))
                           .join(", ")}
                       </small>
                     )}
@@ -206,12 +228,12 @@ export function ModelsPage() {
                       {selectors.data?.agents
                         .filter((agent) => agent.model_id === model.model_id)
                         .map((agent) => agent.name)
-                        .join(", ") || "No agents using this model"}
+                        .join(", ") || t("No agents using this model")}
                     </span>
                   </small>
                 </div>
                 {source && !source.writable && (
-                  <span className={styles.tag}>Read only</span>
+                  <span className={styles.tag}>{t("Read only")}</span>
                 )}
                 <Menu>
                   <MenuTrigger
@@ -219,7 +241,9 @@ export function ModelsPage() {
                       <Button
                         variant="ghost"
                         size="icon"
-                        aria-label={`Actions for ${model.name}`}
+                        aria-label={t("Actions for {{name}}", {
+                          name: model.name,
+                        })}
                       />
                     }
                   >
@@ -238,7 +262,7 @@ export function ModelsPage() {
                           }
                         >
                           <Copy aria-hidden="true" />
-                          Clone model
+                          {t("Clone model")}
                         </MenuItem>
                       )}
                     {mediaKinds.map((kind) => (
@@ -256,9 +280,12 @@ export function ModelsPage() {
                         <Image aria-hidden="true" />
                         {selectors.data?.media_understanding?.[kind] ===
                         model.model_id
-                          ? "Clear"
-                          : "Default"}{" "}
-                        {mediaLabels[kind].toLowerCase()} understanding
+                          ? t("Clear {{media}} understanding", {
+                              media: t(mediaLabels[kind]).toLocaleLowerCase(),
+                            })
+                          : t("Default {{media}} understanding", {
+                              media: t(mediaLabels[kind]).toLocaleLowerCase(),
+                            })}
                       </MenuItem>
                     ))}
                   </MenuPopup>
@@ -268,19 +295,21 @@ export function ModelsPage() {
           })}
         </div>
         {!!selectors.data?.models?.length && !filteredModels.length && (
-          <EmptyList>No matching models.</EmptyList>
+          <EmptyList>{t("No matching models.")}</EmptyList>
         )}
         {selectors.data && !selectors.data.models?.length && (
           <EmptyList>
-            No models yet. Add a subscription or API connection to get started.
+            {t(
+              "No models yet. Add a subscription or API connection to get started.",
+            )}
           </EmptyList>
         )}
       </div>
       {root && (
         <details className={layout.disclosure}>
           <summary>
-            <span>Media models</span>
-            <small>Used when your main model can't read media.</small>
+            <span>{t("Media models")}</span>
+            <small>{t("Used when your main model can't read media.")}</small>
           </summary>
           <SourceDocument
             key={root.relative_path}
@@ -296,6 +325,7 @@ export function ModelsPage() {
 }
 
 function ModelCredentialSummary({ path }: { path: string }) {
+  const { t } = useTranslation();
   const { client } = useTransport();
   const source = useQuery({
     queryKey: ["source", path],
@@ -314,20 +344,20 @@ function ModelCredentialSummary({ path }: { path: string }) {
     queryFn: ({ signal }) => result(client.GET("/api/auth/keys", { signal })),
   });
   if (source.error || keys.error)
-    return <small>Credential status unavailable</small>;
+    return <small>{t("Credential status unavailable")}</small>;
   if (auth?.kind !== "api_key") return null;
   return (
     <small className={management.metadata}>
       <span>
         {auth.env
-          ? `Environment · ${auth.env}`
+          ? t("Environment · {{name}}", { name: auth.env })
           : keys.data
             ? keys.data.some(
                 (key) => key.credential_ref === auth.credential_ref,
               )
-              ? "API key saved"
-              : "API key missing"
-            : "API key reference"}
+              ? t("API key saved")
+              : t("API key missing")
+            : t("API key reference")}
       </span>
     </small>
   );
@@ -343,18 +373,19 @@ export function AddModelButton({
   variant?: "default" | "outline";
   compact?: boolean;
 }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   return (
     <>
       <Button
         variant={compact ? "ghost" : variant}
         size={compact ? "icon-sm" : "default"}
-        aria-label="Add model"
-        title={compact ? "Add model" : undefined}
+        aria-label={t("Add model")}
+        title={compact ? t("Add model") : undefined}
         onClick={() => setOpen(true)}
       >
         <Plus aria-hidden="true" />
-        {!compact && "Add model"}
+        {!compact && t("Add model")}
       </Button>
       {open && (
         <AddModelDialog onClose={() => setOpen(false)} onSaved={onSaved} />
@@ -369,6 +400,7 @@ function AddModelDialog({
   onClose: () => void;
   onSaved: (id: string) => void;
 }) {
+  const { t } = useTranslation();
   const title = useRef<HTMLSpanElement>(null);
   const { client } = useTransport();
   const queries = useQueryClient();
@@ -391,10 +423,11 @@ function AddModelDialog({
           },
         }),
       );
-      if (!publication.completed)
-        throw new Error(
-          publication.error_message || "Couldn't finish saving the model.",
-        );
+      if (!publication.completed) {
+        if (publication.error_message)
+          throw new Error(publication.error_message);
+        throw new ModelLocalError("Couldn't finish saving the model.");
+      }
     },
     onSuccess: async () => {
       await queries.invalidateQueries();
@@ -410,32 +443,43 @@ function AddModelDialog({
       }}
       title={
         <span ref={title} tabIndex={-1}>
-          Add model
+          {t("Add model")}
         </span>
       }
       initialFocus={title}
       disablePointerDismissal
-      closeLabel="Close"
+      closeLabel={t("Close")}
       footer={
         <>
           <Button variant="outline" disabled={save.isPending} onClick={onClose}>
-            Cancel
+            {t("Cancel")}
           </Button>
           <Button
             disabled={!recipe || !recipeReady}
             loading={save.isPending}
             onClick={() => save.mutate()}
           >
-            Save
+            {t("Save")}
           </Button>
         </>
       }
     >
       <div className={styles.stack}>
-        <ErrorNotice error={save.error} />
+        <ErrorNotice
+          error={save.error}
+          message={
+            save.error instanceof ModelLocalError
+              ? t(save.error.message)
+              : undefined
+          }
+        />
         <ModelEditor
           nameField={
-            <TextField label="Model name" value={name} onChange={setName} />
+            <TextField
+              label={t("Model name")}
+              value={name}
+              onChange={setName}
+            />
           }
           value={recipe}
           onChange={setRecipe}

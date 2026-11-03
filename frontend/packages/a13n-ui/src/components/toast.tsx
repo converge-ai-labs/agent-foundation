@@ -16,23 +16,34 @@ export const useToast = ToastPrimitive.useToastManager;
 export function ToastProvider({
   children,
   closeLabel,
+  viewportLabel = "Notifications",
 }: {
   children: React.ReactNode;
   closeLabel: string;
+  viewportLabel?: string;
 }): React.ReactElement {
   return (
     <ToastPrimitive.Provider limit={3} timeout={6000}>
       {children}
-      <ToastViewport closeLabel={closeLabel} />
+      <ToastViewport closeLabel={closeLabel} viewportLabel={viewportLabel} />
     </ToastPrimitive.Provider>
   );
 }
 
-function ToastViewport({ closeLabel }: { closeLabel: string }) {
+function ToastViewport({
+  closeLabel,
+  viewportLabel,
+}: {
+  closeLabel: string;
+  viewportLabel: string;
+}) {
   const { toasts } = ToastPrimitive.useToastManager();
   return (
     <ToastPrimitive.Portal>
-      <ToastPrimitive.Viewport className="fixed top-[max(0.5rem,env(safe-area-inset-top))] left-1/2 z-100 flex w-[min(30rem,calc(100vw-1rem))] -translate-x-1/2 flex-col gap-1.5 outline-none sm:top-5 sm:w-[min(30rem,calc(100vw-2rem))] sm:gap-2">
+      <ToastPrimitive.Viewport
+        aria-label={viewportLabel}
+        className="fixed top-[max(0.5rem,env(safe-area-inset-top))] left-1/2 z-100 flex w-[min(30rem,calc(100vw-1rem))] -translate-x-1/2 flex-col gap-1.5 outline-none sm:top-5 sm:w-[min(30rem,calc(100vw-2rem))] sm:gap-2"
+      >
         {toasts.map((toast) => (
           <ToastPrimitive.Root
             key={toast.id}

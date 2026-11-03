@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import {
   Button,
   Popover,
@@ -39,7 +40,8 @@ export function ParticipantAvatar({
 }: {
   participant: Participant;
 }) {
-  const name = participant.display_name?.trim() || "Anonymous";
+  const { t } = useTranslation();
+  const name = participant.display_name?.trim() || t("Anonymous");
   const words = name.split(/\s+/u);
   const initials = (
     Array.from(words[0])[0] +
@@ -70,6 +72,7 @@ export function ParticipantAvatars({
   ownId?: string | null;
   threadTitle: string;
 }) {
+  const { t } = useTranslation();
   if (!participants.length) return null;
   const count = participants.length;
   return (
@@ -79,7 +82,12 @@ export function ParticipantAvatars({
         delay={150}
         render={<Button variant="ghost" size="sm" />}
         className={styles.trigger}
-        aria-label={`${count} ${count === 1 ? "person" : "people"} online in ${threadTitle}`}
+        aria-label={t(
+          count === 1
+            ? "{{count}} person online in {{title}}"
+            : "{{count}} people online in {{title}}",
+          { count, title: threadTitle },
+        )}
       >
         <span className={styles.avatars}>
           {participants.slice(0, 3).map((participant) => (
@@ -100,7 +108,7 @@ export function ParticipantAvatars({
       </PopoverTrigger>
       <PopoverPopup side="right" align="start" className={styles.popup}>
         <PopoverTitle className={styles.title}>
-          People here <span>{count}</span>
+          {t("People here")} <span>{count}</span>
         </PopoverTitle>
         <ul className={styles.people}>
           {participants.map((participant) => (
@@ -108,9 +116,9 @@ export function ParticipantAvatars({
               <ParticipantAvatar participant={participant} />
               <div className={styles.identity}>
                 <span className={styles.name}>
-                  {participant.display_name?.trim() || "Anonymous"}
+                  {participant.display_name?.trim() || t("Anonymous")}
                   {participant.participant_id === ownId && (
-                    <span className={styles.you}> (you)</span>
+                    <span className={styles.you}> {t("(you)")}</span>
                   )}
                 </span>
                 <small>
@@ -118,18 +126,20 @@ export function ParticipantAvatars({
                     className={styles.statusDot}
                     data-away={!participant.foreground || undefined}
                   />
-                  {participant.foreground ? "Active" : "Away"} ·{" "}
-                  {participant.focus?.target.kind === "conversation"
-                    ? "Chat"
-                    : participant.focus?.target.kind === "changes"
-                      ? "Changes"
-                      : participant.focus?.target.kind === "terminal"
-                        ? "Terminal"
-                        : participant.focus?.target.kind === "file"
-                          ? "Files"
-                          : participant.focus?.target.kind === "project"
-                            ? "Project"
-                            : "Workspace"}
+                  {t(participant.foreground ? "Active" : "Away")} ·{" "}
+                  {t(
+                    participant.focus?.target.kind === "conversation"
+                      ? "Chat"
+                      : participant.focus?.target.kind === "changes"
+                        ? "Changes"
+                        : participant.focus?.target.kind === "terminal"
+                          ? "Terminal"
+                          : participant.focus?.target.kind === "file"
+                            ? "Files"
+                            : participant.focus?.target.kind === "project"
+                              ? "Project"
+                              : "Workspace",
+                  )}
                 </small>
               </div>
             </li>

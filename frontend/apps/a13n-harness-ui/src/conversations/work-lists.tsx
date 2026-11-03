@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { CheckCircle, Circle, CircleHalf } from "@phosphor-icons/react";
 import type { Schema } from "../transport/client";
 import { MessageText } from "./message-text";
@@ -11,20 +12,25 @@ export function orderedTasks(tasks: Task[]) {
   return tasks.slice().sort((a, b) => rank[a.status] - rank[b.status]);
 }
 export function TaskIcon({ status }: { status: Task["status"] }) {
+  const { t } = useTranslation();
+  const labels = {
+    in_progress: t("in progress"),
+    pending: t("pending"),
+    completed: t("completed"),
+  };
   const Icon =
     status === "completed"
       ? CheckCircle
       : status === "in_progress"
         ? CircleHalf
         : Circle;
-  return (
-    <Icon aria-label={status.replaceAll("_", " ")} className={styles[status]} />
-  );
+  return <Icon aria-label={labels[status]} className={styles[status]} />;
 }
 export function TaskList({ page }: { page?: Schema<"TaskPage"> }) {
+  const { t } = useTranslation();
   if (!page) return null;
   if (page.available === false)
-    return <p>Task projection is unavailable for this provider.</p>;
+    return <p>{t("Task projection is unavailable for this provider.")}</p>;
   const names = new Map(
     page.tasks?.map((task) => [task.task_id, task.subject]),
   );
@@ -32,8 +38,8 @@ export function TaskList({ page }: { page?: Schema<"TaskPage"> }) {
     <div className={styles.dependencies}>
       {ids.map((id) => (
         <span key={id}>
-          {names.get(id) ?? "Task outside this list"}
-          <DebugId label="Task" value={id} />
+          {names.get(id) ?? t("Task outside this list")}
+          <DebugId label={t("Task")} value={id} />
         </span>
       ))}
     </div>
@@ -56,35 +62,35 @@ export function TaskList({ page }: { page?: Schema<"TaskPage"> }) {
               <dl>
                 <DebugOnly>
                   <div>
-                    <dt>Task</dt>
+                    <dt>{t("Task")}</dt>
                     <dd>{task.task_id}</dd>
                   </div>
                 </DebugOnly>
                 <div>
-                  <dt>Status</dt>
+                  <dt>{t("Status")}</dt>
                   <dd>
                     {
                       {
-                        in_progress: "In progress",
-                        pending: "Pending",
-                        completed: "Completed",
+                        in_progress: t("In progress"),
+                        pending: t("Pending"),
+                        completed: t("Completed"),
                       }[task.status]
                     }
                   </dd>
                 </div>
                 <div>
-                  <dt>Owner</dt>
-                  <dd>{task.owner || "Unassigned"}</dd>
+                  <dt>{t("Owner")}</dt>
+                  <dd>{task.owner || t("Unassigned")}</dd>
                 </div>
                 {!!task.blocked_by?.length && (
                   <div>
-                    <dt>Blocked by</dt>
+                    <dt>{t("Blocked by")}</dt>
                     <dd>{dependencies(task.blocked_by)}</dd>
                   </div>
                 )}
                 {!!task.blocks?.length && (
                   <div>
-                    <dt>Blocks</dt>
+                    <dt>{t("Blocks")}</dt>
                     <dd>{dependencies(task.blocks)}</dd>
                   </div>
                 )}
@@ -94,13 +100,20 @@ export function TaskList({ page }: { page?: Schema<"TaskPage"> }) {
         ))}
       </ul>
       {!page.tasks?.length && (
-        <p className={styles.emptyState}>No tasks yet.</p>
+        <p className={styles.emptyState}>{t("No tasks yet.")}</p>
       )}
-      {!!page.omitted && <p>{page.omitted} tasks outside this bounded view.</p>}
+      {!!page.omitted && (
+        <p>
+          {t("{{count}} tasks outside this bounded view.", {
+            count: page.omitted,
+          })}
+        </p>
+      )}
     </>
   );
 }
 export function NoteList({ page }: { page?: Schema<"NotePage"> | null }) {
+  const { t } = useTranslation();
   if (!page) return null;
   return (
     <div className={styles.notes}>
@@ -111,9 +124,13 @@ export function NoteList({ page }: { page?: Schema<"NotePage"> | null }) {
         </details>
       ))}
       {!page.notes?.length && (
-        <p className={styles.emptyState}>No notes yet.</p>
+        <p className={styles.emptyState}>{t("No notes yet.")}</p>
       )}
-      {!!page.omitted && <p>{page.omitted} notes omitted by the server.</p>}
+      {!!page.omitted && (
+        <p>
+          {t("{{count}} notes omitted by the server.", { count: page.omitted })}
+        </p>
+      )}
     </div>
   );
 }

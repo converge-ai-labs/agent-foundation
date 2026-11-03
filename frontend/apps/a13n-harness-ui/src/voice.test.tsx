@@ -10,6 +10,7 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { i18n } from "./i18n";
 import { createTransport } from "./transport/client";
 import { TransportContext } from "./transport/context";
 import { VoiceIndicator, VoicePage, VoiceProvider } from "./voice";
@@ -154,6 +155,30 @@ it("shows workspace connection errors and allows explicit retry or startup cance
   expect(screen.getByText("/threads/thread-example")).toBeTruthy();
 });
 
+it("switches retained local voice errors while preserving provider messages", async () => {
+  mount();
+  await screen.findByRole("button", { name: "Start voice" });
+  act(() =>
+    publish({
+      status: "failed",
+      error: "Microphone access ended.",
+      errorLocalizable: true,
+    }),
+  );
+  try {
+    await act(() => i18n.changeLanguage("zh-CN"));
+    expect(screen.getByRole("alert").textContent).toBe("麦克风访问已结束。");
+    act(() =>
+      publish({ error: "Microphone access ended.", errorLocalizable: false }),
+    );
+    expect(screen.getByRole("alert").textContent).toBe(
+      "Microphone access ended.",
+    );
+  } finally {
+    await act(() => i18n.changeLanguage("en"));
+  }
+});
+
 it("hides workspace voice controls until enabled settings arrive", async () => {
   let resolve!: (response: Response) => void;
   mount(
@@ -214,5 +239,63 @@ it.each(["starting", "connecting", "active"] as const)(
     expect(voice.stop).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("button", { name: "Start voice" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Open Live chat" })).toBeNull();
+  },
+);
+
+it("changes language during a call without restarting it or changing captions", async () => {
+  mount();
+  const start = await screen.findByRole("button", { name: "Start voice" });
+  await waitFor(() =>
+    expect((start as HTMLButtonElement).disabled).toBe(false),
+  );
+  fireEvent.click(start);
+  act(() =>
+    publish({
+      status: "active",
+      snapshot: {
+        status: "active",
+        enabled: true,
+        user_text: "Original caption",
+        transcript: [],
+      },
+    }),
+  );
+  fireEvent.click(screen.getByRole("link", { name: "Open Live chat" }));
+  await act(async () => {
+    await i18n.changeLanguage("zh-CN");
+  });
+  expect(screen.getByRole("button", { name: "停止语音" })).toBeTruthy();
+  expect(screen.getByText("Original caption")).toBeTruthy();
+  expect(voice.start).toHaveBeenCalledTimes(1);
+  expect(voice.stop).not.toHaveBeenCalled();
+  await act(async () => {
+    await i18n.changeLanguage("en");
+  });
+});
+
+it.each([
+  ["client fallback", "", "请求失败（500）。"],
+  [
+    "server message",
+    JSON.stringify({ error: { message: "Request failed (500)." } }),
+    "Request failed (500).",
+  ],
+])(
+  "localizes voice settings %s by origin in both views",
+  async (_kind, body, expected) => {
+    voice.state = { status: "active", error: "", snapshot: null };
+    mount(true, async () => new Response(body, { status: 500 }));
+    try {
+      expect((await screen.findByRole("alert")).textContent).toBe(
+        "Request failed (500).",
+      );
+      await act(() => i18n.changeLanguage("zh-CN"));
+      expect(screen.getByRole("alert").textContent).toBe(expected);
+      fireEvent.click(screen.getByRole("link", { name: "打开语音聊天" }));
+      expect((await screen.findByRole("alert")).textContent).toBe(expected);
+      expect(voice.stop).not.toHaveBeenCalled();
+    } finally {
+      await act(() => i18n.changeLanguage("en"));
+    }
   },
 );

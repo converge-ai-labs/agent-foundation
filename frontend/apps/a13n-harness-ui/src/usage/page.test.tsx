@@ -12,6 +12,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TransportContext } from "../transport/context";
 import { createTransport } from "../transport/client";
 import { UsagePage } from "./page";
+import { i18n } from "../i18n";
 
 const clients: QueryClient[] = [];
 afterEach(() => {
@@ -242,4 +243,36 @@ it("keeps daily bars in one tab stop while arrow keys and Home/End move between 
   expect(document.activeElement).toBe(middle);
   fireEvent.keyDown(middle, { key: "End" });
   expect(document.activeElement).toBe(last);
+});
+
+it("switches language without losing filters, details, or provider labels", async () => {
+  const fetcher = vi.fn(async () =>
+    json({
+      ...payload,
+      summary: { ...totals, total_tokens: 123357 },
+    }),
+  );
+  vi.stubGlobal("fetch", fetcher);
+  mount("range=30&project_id=p");
+  await screen.findByRole("button", { name: "Example project" });
+  expect(screen.getAllByText("123.36K").length).toBeGreaterThan(0);
+  fireEvent.click(screen.getByRole("button", { name: "Filters" }));
+  fireEvent.click(screen.getByRole("button", { name: "Token details" }));
+  const reads = fetcher.mock.calls.length;
+  try {
+    await i18n.changeLanguage("zh-CN");
+    await screen.findByRole("heading", { name: "用量" });
+    expect(screen.getAllByText("12.34万").length).toBeGreaterThan(0);
+    expect(screen.getByRole("combobox", { name: "聊天" })).toBeTruthy();
+    expect(screen.getByRole("columnheader", { name: "缓存读取" })).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Example project" }),
+    ).toBeTruthy();
+    expect(screen.getByTestId("location").textContent).toContain(
+      "project_id=p",
+    );
+    expect(fetcher.mock.calls.length).toBe(reads);
+  } finally {
+    await i18n.changeLanguage("en");
+  }
 });

@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import {
   createContext,
   useCallback,
@@ -101,6 +102,7 @@ export function DebugId({
   value?: string | null;
 }) {
   const { enabled } = useDebug();
+  const { t } = useTranslation();
   const { copied, failed, copy } = useDebugCopy();
   if (!enabled || !value) return null;
   return (
@@ -108,7 +110,9 @@ export function DebugId({
       type="button"
       className={styles.id}
       title={
-        failed ? "Could not copy. Try again." : `Copy ${label ?? "identifier"}`
+        failed
+          ? t("Could not copy. Try again.")
+          : t("Copy {{label}}", { label: label ?? t("identifier") })
       }
       onClick={(event) => {
         event.stopPropagation();
@@ -116,8 +120,8 @@ export function DebugId({
       }}
     >
       {label && <span className={styles.idLabel}>{label}</span>}
-      <span>{copied ? "Copied" : value}</span>
-      {failed && <span role="alert">Copy failed</span>}
+      <span>{copied ? t("Copied") : value}</span>
+      {failed && <span role="alert">{t("Copy failed")}</span>}
     </button>
   );
 }
@@ -125,7 +129,7 @@ export function DebugId({
 /** Collapsible raw JSON view shown in Debug mode. */
 export function DebugData({
   value,
-  label = "Raw data",
+  label,
   open,
 }: {
   value: unknown;
@@ -133,17 +137,19 @@ export function DebugData({
   open?: boolean;
 }) {
   const { enabled } = useDebug();
+  const { t } = useTranslation();
   const { copied, failed, copy } = useDebugCopy();
   if (!enabled) return null;
   const text = JSON.stringify(value, null, 2) ?? "undefined";
+  const displayLabel = label ?? t("Raw data");
   return (
     <div className={styles.data}>
       <details open={open}>
         <summary>
-          <span className={styles.badge}>Debug</span>
-          <span>{label}</span>
+          <span className={styles.badge}>{t("Debug")}</span>
+          <span>{displayLabel}</span>
         </summary>
-        <pre tabIndex={0} role="region" aria-label={label}>
+        <pre tabIndex={0} role="region" aria-label={displayLabel}>
           {text}
         </pre>
       </details>
@@ -152,11 +158,11 @@ export function DebugData({
         className={styles.copy}
         onClick={() => void copy(text)}
       >
-        {copied ? "Copied" : "Copy"}
+        {copied ? t("Copied") : t("Copy")}
       </button>
       {failed && (
         <p role="alert" className={styles.copyFailure}>
-          Copy failed. Try again or select the text.
+          {t("Copy failed. Try again or select the text.")}
         </p>
       )}
     </div>

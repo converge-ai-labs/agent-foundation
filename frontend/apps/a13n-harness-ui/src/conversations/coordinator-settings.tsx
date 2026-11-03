@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button, ModalFrame } from "a13n-ui";
@@ -62,15 +63,18 @@ export function CoordinatorPromotion({
   close: () => void;
   mutation: ReturnType<typeof useCoordinatorMutation>;
 }) {
+  const { t } = useTranslation();
   return (
     <ModalFrame
       open={open}
       onOpenChange={(value) => {
         if (!value) close();
       }}
-      title="Make this chat a coordinator?"
-      closeLabel="Close"
-      description="Coordinate new workers in this project. Existing chats stay separate. History and settings are kept. This change is permanent."
+      title={t("Make this chat a coordinator?")}
+      closeLabel={t("Close")}
+      description={t(
+        "Coordinate new workers in this project. Existing chats stay separate. History and settings are kept. This change is permanent.",
+      )}
       footer={
         <>
           <Button
@@ -78,13 +82,13 @@ export function CoordinatorPromotion({
             disabled={mutation.isPending}
             onClick={close}
           >
-            Cancel
+            {t("Cancel")}
           </Button>
           <Button
             loading={mutation.isPending}
             onClick={() => mutation.mutate(undefined, { onSuccess: close })}
           >
-            Make Coordinator
+            {t("Make Coordinator")}
           </Button>
         </>
       }
@@ -101,6 +105,7 @@ export function CoordinatorSettings({
   thread: Schema<"ThreadSummary">;
   pending: boolean;
 }) {
+  const { t } = useTranslation();
   const mutation = useCoordinatorMutation(thread);
   const [promoting, setPromoting] = useState(false);
   return (
@@ -111,7 +116,9 @@ export function CoordinatorSettings({
           loading={mutation.isPending}
           onClick={() => mutation.mutate(!thread.auto_followup)}
         >
-          {thread.auto_followup ? "Pause follow-ups" : "Enable follow-ups"}
+          {thread.auto_followup
+            ? t("Pause follow-ups")
+            : t("Enable follow-ups")}
         </Button>
       ) : thread.role === "ordinary" && thread.configuration.project_id ? (
         <Button
@@ -119,7 +126,7 @@ export function CoordinatorSettings({
           disabled={!canPromoteCoordinator(thread, pending)}
           onClick={() => setPromoting(true)}
         >
-          Make Coordinator
+          {t("Make Coordinator")}
         </Button>
       ) : null}
       <ErrorNotice error={mutation.error} />

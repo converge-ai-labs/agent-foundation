@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { useCallback, useEffect, useState, type RefObject } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import {
@@ -37,6 +38,7 @@ export function InputNavigation({
   revision: unknown;
   onSelect: (id: string) => void;
 }) {
+  const { t } = useTranslation();
   const { client } = useTransport();
   const [active, setActive] = useState<string>();
   const [hovered, setHovered] = useState<number>();
@@ -83,7 +85,7 @@ export function InputNavigation({
           )
           .join(" ")
           .trim()
-          .slice(0, 512) || "Attachment",
+          .slice(0, 512) || t("Attachment"),
     });
   }
   const update = useCallback(() => {
@@ -121,10 +123,10 @@ export function InputNavigation({
   };
   if (items.length < 2 && !query.hasNextPage && !query.isError) return null;
   const moreLabel = query.isFetchingNextPage
-    ? "Loading more inputs"
+    ? t("Loading more inputs")
     : query.isError
-      ? "Retry input navigation"
-      : "Load more inputs";
+      ? t("Retry input navigation")
+      : t("Load more inputs");
   const loadMore = () => {
     if (query.hasNextPage) void query.fetchNextPage();
     else void query.refetch();
@@ -139,14 +141,17 @@ export function InputNavigation({
     <>
       <nav
         className={styles.rail}
-        aria-label="Input timeline"
+        aria-label={t("Input timeline")}
         onMouseLeave={() => setHovered(undefined)}
       >
         {items.map((item, index) => (
           <Tooltip key={item.turn_id}>
             <TooltipTrigger
               render={<button type="button" className={styles.tick} />}
-              aria-label={`Input ${index + 1}: ${item.preview}`}
+              aria-label={t("Input {{number}}: {{preview}}", {
+                number: index + 1,
+                preview: item.preview,
+              })}
               aria-current={active === item.turn_id ? "location" : undefined}
               data-proximity={
                 waveOrigin === undefined
@@ -166,16 +171,16 @@ export function InputNavigation({
               align="center"
               className={styles.preview}
             >
-              <small>Input {index + 1}</small>
+              <small>{t("Input {{number}}", { number: index + 1 })}</small>
               <p>{item.preview}</p>
               <div className={styles.output}>
-                <small>Output</small>
+                <small>{t("Output")}</small>
                 <p
                   className={
                     !item.output_preview ? styles.emptyOutput : undefined
                   }
                 >
-                  {item.output_preview || "No saved output"}
+                  {item.output_preview || t("No saved output")}
                 </p>
               </div>
             </TooltipPopup>
@@ -204,13 +209,13 @@ export function InputNavigation({
                 className={styles.mobileTrigger}
               />
             }
-            aria-label="Input history"
+            aria-label={t("Input history")}
           >
             <ListBullets aria-hidden="true" />
           </PopoverTrigger>
           <PopoverPopup side="bottom" align="start" className={styles.menu}>
-            <PopoverTitle>Input history</PopoverTitle>
-            <nav aria-label="Input history">
+            <PopoverTitle>{t("Input history")}</PopoverTitle>
+            <nav aria-label={t("Input history")}>
               {items.map((item, index) => (
                 <button
                   type="button"
@@ -224,7 +229,9 @@ export function InputNavigation({
                   <span className={styles.menuPreview}>
                     <span>{item.preview}</span>
                     <span className={styles.menuOutput}>
-                      Output: {item.output_preview || "No saved output"}
+                      {t("Output: {{output}}", {
+                        output: item.output_preview || t("No saved output"),
+                      })}
                     </span>
                   </span>
                 </button>

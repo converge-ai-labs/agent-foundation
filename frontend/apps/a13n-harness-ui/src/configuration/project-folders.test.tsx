@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -13,6 +14,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TransportContext } from "../transport/context";
 import { createTransport } from "../transport/client";
 import { ProjectFolders } from "./project-folders";
+import { i18n } from "../i18n";
 
 let sharing: boolean;
 let failMore: boolean;
@@ -76,6 +78,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  void i18n.changeLanguage("en");
   queries.clear();
   vi.unstubAllGlobals();
   vi.clearAllMocks();
@@ -194,4 +197,42 @@ it("restarts changed directory pagination and does not submit the project when e
   expect(
     screen.queryByRole("region", { name: "Browse server directories" }),
   ).toBeNull();
+});
+
+it("keeps the open directory browser and draft paths when the language changes", async () => {
+  mount();
+  fireEvent.change(
+    await screen.findByRole("textbox", { name: "Server directory" }),
+    {
+      target: { value: "/srv" },
+    },
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Browse directory 1" }));
+  await screen.findByRole("button", { name: "code" });
+  fireEvent.change(
+    screen.getByRole("textbox", { name: "Browse server path" }),
+    {
+      target: { value: "/draft/path" },
+    },
+  );
+  await act(() => i18n.changeLanguage("zh-CN"));
+  expect(
+    screen.getByRole("region", { name: i18n.t("Browse server directories") }),
+  ).toBeTruthy();
+  expect(
+    (
+      screen.getByRole("textbox", {
+        name: i18n.t("Browse server path"),
+      }) as HTMLInputElement
+    ).value,
+  ).toBe("/draft/path");
+  expect(
+    (
+      screen.getByRole("textbox", {
+        name: i18n.t("Server directory"),
+      }) as HTMLInputElement
+    ).value,
+  ).toBe("/srv");
+  expect(screen.getByRole("button", { name: "code" })).toBeTruthy();
+  expect(screen.getByLabelText("Roots").textContent).toBe('[{"path":"/srv"}]');
 });
