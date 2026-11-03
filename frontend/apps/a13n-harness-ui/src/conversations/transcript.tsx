@@ -20,7 +20,13 @@ import { ArrowClockwise, CaretRight } from "@phosphor-icons/react";
 import { executionTime } from "./execution-time";
 import { ExecutionDetails } from "./execution-details";
 import { AppCard } from "../mcp-apps/app-card";
-import { QuestionInteraction, ToolActivity } from "./tool-call";
+import {
+  QuestionInteraction,
+  ToolActivity,
+  toolLabel,
+  toolSummary,
+  toolPhase,
+} from "./tool-call";
 import {
   activityKind,
   describeTool,
@@ -1194,7 +1200,7 @@ function ExecutionSegment({
       ? t("Worked for {{duration}}", { duration })
       : t("Worked")
     : toolInfo
-      ? `${toolInfo.label} ${toolInfo.summary}${toolInfo.phase === "Result received" ? "" : ` · ${toolInfo.phase}`}`
+      ? `${toolLabel(toolInfo, t)} ${toolSummary(toolInfo, t)}${toolInfo.phase === "Result received" ? "" : ` · ${toolPhase(toolInfo.phase, t)}`}`
       : latest?.kind === "thinking"
         ? t("Thought")
         : t("View the available execution steps");

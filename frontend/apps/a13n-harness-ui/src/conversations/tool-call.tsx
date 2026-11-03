@@ -26,21 +26,21 @@ import { DebugData, DebugId } from "../shell/debug";
 import { ToolWorkingState } from "./tool-working-state";
 
 // Translate only labels produced by the presentation layer, never tool names or payloads.
-function toolLabel(
+export function toolLabel(
   info: ReturnType<typeof describeTool>,
   t: (key: string, options?: Record<string, unknown>) => string,
 ) {
   return info.generatedLabel ? t(info.label) : info.label;
 }
 
-function toolSummary(
+export function toolSummary(
   info: ReturnType<typeof describeTool>,
   t: (key: string) => string,
 ) {
   return info.generatedSummary ? t(info.summary) : info.summary;
 }
 
-function toolPhase(
+export function toolPhase(
   phase: string,
   t: (key: string, options?: Record<string, unknown>) => string,
 ) {
