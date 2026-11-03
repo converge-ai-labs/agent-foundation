@@ -8,11 +8,11 @@ from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from types import TracebackType
-from typing import Any
+from typing import Any, Self
 
 from a13n_harness.errors import ModelResolutionError
 from a13n_harness.providers.model.oauth.models import ModelAuthenticationError
-from anyio import CancelScope
+from anyio import CancelScope, Lock
 from pydantic_ai import RunContext
 from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.messages import ModelMessage, ModelResponse
@@ -120,6 +120,29 @@ class _RequestScope(AsyncExitStack):
             return await super().__aexit__(exc_type, exc_val, exc_tb)
 
 
+class _ModelLease:
+    """Enter each generation once while Run and request owners overlap."""
+
+    def __init__(self, model: Model) -> None:
+        self.model = model
+        self._users = 0
+        self._lock = Lock()
+
+    async def __aenter__(self) -> Model:
+        async with self._lock:
+            if self._users == 0:
+                await self.model.__aenter__()
+            self._users += 1
+        return self.model
+
+    async def __aexit__(self, *args: Any) -> None:
+        with CancelScope(shield=True):
+            async with self._lock:
+                self._users -= 1
+                if self._users == 0:
+                    await self.model.__aexit__(*args)
+
+
 class SubscriptionGroupModel(WrapperModel):
     """Try each eligible account once, only before a response reaches the caller."""
 
@@ -144,21 +167,51 @@ class SubscriptionGroupModel(WrapperModel):
         # A real provider model supplies profile/settings before the first request.
         template = SubscriptionAccount(id=self._order[0], provider=group.provider, name="Subscription account")
         super().__init__(factory(template))
-        self._models: dict[str, tuple[int, str | None, Model]] = {}
+        self._models: dict[str, tuple[int, str | None, _ModelLease]] = {}
         self._active_id: str | None = None
         self._reported: str | None = None
+        self._entries = 0
+        self._entry_lock = Lock()
+        self._retained = _RequestScope()
+        self._entered_models: set[_ModelLease] = set()
 
-    async def _model(self, account: SubscriptionAccount) -> Model:
+    async def __aenter__(self) -> Self:
+        async with self._entry_lock:
+            if self._entries == 0:
+                await self._retained.enter_async_context(self.wrapped)
+            self._entries += 1
+        return self
+
+    async def __aexit__(
+        self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None
+    ) -> bool | None:
+        with CancelScope(shield=True):
+            async with self._entry_lock:
+                self._entries -= 1
+                if self._entries == 0:
+                    try:
+                        return await self._retained.__aexit__(exc_type, exc_val, exc_tb)
+                    finally:
+                        self._retained = _RequestScope()
+                        self._entered_models.clear()
+        return None
+
+    async def _model(self, account: SubscriptionAccount) -> _ModelLease:
         store = self.accounts.store(account)
         assert store.policy.path is not None
         snapshot = await read_json_snapshot(store.policy.path, provider=Provider(account.provider))
-        cached = self._models.get(account.id)
-        if cached is None or cached[:2] != (account.login_revision, snapshot.digest):
-            # Keep only the latest generation. In-flight requests retain their own reference
-            # and provider entry; replacing the cache never closes another request's client.
-            cached = (account.login_revision, snapshot.digest, self._factory(account))
-            self._models[account.id] = cached
-        return cached[2]
+        async with self._entry_lock:
+            cached = self._models.get(account.id)
+            if cached is None or cached[:2] != (account.login_revision, snapshot.digest):
+                cached = (account.login_revision, snapshot.digest, _ModelLease(self._factory(account)))
+                self._models[account.id] = cached
+            lease = cached[2]
+            if self._entries and lease not in self._entered_models:
+                # The Run retains its generations across the tool loop; request leases
+                # keep in-flight streams alive even if the outer owner exits first.
+                await self._retained.enter_async_context(lease)
+                self._entered_models.add(lease)
+            return lease
 
     async def _choose(self, attempted: set[str], last_error: Exception | None) -> SubscriptionAccount:
         try:
@@ -202,8 +255,7 @@ class SubscriptionGroupModel(WrapperModel):
             attempted.add(account.id)
             async with _RequestScope() as request_scope:
                 try:
-                    model = await self._model(account)
-                    await request_scope.enter_async_context(model)
+                    model = await request_scope.enter_async_context(await self._model(account))
                     response = await operation(model)
                 except Exception as error:
                     failure = account_failure(error)
@@ -261,8 +313,7 @@ class SubscriptionGroupModel(WrapperModel):
             # Each request owns its client through stream exit, including cancellation.
             async with _RequestScope() as response_scope:
                 try:
-                    model = await self._model(account)
-                    await response_scope.enter_async_context(model)
+                    model = await response_scope.enter_async_context(await self._model(account))
                     response = await response_scope.enter_async_context(
                         model.request_stream(messages, model_settings, model_request_parameters, run_context)
                     )

@@ -1,4 +1,4 @@
-"""Exercise native Responses reconciliation through Harness-owned model adapters."""
+"""Exercise native Responses reconciliation through Harness-owned adapters over mocked HTTP."""
 
 import json
 from contextlib import nullcontext
@@ -122,7 +122,7 @@ async def test_streamed_tool_arguments_reconcile_once_through_model_adapters(rou
         async with model:
             with warning:
                 async with model.request_stream(
-                    [ModelRequest(parts=[UserPromptPart("hello")])], None, parameters
+                    [ModelRequest(parts=[UserPromptPart("hello")])], {"openai_transport": "http"}, parameters
                 ) as stream:
                     events = [event async for event in stream]
                     response = stream.get()
@@ -143,7 +143,7 @@ async def test_forced_stream_collector_preserves_done_only_arguments(route, scen
         async with model:
             response = await model.request(
                 [ModelRequest(parts=[UserPromptPart("hello")])],
-                None,
+                {"openai_transport": "http"},
                 ModelRequestParameters(
                     function_tools=[ToolDefinition(name="echo", parameters_json_schema={"type": "object"})]
                 ),
@@ -170,7 +170,7 @@ async def test_harness_executes_and_replays_done_only_arguments_once(route, scen
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as client:
         executable = HarnessBuilder().build(
-            AgentSpec(),
+            AgentSpec(model_settings={"openai_transport": "http"}),
             model=_model(route, client),
             output_type=str,
             capabilities=(Capability(id="tools", tools=[echo]),),

@@ -824,6 +824,16 @@ async def test_model_settings_follow_the_schema_of_their_calling_api(service) ->
     """The schema the provider types expose is the one the Service checks settings against."""
     check = service.runtime.registry.check_model_settings
     check("openai.responses", {"thinking": "high", "max_tokens": 1024}, field="settings")
+    check(
+        "openai.responses", {"openai_transport": "websocket", "openai_previous_response_id": "auto"}, field="settings"
+    )
+    check("openai.responses", {"openai_transport": "http"}, field="settings")
+    for api in ("openai.chat_completions", "bedrock_mantle.responses"):
+        with pytest.raises(ServiceError):
+            check(api, {"openai_transport": "websocket"}, field="settings")
+    for body in ({"stream_id": "other"}, {"type": "response.create"}):
+        with pytest.raises(ServiceError):
+            check("openai.responses", {"extra_body": body}, field="settings")
     check("bedrock.converse", {"bedrock_guardrail_config": {"guardrailIdentifier": "g"}}, field="settings")
     with pytest.raises(ServiceError) as unknown:
         check("anthropic.messages", {"thinkng": True}, field="model_settings")
@@ -851,7 +861,11 @@ async def test_model_settings_follow_the_schema_of_their_calling_api(service) ->
     ):
         with pytest.raises(ServiceError) as refused:
             check(model_api, {key: value}, field="model_settings")
-        expected = f"model_settings.{key}" if key in {"extra_body", "extra_headers"} else "model_settings"
+        expected = (
+            f"model_settings.{key}"
+            if key in {"extra_body", "extra_headers", "openai_previous_response_id"}
+            else "model_settings"
+        )
         assert refused.value.details["field"] == expected, key
 
 

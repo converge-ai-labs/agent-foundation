@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import weakref
-from collections.abc import AsyncGenerator, Awaitable, Callable, Iterator, Mapping
+from collections.abc import AsyncGenerator, Awaitable, Callable, Iterator, Mapping, Sequence
 from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
+from functools import cached_property
 from types import TracebackType
 from typing import Any, Self, cast
 
@@ -14,16 +16,20 @@ import httpx2
 from a13n_logging import get_logger
 from anyio import Lock
 from pydantic_ai import RunContext
+from pydantic_ai.exceptions import ModelHTTPError, UserError
 from pydantic_ai.messages import ModelMessage, ModelResponse
 from pydantic_ai.models import ModelRequestParameters, StreamedResponse
-from pydantic_ai.models.openai import OpenAIResponsesModel
+from pydantic_ai.models._openai_responses_websocket import ResponsesWebSocketStream
+from pydantic_ai.models.openai import OpenAIResponsesModel, OpenAIResponsesModelSettings
 from pydantic_ai.models.wrapper import WrapperModel
+from pydantic_ai.profiles.openai import OpenAIModelProfile
 from pydantic_ai.providers.openai_codex import OpenAICodexCredentialSource, OpenAICodexProvider
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.usage import RunUsage
 
 from a13n_harness.http import outbound_tls_verify
 from a13n_harness.model_affinity import derive_model_affinity_id
+from a13n_harness.models.responses import ResponsesModel
 
 _CODEX_ROUTING_HINT_HEADER = "x-codex-routing-hint"
 _CODEX_TURN_STATE_HEADER = "x-codex-turn-state"
@@ -128,6 +134,76 @@ class _CodexRequestHeaders:
         return state
 
 
+class _CodexResponsesModel(ResponsesModel):
+    """Bind the upstream credential engine to its native WebSocket reservation seam."""
+
+    def __init__(self, model_name: str, *, provider: OpenAICodexProvider, owner: CodexRequestModel) -> None:
+        self._codex_provider = provider
+        self._owner = owner
+        super().__init__(
+            model_name, provider=provider, settings=OpenAIResponsesModelSettings(openai_transport="websocket")
+        )
+
+    @cached_property
+    def profile(self) -> OpenAIModelProfile:
+        return {
+            **super().profile,
+            "openai_responses_supports_websocket": True,
+            "openai_responses_supports_websocket_stream_id": False,
+        }
+
+    def _websocket_unsupported_reason(self) -> str | None:
+        # This adapter prepares the known Codex OAuth credentials before every reservation.
+        # Keep the HTTP auth flow intact for refresh and native HTTP fallback.
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return "Responses WebSockets need the asyncio event loop."
+        return None
+
+    async def _reserve_websocket_lane(
+        self, loop: asyncio.AbstractEventLoop, messages: Sequence[ModelMessage], settings: OpenAIResponsesModelSettings
+    ) -> ResponsesWebSocketStream | None:
+        endpoint = httpx2.URL(self.client.websocket_base_url or self.client.base_url)
+        if (
+            endpoint.scheme not in {"https", "wss"}
+            or endpoint.host != "chatgpt.com"
+            or endpoint.port not in (None, 443)
+        ):
+            raise UserError("Codex WebSocket credentials require the HTTPS Codex endpoint")
+        credentials, replay = await self._codex_provider._prepare_request_credentials()
+
+        async def reserve() -> ResponsesWebSocketStream | None:
+            headers = {**settings.get("extra_headers", {}), **self._codex_provider._auth_headers(credentials)}
+            return await super(_CodexResponsesModel, self)._reserve_websocket_lane(
+                loop, messages, {**settings, "extra_headers": headers}
+            )
+
+        try:
+            response = await reserve()
+        except ModelHTTPError as error:
+            if error.status_code != 401:
+                raise
+            # Only the opening handshake was rejected; no response.create was dispatched.
+            credentials = await replay()
+            response = await reserve()
+        if response is not None:
+            socket = response.websocket
+            handshake = socket.connection._connection.response
+            if handshake is not None:
+                headers = {name: ", ".join(handshake.headers.get_all(name)) for name in handshake.headers}
+                self._owner._request_headers.capture(headers)
+                if socket.connection not in self._owner._observed_connections:
+                    self._owner._observed_connections.add(socket.connection)
+                    await self._owner._observe_headers(headers)
+                # The server issued this connection's turn state in its handshake. Future
+                # requests presenting that state still belong to this exact connection.
+                current = self._owner._request_headers.current()
+                if _CODEX_TURN_STATE_HEADER in current:
+                    socket.headers = {**socket.headers, _CODEX_TURN_STATE_HEADER: current[_CODEX_TURN_STATE_HEADER]}
+        return response
+
+
 class CodexRequestModel(WrapperModel):
     """Add Harness request affinity without reimplementing Codex authentication or dialect.
 
@@ -145,6 +221,7 @@ class CodexRequestModel(WrapperModel):
         response_headers: Callable[[Mapping[str, str]], Awaitable[None]] | None = None,
     ) -> None:
         self._response_headers = response_headers
+        self._observed_connections: weakref.WeakSet[Any] = weakref.WeakSet()
         self._thread_id = thread_id
         self._model_name = model_name
         self._credential_source = credential_source
@@ -160,7 +237,7 @@ class CodexRequestModel(WrapperModel):
         provider = OpenAICodexProvider(credential_source=self._credential_source, http_client=self._client)
         self._client.event_hooks["request"].append(self._prepare_request)
         self._client.event_hooks["response"].append(self._capture_response)
-        return OpenAIResponsesModel(self._model_name, provider=provider)
+        return _CodexResponsesModel(self._model_name, provider=provider, owner=self)
 
     async def _prepare_request(self, request: httpx2.Request) -> None:
         for name in _CODEX_DYNAMIC_HEADERS:
@@ -175,12 +252,15 @@ class CodexRequestModel(WrapperModel):
         if response.url.scheme == "https" and response.url.host == "chatgpt.com" and response.url.port in (None, 443):
             if response.is_success:
                 self._request_headers.capture(response.headers)
-            if self._response_headers is not None:
-                try:
-                    await self._response_headers(response.headers)
-                except Exception:
-                    # Observational failures must never turn a delivered response into a retry.
-                    get_logger("a13n_harness.models.codex").warning("Codex response-header observer failed")
+            await self._observe_headers(response.headers)
+
+    async def _observe_headers(self, headers: Mapping[str, str]) -> None:
+        if self._response_headers is not None:
+            try:
+                await self._response_headers(headers)
+            except Exception:
+                # Observational failures must never turn a delivered response into a retry.
+                get_logger("a13n_harness.models.codex").warning("Codex response-header observer failed")
 
     async def __aenter__(self) -> Self:
         async with self._entry_lock:
