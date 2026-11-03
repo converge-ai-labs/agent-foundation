@@ -108,7 +108,7 @@ class BrowserProvider(Protocol):
 
 
 class BrowserProviderError(Exception):
-    def __init__(self, code: str, *, certainty: Literal["not_dispatched", "known", "unknown"] = "unknown"):
+    def __init__(self, code: str, *, certainty: Literal["not_dispatched", "rejected", "known", "unknown"] = "unknown"):
         super().__init__("Browser provider operation failed")
         self.code = code
         self.certainty = certainty

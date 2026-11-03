@@ -48,20 +48,17 @@ for prefix in ('a13n_harness', 'pydantic', 'sqlalchemy', 'prompt_toolkit', 'http
     assert result.returncode == 0, result.stderr
 
 
-@pytest.mark.parametrize(
-    "module",
-    ["skill_input", "interactive.startup", "interactive.onboarding", "interactive.updates"],
-)
-def test_startup_view_imports_without_loading_execution_dependencies(module: str) -> None:
+def test_startup_view_imports_without_loading_execution_dependencies() -> None:
+    script = """
+import importlib
+import sys
+for module in ('skill_input', 'interactive.startup', 'interactive.onboarding', 'interactive.updates'):
+    importlib.import_module(f'a13n_harness_ui.{module}')
+    loaded = {'a13n_harness', 'pydantic_ai', 'a13n_harness_ui.app', 'a13n_harness_ui.storage'} & sys.modules.keys()
+    assert not loaded, (module, loaded)
+"""
     result = subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            "import sys; "
-            f"import a13n_harness_ui.{module}; "
-            "loaded = {'a13n_harness', 'pydantic_ai', 'a13n_harness_ui.app', 'a13n_harness_ui.storage'} & sys.modules.keys(); "
-            "assert not loaded, loaded",
-        ],
+        [sys.executable, "-c", script],
         check=False,
         capture_output=True,
         text=True,

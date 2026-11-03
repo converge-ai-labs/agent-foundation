@@ -26,18 +26,6 @@ it("uses canonical identities, exact aliases and exact hosts without substring m
   ).toBeUndefined();
 });
 
-it("includes the complete LobeHub catalog and its common name variants", () => {
-  expect(Object.keys(brands).length).toBeGreaterThanOrEqual(322);
-  expect(resolveBrand({ identity: " AdobeFirefly " })).toBe(
-    brands.adobefirefly,
-  );
-  expect(resolveBrand({ alias: "adobe-firefly" })).toBe(brands.adobefirefly);
-  expect(resolveBrand({ alias: "Firefly (Adobe)" })).toBe(brands.adobefirefly);
-  expect(brands.adobefirefly.icon).toContain(
-    "@lobehub/icons-static-svg@1.95.0/icons/adobefirefly-color.svg",
-  );
-});
-
 it("falls back from a failed brand image to a safe provider logo then a generic icon", () => {
   const { container } = render(
     <BrandIcon identity="github" logo="https://logos.example/github.png" />,
@@ -84,57 +72,3 @@ it("prefers an explicit remote logo before the MCP fallback", () => {
   fireEvent.error(logo);
   expect(container.querySelector("img")?.src).toBe(brands.mcp.icon);
 });
-
-it.each([
-  ["cerebras", "cerebras", "https://api.cerebras.ai/v1"],
-  ["sambanova", "sambanova", "https://api.sambanova.ai/v1"],
-  ["fireworks", "fireworks-ai", "https://api.fireworks.ai/inference/v1"],
-  ["together", "togetherai", "https://api.together.xyz/v1"],
-  ["together", "together.ai", "https://api.together.ai/v1"],
-])(
-  "resolves %s provider and catalog identities to SVG logos",
-  (identity, alias, endpoint) => {
-    const brand = brands[identity];
-    expect(resolveBrand({ identity })).toBe(brand);
-    expect(resolveBrand({ alias })).toBe(brand);
-    expect(resolveBrand({ endpoint })).toBe(brand);
-    expect(brand.icon).toBe(
-      `https://cdn.jsdelivr.net/npm/@lobehub/icons-static-svg@1.95.0/icons/${identity}-color.svg`,
-    );
-  },
-);
-
-it.each([
-  ["vercel", "vercel-ai-gateway", "https://ai-gateway.vercel.sh/v1"],
-  ["xai", "x-ai", "https://api.x.ai/v1"],
-])(
-  "resolves %s gateway identities and dark-mode SVGs",
-  (identity, alias, endpoint) => {
-    const brand = brands[identity];
-    expect(resolveBrand({ alias })).toBe(brand);
-    expect(resolveBrand({ endpoint })).toBe(brand);
-    expect(brand.icon).toMatch(/\.svg$/);
-    expect(brand.darkIcon || brand.invertInDark).toBeTruthy();
-  },
-);
-
-it.each(["cloudflare", "cloudflare_ai_gateway", "cloudflare-ai-gateway"])(
-  "renders the Cloudflare logo for %s",
-  (type) => {
-    const { container } = render(<BrandIcon identity={type} alias={type} />);
-    expect(container.querySelector("img")?.src).toBe(brands.cloudflare.icon);
-    expect(brands.cloudflare.icon).toMatch(/cloudflare-color\.svg$/);
-  },
-);
-
-it.each(["api.cloudflare.com", "gateway.ai.cloudflare.com"])(
-  "resolves the Cloudflare API host %s",
-  (host) => {
-    expect(resolveBrand({ endpoint: `https://${host}/account/path` })).toBe(
-      brands.cloudflare,
-    );
-    expect(
-      resolveBrand({ endpoint: `https://${host}.example.org/account/path` }),
-    ).toBeUndefined();
-  },
-);

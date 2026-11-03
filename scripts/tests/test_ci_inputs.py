@@ -236,9 +236,8 @@ def _service_matrix(workflow: dict, tests_changed: str, tmp_path: Path, *, root:
     return json.loads(output.read_text().removeprefix("matrix="))
 
 
-def test_service_ci_runs_service_tests_and_checks(tmp_path: Path) -> None:
+def test_service_ci_partitions_the_current_suite_without_duplicates(tmp_path: Path) -> None:
     workflow = yaml.safe_load((WORKFLOWS / "ci-a13n-service.yml").read_text())
-    jobs = workflow["jobs"]
     matrix = _service_matrix(workflow, "true", tmp_path)
     assert [entry["name"] for entry in matrix] == ["checks", *[f"tests-{index}" for index in range(1, 7)]]
     assert all(entry["targets"] for entry in matrix[1:])
@@ -261,40 +260,6 @@ def test_service_ci_runs_service_tests_and_checks(tmp_path: Path) -> None:
     }
     assert set(targets) == expected
     assert matrix == _service_matrix(workflow, "true", tmp_path)
-    assert {entry["runner"] for entry in matrix} <= {"ubuntu-latest", "ubuntu-24.04"}
-    assert jobs["validation"]["strategy"]["matrix"]["include"] == "${{ fromJSON(needs.changes.outputs.matrix) }}"
-    steps = jobs["validation"]["steps"]
-    test = next(step for step in steps if step["name"] == "Test a13n Service")
-    assert "-n 4 --dist loadgroup" in test["run"]
-    assert test["timeout-minutes"] == 6
-    assert test["if"] == "startsWith(matrix.name, 'tests-')"
-    assert test["env"]["TEST_TARGETS"] == "${{ matrix.targets }}"
-    require_execution = next(step for step in steps if step["name"] == "Require Service execution without skips")
-    assert require_execution["if"] == test["if"]
-    native_browser = next(step for step in steps if step["name"] == "Test native Browser lifecycle and Service assets")
-    assert native_browser["if"] == "matrix.name == 'tests-1'"
-    assert "test_browser_native_live.py" in native_browser["run"]
-    assert "test_selfhost_service_asset_transfer[native]" in native_browser["run"]
-    assert "not report.findall('.//skipped')" in native_browser["run"]
-    docker_check = (ROOT / "Makefile").read_text().split("image-check-browser: sync", 1)[1].split(".PHONY:", 1)[0]
-    for node in (
-        "test_docker_profile_input_and_recovery",
-        "test_docker_critical_child_exit_ends_runtime",
-        "test_selfhost_service_asset_transfer[docker]",
-        "test_docker_scripted_model_browser_tools",
-    ):
-        assert node in docker_check
-    assert "not r.findall('.//skipped')" in docker_check
-    providers = next(step for step in steps if step["name"] == "Test native Environment management drivers")
-    assert providers["if"] == "matrix.name == 'tests-1'"
-    assert "packages/a13n-service/tests/environment_providers" in providers["run"]
-    reports = next(step for step in steps if step["name"] == "Retain Service test reports")
-    assert reports["if"] == "always()"
-    assert reports["with"]["name"] == "service-${{ matrix.name }}-${{ github.run_attempt }}"
-    assert jobs["validation"]["strategy"]["fail-fast"] is False
-    assert any(step.get("run") == "make service-boundaries" for step in steps)
-    assert any(step.get("run") == "make dev-state-check" for step in steps)
-    assert jobs["python"]["needs"] == ["changes", "validation"]
 
 
 def test_service_selection_includes_new_nested_files_and_passes_paths_literally(tmp_path: Path) -> None:

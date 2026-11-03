@@ -415,5 +415,7 @@ def _describe(registry: Registry, definition: RegisteredProvider) -> ProviderTyp
         described.supports_stop = definition.supports_stop
         described.supports_destroy = definition.supports_destroy
     elif isinstance(definition, BrowserProviderDefinition):
+        described.browser_recipe_schema = model_schema(definition.recipe_model)
+        described.supports_viewer = definition.supports_viewer
         described.supports_stop = definition.supports_stop
     return described

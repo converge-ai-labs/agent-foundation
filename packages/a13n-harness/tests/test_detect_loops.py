@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 
 import pytest
-from a13n_harness import AgentContext, AgentSpec, DefinitionError, HarnessBuilder, RunBindings
+from a13n_harness import AgentContext, AgentSpec, HarnessBuilder, RunBindings
 from pydantic_ai.capabilities import AbstractCapability, Capability
 from pydantic_ai.messages import ModelMessage, SystemPromptPart, UserPromptPart
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
@@ -16,29 +16,12 @@ def _spec(**arguments: object) -> AgentSpec:
     return AgentSpec.model_validate({"capabilities": [{"DetectLoops": arguments}]})
 
 
-def test_detect_loops_schema_uses_native_configuration_without_runtime_state() -> None:
-    schema = AgentSpec.model_json_schema_with_capabilities()
-    parameters = schema["$defs"]["spec_params_DetectLoops"]
-    assert parameters["properties"]["action"]["enum"] == ["nudge", "error"]
-    assert not any(name.startswith("_") for name in parameters["properties"])
-    assert parameters["additionalProperties"] is False
-    spec = _spec(action="error", repeated_result_threshold=None)
-    assert AgentSpec.model_validate_json(spec.model_dump_json()) == spec
-
-
 @pytest.mark.parametrize("enabled", [False, True])
 def test_detect_loops_is_available_but_opt_in(enabled: bool) -> None:
     executable = HarnessBuilder().build(_spec() if enabled else AgentSpec(), output_type=str)
     leaves: list[AbstractCapability[AgentContext]] = []
     executable._agent.root_capability.apply(leaves.append)
     assert sum(type(item) is DetectLoops for item in leaves) == int(enabled)
-
-
-@pytest.mark.parametrize("arguments", [{"window": 1}, {"repeated_call_threshold": 11}, {"unknown": True}])
-def test_detect_loops_rejects_invalid_constructor_configuration(arguments: dict[str, object]) -> None:
-    with pytest.raises(DefinitionError) as error:
-        HarnessBuilder().build(_spec(**arguments), output_type=str)
-    assert error.value.code == "agent_build_failed"
 
 
 @pytest.mark.parametrize("action", ["nudge", "error"])

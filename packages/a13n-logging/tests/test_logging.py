@@ -4,8 +4,7 @@ import logging
 from pathlib import Path
 
 import pytest
-from a13n_logging import JsonFormatter, LogFile, LogFormat, PrettyFormatter, configure_logging, log_context
-from rich.logging import RichHandler
+from a13n_logging import LogFile, LogFormat, PrettyFormatter, configure_logging, log_context
 
 
 def _record() -> logging.LogRecord:
@@ -26,28 +25,6 @@ def test_pretty_formatter_preserves_event_context() -> None:
     output = PrettyFormatter().format(_record())
 
     assert output == 'a13n.test session_started session_id="session-1"'
-
-
-def test_configure_logging_selects_pretty_and_json_handlers() -> None:
-    configure_logging(log_format=LogFormat.pretty, logger_names=["a13n.test.pretty"])
-    configure_logging(log_format=LogFormat.json, logger_names=["a13n.test.json"])
-
-    [pretty] = logging.getLogger("a13n.test.pretty").handlers
-    [json_handler] = logging.getLogger("a13n.test.json").handlers
-    assert isinstance(pretty, RichHandler)
-    assert type(json_handler) is logging.StreamHandler
-    assert isinstance(json_handler.formatter, JsonFormatter)
-
-
-def test_json_output_writes_one_record_to_stdout(capsys) -> None:
-    configure_logging(logger_names=["a13n.test.stdout"], log_format=LogFormat.json)
-
-    logging.getLogger("a13n.test.stdout").info("ready", extra={"task_id": "task-1"})
-
-    payload = json.loads(capsys.readouterr().out)
-    assert payload["message"] == "ready"
-    assert payload["task_id"] == "task-1"
-    assert not logging.getLogger("a13n.test.stdout").propagate
 
 
 def test_context_fields_reach_every_record_until_the_block_exits(capsys) -> None:

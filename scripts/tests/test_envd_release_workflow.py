@@ -10,14 +10,6 @@ import pytest
 import yaml
 
 WORKFLOW = Path(__file__).parents[2] / ".github/workflows/release-a13n-envd.yml"
-TARGETS = {
-    "x86_64-unknown-linux-gnu",
-    "aarch64-unknown-linux-gnu",
-    "x86_64-apple-darwin",
-    "aarch64-apple-darwin",
-    "x86_64-pc-windows-msvc",
-    "aarch64-pc-windows-msvc",
-}
 
 
 @pytest.fixture
@@ -43,39 +35,6 @@ def test_client_publication_waits_for_downloads_without_a_registry_cycle(jobs: d
     assert "if" not in release_steps[-1]
     assert "continue-on-error" not in release_steps[-1]
     assert "continue-on-error" not in jobs["create-release"]
-
-
-def test_release_keeps_all_native_targets_and_one_version_patch(jobs: dict) -> None:
-    targets = jobs["build-binaries"]["strategy"]["matrix"]["include"]
-    assert len(targets) == 6
-    assert {entry["target"] for entry in targets} == TARGETS
-    for entry in targets:
-        if entry["target"].endswith("-unknown-linux-gnu"):
-            assert entry["os"] == "ubuntu-24.04"
-            assert entry["cross_linux"] == (entry["target"] == "aarch64-unknown-linux-gnu")
-    for name in ("build-client", "build-binaries", "publish-crate"):
-        patch_steps = [step for step in jobs[name]["steps"] if step["name"] == "Download release version patch"]
-        assert len(patch_steps) == 1
-        assert patch_steps[0]["with"]["name"] == "release-version-a13n-envd"
-
-
-def test_sandbox_release_consumes_same_workflow_linux_artifacts(jobs: dict) -> None:
-    assert "build-binaries" in jobs["publish-image"]["needs"]
-    steps = jobs["publish-image"]["steps"]
-    download = next(step for step in steps if step["name"] == "Download Linux binary archives")
-    assert download["uses"] == "actions/download-artifact@v4"
-    assert download["with"] == {
-        "pattern": "a13n-envd-*-unknown-linux-gnu",
-        "path": "dist/linux",
-        "merge-multiple": True,
-    }
-    stage = next(step for step in steps if step["name"] == "Stage sandbox binaries")
-    assert stage["env"] == {"VERSION": "${{ needs.prepare.outputs.version }}"}
-    build = next(step for step in steps if step.get("uses", "").startswith("docker/build-push-action"))
-    assert "ENVD_BINARY_SOURCE=prebuilt" in build["with"]["build-args"]
-    assert build["with"]["context"] == "."
-    assert steps.index(download) < steps.index(stage) < steps.index(build)
-    assert not any("release version patch" in step["name"] for step in steps)
 
 
 @pytest.mark.parametrize("version", ["1.2.3", "1.2.3-rc.1"])

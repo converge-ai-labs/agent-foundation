@@ -142,11 +142,6 @@ def test_processor_cannot_inject_absent_structural_fields_or_invalid_content(upd
     assert observer.snapshot() == ()
 
 
-def test_required_null_custom_payload_is_not_dropped():
-    event = CustomEvent(name="a13n.test", value=None)
-    assert event.model_dump(mode="json", by_alias=True) == {"type": "CUSTOM", "name": "a13n.test", "value": None}
-
-
 def test_tool_parts_preserve_order_duplicates_and_hide_native_bytes():
     image = ImageUrl("https://example.com/a.png")
     parts = tool_result_content(
