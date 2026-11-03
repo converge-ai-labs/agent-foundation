@@ -268,8 +268,6 @@ Do not create Alembic revision files manually or autogenerate against an existin
 make db-migrate msg="describe the schema change"
 ```
 
-Docker Compose is the default. With PostgreSQL executables installed, `make db-migrate MIGRATION_POSTGRES=native msg="describe the schema change"` starts a private temporary cluster with no TCP listener. Both modes run the same migration generator.
-
 The target starts the local PostgreSQL service when needed, rebuilds schema history in a disposable database, autogenerates and formats the revision, and removes the temporary database. Review the generated migration rather than treating a clean model diff as proof of safety. A new table belongs in its package's `tables.py`, declares its trigger rules there and is registered in the distribution's `tables` ([Service layout](spec/a13n-service/02-layout.md)); the migration environment renders those rules into the revision.
 
 A schema-change pull request must explain lock duration, scans or rewrites, rolling old/new compatibility, index strategy, bounded backfill, interruption and rerun behavior, and rollback or forward repair. Prefer additive expand-and-contract changes. The shared image auto-migrates `all` and `control` replicas under advisory locking; deployments with a dedicated migration job disable replica auto migration. Worker-only processes never migrate.
