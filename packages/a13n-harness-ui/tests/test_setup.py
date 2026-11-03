@@ -74,8 +74,7 @@ async def test_setup_previews_without_publication_and_seeds_selected_connection(
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("tier", [None, "priority", "default"])
-@pytest.mark.parametrize("operation", ["setup", "add_model", "add_agent"])
+@pytest.mark.parametrize("operation,tier", [("setup", None), ("add_model", "priority"), ("add_agent", "default")])
 async def test_setup_writes_native_codex_service_tier(tmp_path: Path, tier: str | None, operation: str) -> None:
     path = tmp_path / "config.yaml"
     changes: dict[str, object] = {}

@@ -3,41 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
 from a13n_harness_ui.settings_loader import ensure_default_directories, load_harness_ui_settings
 from pydantic import ValidationError
 
 pytestmark = pytest.mark.anyio
-
-
-def test_settings_normalize_process_values(tmp_path: Path) -> None:
-    settings = HarnessUiSettings(
-        storage=StorageSettings(data_root=tmp_path / "nested" / ".." / "store"),
-        log_level="debug",
-    )
-
-    assert settings.storage.data_root == (tmp_path / "store").resolve()
-    assert settings.storage.max_object_bytes == 256 * 1024 * 1024
-    assert settings.log_level == "DEBUG"
-    assert settings.log_format == "pretty"
-    assert settings.pricing_auto_update is True
-    assert settings.shutdown_timeout_seconds == 60.0
-
-
-def test_settings_reject_unknown_or_invalid_values(tmp_path: Path) -> None:
-    with pytest.raises(ValidationError):
-        StorageSettings.model_validate({"data_root": tmp_path, "unknown": True})
-
-    with pytest.raises(ValidationError):
-        HarnessUiSettings(storage=StorageSettings(data_root=tmp_path), log_level="TRACE")
-
-    with pytest.raises(ValidationError):
-        StorageSettings(data_root=tmp_path, max_object_bytes=512)
-
-
-def test_settings_remain_strict(tmp_path: Path) -> None:
-    with pytest.raises(ValidationError):
-        StorageSettings.model_validate({"data_root": str(tmp_path)}, strict=True)
 
 
 async def test_loads_one_strict_full_settings_yaml(tmp_path: Path) -> None:

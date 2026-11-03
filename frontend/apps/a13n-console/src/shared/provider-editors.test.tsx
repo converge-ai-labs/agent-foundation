@@ -35,19 +35,10 @@ vi.mock("react-i18next", () => ({
 
 beforeEach(() => {
   vi.resetAllMocks();
-  vi.stubGlobal(
-    "ResizeObserver",
-    class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    },
-  );
-  // Radix Select uses pointer capture and scroll APIs absent from jsdom.
+  // Select uses pointer capture APIs absent from jsdom.
   HTMLElement.prototype.hasPointerCapture = () => false;
   HTMLElement.prototype.setPointerCapture = () => {};
   HTMLElement.prototype.releasePointerCapture = () => {};
-  HTMLElement.prototype.scrollIntoView = () => {};
 });
 afterEach(() => {
   cleanup();

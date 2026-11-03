@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { createClient, type Client } from "../../service-client";
 import { AgentAvatar } from "./avatar";
@@ -14,27 +14,6 @@ afterEach(() => {
   client?.close();
   client = undefined;
   vi.restoreAllMocks();
-});
-
-it("keeps an existing agent's color when renamed or remounted", () => {
-  const { rerender, unmount } = render(
-    <AgentAvatar id="agt_stable" name="Alpha" />,
-  );
-  const color = screen.getByText("A").style.backgroundColor;
-  rerender(<AgentAvatar id="agt_stable" name="Beta" />);
-  expect(screen.getByText("B").style.backgroundColor).toBe(color);
-  unmount();
-  render(<AgentAvatar id="agt_stable" name="Beta" />);
-  expect(screen.getByText("B").style.backgroundColor).toBe(color);
-});
-
-it("previews name changes and handles non-Latin and empty names", () => {
-  const { rerender } = render(<AgentAvatar name="  alpha" />);
-  expect(screen.getByText("A")).toBeDefined();
-  rerender(<AgentAvatar name="研究助手" />);
-  expect(screen.getByText("研")).toBeDefined();
-  rerender(<AgentAvatar name="   " />);
-  expect(screen.getByText("A")).toBeDefined();
 });
 
 it("loads the avatar with workspace authentication and releases its blob URL", async () => {

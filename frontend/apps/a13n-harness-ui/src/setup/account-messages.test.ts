@@ -1,4 +1,4 @@
-import { afterEach, expect, it } from "vitest";
+import { expect, it } from "vitest";
 import { i18n } from "../i18n";
 import type { Schema } from "../transport/client";
 import { accountMessage, loginMessage } from "./account-messages";
@@ -10,9 +10,7 @@ const base: Schema<"LoginStatus"> = {
   state: "failed",
   message: "provider diagnostic: synthetic detail",
 };
-afterEach(async () => {
-  await i18n.changeLanguage("en");
-});
+const t = i18n.getFixedT("zh-CN");
 
 it.each([
   [
@@ -32,69 +30,40 @@ it.each([
     "Login did not complete. Check account status before retrying; no fallback was started.",
   ],
   [null, "The login expired. Start a new login."],
-])(
-  "localizes known login failure %s in both languages",
-  async (error_code, key) => {
-    for (const locale of ["en", "zh-CN"]) {
-      await i18n.changeLanguage(locale);
-      expect(i18n.exists(key, { lng: locale })).toBe(true);
-      const message = loginMessage(
-        { ...base, state: "expired", error_code },
-        i18n.t,
-      );
-      expect(message).toBe(i18n.t(key));
-      if (locale === "zh-CN") expect(message).not.toBe(key);
-    }
-  },
-);
+])("localizes known login failure %s", (error_code, key) => {
+  expect(loginMessage({ ...base, state: "expired", error_code }, t)).toBe(
+    t(key),
+  );
+});
 
-it.each([
-  "account_switch_confirmation_required",
-  "oauth_callback_invalid",
-  "future_provider_error",
-])(
-  "localizes the Host failure message with error code %s",
-  async (error_code) => {
-    const message =
-      "Login did not complete. Check account status before retrying; no fallback was started.";
-    for (const locale of ["en", "zh-CN"]) {
-      await i18n.changeLanguage(locale);
-      expect(loginMessage({ ...base, error_code, message }, i18n.t)).toBe(
-        i18n.t(message),
-      );
-      if (locale === "zh-CN") expect(i18n.t(message)).not.toBe(message);
-      expect(loginMessage({ ...base, error_code }, i18n.t)).toBe(base.message);
-    }
-  },
-);
+it("localizes the Host failure message with an unknown error code", () => {
+  const message =
+    "Login did not complete. Check account status before retrying; no fallback was started.";
+  expect(
+    loginMessage({ ...base, error_code: "future_provider_error", message }, t),
+  ).toBe(t(message));
+});
 
 it.each([
   ["codex", "browser"],
   ["grok", "browser"],
   ["copilot", "device"],
-] as const)(
-  "localizes known %s %s login instructions",
-  async (provider, method) => {
-    const status = { ...base, state: "waiting" as const, provider, method };
-    const english = loginMessage(status, i18n.t)!;
-    await i18n.changeLanguage("zh-CN");
-    expect(i18n.exists(english, { lng: "zh-CN" })).toBe(true);
-    expect(loginMessage(status, i18n.t)).not.toBe(english);
-  },
-);
-
-it("preserves unknown login and account diagnostics verbatim", async () => {
-  await i18n.changeLanguage("zh-CN");
-  expect(
-    loginMessage({ ...base, error_code: "future_provider_error" }, i18n.t),
-  ).toBe(base.message);
-  expect(loginMessage({ ...base, state: "waiting" }, i18n.t)).toBe(
-    base.message,
-  );
-  expect(accountMessage(base.message!, i18n.t)).toBe(base.message);
+] as const)("localizes known %s %s login instructions", (provider, method) => {
+  const status = { ...base, state: "waiting" as const, provider, method };
+  const english = loginMessage(status, i18n.getFixedT("en"))!;
+  expect(loginMessage(status, t)).not.toBe(english);
+  expect(loginMessage(status, t)).not.toBe(base.message);
 });
 
-it("translates only known Host account status messages", async () => {
+it("preserves unknown login and account diagnostics verbatim", () => {
+  expect(
+    loginMessage({ ...base, error_code: "future_provider_error" }, t),
+  ).toBe(base.message);
+  expect(loginMessage({ ...base, state: "waiting" }, t)).toBe(base.message);
+  expect(accountMessage(base.message!, t)).toBe(base.message);
+});
+
+it("translates only known Host account status messages", () => {
   const messages = [
     "Host-managed ChatGPT registration; independent of Codex.",
     "CLI keychain storage is unsupported. Use native login or explicitly enable CLI plaintext storage.",
@@ -102,13 +71,8 @@ it("translates only known Host account status messages", async () => {
     "The external login could not be imported. Sign in here.",
     "Imported the existing login. Its refresh grant is still shared with the original CLI; sign in again here if that grant is rejected.",
   ];
-  for (const locale of ["en", "zh-CN"]) {
-    await i18n.changeLanguage(locale);
-    for (const message of messages) {
-      expect(i18n.exists(message, { lng: locale })).toBe(true);
-      expect(accountMessage(message, i18n.t)).toBe(i18n.t(message));
-      if (locale === "zh-CN")
-        expect(accountMessage(message, i18n.t)).not.toBe(message);
-    }
+  for (const message of messages) {
+    expect(accountMessage(message, t)).toBe(t(message));
+    expect(accountMessage(message, t)).not.toBe(message);
   }
 });

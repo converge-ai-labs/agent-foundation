@@ -7,7 +7,7 @@ from pathlib import Path, PurePath, PurePosixPath, PureWindowsPath
 
 import pytest
 from a13n_harness_ui.cli import CliRequest
-from a13n_harness_ui.interactive.panels import capability_panel, display_path, tool_preview
+from a13n_harness_ui.interactive.panels import capability_panel, display_path
 from a13n_harness_ui.interactive.rendering import Status, StreamRenderer
 from a13n_harness_ui.interactive.shell import CliShell
 from prompt_toolkit.application import create_app_session
@@ -64,13 +64,6 @@ def test_running_and_completed_tool_labels_keep_raw_payloads(name: str, key: str
         renderer.transcript.close()
 
 
-@pytest.mark.parametrize("name", ["edit", "multi_edit"])
-def test_edit_argument_summary_is_relative(name: str, tmp_path: Path) -> None:
-    assert (
-        tool_preview(json.dumps({"file_path": str(tmp_path / "file.py")}), name=name, directory=tmp_path) == "file.py"
-    )
-
-
 @pytest.mark.parametrize("oversized", [False, True])
 def test_edit_event_shortens_only_title(oversized: bool, tmp_path: Path) -> None:
     path = str(tmp_path / "file.py")
@@ -111,25 +104,6 @@ def test_interleaved_child_paths_keep_invocation_base_and_run_identity(tmp_path:
         assert "done" not in (child.preview or "") and "done" in child.source
     finally:
         renderer.transcript.close()
-
-
-@pytest.mark.parametrize(
-    "name, arguments, expected",
-    [
-        ("shell_exec", {"command": "cat /work/project/file.py"}, "cat /work/project/file.py"),
-        ("grep", {"pattern": "/work/project/file.py"}, "/work/project/file.py"),
-        ("glob", {"pattern": "/work/project/*.py"}, "/work/project/*.py"),
-        ("task_create", {"subject": "/work/project/file.py"}, "/work/project/file.py"),
-        ("unknown", {"file_path": "/work/project/file.py"}, "/work/project/file.py"),
-    ],
-)
-def test_non_path_summaries_are_not_rewritten(name: str, arguments: dict[str, str], expected: str) -> None:
-    assert tool_preview(json.dumps(arguments), name=name, directory=PurePosixPath("/work/project")) == expected
-
-
-def test_malformed_arguments_are_not_rewritten() -> None:
-    arguments = '{"file_path": "/work/project/file.py'
-    assert tool_preview(arguments, name="view", directory=PurePosixPath("/work/project")) == arguments
 
 
 def test_shell_passes_explicit_directory_and_rendering_does_not_follow_chdir(

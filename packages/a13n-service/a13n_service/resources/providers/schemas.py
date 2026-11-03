@@ -115,7 +115,10 @@ class ProviderType(BaseModel):
     operations: list[WebOperation] | None = None
     # Environment types: the template schema, and whether its instances can be stopped and destroyed.
     environment_schema: dict[str, JsonValue] | None = None
+    # Browser types: per-allocation creation inputs.
+    browser_recipe_schema: dict[str, JsonValue] | None = None
     supports_stop: bool | None = None
+    supports_viewer: bool | None = None
     supports_destroy: bool | None = None
 
 
