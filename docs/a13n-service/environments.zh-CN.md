@@ -167,7 +167,7 @@ Worker 恢复会尽力复用检查点中的 Envd 会话。会话已关闭或过�
 
 离线时工具会说明本次操作未派发。只有当前 run 已感知过连接失败，后续正常的 agent 循环才会提示该挂载恢复连接。恢复不会重试旧命令。长命令应先启动进程，再使用句柄查询或等待；单次等待到期不会终止进程。命令派发后若丢失回复，结果未知。
 
-在实例详情中可以查看连接状态及检查时间。电脑离线时仍保留登记。envd 会在终端提示连接初始化成功或断开，按 Ctrl+C 可停止连接。
+在实例详情中可以查看连接状态及检查时间。电脑离线时仍保留登记。如果 envd 提示 `device_id_mismatch`，请核对目标环境，用 `--device-id` 传入该环境登记的设备 ID。按 Ctrl+C 可停止连接。
 
 部署多个 Control 副本时，在每个副本上设置 `A13N_CLIENT_ENVIRONMENTS__TRANSFER_ORIGIN`，指向 Worker 可直接访问该副本的 HTTPS 地址。单个 Control 也可使用 `server.control_url` 或 `server.public_url`。文件和截图通过这个连接传输；Worker 不接收设备凭据。
 

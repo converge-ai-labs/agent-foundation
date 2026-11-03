@@ -819,4 +819,3 @@ async def test_client_environment_runs_on_reverse_daemon_and_streams_files(
                 process.terminate()
             _, stderr = await asyncio.wait_for(process.communicate(), 5)
             assert token_file.read_bytes() not in stderr
-            assert b"Reverse WebSocket initialized." in stderr

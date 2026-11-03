@@ -896,15 +896,30 @@ impl EipDeviceHandler for DeviceRequest<'_> {
             .supported_protocol_versions
             .iter()
             .any(|version| version == eip::EIP_PROTOCOL_VERSION)
-            || params
-                .expected_device_id
-                .as_ref()
-                .is_some_and(|id| id != &self.daemon.descriptor.device_id)
         {
             return Err(protocol_error(
                 ErrorType::ProtocolIncompatible,
-                "Device identity or protocol does not match",
+                "Unsupported EIP protocol version",
             ));
+        }
+        if let Some(expected) = &params.expected_device_id
+            && expected != &self.daemon.descriptor.device_id
+        {
+            const DETAIL: &str = "device_id_mismatch";
+            const MESSAGE: &str =
+                "Check the environment and use its registered Device ID with --device-id.";
+            if matches!(
+                self.daemon.config.transport,
+                crate::config::TransportConfig::ReverseWebSocket(_)
+            ) {
+                eprintln!(
+                    "{DETAIL}: {MESSAGE} Configured: {:?}. Expected: {expected:?}.",
+                    self.daemon.descriptor.device_id
+                );
+            }
+            let mut error = protocol_error(ErrorType::ProtocolIncompatible, MESSAGE);
+            error.data.safe_detail = Some(DETAIL.to_owned());
+            return Err(error);
         }
         if !self.carrier.stateless && self.carrier.initialized.swap(true, Ordering::AcqRel) {
             return Err(protocol_error(
@@ -3771,6 +3786,25 @@ mod tests {
             );
             assert!(response.get("result").is_none());
         }
+    }
+
+    #[tokio::test]
+    async fn initialize_reports_registered_device_identity_mismatch() {
+        let config = Config::for_test("env-test");
+        let fixture = Fixture::new(&config, 7);
+        let mut params = initialize_params();
+        params["expected_device_id"] = json!("other");
+        let response = fixture.call("initialize", params).await;
+        assert_eq!(response["error"]["code"], -32003);
+        assert_eq!(
+            response["error"]["data"]["safe_detail"],
+            "device_id_mismatch"
+        );
+        assert_eq!(
+            response["error"]["message"],
+            "Check the environment and use its registered Device ID with --device-id."
+        );
+        assert!(response.get("result").is_none());
     }
 
     #[tokio::test]

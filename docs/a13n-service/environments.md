@@ -165,7 +165,7 @@ Use the `device-id` in Envd’s installation state directory, or have the instal
 
 An offline tool reports that it did not dispatch. After such a failure, the next normal agent iteration can report that the selected mount has reconnected. Recovery does not repeat the command. On a process-capable mount, one agent `shell_exec` starts the process and waits briefly. The agent can later use `shell_info` or `shell_wait` with the returned reference. A wait timeout does not kill the process. If a reply is lost after dispatch, the result is unknown.
 
-The Instances page shows when the connection state was checked. An offline computer remains registered. Envd prints when its connection initializes or closes. Press Ctrl+C in its terminal to disconnect.
+The Instances page shows when the connection state was checked. An offline computer remains registered. If envd reports `device_id_mismatch`, check the environment and pass its registered Device ID with `--device-id`. Press Ctrl+C in the envd terminal to disconnect.
 
 For multiple Control replicas, set `A13N_CLIENT_ENVIRONMENTS__TRANSFER_ORIGIN` on each replica to its own HTTPS origin reachable by Workers. A single Control can use `server.control_url` or `server.public_url`. This stream carries binary files and screenshots; the device credential never goes to Workers.
 
