@@ -5,13 +5,16 @@ import json
 import os
 import shlex
 import stat
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from unittest.mock import AsyncMock
 
+import psutil
 import pytest
 from a13n_harness_ui.cli import CliRequest
-from a13n_harness_ui.interactive.external_editor import edit_prompt
+from a13n_harness_ui.interactive.external_editor import EditorDraftError, edit_prompt, editor_command
 from a13n_harness_ui.interactive.inline_attachments import InlineAttachments
 from a13n_harness_ui.interactive.shell import CliShell
 from a13n_harness_ui.thread_files import AttachmentUpload
@@ -21,11 +24,17 @@ from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output import DummyOutput
 
 
+@pytest.fixture(autouse=True)
+def editor_temp_directory(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+
+
 def _editor(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, script: str) -> Path:
     editor = tmp_path / "editor fixture.py"
     editor.write_text("import sys\nfrom pathlib import Path\npath = Path(sys.argv[-1])\n" + script, encoding="utf-8")
     monkeypatch.delenv("VISUAL", raising=False)
-    monkeypatch.setenv("EDITOR", shlex.join([sys.executable, str(editor), "--wait"]))
+    arguments = [sys.executable, str(editor), "--wait"]
+    monkeypatch.setenv("EDITOR", subprocess.list2cmdline(arguments) if os.name == "nt" else shlex.join(arguments))
     return editor
 
 
@@ -87,8 +96,11 @@ path.write_text(text + '\\ue123', encoding='utf-8')
     attachments.values[second].upload = file
     text = f"前 {first} 中 [image#1] 后 {second}"
     if change in {"delete", "duplicate", "rename"}:
-        with pytest.raises(ValueError, match="Keep each attachment marker"):
+        with pytest.raises(EditorDraftError, match="Keep each attachment marker") as caught:
             await edit_prompt(text, attachments)
+        recovery = caught.value.recovery_path.read_text(encoding="utf-8")
+        assert "前" in recovery and "后" in recovery and "[image#1]" in recovery
+        assert recovery.endswith("\ue123")
     else:
         edited = await edit_prompt(text, attachments)
         assert attachments.compile(edited).attachments == ((file, image) if change == "move" else (image, file))
@@ -204,10 +216,11 @@ time.sleep(60)
 
 
 @pytest.mark.anyio
-async def test_background_draft_replacement_is_not_overwritten(monkeypatch) -> None:
+async def test_background_draft_replacement_is_not_overwritten(tmp_path, monkeypatch) -> None:
     with create_app_session(output=DummyOutput()):
         shell = CliShell(CliRequest())
         shell.composer.text = "original"
+        shell._recoverable = Document("earlier unsubmitted input")
 
         async def edit(text, attachments):
             shell.composer.text = "recovered draft"
@@ -217,6 +230,128 @@ async def test_background_draft_replacement_is_not_overwritten(monkeypatch) -> N
         try:
             await shell._edit_prompt()
             assert shell.composer.text == "recovered draft"
+            assert shell._recoverable == Document("earlier unsubmitted input")
+            (recovery,) = tmp_path.glob("a13n-prompt-recovery-*/prompt.md")
+            assert recovery.read_text(encoding="utf-8") == "editor draft"
             assert "draft changed" in "".join(block.source for block in shell.renderer.transcript.blocks.values())
         finally:
             shell.renderer.transcript.close()
+
+
+@pytest.mark.anyio
+async def test_bom_and_unchanged_folded_draft(tmp_path, monkeypatch) -> None:
+    _editor(tmp_path, monkeypatch, "path.write_bytes(b'\\xef\\xbb\\xbf' + path.read_bytes())\n")
+    assert await edit_prompt("unchanged\n中文", InlineAttachments()) == "unchanged\n中文"
+    with create_app_session(output=DummyOutput()):
+        shell = CliShell(CliRequest())
+        shell.composer.buffer.document = Document(shell.pastes.insert("中文\n" * 400), 0)
+        original = shell.composer.buffer.document
+        try:
+            await shell._edit_prompt()
+            assert shell.composer.buffer.document == original
+        finally:
+            shell.renderer.transcript.close()
+
+
+async def _until_file(path: Path) -> str:
+    async with asyncio.timeout(8):
+        while not path.exists():
+            await asyncio.sleep(0.01)
+    return path.read_text()
+
+
+def _is_live(pid: int) -> bool:
+    try:
+        return psutil.Process(pid).status() != psutil.STATUS_ZOMBIE
+    except psutil.NoSuchProcess:
+        return False
+
+
+@pytest.mark.anyio
+async def test_cancel_launcher_stops_its_editor_child(tmp_path, monkeypatch) -> None:
+    ready = tmp_path / "child-ready"
+    child = f"""
+import os, time
+from pathlib import Path
+Path({str(ready)!r}).write_text(str(os.getpid()))
+time.sleep(60)
+"""
+    _editor(tmp_path, monkeypatch, f"import subprocess\nsubprocess.Popen([sys.executable, '-c', {child!r}]).wait()\n")
+    task = asyncio.create_task(edit_prompt("draft", InlineAttachments()))
+    pid = None
+    try:
+        pid = int(await _until_file(ready))
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        async with asyncio.timeout(5):
+            while _is_live(pid):
+                await asyncio.sleep(0.01)
+        assert not list(tmp_path.glob("a13n-prompt-*/prompt.md"))
+    finally:
+        if not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+        if pid is not None and _is_live(pid):
+            psutil.Process(pid).kill()
+
+
+@pytest.mark.anyio
+@pytest.mark.skipif(os.name != "posix", reason="POSIX SIGTERM grace period; Windows taskkill is immediate")
+async def test_repeated_cancellation_waits_for_term_ignoring_editor(tmp_path, monkeypatch) -> None:
+    ready, terminated = tmp_path / "ready", tmp_path / "terminated"
+    _editor(
+        tmp_path,
+        monkeypatch,
+        f"""
+import os, signal, time
+signal.signal(signal.SIGTERM, lambda *_: Path({str(terminated)!r}).write_text('TERM'))
+Path({str(ready)!r}).write_text(str(os.getpid()) + '\\n' + str(path))
+time.sleep(60)
+""",
+    )
+    task = asyncio.create_task(edit_prompt("draft", InlineAttachments()))
+    pid = None
+    try:
+        value = (await _until_file(ready)).splitlines()
+        pid, prompt = int(value[0]), Path(value[1])
+        task.cancel()
+        await _until_file(terminated)
+        assert prompt.exists()
+        task.cancel()
+        await asyncio.sleep(0)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert not _is_live(pid)
+        assert not prompt.exists()
+    finally:
+        if not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+        if pid is not None and _is_live(pid):
+            psutil.Process(pid).kill()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Native Windows CommandLineToArgvW")
+@pytest.mark.parametrize(
+    "setting,expected",
+    [
+        (r"C:\Users\O'Brien\editor.exe --wait", [r"C:\Users\O'Brien\editor.exe", "--wait"]),
+        ('"C:\\Program Files\\Editor\\editor.exe" --wait', [r"C:\Program Files\Editor\editor.exe", "--wait"]),
+        (r'editor.exe "argument with spaces" "a\\\"b"', ["editor.exe", "argument with spaces", 'a\\"b']),
+    ],
+)
+def test_windows_editor_command_uses_native_quote_rules(setting, expected) -> None:
+    assert editor_command(setting) == expected
+
+
+@pytest.mark.anyio
+@pytest.mark.skipif(os.name != "nt", reason="Native Windows PATHEXT and .cmd launch")
+async def test_windows_cmd_editor_is_resolved_through_pathext(tmp_path, monkeypatch) -> None:
+    editor = _editor(tmp_path, monkeypatch, "path.write_text('edited through cmd', encoding='utf-8')\n")
+    launcher = tmp_path / "a13n-editor-fixture.cmd"
+    launcher.write_text(f'@echo off\n"{sys.executable}" "{editor}" %*\n')
+    monkeypatch.setenv("PATH", str(tmp_path) + os.pathsep + os.environ["PATH"])
+    monkeypatch.setenv("EDITOR", "a13n-editor-fixture --wait")
+    assert await edit_prompt("draft", InlineAttachments()) == "edited through cmd"

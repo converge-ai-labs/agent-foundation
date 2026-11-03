@@ -28,7 +28,9 @@ Use Ctrl+J or Alt+Enter for a newline. Pasting multiline text leaves it in the d
 
 Press **Ctrl+G** in the ordinary prompt composer to edit the draft in your preferred editor. Harness UI uses `VISUAL`, or `EDITOR` when `VISUAL` is unset or blank; set one before launching, for example `EDITOR=nano a13n-harness-ui` or `VISUAL='code --wait' a13n-harness-ui`. The editor runs on the CLI Host, including over SSH. Save and close it to return to the composer, then press Enter when ready to send. Editing never submits or cancels Agent work.
 
-Long pasted text opens expanded. Attachments appear as readable markers: keep each marker unchanged and exactly once; you can move it with its surrounding text. Invalid markers or editor failures preserve the original draft. Temporary prompt files are private and removed after editing. Ctrl+G is unavailable in approval, question, and menu inputs.
+Long pasted text opens expanded. Attachments appear as readable markers: keep each marker unchanged and exactly once; you can move it with its surrounding text. Invalid markers or a draft changed by background work preserve the current draft and save the editor text to a private recovery file; the notice shows its path. This does not replace an existing `/recover` draft. Open the recovery file to retrieve the text, then delete its directory when done. Editor failures preserve the original draft. Working prompt files are private and removed after editing. Ctrl+G is unavailable in approval, question, and menu inputs.
+
+GUI editors must wait until you finish editing: use `code --wait`, `subl --wait`, or macOS `open -W -t`, as appropriate for your editor. A launcher that exits immediately cannot return later edits to the composer. Windows supports native double-quoted paths and PATH/PATHEXT lookup, including `.cmd` launchers. For example, in PowerShell, set `$env:VISUAL = '"C:\Program Files\Neovim\bin\nvim.exe"'`. POSIX uses shell-style argument quoting; editor selection does not put the prompt text into a shell command.
 
 ### Choose an Agent or Model
 

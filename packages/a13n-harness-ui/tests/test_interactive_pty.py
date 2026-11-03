@@ -324,11 +324,12 @@ assert asyncio.run(run_terminal(CliRequest(), runtime_loader=lambda: factory)) i
 def test_external_editor_owns_terminal_and_returns_without_submitting(tmp_path: Path) -> None:
     editor = tmp_path / "editor.py"
     editor.write_text(
-        "import sys\nfrom pathlib import Path\n"
+        "import os, sys\nfrom pathlib import Path\n"
         "path = Path(sys.argv[-1])\n"
         "assert sys.stdin.isatty() and sys.stdout.isatty()\n"
         "print('EXTERNAL-EDITOR-READY', flush=True)\n"
         "text = input()\n"
+        "assert os.tcgetpgrp(0) == os.getpgrp()\n"
         "path.write_text(path.read_text(encoding='utf-8') + text, encoding='utf-8')\n",
         encoding="utf-8",
     )
@@ -337,6 +338,9 @@ import asyncio, os, shlex, sys
 from pathlib import Path
 from a13n_harness_ui.cli import CliRequest
 from a13n_harness_ui.interactive.shell import CliShell
+import fcntl, termios
+os.setsid()
+fcntl.ioctl(0, termios.TIOCSCTTY, 0)
 os.environ['VISUAL'] = shlex.join([sys.executable, str(Path.cwd() / 'editor.py')])
 async def main():
     shell = CliShell(CliRequest())
@@ -346,6 +350,7 @@ async def main():
     async def observe():
         while shell.composer.text != 'draft: edited':
             await asyncio.sleep(0.01)
+        assert os.tcgetpgrp(0) == os.getpgrp()
         Path('returned').write_text(shell.composer.text)
         while shell.composer.text != 'draft: edited!':
             await asyncio.sleep(0.01)

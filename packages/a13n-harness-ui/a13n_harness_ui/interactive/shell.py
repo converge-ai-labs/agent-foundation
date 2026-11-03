@@ -47,7 +47,7 @@ from .attachments import add_images, clipboard_images, read_attachment
 from .commands import CommandRegistry, Invocation
 from .composer import ComposerWindow, wrapped_height
 from .diagnostics import exception_report, pending_task_warning
-from .external_editor import edit_prompt
+from .external_editor import edit_prompt, save_editor_draft
 from .history import HistoryBrowser
 from .inline_attachments import (
     AttachmentBuffer,
@@ -326,15 +326,17 @@ class CliShell:
         buffer = self.composer.buffer
         original = buffer.document
         generation = self._draft_generation
+        expanded = self.pastes.expand(original.text)
         try:
             async with in_terminal():
-                edited = await edit_prompt(self.pastes.expand(original.text), self.inline)
+                edited = await edit_prompt(expanded, self.inline)
             # Background admission recovery or attachment acquisition can change the
             # draft while terminal input belongs to the editor. Never overwrite it.
             if buffer.text != original.text or self._draft_generation != generation:
-                self.emit("The draft changed while the editor was open. Editor changes were not applied.")
+                recovery = save_editor_draft(self.inline.display(edited))
+                self.emit(f"The draft changed while the editor was open. Editor text saved to {recovery}")
                 return
-            if edited != original.text:
+            if edited != expanded:
                 buffer.save_to_undo_stack()
                 buffer.document = Document(edited, len(edited))
         except (OSError, ValueError) as error:
