@@ -193,9 +193,11 @@ class ModelProviderDefinition[C: ProviderConfiguration, K: BaseModel](ProviderDe
         http_client: httpx2.AsyncClient,
         extra_headers: Mapping[str, str] | None = None,
         endpoint_policy: EndpointValidator | None = None,
+        max_response_bytes: int | None = None,
     ) -> Model[Any]:
         """Return a native Model. The caller owns the supplied HTTP client and enters the Model."""
         from ...models.configuration import configured_model
+        from ...models.responses import ResponsesModel
 
         api = model_api or self.supported_model_apis[0]
         if api not in self.supported_model_apis:
@@ -230,6 +232,9 @@ class ModelProviderDefinition[C: ProviderConfiguration, K: BaseModel](ProviderDe
                 if self.build_model is not None
                 else MODEL_APIS[api].build(model_name, native)
             )
+            if isinstance(model, ResponsesModel):
+                model.endpoint_policy = policy
+                model.max_response_bytes = max_response_bytes
             return configured_model(model, policy.configuration) if isinstance(policy, EndpointPolicy) else model
         except BaseException as error:
             with move_on_after(5, shield=True):

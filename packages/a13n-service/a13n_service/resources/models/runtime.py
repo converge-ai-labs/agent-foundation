@@ -70,6 +70,7 @@ async def open_model(
             http_client=client,
             extra_headers=model.provider.reveal_headers(keys),
             endpoint_policy=policy,
+            max_response_bytes=settings.response_bytes,
         )
         async with native:
             yield RequestHeadersModel(native, common_headers=headers) if headers else native

@@ -159,6 +159,8 @@ Use `settings` for JSON-compatible request parameters. Nested objects, explicit 
 | `extra_headers`, `extra_body`                                                         | Native request extensions                                 |
 | `openai_prompt_cache_key`, `openai_store`                                             | OpenAI options, subject to subscription adapter behavior  |
 
+Responses API Models accept `settings.openai_transport: websocket` or `http`. API-key Models default to HTTP; Codex subscription Models default to WebSocket. Set `openai_transport: http` to explicitly use HTTP. Pydantic AI owns connection reuse, reconnect and fallback; WebSocket mode supplies native `openai_previous_response_id: auto` when no continuation setting is present, including with `openai_store: false`. The `model_request_transport` custom lifecycle event reports the actual `http` or `websocket` response path. A connection failure can fall back to HTTP, so the requested setting alone is not proof of the transport used.
+
 Settings are persisted verbatim, including any secrets placed there. Use dedicated credential references and inspect diagnostics before sharing them.
 
 Use `model_configuration` for Host connection construction. Supported HTTP/API-key routes accept an HTTP(S) `base_url` without embedded credentials, query, or fragment; local HTTP is supported. Unknown constructor fields fail validation. Subscriptions and native `xai:` gRPC require empty connection configuration.
