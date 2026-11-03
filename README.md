@@ -6,11 +6,15 @@
 
 **Build and run cloud agents on your own infrastructure.**
 
-a13n is an open-source managed agent service with an integrated harness. It supports long-running tasks, durable execution, and [high-availability deployments](docs/a13n-service/operations.md#process-roles).
+a13n is an open-source managed agent service. It brings the harness, API, and Console together so you can build agent applications without building the serving infrastructure yourself.
 
-Use your own keys with your choice of [model](docs/a13n-service/models.md), [sandbox](docs/a13n-service/environments.md), [search](docs/a13n-service/tools.md#web-search-and-scrape), and [memory](docs/a13n-service/memory.md) providers.
+- **Long-running tasks:** Agents keep working when clients disconnect.
+- **Durable execution:** Interrupted runs can resume from saved checkpoints after worker failures.
+- **Management and monitoring:** Configure agents, inspect runs, and track usage and cost in Console.
 
-## Quickstart
+Choose your [model](docs/a13n-service/models.md), [sandbox](docs/a13n-service/environments.md), [search](docs/a13n-service/tools.md#web-search-and-scrape), and [memory](docs/a13n-service/memory.md) providers. Bring your own keys.
+
+## Run Service
 
 Install Docker and Docker Compose, then run:
 
@@ -23,30 +27,31 @@ docker compose -f a13n-service.yaml up -d --wait --pull always
 Open <http://127.0.0.1:8080>:
 
 1. Create your administrator account.
-2. In **Models**, select **Add model**, connect a provider, and choose a model. Use an API key or [sign in with ChatGPT](docs/a13n-service/models.md#chatgpt-subscription-provider) with an eligible plan.
+2. In **Models**, select **Add model** and configure a model using an API key or an eligible [ChatGPT subscription](docs/a13n-service/models.md#chatgpt-subscription-provider).
 3. Create an agent with that model. Open **Connect to app** for its ID, Service URL, and an API key.
 
 Call the agent from your application through the [HTTP API](docs/a13n-service/connect-application.md) or a [Python, TypeScript, Go, or Rust SDK](docs/a13n-service/sdks.md).
 
-The stack runs Service, Console, PostgreSQL, and Redis. Agent environments use your host Docker Engine. For a shared deployment, follow the [deployment guide](deploy/docker/compose/README.md).
+The stack runs Service, Console, PostgreSQL, and Redis. Agent environments use your host Docker Engine. See the [deployment guide](deploy/docker/compose/README.md) for configuration and [multi-instance setup](docs/a13n-service/operations.md#process-roles) for high availability.
 
 [![Console showing six managed agents, their model providers, and status](.github/assets/console-managed-agents.jpg)](.github/assets/console-managed-agents.jpg)
 
 Console with fictional demo data. See [run details from a scripted demo](.github/assets/console-run-details.jpg) and [workspace usage](.github/assets/console-usage.jpg).
 
-## Service and Harness
+## Use Harness directly
 
-Service keeps tasks running when clients disconnect and resumes them from saved progress after worker failures. Agents can wait for human approval. Use Console to configure agents and inspect their execution.
+Service is built on Harness, which handles tool use, Skills, memory, and subagents. You can also use it without deploying Service:
 
-Service and Harness UI use the same Harness for tools, Skills, memory, and subagents. You can also embed Harness in your own process.
+- **In your application:** [Embed Harness](docs/a13n-harness/getting-started.md) in your Python code. Your application manages execution and storage.
+- **On your machine:** Use [Harness UI](docs/a13n-harness-ui/index.md) to work with agents in a terminal or browser.
 
-Harness scored 58.06% on 62 Terminal-Bench 4.0 tasks. Published Codex results were 58.77% with the same model and reasoning effort. See the [methodology](https://github.com/converge-ai-labs/agent-foundation/discussions/1015) and our [FrontierHarness evaluation](https://github.com/converge-ai-labs/agent-foundation/discussions/1064).
+**Benchmarks:** Harness scored **58.06%** on 62 Terminal-Bench 4.0 tasks, compared with **58.77%** in published Codex results using the same model and reasoning effort. See the [methodology](https://github.com/converge-ai-labs/agent-foundation/discussions/1015) and [FrontierHarness evaluation](https://github.com/converge-ai-labs/agent-foundation/discussions/1064).
 
 ## Documentation
 
-- [Service](docs/a13n-service/index.md): integrate managed agents into your application.
-- [Harness](docs/a13n-harness/getting-started.md): embed agent execution in your process.
-- [Harness UI](docs/a13n-harness-ui/index.md): work with agents in a terminal or browser.
+- [Service documentation](docs/a13n-service/index.md)
+- [HTTP API and application integration](docs/a13n-service/connect-application.md)
+- [Deployment and operations](docs/a13n-service/operations.md)
 - [Examples](examples/README.md)
 
 These guides track `main`. For an installed release, use its release notes and package metadata.
