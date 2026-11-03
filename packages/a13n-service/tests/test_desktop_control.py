@@ -330,6 +330,67 @@ async def test_normal_expiry_has_no_failure_while_returning_or_after_cleanup(ser
     assert current.control == "automation" and current.failure is None
 
 
+@pytest.mark.parametrize("phase", ["draining", "human"])
+@pytest.mark.parametrize("outcome", ["lease_expired", "grant_failed", "viewer_expired", "controller_lost"])
+async def test_expiry_during_grant_distinguishes_normal_end_from_failure(service, desktop, monkeypatch, phase, outcome):
+    from unittest.mock import AsyncMock
+
+    _, environment_id, actor, calls, grants, _ = desktop
+    with monkeypatch.context() as patch:
+        if phase == "draining":
+            patch.setattr(control, "reconcile", AsyncMock())
+        initial = await begin(service, desktop)
+    async with transaction(service.runtime.storage) as session:
+        current = await now(session)
+        row = await session.get_one(DesktopControlRow, initial.id)
+        row.expires_at = current + timedelta(seconds=5 if outcome in {"lease_expired", "grant_failed"} else 300)
+        row.due_at = None
+    connection = access.connection
+
+    async def clock(session):
+        return current
+
+    @asynccontextmanager
+    async def delayed_connection(runtime, selected, operation_id):
+        async with connection(runtime, selected, operation_id) as send:
+
+            async def delayed_send(request):
+                nonlocal current
+                reply = await send(request)
+                if isinstance(request, wire.Grant):
+                    current += timedelta(seconds=6)
+                    if outcome == "grant_failed":
+                        raise TimeoutError("Grant response lost across lease expiry")
+                    if outcome == "viewer_expired":
+                        return reply.model_copy(update={"remaining_seconds": 1})
+                return reply
+
+            yield delayed_send
+
+    expected = {
+        "lease_expired": None,
+        "grant_failed": "desktop_grant_failed",
+        "viewer_expired": "desktop_control_unavailable",
+        "controller_lost": "desktop_control_unavailable",
+    }[outcome]
+    with monkeypatch.context() as patch:
+        patch.setattr(control, "now", clock)
+        patch.setattr(access, "connection", delayed_connection)
+        if outcome == "controller_lost":
+            patch.setattr(control, "controller_allowed", AsyncMock(side_effect=[True, True, False]))
+        await control.reconcile(service.runtime, initial.id)
+        pending = await control.get(service.runtime, actor, service.tenant.workspace_id, environment_id)
+        assert pending.control == "returning" and pending.failure == expected
+        async with transaction(service.runtime.storage) as session:
+            row = await session.get_one(DesktopControlRow, initial.id)
+            assert row.grant_dispatched and row.viewer is None and row.claim_id is None
+        await control.reconcile(service.runtime, initial.id)
+    recovered = await control.get(service.runtime, actor, service.tenant.workspace_id, environment_id)
+    assert recovered.control == "automation" and recovered.failure == expected
+    assert all(grant.state == "revoked" for grant in grants.values())
+    assert isinstance(calls[-1], wire.Settle)
+
+
 async def test_control_renewal_and_verified_return(service, desktop):
     _, environment_id, actor, calls, grants, _ = desktop
     human = await begin(service, desktop)

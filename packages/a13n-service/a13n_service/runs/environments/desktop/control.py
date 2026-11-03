@@ -374,11 +374,12 @@ async def reconcile(runtime: Runtime, control_id: str) -> None:
             return
         row.claim_id = row.claim_until = None
         if phase in {"draining", "human"}:
+            if failure is None and (row.expires_at is None or row.expires_at <= current):
+                await return_control(session, runtime, row)
+                return
             if failure is None and (
                 granted is None
                 or granted.expires_at <= current
-                or row.expires_at is None
-                or row.expires_at <= current
                 or not await controller_allowed(session, runtime, environment, row)
             ):
                 failure = "desktop_control_unavailable"
