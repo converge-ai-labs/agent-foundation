@@ -3,7 +3,7 @@ import { SettingsSection } from "./settings";
 import { useContext, type ReactNode, type FocusEventHandler } from "react";
 import { Button, FormField, Input } from "a13n-ui";
 import { WarningCircleIcon } from "@phosphor-icons/react";
-import { isConnectionError } from "../transport/client";
+import { isConnectionError, NetworkError } from "../transport/client";
 import { ConnectionNoticeContext } from "./connection";
 import styles from "./workbench.module.css";
 
@@ -66,7 +66,14 @@ export function ErrorNotice({
       <div className={styles.errorMessage}>
         <WarningCircleIcon size={inline ? 14 : 18} aria-hidden="true" />
         <span>
-          {message ?? (error instanceof Error ? error.message : String(error))}
+          {message ??
+            (error instanceof NetworkError
+              ? t(
+                  "Unable to reach the server. Check your connection and try again.",
+                )
+              : error instanceof Error
+                ? error.message
+                : String(error))}
         </span>
       </div>
       {retry && (

@@ -124,7 +124,7 @@ const surfaces = [
   "shell/sidebar.tsx",
   "shell/workbench.tsx",
   "shell/ui.tsx",
-
+  "sharing.tsx",
   "shell/startup.tsx",
   "setup/wizard.tsx",
   "setup/setup.tsx",
