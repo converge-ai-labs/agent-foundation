@@ -345,12 +345,11 @@ export function AgentEditor({
                 />
               </Section>
               <Section
-                title={t("Tool discovery")}
-                description={t("Choose how the agent finds tools.")}
+                title={t("Tool availability")}
+                description={t("Choose how the model gets and uses tools.")}
               >
                 <ToolSearchSection
                   draft={draft}
-                  choices={choices}
                   readOnly={configurationReadonly}
                   mark={mark("toolSearch")}
                   error={toolSearchValidation}

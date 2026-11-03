@@ -35,8 +35,8 @@ MODEL_APIS = MappingProxyType(
         "openai.responses": ModelApi(
             "openai.responses",
             "OpenAI Responses",
-            "pydantic_ai.models.openai",
-            "OpenAIResponsesModel",
+            "a13n_harness.models.responses",
+            "ResponsesModel",
             "pydantic_ai.models.openai",
             "OpenAIResponsesModelSettings",
         ),

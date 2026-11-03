@@ -398,3 +398,26 @@ it("remaps grouped membership together with its selected connection", () => {
     "con_source",
   ]);
 });
+
+it("remaps automatic discovery exclusions on connection replacement", () => {
+  const config = {
+    model: "test",
+    connection_tools: [{ connection_id: "con_source" }],
+    tool_search: {
+      automatic: {
+        exclude_connections: ["con_source"],
+        exclude_platform: true,
+      },
+    },
+  };
+  const dependency = agentDependencies(config).find(
+    (item) => item.kind === "connection",
+  )!;
+  expect(dependency.replace("con_target").tool_search?.automatic).toEqual({
+    exclude_connections: ["con_target"],
+    exclude_platform: true,
+  });
+  expect(config.tool_search.automatic.exclude_connections).toEqual([
+    "con_source",
+  ]);
+});

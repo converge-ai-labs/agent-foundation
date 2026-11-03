@@ -8,7 +8,7 @@ members that would let settings escape what the model and its provider resource 
 import json
 from collections.abc import Mapping, Sequence
 from functools import cache
-from typing import Annotated, Any, get_type_hints
+from typing import Annotated, Any, Literal, get_type_hints
 
 from a13n_harness.providers.model.apis import MODEL_APIS
 from a13n_harness.providers.model.definition import ModelProviderDefinition
@@ -88,6 +88,8 @@ _BODY_RESERVED = {
     "text",
     "stream",
     "stream_options",
+    "stream_id",
+    "type",
     "conversation",
     "previous_response_id",
     "background",
@@ -171,6 +173,10 @@ def settings_schema(model_api: str) -> dict[str, JsonValue]:
         for name, hint in get_type_hints(native, localns=_TYPE_CHECKING_ONLY).items()
         if name not in _EXCLUDED
     }
+    if model_api == "openai.responses":
+        fields["openai_previous_response_id"] = (Literal["auto"], None)
+    else:
+        fields.pop("openai_transport", None)
     fields["extra_headers"] = (ExtraHeaders, None)
     if model_api in _RAW_BODY_APIS:
         fields["extra_body"] = (JsonSettings, None)

@@ -542,6 +542,46 @@
       "title": "AssetPart",
       "type": "object"
     },
+    "AutomaticToolSearch": {
+      "additionalProperties": false,
+      "description": "Group Service-owned sources individually, following the agent's selections.",
+      "properties": {
+        "capabilities": {
+          "default": [
+            "browser",
+            "computer"
+          ],
+          "items": {
+            "$ref": "#/$defs/BuiltinToolsetKey"
+          },
+          "title": "Capabilities",
+          "type": "array"
+        },
+        "connections": {
+          "default": true,
+          "title": "Connections",
+          "type": "boolean"
+        },
+        "exclude_connections": {
+          "default": [],
+          "items": {
+            "maxLength": 41,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+            "type": "string"
+          },
+          "maxItems": 128,
+          "title": "Exclude Connections",
+          "type": "array"
+        },
+        "exclude_platform": {
+          "default": false,
+          "title": "Exclude Platform",
+          "type": "boolean"
+        }
+      },
+      "title": "AutomaticToolSearch",
+      "type": "object"
+    },
     "BrowserBinding": {
       "additionalProperties": false,
       "properties": {
@@ -578,6 +618,18 @@
     },
     "BuiltinSkillName": {
       "const": "platform-operations",
+      "type": "string"
+    },
+    "BuiltinToolsetKey": {
+      "enum": [
+        "files",
+        "shell",
+        "computer",
+        "browser",
+        "web",
+        "memory",
+        "assets"
+      ],
       "type": "string"
     },
     "CallResult": {
@@ -1153,7 +1205,8 @@
             "message",
             "child_result",
             "tool_result",
-            "browser_handback"
+            "browser_handback",
+            "desktop_handback"
           ],
           "title": "Kind",
           "type": "string"
@@ -1574,6 +1627,37 @@
         "run_id"
       ],
       "title": "Gap",
+      "type": "object"
+    },
+    "HistoricalDesktopPending": {
+      "additionalProperties": false,
+      "description": "Read-only projection of sealed desktop suspensions predating Computer-scoped control.",
+      "properties": {
+        "approvals": {
+          "items": {
+            "$ref": "#/$defs/PendingCall"
+          },
+          "title": "Approvals",
+          "type": "array"
+        },
+        "calls": {
+          "items": {
+            "$ref": "#/$defs/PendingCall"
+          },
+          "title": "Calls",
+          "type": "array"
+        },
+        "desktop_control_id": {
+          "title": "Desktop Control Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "approvals",
+        "calls",
+        "desktop_control_id"
+      ],
+      "title": "HistoricalDesktopPending",
       "type": "object"
     },
     "InitialRun": {
@@ -2518,18 +2602,6 @@
           },
           "title": "Calls",
           "type": "array"
-        },
-        "desktop_control_id": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Desktop Control Id"
         }
       },
       "required": [
@@ -3111,9 +3183,13 @@
               "$ref": "#/$defs/Pending"
             },
             {
+              "$ref": "#/$defs/HistoricalDesktopPending"
+            },
+            {
               "type": "null"
             }
-          ]
+          ],
+          "title": "Pending"
         },
         "principal_id": {
           "title": "Principal Id",
@@ -3573,6 +3649,13 @@
         },
         "thread": {
           "$ref": "#/$defs/ThreadView"
+        },
+        "unavailable": {
+          "items": {
+            "$ref": "#/$defs/UnavailableConfiguration"
+          },
+          "title": "Unavailable",
+          "type": "array"
         }
       },
       "required": [
@@ -3882,6 +3965,17 @@
       "additionalProperties": false,
       "description": "Presentation of already-selected sources, composed by Harness once per agent.",
       "properties": {
+        "automatic": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AutomaticToolSearch"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "config": {
           "$ref": "#/$defs/ToolSearchConfig"
         },
@@ -3952,11 +4046,7 @@
         "capabilities": {
           "default": [],
           "items": {
-            "enum": [
-              "environment",
-              "web"
-            ],
-            "type": "string"
+            "$ref": "#/$defs/BuiltinToolsetKey"
           },
           "title": "Capabilities",
           "type": "array"
@@ -4026,16 +4116,7 @@
     "ToolsetKey": {
       "anyOf": [
         {
-          "enum": [
-            "files",
-            "shell",
-            "computer",
-            "browser",
-            "web",
-            "memory",
-            "assets"
-          ],
-          "type": "string"
+          "$ref": "#/$defs/BuiltinToolsetKey"
         },
         {
           "$ref": "#/$defs/PlatformGroup"
@@ -4079,9 +4160,35 @@
         "child_result",
         "tool_result",
         "browser_handback",
+        "desktop_handback",
         "spawned"
       ],
       "type": "string"
+    },
+    "UnavailableConfiguration": {
+      "description": "A collection member whose stored configuration requires operator repair.",
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "title": "Kind",
+          "type": "string"
+        },
+        "reason": {
+          "const": "configuration_unavailable",
+          "default": "configuration_unavailable",
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "id"
+      ],
+      "title": "UnavailableConfiguration",
+      "type": "object"
     },
     "UrlPart": {
       "additionalProperties": false,

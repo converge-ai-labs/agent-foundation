@@ -7,6 +7,8 @@ import {
   useState,
 } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
+import { useTranslation } from "../i18n";
+import { composerMessage } from "./composer-messages";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Folder } from "@phosphor-icons/react";
 import { Button, SearchPicker } from "a13n-ui";
@@ -153,6 +155,7 @@ function NewConversation({
   unauthorized: () => void;
 }) {
   const { threadId } = draft;
+  const { t } = useTranslation();
   const active = useRef(true);
   const reviewController = useRef<AbortController | null>(null);
   useEffect(() => {
@@ -525,7 +528,9 @@ function NewConversation({
               />
             )}
           />
-          {drafts.error && <p role="alert">{drafts.error}</p>}
+          {drafts.error && (
+            <p role="alert">{composerMessage(drafts.error, t)}</p>
+          )}
           {attachmentSelections(composerDraft.doc).some(
             ({ key, id }) =>
               !isReadyAttachment(id) && !composerDraft.uploads.has(key),

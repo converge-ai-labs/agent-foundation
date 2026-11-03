@@ -7,8 +7,8 @@ from a13n_harness.environment.models import EnvironmentError
 
 from a13n_service.infra.db import short_session
 from a13n_service.infra.errors import ServiceError, conflict
-from a13n_service.runs.desktop_assistance.service import provider_target
 from a13n_service.runs.environments.adapters import close, execution_connector
+from a13n_service.runs.environments.desktop.access import target as provider_target
 from a13n_service.runs.environments.service import _find
 from a13n_service.runs.runtime import Runtime
 from a13n_service.tenancy.access import workspace_scope
@@ -19,7 +19,7 @@ async def capture(runtime: Runtime, actor: Principal, workspace_id: str, identit
     async with short_session(runtime.storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "run")
         row = await _find(session, scope, identity)
-        target = await provider_target(session, runtime, actor, row)
+        target = await provider_target(session, runtime, row, actor=actor)
         if not row.provider_identity or row.provider_identity.get("type") not in {
             "e2b",
             "modal",
@@ -39,7 +39,7 @@ async def capture(runtime: Runtime, actor: Principal, workspace_id: str, identit
             screenshot = await computer.observe()
             async with short_session(runtime.storage) as session:
                 scope = await workspace_scope(session, actor, workspace_id, "run")
-                current = await provider_target(session, runtime, actor, await _find(session, scope, identity))
+                current = await provider_target(session, runtime, await _find(session, scope, identity), actor=actor)
                 if current != target:
                     raise conflict("environment", identity, "desktop_target_changed")
             return screenshot

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef } from "react";
+import { useTranslation } from "../i18n";
 import {
   drawSelection,
   EditorView,
@@ -52,6 +53,9 @@ export function ComposerEditor({
   loadSkills?: LoadSkills;
   skillContext?: string;
 }) {
+  const { t } = useTranslation();
+  const translate = useRef(t);
+  translate.current = t;
   const host = useRef<HTMLDivElement>(null);
   const attributes = useRef(new Compartment());
   const skills = useRef(new Compartment());
@@ -59,21 +63,27 @@ export function ComposerEditor({
   load.current = loadSkills;
   const currentView = useRef<EditorView | null>(null);
   const description = local
-    ? "Private until you send. Drafts stay in this browser when storage is available. Files upload on Send; reattach them after a reload if needed. Enter to send, Shift+Enter for a new line."
-    : "Shared draft. Lost if the server restarts. Enter to send, Shift+Enter for a new line.";
+    ? t(
+        "Private until you send. Drafts stay in this browser when storage is available. Files upload on Send; reattach them after a reload if needed. Enter to send, Shift+Enter for a new line.",
+      )
+    : t(
+        "Shared draft. Lost if the server restarts. Enter to send, Shift+Enter for a new line.",
+      );
   const contentAttributes = useMemo(
     () => [
+      placeholder(t("Ask anything, or describe a task…")),
       EditorView.contentAttributes.of({
-        "aria-label": local ? "Message" : "Shared prompt",
+        "aria-label": local ? t("Message") : t("Shared prompt"),
         "data-composer-editor": "",
         "aria-multiline": "true",
         "aria-description": description,
         role: "textbox",
       }),
     ],
-    [description, local],
+    [description, local, t],
   );
-  const initialAttributes = useRef(contentAttributes);
+  const currentAttributes = useRef(contentAttributes);
+  currentAttributes.current = contentAttributes;
   const send = useRef(submit);
   const report = useRef(presence);
   const person = useRef(profile);
@@ -165,9 +175,15 @@ export function ComposerEditor({
           blur: clearCursor,
         }),
         ...(attachments
-          ? [composerAttachments(draft, () => attachmentContext.current!)]
+          ? [
+              composerAttachments(
+                draft,
+                () => attachmentContext.current!,
+                () => translate.current,
+              ),
+            ]
           : []),
-        attributes.current.of(initialAttributes.current),
+        attributes.current.of(currentAttributes.current),
         skills.current.of([]),
         keymap.of([
           ...["Enter", "Mod-Enter"].map((key) => ({
@@ -189,7 +205,6 @@ export function ComposerEditor({
           ...composerWordKeymap,
           ...defaultKeymap,
         ]),
-        placeholder("Ask anything, or describe a task…"),
         yCollab(doc.getText("text"), awareness, { undoManager: draft.undo }),
         EditorView.theme({
           "&": {
@@ -289,7 +304,10 @@ export function ComposerEditor({
   }, [autoFocus, draft, doc, editor]);
   useEffect(() => {
     currentView.current?.dispatch({
-      effects: attributes.current.reconfigure(contentAttributes),
+      effects: [
+        attributes.current.reconfigure(contentAttributes),
+        refreshAttachments.of(null),
+      ],
     });
   }, [contentAttributes]);
   useEffect(() => {

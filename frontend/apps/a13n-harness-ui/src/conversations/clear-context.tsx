@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button, ModalFrame } from "a13n-ui";
@@ -23,6 +24,7 @@ export function ClearContext({
   onCleared: () => void;
   reconcile: () => void;
 }) {
+  const { t } = useTranslation();
   const { client } = useTransport();
   const queries = useQueryClient();
   // Confirm exactly the context the user opened, not a newer shared head.
@@ -56,8 +58,8 @@ export function ClearContext({
         variant="ghost"
         size="sm"
         className={styles.optionAction}
-        aria-label="Clear context"
-        title="Clear context · keep chat history and your draft"
+        aria-label={t("Clear context")}
+        title={t("Clear context · keep chat history and your draft")}
         disabled={disabled || !continuationId || clear.isPending}
         loading={clear.isPending}
         onClick={() => {
@@ -66,7 +68,7 @@ export function ClearContext({
         }}
       >
         <ArrowCounterClockwise aria-hidden />
-        <span>Clear context</span>
+        <span>{t("Clear context")}</span>
         <CaretRight aria-hidden size={14} />
       </Button>
       <ModalFrame
@@ -74,9 +76,11 @@ export function ClearContext({
         onOpenChange={(open) => {
           if (!open && !clear.isPending) setTarget(null);
         }}
-        title="Clear chat context?"
-        description="Reset the agent's context, notes, tasks and pending requests. Chat history, files, settings and your draft are kept."
-        closeLabel="Close confirmation"
+        title={t("Clear chat context?")}
+        description={t(
+          "Reset the agent's context, notes, tasks and pending requests. Chat history, files, settings and your draft are kept.",
+        )}
+        closeLabel={t("Close confirmation")}
         footer={
           <>
             <Button
@@ -84,7 +88,7 @@ export function ClearContext({
               disabled={clear.isPending}
               onClick={() => setTarget(null)}
             >
-              Cancel
+              {t("Cancel")}
             </Button>
             <Button
               variant="destructive"
@@ -92,7 +96,7 @@ export function ClearContext({
               disabled={disabled || stale || clear.isPending || !target}
               onClick={() => target && clear.mutate(target)}
             >
-              Clear context
+              {t("Clear context")}
             </Button>
           </>
         }
@@ -100,14 +104,16 @@ export function ClearContext({
         <ErrorNotice error={clear.error} />
         {clear.error && !(clear.error instanceof ApiError) && (
           <p role="alert">
-            Couldn't confirm the reset. The context may already be cleared.
-            Refresh the chat before trying again.
+            {t(
+              "Couldn't confirm the reset. The context may already be cleared. Refresh the chat before trying again.",
+            )}
           </p>
         )}
         {stale && (
           <p role="alert">
-            The chat changed. Close this dialog and review it before clearing
-            context.
+            {t(
+              "The chat changed. Close this dialog and review it before clearing context.",
+            )}
           </p>
         )}
       </ModalFrame>

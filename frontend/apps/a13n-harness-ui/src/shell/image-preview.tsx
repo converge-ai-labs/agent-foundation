@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { useState } from "react";
 import { useTranslation } from "../i18n";
 import { Button, Dialog, DialogPopup, DialogTitle } from "a13n-ui";
@@ -24,6 +25,7 @@ export function ImagePreview({
   error?: unknown;
   retry?: () => void;
 }) {
+  const { t } = useTranslation();
   const [actualSize, setActualSize] = useState(false);
   const [failedSource, setFailedSource] = useState<string>();
   const { t } = useTranslation();

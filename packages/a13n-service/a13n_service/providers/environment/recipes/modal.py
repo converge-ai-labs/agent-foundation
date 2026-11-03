@@ -27,7 +27,7 @@ class ModalRecipe(ModalEnvironmentConfiguration):
 
     desktop_assistance: bool = Field(
         default=False,
-        title="Desktop assistance and control",
+        title="Desktop viewing and control",
         description="Enable human desktop control. The automatic image includes the required supervisor.",
     )
 
@@ -38,7 +38,7 @@ class ModalRecipe(ModalEnvironmentConfiguration):
                 "Automatic Modal images require desktop=True; headless environments require a custom image"
             )
         if self.desktop_assistance and not self.desktop:
-            raise ValueError("Desktop assistance requires desktop=True")
+            raise ValueError("Desktop access requires desktop=True")
         return self
 
     @property

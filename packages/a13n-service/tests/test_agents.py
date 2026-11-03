@@ -88,6 +88,10 @@ def test_the_toolset_catalogue_names_each_tool_once() -> None:
     catalogue = toolsets.catalog(frozenset({"search"}))
     tools = [tool for toolset in catalogue.items for tool in toolset.tools]
 
+    assert set(catalogue.discovery_defaults.capabilities) == {"computer", "browser"}
+    assert catalogue.discovery_defaults.connections
+    assert not catalogue.discovery_defaults.exclude_platform
+    assert catalogue.discovery_defaults == config(tool_search={"automatic": {}}).tool_search.automatic
     assert len({tool.execution_id for tool in tools}) == len({tool.model_name for tool in tools}) == len(tools)
     supported = {tool.execution_id: tool.deployment_supported for tool in tools}
     assert supported["web.search"] and not supported["web.scrape"] and supported["web.fetch"]
@@ -312,7 +316,7 @@ def resolved(agent_id: str, revision_id: str, selected: AgentConfig, **fields: A
         pricing=None,
         provider=cast(Any, None),
     )
-    values: dict[str, Any] = {"reviewer": None, "media": {}, "connection_types": {}, "subagents": {}} | fields
+    values: dict[str, Any] = {"reviewer": None, "media": {}, "connections": {}, "subagents": {}} | fields
     return ResolvedAgent(agent_id=agent_id, revision_id=revision_id, config=selected, model=model, **values)
 
 
@@ -510,7 +514,12 @@ async def test_service_connection_permission_overrides_native_approval(mode: str
 
     source = Capability(toolsets=[FunctionToolset([Tool(execute, requires_approval=True)], id=GITHUB)])
     selected = config(toolsets={}, connection_tools=[{"connection_id": GITHUB, "permission": mode}])
-    root = resolved(new_object_id("ap"), new_object_id("apr"), selected, connection_types={GITHUB: "github"})
+    root = resolved(
+        new_object_id("ap"),
+        new_object_id("apr"),
+        selected,
+        connections={GITHUB: toolsets.ConnectionInfo(name="GitHub", type="github")},
+    )
     executable = build(root, capabilities=lambda _: [source], plugins=PLUGINS, instrumentation=None)
 
     async def model_resolver(context, model_id):
@@ -1184,6 +1193,21 @@ def test_computer_tools_require_explicit_enablement_and_preserve_per_tool_choice
     assert "computer_zoom" in projected.computer_tools
     assert "computer_click" not in projected.computer_tools
     assert selected.toolsets["computer"].tools["type_text"].permission == "ask"
+    assert "computer_notify" not in projected.computer_tools  # Service owns this tool, not the provider.
+    assert toolsets.enabled_tool(selected.toolsets, "computer", "notify") is not None
+    disabled = config(toolsets={"computer": {"enabled": True, "tools": {"notify": {"enabled": False}}}})
+    assert toolsets.enabled_tool(disabled.toolsets, "computer", "notify") is None
+    denied = config(toolsets={"computer": {"enabled": True, "tools": {"notify": {"permission": "deny"}}}})
+    notify = next(
+        tool
+        for group in toolsets.catalog(frozenset()).items
+        if group.key == "computer"
+        for tool in group.tools
+        if tool.key == "notify"
+    )
+    assert notify.execution_id == toolsets.COMPUTER_NOTIFY_TOOL_ID
+    assert notify.model_name == "computer_notify"
+    assert denied.toolsets["computer"].tools["notify"].permission == "deny"
 
 
 def test_computer_coordinate_space_is_explicit_validated_and_preserved_in_overrides():

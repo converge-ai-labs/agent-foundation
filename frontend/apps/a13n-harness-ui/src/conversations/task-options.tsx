@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import {
   createContext,
   useCallback,
@@ -46,6 +47,7 @@ export function TaskOptions({
   environment?: ReactNode;
   context?: ReactNode;
 }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const onDialogOpenChange = useCallback((next: boolean) => {
@@ -54,31 +56,35 @@ export function TaskOptions({
   }, []);
   const content = (
     <>
-      <PopoverTitle className={styles.srOnly}>Chat options</PopoverTitle>
+      <PopoverTitle className={styles.srOnly}>{t("Chat options")}</PopoverTitle>
       <div className={styles.optionList}>
         <label
           className={styles.optionRow}
-          aria-label="Goal"
-          title="Keep working until the goal is done or the follow-up limit is reached."
+          aria-label={t("Goal")}
+          title={t(
+            "Keep working until the goal is done or the follow-up limit is reached.",
+          )}
         >
           <Target aria-hidden />
-          <span>Goal</span>
+          <span>{t("Goal")}</span>
           {goal}
         </label>
         {coordinator && (
           <label
             className={styles.optionRow}
-            aria-label="Coordinate agents"
-            title="Plan and delegate work to agents. Can't be turned off after sending."
+            aria-label={t("Coordinate agents")}
+            title={t(
+              "Plan and delegate work to agents. Can't be turned off after sending.",
+            )}
           >
             <TreeStructure aria-hidden />
-            <span>Coordinate agents</span>
+            <span>{t("Coordinate agents")}</span>
             {coordinator}
           </label>
         )}
         {coordinator && coordinatorEnabled && (
           <p className={styles.optionHint}>
-            Agent coordination stays on after sending.
+            {t("Agent coordination stays on after sending.")}
           </p>
         )}
         {(environment || context) && (
@@ -101,8 +107,8 @@ export function TaskOptions({
     >
       <PopoverTrigger
         render={trigger}
-        aria-label="Chat options"
-        title="Chat options"
+        aria-label={t("Chat options")}
+        title={t("Chat options")}
       >
         <SlidersHorizontal />
       </PopoverTrigger>

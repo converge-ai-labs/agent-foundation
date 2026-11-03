@@ -74,7 +74,7 @@ async def occurrence(
         name=row.name,
         schedule=rule(row),
         max_lateness_seconds=row.max_lateness_seconds,
-        invocation=stored.read(ScheduleInvocation, row.invocation),
+        invocation=stored.read(ScheduleInvocation, row.invocation, kind="schedule", id=row.id),
         timezone_data_version=TIMEZONE_DATA_VERSION,
         utc_offset_seconds=int(offset.total_seconds()) if offset is not None else None,
     )

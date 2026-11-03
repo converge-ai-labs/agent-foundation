@@ -58,6 +58,11 @@ class Handle(BaseModel):
     daytona_desktop_snapshot: str | None = None
     vercel_desktop_snapshot: str | None = None
 
+    @property
+    def desktop_enabled(self) -> bool:
+        """The instance's frozen opt-in for human desktop access."""
+        return bool(self.recipe.get("desktop") and self.recipe.get("desktop_assistance"))
+
 
 class EnvironmentFailure(BaseModel):
     """The last error of the outstanding operation or, on a ready instance, of its last renewal.
@@ -168,6 +173,9 @@ class MountUpdate(BaseModel):
 
 class MountView(BaseModel):
     model_config = ConfigDict(from_attributes=True)
+    desktop_enabled: bool = Field(
+        description="Frozen instance configuration enables human desktop access; not authorization or a health check."
+    )
     name: str
     environment_id: str
     working_directory: str | None

@@ -4,6 +4,7 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
 import { createClient, type Client } from "../../service-client";
+import type { Schema } from "../../shared/api";
 import { overriddenFields, RunAgentDialog } from "./run-agent";
 import { fixtureRun, fixtureRunAgent } from "./transcript/fixture";
 
@@ -37,6 +38,17 @@ beforeEach(() => {
     auth: { type: "session" },
     fetch: async (input, init) => {
       const url = new URL(new Request(input, init).url);
+      if (url.pathname.endsWith("/toolsets"))
+        return Response.json({
+          items: [],
+          discovery_sources: [],
+          discovery_defaults: {
+            capabilities: ["computer", "browser"],
+            connections: true,
+            exclude_connections: [],
+            exclude_platform: false,
+          },
+        } satisfies Schema["ToolsetCatalog"]);
       // The Service applies the Run's overrides; the Console shows its result.
       if (url.pathname.endsWith("/runs/run_2/agent"))
         return Response.json({

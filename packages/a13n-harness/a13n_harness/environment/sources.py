@@ -7,6 +7,7 @@ from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
+from a13n_harness.environment.computer import ComputerCall
 from a13n_harness.environment.execution import EnvironmentConnector
 from a13n_harness.environment.models import (
     FILE_EXECUTION_ACTIONS,
@@ -63,6 +64,7 @@ class EnvironmentMount:
     # Host admission spans the native operation, including failure/cancellation.
     # It may narrow authority, never broaden the frozen permission ceiling.
     operation_guard: Callable[[EnvironmentAction], AbstractAsyncContextManager[None]] | None = None
+    computer_guard: Callable[[ComputerCall], AbstractAsyncContextManager[None]] | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.source, EnvironmentSource):

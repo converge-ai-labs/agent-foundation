@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass, replace
+from types import MappingProxyType
 from typing import Annotated, Any, Literal
 
 from pydantic import Field
@@ -25,6 +26,7 @@ from pydantic_ai.messages import InstructionPart
 from pydantic_ai.tools import ToolDenied
 from pydantic_ai.toolsets import AbstractToolset, ToolsetTool, WrapperToolset
 
+from a13n_harness._tool_execution import TOOL_EXECUTION_METADATA_KEY
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import EnvironmentActivationError
 from a13n_harness.tools._deferred_dispatch import FORWARDED_TOOL_KEY, ToolCallForwarder, forward_tool_call
@@ -61,32 +63,53 @@ class _GroupTool(ToolsetTool[AgentContext]):
     codeact_eligible: bool
 
 
+@dataclass(frozen=True)
+class _ToolGroup:
+    name: str
+    description: str
+
+    def __post_init__(self) -> None:
+        validate_group(self.name, self.description)
+
+
 @dataclass
 class _GroupedToolset(WrapperToolset[AgentContext]):
-    """Assign an arbitrary local Toolset to a flat ToolSearch group.
+    """Assign local tools to discovery groups in one pass.
 
     Compose with ToolSearchCapability. Native lifecycle and dispatch stay on the
     wrapped Toolset; only names and model-facing discovery are changed.
     """
 
-    group: str
-    group_description: str
+    # None assigns the whole source; named entries select individual local tools.
+    groups: Mapping[str | None, _ToolGroup]
     source_label: str
 
     @property
     def label(self) -> str:
-        return f"ToolSearch group {self.group!r} source {self.source_label!r}"
+        return (
+            f"ToolSearch groups {sorted({group.name for group in self.groups.values()})!r} source {self.source_label!r}"
+        )
 
     @property
     def tool_name_conflict_hint(self) -> str:
         return "Give the source tools distinct names or select separate ToolSearch groups."
 
     def __post_init__(self) -> None:
-        validate_group(self.group, self.group_description)
+        self.groups = MappingProxyType(dict(self.groups))
 
     async def get_tools(self, ctx: RunContext[AgentContext]) -> dict[str, ToolsetTool[AgentContext]]:
         result: dict[str, ToolsetTool[AgentContext]] = {}
         for name, tool in (await self.wrapped.get_tools(ctx)).items():
+            group = self.groups.get(name, self.groups.get(None))
+            canonical = grouped_tool_name(group.name, name) if group is not None else name
+            if canonical in result:
+                raise UserError(
+                    f"ToolSearch source {self.source_label!r} has conflicting tool name {canonical!r}. "
+                    "Rename the source tool or choose a different group name."
+                )
+            if group is None:
+                result[name] = tool
+                continue
             from a13n_harness.tools.identity import identify_tool
 
             tool = identify_tool(tool)
@@ -94,7 +117,6 @@ class _GroupedToolset(WrapperToolset[AgentContext]):
             validate_proxy_target(definition)
             if proxy_membership(definition) is not None:
                 raise UserError(f"Tool {name!r} already belongs to a ToolSearch group; wrap each source only once.")
-            canonical = grouped_tool_name(self.group, name)
             metadata = dict(definition.metadata or {})
             if definition.kind == "external":
                 from a13n_harness.tools.client import CLIENT_TOOL_MARKER_KEY
@@ -110,7 +132,7 @@ class _GroupedToolset(WrapperToolset[AgentContext]):
                     name=canonical,
                     metadata={
                         **metadata,
-                        PROXY_MEMBERSHIP_KEY: ToolSearchMembership(self.group, self.group_description, name),
+                        PROXY_MEMBERSHIP_KEY: ToolSearchMembership(group.name, group.description, name),
                     },
                 ),
                 max_retries=tool.max_retries,
@@ -126,14 +148,19 @@ class _GroupedToolset(WrapperToolset[AgentContext]):
     async def get_instructions(
         self, ctx: RunContext[AgentContext]
     ) -> str | InstructionPart | Sequence[str | InstructionPart] | None:
+        if None not in self.groups and any(
+            name not in self.groups and proxy_membership(tool.tool_def) is None
+            for name, tool in (await self.wrapped.get_tools(ctx)).items()
+        ):
+            return await self.wrapped.get_instructions(ctx)
         # Proxy source guidance is returned with discovery, not eagerly for every tool.
         return None
 
     async def call_tool(
         self, name: str, tool_args: dict[str, Any], ctx: RunContext[AgentContext], tool: ToolsetTool[AgentContext]
     ) -> Any:
-        if not isinstance(tool, _GroupTool):
-            raise TypeError("_GroupedToolset received a tool it does not own")
+        if not isinstance(tool, _GroupTool) or tool.toolset is not self:
+            return await self.wrapped.call_tool(name, tool_args, ctx, tool)
         source = tool.source_tool
         local_ctx = replace(ctx, tool_name=tool.owner_local_name)
         return await self.wrapped.call_tool(tool.owner_local_name, tool_args, local_ctx, source)
@@ -214,7 +241,11 @@ class ToolSearchSurfaceToolset(WrapperToolset[AgentContext]):
             metadata={PROXY_CONTROL_KEY: "groups"},
         )
         controls = await CodeActPolicyToolset(
-            FunctionToolset([search, describe, call, listing, groups], id="tool-search-controls"),
+            FunctionToolset(
+                [search, describe, call, listing, groups],
+                id="tool-search-controls",
+                metadata={TOOL_EXECUTION_METADATA_KEY: "control"},
+            ),
             CodeActToolPolicy(default=True),
         ).get_tools(ctx)
         # Inventory belongs in tool results, never in cached control definitions.
@@ -387,13 +418,13 @@ class ToolSearchSurfaceToolset(WrapperToolset[AgentContext]):
     ) -> Any:
         tools = active_proxy_tools(ctx)
         name, values = resolve_proxy_call(tools, {"group": group, "tool": tool, "arguments": arguments})
-        manager = ctx.tool_manager
-        assert manager is not None
         if ctx.usage_limits is not None:
             projected = deepcopy(ctx.usage)
             projected.tool_calls += 2  # This outer envelope and one native target call.
             ctx.usage_limits.check_before_tool_call(projected)
         try:
+            # The sequential envelope owns no runtime slot. The target keeps its
+            # own execution policy, including barriers for sequential tools.
             result = await forward_tool_call(ctx, name, values)
         except ToolRetryError as exc:
             # Native target retries remain keyed by the original prepared name.

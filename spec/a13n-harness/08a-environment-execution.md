@@ -161,3 +161,7 @@ Consumers update Python imports and package requirements to the owning distribut
 ## Host Operation Admission
 
 An `EnvironmentMount` may provide an `operation_guard(action)` asynchronous context manager. The coordinator enters it after normal mount, permission and readiness checks and keeps it open across native dispatch, failure and cancellation. Hosts can use this hook for durable mutual exclusion with external operators. The hook never broadens the mount permission ceiling and does not run provider I/O while holding Host storage locks. Provider clients opened outside Harness remain outside this boundary. A missing hook preserves standalone Harness behavior.
+
+`EnvironmentMount.computer_guard(call)` adds typed admission for the Computer channel inside ordinary operation admission. Its `ComputerCall` identifies the action and any pointer observation. The facade supplies the validated typed result before leaving the guard, including unsuccessful results returned normally. Provider errors and cancellation propagate through the context manager. Hosts can reject subsequent calls before dispatch and register successful observations after dispatch. The hook supplies no operation-drain or native-execution recovery lifecycle.
+
+The Computer guard covers observation, description, zoom, clipboard and bounded input. It supplies no shell, file or process exclusion, and does not change Environment execution generation. A Host may enforce target-control episodes and calling-Agent observation/model-decision freshness using this boundary.

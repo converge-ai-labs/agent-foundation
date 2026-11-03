@@ -153,6 +153,13 @@ class ModelRequestStartedPayload(_FirstPartyPayload):
     message_count: int = Field(ge=0)
 
 
+class ModelRequestTransportPayload(_FirstPartyPayload):
+    type: Literal["model_request_transport"] = "model_request_transport"
+    request_id: str = Field(pattern=r"^model-request-[1-9][0-9]*$", max_length=64)
+    request_index: int = Field(ge=0)
+    transport: Literal["http", "websocket"]
+
+
 class ModelRequestCompletedPayload(_FirstPartyPayload):
     type: Literal["model_request_completed"] = "model_request_completed"
     request_id: str = Field(pattern=r"^model-request-[1-9][0-9]*$", max_length=64)
@@ -389,6 +396,7 @@ type FirstPartyEventPayload = (
     | RunStartedPayload
     | ModelRequestStartedPayload
     | ModelRequestCompletedPayload
+    | ModelRequestTransportPayload
     | ModelRequestFailedPayload
     | ContextSnapshotPayload
     | ContextOperationStartedPayload

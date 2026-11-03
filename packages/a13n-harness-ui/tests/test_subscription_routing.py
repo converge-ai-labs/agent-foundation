@@ -195,15 +195,17 @@ async def test_overlapping_operations_keep_stream_client_open(tmp_path, operatio
                 await getattr(model, operation)([], None, PARAMETERS)
             assert instances[-1] is not first
             assert instances[-1].account_id == accounts[1 if change == "account" else 0].id
-            assert not instances[-1].open
+            assert instances[-1].open  # Retained for the Run's next model request.
             assert first.open
             async for _ in response:
                 assert first.open
-        assert not first.open
-    assert all(instance.exits == 1 for instance in instances)
+        assert first.open is (change == "account")
+        assert first.exits == (change == "credentials")
+    assert all(not instance.open and instance.exits == 1 for instance in instances)
 
 
-async def test_cancelled_stream_closes_only_its_request_model(tmp_path):
+@pytest.mark.parametrize("change", ["account", "credentials"])
+async def test_cancelled_stream_closes_only_its_request_model(tmp_path, change):
     from anyio import CancelScope, Event, create_task_group, sleep_forever
 
     catalog, accounts, group = await _accounts(tmp_path)
@@ -253,16 +255,24 @@ async def test_cancelled_stream_closes_only_its_request_model(tmp_path):
             tasks.start_soon(cancelled_request)
             await entered.wait()
             cancelled = instances[-1]
-            await catalog.update(accounts[0].id, enabled=False)
+            if change == "account":
+                await catalog.update(accounts[0].id, enabled=False)
+            else:
+                path = catalog.store(accounts[0]).policy.path
+                value = json.loads(path.read_text())
+                value["tokens"]["refresh_token"] = "rotated-by-other-tui"
+                path.write_text(json.dumps(value))
             async with model.request_stream([], None, PARAMETERS) as response:
                 surviving = instances[-1]
                 scopes[0].cancel()
                 await finished.wait()
-                assert not cancelled.open
+                assert cancelled.open is (change == "account")
+                assert cancelled.exits == (change == "credentials")
                 assert surviving.open
                 async for _ in response:
                     pass
-        assert not surviving.open
+        assert surviving.open
+    assert all(not instance.open for instance in instances)
     assert len(instances) == 3  # Template plus two requests; cancellation never retries.
     assert all(instance.exits == 1 for instance in instances)
 
@@ -311,14 +321,14 @@ async def test_codex_turn_state_survives_request_scopes_and_nested_router_entrie
     try:
         async with SubscriptionGroupModel(group, catalog, SubscriptionUsage(catalog), factory) as model:
             context = RunContext(deps=None, model=model, usage=RunUsage(), run_id="run-test")
-            async with model.request_stream([], None, PARAMETERS, context) as first:
+            async with model.request_stream([], {"openai_transport": "http"}, PARAMETERS, context) as first:
                 async with model:
-                    async with model.request_stream([], None, PARAMETERS, context) as second:
+                    async with model.request_stream([], {"openai_transport": "http"}, PARAMETERS, context) as second:
                         async for _ in second:
                             pass
                 async for _ in first:
                     pass
-            async with model.request_stream([], None, PARAMETERS, context) as third:
+            async with model.request_stream([], {"openai_transport": "http"}, PARAMETERS, context) as third:
                 async for _ in third:
                     pass
         assert headers == [None, "turn-one", "turn-one"]
@@ -466,6 +476,43 @@ async def test_weighted_order_is_sampled_once_and_credentials_reread(tmp_path):
         await model.request([], None, PARAMETERS)
         assert len(built) == count + 1
     assert calls == [accounts[1].id] * 3
+
+
+async def test_idle_credential_generations_close_on_replacement(tmp_path):
+    catalog, accounts, group = await _accounts(tmp_path)
+    instances = []
+
+    class OwnedModel(FunctionModel):
+        def __init__(self):
+            self.open = False
+            self.exits = 0
+            super().__init__(lambda messages, info: ModelResponse(parts=[TextPart("ok")]), model_name="test-model")
+
+        async def __aenter__(self):
+            assert not self.open
+            self.open = True
+            return self
+
+        async def __aexit__(self, *args):
+            self.open = False
+            self.exits += 1
+
+    def factory(account):
+        instance = OwnedModel()
+        instances.append(instance)
+        return instance
+
+    async with SubscriptionGroupModel(group, catalog, SubscriptionUsage(catalog), factory) as model:
+        for revision in range(4):
+            path = catalog.store(accounts[0]).policy.path
+            value = json.loads(path.read_text())
+            value["tokens"]["refresh_token"] = f"rotation-{revision}"
+            path.write_text(json.dumps(value))
+            await model.request([], None, PARAMETERS)
+            assert instances[-1].open
+            assert all(not instance.open and instance.exits == 1 for instance in instances[1:-1])
+            assert sum(instance.open for instance in instances) == 2  # Template and current generation.
+    assert all(not instance.open and instance.exits == 1 for instance in instances)
 
 
 async def test_main_attribution_is_request_scoped_and_sink_errors_never_failover(tmp_path):
@@ -675,11 +722,11 @@ async def test_grok_same_generation_overlap_keeps_owned_client_open(tmp_path, mo
                 assert clients[-1] is shared_client
                 assert not shared_client.is_closed
                 release.set()
-            assert shared_client.is_closed
+            assert not shared_client.is_closed
             await model.request([], None, PARAMETERS)
             assert len(instances) == 2
-            assert clients[-1] is not shared_client
-            assert clients[-1].is_closed
+            assert clients[-1] is shared_client
+            assert not clients[-1].is_closed
     assert len(requests) == 3
     assert all(client.is_closed for client in clients)
 

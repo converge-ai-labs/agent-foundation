@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
+from types import MappingProxyType
 
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import (
@@ -25,7 +26,7 @@ from a13n_harness.tools.tool_search import (
     proxy_membership,
     validate_group,
 )
-from a13n_harness.toolsets.tool_search import ToolSearchSurfaceToolset, _GroupedToolset
+from a13n_harness.toolsets.tool_search import ToolSearchSurfaceToolset, _GroupedToolset, _ToolGroup
 
 TOOL_SEARCH_CAPABILITY_ID = "a13n.tool-search"
 
@@ -67,15 +68,14 @@ class ToolSearchCapability(CombinedCapability[AgentContext]):
             source = group.source
             if isinstance(source, AbstractToolset):
                 source = Capability(toolsets=[source])
-            sources.append(_group_source(source, name, group.description))
+            sources.append(_group_source(source, {None: _ToolGroup(name, group.description)}))
         surface = _ToolSearchSurfaceCapability(config)
         super().__init__([surface, *sources])
 
 
 def _group_source(
     source: AbstractCapability[AgentContext],
-    name: str,
-    description: str,
+    groups: Mapping[str | None, _ToolGroup],
     source_label: str | None = None,
 ) -> AbstractCapability[AgentContext]:
     """Mark native sortable nodes, retaining containers' instruction composition.
@@ -85,13 +85,17 @@ def _group_source(
     The single-child container keeps original types and instance references visible
     to native ordering instead of replacing a leaf's registered identity.
     """
-    validate_group(name, description)
+    group_names = sorted({group.name for group in groups.values()})
 
     def mark(node: AbstractCapability[AgentContext]) -> AbstractCapability[AgentContext]:
         if node.defer_loading:
-            raise ValueError(f"ToolSearch group {name!r} uses deferred source {node.id or type(node).__name__!r}.")
+            raise ValueError(
+                f"ToolSearch groups {group_names!r} use deferred source {node.id or type(node).__name__!r}."
+            )
         return _ToolSearchGroupCapability(
-            CombinedCapability([node]), name, description, source_label or source.id or type(source).__name__
+            CombinedCapability([node]),
+            groups,
+            source_label or source.id or type(source).__name__,
         )
 
     if isinstance(source, CombinedCapability):
@@ -108,9 +112,7 @@ def _group_source(
             if cls is CombinedCapability:
                 break
             if native_methods.intersection(vars(cls)):
-                return _ToolSearchGroupCapability(
-                    source, name, description, source_label or source.id or type(source).__name__
-                )
+                return _ToolSearchGroupCapability(source, groups, source_label or source.id or type(source).__name__)
 
     grouped = source.visit_and_replace(mark)
     assert grouped is not None
@@ -124,6 +126,8 @@ class ToolSearchSelection:
     description: str
     capabilities: tuple[AbstractCapability[AgentContext], ...] = ()
     plugins: tuple[str, ...] = ()
+    # Optional local tool names per explicitly selected Capability ID. Omission selects all its tools.
+    tools: Mapping[str, frozenset[str]] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "capabilities", tuple(self.capabilities))
@@ -132,6 +136,12 @@ class ToolSearchSelection:
             raise TypeError("ToolSearchSelection.capabilities must contain Capability instances")
         if not all(isinstance(plugin, str) and plugin.strip() for plugin in self.plugins):
             raise TypeError("ToolSearchSelection.plugins must contain nonblank plugin IDs")
+        tools = {key: frozenset(names) for key, names in self.tools.items()}
+        if tools.keys() - {source.id for source in self.capabilities}:
+            raise ValueError("ToolSearchSelection.tools must reference explicitly selected Capability IDs")
+        if any(not names or any(not isinstance(name, str) or not name for name in names) for names in tools.values()):
+            raise ValueError("ToolSearchSelection.tools requires nonempty local tool names")
+        object.__setattr__(self, "tools", MappingProxyType(tools))
 
 
 @dataclass(frozen=True, slots=True)
@@ -142,8 +152,6 @@ class ToolSearchPlan:
     config: ProxyToolSearchConfig = field(default_factory=ProxyToolSearchConfig)
 
     def __post_init__(self) -> None:
-        from types import MappingProxyType
-
         groups = dict(self.groups)
         for name, selection in groups.items():
             if not isinstance(selection, ToolSearchSelection):
@@ -158,7 +166,7 @@ class ToolSearchPlan:
         capabilities: Sequence[AbstractCapability[AgentContext]],
         contributions: Mapping[str, tuple[AbstractCapability[AgentContext], ...]],
     ) -> tuple[AbstractCapability[AgentContext], ...]:
-        memberships: dict[int, tuple[str, str, str]] = {}
+        memberships: dict[int, dict[str | None, _ToolGroup]] = {}
         plugin_memberships: dict[str, str] = {}
         available = {id(source) for source in capabilities}
         labels = {id(source): plugin_id for plugin_id, sources in contributions.items() for source in sources}
@@ -176,21 +184,23 @@ class ToolSearchPlan:
             for source in sources:
                 if id(source) not in available:
                     raise ValueError(f"ToolSearch group {name!r} references a Capability not selected by this Agent")
-                if id(source) in memberships:
+                names = selection.tools.get(source.id) if source.id is not None else None
+                prior = memberships.setdefault(id(source), {})
+                keys = (None,) if names is None else names
+                if None in prior or (names is None and prior) or any(key in prior for key in keys):
                     raise ValueError(
                         f"ToolSearch source {source.id or type(source).__name__!r} belongs to multiple groups"
                     )
-                memberships[id(source)] = (
-                    name,
-                    selection.description,
-                    labels.get(id(source), source.id or type(source).__name__),
-                )
+                prior.update(dict.fromkeys(keys, _ToolGroup(name, selection.description)))
         if not memberships:
             return tuple(capabilities)
+
         return (
             _ToolSearchSurfaceCapability(self.config),
             *(
-                _group_source(source, *memberships[id(source)]) if id(source) in memberships else source
+                _group_source(source, memberships[id(source)], labels.get(id(source)))
+                if id(source) in memberships
+                else source
                 for source in capabilities
             ),
         )
@@ -235,22 +245,20 @@ class _ToolSearchSurfaceCapability(AbstractCapability[AgentContext]):
 
 @dataclass
 class _ToolSearchGroupCapability(WrapperCapability[AgentContext]):
-    """Assign a Capability's run-bound local Toolset to one proxy group.
+    """Assign a Capability's run-bound tools through one compiled group mapping.
 
     WrapperCapability owns for_agent/for_run rebinding, including ContextualMCP's
     fresh authenticated MCP replacement. No client or toolset is captured early.
     """
 
-    group: str
-    group_description: str
+    groups: Mapping[str | None, _ToolGroup]
     source_label: str
 
     def __post_init__(self) -> None:
         super().__post_init__()
-        validate_group(self.group, self.group_description)
         if self.defer_loading:
             raise ValueError(
-                f"ToolSearch group {self.group!r} uses a deferred-loading source; remove defer_loading=True or leave it directly exposed."
+                f"ToolSearch source {self.source_label!r} uses a deferred-loading source; remove defer_loading=True or leave it directly exposed."
             )
 
     def get_toolset(self) -> AbstractToolset[AgentContext] | None:
@@ -258,13 +266,13 @@ class _ToolSearchGroupCapability(WrapperCapability[AgentContext]):
         if toolset is None:
             return None
         if not isinstance(toolset, AbstractToolset):
-            raise TypeError(f"ToolSearch group {self.group!r} requires a concrete local Toolset contribution.")
-        return _GroupedToolset(toolset, self.group, self.group_description, self.source_label)
+            raise TypeError(f"ToolSearch source {self.source_label!r} requires a concrete local Toolset contribution.")
+        return _GroupedToolset(toolset, self.groups, self.source_label)
 
     def get_native_tools(self) -> Sequence[AgentNativeTool[AgentContext]]:
         if self.wrapped.get_native_tools():
             raise ValueError(
-                f"ToolSearch group {self.group!r} includes provider-native tools; use local=True, native=False for MCP."
+                f"ToolSearch source {self.source_label!r} includes provider-native tools; use local=True, native=False for MCP."
             )
         return []
 
