@@ -14,9 +14,11 @@ Choose your model, sandbox, search, and memory providers. Bring your own keys.
 
 [Quickstart](#quickstart) · [Connect your app](docs/a13n-service/connect-application.md) · [SDKs](docs/a13n-service/sdks.md)
 
-[![Console showing a completed support analysis with its input, tool calls, and result](.github/assets/console-run-details.jpg)](.github/assets/console-run-details.jpg)
+[![Console showing six managed agents, their model providers, and status](.github/assets/console-managed-agents.jpg)](.github/assets/console-managed-agents.jpg)
 
-*Inspect agent execution in Console, from input and tool calls to the saved result. Shown with fictional demo data and a scripted model. [View workspace usage](.github/assets/console-usage.jpg).*
+*Manage your agents in Console. Shown with fictional demo data.*
+
+[Run details (scripted demo)](.github/assets/console-run-details.jpg) · [Workspace usage](.github/assets/console-usage.jpg)
 
 ## Quickstart
 
@@ -43,6 +45,8 @@ The local stack includes Service, Console, PostgreSQL, and Redis, and uses your 
 - **Managed agents for your applications.** Tasks continue when clients disconnect, recover from saved progress after worker failures, and can wait for human approval. Call agents through the API; use Console to configure, manage, and observe them.
 - **Harness and service, built together.** Tools, Skills, memory, and subagents share one execution foundation. **58.06% on 62 Terminal-Bench 4.0 tasks**, versus 58.77% in published Codex results with the same model and reasoning effort. [Methodology](https://github.com/converge-ai-labs/agent-foundation/discussions/1015) · [FrontierHarness evaluation](https://github.com/converge-ai-labs/agent-foundation/discussions/1064).
 - **Your infrastructure, your providers.** Self-host the full platform under Apache 2.0. Choose providers for [models](docs/a13n-service/models.md), [sandboxes](docs/a13n-service/environments.md), [search](docs/a13n-service/tools.md#web-search-and-scrape), and [memory](docs/a13n-service/memory.md), using your own credentials.
+
+[![Service and Harness connect your applications and Console to models, environments, memory, web data, and MCP connections, with Harness UI as an interactive workbench](.github/assets/a13n-architecture.webp)](.github/assets/a13n-architecture.webp)
 
 ## Explore
 
