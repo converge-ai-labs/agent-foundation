@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import {
   createContext,
   useContext,
@@ -43,13 +44,14 @@ function Diagram({
   header: (actions: ReactNode) => ReactNode;
   children: ReactNode;
 }) {
+  const { t } = useTranslation();
   const [dark, setDark] = useState(() =>
     document.documentElement.classList.contains("dark"),
   );
   const [result, setResult] = useState<{
     source: string;
     src?: string;
-    error?: string;
+    error?: boolean;
   }>();
   const [original, setOriginal] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -73,8 +75,7 @@ function Diagram({
         if (active)
           setResult({
             source,
-            error:
-              "Diagram preview unavailable. The original source is shown below.",
+            error: true,
           });
       },
     );
@@ -93,47 +94,49 @@ function Diagram({
             size="sm"
             onClick={() => setOriginal(!original)}
             aria-pressed={original}
-            aria-label="Source"
+            aria-label={t("Source")}
           >
             <Code />
-            <span className={styles.actionLabel}>Source</span>
+            <span className={styles.actionLabel}>{t("Source")}</span>
           </Button>
           <Button
             variant="ghost"
             size="sm"
             disabled={!current?.src}
             onClick={() => setExpanded(true)}
-            aria-label="Expand"
+            aria-label={t("Expand")}
           >
             <ArrowsOut />
-            <span className={styles.actionLabel}>Expand</span>
+            <span className={styles.actionLabel}>{t("Expand")}</span>
           </Button>
         </>,
       )}
       {!original && current?.src && (
         <div className={styles.diagramCanvas} data-diagram-canvas>
-          <img src={current.src} alt="Mermaid diagram" />
+          <img src={current.src} alt={t("Mermaid diagram")} />
         </div>
       )}
       {!current && (
         <p className={styles.diagramStatus} role="status">
-          Rendering diagram…
+          {t("Rendering diagram…")}
         </p>
       )}
       {current?.error && (
         <p className={styles.diagramStatus} role="status">
-          {current.error}
+          {t(
+            "Diagram preview unavailable. The original source is shown below.",
+          )}
         </p>
       )}
       {(original || !current?.src) && (
-        <pre tabIndex={0} role="region" aria-label="Diagram source">
+        <pre tabIndex={0} role="region" aria-label={t("Diagram source")}>
           {children}
         </pre>
       )}
       {expanded && current?.src && (
         <ImagePreview
           src={current.src}
-          name="Mermaid diagram"
+          name={t("Mermaid diagram")}
           close={() => setExpanded(false)}
         />
       )}
@@ -145,6 +148,7 @@ export function MarkdownPre({
   node,
   children,
 }: ComponentProps<"pre"> & ExtraProps) {
+  const { t } = useTranslation();
   const markdown = useContext(MarkdownSource);
   const code = node?.children.find(
     (item) => item.type === "element" && item.tagName === "code",
@@ -184,7 +188,9 @@ export function MarkdownPre({
           <Button
             variant="ghost"
             size="sm"
-            aria-label={diagram ? "Copy diagram source" : "Copy code"}
+            aria-label={
+              diagram ? t("Copy diagram source") : t("Copy code block")
+            }
             onClick={async () => {
               try {
                 await copyText(source);
@@ -196,13 +202,13 @@ export function MarkdownPre({
             }}
           >
             <Copy />
-            {copied ? "Copied" : "Copy"}
+            {copied ? t("Copied") : t("Copy")}
           </Button>
         </div>
       </div>
       {copyError && (
         <p className={styles.diagramStatus} role="status">
-          Could not copy. Select the source to copy it manually.
+          {t("Could not copy. Select the source to copy it manually.")}
         </p>
       )}
     </>
@@ -218,13 +224,15 @@ export function MarkdownPre({
           {header()}
           {diagram && (
             <p className={styles.diagramStatus}>
-              Waiting for the complete diagram…
+              {t("Waiting for the complete diagram…")}
             </p>
           )}
           <pre
             tabIndex={0}
             role="region"
-            aria-label={language ? `${language} code` : "Code block"}
+            aria-label={
+              language ? t("{{language}} code", { language }) : t("Code block")
+            }
           >
             <SyntaxCode source={source} language={language} />
           </pre>
@@ -239,11 +247,12 @@ export function MarkdownTable({
   children,
   ...props
 }: ComponentProps<"table"> & ExtraProps) {
+  const { t } = useTranslation();
   return (
     <div
       className={styles.tableScroll}
       role="region"
-      aria-label="Table"
+      aria-label={t("Table")}
       tabIndex={0}
     >
       <table {...props}>{children}</table>

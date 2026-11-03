@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { LogoAnimation } from "a13n-ui";
 import type { Schema } from "../transport/client";
 import type { Submission } from "./draft";
@@ -12,9 +13,11 @@ export function RunActivity({
   submission: Submission;
   operation?: Schema<"RootOperationView">;
 }) {
+  const { t } = useTranslation();
   let label: string | undefined;
   if (submission.kind === "pending")
-    label = submission.action === "steer" ? "Sending instruction…" : "Sending…";
+    label =
+      submission.action === "steer" ? t("Sending instruction…") : t("Sending…");
   else if (
     operation &&
     operation.status !== "preparing" &&
@@ -22,16 +25,16 @@ export function RunActivity({
     operation.receipt.receipt_id === activity?.receipt_id
   )
     return null;
-  else if (activity?.state === "preparing") label = "Preparing…";
-  else if (activity?.state === "running") label = "Working…";
+  else if (activity?.state === "preparing") label = t("Preparing…");
+  else if (activity?.state === "running") label = t("Working…");
   else if (
     submission.kind === "accepted" &&
     submission.action !== "steer" &&
     (!operation || operation.receipt.receipt_id !== submission.receipt)
   )
-    label = "Preparing…";
-  else if (operation?.status === "preparing") label = "Preparing…";
-  else if (operation?.status === "running") label = "Working…";
+    label = t("Preparing…");
+  else if (operation?.status === "preparing") label = t("Preparing…");
+  else if (operation?.status === "running") label = t("Working…");
   if (!label) return null;
   return (
     <div className={styles.runActivity} role="status" aria-live="polite">

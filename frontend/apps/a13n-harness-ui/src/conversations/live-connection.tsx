@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { useEffect, useState } from "react";
 import { Plugs } from "@phosphor-icons/react";
 import {
@@ -16,6 +17,7 @@ export function LiveConnectionStatus({
   connection: string;
   reconnections: number;
 }) {
+  const { t } = useTranslation();
   const [delayed, setDelayed] = useState(false);
   const pending = connection !== "Live";
   useEffect(() => {
@@ -27,35 +29,46 @@ export function LiveConnectionStatus({
     return () => clearTimeout(timer);
   }, [pending]);
   if (!pending || !delayed) return null;
-  const label =
-    connection === "Loading current output"
-      ? "Syncing…"
-      : reconnections > 0 || connection === "Reconnecting"
-        ? "Reconnecting…"
-        : "Connecting…";
+  const syncing = connection === "Loading current output";
+  const reconnecting =
+    !syncing && (reconnections > 0 || connection === "Reconnecting");
+  const label = syncing
+    ? t("Syncing…")
+    : reconnecting
+      ? t("Reconnecting…")
+      : t("Connecting…");
+  // Known application-owned stream states; unknown transport values stay verbatim.
+  const states: Record<string, string> = {
+    Live: t("stream.live"),
+    Connecting: t("stream.connecting"),
+    Reconnecting: t("stream.reconnecting"),
+    "Loading current output": t("stream.loading-current-output"),
+  };
   return (
     <Popover>
       <span role="status" className="sr-only">
-        {connection === "Loading current output"
-          ? connection
-          : `${label.slice(0, -1)} live updates…`}
+        {syncing
+          ? (states[connection] ?? connection)
+          : reconnecting
+            ? t("Reconnecting live updates…")
+            : t("Connecting live updates…")}
       </span>
       <PopoverTrigger
         render={<Button variant="ghost" size="sm" tooltip={false} />}
         className={styles.trigger}
-        aria-label="Live updates connection"
+        aria-label={t("Live updates connection")}
       >
         <Plugs className={styles.icon} aria-hidden="true" />
         <span className={styles.label}>{label}</span>
       </PopoverTrigger>
       <PopoverPopup side="top" align="start" className={styles.popup}>
-        <PopoverTitle>Live updates</PopoverTitle>
-        <p>{connection}</p>
-        <p>Updates will resume automatically when the connection is ready.</p>
+        <PopoverTitle>{t("Live updates")}</PopoverTitle>
+        <p>{states[connection] ?? connection}</p>
+        <p>
+          {t("Updates will resume automatically when the connection is ready.")}
+        </p>
         {reconnections > 0 && (
-          <p>
-            {reconnections} {reconnections === 1 ? "retry" : "retries"}
-          </p>
+          <p>{t("Retry count", { count: reconnections })}</p>
         )}
       </PopoverPopup>
     </Popover>

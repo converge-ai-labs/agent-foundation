@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { MessageText } from "./message-text";
 import styles from "./conversation.module.css";
 
@@ -22,12 +23,15 @@ export function ContextActivity({
   text: string;
   status?: string;
 }) {
+  const { t } = useTranslation();
   return (
     <details className={styles.contextActivity} data-kind={context}>
       <summary>
-        <span>{context === "handoff" ? "Summary" : "Compact Summary"}</span>
+        <span>
+          {context === "handoff" ? t("Summary") : t("Compact Summary")}
+        </span>
         <span className={styles.contextStatus}>
-          {status || (text ? "Saved" : "In progress")}
+          {status || (text ? t("Saved") : t("In progress"))}
         </span>
         {text && <span className={styles.contextPreview}>{preview(text)}</span>}
       </summary>
