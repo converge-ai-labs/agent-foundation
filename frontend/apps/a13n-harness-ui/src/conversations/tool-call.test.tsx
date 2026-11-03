@@ -19,7 +19,10 @@ import { LiveOutput, SavedEntry } from "./transcript";
 import type { Schema } from "../transport/client";
 import { DebugProvider } from "../shell/debug";
 import { i18n } from "../i18n";
-afterEach(cleanup);
+afterEach(async () => {
+  cleanup();
+  await i18n.changeLanguage("en");
+});
 
 it("switches edit evidence labels without closing the disclosure or translating recorded content", async () => {
   await i18n.changeLanguage("en");
@@ -67,7 +70,7 @@ it("localizes tool activity without translating tool names or recorded content w
   );
   fireEvent.click(screen.getByRole("button", { name: /Explored 1 file/ }));
   await act(() => i18n.changeLanguage("zh-CN"));
-  expect(screen.getByRole("button", { name: /已探索 1 个文件/ })).toBeTruthy();
+  expect(screen.getByRole("button", { name: /已查看 1 个文件/ })).toBeTruthy();
   expect(screen.getByText("server text")).toBeTruthy();
   expect(screen.getByText("Edit")).toBeTruthy();
   expect(screen.getByText("/tmp/user file")).toBeTruthy();
