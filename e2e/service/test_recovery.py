@@ -32,7 +32,7 @@ async def tool_committed(api, run_id: str) -> None:  # type: ignore[no-untyped-d
     await eventually(check)
 
 
-@pytest.mark.isolated_service
+@pytest.mark.isolated_service(start_workers=1)
 async def test_a_killed_worker_is_replaced_after_its_lease_expires(stack, skill_environment_template) -> None:  # type: ignore[no-untyped-def]
     api, model = stack.api, stack.model
     agent = await api.create_agent(
@@ -44,13 +44,13 @@ async def test_a_killed_worker_is_replaced_after_its_lease_expires(stack, skill_
     await model.call("view", {"file_path": GUIDE}, call_id="call_view", to="[crash]")
     # The worker dies while this request is outstanding; its answer never comes.
     await model.say("Lost with the worker.", to="[crash]", hold="never")
-    doomed = stack.workers[0]
-    with stack.only(doomed):
-        receipt = await api.start(
-            agent, "[crash] Read the platform guide", options={"execution": {"environment": {"MODE": "accepted"}}}
-        )
-        run_id = receipt["run"]["id"]
-        await model.arrived("[crash]", status="held")
+    doomed, successor = stack.workers
+    receipt = await api.start(
+        agent, "[crash] Read the platform guide", options={"execution": {"environment": {"MODE": "accepted"}}}
+    )
+    run_id = receipt["run"]["id"]
+    await model.arrived("[crash]", status="held")
+    await stack.start_worker(successor)
     await tool_committed(api, run_id)
 
     thread_path = f"/api/v1/threads/{receipt['thread']['id']}"
@@ -112,7 +112,7 @@ async def test_heartbeats_keep_one_attempt_through_a_slow_model(stack) -> None: 
     assert [request["status"] for request in await model.requests("[slow]")] == ["answered"]
 
 
-@pytest.mark.isolated_service
+@pytest.mark.isolated_service(start_workers=1)
 async def test_a_draining_worker_hands_its_run_to_another(stack, skill_environment_template) -> None:  # type: ignore[no-untyped-def]
     api, model = stack.api, stack.model
     agent = await api.create_agent(
@@ -123,12 +123,12 @@ async def test_a_draining_worker_hands_its_run_to_another(stack, skill_environme
     )
     await model.call("view", {"file_path": GUIDE}, call_id="call_view", to="[drain]", hold="drain")
     draining, successor = stack.workers
-    with stack.only(draining):
-        receipt = await api.start(
-            agent, "[drain] Read the platform guide", options={"execution": {"environment": {"MODE": "accepted"}}}
-        )
-        run_id = receipt["run"]["id"]
-        await model.arrived("[drain]", status="held")
+    receipt = await api.start(
+        agent, "[drain] Read the platform guide", options={"execution": {"environment": {"MODE": "accepted"}}}
+    )
+    run_id = receipt["run"]["id"]
+    await model.arrived("[drain]", status="held")
+    await stack.start_worker(successor)
 
     async def checkpointed() -> bool:
         return [entry["status"] for entry in await api.inbox(receipt["thread"]["id"])] == ["consumed"]
@@ -146,12 +146,16 @@ async def test_a_draining_worker_hands_its_run_to_another(stack, skill_environme
         ),
         200,
     )
+    attempts = await api.attempts(run_id)
+    assert [(item["status"], item["start_reason"]) for item in attempts] == [("running", "initial")], attempts
     draining.signal(signal.SIGTERM)
     await eventually(lambda: asyncio.sleep(0, not draining.listening()))
     await model.open("drain")
 
     async def handed_off() -> bool:
-        return [item["status"] for item in await api.attempts(run_id)][:1] == ["yielded"]
+        attempts = await api.attempts(run_id)
+        assert attempts[0]["status"] in {"running", "yielded"}, attempts
+        return attempts[0]["status"] == "yielded"
 
     await eventually(handed_off)
     # Uvicorn re-raises the signal it handled once its graceful shutdown completed.

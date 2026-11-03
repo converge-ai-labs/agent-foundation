@@ -178,7 +178,7 @@ async def test_two_workers_edit_one_file_and_the_next_run_gets_the_changes(stack
     assert cursors(stack, receipt["run"]["id"]) == {memory["id"]: "3"}
 
 
-@pytest.mark.isolated_service
+@pytest.mark.isolated_service(start_workers=1)
 async def test_a_recovered_attempt_continues_from_the_committed_memory_cursors(stack) -> None:  # type: ignore[no-untyped-def]
     api, model = stack.api, stack.model
     agent = await api.create_agent("Helper", await api.create_model(model.base_url))
@@ -188,11 +188,11 @@ async def test_a_recovered_attempt_continues_from_the_committed_memory_cursors(s
     await model.call("memory_file_create", entry, call_id="call_log", to="[crash]")
     # The worker dies while this request is outstanding; its answer never comes.
     await model.say("Lost with the worker.", to="[crash]", hold="never")
-    doomed = stack.workers[0]
-    with stack.only(doomed):
-        receipt = await api.start(agent, "[crash] Log the first entry", memories=mounts)
-        run_id = receipt["run"]["id"]
-        await model.arrived("[crash]", status="held")
+    doomed, successor = stack.workers
+    receipt = await api.start(agent, "[crash] Log the first entry", memories=mounts)
+    run_id = receipt["run"]["id"]
+    await model.arrived("[crash]", status="held")
+    await stack.start_worker(successor)
 
     async def committed() -> bool:
         items = (await api.items(run_id))["items"]
