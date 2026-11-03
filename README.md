@@ -4,6 +4,8 @@
 
 <h1 align="center">Agent Foundation (a13n)</h1>
 
+[![CI](https://github.com/converge-ai-labs/agent-foundation/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/converge-ai-labs/agent-foundation/actions/workflows/ci.yml) [![Documentation](https://img.shields.io/badge/docs-agent--foundation-blue)](https://a13n.dev/docs/) [![Python](https://img.shields.io/badge/python-3.13%2B-blue)](https://www.python.org/) [![License](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE) [![Slack](https://img.shields.io/badge/Slack-Join%20the%20community-4A154B)](https://join.slack.com/t/a13n/shared_invite/zt-4embv13zr-JfXjmJQop4Y9y6K3NH0kDQ)
+
 **Build and run cloud agents on your own infrastructure.**
 
 a13n brings an agent harness and managed runtime together in one open-source platform.
