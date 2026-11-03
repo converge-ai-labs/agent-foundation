@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { ModelIcon } from "../shell/model-identity";
 import { SettingsRow, SettingsSection } from "../shell/settings";
 import { ChoiceField } from "a13n-ui";
@@ -15,14 +16,21 @@ export function MediaUnderstandingFields({
   source: string;
   onChange: (value: string) => void;
 }) {
+  const { t } = useTranslation();
   const selectors = useSelectors();
+  const labels = { image: t("Image"), video: t("Video"), audio: t("Audio") };
+  const understandingLabels = {
+    image: t("Image understanding"),
+    video: t("Video understanding"),
+    audio: t("Audio understanding"),
+  };
   const document = readDocument(source);
   return (
     <SettingsSection variant="grouped">
       {mediaKinds.map((kind) => (
-        <SettingsRow key={kind} label={mediaLabels[kind]}>
+        <SettingsRow key={kind} label={labels[kind]}>
           <ChoiceField
-            label={`${mediaLabels[kind]} understanding`}
+            label={understandingLabels[kind]}
             hideLabel
             className={styles.settingControl}
             value={String(document?.getIn(["media_understanding", kind]) ?? "")}
@@ -42,8 +50,8 @@ export function MediaUnderstandingFields({
                   selectors.data?.media_understanding_environment?.includes(
                     kind,
                   )
-                    ? "Environment"
-                    : "Not configured",
+                    ? t("Environment")
+                    : t("Not configured"),
               },
               ...(selectors.data?.models ?? [])
                 .filter((model) => model.media_capabilities?.includes(kind))

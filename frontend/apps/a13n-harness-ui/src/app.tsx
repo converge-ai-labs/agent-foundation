@@ -8,6 +8,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Button, Logo } from "a13n-ui";
 import {
   ApiError,
+  NetworkError,
   createTransport,
   result,
   type Schema,
@@ -77,6 +78,8 @@ function BrowserContent() {
     </DebugProvider>
   );
 }
+class IncompatibleStatusError extends Error {}
+
 function OwnerApp() {
   const { t } = useTranslation();
   // Consume and remove the URL credential before mounting the router or any network consumer.
@@ -84,7 +87,18 @@ function OwnerApp() {
   const [input, setInput] = useState("");
   const [attempt, setAttempt] = useState(0);
   const [status, setStatus] = useState<Schema<"ListenerStatus"> | null>(null);
-  const [error, setError] = useState("");
+  const [error, setError] = useState<{
+    text: string;
+    local: boolean;
+    status?: number;
+  }>();
+  const errorText = error
+    ? error.status !== undefined
+      ? t("Request failed ({{status}}).", { status: error.status })
+      : error.local
+        ? t(error.text)
+        : error.text
+    : "";
   const [pushWarning, setPushWarning] = useState("");
   const [connecting, setConnecting] = useState(true);
   const hadAccess = useRef(false);
@@ -130,13 +144,14 @@ function OwnerApp() {
     transportRef.current?.close();
     setStatus(null);
     setAccess("login");
-    setError(
-      hadAccess.current
+    setError({
+      text: hadAccess.current
         ? "Access expired. Enter the API key printed by this server."
         : key
           ? "This instance key wasn't accepted. Check it and try again."
           : "",
-    );
+      local: true,
+    });
     setConnecting(false);
     void queries.cancelQueries();
     queries.clear();
@@ -149,7 +164,7 @@ function OwnerApp() {
   useEffect(() => {
     let active = true;
     setStatus(null);
-    setError("");
+    setError(undefined);
     setConnecting(true);
     const controller = new AbortController();
     void result(
@@ -163,7 +178,7 @@ function OwnerApp() {
           !next.app ||
           !next.features
         )
-          throw new Error(
+          throw new IncompatibleStatusError(
             "This server returned an incompatible status response.",
           );
         if (!active) return;
@@ -182,9 +197,18 @@ function OwnerApp() {
           setAccess((current) =>
             current === "login" ? current : "unavailable",
           );
-          setError(
-            failure instanceof Error ? failure.message : "Connection failed.",
-          );
+          setError({
+            text:
+              failure instanceof Error ? failure.message : "Connection failed.",
+            status:
+              failure instanceof ApiError && failure.localFallback
+                ? failure.status
+                : undefined,
+            local:
+              failure instanceof IncompatibleStatusError ||
+              failure instanceof NetworkError ||
+              !(failure instanceof Error),
+          });
           setConnecting(false);
         }
       });
@@ -233,10 +257,10 @@ function OwnerApp() {
                   ) : access === "checking" && attempt === 0 ? null : access !==
                     "login" ? (
                     <Startup
-                      error={error}
+                      error={errorText}
                       connecting={connecting}
                       retry={() => {
-                        setError("");
+                        setError(undefined);
                         setConnecting(true);
                         setAccess("checking");
                         setAttempt((value) => value + 1);
@@ -274,9 +298,9 @@ function OwnerApp() {
                             value={input}
                             onChange={setInput}
                           />
-                          {error && (
+                          {errorText && (
                             <p role="alert" className={styles.accessError}>
-                              {t(error)}
+                              {errorText}
                             </p>
                           )}
                           <Button

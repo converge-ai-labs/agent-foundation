@@ -1,10 +1,15 @@
 import type { TFunction } from "i18next";
+import { errorMessage } from "../i18n/error-message";
 import type { StopRequest } from "./stop-operation";
 import type { Schema } from "../transport/client";
 
 // Existing draft/submission feedback has no message code. Match only known
 // application text; never translate arbitrary server diagnostics or file bytes.
 export const composerMessages = new Set([
+  "This chat already exists. Open it and check its settings before sending your saved input.",
+  "Chat not found. Your input is saved here. Send again to retry creating the same chat.",
+  "Couldn't confirm the chat was created. Send again to check.",
+
   "Synchronize your edits before sending.",
   "Updating chat settings…",
   "Loading chat…",
@@ -74,7 +79,7 @@ export function stopMessage(request: StopRequest, t: TFunction): string {
     );
   if (request.phase === "rejected" && request.rejection !== undefined)
     return t("Stop was not accepted. {{message}}", {
-      message: request.rejection,
+      message: errorMessage(request.rejection, t),
     });
   return composerMessage(request.message, t);
 }

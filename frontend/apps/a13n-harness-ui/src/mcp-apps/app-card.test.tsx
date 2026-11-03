@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -10,9 +11,10 @@ import {
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { GuestAccessContext, TransportContext } from "../transport/context";
-import type { Schema, Transport } from "../transport/client";
+import { ApiError, type Schema, type Transport } from "../transport/client";
 import { ConversationTranscript } from "../conversations/transcript";
 import { AppCard } from "./app-card";
+import { i18n } from "../i18n";
 import { AppContextProvider } from "./context-selection";
 import type { AppHandlers } from "./app-frame";
 
@@ -137,6 +139,66 @@ it("opens history only on request and closing a view sends no server close or to
   expect(screen.queryByTitle("counter")).toBeNull();
   expect(POST).toHaveBeenCalledTimes(1);
 });
+
+it.each([true, false])(
+  "retains error provenance across locale switches (local: %s)",
+  async (local) => {
+    const { POST, wrapper } = setup();
+    const raw = "Request failed (500).";
+    POST.mockRejectedValueOnce(new ApiError(raw, 500, undefined, local));
+    render(<AppCard reference={reference} />, { wrapper });
+    fireEvent.click(screen.getByRole("button", { name: "Open App" }));
+    expect((await screen.findByRole("alert")).textContent).toBe(raw);
+    await act(() => i18n.changeLanguage("zh-CN"));
+    expect(screen.getByRole("alert").textContent).toBe(
+      local ? i18n.t("Request failed ({{status}}).", { status: 500 }) : raw,
+    );
+    expect(POST).toHaveBeenCalledTimes(1);
+    await act(() => i18n.changeLanguage("en"));
+  },
+);
+
+it.each([true, false])(
+  "localizes uncertain requests without retransmission (local cause: %s)",
+  async (local) => {
+    const { POST, GET, wrapper } = setup();
+    render(<AppCard reference={reference} live />, { wrapper });
+    await screen.findByTitle("counter");
+    POST.mockResolvedValueOnce({
+      data: {
+        view_id: "view-one",
+        reference,
+        connection_generation: "conn",
+        root_thread_id: reference.thread_id,
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Enable controls" }));
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: "Enable controls" }),
+      ).toBeNull(),
+    );
+    POST.mockRejectedValueOnce(new Error("lost"));
+    GET.mockRejectedValue(
+      new ApiError("Request failed (500).", 500, undefined, local),
+    );
+    fireEvent.click(screen.getByText("Request from App"));
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Result unknown. The request was not repeated.",
+    );
+    await act(() => i18n.changeLanguage("zh-CN"));
+    const alert = screen.getByRole("alert").textContent;
+    expect(alert).toContain("结果未知。请求未重新发送。");
+    expect(alert).toContain(
+      local
+        ? i18n.t("Request failed ({{status}}).", { status: 500 })
+        : "Request failed (500).",
+    );
+    expect(POST).toHaveBeenCalledTimes(3);
+    expect(GET).toHaveBeenCalledTimes(1);
+    await act(() => i18n.changeLanguage("en"));
+  },
+);
 
 it("retries a failed presentation without activating server interactions", async () => {
   const { POST, wrapper } = setup();
@@ -440,4 +502,21 @@ it("never mounts interactive App transport or frames for guests, including live 
     screen.getByText("Interactive app · available to the instance owner"),
   ).toBeTruthy();
   expect(document.querySelector("iframe")).toBeNull();
+});
+
+it("switches language without reopening the app or changing its identifiers", async () => {
+  const { POST, wrapper } = setup();
+  await i18n.changeLanguage("en");
+  render(<AppCard reference={reference} />, { wrapper });
+  fireEvent.click(screen.getByRole("button", { name: "Open App" }));
+  await screen.findByTitle("counter");
+  await act(() => i18n.changeLanguage("zh-CN"));
+  expect(screen.getByRole("button", { name: "关闭视图" })).toBeTruthy();
+  expect(
+    screen.getByRole("region", { name: "MCP 应用：counter" }),
+  ).toBeTruthy();
+  expect(screen.getByTitle("counter")).toBeTruthy();
+  expect(POST).toHaveBeenCalledTimes(1);
+  await act(() => i18n.changeLanguage("en"));
+  expect(screen.getByRole("button", { name: "Close view" })).toBeTruthy();
 });

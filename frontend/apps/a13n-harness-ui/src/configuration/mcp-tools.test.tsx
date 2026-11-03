@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -9,6 +10,7 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { i18n } from "../i18n";
 import { McpTools } from "./mcp-tools";
 import { DraftContext } from "./drafts";
 
@@ -170,4 +172,42 @@ it("keeps all tools enabled when discovery for selected mode fails", async () =>
     true,
   );
   expect(api.PUT).not.toHaveBeenCalled();
+});
+
+it("preserves selected tool IDs and filter through a language switch", async () => {
+  setup();
+  fireEvent.click(await screen.findByRole("button", { name: "Load tools" }));
+  fireEvent.click(
+    await screen.findByRole("checkbox", { name: "Enable fetch_content" }),
+  );
+  fireEvent.change(screen.getByRole("textbox", { name: "Search tools" }), {
+    target: { value: "fetch" },
+  });
+  await act(async () => {
+    await i18n.changeLanguage("zh-CN");
+  });
+  expect(screen.getByRole("textbox", { name: "搜索工具" })).toHaveProperty(
+    "value",
+    "fetch",
+  );
+  expect(
+    screen
+      .getByRole("checkbox", { name: "启用 fetch_content" })
+      .getAttribute("aria-checked"),
+  ).toBe("true");
+  fireEvent.click(screen.getByRole("button", { name: "保存" }));
+  await waitFor(() =>
+    expect(api.PUT).toHaveBeenCalledWith(
+      "/api/mcp/{server_id}/tools",
+      expect.objectContaining({
+        body: {
+          resource_digest: "a".repeat(64),
+          tools: ["search", "fetch_content"],
+        },
+      }),
+    ),
+  );
+  await act(async () => {
+    await i18n.changeLanguage("en");
+  });
 });

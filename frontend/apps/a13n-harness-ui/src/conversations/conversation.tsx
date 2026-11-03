@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import {
   type ComponentProps,
   useContext,
@@ -94,6 +95,7 @@ function ConversationContent({
   profile: Profile;
   unauthorized: () => void;
 }) {
+  const { t } = useTranslation();
   const transport = useTransport();
   const disconnected = useContext(ConnectionNoticeContext);
   const appContexts = useAppContextSelection();
@@ -272,7 +274,7 @@ function ConversationContent({
   const decisions = useDecisionPlacement(
     detail.data?.deferred_requests?.length ? (
       guest ? (
-        <p role="status">Waiting for the instance owner to respond.</p>
+        <p role="status">{t("Waiting for the instance owner to respond.")}</p>
       ) : (
         <Decisions
           threadId={threadId}
@@ -641,7 +643,7 @@ function ConversationContent({
       }}
     />
   ) : !disconnected && history.isPending && !history.data && !showLive ? (
-    <span role="status">Loading messages…</span>
+    <span role="status">{t("Loading messages\u2026")}</span>
   ) : null;
   const connectionStatus =
     !disconnected && !feedback ? (
@@ -668,31 +670,33 @@ function ConversationContent({
   if (thread?.parent_thread_id)
     return (
       <div>
-        <h1>Child chat</h1>
+        <h1>{t("Child chat")}</h1>
         <p>
-          View this subagent from its parent chat. You can't send messages here.
+          {t(
+            "View this subagent from its parent chat. You can't send messages here.",
+          )}
         </p>
         <Link to={`/threads/${encodeURIComponent(thread.parent_thread_id)}`}>
-          Open parent chat
+          {t("Open parent chat")}
         </Link>
       </div>
     );
   return (
     <ConversationOpening
       ready={pageReady}
-      label="Opening chat…"
+      label={t("Opening chat…")}
       onContinue={() => setShowAvailable(true)}
     >
       <div className={styles.page}>
         {!guest && !readOnly && thread?.archived && (
           <div className={styles.warning}>
-            <p>This chat is archived. Its history remains available.</p>
+            <p>{t("This chat is archived. Its history remains available.")}</p>
             <Button
               variant="outline"
               loading={metadata.isPending}
               onClick={() => metadata.mutate({ archived: false })}
             >
-              Restore chat
+              {t("Restore chat")}
             </Button>
           </div>
         )}
@@ -760,7 +764,9 @@ function ConversationContent({
           >
             <div className={styles.transcript}>
               {history.isFetchingNextPage && (
-                <small role="status">Loading earlier messages…</small>
+                <small role="status">
+                  {t("Loading earlier messages\u2026")}
+                </small>
               )}
               {history.isFetchNextPageError && (
                 <Button
@@ -775,7 +781,7 @@ function ConversationContent({
                     void history.fetchNextPage();
                   }}
                 >
-                  Retry loading
+                  {t("Retry loading")}
                 </Button>
               )}
               <PauseConversationFollowing value={interruptScroll}>
@@ -843,10 +849,10 @@ function ConversationContent({
                     loading={history.isFetchingPreviousPage}
                     onClick={() => void history.fetchPreviousPage()}
                   >
-                    Load newer
+                    {t("Load newer")}
                   </Button>
                   <Button variant="ghost" onClick={backToLatest}>
-                    Back to latest
+                    {t("Back to latest")}
                   </Button>
                 </div>
               )}
@@ -899,25 +905,29 @@ function ConversationContent({
                   >
                     {guest && !canCompose ? (
                       <>
-                        <h2>No messages yet</h2>
+                        <h2>{t("No messages yet")}</h2>
                         <p>
-                          Messages will appear here when this chat gets started.
+                          {t(
+                            "Messages will appear here when this chat gets started.",
+                          )}
                         </p>
                       </>
                     ) : readOnly ? (
                       <>
-                        <h2>No organization history yet</h2>
+                        <h2>{t("No organization history yet")}</h2>
                         <p>
-                          Automatic memory updates appear here. Viewing this
-                          page won't start a run.
+                          {t(
+                            "Automatic memory updates appear here. Viewing this page won't start a run.",
+                          )}
                         </p>
                       </>
                     ) : isCoordinator ? (
                       <>
-                        <h2>What are we working on?</h2>
+                        <h2>{t("What are we working on?")}</h2>
                         <p>
-                          Share a goal. I’ll help plan the work and bring
-                          results back here.
+                          {t(
+                            "Share a goal. I’ll help plan the work and bring results back here.",
+                          )}
                         </p>
                       </>
                     ) : null}
@@ -935,8 +945,8 @@ function ConversationContent({
           >
             <ArrowDown />
             {detail.data?.deferred_requests?.length
-              ? "Response needed"
-              : "New output"}
+              ? t("Response needed")
+              : t("New output")}
           </Button>
         )}
         {!readOnly && detail.data && (
@@ -1029,16 +1039,16 @@ function ConversationContent({
             }
             unavailableReason={
               agentSelection.isPending
-                ? "Updating chat settings…"
+                ? t("Updating chat settings…")
                 : !detail.data
-                  ? "Loading chat…"
+                  ? t("Loading chat…")
                   : undefined
             }
             modelId={draft.modelId}
             leadingControls={
               guest ? undefined : thread?.configuration.agent_source.kind ===
                 "live" ? (
-                <Link to="/settings#live">Live settings</Link>
+                <Link to="/settings#live">{t("Live settings")}</Link>
               ) : (
                 <RunEnvironments
                   catalog={selectors.data}
@@ -1091,7 +1101,7 @@ function ConversationContent({
         )}
         {guest && !canCompose && (
           <p className={styles.composerConnection}>
-            View-only link · Following this chat live.
+            {t("View-only link · Following this chat live.")}
           </p>
         )}
         {!guest && !readOnly && (
@@ -1105,8 +1115,8 @@ function ConversationContent({
         <ModalFrame
           open={rename}
           onOpenChange={setRename}
-          title="Rename chat"
-          closeLabel="Close"
+          title={t("Rename chat")}
+          closeLabel={t("Close")}
         >
           <form
             className={styles.form}
@@ -1116,7 +1126,7 @@ function ConversationContent({
             }}
           >
             <TextField
-              label="Title"
+              label={t("Title")}
               value={title}
               onChange={(value) => setTitle(value.slice(0, 512))}
             />
@@ -1128,14 +1138,14 @@ function ConversationContent({
                 disabled={metadata.isPending}
                 onClick={() => setRename(false)}
               >
-                Cancel
+                {t("Cancel")}
               </Button>
               <Button
                 type="submit"
                 loading={metadata.isPending}
                 disabled={!thread}
               >
-                Save title
+                {t("Save title")}
               </Button>
             </div>
           </form>
@@ -1143,12 +1153,12 @@ function ConversationContent({
         <ModalFrame
           open={inspection}
           onOpenChange={setInspection}
-          title="Chat details"
-          closeLabel="Close dialog"
+          title={t("Chat details")}
+          closeLabel={t("Close dialog")}
           footer={
             <>
               <Button variant="outline" onClick={() => setInspection(false)}>
-                Close
+                {t("Close")}
               </Button>
               <div
                 ref={setInspectionActions}
@@ -1179,7 +1189,7 @@ function ConversationContent({
                       loading={metadata.isPending}
                       onClick={() => metadata.mutate({ archived: true })}
                     >
-                      Archive chat
+                      {t("Archive chat")}
                     </Button>
                   )}
                 {!guest && thread && canDeleteThread(thread) && (
@@ -1191,7 +1201,7 @@ function ConversationContent({
                       setDeleting(true);
                     }}
                   >
-                    Delete chat
+                    {t("Delete chat")}
                   </Button>
                 )}
               </div>

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
@@ -9,6 +9,7 @@ import { createTransport } from "../transport/client";
 import { SourceDocument } from "./sources";
 import { DraftContext } from "./drafts";
 import { EnvdRuntime } from "./envd";
+import { i18n } from "../i18n";
 
 vi.mock("./editor", () => ({ SourceEditor: () => null }));
 let queries: QueryClient;
@@ -130,6 +131,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  void i18n.changeLanguage("en");
   queries.clear();
   vi.unstubAllGlobals();
 });
@@ -240,6 +242,15 @@ it("keeps Full Control running when the automatic Sandbox check fails", async ()
     await screen.findByRole("button", { name: "Install & start" }),
   );
   await screen.findByText("Runtime ready. Sandbox: Isolation unavailable");
+  await act(() => i18n.changeLanguage("zh-CN"));
+  expect(
+    screen.getByText(
+      i18n.t("Runtime ready. Sandbox: {{message}}", {
+        message: "Isolation unavailable",
+      }),
+    ),
+  ).toBeTruthy();
+  await act(() => i18n.changeLanguage("en"));
   expect(running).toBe(1);
   expect(content).toContain("environment-native");
   expect(requests).not.toContain("POST /api/envd/stop");

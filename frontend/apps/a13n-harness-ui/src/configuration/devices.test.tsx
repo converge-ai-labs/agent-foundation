@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
+  act,
   cleanup,
   render,
   screen,
@@ -10,6 +11,7 @@ import {
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
+import { i18n } from "../i18n";
 import { TransportContext } from "../transport/context";
 import { createTransport } from "../transport/client";
 import { DevicesSection } from "./devices";
@@ -101,8 +103,9 @@ beforeEach(() => {
     }),
   );
 });
-afterEach(() => {
+afterEach(async () => {
   cleanup();
+  await i18n.changeLanguage("en");
   queries.clear();
   vi.unstubAllGlobals();
 });
@@ -296,4 +299,30 @@ it("closing a pending wizard does not reject, and closing an approved wizard doe
   await user.click(within(wizard).getByRole("button", { name: "Close" }));
   expect(registration).toBe("paired");
   expect(requests).not.toContain("POST /api/devices/device-one/revoke");
+});
+
+it("retains connection options and pending verification across locale changes", async () => {
+  const user = userEvent.setup();
+  mount();
+  await user.click(screen.getByRole("button", { name: "Connect device" }));
+  const wizard = await screen.findByRole("dialog", { name: "Connect device" });
+  await within(wizard).findByText("ABCD-1234");
+  await user.click(
+    within(wizard).getByRole("switch", { name: /Enable shell execution/ }),
+  );
+  const command = `A13N_ENVD_FULL_CONTROL=1 a13n-envd connect '${window.location.origin}' --computer-use false`;
+  expect(within(wizard).getByText(command)).not.toBeNull();
+  await act(() => i18n.changeLanguage("zh-CN"));
+  const localized = screen.getByRole("dialog", {
+    name: i18n.t("Connect device"),
+  });
+  expect(within(localized).getByText(command)).not.toBeNull();
+  expect(within(localized).getByText("ABCD-1234")).not.toBeNull();
+  expect(
+    within(localized).getByRole("switch", {
+      name: i18n.t("Enable shell execution"),
+      checked: true,
+    }),
+  ).not.toBeNull();
+  expect(requests).not.toContain("POST /api/device-pairings/pair-one/approve");
 });

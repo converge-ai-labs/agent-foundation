@@ -322,7 +322,14 @@ export function SourcesPage({
               )}
               {!kinds && (
                 <span className={styles.kind}>
-                  {source.resource_kind.replaceAll("_", " ")}
+                  {(() => {
+                    const kind = resourceKinds.find(
+                      (item) => item.value === source.resource_kind,
+                    );
+                    return kind
+                      ? t(inlineLabel(kind.label))
+                      : source.resource_kind.replaceAll("_", " ");
+                  })()}
                 </span>
               )}
             </Link>

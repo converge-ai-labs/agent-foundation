@@ -176,7 +176,7 @@ it("preserves archive filters and pending restore across language changes withou
   await user.click(await screen.findByRole("menuitem", { name: "删除聊天" }));
   expect(
     screen.getByRole("dialog", { name: "删除聊天？" }).textContent,
-  ).toContain("“Untitled chat”及其子代理历史记录");
+  ).toContain("“Untitled chat”及其子智能体历史记录");
   await act(() => i18n.changeLanguage("en"));
   expect(screen.getByRole("dialog", { name: "Delete chat?" })).toBeTruthy();
   expect(writes).toEqual([]);

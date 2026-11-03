@@ -681,3 +681,39 @@ it("focuses the new-terminal control in Chinese when no session is active", asyn
     screen.getByRole("button", { name: "New terminal" }),
   );
 });
+
+it("relocalizes terminal controls and local errors without translating server detail or resetting search", async () => {
+  const f = setup();
+  const unauthorized = vi.fn();
+  render(
+    <TerminalScreen id="terminal-one" visible unauthorized={unauthorized} />,
+    { wrapper: f.Wrapper },
+  );
+  const socket = Socket.all[0];
+  fireEvent.click(screen.getByRole("button", { name: "Find in output" }));
+  fireEvent.change(screen.getByLabelText("Find in terminal output"), {
+    target: { value: "retained" },
+  });
+  act(() =>
+    socket.onmessage({
+      data: JSON.stringify({ error: { message: "Disconnected" } }),
+    }),
+  );
+  expect(
+    screen.getByText(/Disconnected Reconnect to inspect current authority/),
+  ).toBeTruthy();
+  await act(async () => {
+    await i18n.changeLanguage("zh-CN");
+  });
+  expect(screen.getByRole("button", { name: "重新连接" })).toBeTruthy();
+  expect(
+    (screen.getByLabelText("在终端输出中查找") as HTMLInputElement).value,
+  ).toBe("retained");
+  expect(
+    screen.getByText(/Disconnected 重新连接以查看当前控制权/),
+  ).toBeTruthy();
+  expect(Socket.all).toHaveLength(1);
+  await act(async () => {
+    await i18n.changeLanguage("en");
+  });
+});

@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { useContext, useState } from "react";
 import { Link } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -18,6 +19,7 @@ export function RenameProject({
   name: string;
   close: () => void;
 }) {
+  const { t } = useTranslation();
   const { client } = useTransport();
   const queries = useQueryClient();
   const drafts = useContext(DraftContext);
@@ -46,7 +48,7 @@ export function RenameProject({
   const save = useMutation({
     mutationFn: async () => {
       if (!path || !editable)
-        throw new Error("This project cannot be renamed here.");
+        throw new Error(t("This project cannot be renamed here."));
       // Read fresh source so renaming does not replay unrelated fields from an old query.
       const latest = await result(
         client.GET("/api/configuration/sources/{relative_path}", {
@@ -62,7 +64,9 @@ export function RenameProject({
         document.get("kind") !== "project"
       )
         throw new Error(
-          "Project settings changed or couldn't be loaded. Open them to review.",
+          t(
+            "Project settings changed or couldn't be loaded. Open them to review.",
+          ),
         );
       const content = updateDocument(latest.content!, ["name"], name.trim());
       const publication = await result(
@@ -93,8 +97,8 @@ export function RenameProject({
   return (
     <ModalFrame
       open
-      title="Rename project"
-      closeLabel="Close"
+      title={t("Rename project")}
+      closeLabel={t("Close")}
       onOpenChange={(open) => {
         if (!open && !save.isPending) close();
       }}
@@ -106,7 +110,7 @@ export function RenameProject({
           if (editable && name.trim() && !save.isPending) save.mutate();
         }}
       >
-        <TextField label="Project name" value={name} onChange={setName} />
+        <TextField label={t("Project name")} value={name} onChange={setName} />
         <ErrorNotice
           error={sources.error || source.error || save.error}
           retry={
@@ -119,14 +123,16 @@ export function RenameProject({
           }
         />
         {(sources.isPending || (path && source.isPending)) && (
-          <p role="status">Reading project…</p>
+          <p role="status">{t("Reading project\u2026")}</p>
         )}
         {dirty && (
-          <p>Save or discard your project changes before renaming it here.</p>
+          <p>
+            {t("Save or discard your project changes before renaming it here.")}
+          </p>
         )}
         {sources.isSuccess &&
           (!path || (source.isSuccess && !editable && !dirty)) && (
-            <p>This project source is unavailable or read only.</p>
+            <p>{t("This project source is unavailable or read only.")}</p>
           )}
         <div className={styles.dialogActions} data-a13n-form-actions>
           {!save.isPending && (
@@ -135,7 +141,7 @@ export function RenameProject({
               to={`/projects/${encodeURIComponent(projectId)}`}
               onClick={close}
             >
-              Project settings
+              {t("Project settings")}
             </Link>
           )}
           <Button
@@ -144,7 +150,7 @@ export function RenameProject({
             disabled={save.isPending}
             onClick={close}
           >
-            Cancel
+            {t("Cancel")}
           </Button>
           <Button
             type="submit"
@@ -156,7 +162,7 @@ export function RenameProject({
               name.trim().length > 256
             }
           >
-            Save name
+            {t("Save name")}
           </Button>
         </div>
       </form>

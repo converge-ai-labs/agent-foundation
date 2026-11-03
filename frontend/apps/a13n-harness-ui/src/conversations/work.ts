@@ -1,3 +1,4 @@
+import type { TFunction } from "i18next";
 import {
   useQuery,
   useQueryClient,
@@ -86,6 +87,7 @@ export function useThreadWork(
 }
 
 export function workCaption(
+  t: TFunction,
   work?: Schema<"ThreadWork">,
   stale = false,
   refreshing = false,
@@ -94,12 +96,17 @@ export function workCaption(
   const source =
     work?.source === "live"
       ? debug
-        ? `Live Run ${work.run_id}, revision ${work.revision}; not a saved checkpoint.`
-        : "Live work. Not saved yet."
+        ? t(
+            "Live Run {{run}}, revision {{revision}}; not a saved checkpoint.",
+            { run: work.run_id, revision: work.revision },
+          )
+        : t("Live work. Not saved yet.")
       : work?.source === "saved"
         ? debug
-          ? `Saved continuation ${work.continuation_id ?? "initial state"}.`
-          : "Saved work."
-        : "Work observation unavailable.";
-  return `${stale ? "Stale observation. " : ""}${refreshing ? "Refreshing. " : ""}${source}`;
+          ? t("Saved continuation {{continuation}}.", {
+              continuation: work.continuation_id ?? t("initial state"),
+            })
+          : t("Saved work.")
+        : t("Work observation unavailable.");
+  return `${stale ? t("Stale observation. ") : ""}${refreshing ? t("Refreshing. ") : ""}${source}`;
 }

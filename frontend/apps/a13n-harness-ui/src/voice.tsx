@@ -11,6 +11,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Microphone, Stop, Waveform } from "@phosphor-icons/react";
 import { Button } from "a13n-ui";
 import { useTranslation } from "./i18n";
+import { errorMessage } from "./i18n/error-message";
 import { useTransport } from "./transport/context";
 import { isConnectionError, result } from "./transport/client";
 import { ConnectionNoticeContext } from "./shell/connection";
@@ -54,9 +55,10 @@ export function VoiceIndicator() {
   const running = ["starting", "connecting", "active"].includes(voice.status);
   const connectionNotice = useContext(ConnectionNoticeContext);
   const error =
-    voice.error ||
+    (voice.error && (voice.errorLocalizable ? t(voice.error) : voice.error)) ||
     (!(connectionNotice && isConnectionError(settings.error)) &&
-      settings.error?.message);
+      settings.error &&
+      errorMessage(settings.error, t));
   if (!settings.data?.enabled && !running) return null;
   return (
     <div className={styles.workspaceVoice}>
@@ -120,12 +122,12 @@ export function VoicePage() {
       ].slice(-2)
     : [];
   const label = connected
-    ? "Connected"
+    ? t("Connected")
     : running
-      ? "Connecting"
+      ? t("Connecting")
       : voice.status === "failed"
-        ? "Connection ended"
-        : "Ready when you are";
+        ? t("Connection ended")
+        : t("Ready when you are");
   return (
     <main className={styles.page} id="main-content">
       <header className={styles.header}>
@@ -175,7 +177,7 @@ export function VoicePage() {
         </div>
         <p className={styles.status} role="status">
           <span data-active={connected} />
-          {t(label)}
+          {label}
         </p>
         <p className={styles.hint}>
           {t(
@@ -188,7 +190,11 @@ export function VoicePage() {
         </p>
         {(voice.error || settings.error) && (
           <p className={styles.error} role="alert">
-            {voice.error || settings.error?.message}
+            {voice.error
+              ? voice.errorLocalizable
+                ? t(voice.error)
+                : voice.error
+              : settings.error && errorMessage(settings.error, t)}
           </p>
         )}
         {!settings.isPending && !settings.data?.enabled && !settings.error && (

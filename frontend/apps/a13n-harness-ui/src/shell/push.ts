@@ -1,6 +1,24 @@
 import { result, type Transport } from "../transport/client";
 import { readPreference, writePreference } from "./preferences";
 
+export class PushError extends Error {
+  constructor(
+    message: string,
+    readonly registration?: {
+      guidance: string;
+      detail: string;
+      cause: unknown;
+    },
+  ) {
+    super(
+      registration
+        ? `${message} ${registration.guidance} Browser detail: ${registration.detail}`
+        : message,
+      registration ? { cause: registration.cause } : undefined,
+    );
+  }
+}
+
 const SUBSCRIPTION = "notifications.push-subscription";
 export const pushSubscriptionId = () => readPreference(SUBSCRIPTION, "");
 export const supportsPush = () =>
@@ -36,7 +54,9 @@ export async function notificationWorker(): Promise<ServiceWorkerRegistration> {
         timeout = setTimeout(
           () =>
             reject(
-              new Error("Background notification setup timed out. Try again."),
+              new PushError(
+                "Background notification setup timed out. Try again.",
+              ),
             ),
           15000,
         );
@@ -52,7 +72,7 @@ export async function enablePush(
   prompt = true,
 ): Promise<void> {
   if (!supportsPush())
-    throw new Error(
+    throw new PushError(
       "Use a supported browser with HTTPS for background alerts. On iPhone or iPad, add Harness to your Home Screen first.",
     );
   // Request directly from the user's gesture, before network or worker awaits.
@@ -61,7 +81,7 @@ export async function enablePush(
       ? await Notification.requestPermission()
       : Notification.permission;
   if (permission !== "granted")
-    throw new Error(
+    throw new PushError(
       "Allow notifications in this site's browser settings first.",
     );
   await serialized(async () => {
@@ -82,7 +102,7 @@ export async function enablePush(
       !!existingKey &&
       String(new Uint8Array(existingKey)) !== String(publicKey);
     if (!prompt && (!subscription || keyChanged))
-      throw new Error(
+      throw new PushError(
         "This device's push subscription has expired. Reconnect background notifications.",
       );
     // An explicit reconnect must replace endpoints rejected by the provider,
@@ -106,16 +126,16 @@ export async function enablePush(
         const guidance = /push service|AbortError/i.test(detail)
           ? "Check your network and notification service. On Android, also check Google Play services, your VPN and firewall."
           : "Check this site's notification permission and browser push support.";
-        throw new Error(
-          `Browser push registration failed before a subscription could be saved to Harness UI. ${guidance} Browser detail: ${detail}`,
-          { cause: error },
+        throw new PushError(
+          "Browser push registration failed before a subscription could be saved to Harness UI.",
+          { guidance, detail, cause: error },
         );
       }
     }
     try {
       const data = subscription.toJSON();
       if (!data.keys?.p256dh || !data.keys.auth)
-        throw new Error(
+        throw new PushError(
           "This browser did not return a complete push subscription.",
         );
       // The user may turn reminders off while the permission prompt or worker is pending.
@@ -144,7 +164,7 @@ export async function enablePush(
             params: { path: { subscription_id: saved.subscription_id } },
           },
         );
-        throw new Error(
+        throw new PushError(
           "Browser storage is unavailable; background notifications were not enabled.",
         );
       }
@@ -192,7 +212,7 @@ export async function disablePush(transport?: Transport): Promise<void> {
     if (browserRemoved || serverRemoved || !id)
       writePreference(SUBSCRIPTION, "");
     else
-      throw new Error(
+      throw new PushError(
         "Could not disable background notifications. Check browser site permissions and try again.",
       );
   });
@@ -231,7 +251,7 @@ export async function testPush(transport: Transport): Promise<void> {
     }),
   );
   if (!response.accepted)
-    throw new Error(
+    throw new PushError(
       "The push service did not accept the test. Try enabling background notifications again.",
     );
 }

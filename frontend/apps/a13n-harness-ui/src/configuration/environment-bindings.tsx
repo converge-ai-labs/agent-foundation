@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import {
   SettingsTextField as TextField,
   SettingsChoice as ChoiceField,
@@ -50,6 +51,7 @@ export function DefaultWorkingDirectory({
   allowUnsetDefault?: boolean;
   onChange: (alias: string | null) => void;
 }) {
+  const { t } = useTranslation();
   const devices = useDevices(!!value.environment_bindings?.length);
   const choices = workingDirectories(value, devices.data);
   const selected =
@@ -61,7 +63,7 @@ export function DefaultWorkingDirectory({
   return (
     <SettingsSection className={styles.defaultDirectory}>
       <ChoiceField
-        label="Default folder"
+        label={t("Default folder")}
         popupClassName={styles.directoryOptions}
         value={selected}
         onValueChange={(alias) => onChange(alias || null)}
@@ -70,7 +72,7 @@ export function DefaultWorkingDirectory({
             ? [
                 {
                   value: "",
-                  label: "Use chat default",
+                  label: t("Use chat default"),
                 },
               ]
             : []),
@@ -78,7 +80,7 @@ export function DefaultWorkingDirectory({
             ? [
                 {
                   value: selected,
-                  label: "Removed directory · Choose a replacement",
+                  label: t("Removed directory · Choose a replacement"),
                   disabled: true,
                 },
               ]
@@ -86,7 +88,9 @@ export function DefaultWorkingDirectory({
           ...choices,
         ]}
       />
-      {missing && <p role="alert">Choose a default folder before saving.</p>}
+      {missing && (
+        <p role="alert">{t("Choose a default folder before saving.")}</p>
+      )}
     </SettingsSection>
   );
 }
@@ -98,6 +102,7 @@ export function BindingSummary({
   bindings: readonly EnvironmentBinding[];
   defaultEnvironment?: string | null;
 }) {
+  const { t } = useTranslation();
   const devices = useDevices(bindings.length > 0);
   return (
     <>
@@ -116,7 +121,9 @@ export function BindingSummary({
             <p key={binding.alias} className={styles.summaryPath}>
               {binding.working_directory}
               {binding.alias === defaultEnvironment && (
-                <span className="ml-2 text-muted-foreground">Default</span>
+                <span className="ml-2 text-muted-foreground">
+                  {t("Default")}
+                </span>
               )}
             </p>
           ))}
@@ -144,6 +151,7 @@ export function EnvironmentBindings({
     defaultEnvironment: string | null,
   ) => void;
 }) {
+  const { t } = useTranslation();
   const devices = useDevices();
   const [editing, setEditing] = useState<EditingEnvironment>();
   const [removing, setRemoving] = useState<EnvironmentBinding>();
@@ -157,7 +165,7 @@ export function EnvironmentBindings({
   const selectedDefault = selectedWorkingDirectory(value);
   const removingDefault = removing?.alias === selectedDefault;
   return (
-    <section className={styles.remote} aria-label="Remote environments">
+    <section className={styles.remote} aria-label={t("Remote environments")}>
       <ErrorNotice error={devices.error} />
       {deviceEnvironments(bindings).map((group) => {
         const name =
@@ -168,7 +176,7 @@ export function EnvironmentBindings({
           <section
             key={group.key}
             className={styles.environment}
-            aria-label={`${name} environment`}
+            aria-label={t("{{name}} environment", { name })}
           >
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
@@ -179,7 +187,7 @@ export function EnvironmentBindings({
                 </p>
                 {devices.data &&
                   !devices.data.some((item) => item.id === group.deviceId) && (
-                    <p className="text-sm">Device not configured</p>
+                    <p className="text-sm">{t("Device not configured")}</p>
                   )}
               </div>
               <div className="flex flex-wrap gap-1">
@@ -189,9 +197,9 @@ export function EnvironmentBindings({
                   size="sm"
                   variant="ghost"
                   onClick={() => setEditing({ group })}
-                  aria-label={`Edit ${name} environment`}
+                  aria-label={t("Edit {{name}} environment", { name })}
                 >
-                  Edit
+                  {t("Edit")}
                 </Button>
               </div>
             </div>
@@ -202,7 +210,7 @@ export function EnvironmentBindings({
                     <p className="break-all">{binding.working_directory}</p>
                     {binding.alias === selectedDefault && (
                       <span className="text-xs text-muted-foreground">
-                        Default folder
+                        {t("Default folder")}
                       </span>
                     )}
                   </div>
@@ -210,14 +218,16 @@ export function EnvironmentBindings({
                     type="button"
                     size="sm"
                     variant="ghost"
-                    aria-label={`Remove directory ${binding.working_directory}`}
+                    aria-label={t("Remove directory {{path}}", {
+                      path: binding.working_directory,
+                    })}
                     disabled={!allowEmpty && bindings.length === 1}
                     onClick={() => {
                       setRemoving(binding);
                       setReplacement("");
                     }}
                   >
-                    Remove
+                    {t("Remove")}
                   </Button>
                 </li>
               ))}
@@ -228,21 +238,21 @@ export function EnvironmentBindings({
                 size="sm"
                 variant="ghost"
                 disabled={bindings.length >= 64}
-                aria-label={`Add directory to ${name}`}
+                aria-label={t("Add directory to {{name}}", { name })}
                 onClick={() => setEditing({ group, addDirectory: true })}
               >
                 <PlusIcon />
-                Add directory
+                {t("Add directory")}
               </Button>
             </div>
             <details className={styles.advanced}>
-              <summary className="cursor-pointer">Run details</summary>
+              <summary className="cursor-pointer">{t("Run details")}</summary>
               <p className="mt-2">
                 {policy.permission_ceiling?.operations?.join(", ") ??
-                  "Files and execution"}
+                  t("Files and execution")}
               </p>
               {(policy.egress || policy.expected_boundary) && (
-                <p>Custom network and access rules are kept.</p>
+                <p>{t("Custom network and access rules are kept.")}</p>
               )}
               {group.directories.map((binding) => (
                 <p key={binding.alias} className="mt-1 break-all">
@@ -263,7 +273,7 @@ export function EnvironmentBindings({
           onClick={() => setEditing({})}
         >
           <PlusIcon />
-          Add environment
+          {t("Add environment")}
         </Button>
       </div>
       <ModalFrame
@@ -271,8 +281,8 @@ export function EnvironmentBindings({
         onOpenChange={(open) => {
           if (!open) setEditing(undefined);
         }}
-        title={editing?.group ? "Edit environment" : "Add environment"}
-        closeLabel="Close"
+        title={editing?.group ? t("Edit environment") : t("Add environment")}
+        closeLabel={t("Close")}
       >
         {editing && (
           <DeviceEnvironmentEditor
@@ -301,9 +311,11 @@ export function EnvironmentBindings({
         onOpenChange={(open) => {
           if (!open) setRemoving(undefined);
         }}
-        title="Remove directory selection?"
-        description="Remove this folder from the selection? Files, the device connection and run history are kept."
-        closeLabel="Close"
+        title={t("Remove directory selection?")}
+        description={t(
+          "Remove this folder from the selection? Files, the device connection and run history are kept.",
+        )}
+        closeLabel={t("Close")}
         footer={
           <>
             <Button
@@ -311,7 +323,7 @@ export function EnvironmentBindings({
               variant="outline"
               onClick={() => setRemoving(undefined)}
             >
-              Cancel
+              {t("Cancel")}
             </Button>
             <Button
               type="button"
@@ -324,7 +336,7 @@ export function EnvironmentBindings({
                 setRemoving(undefined);
               }}
             >
-              Remove selection
+              {t("Remove selection")}
             </Button>
           </>
         }
@@ -332,8 +344,8 @@ export function EnvironmentBindings({
         <p className="break-all">{removing?.working_directory}</p>
         {removingDefault && (
           <ChoiceField
-            label="Replacement default"
-            placeholder="Choose a directory"
+            label={t("Replacement default")}
+            placeholder={t("Choose a directory")}
             value={replacement}
             onValueChange={setReplacement}
             options={choices.filter((item) => item.value !== removing?.alias)}
@@ -359,6 +371,7 @@ function DeviceEnvironmentEditor({
   save: (bindings: EnvironmentBinding[]) => void;
   cancel: () => void;
 }) {
+  const { t } = useTranslation();
   const first = initial[0];
   const [deviceId, setDeviceId] = useState(first?.device_id ?? "");
   const [directories, setDirectories] = useState(() => [
@@ -371,7 +384,7 @@ function DeviceEnvironmentEditor({
   const [permission, setPermission] = useState<string | undefined>(
     first ? permissionPreset(first.permission_ceiling) : "full",
   );
-  const [error, setError] = useState<Error>();
+  const [invalidAlias, setInvalidAlias] = useState(false);
   const [connected, setConnected] = useState<Schema<"DeviceSummary">>();
   const availableDevices =
     connected && !devices.some((item) => item.id === connected.id)
@@ -397,14 +410,16 @@ function DeviceEnvironmentEditor({
     <div className={styles.editor}>
       <SettingsSection>
         <ChoiceField
-          label="Device"
+          label={t("Device")}
           placeholder={
-            availableDevices.length ? "Choose a device" : "No devices connected"
+            availableDevices.length
+              ? t("Choose a device")
+              : t("No devices connected")
           }
           disabled={!availableDevices.length && !deviceId}
           description={
             !availableDevices.length && !deviceId
-              ? "Connect a device to add a remote environment."
+              ? t("Connect a device to add a remote environment.")
               : undefined
           }
           value={deviceId}
@@ -412,7 +427,12 @@ function DeviceEnvironmentEditor({
           options={[
             ...(deviceId &&
             !availableDevices.some((item) => item.id === deviceId)
-              ? [{ value: deviceId, label: `${deviceId} · Not configured` }]
+              ? [
+                  {
+                    value: deviceId,
+                    label: t("{{name}} · Not configured", { name: deviceId }),
+                  },
+                ]
               : []),
             ...availableDevices.map((item) => ({
               value: item.id,
@@ -422,27 +442,33 @@ function DeviceEnvironmentEditor({
         />
         {deviceId && (
           <ChoiceField
-            label="Allowed actions"
+            label={t("Allowed actions")}
             value={permission}
             onValueChange={setPermission}
-            placeholder="Keep existing permissions"
+            placeholder={t("Keep existing permissions")}
             options={[
-              { value: "read_only", label: "Read only" },
-              { value: "full", label: "Full control" },
+              { value: "read_only", label: t("Read only") },
+              { value: "full", label: t("Full control") },
             ]}
             description={
               permission === "full"
-                ? "Applies to the folders below. Allows files, commands and any enabled desktop controls. Desktop access extends beyond these folders. Screenshots may be sent to the model and saved in chat history."
+                ? t(
+                    "Applies to the folders below. Allows files, commands and any enabled desktop controls. Desktop access extends beyond these folders. Screenshots may be sent to the model and saved in chat history.",
+                  )
                 : permission === "read_only"
-                  ? "Read files in the folders below. No file changes, commands or desktop access."
-                  : "Keep each folder's current permissions unless you choose an option."
+                  ? t(
+                      "Read files in the folders below. No file changes, commands or desktop access.",
+                    )
+                  : t(
+                      "Keep each folder's current permissions unless you choose an option.",
+                    )
             }
           />
         )}
       </SettingsSection>
       <div>
         <ConnectDevice
-          label="Connect new device"
+          label={t("Connect new device")}
           onConnected={(device) => {
             setConnected(device);
             selectDevice(device.id);
@@ -458,21 +484,23 @@ function DeviceEnvironmentEditor({
               onChange={(path) => updateDirectory(index, { path })}
               label={
                 index === 0
-                  ? "Working directory"
-                  : `Working directory ${index + 1}`
+                  ? t("Working directory")
+                  : t("Working directory {{number}}", { number: index + 1 })
               }
             />
             <details className={styles.advanced}>
-              <summary>Advanced routing</summary>
+              <summary>{t("Advanced routing")}</summary>
               <TextField
                 label={
                   index === 0
-                    ? "Directory alias"
-                    : `Directory alias ${index + 1}`
+                    ? t("Directory alias")
+                    : t("Directory alias {{number}}", { number: index + 1 })
                 }
                 value={directory.alias}
                 onChange={(alias) => updateDirectory(index, { alias })}
-                description="An internal name for this connection. Leave blank to generate one."
+                description={t(
+                  "An internal name for this connection. Leave blank to generate one.",
+                )}
               />
             </details>
             {index >= initial.length &&
@@ -485,7 +513,7 @@ function DeviceEnvironmentEditor({
                     setDirectories(directories.filter((_, i) => i !== index))
                   }
                 >
-                  Discard directory
+                  {t("Discard directory")}
                 </Button>
               )}
           </div>
@@ -502,14 +530,24 @@ function DeviceEnvironmentEditor({
             }
           >
             <PlusIcon />
-            Add folder
+            {t("Add folder")}
           </Button>
         </div>
       )}
-      <ErrorNotice error={error} />
+      <ErrorNotice
+        error={
+          invalidAlias
+            ? new Error(
+                t(
+                  "Choose unique directory aliases using lowercase letters, numbers, hyphens or underscores. Host mount names are reserved.",
+                ),
+              )
+            : undefined
+        }
+      />
       <div data-a13n-form-actions className={styles.actions}>
         <Button type="button" variant="outline" onClick={cancel}>
-          Cancel
+          {t("Cancel")}
         </Button>
         <Button
           type="button"
@@ -530,11 +568,7 @@ function DeviceEnvironmentEditor({
                 !/^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*$/.test(alias) ||
                 alias.length > 63
               ) {
-                setError(
-                  new Error(
-                    "Choose unique directory aliases using lowercase letters, numbers, hyphens or underscores. Host mount names are reserved.",
-                  ),
-                );
+                setInvalidAlias(true);
                 return;
               }
               aliases.push(alias);
@@ -557,7 +591,7 @@ function DeviceEnvironmentEditor({
             save(next);
           }}
         >
-          Use environment
+          {t("Use environment")}
         </Button>
       </div>
     </div>
@@ -592,6 +626,7 @@ export function suggestAlias(name: string, used: readonly string[]) {
 }
 
 function BindingStatus({ deviceId }: { deviceId: string }) {
+  const { t } = useTranslation();
   const info = useDeviceInfo(deviceId, false);
   return (
     <Button
@@ -603,9 +638,9 @@ function BindingStatus({ deviceId }: { deviceId: string }) {
     >
       {info.data
         ? info.data.available
-          ? "Online · Check"
-          : "Offline · Retry"
-        : "Check connection"}
+          ? t("Online · Check")
+          : t("Offline · Retry")
+        : t("Check connection")}
     </Button>
   );
 }

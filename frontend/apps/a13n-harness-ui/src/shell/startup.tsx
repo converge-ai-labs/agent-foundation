@@ -44,9 +44,7 @@ export function Startup({
         <div className={styles.status}>
           <LanguageChoice />
           {error && <h1>{t("Can't connect to Harness UI")}</h1>}
-          <p role="status">
-            {error ? t(error) : t("Connecting to Harness UI…")}
-          </p>
+          <p role="status">{error || t("Connecting to Harness UI…")}</p>
           {!connecting && (
             <Button variant="outline" onClick={retry}>
               {t("Retry connection")}

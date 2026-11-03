@@ -1,3 +1,4 @@
+import { i18n } from "../i18n";
 import type { Schema } from "../transport/client";
 
 export type EnvironmentSelection = Schema<"EnvironmentSelectionPatch">;
@@ -52,14 +53,19 @@ export function environmentSummary(value: EnvironmentSelection) {
   const directories = roots.length + bindings.length;
   if (!bindings.length)
     return roots.length
-      ? `Local · ${directoryCount(roots.length)}`
-      : "Local · Chat files";
+      ? i18n.t("Local · {{directories}}", {
+          directories: directoryCount(roots.length),
+        })
+      : i18n.t("Local · Chat files");
   const count = deviceEnvironments(bindings).length + (roots.length ? 1 : 0);
-  return `${count} environment${count === 1 ? "" : "s"} · ${directoryCount(directories)}`;
+  return i18n.t("{{environments}} · {{directories}}", {
+    environments: i18n.t("{{count}} environment", { count }),
+    directories: directoryCount(directories),
+  });
 }
 
 export function directoryCount(count: number) {
-  return `${count} director${count === 1 ? "y" : "ies"}`;
+  return i18n.t("{{count}} directory", { count });
 }
 
 export function workingDirectories(
@@ -72,9 +78,11 @@ export function workingDirectories(
   return [
     ...(value.local_roots ?? []).map((path, index) => ({
       value: localAlias(index),
-      label: `Local · ${path || "Empty directory"}`,
+      label: i18n.t("Local · {{path}}", {
+        path: path || i18n.t("Empty directory"),
+      }),
     })),
-    { value: "thread-files", label: "Local · Chat files" },
+    { value: "thread-files", label: i18n.t("Local · Chat files") },
     ...bindings.map((binding) => ({
       value: binding.alias,
       label:

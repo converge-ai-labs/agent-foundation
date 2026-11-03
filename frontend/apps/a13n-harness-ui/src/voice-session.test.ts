@@ -187,6 +187,7 @@ it("reports control failure and requires another user start rather than reconnec
   expect(session.getSnapshot()).toMatchObject({
     status: "failed",
     error: "Another tab owns Live",
+    errorLocalizable: false,
   });
   await vi.advanceTimersByTimeAsync(65_000);
   expect(Socket.instances).toHaveLength(1);
@@ -203,6 +204,16 @@ it("releases controls on denied microphone permission", async () => {
   });
   expect(socket.close).toHaveBeenCalledTimes(1);
   expect(fetchMock).not.toHaveBeenCalled();
+});
+it("marks locally generated timeout messages for localization", async () => {
+  const { pending } = await claim();
+  await pending;
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(session.getSnapshot()).toMatchObject({
+    status: "failed",
+    error: "Voice connection timed out. Start again when ready.",
+    errorLocalizable: true,
+  });
 });
 it("releases a startup timeout even after the start receipt has returned", async () => {
   const { pending } = await claim();

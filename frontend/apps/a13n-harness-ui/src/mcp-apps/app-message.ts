@@ -5,7 +5,7 @@ export type MessageState = {
   context?: Schema<"AppContext">;
   sent: boolean;
   receipt?: Schema<"AppMessageReceipt">;
-  uncertain?: string;
+  uncertain?: boolean;
 };
 
 /** One user-reviewed message at a time. Lost writes are reconciled by key, never resent. */
@@ -129,8 +129,7 @@ export class AppMessage {
       if (!this.closed && this.state?.request.request_key === key)
         this.publish({
           ...this.state,
-          uncertain:
-            "Message outcome unknown. It was not resent. Check its receipt or inspect the chat.",
+          uncertain: true,
         });
     }
   }

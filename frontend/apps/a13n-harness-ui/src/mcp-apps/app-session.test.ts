@@ -104,9 +104,7 @@ it.each([true, false])(
     POST.mockRejectedValue(new Error("decision response lost"));
     GET.mockResolvedValue({ data: operation(key, "approval_required") });
     await session.decide(key, approve);
-    expect(session.getSnapshot()[0].uncertain).toContain(
-      "Couldn't confirm your choice",
-    );
+    expect(session.getSnapshot()[0].uncertain).toEqual({ kind: "decision" });
     await session.decide(key, !approve);
     await session.reconcile(key);
     await session.decide(key, approve);
@@ -124,7 +122,10 @@ it("shows unknown outcomes, stops polling on connection failure, and only reads 
   GET.mockRejectedValue(new Error("offline"));
   const completion = session.call("counter");
   await vi.advanceTimersByTimeAsync(0);
-  expect(session.getSnapshot()[0].uncertain).toContain("not repeated");
+  expect(session.getSnapshot()[0].uncertain).toEqual({
+    kind: "result",
+    cause: expect.objectContaining({ message: "offline" }),
+  });
   await vi.advanceTimersByTimeAsync(60000);
   expect(GET).toHaveBeenCalledTimes(1);
   expect(POST).toHaveBeenCalledTimes(1);

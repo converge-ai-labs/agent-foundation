@@ -10,6 +10,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { i18n } from "../i18n";
 import { TransportContext } from "../transport/context";
 import type { Transport, Schema } from "../transport/client";
 import { EnvironmentMonitor, MonitorContent } from "./environment-monitor";
@@ -294,4 +295,28 @@ it("switches resource views and keeps rates per source with unavailable daemon t
   expect(screen.getByText("Sessions").nextElementSibling?.textContent).toBe(
     "2",
   );
+});
+
+it("preserves the selected device and refresh setting through language changes", async () => {
+  await i18n.changeLanguage("en");
+  const { get } = setup();
+  await screen.findByText("Monitoring disabled");
+  fireEvent.change(screen.getByRole("combobox", { name: "Device" }), {
+    target: { value: "Test" },
+  });
+  await screen.findByText("Offline");
+  fireEvent.change(screen.getByRole("combobox", { name: "Auto-refresh" }), {
+    target: { value: "0" },
+  });
+  const requests = get.mock.calls.length;
+  await act(() => i18n.changeLanguage("zh-CN"));
+  expect(screen.getByText("离线")).toBeTruthy();
+  expect(
+    screen.getByRole<HTMLSelectElement>("combobox", { name: "设备" }).value,
+  ).toBe("Test");
+  expect(
+    screen.getByRole<HTMLSelectElement>("combobox", { name: "自动刷新" }).value,
+  ).toBe("0");
+  expect(get).toHaveBeenCalledTimes(requests);
+  await act(() => i18n.changeLanguage("en"));
 });

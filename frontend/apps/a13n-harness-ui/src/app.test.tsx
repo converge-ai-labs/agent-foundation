@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -11,6 +12,7 @@ import {
 import userEvent from "@testing-library/user-event";
 import { parse } from "yaml";
 import { BrowserApp } from "./app";
+import { i18n } from "./i18n";
 import { Realtime } from "./transport/realtime";
 import * as push from "./shell/push";
 import { IDBFactory } from "fake-indexeddb";
@@ -448,6 +450,62 @@ it("supports explicit server bypass without inventing a frontend version", async
   await screen.findByText("Harness UI · 0.0.0");
   expect(screen.getByText(/Server login is disabled/)).toBeTruthy();
 });
+
+it.each([true, false])(
+  "retains startup error provenance across language changes (local: %s)",
+  async (local) => {
+    const message = "This server returned an incompatible status response.";
+    const fetcher = vi
+      .fn()
+      .mockResolvedValue(local ? json({}) : json({ error: { message } }, 500));
+    vi.stubGlobal("fetch", fetcher);
+    render(<BrowserApp />);
+    try {
+      await screen.findByText(message);
+      await act(async () => {
+        await i18n.changeLanguage("zh-CN");
+      });
+      expect(screen.getByRole("status").textContent).toBe(
+        local ? "服务器返回了不兼容的状态响应。" : message,
+      );
+      expect(fetcher).toHaveBeenCalledOnce();
+    } finally {
+      await act(async () => {
+        await i18n.changeLanguage("en");
+      });
+    }
+  },
+);
+
+it.each([true, false])(
+  "translates only locally generated HTTP fallback errors (fallback: %s)",
+  async (fallback) => {
+    const message = "Request failed (500).";
+    const fetcher = vi
+      .fn()
+      .mockResolvedValue(
+        fallback
+          ? new Response("bad gateway", { status: 500 })
+          : json({ error: { message } }, 500),
+      );
+    vi.stubGlobal("fetch", fetcher);
+    render(<BrowserApp />);
+    try {
+      await screen.findByText(message);
+      await act(async () => {
+        await i18n.changeLanguage("zh-CN");
+      });
+      expect(screen.getByRole("status").textContent).toBe(
+        fallback ? "请求失败（500）。" : message,
+      );
+      expect(fetcher).toHaveBeenCalledOnce();
+    } finally {
+      await act(async () => {
+        await i18n.changeLanguage("en");
+      });
+    }
+  },
+);
 
 it("rejects incompatible status without caching access", async () => {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json({})));

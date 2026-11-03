@@ -230,17 +230,17 @@ export function EnvironmentsPage() {
         aria-label={t("Environment sections")}
       >
         {[
-          ["local", "Local execution"],
-          ["devices", "Devices"],
-          ["profiles", "Profiles & extensions"],
-          ["runtime", "Local runtime"],
+          ["local", t("Local execution")],
+          ["devices", t("Devices")],
+          ["profiles", t("Profiles & extensions")],
+          ["runtime", t("Local runtime")],
         ].map(([value, label]) => (
           <Link
             key={value}
             to={`/settings/environments?tab=${value}`}
             aria-current={selectedTab === value ? "page" : undefined}
           >
-            {t(label)}
+            {label}
           </Link>
         ))}
       </nav>
@@ -279,7 +279,7 @@ export function EnvironmentsPage() {
               />
             </div>
             <p className={layout.hint}>
-              Choose full access or a sandbox for local work.
+              {t("Choose full access or a sandbox for local work.")}
             </p>
             <DraftLinks kinds={["environment_profile"]} />
             {selectors.isPending && <Skeleton className="h-32 w-full" />}
@@ -368,14 +368,26 @@ export function InstalledCatalog({
     queryFn: ({ signal }) => result(client.GET("/api/catalog", { signal })),
   });
   const available = catalog.data?.filter((item) => item.kind === kind);
-  const catalogLabel =
+  const catalogCopy =
     kind === "capability"
-      ? "capabilities"
+      ? {
+          search: t("Search installed capabilities"),
+          noMatch: t("No matching installed capabilities."),
+          empty: t("No installed capabilities."),
+        }
       : kind === "environment_provider"
-        ? "environment providers"
-        : "plugins";
+        ? {
+            search: t("Search installed environment providers"),
+            noMatch: t("No matching installed environment providers."),
+            empty: t("No installed environment providers."),
+          }
+        : {
+            search: t("Search installed plugins"),
+            noMatch: t("No matching installed plugins."),
+            empty: t("No installed plugins."),
+          };
   const items = available?.filter((item) =>
-    `${item.key} ${item.kind === "capability" ? capabilityLabel(item.key) : ""} ${item.distribution_name ?? ""}`
+    `${item.key} ${item.kind === "capability" ? capabilityLabel(item.key, t) : ""} ${item.distribution_name ?? ""}`
       .toLowerCase()
       .includes(search.toLowerCase()),
   );
@@ -390,7 +402,7 @@ export function InstalledCatalog({
       <ErrorNotice error={catalog.error} retry={() => void catalog.refetch()} />
       {!!available?.length && (
         <SearchField
-          label={t(`Search installed ${catalogLabel}`)}
+          label={catalogCopy.search}
           value={search}
           onChange={setSearch}
         />
@@ -402,7 +414,7 @@ export function InstalledCatalog({
             <div>
               <strong>
                 {item.kind === "capability"
-                  ? capabilityLabel(item.key)
+                  ? capabilityLabel(item.key, t)
                   : item.key}
               </strong>
               <small>
@@ -434,9 +446,7 @@ export function InstalledCatalog({
       </div>
       {items?.length === 0 && (
         <p className={layout.hint}>
-          {available?.length
-            ? t(`No matching installed ${catalogLabel}.`)
-            : t(`No installed ${catalogLabel}.`)}
+          {available?.length ? catalogCopy.noMatch : catalogCopy.empty}
         </p>
       )}
     </div>

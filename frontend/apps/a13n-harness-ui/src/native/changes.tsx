@@ -1,3 +1,5 @@
+import { useTranslation } from "../i18n";
+import type { TFunction } from "i18next";
 import { useEffect, useMemo, useState } from "react";
 import {
   useInfiniteQuery,
@@ -27,17 +29,17 @@ import { gitPath } from "./buffer";
 import styles from "./native.module.css";
 
 type Page = { offset: number; expected_revision?: string };
-export function gitChangeLabel(change: Schema<"GitChange">) {
-  if (change.kind === "conflicted") return "Conflict";
-  if (change.kind === "untracked") return "New";
-  if (change.kind === "ignored") return "Ignored";
+export function gitChangeLabel(change: Schema<"GitChange">, t: TFunction) {
+  if (change.kind === "conflicted") return t("Conflict");
+  if (change.kind === "untracked") return t("New");
+  if (change.kind === "ignored") return t("Ignored");
   const labels: Record<string, string> = {
-    M: "Modified",
-    A: "Added",
-    D: "Deleted",
-    R: "Renamed",
-    C: "Copied",
-    T: "Type changed",
+    M: t("Modified"),
+    A: t("Added"),
+    D: t("Deleted"),
+    R: t("Renamed"),
+    C: t("Copied"),
+    T: t("Type changed"),
   };
   return (
     [
@@ -46,7 +48,7 @@ export function gitChangeLabel(change: Schema<"GitChange">) {
           .map((status) => labels[status])
           .filter(Boolean),
       ),
-    ].join(" · ") || "Changed"
+    ].join(" · ") || t("Changed")
   );
 }
 export function useGitStatus(path: string, includeIgnored: boolean) {
@@ -125,6 +127,7 @@ export function Changes({
   select: (selection: DiffSelection | null, choices?: DiffSelection[]) => void;
   onChoices?: (choices: DiffSelection[]) => void;
 }) {
+  const { t } = useTranslation();
   const queries = useQueryClient();
   const [ignored, setIgnored] = useState(false);
   const [filter, setFilter] = useState("");
@@ -158,14 +161,16 @@ export function Changes({
   if (!feature)
     return (
       <div className={styles.empty}>
-        <h3>Git unavailable</h3>
+        <h3>{t("Git unavailable")}</h3>
         <p>
-          Install Git on the server and turn on computer sharing to view
-          changes.
+          {t(
+            "Install Git on the server and turn on computer sharing to view changes.",
+          )}
         </p>
       </div>
     );
-  if (!path) return <p>Choose a server directory to inspect its repository.</p>;
+  if (!path)
+    return <p>{t("Choose a server directory to inspect its repository.")}</p>;
   const groups = ["staged", "unstaged", "untracked"] as const;
   const matches = entries.filter((entry) =>
     `${entry.path} ${entry.original_path ?? ""}`
@@ -182,46 +187,60 @@ export function Changes({
         }}
       />
       {(discovery.isFetching || status.isFetching) && (
-        <small role="status">Refreshing Git status…</small>
+        <small role="status">{t("Refreshing Git status…")}</small>
       )}
       {discovery.data?.state !== "repository" && discovery.data && (
         <div className={styles.empty}>
           <h3>
             {discovery.data.state === "bare"
-              ? "Bare repository"
-              : "No Git worktree here"}
+              ? t("Bare repository")
+              : t("No Git worktree here")}
           </h3>
           <p>
-            Choose a Git worktree folder. Other files are still available in
-            Files.
+            {t(
+              "Choose a Git worktree folder. Other files are still available in Files.",
+            )}
           </p>
         </div>
       )}
       {repository && (
         <>
           <details className={styles.repo}>
-            <summary aria-label="Repository details" title={repository.root}>
+            <summary
+              aria-label={t("Repository details")}
+              title={repository.root}
+            >
               <GitBranch size={14} aria-hidden />
               <span>
-                {repository.branch ?? "Detached HEAD"}
-                {!repository.head_oid ? " · No commits yet" : ""}
+                {repository.branch ?? t("Detached HEAD")}
+                {!repository.head_oid ? t(" · No commits yet") : ""}
               </span>
               <CaretRight size={12} aria-hidden />
             </summary>
             <div>
-              <p>Worktree: {repository.root}</p>
+              <p>{t("Worktree: {{path}}", { path: repository.root })}</p>
               <DebugOnly>
-                <p>HEAD: {repository.head_oid ?? "Empty tree (no commits)"}</p>
-                <p>Git directory: {repository.git_dir}</p>
-                <p>Common directory: {repository.common_dir}</p>
+                <p>
+                  {t("HEAD: {{head}}", {
+                    head: repository.head_oid ?? t("Empty tree (no commits)"),
+                  })}
+                </p>
+                <p>
+                  {t("Git directory: {{path}}", { path: repository.git_dir })}
+                </p>
+                <p>
+                  {t("Common directory: {{path}}", {
+                    path: repository.common_dir,
+                  })}
+                </p>
               </DebugOnly>
-              <p>Changes include all work in this checkout.</p>
+              <p>{t("Changes include all work in this checkout.")}</p>
             </div>
           </details>
           <div className={styles.directoryToolbar}>
             <SearchField
-              label="Filter loaded changes by path"
-              placeholder="Filter changes…"
+              label={t("Filter loaded changes by path")}
+              placeholder={t("Filter changes…")}
               value={filter}
               onChange={setFilter}
             />
@@ -231,7 +250,7 @@ export function Changes({
                   <Button
                     variant="ghost"
                     size="icon-sm"
-                    aria-label="Change filters"
+                    aria-label={t("Change filters")}
                   />
                 }
               >
@@ -242,13 +261,15 @@ export function Changes({
                   checked={ignored}
                   onCheckedChange={setIgnored}
                 >
-                  Show ignored entries
+                  {t("Show ignored entries")}
                 </MenuCheckboxItem>
               </MenuPopup>
             </Menu>
           </div>
           {status.hasNextPage && (
-            <small>Counts and filtering cover loaded changes only.</small>
+            <small>
+              {t("Counts and filtering cover loaded changes only.")}
+            </small>
           )}
           {groups.map((axis) => {
             const rows = matches.filter((entry) =>
@@ -260,19 +281,19 @@ export function Changes({
                 <summary
                   title={
                     axis === "staged"
-                      ? "HEAD → index"
+                      ? t("HEAD → index")
                       : axis === "unstaged"
-                        ? "Index → worktree"
-                        : "New files"
+                        ? t("Index → worktree")
+                        : t("New files")
                   }
                 >
                   <CaretRight size={12} aria-hidden />
                   <span>
                     {axis === "staged"
-                      ? "Staged"
+                      ? t("Staged")
                       : axis === "unstaged"
-                        ? "Unstaged"
-                        : "Untracked"}
+                        ? t("Unstaged")
+                        : t("Untracked")}
                   </span>
                   <small>
                     {rows.length}
@@ -302,12 +323,12 @@ export function Changes({
                     </span>
                     <small>
                       {entry.kind === "conflicted"
-                        ? "Conflict"
+                        ? t("Conflict")
                         : axis === "staged"
                           ? entry.index_status
                           : axis === "unstaged"
                             ? entry.worktree_status
-                            : "New"}
+                            : t("New")}
                       {entry.submodule && entry.submodule !== "N..."
                         ? ` · ${entry.submodule}`
                         : ""}
@@ -328,16 +349,16 @@ export function Changes({
                   onClick={() => openFile(gitPath(repository.root, entry.path))}
                 >
                   <span>{entry.path}</span>
-                  <small>Open in Files</small>
+                  <small>{t("Open in Files")}</small>
                 </button>
               ))}
           {!matches.length && status.isSuccess && !status.error && (
             <p className={styles.changeEmpty}>
               {filter
-                ? "No loaded changes match this filter."
+                ? t("No loaded changes match this filter.")
                 : status.hasNextPage
-                  ? "No changes in this loaded page."
-                  : "No changes in this worktree."}
+                  ? t("No changes in this loaded page.")
+                  : t("No changes in this worktree.")}
             </p>
           )}
           {status.hasNextPage && (
@@ -347,7 +368,7 @@ export function Changes({
               disabled={status.isFetching}
               onClick={() => void status.fetchNextPage()}
             >
-              Load more changes
+              {t("Load more changes")}
             </Button>
           )}
         </>
@@ -368,6 +389,7 @@ export function DiffView({
   choices?: DiffSelection[];
   navigate?: (selection: DiffSelection) => void;
 }) {
+  const { t } = useTranslation();
   const { client } = useTransport();
   const diff = useQuery({
     queryKey: ["native", "diff", selection],
@@ -388,18 +410,18 @@ export function DiffView({
       item.comparison === selection.comparison,
   );
   return (
-    <section className={styles.file} aria-label="Reviewed Git diff">
+    <section className={styles.file} aria-label={t("Reviewed Git diff")}>
       <div className={styles.fileHeader}>
         {navigate && choices.length > 1 && (
           <nav
             className={styles.changeNavigation}
-            aria-label="Review changed files"
+            aria-label={t("Review changed files")}
           >
             <Button
               size="icon-sm"
               variant="ghost"
-              aria-label="Previous file"
-              title="Previous file"
+              aria-label={t("Previous file")}
+              title={t("Previous file")}
               disabled={index <= 0}
               onClick={() => navigate(choices[index - 1]!)}
             >
@@ -409,8 +431,8 @@ export function DiffView({
             <Button
               size="icon-sm"
               variant="ghost"
-              aria-label="Next file"
-              title="Next file"
+              aria-label={t("Next file")}
+              title={t("Next file")}
               disabled={index < 0 || index >= choices.length - 1}
               onClick={() => navigate(choices[index + 1]!)}
             >
@@ -425,16 +447,19 @@ export function DiffView({
             openFile(gitPath(selection.repository_path, selection.path))
           }
         >
-          Open in Files
+          {t("Open in Files")}
         </Button>
       </div>
       <ErrorNotice error={diff.error} retry={() => void diff.refetch()} />
-      {diff.isFetching && <p role="status">Reading comparison…</p>}
+      {diff.isFetching && <p role="status">{t("Reading comparison…")}</p>}
       {value && (
         <>
           {value.original_path && (
             <p>
-              Rename: {value.original_path} → {value.path}
+              {t("Rename: {{from}} → {{to}}", {
+                from: value.original_path,
+                to: value.path,
+              })}
             </p>
           )}
           {value.presentation === "text" && value.text != null ? (
@@ -457,20 +482,35 @@ export function DiffView({
           ) : (
             <p>
               {value.presentation === "binary"
-                ? "This isn't UTF-8 text. Open it in Files to attach the file instead."
-                : "No changes on this comparison axis."}
+                ? t(
+                    "This isn't UTF-8 text. Open it in Files to attach the file instead.",
+                  )
+                : t("No changes on this comparison axis.")}
             </p>
           )}
           <DebugOnly>
             <details className={styles.metadata}>
-              <summary>Comparison version</summary>
-              <p>Repository: {value.repository.root}</p>
+              <summary>{t("Comparison version")}</summary>
               <p>
-                HEAD: {value.repository.head_oid ?? "Empty tree (unborn HEAD)"}
+                {t("Repository: {{path}}", { path: value.repository.root })}
               </p>
-              <p>Index: {value.index_revision}</p>
-              <p>Diff revision: {value.revision}</p>
-              <p>Git directory: {value.repository.git_dir}</p>
+              <p>
+                {t("HEAD: {{head}}", {
+                  head:
+                    value.repository.head_oid ?? t("Empty tree (unborn HEAD)"),
+                })}
+              </p>
+              <p>
+                {t("Index: {{revision}}", { revision: value.index_revision })}
+              </p>
+              <p>
+                {t("Diff revision: {{revision}}", { revision: value.revision })}
+              </p>
+              <p>
+                {t("Git directory: {{path}}", {
+                  path: value.repository.git_dir,
+                })}
+              </p>
             </details>
           </DebugOnly>
         </>

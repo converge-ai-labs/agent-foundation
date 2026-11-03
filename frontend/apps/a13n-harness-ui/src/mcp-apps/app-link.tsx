@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "a13n-ui";
 import styles from "./app-card.module.css";
@@ -31,6 +32,7 @@ type PendingLink = {
 };
 
 export function useAppLink() {
+  const { t } = useTranslation();
   const pending = useRef<PendingLink | undefined>(undefined);
   const [href, setHref] = useState<string>();
   const cancel = useCallback(() => {
@@ -55,12 +57,13 @@ export function useAppLink() {
   const confirmation = href ? (
     <section
       className={styles.request}
-      aria-label="App external link confirmation"
+      aria-label={t("App external link confirmation")}
     >
-      <strong>Open this external website?</strong>
+      <strong>{t("Open this external website?")}</strong>
       <p>
-        The app wants to open this link. It opens in a new tab without access to
-        this chat.
+        {t(
+          "The app wants to open this link. It opens in a new tab without access to this chat.",
+        )}
       </p>
       <pre>{href}</pre>
       <div className={styles.actions}>
@@ -76,10 +79,10 @@ export function useAppLink() {
             link.resolve({});
           }}
         >
-          Open external link
+          {t("Open external link")}
         </Button>
         <Button size="sm" variant="ghost" onClick={cancel}>
-          Decline link
+          {t("Decline link")}
         </Button>
       </div>
     </section>

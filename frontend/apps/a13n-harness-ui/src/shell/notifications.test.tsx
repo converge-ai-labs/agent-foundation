@@ -116,6 +116,24 @@ function mount(path = "/threads/thread-1", transport: Transport | null = null) {
     </QueryClientProvider>,
   );
 }
+it("updates the permission prompt when the language changes without dismissing it", async () => {
+  mount();
+  expect(await screen.findByText("Get task notifications")).toBeTruthy();
+  try {
+    await act(async () => {
+      await i18n.changeLanguage("zh-CN");
+    });
+    expect(await screen.findByText("获取任务通知")).toBeTruthy();
+    expect(screen.getByText("在任务完成或需要你输入时接收通知。")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "设置" }));
+    expect(screen.getByText("/settings/notifications")).toBeTruthy();
+  } finally {
+    await act(async () => {
+      await i18n.changeLanguage("en");
+    });
+  }
+});
+
 it("requires explicit background opt-in for granted permission and suppresses page-native duplicates", async () => {
   permission = "granted";
   const transport = createTransport("fixture-key", vi.fn());
@@ -566,3 +584,87 @@ it("suppresses a viewed Goal success but keeps incomplete Goal warnings", async 
   fireEvent.click(screen.getByText("Emit"));
   expect(await screen.findByText("Goal not verified · UI polish")).toBeTruthy();
 });
+
+it("retranslates local push failures without retrying and preserves browser details", async () => {
+  permission = "granted";
+  writePreference("notifications.push-subscription", "subscription-one");
+  const transport = createTransport("fixture-key", vi.fn());
+  vi.spyOn(push, "enablePush").mockResolvedValue();
+  const failure = new push.PushError(
+    "Browser push registration failed before a subscription could be saved to Harness UI.",
+    {
+      guidance:
+        "Check this site's notification permission and browser push support.",
+      detail: "NotAllowedError: browser detail",
+      cause: new Error("browser detail"),
+    },
+  );
+  const test = vi.spyOn(push, "testPush").mockRejectedValue(failure);
+  mount("/settings#notifications", transport);
+  try {
+    await screen.findByText("Enabled on this device");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Send test notification" }),
+    );
+    await screen.findByText("Subscription needs attention");
+    expect(screen.getByRole("alert").textContent).toContain(
+      "Browser detail: NotAllowedError: browser detail",
+    );
+    await act(async () => {
+      await i18n.changeLanguage("zh-CN");
+    });
+    expect(screen.getByRole("alert").textContent).toContain(
+      "浏览器推送注册失败",
+    );
+    expect(screen.getByRole("alert").textContent).toContain(
+      "浏览器详情：NotAllowedError: browser detail",
+    );
+    expect(test).toHaveBeenCalledOnce();
+  } finally {
+    await act(async () => {
+      await i18n.changeLanguage("en");
+    });
+    transport.close();
+  }
+});
+
+it.each([
+  { local: true, expected: "请先在浏览器中允许此网站发送通知。" },
+  {
+    local: false,
+    expected: "Allow notifications in this site's browser settings first.",
+  },
+])(
+  "distinguishes a $local local push failure from identical external text",
+  async ({ local, expected }) => {
+    permission = "granted";
+    writePreference("notifications.push-subscription", "subscription-one");
+    const transport = createTransport("fixture-key", vi.fn());
+    vi.spyOn(push, "enablePush").mockResolvedValue();
+    const message =
+      "Allow notifications in this site's browser settings first.";
+    const test = vi
+      .spyOn(push, "testPush")
+      .mockRejectedValue(
+        local ? new push.PushError(message) : new Error(message),
+      );
+    mount("/settings#notifications", transport);
+    try {
+      await screen.findByText("Enabled on this device");
+      fireEvent.click(
+        screen.getByRole("button", { name: "Send test notification" }),
+      );
+      await screen.findByText("Subscription needs attention");
+      await act(async () => {
+        await i18n.changeLanguage("zh-CN");
+      });
+      expect(screen.getByRole("alert").textContent).toContain(expected);
+      expect(test).toHaveBeenCalledOnce();
+    } finally {
+      await act(async () => {
+        await i18n.changeLanguage("en");
+      });
+      transport.close();
+    }
+  },
+);

@@ -185,11 +185,14 @@ export async function submitDraft(
   let references: Schema<"SkillReference">[] = [];
   let skillCatalog: Schema<"SkillCatalogView"> | undefined;
   let appContext: Schema<"AppContextReference">[] = [];
+  let capturing = false;
   try {
     if (action === "send") appContext = captureAppContext?.() ?? [];
     if (prepare) await prepare();
     signal?.throwIfAborted();
+    capturing = true;
     captured = draft.capture();
+    capturing = false;
     parts =
       preset === undefined
         ? captured.parts
@@ -210,6 +213,7 @@ export async function submitDraft(
     draft.submission = {
       kind: "rejected",
       message: error instanceof Error ? error.message : "Cannot capture input.",
+      raw: error instanceof Error && !capturing,
     };
     captured?.doc.destroy();
     draft.notify();
@@ -219,6 +223,7 @@ export async function submitDraft(
   input.state = "pending";
   draft.submission = { kind: "pending", action };
   draft.notify();
+  let localRejection = false;
   try {
     let acceptedReceipt: string;
     if (action === "send") {
@@ -242,11 +247,13 @@ export async function submitDraft(
         throw new Error("Submission acknowledgement was incomplete.");
       acceptedReceipt = accepted.receipt_id;
     } else {
-      if (!receipt)
+      if (!receipt) {
+        localRejection = true;
         throw new ApiError(
           "The current operation is unavailable. Refresh its status.",
           409,
         );
+      }
       const accepted = await result(
         transport.client.POST("/api/operations/{receipt_id}/steer", {
           params: { path: { receipt_id: receipt } },
@@ -262,11 +269,13 @@ export async function submitDraft(
         throw new Error(
           "Instruction acknowledgement did not match this operation.",
         );
-      if (!accepted.accepted)
+      if (!accepted.accepted) {
+        localRejection = true;
         throw new ApiError(
           "The run didn't accept your message. Your input is still saved here.",
           409,
         );
+      }
       acceptedReceipt = receipt;
     }
     input.state = "accepted";
@@ -285,7 +294,11 @@ export async function submitDraft(
       error.status < 500
     ) {
       input.state = "rejected";
-      draft.submission = { kind: "rejected", message: error.message };
+      draft.submission = {
+        kind: "rejected",
+        message: error.message,
+        raw: !localRejection,
+      };
     } else {
       input.state = "unknown";
       draft.submission = {
@@ -459,10 +472,14 @@ export function Composer({
   const [notice, setNotice] = useState<{
     message: string;
     values?: Record<string, string>;
+    raw?: boolean;
   }>({ message: "" });
   const error = notice.message;
-  const setError = (message: string, values?: Record<string, string>) =>
-    setNotice({ message, values });
+  const setError = (
+    message: string,
+    values?: Record<string, string>,
+    raw = false,
+  ) => setNotice({ message, values, raw });
   const skillContext = JSON.stringify([
     local,
     skillDefaults,
@@ -761,6 +778,8 @@ export function Composer({
           failure instanceof Error
             ? failure.message
             : "Couldn't prepare the chat. Your input is still saved here.",
+          undefined,
+          failure instanceof Error,
         );
     } finally {
       preparation.current = null;
@@ -809,6 +828,8 @@ export function Composer({
         failure instanceof Error
           ? failure.message
           : "Upload failed. Retry or remove the attachment.",
+        undefined,
+        failure instanceof Error,
       );
     }
   }
@@ -857,7 +878,11 @@ export function Composer({
         await Promise.all(pending.map(({ key, file }) => uploadOne(key, file)));
       else draft.notify();
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "Upload failed.");
+      setError(
+        failure instanceof Error ? failure.message : "Upload failed.",
+        undefined,
+        failure instanceof Error,
+      );
     } finally {
       if (upload.current) upload.current.value = "";
     }
@@ -905,6 +930,8 @@ export function Composer({
       if (controller.signal.aborted) return;
       setError(
         failure instanceof Error ? failure.message : "Preview unavailable.",
+        undefined,
+        failure instanceof Error,
       );
     }
   }
@@ -1092,18 +1119,22 @@ export function Composer({
           draft.submission.kind !== "rejected" &&
           !unknown && (
             <p role="alert" className={styles.warning}>
-              {composerMessage(
-                error || draft.error,
-                t,
-                error ? notice.values : undefined,
-              )}
+              {(error ? notice.raw : draft.errorRaw)
+                ? error || draft.error
+                : composerMessage(
+                    error || draft.error,
+                    t,
+                    error ? notice.values : undefined,
+                  )}
             </p>
           )}
         {(draft.submission.kind === "rejected" || unknown) && (
           <div role="alert" className={styles.warning}>
             <p>
               {"message" in draft.submission &&
-                composerMessage(draft.submission.message, t)}
+                (draft.submission.kind === "rejected" && draft.submission.raw
+                  ? draft.submission.message
+                  : composerMessage(draft.submission.message, t))}
             </p>
             {unknown &&
               "receipt" in draft.submission &&

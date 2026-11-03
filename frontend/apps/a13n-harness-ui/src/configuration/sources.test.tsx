@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
 import {
+  act,
   cleanup,
   render,
   screen,
@@ -12,7 +13,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { TransportContext } from "../transport/context";
 import type { Transport } from "../transport/client";
-import { SourceDocument } from "./sources";
+import { SourceDocument, SourcesPage } from "./sources";
+import { i18n } from "../i18n";
 import { DraftContext, type SourceDraft } from "./drafts";
 
 vi.mock("./editor", () => ({ SourceEditor: () => null }));
@@ -190,4 +192,60 @@ it("confirms cancelling an existing edit and restores the saved content without 
   expect(drafts.get(path)?.content).toBe(content);
   expect(client.PUT).not.toHaveBeenCalled();
   expect(client.POST).not.toHaveBeenCalled();
+});
+
+it("localizes known source types while keeping paths and search across language changes", async () => {
+  const queries = new QueryClient({
+    defaultOptions: { queries: { staleTime: Infinity } },
+  });
+  queries.setQueryData(["sources"], {
+    sources: [
+      {
+        relative_path: "models/custom.yaml",
+        resource_kind: "model",
+        resource_ids: ["model-custom"],
+        writable: true,
+        content_available: true,
+      },
+    ],
+  });
+  queries.setQueryData(["selectors"], {
+    models: [{ model_id: "model-custom", name: "Custom Provider" }],
+  });
+  const user = userEvent.setup();
+  render(
+    <QueryClientProvider client={queries}>
+      <TransportContext value={{ client: {} } as Transport}>
+        <DraftContext value={new Map()}>
+          <MemoryRouter>
+            <SourcesPage />
+          </MemoryRouter>
+        </DraftContext>
+      </TransportContext>
+    </QueryClientProvider>,
+  );
+  try {
+    expect(screen.getByText("model")).toBeTruthy();
+    const search = screen.getByRole("searchbox", {
+      name: "Search configuration files",
+    });
+    await user.type(search, "custom");
+    await act(async () => {
+      await i18n.changeLanguage("zh-CN");
+    });
+    expect(screen.getByText("模型")).toBeTruthy();
+    expect(screen.getByText("models/custom.yaml")).toBeTruthy();
+    expect(
+      (
+        screen.getByRole("searchbox", {
+          name: "搜索配置文件",
+        }) as HTMLInputElement
+      ).value,
+    ).toBe("custom");
+  } finally {
+    await act(async () => {
+      await i18n.changeLanguage("en");
+    });
+    queries.clear();
+  }
 });

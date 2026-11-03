@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -19,6 +20,7 @@ import { Child } from "./details";
 import { ToolExecutions } from "./tool-executions";
 import { refreshThread } from "./refresh";
 import { ChildControlsProvider } from "./child-controls";
+import { i18n } from "../i18n";
 import { DebugProvider } from "../shell/debug";
 
 afterEach(cleanup);
@@ -381,6 +383,20 @@ it("retains pending and unknown child controls when inspection unmounts and reop
     await screen.findByRole("textbox", { name: "Instruction for Worker" }),
     { target: { value: "Check once" } },
   );
+  await act(async () => {
+    await i18n.changeLanguage("zh-CN");
+  });
+  expect(
+    (
+      screen.getByRole("textbox", {
+        name: "给 Worker 的指令",
+      }) as HTMLInputElement
+    ).value,
+  ).toBe("Check once");
+  expect(POST).not.toHaveBeenCalled();
+  await act(async () => {
+    await i18n.changeLanguage("en");
+  });
   fireEvent.click(screen.getByRole("button", { name: "Guide subagent" }));
   await waitFor(() => expect(POST).toHaveBeenCalledOnce());
   expect(POST.mock.calls[0]).toEqual([

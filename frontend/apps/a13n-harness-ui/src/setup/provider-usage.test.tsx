@@ -82,7 +82,7 @@ it("renders Grok allowance and purchased dollars without Codex windows or vouche
       }}
     />,
   );
-  expect(screen.getByText("99%")).toBeTruthy();
+  expect(screen.getByText("99% used")).toBeTruthy();
   expect(
     screen.getByRole("meter", { name: "Weekly used" }).getAttribute("value"),
   ).toBe("99.994");

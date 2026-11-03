@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { ModelIcon, ModelIdentity } from "../shell/model-identity";
 import { reasoningModeLabel } from "./reasoning-mode-picker";
 import { useState } from "react";
@@ -30,6 +31,7 @@ function ConfigurationSummary({
 }: {
   configuration: Schema<"ThreadConfiguration">;
 }) {
+  const { t } = useTranslation();
   const { data: catalog } = useSelectors();
   const resourceNames = (
     ids: string[] | undefined,
@@ -41,11 +43,11 @@ function ConfigurationSummary({
           resources?.find((resource) => resource.resource_id === id)?.name ??
           id,
       )
-      .join(", ") || "None";
+      .join(", ") || t("None");
   return (
     <dl className={styles.detailGrid}>
       <div>
-        <dt>Agent</dt>
+        <dt>{t("Agent")}</dt>
         <dd>
           {catalog?.agents?.find(
             (agent) => agent.agent_id === configuration.agent_source.id,
@@ -53,7 +55,7 @@ function ConfigurationSummary({
         </dd>
       </div>
       <div>
-        <dt>Default model</dt>
+        <dt>{t("Default model")}</dt>
         <dd>
           {configuration.default_model_id ? (
             <ModelIdentity
@@ -67,12 +69,12 @@ function ConfigurationSummary({
               }
             />
           ) : (
-            "Follow agent model"
+            t("Follow agent model")
           )}
         </dd>
       </div>
       <div className={styles.detailLongRow}>
-        <dt>Environments</dt>
+        <dt>{t("Environments")}</dt>
         <dd>
           <EnvironmentsSummary
             value={configuration}
@@ -81,7 +83,7 @@ function ConfigurationSummary({
         </dd>
       </div>
       <div>
-        <dt>Plugins</dt>
+        <dt>{t("Plugins")}</dt>
         <dd>
           {resourceNames(
             configuration.harness_plugin_ids,
@@ -90,7 +92,7 @@ function ConfigurationSummary({
         </dd>
       </div>
       <div>
-        <dt>Run extensions</dt>
+        <dt>{t("Run extensions")}</dt>
         <dd>
           {resourceNames(
             configuration.environment_run_extension_ids,
@@ -99,7 +101,7 @@ function ConfigurationSummary({
         </dd>
       </div>
       <div>
-        <dt>MCP servers</dt>
+        <dt>{t("MCP servers")}</dt>
         <dd>
           {resourceNames(configuration.mcp_server_ids, catalog?.mcp_servers)}
         </dd>
@@ -118,6 +120,7 @@ export function ConversationConfiguration({
   actionsContainer?: HTMLElement | null;
   reconcile: () => void;
 }) {
+  const { t } = useTranslation();
   const { client } = useTransport();
   const inspection = useQuery({
     queryKey: ["thread", threadId, "configuration"],
@@ -175,34 +178,46 @@ export function ConversationConfiguration({
         error={inspection.error || preview.error || apply.error}
         retry={() => void inspection.refetch()}
       />
-      {inspection.isPending && <p role="status">Loading settings…</p>}
+      {inspection.isPending && <p role="status">{t("Loading settings…")}</p>}
       {data && (
         <>
           {data.next_run.configuration.agent_source.kind === "live" ? (
             <section>
-              <h3>Live executor</h3>
+              <h3>{t("Live executor")}</h3>
               <p>
-                Live voice has its own workspace and tools. Choose its model,
-                voice and file access in General settings.
+                {t(
+                  "Live voice has its own workspace and tools. Choose its model, voice and file access in General settings.",
+                )}
               </p>
-              <p>Next model: {data.next_model_id || "Not configured"}</p>
+              <p>
+                {t("Next model: {{model}}", {
+                  model: data.next_model_id || t("Not configured"),
+                })}
+              </p>
             </section>
           ) : readOnly ? (
             <section>
-              <h3>Automatic organization</h3>
+              <h3>{t("Automatic organization")}</h3>
               <p>
-                This chat can only use its memory tools. It has no execution
-                environment, shared tools, plugins, MCP servers or subagents.
+                {t(
+                  "This chat can only use its memory tools. It has no execution environment, shared tools, plugins, MCP servers or subagents.",
+                )}
               </p>
-              <p>Next model: {data.next_model_id || "Not configured"}</p>
+              <p>
+                {t("Next model: {{model}}", {
+                  model: data.next_model_id || t("Not configured"),
+                })}
+              </p>
             </section>
           ) : (
             <section>
               <p className={styles.settingsHint}>
-                Changes apply to the next run, using the latest shared settings.
+                {t(
+                  "Changes apply to the next run, using the latest shared settings.",
+                )}
               </p>
               <DebugData
-                label="Where these settings come from"
+                label={t("Where these settings come from")}
                 value={{
                   provenance: data.next_run.provenance,
                   tool_search: data.next_tool_search,
@@ -221,8 +236,10 @@ export function ConversationConfiguration({
           )}
           {!readOnly && data.next_run.configuration.project_id && (
             <details className={layout.details}>
-              <summary>Apply Project defaults</summary>
-              <p>Preview changes before replacing this chat’s settings.</p>
+              <summary>{t("Apply Project defaults")}</summary>
+              <p>
+                {t("Preview changes before replacing this chat’s settings.")}
+              </p>
               <div className={styles.detailActions}>
                 <Button
                   variant="outline"
@@ -234,7 +251,7 @@ export function ConversationConfiguration({
                     preview.mutate(false);
                   }}
                 >
-                  Preview defaults
+                  {t("Preview defaults")}
                 </Button>
                 <Button
                   variant="outline"
@@ -246,21 +263,27 @@ export function ConversationConfiguration({
                     preview.mutate(true);
                   }}
                 >
-                  Environments only
+                  {t("Environments only")}
                 </Button>
               </div>
               <p>
-                Environment-only changes keep your Agent, model and connections.
+                {t(
+                  "Environment-only changes keep your Agent, model and connections.",
+                )}
               </p>
               {reviewed && (
                 <div className={styles.form}>
                   <div className={styles.detailGrid}>
                     <section>
-                      <h4>Before · version {reviewed.expected_version}</h4>
+                      <h4>
+                        {t("Before · version {{version}}", {
+                          version: reviewed.expected_version,
+                        })}
+                      </h4>
                       <ConfigurationSummary configuration={reviewed.current} />
                     </section>
                     <section>
-                      <h4>After</h4>
+                      <h4>{t("After")}</h4>
                       <ConfigurationSummary
                         configuration={reviewed.replacement}
                       />
@@ -274,13 +297,14 @@ export function ConversationConfiguration({
                     onClick={() => apply.mutate()}
                   >
                     {applyEnvironments
-                      ? "Apply environments"
-                      : "Apply defaults"}
+                      ? t("Apply environments")
+                      : t("Apply defaults")}
                   </Button>
                   {apply.isError && (
                     <p>
-                      Refresh and review the preview before applying. Nothing
-                      was retried.
+                      {t(
+                        "Refresh and review the preview before applying. Nothing was retried.",
+                      )}
                     </p>
                   )}
                 </div>
@@ -290,34 +314,35 @@ export function ConversationConfiguration({
           <details className={layout.details}>
             <summary>
               {data.capture_source === "active_operation"
-                ? "Current run settings"
-                : "Saved run settings"}
+                ? t("Current run settings")
+                : t("Saved run settings")}
             </summary>
             {data.captured ? (
               <>
                 <dl className={styles.detailGrid}>
                   <div>
-                    <dt>Agent</dt>
+                    <dt>{t("Agent")}</dt>
                     <dd>{data.captured.agent.name}</dd>
                   </div>
                   <div>
-                    <dt>Model</dt>
-                    <dd>{data.captured.agent.model_id || "Not captured"}</dd>
+                    <dt>{t("Model")}</dt>
+                    <dd>{data.captured.agent.model_id || t("Not captured")}</dd>
                   </div>
                   <div>
-                    <dt>Thinking (requested)</dt>
+                    <dt>{t("Thinking (requested)")}</dt>
                     <dd>
-                      {data.captured.agent.thinking_summary ?? "Not captured"}
+                      {data.captured.agent.thinking_summary ??
+                        t("Not captured")}
                     </dd>
                   </div>
                   <div>
-                    <dt>Reasoning mode (requested)</dt>
+                    <dt>{t("Reasoning mode (requested)")}</dt>
                     <dd>
                       {reasoningModeLabel(data.captured.agent.reasoning_mode)}
                     </dd>
                   </div>
                   <div className={styles.detailLongRow}>
-                    <dt>Captured environments</dt>
+                    <dt>{t("Captured environments")}</dt>
                     <dd>
                       <EnvironmentsSummary
                         value={{
@@ -328,17 +353,22 @@ export function ConversationConfiguration({
                     </dd>
                   </div>
                   <div>
-                    <dt>Capabilities</dt>
-                    <dd>{data.captured.capability_ids.join(", ") || "None"}</dd>
+                    <dt>{t("Capabilities")}</dt>
+                    <dd>
+                      {data.captured.capability_ids.join(", ") || t("None")}
+                    </dd>
                   </div>
                 </dl>
-                <DebugData label="Configuration used" value={data.captured} />
+                <DebugData
+                  label={t("Configuration used")}
+                  value={data.captured}
+                />
               </>
             ) : (
               <p>
                 {data.capture_source === "active_operation"
-                  ? "Starting the run. Its settings will appear shortly."
-                  : "No captured configuration is available."}
+                  ? t("Starting the run. Its settings will appear shortly.")
+                  : t("No captured configuration is available.")}
               </p>
             )}
           </details>
@@ -358,6 +388,7 @@ export function ThreadSelections({
   embedded?: boolean;
   actionsContainer?: HTMLElement | null;
 }) {
+  const { t } = useTranslation();
   const transport = useTransport();
   const { client } = transport;
   const queries = useQueryClient();
@@ -408,7 +439,7 @@ export function ThreadSelections({
       {!!Object.keys(patch).length && (
         <Button
           variant="ghost"
-          aria-label="Discard selection edits"
+          aria-label={t("Discard selection edits")}
           disabled={mutation.isPending}
           onClick={() => {
             updatePatch({});
@@ -416,7 +447,7 @@ export function ThreadSelections({
             mutation.reset();
           }}
         >
-          Discard
+          {t("Discard")}
         </Button>
       )}
 
@@ -431,16 +462,16 @@ export function ThreadSelections({
           }
           onClick={() => mutation.mutate()}
         >
-          Save for next run
+          {t("Save for next run")}
         </Button>
       )}
     </div>
   );
   const fields = (
     <fieldset className={styles.settingsFields} disabled={mutation.isPending}>
-      <SettingsSection title="Agent & model">
+      <SettingsSection title={t("Agent & model")}>
         <ChoiceField
-          label="Project"
+          label={t("Project")}
           value={
             patch.project_id === undefined
               ? (configuration.project_id ?? "")
@@ -450,7 +481,7 @@ export function ThreadSelections({
             setPatch({ ...patch, project_id: value || null })
           }
           options={[
-            { value: "", label: "Without a project" },
+            { value: "", label: t("Without a project") },
             ...(projects.data ?? []).map((project) => ({
               value: project.project_id,
               label: project.name,
@@ -458,7 +489,7 @@ export function ThreadSelections({
           ]}
         />
         <ChoiceField
-          label="Agent"
+          label={t("Agent")}
           value={patch.agent_id ?? configuration.agent_source.id}
           onValueChange={(agent_id) => setPatch({ ...patch, agent_id })}
           options={(selectors.data?.agents ?? []).map((agent) => ({
@@ -467,7 +498,7 @@ export function ThreadSelections({
           }))}
         />
         <ChoiceField
-          label="Default model"
+          label={t("Default model")}
           value={
             patch.default_model_id === undefined
               ? (configuration.default_model_id ?? "")
@@ -477,7 +508,7 @@ export function ThreadSelections({
             setPatch({ ...patch, default_model_id: value || null })
           }
           options={[
-            { value: "", label: "Follow Agent model" },
+            { value: "", label: t("Follow Agent model") },
             ...(selectors.data?.models ?? []).map((model) => ({
               value: model.model_id,
               label: model.name,
@@ -488,37 +519,37 @@ export function ThreadSelections({
       </SettingsSection>
       {patch.project_id !== undefined && (
         <p className={styles.settingsHint}>
-          Moving a chat to a Project keeps its settings.
+          {t("Moving a chat to a Project keeps its settings.")}
         </p>
       )}
-      <SettingsSection title="Environments">
+      <SettingsSection title={t("Environments")}>
         <div className={layout.fieldGroup}>
           <EnvironmentsEditor
             value={{ ...configuration, ...patch }}
             profiles={selectors.data?.environments}
             inheritedProfile={configuration.environment_profile_id}
-            inheritLabel="Keep chat local mode"
+            inheritLabel={t("Keep chat local mode")}
             onChange={(environments) => setPatch({ ...patch, ...environments })}
           />
         </div>
       </SettingsSection>
       <section className={styles.connectionSelections}>
-        <SettingsSection title="Connections">
+        <SettingsSection title={t("Connections")}>
           {(
             [
               {
                 key: "harness_plugin_ids",
-                label: "Plugins",
+                label: t("Plugins"),
                 options: selectors.data?.harness_plugins,
               },
               {
                 key: "environment_run_extension_ids",
-                label: "Run extensions",
+                label: t("Run extensions"),
                 options: selectors.data?.environment_run_extensions,
               },
               {
                 key: "mcp_server_ids",
-                label: "MCP servers",
+                label: t("MCP servers"),
                 options: selectors.data?.mcp_servers,
               },
             ] as const
@@ -527,8 +558,10 @@ export function ThreadSelections({
               <SettingsRow label={label}>
                 <span className={layout.hint}>
                   {options?.length
-                    ? `${(patch[key] ?? configuration[key] ?? []).length} selected`
-                    : "None configured"}
+                    ? t("{{count}} selected", {
+                        count: (patch[key] ?? configuration[key] ?? []).length,
+                      })
+                    : t("None configured")}
                 </span>
               </SettingsRow>
               {options?.map((option) => {
@@ -544,8 +577,10 @@ export function ThreadSelections({
                             to={`/settings/source?path=${encodeURIComponent(option.source_path)}`}
                           >
                             {option.selected_tool_count == null
-                              ? "All tools"
-                              : `${option.selected_tool_count} selected tools`}
+                              ? t("All tools")
+                              : t("{{count}} selected tools", {
+                                  count: option.selected_tool_count,
+                                })}
                           </Link>
                           {selectors.data?.agents
                             .find(
@@ -556,7 +591,7 @@ export function ThreadSelections({
                             )
                             ?.tool_search_mcp_servers?.includes(
                               option.resource_id,
-                            ) && " · On demand"}
+                            ) && t(" · On demand")}
                         </>
                       ) : undefined
                     }
@@ -584,7 +619,7 @@ export function ThreadSelections({
           ))}
         </SettingsSection>
         <Link className={layout.hint} to="/settings/connections">
-          Manage connections
+          {t("Manage connections")}
         </Link>
       </section>
       <ErrorNotice
@@ -593,11 +628,16 @@ export function ThreadSelections({
       {(stale || mutation.isError) && (
         <div className={styles.warning}>
           <p>
-            Your edits are based on version {configuration.version}. Review the
-            latest settings below, then keep your edits to apply them to that
-            version. Nothing was retried.
+            {t(
+              "Your edits are based on version {{version}}. Review the latest settings below, then keep your edits to apply them to that version. Nothing was retried.",
+              { version: configuration.version },
+            )}
           </p>
-          <h4>Latest selections · version {latest.version}</h4>
+          <h4>
+            {t("Latest selections · version {{version}}", {
+              version: latest.version,
+            })}
+          </h4>
           <ConfigurationSummary configuration={latest} />
           <Button
             variant="outline"
@@ -606,7 +646,7 @@ export function ThreadSelections({
               mutation.reset();
             }}
           >
-            Keep my edits
+            {t("Keep my edits")}
           </Button>
         </div>
       )}
@@ -617,7 +657,7 @@ export function ThreadSelections({
     fields
   ) : (
     <details className={layout.details}>
-      <summary>Change settings for the next run</summary>
+      <summary>{t("Change settings for the next run")}</summary>
       {fields}
     </details>
   );

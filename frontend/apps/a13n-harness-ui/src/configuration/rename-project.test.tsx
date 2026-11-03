@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -12,6 +13,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { parse } from "yaml";
 import { TransportContext } from "../transport/context";
 import { createTransport } from "../transport/client";
+import { i18n } from "../i18n";
 import { RenameProject } from "./rename-project";
 import { DraftContext, type SourceDraft } from "./drafts";
 
@@ -180,4 +182,22 @@ it("does not submit a read-only source", async () => {
       .disabled,
   ).toBe(true);
   expect(writes).toHaveLength(0);
+});
+
+it("keeps an edited name across a language change", async () => {
+  mount();
+  fireEvent.change(screen.getByRole("textbox", { name: "Project name" }), {
+    target: { value: "Unpublished name" },
+  });
+  await act(async () => {
+    await i18n.changeLanguage("zh-CN");
+  });
+  expect(
+    (screen.getByRole("textbox", { name: "项目名称" }) as HTMLInputElement)
+      .value,
+  ).toBe("Unpublished name");
+  expect(screen.getByRole("button", { name: "保存名称" })).toBeTruthy();
+  await act(async () => {
+    await i18n.changeLanguage("en");
+  });
 });

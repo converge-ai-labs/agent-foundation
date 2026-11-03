@@ -14,6 +14,12 @@ export class NetworkError extends Error {
   }
 }
 
+export class EmptyResponseError extends Error {
+  constructor() {
+    super("Server returned an empty response.");
+  }
+}
+
 export function isConnectionError(error: unknown): boolean {
   return (
     error instanceof NetworkError ||
@@ -26,6 +32,7 @@ export class ApiError extends Error {
     message: string,
     readonly status: number,
     readonly code?: string,
+    readonly localFallback = false,
   ) {
     super(message);
   }
@@ -33,13 +40,16 @@ export class ApiError extends Error {
 export async function responseError(response: Response): Promise<ApiError> {
   let message = `Request failed (${response.status}).`;
   let code: string | undefined;
+  let localFallback = true;
   try {
     const body: unknown = await response.clone().json();
     if (typeof body === "object" && body !== null && "error" in body) {
       const error = body.error;
       if (typeof error === "object" && error !== null) {
-        if ("message" in error && typeof error.message === "string")
+        if ("message" in error && typeof error.message === "string") {
           message = error.message;
+          localFallback = false;
+        }
         if ("code" in error && typeof error.code === "string")
           code = error.code;
       }
@@ -47,9 +57,11 @@ export async function responseError(response: Response): Promise<ApiError> {
   } catch {
     /* A proxy may return a non-JSON failure. */
   }
-  if (response.status === 401 && code !== "share_unavailable")
+  if (response.status === 401 && code !== "share_unavailable") {
     message = "Access expired. Enter the API key printed by this server.";
-  return new ApiError(message, response.status, code);
+    localFallback = true;
+  }
+  return new ApiError(message, response.status, code, localFallback);
 }
 export function createTransport(
   key: string,
@@ -146,7 +158,6 @@ export function createTransport(
 export type Transport = ReturnType<typeof createTransport>;
 export async function result<T>(request: Promise<{ data?: T }>): Promise<T> {
   const response = await request;
-  if (response.data === undefined)
-    throw new Error("Server returned an empty response.");
+  if (response.data === undefined) throw new EmptyResponseError();
   return response.data;
 }

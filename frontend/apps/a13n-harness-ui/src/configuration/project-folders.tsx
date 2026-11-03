@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { useState } from "react";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Input } from "a13n-ui";
@@ -25,6 +26,7 @@ export function ProjectFolders({
   compact?: boolean;
   onChange: (roots: { path: string }[]) => void;
 }) {
+  const { t } = useTranslation();
   const status = useStatus();
   const setup = useSetup();
   const [browsing, setBrowsing] = useState<number | null>(null);
@@ -33,12 +35,13 @@ export function ProjectFolders({
   return (
     <div className={`${styles.folders} ${compact ? styles.compact : ""}`}>
       {compact && roots.length > 0 && (
-        <p className={styles.label}>Working folders</p>
+        <p className={styles.label}>{t("Working folders")}</p>
       )}
       {!compact && (
         <p className={styles.hint}>
-          Choose existing folders on the server or in its container. The first
-          is your workspace. Files stay in place.
+          {t(
+            "Choose existing folders on the server or in its container. The first is your workspace. Files stay in place.",
+          )}
         </p>
       )}
       {roots.map((root, index) => (
@@ -48,8 +51,10 @@ export function ProjectFolders({
               <Input
                 aria-label={
                   index === 0
-                    ? "Server directory"
-                    : `Additional server directory ${index}`
+                    ? t("Server directory")
+                    : t("Additional server directory {{number}}", {
+                        number: index,
+                      })
                 }
                 value={root.path}
                 title={root.path}
@@ -61,8 +66,10 @@ export function ProjectFolders({
               <TextField
                 label={
                   index === 0
-                    ? "Server directory"
-                    : `Additional server directory ${index}`
+                    ? t("Server directory")
+                    : t("Additional server directory {{number}}", {
+                        number: index,
+                      })
                 }
                 value={root.path}
                 onChange={(value) => update(index, value)}
@@ -73,12 +80,14 @@ export function ProjectFolders({
                 type="button"
                 variant="outline"
                 className={styles.browseButton}
-                aria-label={`Browse directory ${index + 1}`}
+                aria-label={t("Browse directory {{number}}", {
+                  number: index + 1,
+                })}
                 aria-expanded={browsing === index}
                 onClick={() => setBrowsing(browsing === index ? null : index)}
               >
                 <FolderIcon />
-                <span>Browse</span>
+                <span>{t("Browse")}</span>
               </Button>
             )}
             <Button
@@ -86,7 +95,9 @@ export function ProjectFolders({
               variant="ghost"
               size="icon-sm"
               disabled={!allowEmpty && roots.length <= 1}
-              aria-label={`Remove directory ${index + 1}`}
+              aria-label={t("Remove directory {{number}}", {
+                number: index + 1,
+              })}
               onClick={() => {
                 setBrowsing(null);
                 onChange(roots.filter((_, i) => i !== index));
@@ -120,12 +131,14 @@ export function ProjectFolders({
           onClick={() => onChange([...roots, { path: "" }])}
         >
           <PlusIcon />
-          {roots.length ? "Add folder" : "Add local folder"}
+          {roots.length ? t("Add folder") : t("Add local folder")}
         </Button>
       </div>
       {roots.length > 0 && status.data && !status.data.features?.host_files && (
         <small className={styles.hint}>
-          Turn on computer sharing to browse folders, or enter a path manually.
+          {t(
+            "Turn on computer sharing to browse folders, or enter a path manually.",
+          )}
         </small>
       )}
     </div>
@@ -143,6 +156,7 @@ function DirectoryBrowser({
   close: () => void;
 }) {
   const { client } = useTransport();
+  const { t } = useTranslation();
   const queries = useQueryClient();
   const [path, setPath] = useState(initialPath);
   const [input, setInput] = useState(initialPath);
@@ -177,7 +191,7 @@ function DirectoryBrowser({
   return (
     <section
       className={styles.browser}
-      aria-label="Browse server directories"
+      aria-label={t("Browse server directories")}
       onKeyDown={(event) => {
         if (event.key === "Enter" && event.target instanceof HTMLInputElement) {
           event.preventDefault();
@@ -187,7 +201,7 @@ function DirectoryBrowser({
     >
       <div className={styles.row}>
         <TextField
-          label="Browse server path"
+          label={t("Browse server path")}
           value={input}
           onChange={setInput}
         />
@@ -197,13 +211,13 @@ function DirectoryBrowser({
           disabled={!input.trim()}
           onClick={() => navigate(input.trim())}
         >
-          Go
+          {t("Go")}
         </Button>
         <Button
           type="button"
           variant="ghost"
           size="icon"
-          aria-label="Close directory browser"
+          aria-label={t("Close directory browser")}
           onClick={close}
         >
           <XIcon />
@@ -218,7 +232,7 @@ function DirectoryBrowser({
           onClick={() => navigate(parentPath(current || path))}
         >
           <ArrowUpIcon />
-          Parent folder
+          {t("Parent folder")}
         </Button>
         <span className={styles.path} title={current || path}>
           {basename(current || path)}
@@ -233,7 +247,9 @@ function DirectoryBrowser({
           })
         }
       />
-      {listing.isFetching && <small role="status">Reading directory…</small>}
+      {listing.isFetching && (
+        <small role="status">{t("Reading directory…")}</small>
+      )}
       <div className={`${styles.entries} a13n-scrollbar`}>
         {entries.map((entry) => (
           <button
@@ -244,15 +260,15 @@ function DirectoryBrowser({
           >
             <FolderIcon />
             <span>{basename(entry.path)}</span>
-            {entry.kind === "symlink" && <small>Link</small>}
+            {entry.kind === "symlink" && <small>{t("Link")}</small>}
             <CaretRightIcon />
           </button>
         ))}
         {listing.isSuccess && !entries.length && (
           <small className={styles.hint}>
             {listing.hasNextPage
-              ? "No folders in this page. Load more to continue."
-              : "No subfolders."}
+              ? t("No folders in this page. Load more to continue.")
+              : t("No subfolders.")}
           </small>
         )}
         {listing.hasNextPage && (
@@ -263,7 +279,7 @@ function DirectoryBrowser({
             loading={listing.isFetchingNextPage}
             onClick={() => void listing.fetchNextPage()}
           >
-            Load more entries
+            {t("Load more entries")}
           </Button>
         )}
       </div>
@@ -275,10 +291,10 @@ function DirectoryBrowser({
           variant="outline"
           onClick={() => current && select(current)}
         >
-          Use this directory
+          {t("Use this directory")}
         </Button>
         <Button type="button" variant="ghost" size="sm" onClick={close}>
-          Cancel
+          {t("Cancel")}
         </Button>
       </div>
     </section>

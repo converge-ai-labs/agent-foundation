@@ -9,7 +9,7 @@ import { AppMessage } from "./app-message";
 export type AppRequestState = {
   request: Schema<"AppToolRequest">;
   operation?: Schema<"AppOperation">;
-  uncertain?: string;
+  uncertain?: { kind: "decision" } | { kind: "result"; cause: unknown };
   deciding?: boolean;
   submittedDecision?: boolean;
 };
@@ -171,9 +171,7 @@ export class AppSession {
       state?.submittedDecision !== undefined;
     this.update(key, {
       operation,
-      uncertain: unconfirmedDecision
-        ? "Couldn't confirm your choice. Nothing was retried or changed. Check the result or close this view."
-        : undefined,
+      uncertain: unconfirmedDecision ? { kind: "decision" } : undefined,
       deciding: false,
     });
     const pending = this.pending.get(key);
@@ -213,7 +211,7 @@ export class AppSession {
       if (!this.closed)
         this.update(key, {
           deciding: false,
-          uncertain: `Result unknown. The request was not repeated. ${error instanceof Error ? error.message : String(error)}`,
+          uncertain: { kind: "result", cause: error },
         });
     }
   }

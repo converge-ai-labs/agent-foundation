@@ -17,17 +17,21 @@ import { readDocument } from "./documents";
 import styles from "../shell/workbench.module.css";
 import layout from "./settings.module.css";
 
-const sections = [
-  { path: "/settings", label: "General", icon: SlidersHorizontal },
-  { path: "/settings/agents", label: "Agents", icon: HeadCircuit },
-  { path: "/settings/models", label: "Models", icon: Cube },
-  { path: "/settings/environments", label: "Environments", icon: Monitor },
-  { path: "/settings/accounts", label: "Accounts & API keys", icon: Key },
-  { path: "/settings/connections", label: "Connections", icon: Plug },
-  { path: "/settings/resources", label: "Configuration files", icon: FileCode },
-];
 export function SettingsNavigation({ backTo }: { backTo: string }) {
   const { t } = useTranslation();
+  const sections = [
+    { path: "/settings", label: t("General"), icon: SlidersHorizontal },
+    { path: "/settings/agents", label: t("Agents"), icon: HeadCircuit },
+    { path: "/settings/models", label: t("Models"), icon: Cube },
+    { path: "/settings/environments", label: t("Environments"), icon: Monitor },
+    { path: "/settings/accounts", label: t("Accounts & API keys"), icon: Key },
+    { path: "/settings/connections", label: t("Connections"), icon: Plug },
+    {
+      path: "/settings/resources",
+      label: t("Configuration files"),
+      icon: FileCode,
+    },
+  ];
   const location = useLocation();
   const sources = useSources();
   const drafts = useContext(DraftContext);
@@ -86,7 +90,7 @@ export function SettingsNavigation({ backTo }: { backTo: string }) {
                 size={18}
                 weight={active ? "duotone" : "regular"}
               />
-              {t(label)}
+              {label}
             </Link>
           );
         })}

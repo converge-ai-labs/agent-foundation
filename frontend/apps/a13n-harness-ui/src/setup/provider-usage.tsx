@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "a13n-ui";
 import { ArrowsClockwiseIcon, WalletIcon } from "@phosphor-icons/react";
@@ -19,27 +20,31 @@ export function GrokAllowance({
 }: {
   usage: Schema<"GrokUsage"> | null | undefined;
 }) {
+  const { t } = useTranslation();
   const billing = usage?.config;
+  const label = allowanceLabel(usage?.config?.current_period?.type, t);
   const allowance = grokAllowance(billing);
   return (
     <>
       <div className={styles.quotaWindows}>
         <div className={styles.meter}>
           {allowance.usedPercent === null ? (
-            <span>Allowance unavailable</span>
+            <span>{t("Allowance unavailable")}</span>
           ) : (
             <>
               <div className={styles.meterHeading}>
-                <span>{allowance.label}</span>
+                <span>{label}</span>
                 <span>
-                  <strong>{Math.floor(allowance.usedPercent)}%</strong> used
+                  {t("{{percent}}% used", {
+                    percent: Math.floor(allowance.usedPercent),
+                  })}
                 </span>
               </div>
               <meter
                 min={0}
                 max={100}
                 value={allowance.usedPercent}
-                aria-label={`${allowance.label} used`}
+                aria-label={t("{{label}} used", { label })}
               />
             </>
           )}
@@ -52,27 +57,32 @@ export function GrokAllowance({
             }
           >
             {allowance.resetAt
-              ? `Resets ${quotaTime(Date.parse(allowance.resetAt), true)}`
-              : "Reset time unavailable"}
+              ? t("Resets {{time}}", {
+                  time: quotaTime(Date.parse(allowance.resetAt), true),
+                })
+              : t("Reset time unavailable")}
           </span>
         </div>
       </div>
       <div className={styles.balanceSummary}>
         {billing?.is_unified_billing_user === true && (
           <div className={styles.balanceCell}>
-            <span>Billing</span>
-            <strong className={styles.balanceValue}>Shared usage pool</strong>
+            <span>{t("Billing")}</span>
+            <strong className={styles.balanceValue}>
+              {" "}
+              {t("Shared usage pool")}
+            </strong>
           </div>
         )}
         {billing?.prepaid_balance && (
           <div className={styles.balanceCell}>
             <span className={styles.summaryItem}>
               <WalletIcon size={15} aria-hidden />
-              Purchased credits
+              {t("Purchased credits")}
             </span>
             <strong className={styles.balanceValue}>
               {billing.prepaid_balance.val == null
-                ? "Unavailable"
+                ? t("Unavailable")
                 : dollars(Math.abs(billing.prepaid_balance.val))}
             </strong>
           </div>
@@ -80,11 +90,16 @@ export function GrokAllowance({
         {billing?.is_unified_billing_user === false &&
           billing.on_demand_cap && (
             <div className={styles.balanceCell}>
-              <span>Pay as you go</span>
+              <span>{t("Pay as you go")}</span>
               <strong className={styles.balanceValue}>
                 {billing.on_demand_cap.val
-                  ? `${billing.on_demand_used ? dollars(billing.on_demand_used.val ?? 0) : "Usage unknown"} / ${dollars(billing.on_demand_cap.val)} cap`
-                  : "Disabled"}
+                  ? t("{{used}} / {{cap}} cap", {
+                      used: billing.on_demand_used
+                        ? dollars(billing.on_demand_used.val ?? 0)
+                        : t("Usage unknown"),
+                      cap: dollars(billing.on_demand_cap.val),
+                    })
+                  : t("Disabled")}
               </strong>
             </div>
           )}
@@ -100,6 +115,7 @@ export function CopilotAllowance({
   identity: string;
   ready: boolean;
 }) {
+  const { t } = useTranslation();
   const { client } = useTransport();
   const quota = useQuery({
     queryKey: ["copilot-usage", identity],
@@ -114,49 +130,61 @@ export function CopilotAllowance({
   return (
     <div className={styles.usage}>
       <span className={styles.quotaLabel}>
-        Copilot allowance
+        {t("Copilot allowance")}
         {quota.data?.copilot_plan ? ` · ${quota.data.copilot_plan}` : ""}
       </span>
       <ErrorNotice error={quota.error} />
       {!ready ? (
-        <span>Sign in to check allowance</span>
+        <span>{t("Sign in to check allowance")}</span>
       ) : !buckets.length ? (
         <span>
-          {quota.isPending ? "Checking allowance…" : "Allowance unavailable"}
+          {quota.isPending
+            ? t("Checking allowance…")
+            : t("Allowance unavailable")}
         </span>
       ) : (
         <div className={styles.quotaWindows}>
           {buckets.map(([id, bucket]) => (
             <div key={id} className={styles.meter}>
               <span>
-                {copilotBucketLabel(id)} ·{" "}
+                {copilotBucketLabel(id, t)} ·{" "}
                 {bucket.unlimited
-                  ? "Unlimited"
+                  ? t("Unlimited")
                   : bucket.percent_remaining != null
-                    ? `${Math.round(Math.max(0, Math.min(100, bucket.percent_remaining)))}% left`
-                    : "Remaining allowance unavailable"}
+                    ? t("{{percent}}% left", {
+                        percent: Math.round(
+                          Math.max(0, Math.min(100, bucket.percent_remaining)),
+                        ),
+                      })
+                    : t("Remaining allowance unavailable")}
               </span>
               {!bucket.unlimited && bucket.percent_remaining != null && (
                 <meter
                   min={0}
                   max={100}
                   value={Math.max(0, Math.min(100, bucket.percent_remaining))}
-                  aria-label={`${copilotBucketLabel(id)} remaining`}
+                  aria-label={t("{{label}} remaining", {
+                    label: copilotBucketLabel(id, t),
+                  })}
                 />
               )}
               {!bucket.unlimited &&
                 bucket.remaining != null &&
                 bucket.entitlement != null && (
                   <span>
-                    {bucket.remaining} / {bucket.entitlement} remaining
+                    {t("{{remaining}} / {{entitlement}} remaining", {
+                      remaining: bucket.remaining,
+                      entitlement: bucket.entitlement,
+                    })}
                   </span>
                 )}
               {bucket.overage_permitted != null && (
                 <span className={styles.quotaDetail}>
-                  Additional usage{" "}
-                  {bucket.overage_permitted ? "enabled" : "disabled"}
+                  {bucket.overage_permitted
+                    ? t("Additional usage enabled")
+                    : t("Additional usage disabled")}
                   {bucket.overage_count != null
-                    ? ` · ${bucket.overage_count} used`
+                    ? ` · ${t("{{count}} used", { count: bucket.overage_count })}`
                     : ""}
                 </span>
               )}
@@ -167,15 +195,17 @@ export function CopilotAllowance({
       {quota.data && (
         <span className={styles.quotaDetail}>
           {quota.data.quota_reset_date
-            ? `Resets ${quotaTime(Date.parse(quota.data.quota_reset_date))}`
-            : "Reset time unavailable"}
+            ? t("Resets {{time}}", {
+                time: quotaTime(Date.parse(quota.data.quota_reset_date)),
+              })
+            : t("Reset time unavailable")}
         </span>
       )}
       {ready && (
         <Button
           variant="ghost"
           size="icon-sm"
-          aria-label="Refresh allowance"
+          aria-label={t("Refresh allowance")}
           loading={quota.isFetching}
           onClick={() => void quota.refetch()}
         >
@@ -186,31 +216,46 @@ export function CopilotAllowance({
   );
 }
 
-function copilotBucketLabel(id: string) {
+function copilotBucketLabel(
+  id: string,
+  t: ReturnType<typeof useTranslation>["t"],
+) {
   return (
     (
       {
-        chat: "Chat",
-        completions: "Code completions",
-        premium_interactions: "Premium requests",
-        premium_models: "Premium models",
+        chat: t("Chat"),
+        completions: t("Code completions"),
+        premium_interactions: t("Premium requests"),
+        premium_models: t("Premium models"),
       } as Record<string, string>
     )[id] ?? id
   );
 }
 
 export function ChatGPTAllowance() {
+  const { t } = useTranslation();
   return (
     <div className={styles.usage}>
-      <span className={styles.quotaLabel}>ChatGPT plan allowance</span>
-      <span>Numeric allowance is unavailable for this connection.</span>
+      <span className={styles.quotaLabel}>{t("ChatGPT plan allowance")}</span>
+      <span>{t("Numeric allowance is unavailable for this connection.")}</span>
       <a
         href="https://chatgpt.com/settings/usage"
         target="_blank"
         rel="noreferrer"
       >
-        View usage in ChatGPT ↗
+        {t("View usage in ChatGPT ↗")}
       </a>
     </div>
   );
+}
+
+function allowanceLabel(
+  type: string | null | undefined,
+  t: ReturnType<typeof useTranslation>["t"],
+) {
+  return type === "USAGE_PERIOD_TYPE_WEEKLY"
+    ? t("Weekly")
+    : type === "USAGE_PERIOD_TYPE_MONTHLY"
+      ? t("Monthly")
+      : t("Current period");
 }

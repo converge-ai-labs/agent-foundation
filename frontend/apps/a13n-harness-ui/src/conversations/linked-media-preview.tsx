@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { useEffect, useRef, useState } from "react";
 import { result, type Schema } from "../transport/client";
 import { useTransport } from "../transport/context";
@@ -7,6 +8,7 @@ import { mediaKind, MAX_MEDIA_BYTES } from "../native/media-kind";
 import styles from "./markdown.module.css";
 
 export function LinkedMediaPreview({ path }: { path: string }) {
+  const { t } = useTranslation();
   const transport = useTransport();
   const container = useRef<HTMLElement>(null);
   const [visible, setVisible] = useState(false);
@@ -63,11 +65,13 @@ export function LinkedMediaPreview({ path }: { path: string }) {
       ref={container}
       className={styles.linkedPreview}
       data-state={!current ? "loading" : current.error ? "error" : "ready"}
-      aria-label={`Media preview: ${path.split(/[\\/]/).at(-1)}`}
+      aria-label={t("Media preview: {{name}}", {
+        name: path.split(/[\\/]/).at(-1),
+      })}
     >
       {!current && (
         <p role="status" className={styles.srOnly}>
-          Loading media preview…
+          {t("Loading media preview…")}
         </p>
       )}
       <ErrorNotice
@@ -78,11 +82,12 @@ export function LinkedMediaPreview({ path }: { path: string }) {
       {file &&
         (kind === "image" && file.entry.size > MAX_MEDIA_BYTES ? (
           <p>
-            Too large to preview. Open the original file. The preview limit is
-            10 MiB.
+            {t(
+              "Too large to preview. Open the original file. The preview limit is 10 MiB.",
+            )}
           </p>
         ) : !kind ? (
-          <p>Can't preview this file. Open the original instead.</p>
+          <p>{t("Can't preview this file. Open the original instead.")}</p>
         ) : (
           <FileMedia
             key={`${path}:${file.entry.revision}:${attempt}`}

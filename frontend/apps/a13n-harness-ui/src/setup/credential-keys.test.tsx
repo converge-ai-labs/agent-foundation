@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -10,6 +11,7 @@ import {
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
+import { i18n } from "../i18n";
 import { CredentialKeys } from "./credential-keys";
 import { TransportContext } from "../transport/context";
 import { createTransport } from "../transport/client";
@@ -233,4 +235,29 @@ it("does not call a key unlinked when Device sources cannot be read", async () =
   });
   expect(within(unknown).getByText("key-device")).toBeTruthy();
   expect(screen.queryByText("Not linked to a Model or Device")).toBeNull();
+});
+
+it("retains a key draft while switching languages", async () => {
+  const writes = mount();
+  await screen.findByText("key-work");
+  fireEvent.click(screen.getByRole("button", { name: "Add API key" }));
+  fireEvent.change(screen.getByLabelText("Saved key name"), {
+    target: { value: "draft-key" },
+  });
+  fireEvent.change(screen.getByLabelText("API key"), {
+    target: { value: "private-draft" },
+  });
+  await act(async () => {
+    await i18n.changeLanguage("zh-CN");
+  });
+  expect(
+    (screen.getByLabelText("已保存的密钥名称") as HTMLInputElement).value,
+  ).toBe("draft-key");
+  expect((screen.getByLabelText("API 密钥") as HTMLInputElement).value).toBe(
+    "private-draft",
+  );
+  expect(writes).toHaveLength(0);
+  await act(async () => {
+    await i18n.changeLanguage("en");
+  });
 });

@@ -1,3 +1,5 @@
+import { useTranslation } from "../i18n";
+import { Trans } from "react-i18next";
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button, ModalFrame } from "a13n-ui";
@@ -16,6 +18,7 @@ export function ForgetEnvironment({
   name: string;
   resourceId: string;
 }) {
+  const { t } = useTranslation();
   const { client } = useTransport();
   const cache = useQueryClient();
   const projects = useProjects();
@@ -50,17 +53,19 @@ export function ForgetEnvironment({
           remove.reset();
         }
       }}
-      title={`Forget ${name}?`}
-      closeLabel="Close"
-      description="Remove this saved connection or profile. Remote files, devices, active runs and history are kept."
+      title={t("Forget {{name}}?", { name })}
+      closeLabel={t("Close")}
+      description={t(
+        "Remove this saved connection or profile. Remote files, devices, active runs and history are kept.",
+      )}
       trigger={
         <Button
           type="button"
           size="sm"
           variant="ghost"
-          aria-label={`Forget ${name}`}
+          aria-label={t("Forget {{name}}", { name })}
         >
-          Forget
+          {t("Forget")}
         </Button>
       }
       footer={
@@ -71,26 +76,27 @@ export function ForgetEnvironment({
             disabled={remove.isPending}
             onClick={() => setOpen(false)}
           >
-            Cancel
+            {t("Cancel")}
           </Button>
           <Button
             type="button"
             loading={remove.isPending}
             onClick={() => remove.mutate()}
           >
-            Forget
+            {t("Forget")}
           </Button>
         </>
       }
     >
       <p>
-        Remove this from <Link to="/settings">General settings</Link> and
-        project defaults first. Update any existing chats that still use it
-        before their next run.
+        <Trans
+          i18nKey="Remove this from <settings>General settings</settings> and project defaults first. Update any existing chats that still use it before their next run."
+          components={{ settings: <Link to="/settings" /> }}
+        />
       </p>
       {references.length > 0 && (
         <div className="grid gap-2">
-          <p>Used by these projects:</p>
+          <p>{t("Used by these projects:")}</p>
           <ul className="grid gap-2 pl-4 list-disc break-words">
             {references.map((project) => {
               const source = sources.data?.sources.find((item) =>

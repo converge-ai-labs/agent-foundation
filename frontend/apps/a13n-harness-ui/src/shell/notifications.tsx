@@ -17,6 +17,7 @@ import type { Schema } from "../transport/client";
 import { readPreference, writePreference } from "./preferences";
 import { TransportContext } from "../transport/context";
 import {
+  PushError,
   disablePush,
   enablePush,
   reportPushActivity,
@@ -61,8 +62,9 @@ const NotificationsContext = createContext<Notifications | null>(null);
 export const useNotifications = () => useContext(NotificationsContext);
 
 export function NotificationsProvider({ children }: { children: ReactNode }) {
+  const { t } = useTranslation();
   return (
-    <ToastProvider closeLabel="Dismiss notification">
+    <ToastProvider closeLabel={t("Dismiss notification")}>
       <NotificationState>{children}</NotificationState>
     </ToastProvider>
   );
@@ -86,10 +88,15 @@ function NotificationState({ children }: { children: ReactNode }) {
   };
   const [permission, setPermission] = useState(notificationPermission);
   const [requesting, setRequesting] = useState(false);
-  const [error, updateError] = useState<{ text: string; raw?: boolean }>({
+  const [error, updateError] = useState<{
+    text: string;
+    raw?: boolean;
+    push?: PushError;
+  }>({
     text: "",
   });
-  const setError = (text: string, raw = false) => updateError({ text, raw });
+  const setError = (text: string, raw = false, push?: PushError) =>
+    updateError({ text, raw, push });
   const [testStatus, setTestStatus] = useState("");
   const [background, setBackground] = useState<Background>(() =>
     pushSubscriptionId() ? "checking" : "disabled",
@@ -108,9 +115,10 @@ function NotificationState({ children }: { children: ReactNode }) {
     navigate,
     toast,
     background,
+    t,
     viewedThread,
   });
-  current.current = { enabled, navigate, toast, background, viewedThread };
+  current.current = { enabled, navigate, toast, background, viewedThread, t };
   useEffect(() => {
     alive.current = true;
     const refresh = () => {
@@ -238,7 +246,8 @@ function NotificationState({ children }: { children: ReactNode }) {
           failure instanceof Error
             ? failure.message
             : "Notification setup failed. Check this site's browser settings.",
-          failure instanceof Error,
+          failure instanceof Error && !(failure instanceof PushError),
+          failure instanceof PushError ? failure : undefined,
         );
       }
     } finally {
@@ -274,13 +283,15 @@ function NotificationState({ children }: { children: ReactNode }) {
         "detail",
       ]);
       const name =
-        detail?.thread.title || detail?.thread.excerpt?.first_input || "Chat";
+        detail?.thread.title ||
+        detail?.thread.excerpt?.first_input ||
+        current.current.t("Chat");
       const state = {
-        completed: "Task completed",
-        failed: "Task failed",
-        suspended: "Your input is needed",
-        goal_verified: "Goal verified by the Agent",
-        goal_incomplete: "Goal not verified",
+        completed: current.current.t("Task completed"),
+        failed: current.current.t("Task failed"),
+        suspended: current.current.t("Your input is needed"),
+        goal_verified: current.current.t("Goal verified by the Agent"),
+        goal_incomplete: current.current.t("Goal not verified"),
       }[notice.status];
       const title = `${state} · ${Array.from(name).slice(0, 80).join("")}`;
       const path = `/threads/${encodeURIComponent(threadId)}`;
@@ -299,11 +310,15 @@ function NotificationState({ children }: { children: ReactNode }) {
         actionProps: {
           children: (
             <>
-              <span className={styles.desktopLabel}>Open chat</span>
-              <span className={styles.mobileLabel}>Open</span>
+              <span className={styles.desktopLabel}>
+                {current.current.t("Open chat")}
+              </span>
+              <span className={styles.mobileLabel}>
+                {current.current.t("Open")}
+              </span>
             </>
           ),
-          "aria-label": "Open chat",
+          "aria-label": current.current.t("Open chat"),
           onClick: () => current.current.navigate(path),
         },
       });
@@ -330,7 +345,8 @@ function NotificationState({ children }: { children: ReactNode }) {
             failure instanceof Error
               ? failure.message
               : "Background notification test failed.",
-            failure instanceof Error,
+            failure instanceof Error && !(failure instanceof PushError),
+            failure instanceof PushError ? failure : undefined,
           );
         });
       return;
@@ -340,7 +356,19 @@ function NotificationState({ children }: { children: ReactNode }) {
     enabled,
     permission,
     requesting,
-    error: error.text ? (error.raw ? error.text : t(error.text)) : "",
+    error: error.push?.registration
+      ? t("{{message}} {{guidance}} Browser detail: {{detail}}", {
+          message: t(
+            "Browser push registration failed before a subscription could be saved to Harness UI.",
+          ),
+          guidance: t(error.push.registration.guidance),
+          detail: error.push.registration.detail,
+        })
+      : error.text
+        ? error.raw
+          ? error.text
+          : t(error.text)
+        : "",
     testStatus: testStatus ? t(testStatus) : "",
     background,
     setEnabled,
@@ -403,6 +431,7 @@ function PermissionDescription({ permission }: { permission: Permission }) {
   );
 }
 function PermissionToast({ onDismiss }: { onDismiss: () => void }) {
+  const { t } = useTranslation();
   const notifications = useNotifications()!;
   const toast = useToast();
   const navigate = useNavigate();
@@ -414,14 +443,16 @@ function PermissionToast({ onDismiss }: { onDismiss: () => void }) {
     const manager = latest.current.toast;
     const id = manager.add({
       id: "notification-setup",
-      title: issue ? "Background alerts paused" : "Get task notifications",
+      title: issue
+        ? t("Background alerts paused")
+        : t("Get task notifications"),
       description: issue
-        ? "Alerts still appear here. Reconnect in Settings."
-        : "Get notified when a task finishes or needs your input.",
+        ? t("Alerts still appear here. Reconnect in Settings.")
+        : t("Get notified when a task finishes or needs your input."),
       type: issue ? "warning" : "info",
       timeout: 8000,
       actionProps: {
-        children: "Settings",
+        children: t("Settings"),
         onClick: () => {
           latest.current.onDismiss();
           latest.current.navigate("/settings/notifications");
@@ -435,7 +466,7 @@ function PermissionToast({ onDismiss }: { onDismiss: () => void }) {
       active = false;
       manager.close(id);
     };
-  }, [issue]);
+  }, [issue, t]);
   return null;
 }
 export function NotificationSettings({

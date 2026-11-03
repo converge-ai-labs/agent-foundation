@@ -1,8 +1,11 @@
 import { result, type Schema, type Transport } from "./transport/client";
 
+class VoiceMessage extends Error {}
+
 export type VoiceState = {
   status: "idle" | "starting" | "connecting" | "active" | "failed";
   error: string;
+  errorLocalizable?: boolean;
   snapshot: Schema<"VoiceSnapshot"> | null;
 };
 type Call = {
@@ -47,13 +50,15 @@ export class VoiceSession {
   stop = () => {
     const call = this.call;
     if (call) this.release(call); // Control disconnect stops Host voice, never executor Runs.
-    this.update({ status: "idle", error: "" });
+    this.update({ status: "idle", error: "", errorLocalizable: false });
   };
   private fail(call: Call, error: unknown) {
     if (this.call !== call) return;
     this.release(call);
     this.update({
       status: "failed",
+      errorLocalizable:
+        error instanceof VoiceMessage || !(error instanceof Error),
       error:
         error instanceof Error
           ? error.message
@@ -74,12 +79,19 @@ export class VoiceSession {
       timeout: null,
     };
     this.call = call;
-    this.update({ status: "starting", error: "", snapshot: null });
+    this.update({
+      status: "starting",
+      error: "",
+      errorLocalizable: false,
+      snapshot: null,
+    });
     call.timeout = setTimeout(
       () =>
         this.fail(
           call,
-          new Error("Voice connection timed out. Start again when ready."),
+          new VoiceMessage(
+            "Voice connection timed out. Start again when ready.",
+          ),
         ),
       60_000,
     );
@@ -88,7 +100,7 @@ export class VoiceSession {
         !navigator.mediaDevices?.getUserMedia ||
         !globalThis.RTCPeerConnection
       )
-        throw new Error(
+        throw new VoiceMessage(
           "Voice needs a browser with microphone access on HTTPS or localhost.",
         );
       // Claim controls before asking for microphone permission. No automatic reconnect.
@@ -122,13 +134,19 @@ export class VoiceSession {
               return;
             }
             if (frame.start_id !== call.id) return;
-            this.update({ snapshot: frame, error: frame.error ?? "" });
+            this.update({
+              snapshot: frame,
+              error: frame.error ?? "",
+              errorLocalizable: false,
+            });
             if (frame.status === "failed" || frame.status === "idle") {
               this.fail(
                 call,
-                new Error(
-                  frame.error || "Voice session ended. Start again when ready.",
-                ),
+                frame.error
+                  ? new Error(frame.error)
+                  : new VoiceMessage(
+                      "Voice session ended. Start again when ready.",
+                    ),
               );
             } else if (frame.answer_sdp && call.peer && !call.answer) {
               call.answer = true;
@@ -145,15 +163,16 @@ export class VoiceSession {
           }
         };
         socket.onerror = () => {
-          const error = new Error("Could not connect Live controls.");
+          const error = new VoiceMessage("Could not connect Live controls.");
           reject(error);
           this.fail(call, error);
         };
         socket.onclose = (event) => {
-          const error = new Error(
-            event.reason ||
-              "Live controls disconnected. Start again when ready.",
-          );
+          const error = event.reason
+            ? new Error(event.reason)
+            : new VoiceMessage(
+                "Live controls disconnected. Start again when ready.",
+              );
           reject(error);
           this.fail(call, error);
         };
@@ -173,7 +192,7 @@ export class VoiceSession {
       stream.getTracks().forEach((track) => {
         peer.addTrack(track, stream);
         track.onended = () =>
-          this.fail(call, new Error("Microphone access ended."));
+          this.fail(call, new VoiceMessage("Microphone access ended."));
       });
       peer.createDataChannel("oai-events");
       peer.ontrack = (event) => {
@@ -185,7 +204,7 @@ export class VoiceSession {
           .catch(() =>
             this.fail(
               call,
-              new Error(
+              new VoiceMessage(
                 "Audio playback was blocked. Allow sound and start again.",
               ),
             ),
@@ -202,7 +221,7 @@ export class VoiceSession {
         ) {
           this.fail(
             call,
-            new Error("Audio disconnected. Start a new voice session."),
+            new VoiceMessage("Audio disconnected. Start a new voice session."),
           );
         }
       };
@@ -248,7 +267,7 @@ function waitForIce(
     };
     const timeout = setTimeout(() => {
       cleanup();
-      reject(new Error("Audio network setup timed out."));
+      reject(new VoiceMessage("Audio network setup timed out."));
     }, 10_000);
     peer.addEventListener("icegatheringstatechange", changed);
     signal.addEventListener("abort", aborted, { once: true });

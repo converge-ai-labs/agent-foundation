@@ -1,13 +1,24 @@
+import { useTranslation } from "../i18n";
+import type { TFunction } from "i18next";
 import { Badge } from "a13n-ui";
 import type { ProcessObservation } from "./process-observations";
 import { DebugOnly } from "../shell/debug";
 import styles from "./work-inspector.module.css";
 
-function status(item: ProcessObservation) {
+function status(item: ProcessObservation, t: TFunction) {
   if (item.phase === "exited" && item.exitCode)
-    return `Failed (exit ${item.exitCode})`;
+    return t("Failed (exit {{code}})", { code: item.exitCode });
+  const labels: Record<string, string> = {
+    running: t("Running"),
+    exited: t("Exited"),
+    signaled: t("Signaled"),
+    timed_out: t("Timed out"),
+    cancelled: t("Cancelled"),
+    failed: t("Failed"),
+    unavailable: t("Unavailable"),
+  };
   const label = item.phase.replaceAll("_", " ");
-  return label.charAt(0).toUpperCase() + label.slice(1);
+  return labels[item.phase] ?? label.charAt(0).toUpperCase() + label.slice(1);
 }
 export function Processes({
   observations,
@@ -18,15 +29,18 @@ export function Processes({
   omitted: boolean;
   incomplete: boolean;
 }) {
+  const { t } = useTranslation();
   return (
     <>
       {incomplete && (
         <p className={styles.caption}>
-          Live observations are incomplete. Status may be stale.
+          {t("Live observations are incomplete. Status may be stale.")}
         </p>
       )}
       {!observations.length && (
-        <p className={styles.emptyState}>No background processes observed.</p>
+        <p className={styles.emptyState}>
+          {t("No background processes observed.")}
+        </p>
       )}
       <ul className={styles.tasks}>
         {observations
@@ -36,7 +50,7 @@ export function Processes({
             <li key={`${item.runId}:${item.processId}`}>
               <details>
                 <summary className={styles.processSummary}>
-                  <code>{item.command || "Command unavailable"}</code>
+                  <code>{item.command || t("Command unavailable")}</code>
                   <Badge
                     variant={
                       item.phase === "failed" ||
@@ -48,30 +62,30 @@ export function Processes({
                           : "secondary"
                     }
                   >
-                    {status(item)}
+                    {status(item, t)}
                   </Badge>
                 </summary>
                 <div className={styles.executionBody}>
                   <dl>
                     <DebugOnly>
                       <div>
-                        <dt>Process</dt>
+                        <dt>{t("Process")}</dt>
                         <dd>{item.processId}</dd>
                       </div>
                       <div>
-                        <dt>Run</dt>
+                        <dt>{t("Run")}</dt>
                         <dd>{item.runId}</dd>
                       </div>
                     </DebugOnly>
                     {item.exitCode !== undefined && (
                       <div>
-                        <dt>Exit code</dt>
+                        <dt>{t("Exit code")}</dt>
                         <dd>{item.exitCode}</dd>
                       </div>
                     )}
                   </dl>
                   <p className={styles.caption}>
-                    Output is in the corresponding tool call.
+                    {t("Output is in the corresponding tool call.")}
                   </p>
                 </div>
               </details>
@@ -79,11 +93,11 @@ export function Processes({
           ))}
       </ul>
       {(omitted || observations.length > 16) && (
-        <p>Older observations omitted. Showing up to 16 processes.</p>
+        <p>{t("Older observations omitted. Showing up to 16 processes.")}</p>
       )}
       {!!observations.length && (
         <p className={styles.caption}>
-          Inspection does not control or stop processes.
+          {t("Inspection does not control or stop processes.")}
         </p>
       )}
     </>

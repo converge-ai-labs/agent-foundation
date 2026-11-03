@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 import { useState } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
+import { i18n } from "../i18n";
 import { TransportContext } from "../transport/context";
 import { createTransport } from "../transport/client";
 import {
@@ -102,8 +103,9 @@ beforeEach(() => {
     }),
   );
 });
-afterEach(() => {
+afterEach(async () => {
   cleanup();
+  await i18n.changeLanguage("en");
   queries.clear();
   vi.unstubAllGlobals();
 });
@@ -405,4 +407,80 @@ it("adds directories inside an existing environment and applies access changes t
   expect(
     JSON.parse(screen.getByTestId("selection").textContent!).bindings,
   ).toHaveLength(2);
+});
+
+it("retains an invalid alias and remote path while translating the validation error", async () => {
+  mount(<Fields />);
+  const user = await chooseDevice();
+  const alias = screen.getByRole("textbox", { name: "Directory alias" });
+  await user.clear(alias);
+  await user.type(alias, "Invalid Alias");
+  await user.type(
+    screen.getByRole("textbox", { name: "Working directory" }),
+    "/draft/path",
+  );
+  await user.click(screen.getByRole("button", { name: "Use environment" }));
+  const key =
+    "Choose unique directory aliases using lowercase letters, numbers, hyphens or underscores. Host mount names are reserved.";
+  expect(screen.getByText(key)).not.toBeNull();
+  await act(() => i18n.changeLanguage("zh-CN"));
+  expect(screen.getByText(i18n.t(key))).not.toBeNull();
+  expect(
+    (
+      screen.getByRole("textbox", {
+        name: i18n.t("Directory alias"),
+      }) as HTMLInputElement
+    ).value,
+  ).toBe("Invalid Alias");
+  expect(
+    (
+      screen.getByRole("textbox", {
+        name: i18n.t("Working directory"),
+      }) as HTMLInputElement
+    ).value,
+  ).toBe("/draft/path");
+  expect(
+    JSON.parse(screen.getByTestId("selection").textContent!).bindings,
+  ).toEqual([]);
+});
+
+it("retains the pending permission choice and directory across a language change", async () => {
+  mount(<Fields initial={[binding]} />);
+  const user = userEvent.setup();
+  await user.click(
+    await screen.findByRole("button", {
+      name: "Edit Build machine environment",
+    }),
+  );
+  await user.clear(screen.getByRole("textbox", { name: "Working directory" }));
+  await user.type(
+    screen.getByRole("textbox", { name: "Working directory" }),
+    "/pending/project",
+  );
+  await user.click(screen.getByRole("combobox", { name: "Allowed actions" }));
+  await user.click(await screen.findByRole("option", { name: "Read only" }));
+  await act(() => i18n.changeLanguage("zh-CN"));
+  expect(
+    screen.getByRole("combobox", { name: i18n.t("Allowed actions") })
+      .textContent,
+  ).toBe(i18n.t("Read only"));
+  expect(
+    (
+      screen.getByRole("textbox", {
+        name: i18n.t("Working directory"),
+      }) as HTMLInputElement
+    ).value,
+  ).toBe("/pending/project");
+  await user.click(
+    screen.getByRole("button", { name: i18n.t("Use environment") }),
+  );
+  expect(
+    JSON.parse(screen.getByTestId("selection").textContent!).bindings,
+  ).toEqual([
+    {
+      ...binding,
+      working_directory: "/pending/project",
+      permission_ceiling: { operations: readOnly },
+    },
+  ]);
 });

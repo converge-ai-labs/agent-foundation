@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { ToolSearchFields } from "./tool-search";
 import { ModelIdentity } from "../shell/model-identity";
 import { SettingsChoice as ChoiceField } from "../shell/settings";
@@ -32,6 +33,7 @@ export function AgentFields({
   source: string;
   onChange: (source: string) => void;
 }) {
+  const { t } = useTranslation();
   const { client } = useTransport();
   const sources = useSources();
   const selectors = useSelectors();
@@ -79,7 +81,9 @@ export function AgentFields({
       ),
   });
   if (!document)
-    return <p>Fix the YAML in Advanced configuration before editing tools.</p>;
+    return (
+      <p>{t("Fix the YAML in Advanced configuration before editing tools.")}</p>
+    );
   if (
     (raw.capabilities !== undefined &&
       (!Array.isArray(raw.capabilities) ||
@@ -100,8 +104,9 @@ export function AgentFields({
   )
     return (
       <p>
-        Fix the tool and subagent lists in Advanced configuration to use these
-        fields.
+        {t(
+          "Fix the tool and subagent lists in Advanced configuration to use these fields.",
+        )}
       </p>
     );
   const workingIndex = capabilities.findIndex(
@@ -125,23 +130,23 @@ export function AgentFields({
   return (
     <>
       <ErrorNotice error={catalog.error || proxy.error} />
-      <SettingsSection title="Tools & capabilities">
+      <SettingsSection title={t("Tools & capabilities")}>
         <SettingsToggle
-          label="Tasks"
-          description="Track the work this agent plans and completes."
+          label={t("Tasks")}
+          description={t("Track the work this agent plans and completes.")}
           checked={working.tasks_enabled ?? true}
           onCheckedChange={(checked) => setWorking("tasks_enabled", checked)}
         />
         <SettingsToggle
-          label="Notes"
-          description="Keep working notes during a chat."
+          label={t("Notes")}
+          description={t("Keep working notes during a chat.")}
           checked={working.notes_enabled ?? true}
           onCheckedChange={(checked) => setWorking("notes_enabled", checked)}
         />
         <details className={layout.groupDisclosure}>
           <summary>
-            <span>Model tools</span>
-            <small>Tools provided by the selected model</small>
+            <span>{t("Model tools")}</span>
+            <small>{t("Tools provided by the selected model")}</small>
           </summary>
           <div>
             <AgentNativeTools source={source} onChange={onChange} />
@@ -149,9 +154,9 @@ export function AgentFields({
         </details>
         <details className={layout.groupDisclosure}>
           <summary>
-            <span>Capabilities</span>
+            <span>{t("Capabilities")}</span>
             <small>
-              Add skills, web access and other installed capabilities
+              {t("Add skills, web access and other installed capabilities")}
             </small>
           </summary>
           <div className={management.capabilities}>
@@ -162,11 +167,23 @@ export function AgentFields({
                   <div className={management.capability} key={index}>
                     <div className={management.capabilityHeader}>
                       <span className={management.inlineLabel}>
-                        {capabilityLabel(item.capability)}
+                        {capabilityLabel(item.capability, t)}
                       </span>
                       <Button
                         variant="ghost"
-                        aria-label={`${["file_context", "user_interaction", "codeact"].includes(item.capability) ? "Reset capability" : "Remove capability"} ${capabilityLabel(item.capability)}`}
+                        aria-label={
+                          [
+                            "file_context",
+                            "user_interaction",
+                            "codeact",
+                          ].includes(item.capability)
+                            ? t("Reset capability {{name}}", {
+                                name: capabilityLabel(item.capability, t),
+                              })
+                            : t("Remove capability {{name}}", {
+                                name: capabilityLabel(item.capability, t),
+                              })
+                        }
                         onClick={() => remove("capabilities", index)}
                       >
                         {[
@@ -183,8 +200,8 @@ export function AgentFields({
                           "user_interaction",
                           "codeact",
                         ].includes(item.capability)
-                          ? "Reset to default"
-                          : "Remove"}
+                          ? t("Reset to default")
+                          : t("Remove")}
                       </Button>
                     </div>
                     <CapabilityOptions
@@ -197,14 +214,14 @@ export function AgentFields({
             )}
             <ResourceChoice
               loading={catalog.isPending}
-              label="Add capability"
+              label={t("Add capability")}
               value=""
               onValueChange={(capability) => {
                 if (capability)
                   add("capabilities", { capability, configuration: {} });
               }}
               options={[
-                { value: "", label: "Choose capability" },
+                { value: "", label: t("Choose capability") },
                 ...(catalog.data ?? [])
                   .filter(
                     (item) =>
@@ -221,7 +238,7 @@ export function AgentFields({
                   )
                   .map((item) => ({
                     value: item.key,
-                    label: capabilityLabel(item.key),
+                    label: capabilityLabel(item.key, t),
                   })),
               ]}
             />
@@ -229,10 +246,12 @@ export function AgentFields({
         </details>
       </SettingsSection>
       {connections && (
-        <SettingsSection title="Connections">{connections}</SettingsSection>
+        <SettingsSection title={t("Connections")}>
+          {connections}
+        </SettingsSection>
       )}
       <ToolSearchFields source={source} onChange={onChange} />
-      <SettingsSection variant="grouped" title="Delegation">
+      <SettingsSection variant="grouped" title={t("Delegation")}>
         {children.map((item, index) => (
           <SettingsRow
             key={index}
@@ -254,27 +273,29 @@ export function AgentFields({
                         selectors.data?.agents.find(
                           (agent) => agent.agent_id === item.agent,
                         )?.model_id,
-                    )?.name ?? "No model selected"
+                    )?.name ?? t("No model selected")
                   }
                 />
               ) : (
-                "Markdown · inherits this Agent's model"
+                t("Markdown · inherits this Agent's model")
               )
             }
           >
             <Button
               variant="ghost"
-              aria-label={`Remove subagent ${item.agent ?? item.markdown}`}
+              aria-label={t("Remove subagent {{name}}", {
+                name: item.agent ?? item.markdown,
+              })}
               onClick={() => remove("subagents", index)}
             >
               <Trash aria-hidden="true" />
-              Remove
+              {t("Remove")}
             </Button>
           </SettingsRow>
         ))}
         <ResourceChoice
           loading={sources.isPending}
-          label="Add subagent"
+          label={t("Add subagent")}
           value=""
           onValueChange={(child) => {
             if (child) {
@@ -285,7 +306,7 @@ export function AgentFields({
           options={[
             {
               value: "",
-              label: "Choose subagent",
+              label: t("Choose subagent"),
             },
             ...(sources.data?.sources ?? [])
               .filter(
@@ -306,7 +327,7 @@ export function AgentFields({
                     value: `${item.resource_kind === "agent" ? "agent" : "markdown"}:${id}`,
                     label:
                       item.resource_kind === "agent"
-                        ? `Agent · ${agentName(id)}`
+                        ? t("Agent · {{name}}", { name: agentName(id) })
                         : `Markdown · ${id}`,
                   })),
               ),
@@ -314,14 +335,14 @@ export function AgentFields({
         />
         {!!root.configuration?.subagents?.include?.length && (
           <div className={styles.sectionNote}>
-            <h3>Instance roles</h3>
+            <h3>{t("Instance roles")}</h3>
             <p>{root.configuration.subagents.include.join(", ")}</p>
             <small>
-              Appended when this Agent runs as a root.{" "}
+              {t("Appended when this Agent runs as a root.")}{" "}
               <Link
                 to={`/settings/source?path=${encodeURIComponent(root.path!)}`}
               >
-                Manage instance roles
+                {t("Manage instance roles")}
               </Link>
             </small>
           </div>
@@ -332,13 +353,13 @@ export function AgentFields({
           </div>
         )}
       </SettingsSection>
-      <SettingsSection title="Advanced tools">
+      <SettingsSection title={t("Advanced tools")}>
         <details className={layout.groupDisclosure}>
-          <summary>Tool restrictions</summary>
+          <summary>{t("Tool restrictions")}</summary>
           <div className={styles.stack}>
             <SettingsToggle
-              label="Restrict tool names"
-              description="Allow only the optional tools named below."
+              label={t("Restrict tool names")}
+              description={t("Allow only the optional tools named below.")}
               checked={Array.isArray(raw.tools)}
               onCheckedChange={(checked) =>
                 onChange(
@@ -348,8 +369,10 @@ export function AgentFields({
             />
             {Array.isArray(raw.tools) && (
               <FormField
-                label="Allowed tool names"
-                description="One tool name per line. Leave empty to disable optional tools. Required tools stay available."
+                label={t("Allowed tool names")}
+                description={t(
+                  "One tool name per line. Leave empty to disable optional tools. Required tools stay available.",
+                )}
               >
                 <Textarea
                   variant="soft"
@@ -381,17 +404,19 @@ export function AgentFields({
           </div>
         </details>
         <details className={layout.groupDisclosure}>
-          <summary>Saved tool groups</summary>
+          <summary>{t("Saved tool groups")}</summary>
           <div className={styles.stack}>
-            <p>Shows saved groups. Edit them in Advanced configuration.</p>
+            <p>
+              {t("Shows saved groups. Edit them in Advanced configuration.")}
+            </p>
             {!accepted ? (
-              <p>Save this agent to inspect its tool groups.</p>
+              <p>{t("Save this agent to inspect its tool groups.")}</p>
             ) : proxy.isPending ? (
-              <p>Loading composition…</p>
+              <p>{t("Loading composition…")}</p>
             ) : (
               <>
                 {!proxy.data?.sources.length && (
-                  <p>No configured plugin or MCP sources.</p>
+                  <p>{t("No configured plugin or MCP sources.")}</p>
                 )}
                 {proxy.data?.sources.map((item) => (
                   <p key={item.resource_id}>
@@ -417,6 +442,7 @@ function CapabilityOptions({
   index: number;
   onChange: (source: string) => void;
 }) {
+  const { t } = useTranslation();
   const document = readDocument(source)!;
   const item = document.toJS().capabilities[index];
   const config = item.configuration ?? {};
@@ -427,8 +453,10 @@ function CapabilityOptions({
   if (item.capability === "skills")
     return (
       <FormField
-        label="Additional skill directories"
-        description="One folder per line. Adds to automatically found skills."
+        label={t("Additional skill directories")}
+        description={t(
+          "One folder per line. Adds to automatically found skills.",
+        )}
       >
         <Textarea
           variant="soft"
@@ -450,27 +478,27 @@ function CapabilityOptions({
     return (
       <details className={styles.details}>
         <summary>
-          <span className={management.inlineLabel}>Web options</span>
+          <span className={management.inlineLabel}>{t("Web options")}</span>
         </summary>
         <div className={styles.stack}>
           <ChoiceField
-            label="Web search"
+            label={t("Web search")}
             value={config.search?.mode ?? "auto"}
             options={[
-              { value: "auto", label: "Automatic" },
-              { value: "host", label: "Host search" },
-              { value: "native", label: "Model-native search" },
-              { value: "off", label: "Off" },
+              { value: "auto", label: t("Automatic") },
+              { value: "host", label: t("Host search") },
+              { value: "native", label: t("Model-native search") },
+              { value: "off", label: t("Off") },
             ]}
             onValueChange={(mode) => set(["search", "mode"], mode)}
           />
           <SettingsToggle
-            label="Fetch web resources"
+            label={t("Fetch web resources")}
             checked={config.fetch?.enabled ?? true}
             onCheckedChange={(checked) => set(["fetch", "enabled"], checked)}
           />
           <SettingsToggle
-            label="Download files"
+            label={t("Download files")}
             checked={config.download?.enabled ?? true}
             onCheckedChange={(checked) => set(["download", "enabled"], checked)}
           />

@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { useId, useState, type PointerEvent } from "react";
 import type { Schema } from "../transport/client";
 import styles from "./environment-monitor.module.css";
@@ -99,6 +100,7 @@ export function Trend({
   onCursor: (minute: number | null) => void;
   onZoom: (range: TimeRange) => void;
 }) {
+  const { t } = useTranslation();
   const helpId = useId();
   const [drag, setDrag] = useState<TimeRange | null>(null);
   const visible = history.filter(
@@ -124,12 +126,15 @@ export function Trend({
     return range.start + ratio * (range.end - range.start);
   };
   return (
-    <section className={styles.trend} aria-label={`${title} history`}>
+    <section
+      className={styles.trend}
+      aria-label={t("{{title}} history", { title })}
+    >
       <div className={styles.trendHeading}>
         <h3>{title}</h3>
         <span>
-          <i className={styles.averageKey} /> Average{" "}
-          <i className={styles.peakKey} /> Peak
+          <i className={styles.averageKey} /> {t("Average")}{" "}
+          <i className={styles.peakKey} /> {t("Peak")}
         </span>
       </div>
       <div className={styles.plot}>
@@ -143,7 +148,7 @@ export function Trend({
           preserveAspectRatio="none"
           role="group"
           tabIndex={0}
-          aria-label={`${title} interactive chart`}
+          aria-label={t("{{title}} interactive chart", { title })}
           aria-describedby={helpId}
           onPointerDown={(event) => {
             if (event.button !== 0) return;
@@ -249,7 +254,7 @@ export function Trend({
         </svg>
         {!points.length && (
           <span className={styles.emptyPlot}>
-            No observations in this range
+            {t("No observations in this range")}
           </span>
         )}
         <div className={styles.timeAxis}>
@@ -266,18 +271,19 @@ export function Trend({
             ? new Date(selected.minute * 60000).toLocaleString()
             : cursor != null
               ? timeLabel(cursor)
-              : "No observations yet"}
+              : t("No observations yet")}
         </span>
         <span>
-          Average <strong>{format(selected?.[metric]?.average)}</strong>
+          {t("Average")} <strong>{format(selected?.[metric]?.average)}</strong>
         </span>
         <span>
-          Peak <strong>{format(selected?.[metric]?.peak)}</strong>
+          {t("Peak")} <strong>{format(selected?.[metric]?.peak)}</strong>
         </span>
       </div>
       <span id={helpId} className={styles.srOnly}>
-        Drag to zoom, down to 2 minutes. Arrow keys move by a minute. Escape
-        clears the selection.
+        {t(
+          "Drag to zoom, down to 2 minutes. Arrow keys move by a minute. Escape clears the selection.",
+        )}
       </span>
     </section>
   );

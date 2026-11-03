@@ -1550,3 +1550,98 @@ it("keeps history subscribers quiet during typing and acknowledgements, but obse
   });
   expect(screen.getByText("accepted:accepted")).toBeTruthy();
 });
+
+it("preserves an upload error from the server even when it matches application copy", async () => {
+  const { i18n } = await import("../i18n");
+  await i18n.changeLanguage("zh-CN");
+  const draft = new ThreadDraft();
+  vi.spyOn(draft, "connect").mockReturnValue({
+    presence: () => {},
+    close: () => {},
+  });
+  draft.receive({
+    draft_id: "draft-one",
+    participant_id: "participant-one",
+    participants: {},
+    update_base64: encode(Y.encodeStateAsUpdate(draft.doc)),
+  });
+  const message = "Upload failed. Retry or remove the attachment.";
+  const transport = {
+    fetch: vi.fn().mockRejectedValue(new Error(message)),
+  } as unknown as Transport;
+  const query = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  try {
+    const view = render(
+      <QueryClientProvider client={query}>
+        <TransportContext value={transport}>
+          <ComposerDrafts value={new Map([["thread-one", draft]])}>
+            <Composer
+              threadId="thread-one"
+              activity={{ state: "inactive" } as Schema<"RootActivityView">}
+              canRun
+              profile={{ display_name: "Alice", color: "#2563eb" }}
+              unauthorized={() => {}}
+              reconcile={() => {}}
+            />
+          </ComposerDrafts>
+        </TransportContext>
+      </QueryClientProvider>,
+    );
+    fireEvent.change(view.container.querySelector('input[type="file"]')!, {
+      target: { files: [new File(["x"], "notes.txt", { type: "text/plain" })] },
+    });
+    expect((await screen.findByRole("alert")).textContent).toContain(message);
+  } finally {
+    cleanup();
+    query.clear();
+    await i18n.changeLanguage("en");
+  }
+});
+
+it.each(["draft", "submission"])(
+  "preserves matching server %s diagnostics in Chinese",
+  async (source) => {
+    const { i18n } = await import("../i18n");
+    await i18n.changeLanguage("zh-CN");
+    const draft = new ThreadDraft();
+    vi.spyOn(draft, "connect").mockReturnValue({
+      presence: () => {},
+      close: () => {},
+    });
+    const message = "Draft synchronization rejected.";
+    if (source === "draft") {
+      draft.error = message;
+      draft.errorRaw = true;
+    } else {
+      draft.submission = { kind: "rejected", message, raw: true };
+    }
+    const query = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    try {
+      render(
+        <QueryClientProvider client={query}>
+          <TransportContext value={{} as Transport}>
+            <ComposerDrafts value={new Map([["thread-one", draft]])}>
+              <Composer
+                threadId="thread-one"
+                activity={{ state: "inactive" } as Schema<"RootActivityView">}
+                canRun
+                profile={{ display_name: "Alice", color: "#2563eb" }}
+                unauthorized={() => {}}
+                reconcile={() => {}}
+              />
+            </ComposerDrafts>
+          </TransportContext>
+        </QueryClientProvider>,
+      );
+      expect(screen.getByRole("alert").textContent).toContain(message);
+    } finally {
+      cleanup();
+      query.clear();
+      await i18n.changeLanguage("en");
+    }
+  },
+);

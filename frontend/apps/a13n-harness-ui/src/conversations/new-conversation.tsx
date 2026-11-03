@@ -350,12 +350,12 @@ function NewConversation({
   return (
     <ConversationOpening
       ready={pageReady}
-      label="Preparing your chat…"
+      label={t("Preparing your chat…")}
       onContinue={() => setShowAvailable(true)}
     >
-      <section className={styles.page} aria-label="New chat">
+      <section className={styles.page} aria-label={t("New chat")}>
         <div className={styles.inputArea}>
-          <h1 className={styles.welcome}>What can I help with?</h1>
+          <h1 className={styles.welcome}>{t("What can I help with?")}</h1>
           <ConversationTranscript
             entries={[]}
             blocks={[]}
@@ -363,22 +363,22 @@ function NewConversation({
             threadId={threadId}
           />
           <fieldset className={styles.context} disabled={choicesDisabled}>
-            <legend className={styles.srOnly}>Chat settings</legend>
+            <legend className={styles.srOnly}>{t("Chat settings")}</legend>
             <div className={styles.location}>
               <Folder aria-hidden="true" />
               <SearchPicker
-                label="Project"
+                label={t("Project")}
                 popupClassName={styles.choicePopup}
-                placeholder="Without a project"
-                emptyMessage="No projects found."
+                placeholder={t("Without a project")}
+                emptyMessage={t("No projects found.")}
                 disabled={choicesDisabled || !!ownerId}
                 value={defaults.project_id ?? ""}
                 onValueChange={(value) => change({ project_id: value || null })}
                 groups={[
                   {
-                    label: "Projects",
+                    label: t("Projects"),
                     options: [
-                      { value: "", label: "Without a project" },
+                      { value: "", label: t("Without a project") },
                       ...(projects.data ?? []).map((item) => ({
                         value: item.project_id,
                         label: item.name,
@@ -387,7 +387,9 @@ function NewConversation({
                         ? [
                             {
                               value: defaults.project_id,
-                              label: `${defaults.project_id} (unavailable)`,
+                              label: t("{{id}} (unavailable)", {
+                                id: defaults.project_id,
+                              }),
                               disabled: true,
                             },
                           ]
@@ -401,15 +403,23 @@ function NewConversation({
           {choicesDisabled && (
             <div className={styles.projectNotice}>
               <div role="status">
-                <strong>Project changes are paused</strong>
+                <strong>{t("Project changes are paused")}</strong>
                 <p>
                   {preparing
-                    ? "Sending your first message. Wait until it finishes before changing projects."
+                    ? t(
+                        "Sending your first message. Wait until it finishes before changing projects.",
+                      )
                     : unknownSubmission
-                      ? "Open the chat to check delivery before changing projects."
+                      ? t(
+                          "Open the chat to check delivery before changing projects.",
+                        )
                       : draft.created
-                        ? "This draft belongs to an existing chat. Open it to continue."
-                        : "Couldn't confirm the chat was created. Check its status before changing projects. Your input is saved here."}
+                        ? t(
+                            "This draft belongs to an existing chat. Open it to continue.",
+                          )
+                        : t(
+                            "Couldn't confirm the chat was created. Check its status before changing projects. Your input is saved here.",
+                          )}
                 </p>
               </div>
               {!preparing &&
@@ -417,7 +427,7 @@ function NewConversation({
                   <Link
                     to={`/threads/${encodeURIComponent(threadId)}?compose=1`}
                   >
-                    Open saved draft
+                    {t("Open saved draft")}
                   </Link>
                 ) : (
                   <Button
@@ -426,7 +436,9 @@ function NewConversation({
                     disabled={review.isPending}
                     onClick={() => review.mutate()}
                   >
-                    {review.isPending ? "Checking chat…" : "Check chat status"}
+                    {review.isPending
+                      ? t("Checking chat…")
+                      : t("Check chat status")}
                   </Button>
                 ))}
               <ErrorNotice error={review.error} />
@@ -434,8 +446,9 @@ function NewConversation({
           )}
           {!choicesDisabled && review.isSuccess && !review.data && (
             <p className={styles.recoveryStatus} role="status">
-              No chat found. You can change projects now. Your input is saved
-              here.
+              {t(
+                "No chat found. You can change projects now. Your input is saved here.",
+              )}
             </p>
           )}
           <Composer
@@ -470,13 +483,15 @@ function NewConversation({
             }
             unavailableReason={
               review.isPending
-                ? "Checking the previous creation attempt…"
+                ? t("Checking the previous creation attempt…")
                 : !ownerAvailable
-                  ? "The coordinator must be available in this project. Retry or remove the assignment."
+                  ? t(
+                      "The coordinator must be available in this project. Retry or remove the assignment.",
+                    )
                   : preview.isPending
-                    ? "Updating chat settings…"
+                    ? t("Updating chat settings…")
                     : preview.error
-                      ? "Review chat settings before sending."
+                      ? t("Review chat settings before sending.")
                       : undefined
             }
             profile={profile}
@@ -536,8 +551,9 @@ function NewConversation({
               !isReadyAttachment(id) && !composerDraft.uploads.has(key),
           ) && (
             <p role="alert">
-              Reattach missing files before sending. Local attachments are lost
-              on reload; uploaded files stay with their original chat.
+              {t(
+                "Reattach missing files before sending. Local attachments are lost on reload; uploaded files stay with their original chat.",
+              )}
             </p>
           )}
           <ErrorNotice
@@ -553,7 +569,7 @@ function NewConversation({
           />
           {(preview.error || setup.data?.needed) && (
             <Link className={styles.setup} to="/setup">
-              Continue setup
+              {t("Continue setup")}
             </Link>
           )}
         </div>
