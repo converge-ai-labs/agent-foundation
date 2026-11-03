@@ -2,6 +2,7 @@ import "./styles/blog.css";
 import { $$ } from "./dom";
 import { mountMarks } from "./mark";
 import { mountStars } from "./stars";
+import { mountBenchmarkInspectors } from "./benchmark";
 
 const LABEL = 12; // px, a plate label on screen
 const LABEL_MAX = 16; // drawing units; larger labels collide with the drawing
@@ -9,6 +10,7 @@ const CROP_PAD = 10; // drawing units around a cropped cover
 
 mountMarks();
 mountStars();
+mountBenchmarkInspectors();
 
 /** Copies a value and confirms on success. */
 async function copy(value: string, done: () => void) {
@@ -52,7 +54,7 @@ const plates = new ResizeObserver((entries) => {
 for (const plate of $$(".plate:not(.bare)")) plates.observe(plate);
 
 // the cover crops its drawing to the lines, leaving the labels out
-for (const svg of $$<SVGSVGElement>(".cover svg")) {
+for (const svg of $$<SVGSVGElement>(".cover svg:not(.benchmark-cover)")) {
   const boxes = $$<SVGGraphicsElement>(":scope > :not(text)", svg).map((el) =>
     el.getBBox(),
   );

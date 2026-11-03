@@ -15,6 +15,8 @@ const processor = unified()
   .use(remarkParse)
   .use(remarkGfm)
   .use(remarkRehype, {
+    // Posts and their inline SVGs are reviewed repository source.
+    allowDangerousHtml: true,
     footnoteLabel: "Notes",
     footnoteLabelProperties: { className: ["notes-head"] },
   });
@@ -30,6 +32,7 @@ export async function render(markdown: string, dir: string) {
   });
   const hast = (await processor.run(mdast)) as Root;
   linkHeadings(hast);
+  wrapTables(hast);
   await Promise.all([highlightCode(hast), placeFigures(hast, dir)]);
   return { html: toHtml(hast, { allowDangerousHtml: true }), words };
 }
@@ -46,6 +49,15 @@ const text = (node: ElementContent | Root): string =>
     : "children" in node
       ? node.children.map((child) => text(child as ElementContent)).join("")
       : "";
+
+/** Preserve table semantics while wide comparisons scroll within the page. */
+function wrapTables(tree: Root) {
+  visit(tree, "element", (node, index, parent) => {
+    if (node.tagName !== "table" || index === undefined || !parent) return;
+    parent.children[index] = el("div", { className: ["table-scroll"] }, [node]);
+    return index + 1;
+  });
+}
 
 /** Section headings get GitHub's IDs and a link to themselves. */
 function linkHeadings(tree: Root) {

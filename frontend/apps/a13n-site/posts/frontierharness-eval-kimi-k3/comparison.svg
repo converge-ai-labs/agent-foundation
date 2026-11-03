@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="benchmark-comparison" viewBox="0 0 800 440">
+  <title>FrontierHarness Eval: pass rate and reported standardized cost per pass</title>
+  <desc>a13n is a local run; the twelve published configurations used different runtime and provider conditions. a13n passed 21 of 30 tasks at $2.93 per pass. Cost excludes nine requests with unknown usage, other attempts and machines; raw usage is complete for 22 of 30 a13n tasks. Hollow baseline points have partial reported cost coverage. All values are also in the comparison table.</desc>
+  <text class="fi" x="70" y="22" style="font:400 14px var(--mono)">Pass rate</text>
+  <path class="pf" d="M70 289.44H770" /><text class="fi" x="55" y="294.44" text-anchor="end" style="font:400 13px var(--mono)">50%</text>
+  <path class="pf" d="M70 238.52H770" /><text class="fi" x="55" y="243.52" text-anchor="end" style="font:400 13px var(--mono)">55%</text>
+  <path class="pf" d="M70 187.59H770" /><text class="fi" x="55" y="192.59" text-anchor="end" style="font:400 13px var(--mono)">60%</text>
+  <path class="pf" d="M70 136.67H770" /><text class="fi" x="55" y="141.67" text-anchor="end" style="font:400 13px var(--mono)">65%</text>
+  <path class="pf" d="M70 85.74H770" /><text class="fi" x="55" y="90.74" text-anchor="end" style="font:400 13px var(--mono)">70%</text>
+  <text class="fi" x="104.49" y="350" text-anchor="middle" style="font:400 13px var(--mono)">$1</text>
+  <text class="fi" x="251.61" y="350" text-anchor="middle" style="font:400 13px var(--mono)">$2</text>
+  <text class="fi" x="446.10" y="350" text-anchor="middle" style="font:400 13px var(--mono)">$5</text>
+  <text class="fi" x="593.22" y="350" text-anchor="middle" style="font:400 13px var(--mono)">$10</text>
+  <text class="fi" x="740.34" y="350" text-anchor="middle" style="font:400 13px var(--mono)">$20</text>
+  <text class="fi" x="420" y="382" text-anchor="middle" style="font:400 14px var(--mono)">Cost per pass · USD, logarithmic scale</text>
+  <g data-result="a13n Harness" data-summary="21/30 passed · $2.93 per pass" data-note="Reported cost covers the selected tasks after nine unknown-usage requests were excluded. Complete raw usage: 22/30 tasks.">
+    <title>a13n Harness: 21/30 passed · $2.93 per pass. Reported cost covers the selected tasks after nine unknown-usage requests were excluded. Complete raw usage: 22/30 tasks.</title>
+    <path class="fa" d="M332.33 77.74l6 8-6 8-6-8Z" />
+    <circle class="pa selection" cx="332.33" cy="85.74" r="12" />
+  </g>
+  <g data-result="Codex" data-summary="20/30 passed · $3.47 per pass" data-note="100% reported cost coverage.">
+    <title>Codex: 20/30 passed · $3.47 per pass. 100% reported cost coverage.</title>
+    <circle cx="368.46" cy="119.69" r="5.5" style="fill:var(--muted);stroke:var(--muted);stroke-width:1.4" />
+    <circle class="pa selection" cx="368.46" cy="119.69" r="12" />
+  </g>
+  <g data-result="Claude Code" data-summary="19/30 passed · $18.34 per pass" data-note="97% reported cost coverage. Cost reflects the available portion only.">
+    <title>Claude Code: 19/30 passed · $18.34 per pass. 97% reported cost coverage. Cost reflects the available portion only.</title>
+    <circle cx="721.91" cy="153.64" r="5.5" style="fill:var(--paper);stroke:var(--muted);stroke-width:1.4" />
+    <circle class="pa selection" cx="721.91" cy="153.64" r="12" />
+  </g>
+  <g data-result="DSH Creator" data-summary="19/30 passed · $3.28 per pass" data-note="90% reported cost coverage. Cost reflects the available portion only.">
+    <title>DSH Creator: 19/30 passed · $3.28 per pass. 90% reported cost coverage. Cost reflects the available portion only.</title>
+    <circle cx="356.93" cy="153.64" r="5.5" style="fill:var(--paper);stroke:var(--muted);stroke-width:1.4" />
+    <circle class="pa selection" cx="356.93" cy="153.64" r="12" />
+  </g>
+  <g data-result="DSH PTC" data-summary="18/30 passed · $4.58 per pass" data-note="90% reported cost coverage. Cost reflects the available portion only.">
+    <title>DSH PTC: 18/30 passed · $4.58 per pass. 90% reported cost coverage. Cost reflects the available portion only.</title>
+    <circle cx="427.35" cy="187.59" r="5.5" style="fill:var(--paper);stroke:var(--muted);stroke-width:1.4" />
+    <circle class="pa selection" cx="427.35" cy="187.59" r="12" />
+  </g>
+  <g data-result="DSH Standard" data-summary="18/30 passed · $3.46 per pass" data-note="90% reported cost coverage. Cost reflects the available portion only.">
+    <title>DSH Standard: 18/30 passed · $3.46 per pass. 90% reported cost coverage. Cost reflects the available portion only.</title>
+    <circle cx="367.89" cy="187.59" r="5.5" style="fill:var(--paper);stroke:var(--muted);stroke-width:1.4" />
+    <circle class="pa selection" cx="367.89" cy="187.59" r="12" />
+  </g>
+  <g data-result="Pi" data-summary="18/30 passed · $2.43 per pass" data-note="100% reported cost coverage.">
+    <title>Pi: 18/30 passed · $2.43 per pass. 100% reported cost coverage.</title>
+    <circle cx="293.21" cy="187.59" r="5.5" style="fill:var(--muted);stroke:var(--muted);stroke-width:1.4" />
+    <circle class="pa selection" cx="293.21" cy="187.59" r="12" />
+  </g>
+  <g data-result="DSH Minimal" data-summary="17/30 passed · $4.72 per pass" data-note="87% reported cost coverage. Cost reflects the available portion only.">
+    <title>DSH Minimal: 17/30 passed · $4.72 per pass. 87% reported cost coverage. Cost reflects the available portion only.</title>
+    <circle cx="433.77" cy="221.54" r="5.5" style="fill:var(--paper);stroke:var(--muted);stroke-width:1.4" />
+    <circle class="pa selection" cx="433.77" cy="221.54" r="12" />
+  </g>
+  <g data-result="Kimi Code" data-summary="17/30 passed · $3.65 per pass" data-note="100% reported cost coverage.">
+    <title>Kimi Code: 17/30 passed · $3.65 per pass. 100% reported cost coverage.</title>
+    <circle cx="379.13" cy="221.54" r="5.5" style="fill:var(--muted);stroke:var(--muted);stroke-width:1.4" />
+    <circle class="pa selection" cx="379.13" cy="221.54" r="12" />
+  </g>
+  <g data-result="Oh My Pi" data-summary="17/30 passed · $4.75 per pass" data-note="100% reported cost coverage.">
+    <title>Oh My Pi: 17/30 passed · $4.75 per pass. 100% reported cost coverage.</title>
+    <circle cx="435.01" cy="221.54" r="5.5" style="fill:var(--muted);stroke:var(--muted);stroke-width:1.4" />
+    <circle class="pa selection" cx="435.01" cy="221.54" r="12" />
+  </g>
+  <g data-result="Exo Harness" data-summary="16/30 passed · $1.05 per pass" data-note="100% reported cost coverage.">
+    <title>Exo Harness: 16/30 passed · $1.05 per pass. 100% reported cost coverage.</title>
+    <circle cx="113.88" cy="255.49" r="5.5" style="fill:var(--muted);stroke:var(--muted);stroke-width:1.4" />
+    <circle class="pa selection" cx="113.88" cy="255.49" r="12" />
+  </g>
+  <g data-result="Hermes" data-summary="15/30 passed · $2.90 per pass" data-note="93% reported cost coverage. Cost reflects the available portion only.">
+    <title>Hermes: 15/30 passed · $2.90 per pass. 93% reported cost coverage. Cost reflects the available portion only.</title>
+    <circle cx="330.79" cy="289.44" r="5.5" style="fill:var(--paper);stroke:var(--muted);stroke-width:1.4" />
+    <circle class="pa selection" cx="330.79" cy="289.44" r="12" />
+  </g>
+  <g data-result="OpenCode" data-summary="15/30 passed · $3.24 per pass" data-note="97% reported cost coverage. Cost reflects the available portion only.">
+    <title>OpenCode: 15/30 passed · $3.24 per pass. 97% reported cost coverage. Cost reflects the available portion only.</title>
+    <circle cx="354.29" cy="289.44" r="5.5" style="fill:var(--paper);stroke:var(--muted);stroke-width:1.4" />
+    <circle class="pa selection" cx="354.29" cy="289.44" r="12" />
+  </g>
+  <text class="fa" x="332.33" y="65.74" text-anchor="middle" style="font:500 15px var(--text)">a13n · 70.0%</text>
+  <text class="fi" x="382.46" y="124.69" text-anchor="start" style="font:500 15px var(--text)">Codex</text>
+  <text class="fi" x="281.21" y="192.59" text-anchor="end" style="font:500 15px var(--text)">Pi</text>
+  <text class="fi" x="127.88" y="243.49" text-anchor="start" style="font:500 15px var(--text)">Exo Harness</text>
+  <text class="fi" x="709.91" y="140.64" text-anchor="end" style="font:500 15px var(--text)">Claude Code</text>
+  <path class="fa" d="M78 411l5 6-5 6-5-6Z" />
+  <text class="fi" x="94" y="422" style="font:400 13px var(--text)">a13n local run</text>
+  <circle cx="285" cy="417" r="5" style="fill:var(--muted)" />
+  <text class="fi" x="299" y="422" style="font:400 13px var(--text)">Frozen baseline</text>
+  <circle cx="495" cy="417" r="5" style="fill:var(--paper);stroke:var(--muted);stroke-width:1.4" />
+  <text class="fi" x="509" y="422" style="font:400 13px var(--text)">Partial reported cost coverage</text>
+</svg>
