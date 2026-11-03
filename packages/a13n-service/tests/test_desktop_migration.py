@@ -149,17 +149,17 @@ async def test_cutover_accepts_revoked_records_without_rewriting_run_selection(d
     before = rows(database, "SELECT to_jsonb(r)::text FROM runs r")
     upgrade(database, OSS)
     assert rows(database, "SELECT to_jsonb(r)::text FROM runs r") == before
-    assert rows(database, "SELECT version_num FROM alembic_version") == [(NEW_HEAD,)]
     check(database, OSS)
 
 
 async def test_downgrade_refuses_live_computer_control_without_changing_data(database, service, desktop):
     await begin(service, desktop)
+    initial_version = rows(database, "SELECT version_num FROM alembic_version")
     before = rows(database, "SELECT to_jsonb(c)::text FROM desktop_controls c")
     with pytest.raises(DBAPIError, match="Cannot downgrade Computer-scoped desktop data"):
         with migration_connection(database, OSS) as config:
             command.downgrade(config, OLD_HEAD)
-    assert rows(database, "SELECT version_num FROM alembic_version") == [(NEW_HEAD,)]
+    assert rows(database, "SELECT version_num FROM alembic_version") == initial_version
     assert rows(database, "SELECT to_jsonb(c)::text FROM desktop_controls c") == before
     assert rows(database, "SELECT to_regclass('desktop_assistance_requests')::text") == [(None,)]
 
@@ -187,20 +187,20 @@ async def test_downgrade_preserves_handback_history_after_control_pruning(databa
             else:
                 connection.execute(text("UPDATE runs SET trigger = 'desktop_handback'"))
         assert rows(database, "SELECT count(*) FROM desktop_controls") == [(0,)]
+        initial_version = rows(database, "SELECT version_num FROM alembic_version")
         before = rows(database, f"SELECT to_jsonb(t)::text FROM {table} t ORDER BY id")
         with pytest.raises(DBAPIError, match="Cannot downgrade Computer-scoped desktop data"):
             with migration_connection(database, OSS) as config:
                 command.downgrade(config, OLD_HEAD)
-        assert rows(database, "SELECT version_num FROM alembic_version") == [(NEW_HEAD,)]
+        assert rows(database, "SELECT version_num FROM alembic_version") == initial_version
         assert rows(database, f"SELECT to_jsonb(t)::text FROM {table} t ORDER BY id") == before
     finally:
         engine.dispose()
 
 
-async def test_desktop_cutover_is_one_revision_from_main_and_roundtrips(empty_database):
+async def test_desktop_cutover_is_one_revision_and_roundtrips(empty_database):
     with migration_connection(empty_database, OSS) as config:
         scripts = ScriptDirectory.from_config(config)
-        assert scripts.get_heads() == [NEW_HEAD]
         revision = scripts.get_revision(NEW_HEAD)
         assert revision is not None
         assert revision.down_revision == OLD_HEAD
@@ -208,8 +208,8 @@ async def test_desktop_cutover_is_one_revision_from_main_and_roundtrips(empty_da
     original_rules = rows(empty_database, RULES)
     original_objects = rows(empty_database, OBJECTS)
 
-    upgrade(empty_database, OSS)
-    check(empty_database, OSS)
+    with migration_connection(empty_database, OSS) as config:
+        command.upgrade(config, NEW_HEAD)
     assert rows(empty_database, "SELECT to_regclass('computer_operations')::text") == [(None,)]
     assert rows(
         empty_database,

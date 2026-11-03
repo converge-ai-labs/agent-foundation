@@ -44,9 +44,10 @@ async def test_cross_replica_connection_is_exclusive_and_old_cleanup_preserves_r
     assert await service.runtime.redis.get(presence_key(identity)) is None
 
 
-async def test_initialization_timeout_does_not_publish_online_and_releases_connection(service):
+async def test_initialization_timeout_does_not_publish_online_and_releases_connection(service, runs_kit):
+    await runs_kit.pause_sweeps(service)
     pool = service.runtime.client_connections
-    pool.config = pool.config.model_copy(update={"initialization_seconds": 0.1})
+    pool.config = pool.config.model_copy(update={"initialization_seconds": 1})
     created = (await register(service)).json()
     identity, token = created["client"]["environment"]["id"], created["token"]
     async with listening(service.app) as endpoint:
