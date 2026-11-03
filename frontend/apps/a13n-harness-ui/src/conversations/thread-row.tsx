@@ -1,3 +1,5 @@
+import type { TFunction } from "i18next";
+import { useTranslation } from "../i18n";
 import { useContext, useRef, useState } from "react";
 import { NavLink, useNavigate, useLocation } from "react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -43,13 +45,14 @@ import {
 
 import { NavigationDragContext } from "./navigation-drag";
 
-function threadState(row: ActivityRow) {
-  if (row.pending_decision) return "Needs your answer";
-  if (row.thread.root_activity.state === "preparing") return "Preparing";
-  if (row.thread.root_activity.state === "running") return "Running";
-  if (row.thread.last_execution?.status === "failed") return "Failed";
-  if (row.thread.last_execution?.status === "unknown") return "Outcome unknown";
-  if (row.thread.archived) return "Archived";
+function threadState(row: ActivityRow, t: TFunction) {
+  if (row.pending_decision) return t("Needs your answer");
+  if (row.thread.root_activity.state === "preparing") return t("Preparing");
+  if (row.thread.root_activity.state === "running") return t("Running");
+  if (row.thread.last_execution?.status === "failed") return t("Failed");
+  if (row.thread.last_execution?.status === "unknown")
+    return t("Outcome unknown");
+  if (row.thread.archived) return t("Archived");
   return "";
 }
 
@@ -85,6 +88,7 @@ export function ThreadRow({
   activeWorkerCount?: number;
   disclosure?: { expanded: boolean; onToggle: () => void };
 }) {
+  const { t } = useTranslation();
   const drag = useContext(NavigationDragContext);
   const rowElement = useRef<HTMLDivElement>(null);
   const sortable =
@@ -107,16 +111,17 @@ export function ThreadRow({
   const title = conversationTitle(
     row.thread,
     composers.get(row.thread.thread_id)?.localInputs,
+    t("Untitled chat"),
   );
   const isCoordinator = row.thread.role === "coordinator";
-  const state = threadState(row);
+  const state = threadState(row, t);
   const workerActivity =
     activeWorkerCount > 0
-      ? `${activeWorkerCount} ${activeWorkerCount === 1 ? "worker" : "workers"} active`
+      ? t("Active worker count", { count: activeWorkerCount })
       : "";
   const actionsButton = useRef<HTMLButtonElement>(null);
   const canStar = row.thread.role !== "worker" && !row.thread.parent_thread_id;
-  const starLabel = row.thread.starred ? "Unstar chat" : "Star chat";
+  const starLabel = row.thread.starred ? t("Unstar chat") : t("Star chat");
   const star = useMutation({
     mutationFn: () =>
       result(
@@ -191,7 +196,11 @@ export function ThreadRow({
           <button
             type="button"
             className={styles.threadDisclosure}
-            aria-label={`${disclosure.expanded ? "Collapse" : "Expand"} workers for ${title}`}
+            aria-label={
+              disclosure.expanded
+                ? t("Collapse workers for {{title}}", { title })
+                : t("Expand workers for {{title}}", { title })
+            }
             aria-expanded={disclosure.expanded}
             onClick={disclosure.onToggle}
           >
@@ -246,15 +255,16 @@ export function ThreadRow({
         >
           <span className={styles.threadLabel}>
             <strong title={title}>{title}</strong>
-            {row.thread.role === "coordinator" && title !== "Coordinator" && (
-              <span className={styles.srOnly}>Coordinator</span>
-            )}
+            {row.thread.role === "coordinator" &&
+              title !== t("Coordinator") && (
+                <span className={styles.srOnly}>{t("Coordinator")}</span>
+              )}
             {showProject && (
               <small>
                 {row.project_name ??
                   (row.thread.configuration.project_id
-                    ? "Unavailable project"
-                    : "Without a project")}
+                    ? t("Unavailable project")
+                    : t("Without a project"))}
               </small>
             )}
           </span>
@@ -264,15 +274,15 @@ export function ThreadRow({
               title={workerActivity}
               aria-label={workerActivity}
             >
-              {activeWorkerCount} active
+              {t("{{count, number}} active", { count: activeWorkerCount })}
             </small>
           )}
           {unsent && (
             <span
               className={styles.draftMarker}
               role="img"
-              aria-label="Draft · Unsent input"
-              title="Unsent input"
+              aria-label={t("Draft · Unsent input")}
+              title={t("Unsent input")}
             >
               <PencilSimple size={12} aria-hidden="true" />
             </span>
@@ -287,8 +297,8 @@ export function ThreadRow({
             <span
               className={styles.resultDot}
               role="img"
-              aria-label="New result"
-              title="New result"
+              aria-label={t("New result")}
+              title={t("New result")}
             />
           )}
         </NavLink>
@@ -296,22 +306,22 @@ export function ThreadRow({
           <Button
             variant="ghost"
             size={showRestore === "compact" ? "icon-sm" : "sm"}
-            title={`Restore ${title}`}
+            title={t("Restore {{title}}", { title })}
             loading={archive.isPending}
             disabled={row.thread.root_activity.state !== "inactive"}
             onClick={() => archive.mutate()}
-            aria-label={`Restore ${title}`}
+            aria-label={t("Restore {{title}}", { title })}
           >
             <ArrowCounterClockwise />
-            {showRestore !== "compact" && "Restore"}
+            {showRestore !== "compact" && t("Restore")}
           </Button>
         )}
         {canStar && row.thread.starred && (
           <span
             className={styles.threadStar}
             role="img"
-            aria-label={`Starred chat: ${title}`}
-            title="Starred · Shared with everyone in this project"
+            aria-label={t("Starred chat: {{title}}", { title })}
+            title={t("Starred · Shared with everyone in this project")}
           >
             <Star size={12} weight="fill" aria-hidden="true" />
           </span>
@@ -323,7 +333,7 @@ export function ThreadRow({
             }
             className={styles.threadActions}
             aria-busy={star.isPending || fork.isPending}
-            aria-label={`Actions for ${title}`}
+            aria-label={t("Actions for {{name}}", { name: title })}
           >
             <DotsThree />
           </MenuTrigger>
@@ -340,7 +350,8 @@ export function ThreadRow({
                   )
                 }
               >
-                <ChatCircle /> New worker
+                <ChatCircle />
+                {t("New worker")}
               </MenuItem>
             )}
             {sortable && (
@@ -351,7 +362,7 @@ export function ThreadRow({
                   }
                 >
                   <ArrowUp />
-                  Move up
+                  {t("Move up")}
                 </MenuItem>
                 <MenuItem
                   onClick={() =>
@@ -359,7 +370,7 @@ export function ThreadRow({
                   }
                 >
                   <ArrowDown />
-                  Move down
+                  {t("Move down")}
                 </MenuItem>
               </>
             )}
@@ -371,9 +382,9 @@ export function ThreadRow({
             )}
             {(
               [
-                ["rename", "Rename chat", "Rename", PencilSimple],
-                ["share", "Share chat", "Share", ShareNetwork],
-                ["details", "Chat details", "Details", SlidersHorizontal],
+                ["rename", t("Rename chat"), t("Rename"), PencilSimple],
+                ["share", t("Share chat"), t("Share"), ShareNetwork],
+                ["details", t("Chat details"), t("Details"), SlidersHorizontal],
               ] as const
             ).map(([action, label, caption, Icon]) => (
               <MenuItem
@@ -397,7 +408,8 @@ export function ThreadRow({
                   disabled={fork.isPending}
                   onClick={() => fork.mutate()}
                 >
-                  <GitFork /> Fork chat
+                  <GitFork />
+                  {t("Fork chat")}
                 </MenuItem>
               )}
             {row.thread.role === "ordinary" &&
@@ -408,7 +420,8 @@ export function ThreadRow({
                   }
                   onClick={() => setPromoting(true)}
                 >
-                  <CoordinatorIcon size={16} /> Make Coordinator
+                  <CoordinatorIcon size={16} />
+                  {t("Make Coordinator")}
                 </MenuItem>
               )}
             {row.thread.role === "coordinator" && (
@@ -418,8 +431,8 @@ export function ThreadRow({
               >
                 <CoordinatorIcon size={16} />
                 {row.thread.auto_followup
-                  ? "Pause follow-ups"
-                  : "Enable follow-ups"}
+                  ? t("Pause follow-ups")
+                  : t("Enable follow-ups")}
               </MenuItem>
             )}
             {row.thread.configuration.agent_source.kind !== "live" && (
@@ -431,7 +444,7 @@ export function ThreadRow({
                 onClick={() => archive.mutate()}
               >
                 <Archive />
-                {row.thread.archived ? "Restore chat" : "Archive chat"}
+                {row.thread.archived ? t("Restore chat") : t("Archive chat")}
               </MenuItem>
             )}
             {canDeleteThread(row.thread) && (
@@ -440,7 +453,8 @@ export function ThreadRow({
                 disabled={row.thread.root_activity.state !== "inactive"}
                 onClick={() => setDeleting(true)}
               >
-                <Trash /> Delete chat
+                <Trash />
+                {t("Delete chat")}
               </MenuItem>
             )}
           </MenuPopup>

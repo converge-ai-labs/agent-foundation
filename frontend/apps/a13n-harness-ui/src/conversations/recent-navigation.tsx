@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { Button } from "a13n-ui";
 import type { Schema } from "../transport/client";
 import { ErrorNotice } from "../shell/ui";
@@ -20,6 +21,7 @@ export function RecentNavigation({
   selected?: Schema<"ThreadSummary">;
   selectedUpdatedAt: number;
 }) {
+  const { t } = useTranslation();
   const list = useThreads("", undefined, false, {
     enabled,
     includeActive: true,
@@ -60,15 +62,15 @@ export function RecentNavigation({
       <ThreadRow key={row.thread.thread_id} row={row} />
     );
   return (
-    <section aria-label="Recent chats">
+    <section aria-label={t("Recent chats")}>
       {rows.map(renderRow)}
       {list.isPending && !list.data && enabled && (
         <div role="status" className={styles.initialLoading}>
-          <span>Loading chats…</span>
+          <span>{t("Loading chats…")}</span>
         </div>
       )}
       {list.isSuccess && list.data?.pages[0]?.total === 0 && !rows.length && (
-        <small className={styles.emptyGroup}>No chats yet</small>
+        <small className={styles.emptyGroup}>{t("No chats yet")}</small>
       )}
       <ErrorNotice error={owners.error} retry={() => void owners.refetch()} />
       <ErrorNotice error={list.error} retry={() => void list.refetch()} />
@@ -79,9 +81,9 @@ export function RecentNavigation({
           className={styles.showMore}
           loading={list.isFetchingNextPage}
           onClick={() => void list.fetchNextPage()}
-          aria-label="Show more recent chats"
+          aria-label={t("Show more recent chats")}
         >
-          Show more
+          {t("Show more")}
         </Button>
       )}
     </section>
