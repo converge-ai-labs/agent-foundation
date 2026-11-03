@@ -1,6 +1,6 @@
 ---
 title: a13n Harness on Terminal-Bench 4.0
-description: A 62-task comparison with Codex, using GPT-6.1 Sol at maximum reasoning effort. Pass rates, inference costs, and the conditions behind the numbers.
+description: A 62-task run with GPT-6.1 Sol. Observed pass rates and inference-cost estimates under the published Codex cache-hit assumptions.
 date: '2026-11-03'
 authors: [a13n team]
 report:
@@ -14,7 +14,7 @@ report:
 
 We ran a13n Harness on 62 Terminal-Bench 4.0 tasks with GPT-6.1 Sol at maximum reasoning effort. a13n passed **36 tasks (58.06%)**, compared with **58.77% for Codex 0.159.0**, recomputed from its published results on the same task set. The observed gap was about **0.7 percentage points**.
 
-On the 61 tasks with complete official usage records, estimated inference cost was **$98.73 for a13n** and **$97.70 per Codex round**. a13n’s estimate uses the official cache-hit rate for each task. [Evaluation report](https://github.com/converge-ai-labs/agent-foundation/discussions/1015)
+On the 61 tasks with complete official usage records, estimated inference cost was **$98.73 for a13n** and **$97.70 per Codex round**. **The a13n cost is an estimate under Codex’s per-task cache-hit assumptions.** It does not measure a13n’s actual cache performance or billed spend. [Evaluation report](https://github.com/converge-ai-labs/agent-foundation/discussions/1015)
 
 ![a13n and Codex pass rates and inference costs](results.svg "Figure 1. Pass rate uses 62 shared task identities. Cost uses the 61 with complete official usage. a13n cost is estimated with official per-task cache-hit rates; costs exclude other attempts and machine costs.")
 
@@ -32,11 +32,11 @@ Costs cover selected or final runs and exclude other attempts and machine costs.
 
 Of the 310 official final records, 308 had valid scores. We excluded the two missing scores from Codex’s denominator while keeping all 62 task identities in scope. The unequal numbers of retained runs mean these observed results do not establish statistical equivalence.
 
-## Why the cost comparison uses 61 tasks
+## What the cost estimate measures
 
 One of the five official runs for `cumulative-layout-shift` has no usage record. We removed that task from both sides of the cost comparison. On the remaining 61 tasks, a13n’s estimate is **$1.03 higher per round**, about **1.1%**.
 
-We kept a13n’s input and output token counts, applied the corresponding official task’s cache-hit rate, and summed the resulting fees. Cache behavior is an assumed input to this estimate; the figure is not an observed a13n invoice. [Cost methodology](https://github.com/converge-ai-labs/agent-foundation/discussions/1015)
+We kept a13n’s input and output token counts, applied the corresponding official task’s cache-hit rate, and summed the resulting fees. This holds the caching assumption constant, so the comparison reflects token use under those rates. The near-equal estimates support that conditional comparison; they do not establish equal observed cache performance or actual inference spend. [Cost methodology](https://github.com/converge-ai-labs/agent-foundation/discussions/1015)
 
 Across all 62 tasks, the figures are $106.88 estimated for a13n and $102.53 of known official cost per round. Official usage is incomplete on that wider set, so those totals do not have equal coverage.
 
@@ -53,7 +53,7 @@ Terminal-Bench 4.0 contains 66 tasks. Our host had 12 CPU threads, about 32 GiB 
 
 ## How the tasks ran
 
-Harbor 0.23.0 prepared each Docker task container. The real Harness UI App drove the model with native file and shell tools, connecting task-declared Skills and MCP services where needed. Each task’s verifier decided pass or fail. The evaluated a13n build included local modifications beyond base commit `4eb06e8`.
+Harbor 0.23.0 prepared each Docker task container. The real Harness UI App drove the model with native file and shell tools, connecting task-declared Skills and MCP services where needed. Each task’s verifier decided pass or fail. The evaluated a13n build included local modifications beyond base commit `4eb06e8`. **The public report does not publish the patch or a complete build manifest for those modifications.** Checking out the base commit alone cannot recreate the evaluated build; an exact rerun needs that missing build information and the execution configuration.
 
 The dataset was Terminal-Bench 4.0.0. Its resource, environment, instruction, and verifier changes make benchmark version part of the comparison. [Terminal-Bench 4.0 release notes](https://www.tbench.ai/news/terminal-bench-4-0)
 
