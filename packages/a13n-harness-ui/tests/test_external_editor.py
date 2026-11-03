@@ -358,6 +358,122 @@ async def test_windows_cmd_editor_is_resolved_through_pathext(tmp_path, monkeypa
 
 
 @pytest.mark.anyio
+async def test_repeated_cancellation_during_process_acquisition(tmp_path, monkeypatch) -> None:
+    ready = tmp_path / "editor-ready"
+    _editor(
+        tmp_path,
+        monkeypatch,
+        f"import os, time\nPath({str(ready)!r}).write_text(str(os.getpid()) + '\\n' + str(path))\ntime.sleep(60)\n",
+    )
+    release = asyncio.Event()
+    spawn = asyncio.create_subprocess_exec
+
+    async def delayed_spawn(*args, **kwargs):
+        process = await spawn(*args, **kwargs)
+        if args[0] == sys.executable:
+            await release.wait()
+        return process
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", delayed_spawn)
+    task = asyncio.create_task(edit_prompt("draft", InlineAttachments()))
+    pid = None
+    try:
+        value = (await _until_file(ready)).splitlines()
+        pid, prompt = int(value[0]), Path(value[1])
+        for _ in range(3):
+            task.cancel()
+            await asyncio.sleep(0)
+        with pytest.raises(TimeoutError):
+            await asyncio.wait_for(asyncio.shield(task), timeout=0.1)
+        assert _is_live(pid) and prompt.exists()
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(asyncio.shield(task), timeout=5)
+        assert not _is_live(pid)
+        assert not prompt.exists()
+    finally:
+        release.set()
+        if not task.done():
+            task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        if pid is not None and _is_live(pid):
+            psutil.Process(pid).kill()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("shutdown", ["cancel", "exit", "error"])
+@pytest.mark.parametrize("handed_off", [False, True])
+async def test_shell_repeated_cancellation_waits_for_editor_cleanup(
+    tmp_path, monkeypatch, terminal_app, shutdown, handed_off
+) -> None:
+    from a13n_harness_ui.interactive import external_editor
+    from a13n_harness_ui.interactive.backend import SessionBackend
+    from a13n_harness_ui.interactive.rendering import Status
+
+    ready = tmp_path / "editor-ready"
+    _editor(
+        tmp_path,
+        monkeypatch,
+        f"import os, time\nPath({str(ready)!r}).write_text(str(os.getpid()) + '\\n' + str(path))\ntime.sleep(60)\n",
+    )
+    stopping, release = asyncio.Event(), asyncio.Event()
+    stop_editor = external_editor._stop_editor
+
+    async def delayed_stop(process):
+        stopping.set()
+        await release.wait()
+        await stop_editor(process)
+
+    monkeypatch.setattr(external_editor, "_stop_editor", delayed_stop)
+    backend = SessionBackend(terminal_app, CliRequest(), tmp_path, Status())
+    backend.interaction = AsyncMock(return_value=None)
+    with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
+        shell = CliShell(CliRequest(), directory=tmp_path)
+        shell.composer.text = "keep this draft"
+        terminal = asyncio.create_task(shell.app.run_async(set_exception_handler=False)) if handed_off else None
+        session = asyncio.create_task(shell.run(backend, terminal_task=terminal))
+        pid = None
+        try:
+            async with asyncio.timeout(5):
+                while not shell.ready or not shell.app.is_running:
+                    await asyncio.sleep(0.01)
+            pipe.send_text("\x07")
+            value = (await _until_file(ready)).splitlines()
+            pid, prompt = int(value[0]), Path(value[1])
+            if shutdown == "cancel":
+                session.cancel()
+            elif shutdown == "exit":
+                shell.app.exit()
+            else:
+                shell.app.exit(exception=RuntimeError("fixture terminal failure"))
+            await asyncio.wait_for(stopping.wait(), timeout=5)
+            # Repeated requests must not interrupt the terminal handoff or the
+            # background-task drain. Cleanup remains deliberately held.
+            for _ in range(3):
+                session.cancel()
+                await asyncio.sleep(0)
+            with pytest.raises(TimeoutError):
+                await asyncio.wait_for(asyncio.shield(session), timeout=0.1)
+            assert _is_live(pid) and prompt.exists()
+            release.set()
+            with pytest.raises(RuntimeError if shutdown == "error" else asyncio.CancelledError):
+                await asyncio.wait_for(asyncio.shield(session), timeout=5)
+            assert not _is_live(pid)
+            assert not prompt.exists()
+            assert shell.composer.text == "keep this draft"
+        finally:
+            release.set()
+            if not session.done():
+                session.cancel()
+            await asyncio.wait_for(asyncio.gather(session, return_exceptions=True), timeout=5)
+            if shell._editor_task is not None:
+                await asyncio.wait_for(asyncio.gather(shell._editor_task, return_exceptions=True), timeout=5)
+            if pid is not None and _is_live(pid):
+                psutil.Process(pid).kill()
+            shell.renderer.transcript.close()
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize("shutdown", ["exit", "cancel", "error"])
 async def test_application_shutdown_cancels_editor_before_waiting_for_terminal(tmp_path, monkeypatch, shutdown) -> None:
     ready = tmp_path / "editor-ready"

@@ -1435,9 +1435,23 @@ class CliShell:
         try:
             with patch_stdout():
                 if terminal_task is None:
-                    await self.app.run_async(set_exception_handler=False)
-                else:
-                    await terminal_task
+                    terminal_task = asyncio.create_task(self.app.run_async(set_exception_handler=False))
+                try:
+                    await asyncio.shield(terminal_task)
+                except asyncio.CancelledError:
+                    # Application teardown is cancellable. Start shutdown once,
+                    # then let its editor finish before terminal input detaches.
+                    if not self.app.is_done:
+                        terminal_task.cancel()
+                    with CancelScope(shield=True):
+                        while not terminal_task.done():
+                            try:
+                                await asyncio.shield(terminal_task)
+                            except asyncio.CancelledError:
+                                pass
+                    with suppress(asyncio.CancelledError):
+                        terminal_task.result()
+                    raise
         except BaseException:
             # An App failure may leave its receipt unsettled. Stop the UI waiter
             # so cleanup can reach the App, which still owns the actual Run.
