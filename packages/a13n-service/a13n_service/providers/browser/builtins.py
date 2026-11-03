@@ -23,6 +23,12 @@ def builtins(settings: Browsers, response_bytes: int = 16777216) -> tuple[Browse
         assert credential is not None
         return cloud.Kernel(config, cloud.CloudAPI("kernel", credential, policy, max_bytes=response_bytes))
 
+    async def open_browser_use(
+        config: cloud.BrowserUseConfiguration, credential: cloud.CloudCredential | None, policy: EndpointPolicy
+    ):
+        assert credential is not None
+        return cloud.BrowserUse(config, cloud.CloudAPI("browser_use", credential, policy, max_bytes=response_bytes))
+
     definitions: list[BrowserProviderDefinition] = [
         BrowserProviderDefinition(
             type="browserbase",
@@ -32,6 +38,15 @@ def builtins(settings: Browsers, response_bytes: int = 16777216) -> tuple[Browse
             recipe_model=cloud.BrowserbaseRecipe,
             backend_identity=lambda config: {"project_id": config.project_id},
             provider_factory=open_browserbase,
+        ),
+        BrowserProviderDefinition(
+            type="browser_use",
+            display_name="Browser Use Cloud",
+            configuration_model=cloud.BrowserUseConfiguration,
+            credential_model=cloud.CloudCredential,
+            recipe_model=cloud.BrowserUseRecipe,
+            backend_identity=lambda config: {"project_id": config.project_id},
+            provider_factory=open_browser_use,
         ),
         BrowserProviderDefinition(
             type="kernel",
