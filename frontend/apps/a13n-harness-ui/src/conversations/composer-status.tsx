@@ -14,6 +14,8 @@ import {
 import { useOperation, useThreads } from "./queries";
 import { HelpTip } from "../shell/help-tip";
 import { ErrorNotice } from "../shell/ui";
+import { useTranslation } from "../i18n";
+import { modelControlMessage } from "./model-control-messages";
 import {
   elapsedTime,
   usageSummary,
@@ -40,6 +42,7 @@ export function ComposerStatus({
   busy?: boolean;
   liveTokens?: number;
 }) {
+  const { t, i18n } = useTranslation();
   const { enabled: debug } = useDebug();
   const activity = useThreads(threadId, undefined, true, { enabled: !receipt });
   const observed = useOperation(threadId, receipt);
@@ -104,18 +107,19 @@ export function ComposerStatus({
             className={styles.metric}
             title={`${mainAccount.group_id} · ${mainAccount.reason.replaceAll("_", " ")}`}
           >
-            Account <strong>{mainAccount.account_name}</strong>
+            {t("Account")} <strong>{mainAccount.account_name}</strong>
           </span>
         )}
         {(
           [
-            ["Tokens", summary.tokens, "Chat usage"],
-            ["Context", summary.context, "Context usage"],
-            ["Cost", summary.cost, "Chat usage"],
+            // The first element identifies the metric; the last is its label.
+            ["Tokens", summary.tokens, t("Chat usage"), t("Tokens")],
+            ["Context", summary.context, t("Context usage"), t("Context")],
+            ["Cost", summary.cost, t("Chat usage"), t("Cost")],
           ] as const
         )
           .filter(([label]) => debug || label !== "Tokens")
-          .map(([label, value, title]) => (
+          .map(([label, value, title, name]) => (
             <Popover
               key={label}
               open={detail === label}
@@ -127,11 +131,11 @@ export function ComposerStatus({
             >
               <PopoverTrigger
                 className={styles.metric}
-                aria-label={`${label} details`}
-                title={`${label}: ${value}`}
+                aria-label={t("{{metric}} details", { metric: name })}
+                title={t("{{metric}}: {{value}}", { metric: name, value })}
               >
                 {debug ? (
-                  label
+                  name
                 ) : label === "Context" ? (
                   <CircleHalf aria-hidden />
                 ) : (
@@ -139,7 +143,7 @@ export function ComposerStatus({
                 )}{" "}
                 {label === "Context" && !debug && tokens != null && (
                   <span>
-                    {Intl.NumberFormat("en", {
+                    {Intl.NumberFormat(i18n.resolvedLanguage, {
                       minimumFractionDigits: 1,
                       maximumFractionDigits: 2,
                     }).format(tokens / 1000)}
@@ -162,18 +166,19 @@ export function ComposerStatus({
                 <div className={styles.popupHeader}>
                   <PopoverTitle>{title}</PopoverTitle>
                   {label === "Context" && (
-                    <HelpTip label="About context">
-                      Tokens in the latest request. Chat totals are in Usage.
-                      The context limit depends on the model.
+                    <HelpTip label={t("About context")}>
+                      {t(
+                        "Tokens in the latest request. Chat totals are in Usage. The context limit depends on the model.",
+                      )}
                       {!context.data?.context_window &&
-                        " This model has not provided a context limit, so its used percentage is unavailable."}
+                        ` ${t("This model has not provided a context limit, so its used percentage is unavailable.")}`}
                     </HelpTip>
                   )}
                   <Button
                     variant="ghost"
                     size="icon-xs"
-                    aria-label="Refresh usage"
-                    title="Refresh usage"
+                    aria-label={t("Refresh usage")}
+                    title={t("Refresh usage")}
                     loading={usage.isFetching || context.isFetching}
                     onClick={() => {
                       void usage.refetch();
@@ -216,18 +221,23 @@ export function ComposerStatus({
         {debug && (
           <span
             className={styles.metric}
-            title="Elapsed time for the current or latest operation."
+            title={t("Elapsed time for the current or latest operation.")}
           >
-            {active ? "Working" : "Time"}{" "}
+            {active ? t("Working") : t("Time")}{" "}
             <strong>{elapsedTime(operation, now)}</strong>
           </span>
         )}
         {debug && (
           <span
             className={styles.metric}
-            title="Speed requested for this run. Changes apply next time. Actual speed depends on the provider."
+            title={t(
+              "Speed requested for this run. Changes apply next time. Actual speed depends on the provider.",
+            )}
           >
-            Speed <strong>{speedLabel(capturedAgent?.fast)}</strong>
+            {t("Speed")}{" "}
+            <strong>
+              {modelControlMessage(speedLabel(capturedAgent?.fast), t)}
+            </strong>
           </span>
         )}
         {debug &&
@@ -235,15 +245,22 @@ export function ComposerStatus({
           capturedAgent.reasoning_mode !== "default" && (
             <span
               className={styles.metric}
-              title="Reasoning mode requested for this run. Provider access may vary. Changes apply next time."
+              title={t(
+                "Reasoning mode requested for this run. Provider access may vary. Changes apply next time.",
+              )}
             >
-              Mode{" "}
+              {t("Mode")}{" "}
               <strong>
-                {reasoningModeLabel(capturedAgent.reasoning_mode)}
+                {modelControlMessage(
+                  reasoningModeLabel(capturedAgent.reasoning_mode),
+                  t,
+                )}
               </strong>
             </span>
           )}
-        {stale && <span className={styles.stale}>Update unavailable</span>}
+        {stale && (
+          <span className={styles.stale}>{t("Update unavailable")}</span>
+        )}
       </div>
     </div>
   );
