@@ -64,7 +64,10 @@ export const useNotifications = () => useContext(NotificationsContext);
 export function NotificationsProvider({ children }: { children: ReactNode }) {
   const { t } = useTranslation();
   return (
-    <ToastProvider closeLabel={t("Dismiss notification")}>
+    <ToastProvider
+      closeLabel={t("Dismiss notification")}
+      viewportLabel={t("Notifications")}
+    >
       <NotificationState>{children}</NotificationState>
     </ToastProvider>
   );

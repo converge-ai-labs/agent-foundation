@@ -116,6 +116,14 @@ function mount(path = "/threads/thread-1", transport: Transport | null = null) {
     </QueryClientProvider>,
   );
 }
+it("updates the toast viewport accessible name when the language changes", async () => {
+  await act(() => i18n.changeLanguage("en"));
+  mount();
+  expect(screen.getByRole("region", { name: "Notifications" })).toBeTruthy();
+  await act(() => i18n.changeLanguage("zh-CN"));
+  expect(screen.getByRole("region", { name: "通知" })).toBeTruthy();
+  await act(() => i18n.changeLanguage("en"));
+});
 it("updates the permission prompt when the language changes without dismissing it", async () => {
   mount();
   expect(await screen.findByText("Get task notifications")).toBeTruthy();
