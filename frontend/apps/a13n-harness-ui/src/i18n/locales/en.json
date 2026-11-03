@@ -880,5 +880,13 @@
   "Loading image…": "Loading image…",
   "This image cannot be previewed. Download the original to inspect it.": "This image cannot be previewed. Download the original to inspect it.",
   "Zoom image to actual size": "Zoom image to actual size",
-  "Fit image to screen": "Fit image to screen"
+  "Fit image to screen": "Fit image to screen",
+  "Execution cancelled": "Execution cancelled",
+  "Execution suspended": "Execution suspended",
+  "Execution failed": "Execution failed",
+  "A response is needed before execution can continue.": "A response is needed before execution can continue.",
+  "Run finished. Open its details to check follow-ups and environment results.": "Run finished. Open its details to check follow-ups and environment results.",
+  "Subagent · {{name}}": "Subagent · {{name}}",
+  "Suspended": "Suspended",
+  "Outcome: {{outcome}}.": "Outcome: {{outcome}}."
 }

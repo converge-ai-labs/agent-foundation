@@ -872,5 +872,13 @@
   "Loading image…": "正在加载图片…",
   "This image cannot be previewed. Download the original to inspect it.": "该图片无法预览。请下载原图查看。",
   "Zoom image to actual size": "放大图片到实际大小",
-  "Fit image to screen": "让图片适应屏幕"
+  "Fit image to screen": "让图片适应屏幕",
+  "Execution cancelled": "执行已取消",
+  "Execution suspended": "执行已暂停",
+  "Execution failed": "执行失败",
+  "A response is needed before execution can continue.": "需要先回复，执行才能继续。",
+  "Run finished. Open its details to check follow-ups and environment results.": "运行已结束。打开详情查看后续事项与环境结果。",
+  "Subagent · {{name}}": "子智能体 · {{name}}",
+  "Suspended": "已暂停",
+  "Outcome: {{outcome}}.": "结果：{{outcome}}。"
 }
