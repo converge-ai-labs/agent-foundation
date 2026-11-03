@@ -141,7 +141,10 @@ class _CodexResponsesModel(ResponsesModel):
         self._codex_provider = provider
         self._owner = owner
         super().__init__(
-            model_name, provider=provider, settings=OpenAIResponsesModelSettings(openai_transport="websocket")
+            model_name,
+            provider=provider,
+            settings=OpenAIResponsesModelSettings(openai_transport="websocket"),
+            response_headers=owner._capture_handshake,
         )
 
     @cached_property
@@ -189,18 +192,11 @@ class _CodexResponsesModel(ResponsesModel):
             response = await reserve()
         if response is not None:
             socket = response.websocket
-            handshake = socket.connection._connection.response
-            if handshake is not None:
-                headers = {name: ", ".join(handshake.headers.get_all(name)) for name in handshake.headers}
-                self._owner._request_headers.capture(headers)
-                if socket.connection not in self._owner._observed_connections:
-                    self._owner._observed_connections.add(socket.connection)
-                    await self._owner._observe_headers(headers)
-                # The server issued this connection's turn state in its handshake. Future
-                # requests presenting that state still belong to this exact connection.
-                current = self._owner._request_headers.current()
-                if _CODEX_TURN_STATE_HEADER in current:
-                    socket.headers = {**socket.headers, _CODEX_TURN_STATE_HEADER: current[_CODEX_TURN_STATE_HEADER]}
+            # The handshake hook captured state in the opening request's Run scope.
+            # Teach the native header-equality check that this state belongs to this socket.
+            current = self._owner._request_headers.current()
+            if _CODEX_TURN_STATE_HEADER in current:
+                socket.headers = {**socket.headers, _CODEX_TURN_STATE_HEADER: current[_CODEX_TURN_STATE_HEADER]}
         return response
 
 
@@ -221,7 +217,6 @@ class CodexRequestModel(WrapperModel):
         response_headers: Callable[[Mapping[str, str]], Awaitable[None]] | None = None,
     ) -> None:
         self._response_headers = response_headers
-        self._observed_connections: weakref.WeakSet[Any] = weakref.WeakSet()
         self._thread_id = thread_id
         self._model_name = model_name
         self._credential_source = credential_source
@@ -247,6 +242,10 @@ class CodexRequestModel(WrapperModel):
         else:
             for name in ("authorization", "chatgpt-account-id", "originator"):
                 request.headers.pop(name, None)
+
+    async def _capture_handshake(self, headers: Mapping[str, str]) -> None:
+        self._request_headers.capture(headers)
+        await self._observe_headers(headers)
 
     async def _capture_response(self, response: httpx2.Response) -> None:
         if response.url.scheme == "https" and response.url.host == "chatgpt.com" and response.url.port in (None, 443):

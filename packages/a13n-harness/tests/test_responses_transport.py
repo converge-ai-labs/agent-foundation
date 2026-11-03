@@ -300,7 +300,8 @@ def test_websocket_proxy_and_tls_operator_settings(monkeypatch):
 
 
 @pytest.mark.parametrize("refresh", [False, True])
-async def test_codex_websocket_auth_and_turn_state(monkeypatch, refresh):
+@pytest.mark.parametrize("transition", ["reuse", "token_rotation", "new_run"])
+async def test_codex_websocket_auth_and_turn_state(monkeypatch, refresh, transition):
     from datetime import UTC, datetime, timedelta
 
     import openai.lib._websocket as sdk
@@ -312,7 +313,8 @@ async def test_codex_websocket_auth_and_turn_state(monkeypatch, refresh):
     from .test_model_auth import _codex_credentials, _CodexSource
 
     source = _CodexSource(_codex_credentials(marker="initial", expires_at=datetime.now(UTC) + timedelta(hours=1)))
-    handshakes, requests, observations = [], [], []
+    handshakes, requests, observations, http_requests = [], [], [], []
+    reject_http = False
 
     def handshake(socket, request):
         handshakes.append(dict(request.headers))
@@ -333,8 +335,22 @@ async def test_codex_websocket_auth_and_turn_state(monkeypatch, refresh):
         observations.append(headers)
 
     async def http_respond(request):
-        assert request.url.host == "auth.openai.com"
-        return httpx2.Response(200, json={"access_token": "codex-access-refreshed", "refresh_token": "new-refresh"})
+        nonlocal reject_http
+        if request.url.host == "auth.openai.com":
+            return httpx2.Response(
+                200,
+                json={"access_token": f"codex-access-refreshed-{len(source.saved)}", "refresh_token": "new-refresh"},
+            )
+        assert request.url.host == "chatgpt.com"
+        http_requests.append(dict(request.headers))
+        if reject_http:
+            reject_http = False
+            return httpx2.Response(401, json={"error": {"message": "Expired"}})
+        return httpx2.Response(
+            200,
+            headers={"content-type": "text/event-stream", "x-codex-turn-state": "http-turn"},
+            content="".join(f"data: {json.dumps(event)}\n\n" for event in events()),
+        )
 
     async with serve(respond, "127.0.0.1", 0, process_request=handshake, process_response=headers) as server:
 
@@ -356,12 +372,34 @@ async def test_codex_websocket_auth_and_turn_state(monkeypatch, refresh):
                         async for _ in response:
                             pass
                         assert response.get().provider_details["transport"] == "websocket"
+                if transition == "token_rotation":
+                    # Refresh through the real HTTP auth flow while the reusable socket is live.
+                    reject_http = True
+                    await consume(model, [], {"openai_transport": "http"})
+                    assert len(source.saved) == (2 if refresh else 1)
+                elif transition == "new_run":
+                    context = RunContext(deps=None, model=model, usage=RunUsage(), run_id="another-run")
+                if transition != "reuse":
+                    for _ in range(2):
+                        async with model.request_stream([], None, PARAMETERS, context) as response:
+                            async for _ in response:
+                                pass
+                            assert (response.get().provider_details or {}).get("transport") != "websocket"
+                    assert len(http_requests) == (4 if transition == "token_rotation" else 2)
+                    if transition == "token_rotation":
+                        assert http_requests[-1]["authorization"] == f"Bearer {source.current.access_token}"
+                        assert http_requests[-1]["authorization"] != handshakes[-1]["authorization"]
+                        assert http_requests[-1]["x-codex-turn-state"] == "server-turn"
+                    else:
+                        assert "x-codex-turn-state" not in http_requests[0]
+                        assert http_requests[1]["x-codex-turn-state"] == "http-turn"
         assert len(handshakes) == (2 if refresh else 1)
         assert len(requests) == 2
         assert handshakes[0]["authorization"] == "Bearer codex-access-initial"
         assert handshakes[-1]["chatgpt-account-id"] == "account-1"
         assert handshakes[-1]["session-id"] == handshakes[-1]["thread-id"]
-        assert len(observations) == 1
+        assert sum(headers.get("upgrade") == "websocket" for headers in observations) == 1
+        assert len(observations) == 1 + len(http_requests)
         if refresh:
-            assert handshakes[-1]["authorization"] == "Bearer codex-access-refreshed"
-            assert len(source.saved) == 1
+            assert handshakes[-1]["authorization"] == "Bearer codex-access-refreshed-0"
+            assert len(source.saved) == (2 if transition == "token_rotation" else 1)

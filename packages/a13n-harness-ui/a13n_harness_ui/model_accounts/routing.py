@@ -189,6 +189,8 @@ class SubscriptionGroupModel(WrapperModel):
             async with self._entry_lock:
                 self._entries -= 1
                 if self._entries == 0:
+                    for lease in self._entered_models:
+                        self._retained.push_async_exit(lease)
                     try:
                         return await self._retained.__aexit__(exc_type, exc_val, exc_tb)
                     finally:
@@ -196,22 +198,26 @@ class SubscriptionGroupModel(WrapperModel):
                         self._entered_models.clear()
         return None
 
-    async def _model(self, account: SubscriptionAccount) -> _ModelLease:
-        store = self.accounts.store(account)
-        assert store.policy.path is not None
-        snapshot = await read_json_snapshot(store.policy.path, provider=Provider(account.provider))
+    async def _model(self, account: SubscriptionAccount, request_scope: _RequestScope) -> Model:
         async with self._entry_lock:
+            store = self.accounts.store(account)
+            assert store.policy.path is not None
+            snapshot = await read_json_snapshot(store.policy.path, provider=Provider(account.provider))
             cached = self._models.get(account.id)
             if cached is None or cached[:2] != (account.login_revision, snapshot.digest):
+                previous = cached[2] if cached is not None else None
                 cached = (account.login_revision, snapshot.digest, _ModelLease(self._factory(account)))
                 self._models[account.id] = cached
+                if previous in self._entered_models:
+                    self._entered_models.remove(previous)
+                    # Retire only the Run's hold; in-flight requests own their final exit.
+                    await previous.__aexit__(None, None, None)
             lease = cached[2]
             if self._entries and lease not in self._entered_models:
-                # The Run retains its generations across the tool loop; request leases
-                # keep in-flight streams alive even if the outer owner exits first.
-                await self._retained.enter_async_context(lease)
+                await lease.__aenter__()
                 self._entered_models.add(lease)
-            return lease
+            # Acquire before replacement or Run exit can release the selected generation.
+            return await request_scope.enter_async_context(lease)
 
     async def _choose(self, attempted: set[str], last_error: Exception | None) -> SubscriptionAccount:
         try:
@@ -255,7 +261,7 @@ class SubscriptionGroupModel(WrapperModel):
             attempted.add(account.id)
             async with _RequestScope() as request_scope:
                 try:
-                    model = await request_scope.enter_async_context(await self._model(account))
+                    model = await self._model(account, request_scope)
                     response = await operation(model)
                 except Exception as error:
                     failure = account_failure(error)
@@ -313,7 +319,7 @@ class SubscriptionGroupModel(WrapperModel):
             # Each request owns its client through stream exit, including cancellation.
             async with _RequestScope() as response_scope:
                 try:
-                    model = await response_scope.enter_async_context(await self._model(account))
+                    model = await self._model(account, response_scope)
                     response = await response_scope.enter_async_context(
                         model.request_stream(messages, model_settings, model_request_parameters, run_context)
                     )
