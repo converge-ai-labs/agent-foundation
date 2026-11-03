@@ -13,10 +13,10 @@ import userEvent from "@testing-library/user-event";
 import type { Schema } from "../../../shared/api";
 import { EnvironmentDesktop, ThreadDesktopPanel } from "./environment-desktop";
 
-const { get, post, viewers, t } = vi.hoisted(() => ({
+const { get, post, viewers, translation } = vi.hoisted(() => ({
   get: vi.fn(),
   post: vi.fn(),
-  t: (key: string) => key,
+  translation: { t: (key: string) => key },
   viewers: [] as Array<
     EventTarget & { viewOnly: boolean; disconnect: ReturnType<typeof vi.fn> }
   >,
@@ -30,7 +30,10 @@ vi.mock("../../../layout/workspace", () => ({
   useWorkspace: () => ({ workspace: { id: "ws" } }),
 }));
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ t, i18n: { resolvedLanguage: "en" } }),
+  useTranslation: () => ({
+    t: translation.t,
+    i18n: { resolvedLanguage: "en" },
+  }),
 }));
 vi.mock("@novnc/novnc/lib/rfb", () => ({
   default: {
@@ -105,6 +108,7 @@ function start(initial = human, strict = false) {
     ...result,
     cache,
     changeEnvironment: () => result.rerender(wrap("other")),
+    refreshRender: () => result.rerender(wrap()),
   };
 }
 async function observing() {
@@ -127,6 +131,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.resetAllMocks();
   viewers.length = 0;
+  translation.t = (key: string) => key;
 });
 
 function panelMount(
@@ -332,6 +337,76 @@ it.each(["retake", "return", "controller"])(
     expect(post.mock.calls.at(-1)?.[1].body.mode).toBe("view");
   },
 );
+
+it("keeps a live connection when the display language changes and localizes later failures", async () => {
+  const { refreshRender } = start();
+  await connect();
+  translation.t = (key) =>
+    key === "Desktop disconnected. Open it again to reconnect."
+      ? "桌面已断开，请重新连接。"
+      : key;
+  refreshRender();
+  expect(viewers).toHaveLength(2);
+  expect(viewers[1].disconnect).not.toHaveBeenCalled();
+  expect(viewers[1].viewOnly).toBe(false);
+  act(() => viewers[1].dispatchEvent(new Event("disconnect")));
+  await screen.findByText("桌面已断开，请重新连接。");
+  expect(viewers[1].viewOnly).toBe(true);
+});
+
+it("shows a failed takeover and clears it after an explicit successful retry", async () => {
+  start(automated);
+  await observing();
+  const failed = { ...automated, episode: 1, failure: "desktop_grant_failed" };
+  get.mockResolvedValue(reply(failed));
+  post.mockResolvedValueOnce(reply(failed));
+  fireEvent.click(screen.getByRole("button", { name: "Take control" }));
+  await screen.findByText("Could not take control. You can try again.");
+  await waitFor(() => expect(viewers).toHaveLength(2));
+  expect(post.mock.calls.at(-1)?.[1].body.mode).toBe("view");
+  expect(screen.queryByRole("button", { name: "Return control" })).toBeNull();
+  const retried = { ...human, episode: 2 };
+  get.mockResolvedValue(reply(retried));
+  post.mockResolvedValueOnce(reply(retried));
+  fireEvent.click(screen.getByRole("button", { name: "Take control" }));
+  await screen.findByText("You control Computer");
+  await waitFor(() => expect(viewers).toHaveLength(3));
+  expect(
+    screen.queryByText("Could not take control. You can try again."),
+  ).toBeNull();
+  expect(post.mock.calls.at(-1)?.[1].body).toMatchObject({
+    mode: "control",
+    episode: 2,
+  });
+});
+
+it("shows pending cleanup without offering takeover and clears the warning when it completes", async () => {
+  const { cache } = start();
+  await connect();
+  const returning = {
+    ...human,
+    control: "returning",
+    failure: "desktop_revoke_failed",
+  };
+  get.mockResolvedValue(reply(returning));
+  post.mockResolvedValueOnce(reply(returning));
+  fireEvent.click(screen.getByRole("button", { name: "Return control" }));
+  await screen.findByText(
+    "Control cleanup is incomplete. Retrying automatically.",
+  );
+  expect(screen.queryByRole("button", { name: "Take control" })).toBeNull();
+  expect(viewers[1].viewOnly).toBe(true);
+  expect(viewers[1].disconnect).toHaveBeenCalled();
+  const returned = { ...automated, episode: 1 };
+  get.mockResolvedValue(reply(returned));
+  act(() => cache.setQueryData(key, { value: returned }));
+  await screen.findByRole("button", { name: "Take control" });
+  expect(
+    screen.queryByText(
+      "Control cleanup is incomplete. Retrying automatically.",
+    ),
+  ).toBeNull();
+});
 
 it("discards late grants after changing Environment", async () => {
   const { changeEnvironment } = start();

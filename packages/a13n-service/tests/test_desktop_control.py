@@ -183,6 +183,62 @@ async def begin(service, desktop):
     )
 
 
+@pytest.mark.parametrize("failure", ["describe", "fencing", "target", "controller"])
+async def test_predispatch_failure_remains_visible_until_takeover_retry(service, desktop, monkeypatch, failure):
+    from unittest.mock import AsyncMock
+
+    from a13n_service.infra.errors import conflict
+
+    _, environment_id, actor, calls, grants, _ = desktop
+    with monkeypatch.context() as patch:
+        patch.setattr(control, "reconcile", AsyncMock())
+        pending = await begin(service, desktop)
+    connection, target = access.connection, access.target
+
+    @asynccontextmanager
+    async def failed_connection(runtime, selected, operation_id):
+        async with connection(runtime, selected, operation_id) as send:
+
+            async def failing_send(request):
+                assert isinstance(request, wire.Describe)
+                description = await send(request)
+                if failure == "describe":
+                    raise TimeoutError("Describe timed out")
+                return description.model_copy(update={"revocation_fences_grants": False})
+
+            yield failing_send
+
+    async def failed_target(session, runtime, environment, *, actor=None):
+        if actor is None:
+            raise conflict("environment", environment.id, "desktop_target_changed")
+        return await target(session, runtime, environment, actor=actor)
+
+    with monkeypatch.context() as patch:
+        if failure in {"describe", "fencing"}:
+            patch.setattr(access, "connection", failed_connection)
+        elif failure == "target":
+            patch.setattr(access, "target", failed_target)
+        else:
+            patch.setattr(control, "controller_allowed", AsyncMock(return_value=False))
+        await control.reconcile(service.runtime, pending.id)
+    expected = {
+        "target": "desktop_target_unavailable",
+        "controller": "desktop_controller_unavailable",
+    }.get(failure, "desktop_grant_failed")
+    failed = await control.get(service.runtime, actor, service.tenant.workspace_id, environment_id)
+    assert failed.control == "automation" and failed.failure == expected
+    assert not grants and all(isinstance(call, wire.Describe) for call in calls)
+    async with transaction(service.runtime.storage) as session:
+        row = await session.get_one(DesktopControlRow, pending.id)
+        assert row.claim_id is None and row.grant_id is None and row.due_at is None
+    await control.reconcile(service.runtime, pending.id)
+    unchanged = await control.get(service.runtime, actor, service.tenant.workspace_id, environment_id)
+    assert unchanged.failure == expected
+    retried = await begin(service, desktop)
+    assert retried.control == "human" and retried.failure is None
+    assert retried.episode == pending.episode + 1
+
+
 async def test_control_renewal_and_verified_return(service, desktop):
     _, environment_id, actor, calls, grants, _ = desktop
     human = await begin(service, desktop)

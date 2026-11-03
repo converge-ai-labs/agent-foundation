@@ -1,7 +1,7 @@
 import { Button, ChoiceField } from "a13n-ui";
 import { MonitorIcon, XIcon } from "@phosphor-icons/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type RFB from "@novnc/novnc/lib/rfb";
 import { revalidateSession, useAuth, useClient } from "../../../auth/context";
@@ -186,11 +186,25 @@ export function EnvironmentDesktop({
     setConnected(false);
   }
   function fail(cause: unknown) {
-    controlIntent.current = null;
     closeLocal();
     setError(cause);
     revalidateSession(cause);
   }
+  const connectionFailed = useEffectEvent(
+    (reason: "disconnected" | "refused" | "expired") => {
+      fail(
+        new Error(
+          t(
+            reason === "disconnected"
+              ? "Desktop disconnected. Open it again to reconnect."
+              : reason === "refused"
+                ? "Desktop connection was refused."
+                : "Desktop access expired. Open it again to reconnect.",
+          ),
+        ),
+      );
+    },
+  );
   async function openViewer(mode: Viewer["mode"]) {
     const initial = authority.current;
     if (openingAuthority.current || !initial) return;
@@ -327,18 +341,14 @@ export function EnvironmentDesktop({
         const refused = () => {
           if (!active || rfb.current !== instance) return;
           active = false;
-          actions.current.close();
-          setError(
-            new Error(t("Desktop disconnected. Open it again to reconnect.")),
-          );
+          connectionFailed("disconnected");
         };
         instance.addEventListener("disconnect", refused);
         instance.addEventListener("securityfailure", refused);
       })
       .catch(() => {
         if (!active) return;
-        actions.current.close();
-        setError(new Error(t("Desktop connection was refused.")));
+        connectionFailed("refused");
       });
     return () => {
       active = false;
@@ -348,7 +358,7 @@ export function EnvironmentDesktop({
         if (rfb.current === instance) rfb.current = null;
       }
     };
-  }, [url, password, generation, episode, mode, actorId, t]);
+  }, [url, password, generation, episode, mode, actorId]);
 
   useEffect(() => {
     if (!viewer) return;
@@ -359,12 +369,7 @@ export function EnvironmentDesktop({
         : Infinity,
     );
     const expiry = setTimeout(
-      () => {
-        actions.current.close();
-        setError(
-          new Error(t("Desktop access expired. Open it again to reconnect.")),
-        );
-      },
+      () => connectionFailed("expired"),
       Math.max(0, deadline - Date.now()),
     );
     // Refresh the short viewer grant separately from the user's explicit control lease.
@@ -382,14 +387,11 @@ export function EnvironmentDesktop({
       clearTimeout(expiry);
       clearTimeout(refresh);
     };
-  }, [viewer, control?.expires_at, t]);
+  }, [viewer, control?.expires_at]);
 
   async function command(kind: "takeover" | "renew" | "handback") {
     if (busy || !query.data) return;
-    if (kind !== "renew") {
-      controlIntent.current = null;
-      closeLocal();
-    }
+    if (kind !== "renew") closeLocal();
     setBusy(true);
     setError(undefined);
     await cache.cancelQueries({ queryKey: key });
@@ -473,9 +475,11 @@ export function EnvironmentDesktop({
             )}
           </div>
           {control.failure && (
-            <p>
+            <p role="alert">
               {t(
-                "Control transition needs attention. Refresh or return control to retry cleanup.",
+                control.control === "automation"
+                  ? "Could not take control. You can try again."
+                  : "Control cleanup is incomplete. Retrying automatically.",
               )}
             </p>
           )}

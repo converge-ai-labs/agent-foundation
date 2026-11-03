@@ -268,8 +268,9 @@ async def reconcile(runtime: Runtime, control_id: str) -> None:
             elif row.control == "human" and (previous is None or previous.expires_at <= current):
                 reason = "desktop_viewer_expired"
             if reason:
-                row.failure = reason
                 await return_control(session, runtime, row)
+                if row.control != "automation" or reason != "desktop_control_expired":
+                    row.failure = reason
         if row.control == "automation" or (row.claim_until is not None and row.claim_until > current):
             return
         if row.due_at is not None and row.due_at > current:
@@ -282,9 +283,10 @@ async def reconcile(runtime: Runtime, control_id: str) -> None:
             ):
                 raise conflict("environment", environment.id, "desktop_target_changed")
         except ServiceError:
-            row.failure = "desktop_target_unavailable"
             await return_control(session, runtime, row)
-            row.due_at = current + timedelta(seconds=access.RENEW_SECONDS)
+            row.failure = "desktop_target_unavailable"
+            if row.control == "returning":
+                row.due_at = current + timedelta(seconds=access.RENEW_SECONDS)
             return
         phase, generation, episode = row.control, row.generation, row.episode
         grant_id, guest_generation, deadline = row.grant_id, row.guest_generation, row.expires_at
@@ -378,8 +380,8 @@ async def reconcile(runtime: Runtime, control_id: str) -> None:
             ):
                 failure = "desktop_control_unavailable"
             if failure is not None:
-                row.failure = failure
                 await return_control(session, runtime, row)
+                row.failure = failure
                 return
             assert granted is not None
             row.viewer = protect(runtime, environment, row, granted)
