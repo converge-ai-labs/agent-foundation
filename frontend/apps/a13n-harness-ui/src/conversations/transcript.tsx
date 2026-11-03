@@ -28,6 +28,7 @@ import {
   savedToolGroups,
   type ToolView,
 } from "./tool-presentation";
+import { toolLabel, toolMessage } from "./tool-messages";
 import { MessageText } from "./message-text";
 import { CopyMessage } from "./copy-message";
 import { ContextActivity } from "./context-activity";
@@ -1185,12 +1186,22 @@ function ExecutionSegment({
   const latestTool = latest?.kind === "tools" ? latest.tools.at(-1) : undefined;
   const toolInfo = latestTool ? describeTool(latestTool) : undefined;
   const duration = executionTime(durationMs);
+  const toolPreview =
+    toolInfo && latestTool
+      ? {
+          label: toolLabel(toolInfo.label, latestTool.name, t),
+          summary: toolMessage(toolInfo.summary, t),
+          phase: toolMessage(toolInfo.phase, t),
+        }
+      : undefined;
   const preview = complete
     ? duration
       ? t("Worked for {{duration}}", { duration })
       : t("Worked")
-    : toolInfo
-      ? `${toolInfo.label} ${toolInfo.summary}${toolInfo.phase === "Result received" ? "" : ` · ${toolInfo.phase}`}`
+    : toolPreview
+      ? toolInfo?.phase === "Result received"
+        ? t("{{label}} {{summary}}", toolPreview)
+        : t("{{label}} {{summary}} · {{phase}}", toolPreview)
       : latest?.kind === "thinking"
         ? t("Thought")
         : t("View the available execution steps");

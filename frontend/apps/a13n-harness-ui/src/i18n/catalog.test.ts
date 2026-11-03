@@ -9,6 +9,7 @@ import {
   composerMessages,
   stopOutcomeMessages,
 } from "../conversations/composer-messages";
+import { toolMessages } from "../conversations/tool-messages";
 
 function catalogErrors(catalogs: Record<string, Record<string, string>>) {
   const errors: string[] = [];
@@ -116,6 +117,9 @@ const surfaces = [
   "conversations/clear-context.tsx",
   "conversations/composer-status.tsx",
   "conversations/usage-details.tsx",
+  "conversations/tool-call.tsx",
+  "conversations/tool-presentation.ts",
+  "conversations/tool-messages.ts",
   "shell/confirm-action.tsx",
   "shell/image-preview.tsx",
 ];
@@ -156,6 +160,13 @@ it("keeps retained composer feedback and terminal stop outcomes in both catalogs
     ...composerMessages,
     ...Object.values(stopOutcomeMessages),
   ]) {
+    expect(Object.hasOwn(en, key), key).toBe(true);
+    expect(Object.hasOwn(zhCN, key), key).toBe(true);
+  }
+});
+
+it("keeps every allowlisted tool descriptor in both catalogs", () => {
+  for (const key of toolMessages) {
     expect(Object.hasOwn(en, key), key).toBe(true);
     expect(Object.hasOwn(zhCN, key), key).toBe(true);
   }

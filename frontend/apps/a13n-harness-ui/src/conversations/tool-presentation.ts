@@ -1,8 +1,10 @@
 import type { ContentPart } from "@ag-ui/core";
 import { readContentParts } from "a13n-ui";
 import { toolExecutionReceipt } from "a13n-ui/display";
+import type { TFunction } from "i18next";
 import type { Schema } from "../transport/client";
 import { ProcessObservations } from "./process-observations";
+import { toolMessage } from "./tool-messages";
 
 export type AppliedEdit = { file_path: string; before: string; after: string };
 export type ToolView = {
@@ -720,12 +722,10 @@ function shellGroupStatus(
   return "";
 }
 
-export function activitySummary(tools: ToolView[]) {
+export function activitySummary(tools: ToolView[], t: TFunction) {
   const infos = tools.map(describeTool);
   const kind = activityKind(tools[0]);
   const shellStatus = kind === "shell" ? shellGroupStatus(tools, infos) : "";
-  const count = (n: number, noun: string) =>
-    `${n} ${noun}${n === 1 ? "" : "s"}`;
   const files = new Set(infos.map((info) => info.path).filter(Boolean)).size;
   const pendingTools = tools.filter(
     (tool) =>
@@ -752,22 +752,66 @@ export function activitySummary(tools: ToolView[]) {
   );
   let title: string;
   if (kind === "executions")
-    title = `Tool calls · ${count(tools.length, "operation")}`;
-  else if (kind === "work" || kind === "subagents")
-    title = `${kind === "work" ? "Tasks & notes" : "Subagents"} · ${count(tools.length, "operation")}`;
+    title = t("Tool calls · {{count, number}} operations", {
+      count: tools.length,
+    });
+  else if (kind === "work")
+    title = t("Tasks & notes · {{count, number}} operations", {
+      count: tools.length,
+    });
+  else if (kind === "subagents")
+    title = t("Subagents · {{count, number}} operations", {
+      count: tools.length,
+    });
   else if (kind === "edit")
-    title = `File changes · ${files ? count(files, "file") : count(tools.length, "operation")}`;
+    title = files
+      ? t("File changes · {{count, number}} files", { count: files })
+      : t("File changes · {{count, number}} operations", {
+          count: tools.length,
+        });
   else if (kind === "shell") {
     const commands = tools.filter((tool) => tool.name === "shell_exec").length;
-    title = `${pending ? "Running" : "Ran"} ${commands ? count(commands, "command") : count(tools.length, "process operation")}`;
+    title = commands
+      ? pending
+        ? t("Running {{count, number}} commands", { count: commands })
+        : t("Ran {{count, number}} commands", { count: commands })
+      : pending
+        ? t("Running {{count, number}} process operations", {
+            count: tools.length,
+          })
+        : t("Ran {{count, number}} process operations", {
+            count: tools.length,
+          });
     if (!pending && (issues.length || shellStatus))
-      title = `Shell · ${count(tools.length, "operation")}`;
+      title = t("Shell · {{count, number}} operations", {
+        count: tools.length,
+      });
   } else if (kind === "web")
-    title = `${pending ? "Browsing" : "Browsed"} the web · ${count(tools.length, "action")}`;
+    title = pending
+      ? t("Browsing the web · {{count, number}} actions", {
+          count: tools.length,
+        })
+      : t("Browsed the web · {{count, number}} actions", {
+          count: tools.length,
+        });
   else {
     const reads = tools.filter((tool) => tool.name === "view").length;
     const searches = tools.length - reads;
-    title = `${pending ? "Exploring" : "Explored"} ${[reads && count(files || reads, "file"), searches && count(searches, "lookup")].filter(Boolean).join(" · ")}`;
+    // One sentence for the leading measure, with the secondary measure appended
+    // as its own phrase; neither is assembled from translated fragments.
+    const explored = reads
+      ? pending
+        ? t("Exploring {{count, number}} files", { count: files || reads })
+        : t("Explored {{count, number}} files", { count: files || reads })
+      : pending
+        ? t("Exploring {{count, number}} lookups", { count: searches })
+        : t("Explored {{count, number}} lookups", { count: searches });
+    title =
+      reads && searches
+        ? [explored, t("{{count, number}} lookups", { count: searches })].join(
+            " · ",
+          )
+        : explored;
   }
   const notices = issues.filter(
     (info) => info.phase !== "Failed" || kind === "executions",
@@ -778,28 +822,34 @@ export function activitySummary(tools: ToolView[]) {
   const cancellations = tools.filter(
     (tool) => tool.name === "tool_execution_cancel",
   ).length;
-  const lastPhase = infos.at(-1)?.phase;
+  const lastPhase = infos.at(-1)?.phase ?? "";
   return {
     title,
     issue: issues.length > 0,
     status: [
-      !pending && !issues.length ? shellStatus : "",
-      waiting ? `${waiting} waiting` : "",
-      pending > waiting ? `${pending - waiting} running` : "",
+      !pending && !issues.length && shellStatus
+        ? toolMessage(shellStatus, t)
+        : "",
+      waiting ? t("{{count, number}} waiting", { count: waiting }) : "",
+      pending > waiting
+        ? t("{{count, number}} running", { count: pending - waiting })
+        : "",
       kind === "executions" && cancellations
-        ? count(cancellations, "cancellation request")
+        ? t("{{count, number}} cancellation requests", {
+            count: cancellations,
+          })
         : "",
       kind === "executions" &&
       !pending &&
       !issues.length &&
       lastPhase !== "Result received" &&
       lastPhase !== "Cancellation requested"
-        ? lastPhase
+        ? toolMessage(lastPhase, t)
         : "",
       notices.length === 1
-        ? notices[0].phase
+        ? toolMessage(notices[0].phase, t)
         : notices.length
-          ? `${notices.length} need attention`
+          ? t("{{count, number}} need attention", { count: notices.length })
           : "",
     ]
       .filter(Boolean)

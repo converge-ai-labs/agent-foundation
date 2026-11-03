@@ -10,9 +10,12 @@ import {
   type ToolView,
 } from "./tool-presentation";
 import { LiveOutput, SavedEntry } from "./transcript";
+import { i18n } from "../i18n";
 import type { Schema } from "../transport/client";
 
 afterEach(cleanup);
+// Grouped titles and status are resolved at render time; assert the English catalog.
+const summary = (tools: ToolView[]) => activitySummary(tools, i18n.t);
 const completed = (name: string, input = {}): ToolView => ({
   id: name,
   name,
@@ -128,9 +131,9 @@ it("keeps attention states in collapsed groups without claiming an unrecorded re
     { ...completed("web_search"), outcome: "interrupted" as const },
     { ...completed("grep"), retry: true },
   ])
-    expect(activitySummary([tool]).issue).toBe(true);
+    expect(summary([tool]).issue).toBe(true);
   const pending = { id: "pending", name: "shell_exec", inputComplete: true };
-  expect(activitySummary([pending]).status).toBe("1 running");
+  expect(summary([pending]).status).toBe("1 running");
   expect(
     describeTool({
       ...completed("run_thread"),
@@ -153,7 +156,7 @@ it("surfaces the OpenAI adapter's failed native-search status in live and saved 
     stopped: true,
   };
   expect(describeTool(tool).phase).toBe("Failed");
-  expect(activitySummary([tool])).toMatchObject({
+  expect(summary([tool])).toMatchObject({
     issue: true,
     status: "",
   });
@@ -343,7 +346,7 @@ it("refines all collaboration tools and exposes discovered Thread links on expan
   expect(
     screen.getByRole("link", { name: "Research" }).getAttribute("href"),
   ).toBe("/threads/thread-one");
-  expect(screen.getByText("1 threads found")).toBeTruthy();
+  expect(screen.getByText("1 thread found")).toBeTruthy();
 });
 
 it("retains saved applied diffs and explicit omission without reconstructing requested input", () => {
@@ -439,7 +442,7 @@ it("does not pair provider search results with local calls sharing an ID", () =>
   const tools = savedToolGroups(entries).get(entries[0].parts[0])!;
   expect(tools[0].result).toEqual({ status: "completed" });
   expect(tools[1].result).toBeUndefined();
-  expect(activitySummary(tools).issue).toBe(true);
+  expect(summary(tools).issue).toBe(true);
 });
 
 it("groups execution controls in live and saved output and keeps waiting distinct from execution completion", () => {
@@ -513,7 +516,7 @@ it("groups execution controls in live and saved output and keeps waiting distinc
   ] as Schema<"TranscriptEntry">[];
   const saved = savedToolGroups(entries).get(entries[0].parts[0])!;
   expect(saved).toHaveLength(2);
-  expect(activitySummary(saved)).toMatchObject({
+  expect(summary(saved)).toMatchObject({
     title: "Tool calls · 2 operations",
     status: "Running at last check",
   });
@@ -532,7 +535,7 @@ it("keeps execution failures and cancellation requests visible without interpret
       status: "failed",
     },
   };
-  expect(activitySummary([failed])).toMatchObject({
+  expect(summary([failed])).toMatchObject({
     issue: true,
     status: "Failed at last check",
   });
@@ -551,11 +554,9 @@ it("keeps execution failures and cancellation requests visible without interpret
     result: { ...failed.result, status: "running" },
   };
   expect(describeTool(cancelled).phase).toBe("Cancellation requested");
-  expect(activitySummary([cancelled]).status).toContain(
-    "1 cancellation request",
-  );
+  expect(summary([cancelled]).status).toContain("1 cancellation request");
   expect(
-    activitySummary([{ ...waiting, result: { status: "unavailable" } }]),
+    summary([{ ...waiting, result: { status: "unavailable" } }]),
   ).toMatchObject({ issue: true, status: "Unavailable" });
 });
 
@@ -571,12 +572,12 @@ it.each(["queued", "running"])(
         status,
       },
     };
-    expect(activitySummary([tool])).toMatchObject({
+    expect(summary([tool])).toMatchObject({
       title: "Shell · 1 operation",
       status: "Execution handed off",
     });
     expect(
-      activitySummary([{ ...tool, result: { status: { phase: "running" } } }]),
+      summary([{ ...tool, result: { status: { phase: "running" } } }]),
     ).toMatchObject({
       title: "Shell · 1 operation",
       status: "Running at last check",
@@ -679,33 +680,30 @@ it.each([false, true])(
       // Retained native results need not repeat the control reference.
       result: { ok: true, status: { phase: "exited", exit_code: 0 } },
     };
-    expect(activitySummary([start, wait])).toMatchObject({
+    expect(summary([start, wait])).toMatchObject({
       title: "Ran 1 command",
       status: "",
       issue: false,
     });
     expect(
-      activitySummary([
-        start,
-        { ...wait, result: { status: { phase: "running" } } },
-      ]).status,
+      summary([start, { ...wait, result: { status: { phase: "running" } } }])
+        .status,
     ).toBe("Running at last check");
     // Another handle or child cannot settle the launch observation.
     expect(
-      activitySummary([start, { ...wait, input: { process_id: "other" } }])
-        .status,
+      summary([start, { ...wait, input: { process_id: "other" } }]).status,
     ).toBe(receipt ? "Execution handed off" : "Running at last check");
-    expect(
-      activitySummary([start, { ...wait, subagentRunId: "child" }]).status,
-    ).toBe(receipt ? "Execution handed off" : "Running at last check");
-    expect(
-      activitySummary([start, { ...wait, result: { ok: true } }]).status,
-    ).toBe(receipt ? "Execution handed off" : "Running at last check");
+    expect(summary([start, { ...wait, subagentRunId: "child" }]).status).toBe(
+      receipt ? "Execution handed off" : "Running at last check",
+    );
+    expect(summary([start, { ...wait, result: { ok: true } }]).status).toBe(
+      receipt ? "Execution handed off" : "Running at last check",
+    );
     const failed = {
       ...wait,
       result: { status: { phase: "exited", exit_code: 7 } },
     };
-    expect(activitySummary([start, failed])).toMatchObject({
+    expect(summary([start, failed])).toMatchObject({
       issue: true,
       status: "",
     });
@@ -726,14 +724,12 @@ it("retains another active command after one Shell reference completes", () => {
     id: `wait-${id}`,
     result: { status: { phase: "exited", exit_code: 0 } },
   });
-  expect(
-    activitySummary([start("one"), start("two"), wait("one")]),
-  ).toMatchObject({
+  expect(summary([start("one"), start("two"), wait("one")])).toMatchObject({
     title: "Shell · 3 operations",
     status: "Running at last check",
   });
   expect(
-    activitySummary([start("one"), start("two"), wait("one"), wait("two")]),
+    summary([start("one"), start("two"), wait("one"), wait("two")]),
   ).toMatchObject({ title: "Ran 2 commands", status: "" });
 });
 
