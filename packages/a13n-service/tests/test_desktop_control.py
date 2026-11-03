@@ -183,7 +183,7 @@ async def begin(service, desktop):
     )
 
 
-@pytest.mark.parametrize("failure", ["describe", "fencing", "target", "controller"])
+@pytest.mark.parametrize("failure", ["describe", "fencing", "target", "controller", "controller_before_grant"])
 async def test_predispatch_failure_remains_visible_until_takeover_retry(service, desktop, monkeypatch, failure):
     from unittest.mock import AsyncMock
 
@@ -218,12 +218,15 @@ async def test_predispatch_failure_remains_visible_until_takeover_retry(service,
             patch.setattr(access, "connection", failed_connection)
         elif failure == "target":
             patch.setattr(access, "target", failed_target)
+        elif failure == "controller_before_grant":
+            patch.setattr(control, "controller_allowed", AsyncMock(side_effect=[True, False]))
         else:
             patch.setattr(control, "controller_allowed", AsyncMock(return_value=False))
         await control.reconcile(service.runtime, pending.id)
     expected = {
         "target": "desktop_target_unavailable",
         "controller": "desktop_controller_unavailable",
+        "controller_before_grant": "desktop_controller_unavailable",
     }.get(failure, "desktop_grant_failed")
     failed = await control.get(service.runtime, actor, service.tenant.workspace_id, environment_id)
     assert failed.control == "automation" and failed.failure == expected
@@ -237,6 +240,94 @@ async def test_predispatch_failure_remains_visible_until_takeover_retry(service,
     retried = await begin(service, desktop)
     assert retried.control == "human" and retried.failure is None
     assert retried.episode == pending.episode + 1
+
+
+@pytest.mark.parametrize("failure", ["timeout", "inactive"])
+@pytest.mark.parametrize("cleanup_failure", [None, "revoke", "target"])
+async def test_postdispatch_failure_survives_cleanup_and_clears_on_retry(
+    service, desktop, monkeypatch, failure, cleanup_failure
+):
+    from a13n_service.infra.errors import conflict
+
+    _, environment_id, actor, calls, grants, state = desktop
+    connection, target = access.connection, access.target
+
+    @asynccontextmanager
+    async def failed_connection(runtime, selected, operation_id):
+        async with connection(runtime, selected, operation_id) as send:
+
+            async def failing_send(request):
+                reply = await send(request)
+                if isinstance(request, wire.Grant):
+                    if failure == "timeout":
+                        raise TimeoutError("Grant response lost after dispatch")
+                    return reply.model_copy(update={"state": "failed", "token": None, "password": None})
+                return reply
+
+            yield failing_send
+
+    with monkeypatch.context() as patch:
+        patch.setattr(access, "connection", failed_connection)
+        failed = await begin(service, desktop)
+    assert failed.control == "returning" and failed.failure == "desktop_grant_failed"
+    assert any(isinstance(call, wire.Grant) for call in calls)
+    async with transaction(service.runtime.storage) as session:
+        row = await session.get_one(DesktopControlRow, failed.id)
+        assert row.grant_dispatched and row.viewer is None
+
+    async def failed_target(session, runtime, environment, *, actor=None):
+        if actor is None:
+            raise conflict("environment", environment.id, "desktop_target_changed")
+        return await target(session, runtime, environment, actor=actor)
+
+    if cleanup_failure:
+        with monkeypatch.context() as patch:
+            state["fail_revoke"] = cleanup_failure == "revoke"
+            if cleanup_failure == "target":
+                patch.setattr(access, "target", failed_target)
+            await control.reconcile(service.runtime, failed.id)
+        pending = await control.get(service.runtime, actor, service.tenant.workspace_id, environment_id)
+        assert pending.control == "returning" and pending.failure == "desktop_grant_failed"
+        async with transaction(service.runtime.storage) as session:
+            row = await session.get_one(DesktopControlRow, failed.id)
+            assert row.due_at is not None
+            row.due_at = None
+        state["fail_revoke"] = False
+    await control.reconcile(service.runtime, failed.id)
+    recovered = await control.get(service.runtime, actor, service.tenant.workspace_id, environment_id)
+    assert recovered.control == "automation" and recovered.failure == "desktop_grant_failed"
+    assert all(grant.state == "revoked" for grant in grants.values())
+    assert isinstance(calls[-1], wire.Settle)
+    await control.reconcile(service.runtime, failed.id)
+    assert (
+        await control.get(service.runtime, actor, service.tenant.workspace_id, environment_id)
+    ).failure == recovered.failure
+    retried = await begin(service, desktop)
+    assert retried.control == "human" and retried.failure is None
+    assert retried.episode == failed.episode + 1
+
+
+async def test_normal_expiry_has_no_failure_while_returning_or_after_cleanup(service, desktop, monkeypatch):
+    _, environment_id, actor, _, _, _ = desktop
+    human = await begin(service, desktop)
+    async with transaction(service.runtime.storage) as session:
+        row = await session.get_one(DesktopControlRow, human.id)
+        row.expires_at = await now(session) - timedelta(seconds=1)
+        row.due_at = None
+    connection = access.connection
+
+    @asynccontextmanager
+    async def checked_connection(runtime, selected, operation_id):
+        current = await control.get(runtime, actor, service.tenant.workspace_id, environment_id)
+        assert current.control == "returning" and current.failure is None
+        async with connection(runtime, selected, operation_id) as send:
+            yield send
+
+    with monkeypatch.context() as patch:
+        patch.setattr(access, "connection", checked_connection)
+        await control.reconcile(service.runtime, human.id)
+    current = await control.get(service.runtime, actor, service.tenant.workspace_id, environment_id)
+    assert current.control == "automation" and current.failure is None
 
 
 async def test_control_renewal_and_verified_return(service, desktop):
@@ -300,9 +391,8 @@ async def test_failed_revoke_retry_is_not_reset_by_repeated_handback(service, de
         row.due_at = await now(session) - timedelta(seconds=1)
     state["fail_revoke"] = False
     await control.reconcile(service.runtime, human.id)
-    assert (
-        await control.get(service.runtime, actor, service.tenant.workspace_id, environment_id)
-    ).control == "automation"
+    current = await control.get(service.runtime, actor, service.tenant.workspace_id, environment_id)
+    assert current.control == "automation" and current.failure is None
 
 
 def restarted_guest(desktop, monkeypatch, tmp_path):
@@ -349,7 +439,8 @@ async def test_supervisor_restart_returns_control_after_verified_cleanup(
         calls.clear()
         await control.reconcile(service.runtime, human.id)
     current = await control.get(service.runtime, actor, service.tenant.workspace_id, environment_id)
-    assert current.control == "automation" and current.failure is None
+    assert current.control == "automation"
+    assert current.failure == ("desktop_grant_failed" if phase == "human" else None)
     assert [type(call) for call in calls] == [wire.Describe, wire.Inspect, wire.Settle]
     assert calls[1].operation == "revoke"
     assert calls[1].generation == calls[2].generation == guest.generation != GENERATION

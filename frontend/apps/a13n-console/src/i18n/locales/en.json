@@ -14,7 +14,7 @@
   "Another user controls Computer": "Another user controls Computer",
   "Control expires": "Control expires",
   "Could not take control. You can try again.": "Could not take control. You can try again.",
-  "Control cleanup is incomplete. Retrying automatically.": "Control cleanup is incomplete. Retrying automatically.",
+  "Desktop control failed. Returning control automatically.": "Desktop control failed. Returning control automatically.",
   "Live desktop": "Live desktop",
   "Connecting…": "Connecting…",
   "Input enabled": "Input enabled",

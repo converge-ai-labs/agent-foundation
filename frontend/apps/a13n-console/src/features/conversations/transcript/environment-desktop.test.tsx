@@ -392,7 +392,7 @@ it("shows pending cleanup without offering takeover and clears the warning when 
   post.mockResolvedValueOnce(reply(returning));
   fireEvent.click(screen.getByRole("button", { name: "Return control" }));
   await screen.findByText(
-    "Control cleanup is incomplete. Retrying automatically.",
+    "Desktop control failed. Returning control automatically.",
   );
   expect(screen.queryByRole("button", { name: "Take control" })).toBeNull();
   expect(viewers[1].viewOnly).toBe(true);
@@ -403,9 +403,35 @@ it("shows pending cleanup without offering takeover and clears the warning when 
   await screen.findByRole("button", { name: "Take control" });
   expect(
     screen.queryByText(
-      "Control cleanup is incomplete. Retrying automatically.",
+      "Desktop control failed. Returning control automatically.",
     ),
   ).toBeNull();
+});
+
+it("keeps a post-dispatch takeover failure visible through cleanup and offers retry only afterward", async () => {
+  const { cache } = start(automated);
+  await observing();
+  const returning = {
+    ...human,
+    control: "returning",
+    failure: "desktop_grant_failed",
+  };
+  get.mockResolvedValue(reply(returning));
+  post.mockResolvedValueOnce(reply(returning));
+  fireEvent.click(screen.getByRole("button", { name: "Take control" }));
+  await screen.findByText(
+    "Desktop control failed. Returning control automatically.",
+  );
+  expect(screen.queryByRole("button", { name: "Take control" })).toBeNull();
+  const returned = { ...automated, episode: 1, failure: returning.failure };
+  get.mockResolvedValue(reply(returned));
+  act(() => cache.setQueryData(key, { value: returned }));
+  await screen.findByText("Could not take control. You can try again.");
+  expect(
+    screen
+      .getByRole("button", { name: "Take control" })
+      .hasAttribute("disabled"),
+  ).toBe(false);
 });
 
 it("discards late grants after changing Environment", async () => {

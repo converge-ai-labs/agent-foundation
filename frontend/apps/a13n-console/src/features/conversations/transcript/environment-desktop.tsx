@@ -479,7 +479,7 @@ export function EnvironmentDesktop({
               {t(
                 control.control === "automation"
                   ? "Could not take control. You can try again."
-                  : "Control cleanup is incomplete. Retrying automatically.",
+                  : "Desktop control failed. Returning control automatically.",
               )}
             </p>
           )}

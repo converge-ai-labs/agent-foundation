@@ -228,7 +228,10 @@ async def reopen(session: AsyncSession, runtime: Runtime, row: DesktopControlRow
     row.expires_at = row.viewer = row.grant_id = None
     row.controller_id = row.controller_thread_id = None
     row.grant_dispatched = False
-    row.claim_id = row.claim_until = row.due_at = row.failure = None
+    row.claim_id = row.claim_until = row.due_at = None
+    # Cleanup recovery clears its own failure, not the cause that ended human control.
+    if row.failure in {"desktop_revoke_failed", "desktop_target_unavailable"}:
+        row.failure = None
     for registration in await session.scalars(
         select(DesktopBlockedRow).where(
             DesktopBlockedRow.control_id == row.id,
@@ -269,7 +272,7 @@ async def reconcile(runtime: Runtime, control_id: str) -> None:
                 reason = "desktop_viewer_expired"
             if reason:
                 await return_control(session, runtime, row)
-                if row.control != "automation" or reason != "desktop_control_expired":
+                if reason != "desktop_control_expired":
                     row.failure = reason
         if row.control == "automation" or (row.claim_until is not None and row.claim_until > current):
             return
@@ -284,7 +287,7 @@ async def reconcile(runtime: Runtime, control_id: str) -> None:
                 raise conflict("environment", environment.id, "desktop_target_changed")
         except ServiceError:
             await return_control(session, runtime, row)
-            row.failure = "desktop_target_unavailable"
+            row.failure = row.failure or "desktop_target_unavailable"
             if row.control == "returning":
                 row.due_at = current + timedelta(seconds=access.RENEW_SECONDS)
             return
@@ -314,12 +317,12 @@ async def reconcile(runtime: Runtime, control_id: str) -> None:
                     current = await now(session)
                     if not owns_claim(row, claim, generation, episode, phase, current):
                         return
-                    if (
-                        row.expires_at is None
-                        or row.expires_at <= current
-                        or not await controller_allowed(session, runtime, environment, row)
-                    ):
+                    if row.expires_at is None or row.expires_at <= current:
                         await return_control(session, runtime, row)
+                        return
+                    if not await controller_allowed(session, runtime, environment, row):
+                        await return_control(session, runtime, row)
+                        row.failure = "desktop_controller_unavailable"
                         return
                     deadline = row.expires_at
                     row.guest_generation = guest_generation
@@ -388,7 +391,7 @@ async def reconcile(runtime: Runtime, control_id: str) -> None:
             row.control, row.failure = "human", None
             row.due_at = min(granted.expires_at, current + timedelta(seconds=access.RENEW_SECONDS))
         elif failure is not None:
-            row.failure = failure
+            row.failure = row.failure or failure
             row.due_at = current + timedelta(seconds=access.RENEW_SECONDS)
         else:
             await reopen(session, runtime, row, current)
