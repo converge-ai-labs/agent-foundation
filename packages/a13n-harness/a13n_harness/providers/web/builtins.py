@@ -1,8 +1,22 @@
 """Built-in Web Provider definitions."""
 
+from ..authentication import Authentication, CredentialMode
 from .configuration import ApiKeyCredential, EmptyConfiguration
 from .definition import WebProviderDefinition
-from .vendors import brave, deepseek, duckduckgo, exa, firecrawl, jina, parallel, perplexity, serpapi, tavily, tinyfish
+from .vendors import (
+    brave,
+    deepseek,
+    duckduckgo,
+    exa,
+    firecrawl,
+    jina,
+    keenable,
+    parallel,
+    perplexity,
+    serpapi,
+    tavily,
+    tinyfish,
+)
 
 
 def built_in_web_providers() -> tuple[WebProviderDefinition, ...]:
@@ -13,7 +27,17 @@ def built_in_web_providers() -> tuple[WebProviderDefinition, ...]:
             setup_url="https://duckduckgo.com/",
             configuration_model=EmptyConfiguration,
             search=duckduckgo.search,
-        )
+        ),
+        WebProviderDefinition(
+            type="keenable",
+            display_name="Keenable",
+            setup_url="https://keenable.ai",
+            configuration_model=EmptyConfiguration,
+            credential_model=ApiKeyCredential,
+            # Works without a key (free public endpoint); a key raises limits.
+            authentication=Authentication(mode=CredentialMode.optional),
+            search=keenable.search,
+        ),
     ]
     for provider_type, display_name, setup_url, search, scrape in (
         ("brave", "Brave Search", "https://api-dashboard.search.brave.com/", brave.search, None),

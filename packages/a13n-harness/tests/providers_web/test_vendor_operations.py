@@ -7,7 +7,16 @@ import pytest
 from a13n_harness.providers.web import ScrapeOptions, SearchOptions, WebScrapeRequest, WebSearchRequest
 from a13n_harness.providers.web.configuration import ApiKeyCredential
 from a13n_harness.providers.web.transport import WebProviderTransport
-from a13n_harness.providers.web.vendors import duckduckgo, firecrawl, jina, parallel, perplexity, serpapi, tavily
+from a13n_harness.providers.web.vendors import (
+    duckduckgo,
+    firecrawl,
+    jina,
+    keenable,
+    parallel,
+    perplexity,
+    serpapi,
+    tavily,
+)
 
 SEARCH_URLS = {
     "duckduckgo": duckduckgo.SEARCH_URL,
@@ -17,6 +26,8 @@ SEARCH_URLS = {
     "jina": jina.SEARCH_URL,
     "perplexity": perplexity.SEARCH_URL,
     "serpapi": serpapi.SEARCH_URL,
+    "keenable": keenable.SEARCH_URL,
+    "keenable_public": keenable.PUBLIC_SEARCH_URL,
 }
 SCRAPE_URLS = {
     "parallel": parallel.SCRAPE_URL,
@@ -104,6 +115,41 @@ async def test_duckduckgo_uses_html_search_without_credential(providers) -> None
         result = await web.search(WebSearchRequest(query="query", limit=2))
     assert [(item.title, item.url, item.snippet) for item in result.results] == [
         ("Good", "https://example.com/a", "Summary")
+    ]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("keyed", [False, True])
+async def test_keenable_search_works_with_or_without_credential(keyed: bool, providers) -> None:
+
+    def handle(request: httpx2.Request) -> httpx2.Response:
+        expected = keenable.SEARCH_URL if keyed else keenable.PUBLIC_SEARCH_URL
+        assert str(request.url) == expected
+        assert request.headers["x-keenable-title"] == "a13n"
+        assert request.headers.get("x-api-key") == ("secret" if keyed else None)
+        assert "authorization" not in request.headers
+        assert json.loads(request.content) == {"query": "query", "max_results": 2}
+        return httpx2.Response(
+            200,
+            json={
+                "results": [
+                    {"title": "Good", "url": "https://example.com/a", "description": "Summary", "snippet": "Long"},
+                    {"title": "No URL", "description": "dropped"},
+                    {"title": "Snippet", "url": "https://example.com/b", "snippet": "x" * 2000},
+                ]
+            },
+        )
+
+    async with providers["keenable"].open(
+        {},
+        ApiKeyCredential(api_key="secret") if keyed else None,
+        transport=transport(handle),
+        options=SearchOptions(max_results=2, allow_domains=("example.com",), deny_domains=()),
+    ) as web:
+        result = await web.search(WebSearchRequest(query="query", limit=2))
+    assert [(item.title, item.url, item.snippet) for item in result.results] == [
+        ("Good", "https://example.com/a", "Summary"),
+        ("Snippet", "https://example.com/b", "x" * keenable.SNIPPET_CHARS),
     ]
 
 
