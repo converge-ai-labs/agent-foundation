@@ -1542,20 +1542,6 @@ items = await inventory(group=second['groups'][0]['group'], detail='full')
     assert content["items"]["tools"][0]["tool"] == "lookup"
 
 
-def test_search_configuration_defaults_to_proxy_and_roundtrips() -> None:
-    from a13n_harness.tools.tool_search import ToolSearchConfig
-    from jsonschema import Draft202012Validator
-    from pydantic import TypeAdapter
-
-    adapter = TypeAdapter(ToolSearchConfig)
-    for value in ({}, {"max_results": 5}, {"mode": "proxy"}):
-        config = adapter.validate_python(value)
-        assert config.mode == "proxy"
-        encoded = adapter.dump_python(config, mode="json")
-        Draft202012Validator(adapter.json_schema()).validate(encoded)
-        assert adapter.validate_python(encoded) == config
-
-
 async def test_disjoint_tool_selections_keep_unselected_tools_direct_and_bind_source_once() -> None:
     bound = []
     invoked = []

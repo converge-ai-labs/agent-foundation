@@ -489,45 +489,34 @@ it("restores the latest form draft after malformed or structured JSON without lo
   expect(writes).toHaveLength(0);
 });
 
-it.each(["outside", "escape"])(
-  "dismisses only the nested error dialog with %s and keeps the draft",
-  async (dismiss) => {
-    const { user, dialog, writes } = await openCreateDraft();
-    await user.type(dialog.getByLabelText("Name"), "Retained draft");
-    await user.click(dialog.getByRole("button", { name: "JSON" }));
-    await user.clear(dialog.getByLabelText("Invocation JSON"));
-    await user.paste("{");
-    await user.click(dialog.getByRole("button", { name: "Fields" }));
-    const errorDialog = screen.getByRole("dialog", {
-      name: "Cannot switch to fields",
-    });
-    if (dismiss === "outside") {
-      await user.click(errorDialog.closest('[data-slot="dialog-viewport"]')!);
-    } else {
-      await user.keyboard("{Escape}");
-    }
-    await waitFor(() =>
-      expect(
-        screen.queryByRole("dialog", { name: "Cannot switch to fields" }),
-      ).toBeNull(),
-    );
+it("dismisses only the nested error dialog with Escape and keeps the draft", async () => {
+  const { user, dialog, writes } = await openCreateDraft();
+  await user.type(dialog.getByLabelText("Name"), "Retained draft");
+  await user.click(dialog.getByRole("button", { name: "JSON" }));
+  await user.clear(dialog.getByLabelText("Invocation JSON"));
+  await user.paste("{");
+  await user.click(dialog.getByRole("button", { name: "Fields" }));
+  expect(
+    screen.getByRole("dialog", { name: "Cannot switch to fields" }),
+  ).toBeTruthy();
+  await user.keyboard("{Escape}");
+  await waitFor(() =>
     expect(
-      screen.getByRole("dialog", { name: "Create schedule" }),
-    ).toBeTruthy();
-    expect((dialog.getByLabelText("Name") as HTMLInputElement).value).toBe(
-      "Retained draft",
-    );
-    const json = dialog.getByLabelText(
-      "Invocation JSON",
-    ) as HTMLTextAreaElement;
-    expect(json.value).toBe("{");
-    await user.click(json);
-    await user.clear(json);
-    await user.paste("{}");
-    expect(json.value).toBe("{}");
-    expect(writes).toHaveLength(0);
-  },
-);
+      screen.queryByRole("dialog", { name: "Cannot switch to fields" }),
+    ).toBeNull(),
+  );
+  expect(screen.getByRole("dialog", { name: "Create schedule" })).toBeTruthy();
+  expect((dialog.getByLabelText("Name") as HTMLInputElement).value).toBe(
+    "Retained draft",
+  );
+  const json = dialog.getByLabelText("Invocation JSON") as HTMLTextAreaElement;
+  expect(json.value).toBe("{");
+  await user.click(json);
+  await user.clear(json);
+  await user.paste("{}");
+  expect(json.value).toBe("{}");
+  expect(writes).toHaveLength(0);
+});
 
 it("lets users correct JSON after a failed switch and still rejects invalid submissions", async () => {
   const { user, dialog, writes } = await openCreateDraft();

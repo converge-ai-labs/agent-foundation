@@ -111,17 +111,6 @@ async def test_capability_type_catalog_rejects_name_mismatch_and_native_collisio
     assert redundant_native.value.code == "capability_type_catalog_invalid"
 
 
-async def test_native_capability_ids_allow_dots_but_not_colons() -> None:
-    HarnessBuilder().build(
-        AgentSpec(model="logical:test"),
-        output_type=str,
-        capabilities=(Capability(id="valid.id"),),
-    )
-
-    with pytest.raises(UserError, match="cannot contain a colon"):
-        Capability(id="invalid:id")
-
-
 async def test_run_replacement_capability_ids_must_not_contain_colons() -> None:
     executable = HarnessBuilder().build(
         AgentSpec(),

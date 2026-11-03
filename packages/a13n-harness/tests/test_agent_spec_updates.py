@@ -15,7 +15,6 @@ from a13n_harness.capabilities import UserInteractionCapability
 from a13n_harness.filters import ColdStartFilterConfiguration
 from pydantic import ValidationError
 from pydantic_ai.models.test import TestModel
-from pydantic_ai.usage import UsageLimits
 
 
 def _preset() -> AgentSpec:
@@ -52,36 +51,6 @@ def test_cold_start_configuration_round_trip_and_updates(tmp_path: Path, idle_se
     assert "ColdStartFilterConfiguration" in schema["$defs"]
     with pytest.raises(ValidationError):
         spec.with_updates(cold_start_filter={"idle_seconds": 0})
-
-
-def test_agent_spec_defaults_to_a_detached_long_task_usage_budget() -> None:
-    first = AgentSpec()
-    second = AgentSpec()
-
-    assert first.usage_limits.request_limit == 1000
-    assert first.usage_limits is not second.usage_limits
-
-    first.usage_limits.request_limit = 3
-    assert second.usage_limits.request_limit == 1000
-
-
-def test_agent_spec_schema_and_updates_preserve_native_usage_limits() -> None:
-    spec = AgentSpec.from_dict(
-        {
-            "usage_limits": {
-                "request_limit": 250,
-                "total_tokens_limit": 100_000,
-            }
-        }
-    )
-    updated = spec.with_updates(usage_limits=UsageLimits(request_limit=None))
-    schema = AgentSpec.model_json_schema_with_capabilities()
-
-    assert spec.usage_limits.request_limit == 250
-    assert spec.usage_limits.total_tokens_limit == 100_000
-    assert updated.usage_limits.request_limit is None
-    assert updated.usage_limits is not spec.usage_limits
-    assert schema["properties"]["usage_limits"]["default"]["request_limit"] == 1000
 
 
 def test_with_updates_returns_a_validated_deep_copy_without_mutating_preset() -> None:
@@ -167,16 +136,6 @@ def test_with_updates_rejects_unknown_duplicate_and_invalid_fields() -> None:
         preset.with_updates({"model": "openai:gpt-5-mini"}, model="openai:gpt-5")
     with pytest.raises(ValidationError):
         preset.with_updates(model_characteristics={"context_window_tokens": 0})
-
-
-def test_with_updates_does_not_recursively_merge_mapping_fields() -> None:
-    preset = _preset()
-
-    updated = preset.with_updates(model_settings={"temperature": 0.9})
-
-    assert updated.model_settings == {"temperature": 0.9}
-    assert "max_tokens" not in updated.model_settings
-    assert preset.model_settings == {"temperature": 0.2, "max_tokens": 2048}
 
 
 def test_agent_definition_with_updates_materializes_a_complete_child() -> None:

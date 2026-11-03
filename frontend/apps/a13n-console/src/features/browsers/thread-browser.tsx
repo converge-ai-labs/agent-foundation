@@ -6,7 +6,7 @@ import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
-import { data, ifMatch, rowTag, type Schema } from "../../shared/api";
+import { allPages, data, ifMatch, rowTag, type Schema } from "../../shared/api";
 import { ErrorNotice, Loading, StatePill } from "../../shared/feedback";
 import { FormActions } from "../../shared/forms";
 import {
@@ -14,6 +14,7 @@ import {
   invalidateConversation,
 } from "../conversations/api";
 import { useInteractiveThread } from "../conversations/transcript/run-actions";
+import { useProviderTypes } from "../providers/kind-providers";
 import { useBrowser, useBrowserOptions } from "./api";
 import { BrowserLifecycle } from "./page";
 import { BrowserViewer } from "./viewer";
@@ -322,6 +323,28 @@ function BrowserControl({
   const cache = useQueryClient();
   const { workspace } = useWorkspace();
   const [viewing, setViewing] = useState(false);
+  const managed = browser.source === "managed";
+  const providers = useQuery({
+    queryKey: ["browser-providers", workspace.id, "options"],
+    queryFn: ({ signal }) =>
+      allPages((cursor) =>
+        client
+          .workspace(workspace.id)
+          .GET("/api/v1/browser-providers", {
+            params: { query: { cursor, limit: 100 } },
+            signal,
+          })
+          .then(data),
+      ),
+    enabled: managed,
+  });
+  const types = useProviderTypes("browser", managed);
+  const provider = providers.data?.find(
+    (item) => item.id === browser.provider_id,
+  );
+  const definition = types.data?.items.find(
+    (item) => item.type === provider?.type,
+  );
   const operation = useMutation({
     mutationFn: (action: "takeover" | "handback") =>
       client
@@ -344,6 +367,24 @@ function BrowserControl({
     return (
       <p className="text-sm text-muted-foreground">
         {t("External CDP browsers do not provide a viewer or human control.")}
+      </p>
+    );
+  if (providers.isPending || types.isPending) return <Loading variant="form" />;
+  if (providers.error || types.error)
+    return (
+      <ErrorNotice
+        error={providers.error ?? types.error}
+        retry={() => {
+          void providers.refetch();
+          void types.refetch();
+        }}
+      />
+    );
+  if (!definition) return null;
+  if (!definition.supports_viewer)
+    return (
+      <p className="text-sm text-muted-foreground">
+        {t("This browser provider does not support a viewer or human control.")}
       </p>
     );
   if (["stopped", "deleted", "deleting", "lost"].includes(browser.status))

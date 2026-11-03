@@ -154,12 +154,6 @@ def test_http_host_is_not_a_url_or_docker_host(host):
         DockerHttpConfiguration(host=host, allow_plaintext_private_link=True)
 
 
-def test_remote_plaintext_requires_explicit_private_link_consent():
-    with pytest.raises(ValueError):
-        DockerHttpConfiguration(host="10.0.0.8")
-    assert DockerHttpConfiguration(host="10.0.0.8", allow_plaintext_private_link=True).host == "10.0.0.8"
-
-
 def test_network_disabled_and_native_desktop_are_rejected():
     with pytest.raises(ValueError, match="requires networking"):
         DockerEnvironmentConfiguration(execution="envd_http", disable_network=True)

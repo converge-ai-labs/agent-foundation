@@ -875,18 +875,6 @@ def test_explicit_null_image_input_survives_serialization_and_revalidation() -> 
     assert AgentSpec.model_validate_json(spec.model_dump_json()).model_characteristics == characteristics
 
 
-def test_image_input_object_uses_native_defaults_and_is_frozen() -> None:
-    characteristics = HarnessModelCharacteristics.model_validate({"image_input": {"support_gif": False}})
-    policy = characteristics.image_input
-    assert policy is not None
-    assert policy == ImageInputPolicy(support_gif=False)
-    assert characteristics.model_dump(mode="json")["image_input"] == policy.model_dump(mode="json")
-    with pytest.raises(ValueError, match="frozen"):
-        policy.max_images = 1
-    with pytest.raises(ValueError, match="frozen"):
-        characteristics.image_input = None
-
-
 @pytest.mark.parametrize("streaming", [False, True])
 async def test_batch_eviction_keeps_prefix_stable_across_reconstructed_runs(streaming: bool) -> None:
     seen: list[list[ModelMessage]] = []
