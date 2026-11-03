@@ -1,5 +1,5 @@
-import { SettingsSection } from "./settings";
 import { useTranslation } from "../i18n";
+import { SettingsSection } from "./settings";
 import { useContext, type ReactNode, type FocusEventHandler } from "react";
 import { Button, FormField, Input } from "a13n-ui";
 import { WarningCircleIcon } from "@phosphor-icons/react";

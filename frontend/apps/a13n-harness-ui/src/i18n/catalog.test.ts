@@ -116,6 +116,18 @@ it("formats counts and resolves known login states without translating provider 
 // and the remaining workbench workflows are tracked separately in #1248.
 const surfaces = [
   "app.tsx",
+  "conversations/navigation.tsx",
+  "conversations/recent-navigation.tsx",
+  "conversations/draft-navigation.tsx",
+  "conversations/chat-search.tsx",
+  "conversations/archived.tsx",
+  "conversations/thread-row.tsx",
+  "conversations/coordinator-entry.tsx",
+  "conversations/delete-thread.tsx",
+  "conversations/project-order.ts",
+  "shell/sidebar.tsx",
+  "shell/workbench.tsx",
+  "shell/ui.tsx",
   "shell/startup.tsx",
   "setup/wizard.tsx",
   "setup/setup.tsx",
@@ -153,7 +165,6 @@ const surfaces = [
   "conversations/clear-context.tsx",
   "shell/confirm-action.tsx",
   "shell/image-preview.tsx",
-  "shell/ui.tsx",
 ];
 it("keeps literal translation calls in the catalogs", () => {
   const missing: string[] = [];

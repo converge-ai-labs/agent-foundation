@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { i18n } from "../i18n";
 import {
   act,
   cleanup,
@@ -47,7 +48,10 @@ beforeEach(() => {
   localStorage.clear();
   viewport(1280);
 });
-afterEach(cleanup);
+afterEach(async () => {
+  cleanup();
+  await i18n.changeLanguage("en");
+});
 
 it("resizes within bounds, captures the pointer and remembers the released width", () => {
   const { handle, unmount } = fixture();
@@ -94,6 +98,20 @@ it("supports keyboard sizing and a double-click reset", () => {
   fireEvent.doubleClick(handle);
   expect(handle.getAttribute("aria-valuenow")).toBe("220");
   expect(localStorage.getItem(preference)).toBe("220");
+});
+
+it("keeps an active resize and its width when the display language changes", async () => {
+  const { handle } = fixture();
+  pointer(handle, "pointerdown", 220);
+  pointer(handle, "pointermove", 280);
+  await act(() => i18n.changeLanguage("zh-CN"));
+  expect(screen.getByRole("separator", { name: "调整导航宽度" })).toBe(handle);
+  expect(handle.getAttribute("aria-valuetext")).toBe("280 像素");
+  expect(localStorage.getItem(preference)).toBe("220");
+  pointer(handle, "pointermove", 300);
+  pointer(handle, "pointerup", 300);
+  expect(localStorage.getItem(preference)).toBe("300");
+  expect(handle.releasePointerCapture).toHaveBeenCalledWith(1);
 });
 
 it("restores the previous width when a drag is cancelled and ignores unrelated pointers", () => {
