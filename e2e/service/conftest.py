@@ -1,7 +1,7 @@
 """Shared Service processes, isolated workspaces, and dedicated stacks for process faults."""
 
+import asyncio
 import re
-import signal
 from collections.abc import AsyncIterator, Generator, Iterator
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
@@ -49,7 +49,8 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line("markers", "hosted(type): a journey on a hosted sandbox vendor, run only when asked for")
     config.addinivalue_line(
-        "markers", "isolated_service(worker_slots=4): owns Service processes for faults or custom worker capacity"
+        "markers",
+        "isolated_service(worker_slots=4, start_workers=2): owns Service processes for faults or custom worker capacity",
     )
 
 
@@ -110,17 +111,11 @@ class Stack:
             base_url=self.control.url, verify=trust(self.stores), trust_env=False, timeout=10, headers=headers
         )
 
-    @contextmanager
-    def only(self, worker: ServiceProcess) -> Iterator[None]:
-        """Suspend the other workers, so that runs accepted meanwhile are claimed by `worker`."""
-        others = [other for other in self.workers if other is not worker]
-        for other in others:
-            other.signal(signal.SIGSTOP)
-        try:
-            yield
-        finally:
-            for other in others:
-                other.signal(signal.SIGCONT)
+    async def start_worker(self, worker: ServiceProcess) -> None:
+        """Start a deferred worker after the intended worker has claimed the run."""
+        assert worker.process is None, "worker already started"
+        worker.start()
+        await asyncio.to_thread(wait_ready, [worker], trust(self.stores))
 
 
 @dataclass
@@ -135,7 +130,9 @@ class Service:
 
 
 @contextmanager
-def running_service(stores: Stores, directory: Path, *, worker_slots: int = 4) -> Iterator[Service]:
+def running_service(
+    stores: Stores, directory: Path, *, worker_slots: int = 4, start_workers: int = 2
+) -> Iterator[Service]:
     with ExitStack() as cleanup:
         database = cleanup.enter_context(cloned_database(stores))
         config = write_config(
@@ -145,8 +142,11 @@ def running_service(stores: Stores, directory: Path, *, worker_slots: int = 4) -
         workers = [ServiceProcess("worker", config, directory / f"worker-{index}.log") for index in (1, 2)]
         for process in [control, *workers]:
             cleanup.callback(process.kill)
+        # Fault journeys defer the successor instead of suspending a worker that may hold database locks.
+        started = [control, *workers[:start_workers]]
+        for process in started:
             process.start()
-        wait_ready([control, *workers], trust(stores))
+        wait_ready(started, trust(stores))
         engine = create_engine(database_url(stores.postgres_url, database))
         cleanup.callback(engine.dispose)
         with httpx2.Client(base_url=control.url, verify=trust(stores), trust_env=False, timeout=10) as client:
