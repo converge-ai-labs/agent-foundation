@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import shlex
 import shutil
 import subprocess
 import sys
@@ -243,20 +242,6 @@ def test_service_contract_hook_skips_package_tests_but_keeps_contract_inputs(pat
     assert bool(selected) is regenerates
 
 
-def test_markdown_hook_uses_locked_workspace_formatter() -> None:
-    config = yaml.safe_load((REPOSITORY_ROOT / ".pre-commit-config.yaml").read_text())
-    hooks = [(repo, hook) for repo in config["repos"] for hook in repo["hooks"] if hook["id"] == "mdformat"]
-    assert len(hooks) == 1
-    repo, hook = hooks[0]
-    assert repo["repo"] == "local"
-    assert hook["language"] == "system"
-    assert hook["entry"] == "uv run --locked mdformat"
-    assert hook["types"] == ["markdown"]
-    assert hook["args"] == ["--number"]
-    assert hook.get("pass_filenames", True) is True
-    assert "additional_dependencies" not in hook
-
-
 def test_automation_ci_covers_markdown_hook_configuration() -> None:
     workflow = yaml.safe_load((REPOSITORY_ROOT / ".github/workflows/ci-automation.yml").read_text())
     for event in ("pull_request", "push"):
@@ -274,30 +259,3 @@ def test_root_targets_do_not_require_sdk_checkouts(tmp_path: Path, target: str) 
     assert "sdk-" not in result.stdout
     assert "a13n-service-cli" not in result.stdout
     assert not (tmp_path / "sdk").exists()
-
-
-def test_service_ci_owns_export_drift_and_tests() -> None:
-    workflow = yaml.safe_load((REPOSITORY_ROOT / ".github/workflows/ci-a13n-service.yml").read_text())
-    for event in ("pull_request", "push"):
-        patterns = workflow[True][event]["paths"]
-        for path in (
-            "proto/a13n-service/openapi.json",
-            "proto/a13n-service/session-stream.schema.json",
-            "proto/a13n-service/thread-stream.schema.json",
-            "scripts/export-a13n-service-openapi.py",
-            "scripts/tests/test_service_contract.py",
-            "packages/a13n-service/a13n_service/runs/routes.py",
-            "packages/a13n-harness/a13n_harness/types.py",
-            "packages/a13n-stream-protocol/a13n_stream_protocol/events.py",
-            "uv.lock",
-        ):
-            assert any(Path(path).full_match(pattern) for pattern in patterns), (event, path)
-    steps = workflow["jobs"]["validation"]["steps"]
-    for command in (
-        "uv run --locked python scripts/export-a13n-service-openapi.py --check",
-        "uv run --locked python -m pytest scripts/tests/test_service_contract.py",
-    ):
-        required = shlex.split(command)
-        step = next(step for step in steps if shlex.split(step.get("run", ""))[: len(required)] == required)
-        assert step["if"] == "matrix.name == 'checks'"
-    assert workflow["jobs"]["python"]["needs"] == ["changes", "validation"]

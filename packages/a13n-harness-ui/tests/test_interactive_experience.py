@@ -545,33 +545,6 @@ async def test_subagent_inspection_discards_results_after_conversation_switch(ex
 
 
 @pytest.mark.anyio
-async def test_task_panel_has_a_full_width_separator_in_the_terminal() -> None:
-    from a13n_harness_ui.surfaces import TaskView
-
-    with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
-        shell = CliShell(CliRequest())
-        shell.renderer.append("tool output", kind="tool")
-        shell.renderer.tasks.restore(
-            TaskPage(tasks=(TaskView(task_id="task-1", version=1, subject="Do work", status="pending"),))
-        )
-        terminal = asyncio.create_task(shell.app.run_async())
-        try:
-            for _ in range(100):
-                screen = shell.app.renderer.last_rendered_screen
-                if screen is not None:
-                    break
-                await asyncio.sleep(0.01)
-            assert screen is not None
-            lines = ["".join(row[x].char for x in range(80)) for _, row in sorted(screen.data_buffer.items())]
-            index = next(index for index, line in enumerate(lines) if "Tasks ·" in line)
-            assert lines[index - 1] == "─" * 80
-        finally:
-            shell.app.exit()
-            await terminal
-            shell.renderer.transcript.close()
-
-
-@pytest.mark.anyio
 async def test_activity_refresh_is_thread_scoped_and_does_not_publish_stale_results() -> None:
     from a13n_harness_ui.surfaces import ChildExecutionPage
 

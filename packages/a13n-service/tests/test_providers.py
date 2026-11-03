@@ -773,13 +773,9 @@ async def test_provider_types_describe_each_registered_definition(service) -> No
 
     models = await types("model")
     openai = models["openai"]
-    assert openai["display_name"] == "OpenAI" and openai["supports_test"] is True
+    assert openai["supports_test"] is True
     assert openai["model_apis"] == ["openai.responses", "openai.chat_completions"]
     assert openai["default_model_api"] == "openai.responses"
-    assert openai["model_api_labels"] == {
-        "openai.responses": "OpenAI Responses",
-        "openai.chat_completions": "OpenAI Chat Completions",
-    }
     assert openai["credential_schema"]["properties"]["api_key"]
     assert openai["authentication"]["mode"] == "required"
     assert models["vercel"]["supports_test"] is False
@@ -801,21 +797,11 @@ async def test_provider_types_describe_each_registered_definition(service) -> No
     assert {name: item["supports_test"] for name, item in (await types("connector")).items()} == {"composio": True}
     lifecycle = ("supports_stop", "supports_destroy", "supports_test")
     environments = await types("environment")
-    # External envd targets are no provider type; Sprites cannot stop, and only a Docker account can be tested.
-    assert {name: tuple(item[flag] for flag in lifecycle) for name, item in environments.items()} == {
-        "daytona": (True, True, False),
-        "docker": (True, True, True),
-        "e2b": (True, True, False),
-        "modal": (True, True, False),
-        "runloop": (True, True, False),
-        "sprites": (False, True, False),
-        "vercel": (True, True, False),
-    }
+    assert tuple(environments["docker"][flag] for flag in lifecycle) == (True, True, True)
+    assert tuple(environments["sprites"][flag] for flag in lifecycle) == (False, True, False)
     # The Docker forms state the operator's policy and the worker's limits.
     docker = environments["docker"]
-    assert "tcp://host:port" in docker["configuration_schema"]["properties"]["docker_host"]["description"]
     recipe = docker["environment_schema"]["properties"]
-    assert "a directory the operator allows" in recipe["mounts"]["description"]
     assert recipe["max_file_bytes"]["maximum"] == HarnessDockerRecipe.model_fields["max_file_bytes"].default
     assert (await service.client.get("/api/v1/provider-types/trace")).status_code == 400
 

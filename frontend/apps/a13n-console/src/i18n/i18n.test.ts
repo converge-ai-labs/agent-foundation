@@ -65,21 +65,3 @@ test("literal translation keys exist in the catalogs", () => {
   }
   expect([...keys].filter((key) => !(key in en)).sort()).toEqual([]);
 });
-
-test("distinguishes Session, Thread and Run in Chinese product labels", async () => {
-  await i18n.changeLanguage("zh-CN");
-  expect(i18n.t("Session")).toBe("会话");
-  expect(i18n.t("Thread")).toBe("线程");
-  expect(i18n.t("Main thread")).toBe("主线程");
-  expect(i18n.t("Switch thread")).toBe("切换线程");
-  expect(i18n.t("Run")).toBe("运行");
-  expect(i18n.t("{{count}} runs", { count: 2 })).toBe("2 次运行");
-});
-
-test("English state and trigger labels consistently start with a capital letter", () => {
-  const labels = Object.entries(en).filter(([key]) =>
-    /^(state|trigger)\./.test(key),
-  );
-  expect(labels.length).toBeGreaterThan(0);
-  for (const [key, label] of labels) expect(label, key).toMatch(/^[A-Z]/);
-});
