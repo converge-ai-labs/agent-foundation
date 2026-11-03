@@ -69,6 +69,7 @@ const surfaces = [
   "conversations/run-activity.tsx",
   "conversations/execution-details.tsx",
   "conversations/live-connection.tsx",
+  "shell/image-preview.tsx",
   "shell/sidebar.tsx",
   "shell/workbench.tsx",
   "shell/ui.tsx",

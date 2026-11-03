@@ -13,6 +13,8 @@ import type { DisplayBlock } from "./stream";
 import { LiveOutput, RecoveryNotice, SavedEntry } from "./transcript";
 import { MessageText } from "./message-text";
 import { LiveConnectionStatus } from "./live-connection";
+import { ContextActivity } from "./context-activity";
+import { ImagePreview } from "../shell/image-preview";
 
 beforeEach(() =>
   vi.stubGlobal("matchMedia", () => ({
@@ -173,4 +175,50 @@ it("translates markdown block controls and the image fallback around verbatim mo
   expect(
     screen.getByRole("region", { name: "python 代码" }).textContent,
   ).toContain("print(1)");
+});
+
+it("translates generated context phases and keeps their backend diagnostics verbatim", async () => {
+  const view = render(
+    <ContextActivity
+      context="compaction"
+      text=""
+      status="In progress · model_rate_limited"
+    />,
+  );
+  expect(screen.getByText("In progress · model_rate_limited")).toBeTruthy();
+
+  await act(() => i18n.changeLanguage("zh-CN"));
+
+  expect(screen.getByText("进行中 · model_rate_limited")).toBeTruthy();
+  view.rerender(
+    <ContextActivity context="handoff" text="" status="Summary ready" />,
+  );
+  expect(screen.getByText("摘要已就绪")).toBeTruthy();
+  // An unrecognized backend status stays verbatim.
+  view.rerender(
+    <ContextActivity context="handoff" text="" status="Queued upstream" />,
+  );
+  expect(screen.getByText("Queued upstream")).toBeTruthy();
+});
+
+it("translates the expanded image viewer used by diagrams and attachments", async () => {
+  render(
+    <ImagePreview
+      src="data:image/png;base64,iVBORw0K"
+      name="chart.png"
+      close={() => {}}
+    />,
+  );
+  expect(screen.getByRole("button", { name: "Actual size" })).toBeTruthy();
+  expect(screen.getByLabelText("Download image")).toBeTruthy();
+
+  await act(() => i18n.changeLanguage("zh-CN"));
+
+  expect(screen.getByRole("button", { name: "实际大小" })).toBeTruthy();
+  expect(screen.getByLabelText("下载图片")).toBeTruthy();
+  expect(
+    screen.getByRole("button", { name: "放大图片到实际大小" }),
+  ).toBeTruthy();
+  // The authored file name stays verbatim.
+  expect(screen.getByText("chart.png")).toBeTruthy();
 });

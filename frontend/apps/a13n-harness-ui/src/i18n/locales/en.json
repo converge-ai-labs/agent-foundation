@@ -868,5 +868,17 @@
   "stream.connecting": "Connecting",
   "stream.reconnecting": "Reconnecting",
   "stream.loading-current-output": "Loading current output",
-  "Updates will resume automatically when the connection is ready.": "Updates will resume automatically when the connection is ready."
+  "Updates will resume automatically when the connection is ready.": "Updates will resume automatically when the connection is ready.",
+  "Summary ready": "Summary ready",
+  "Prepared": "Prepared",
+  "Completed": "Completed",
+  "Close image preview": "Close image preview",
+  "Actual size": "Actual size",
+  "Fit to screen": "Fit to screen",
+  "Download image": "Download image",
+  "Download": "Download",
+  "Loading image…": "Loading image…",
+  "This image cannot be previewed. Download the original to inspect it.": "This image cannot be previewed. Download the original to inspect it.",
+  "Zoom image to actual size": "Zoom image to actual size",
+  "Fit image to screen": "Fit image to screen"
 }

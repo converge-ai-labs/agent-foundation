@@ -860,5 +860,17 @@
   "stream.connecting": "连接中",
   "stream.reconnecting": "重连中",
   "stream.loading-current-output": "正在加载当前输出",
-  "Updates will resume automatically when the connection is ready.": "连接就绪后将自动恢复更新。"
+  "Updates will resume automatically when the connection is ready.": "连接就绪后将自动恢复更新。",
+  "Summary ready": "摘要已就绪",
+  "Prepared": "已准备",
+  "Completed": "已完成",
+  "Close image preview": "关闭图片预览",
+  "Actual size": "实际大小",
+  "Fit to screen": "适应屏幕",
+  "Download image": "下载图片",
+  "Download": "下载",
+  "Loading image…": "正在加载图片…",
+  "This image cannot be previewed. Download the original to inspect it.": "该图片无法预览。请下载原图查看。",
+  "Zoom image to actual size": "放大图片到实际大小",
+  "Fit image to screen": "让图片适应屏幕"
 }

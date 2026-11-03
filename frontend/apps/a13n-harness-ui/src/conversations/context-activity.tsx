@@ -24,6 +24,16 @@ export function ContextActivity({
   status?: string;
 }) {
   const { t } = useTranslation();
+  // The stream reducer joins a known phase with backend diagnostics; only the
+  // leading phase is application-owned text.
+  const phases: Record<string, string> = {
+    "Summary ready": t("Summary ready"),
+    Prepared: t("Prepared"),
+    Completed: t("Completed"),
+    Failed: t("Failed"),
+    "In progress": t("In progress"),
+  };
+  const [phase, ...diagnostics] = (status ?? "").split(" · ");
   return (
     <details className={styles.contextActivity} data-kind={context}>
       <summary>
@@ -31,7 +41,11 @@ export function ContextActivity({
           {context === "handoff" ? t("Summary") : t("Compact Summary")}
         </span>
         <span className={styles.contextStatus}>
-          {status || (text ? t("Saved") : t("In progress"))}
+          {status
+            ? [phases[phase] ?? phase, ...diagnostics].join(" · ")
+            : text
+              ? t("Saved")
+              : t("In progress")}
         </span>
         {text && <span className={styles.contextPreview}>{preview(text)}</span>}
       </summary>
