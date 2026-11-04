@@ -52,7 +52,7 @@ export function MemoriesPage() {
   ];
   return (
     <Page
-      title={t("Collections")}
+      title={t("Memory collections")}
       description={t("Files and records your agents keep across sessions.")}
       actions={create}
       toolbar={
@@ -109,7 +109,7 @@ export function MemoriesPage() {
       ) : query.data?.items.length ? (
         <>
           <ResourceTable
-            caption={t("Collections")}
+            caption={t("Memory collections")}
             items={query.data.items}
             onRowActivate={(memory) => navigate(memory.id)}
             columns={[

@@ -17,7 +17,7 @@ const destinations: Record<string, string> = {
   connections: "Connections",
   environments: "Environments",
   browsers: "Browsers",
-  memories: "Collections",
+  memories: "Memory collections",
   "memory-spaces": "Memory Spaces",
   models: "Models",
   sessions: "Sessions",
