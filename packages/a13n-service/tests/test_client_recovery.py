@@ -76,7 +76,8 @@ async def test_healthy_tools_do_not_write_recovery_state():
 
 @pytest.mark.parametrize("completion_order", [("success", "failure"), ("failure", "success")])
 @pytest.mark.parametrize("result_order", [("success", "failure"), ("failure", "success")])
-async def test_mixed_batch_retains_result_order_across_checkpoint(completion_order, result_order):
+@pytest.mark.parametrize("observed", [False, True])
+async def test_mixed_batch_retains_result_order_across_checkpoint(completion_order, result_order, observed):
     runtime = SimpleNamespace(client_connections=SimpleNamespace(presence=AsyncMock(return_value=None)))
     capability = recovery.Recovery(runtime, SimpleNamespace(run_id="mixed"), None, {}, {})
     capability.mounts["pc"] = None, SimpleNamespace(client=Incarnation("dev"), environment_id="env_test")
@@ -89,8 +90,12 @@ async def test_mixed_batch_retains_result_order_across_checkpoint(completion_ord
             if name == "success":
                 current.get().successes.add("pc")
                 return {"ok": True}
-            current.get().disconnected["pc"] = "first"
-            return {"ok": False, "error": {"code": "environment_unavailable", "details": {"mount": "pc"}}}
+            if observed:
+                current.get().disconnected["pc"] = "first"
+            return {
+                "ok": False,
+                "error": {"code": "environment_unavailable", "details": {"mount": "pc", "reason": "client_offline"}},
+            }
 
         return await capability.wrap_tool_execute(
             ctx, call=ToolCallPart("shell_exec", {}, tool_call_id=name), tool_def=None, args={}, handler=tool

@@ -87,10 +87,18 @@ class Recovery(AbstractModelContextCapability):
         token = current.set(observation)
         try:
             result = await handler(args)
-            if observation.disconnected or observation.successes:
+            # Preparation may fail before the RPC observer runs. Preserve this
+            # batch too; _record still requires connection-loss evidence before notifying.
+            error = result.get("error") if isinstance(result, dict) and result.get("ok") is False else None
+            details = error.get("details") if isinstance(error, dict) else None
+            connection_failure = isinstance(error, dict) and (
+                error.get("code") in {"environment_unavailable", "environment_unknown_outcome"}
+                or (isinstance(details, dict) and details.get("reason") == "client_offline")
+            )
+            if observation.disconnected or observation.successes or connection_failure:
                 async with self.state_lock:
                     state = await self._state(ctx)
-                    if observation.disconnected or state.mounts or state.observations:
+                    if observation.disconnected or connection_failure or state.mounts or state.observations:
                         state.observations.update(self.successes)
                         self.successes.clear()
                         state.observations[call.tool_call_id] = observation
