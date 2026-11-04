@@ -148,6 +148,16 @@ beforeEach(() => {
                 supports_destroy: true,
               },
               {
+                type: "kubernetes",
+                display_name: "Kubernetes",
+                environment_schema: {
+                  type: "object",
+                  properties: { pod_template: { type: "object" } },
+                },
+                supports_stop: false,
+                supports_destroy: true,
+              },
+              {
                 type: "direct_local",
                 display_name: "Local directory",
                 environment_schema: localSchema,
@@ -163,6 +173,12 @@ beforeEach(() => {
               },
             ]
           : [
+              {
+                id: "eprov_kubernetes",
+                type: "kubernetes",
+                name: "Kubernetes",
+                enabled: true,
+              },
               { id: "eprov_e2b", type: "e2b", name: "E2B", enabled: true },
               {
                 id: "eprov_local",
@@ -889,6 +905,44 @@ it("saves structured host mounts and preserves them through JSON and preset swit
           }),
         }),
       }),
+    }),
+  );
+});
+
+it("saves Kubernetes idle-delete and preparation policy without VM stop timers", async () => {
+  const user = userEvent.setup();
+  await selectProvider(user, "Kubernetes");
+  await user.type(
+    screen.getByRole("textbox", { name: "Name" }),
+    "Kubernetes sandbox",
+  );
+  await user.click(screen.getByRole("button", { name: "Lifecycle" }));
+  expect(
+    screen.queryByRole("spinbutton", { name: "Stop after idle seconds" }),
+  ).toBeNull();
+  const idle = screen.getByRole("spinbutton", {
+    name: "Delete after idle seconds",
+  }) as HTMLInputElement;
+  expect(idle.value).toBe("1800");
+  await user.clear(idle);
+  await user.click(screen.getByRole("button", { name: "Create template" }));
+  await waitFor(() =>
+    expect(state.POST).toHaveBeenCalledWith("/api/v1/environment-templates", {
+      body: {
+        name: "Kubernetes sandbox",
+        description: null,
+        provider_id: "eprov_kubernetes",
+        config: {
+          recipe: {},
+          stop_after_seconds: null,
+          delete_after_seconds: null,
+          reclamation: {
+            idle_delete_seconds: null,
+            preparation_seconds: 600,
+            failed_retention_seconds: 3600,
+          },
+        },
+      },
     }),
   );
 });

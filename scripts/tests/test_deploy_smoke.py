@@ -95,3 +95,35 @@ def test_failed_expectations_report_the_error_but_not_the_request() -> None:
     with pytest.raises(RuntimeError) as failure:
         browser.expect(200, "POST", "/api/v1/auth/login", {"email": "a@example.com", "password": "not-in-errors"})
     assert "unauthenticated" in str(failure.value) and "not-in-errors" not in str(failure.value)
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_kind_smoke_opt_in_uses_the_deployed_journey(monkeypatch, tmp_path, enabled):
+    monkeypatch.setenv("K8S_ENVIRONMENTS", "1" if enabled else "0")
+    monkeypatch.setattr(deploy_smoke, "state_directory", lambda: tmp_path)
+    monkeypatch.setattr(deploy_smoke, "read_env", lambda _: {"EMAIL": "owner@example.com", "PASSWORD": "private"})
+    check, run = Mock(), Mock()
+    monkeypatch.setattr(deploy_smoke, "check", check)
+    monkeypatch.setattr(deploy_smoke.subprocess, "run", run)
+    deploy_smoke.kind_smoke()
+    check.assert_called_once_with(deploy_smoke.CONSOLE_URL, "owner@example.com", "private", first_run=False)
+    if enabled:
+        run.assert_called_once_with(
+            ["uv", "run", "--locked", "python", "-m", "e2e.service.deployed_kubernetes"],
+            cwd=deploy_smoke.ROOT,
+            check=True,
+        )
+    else:
+        run.assert_not_called()
+
+
+def test_native_journey_reuses_fixture_source_and_keeps_it_out_of_runtime_identity(monkeypatch):
+    monkeypatch.syspath_prepend(str(deploy_smoke.ROOT))
+    from e2e.service.deployed_kubernetes import fixture_manifests
+
+    config, pod, service = fixture_manifests("a13n-service:current", "smoke-example")
+    assert config["data"]["scripted_model.py"] == (deploy_smoke.ROOT / "dev/fixtures/scripted_model.py").read_text()
+    assert pod["spec"]["automountServiceAccountToken"] is False
+    assert pod["spec"]["containers"][0]["image"] == "a13n-service:current"
+    assert service["spec"]["selector"] == pod["metadata"]["labels"]
+    assert "nodePort" not in service["spec"]["ports"][0]

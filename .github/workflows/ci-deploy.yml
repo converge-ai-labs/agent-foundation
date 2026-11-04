@@ -10,6 +10,17 @@ on:
       - "deploy/kubernetes/**"
       - "scripts/deploy_smoke.py"
       - "scripts/k8s_local.py"
+      - "e2e/service/deployed_kubernetes.py"
+      - "e2e/service/api.py"
+      - "e2e/service/scripted.py"
+      - "dev/fixtures/**"
+      - "deploy/docker/images/sandbox/**"
+      - "crates/a13n-envd/**"
+      - "packages/a13n-envd-client/**"
+      - "packages/a13n-harness/a13n_harness/providers/environment/kubernetes/**"
+      - "packages/a13n-harness/a13n_harness/providers/environment/remote_envd/**"
+      - "packages/a13n-service/a13n_service/providers/**"
+      - "packages/a13n-service/a13n_service/runs/environments/**"
   workflow_dispatch:
 
 env:
@@ -27,7 +38,9 @@ jobs:
     name: Helm install and upgrade on kind
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
+    env:
+      K8S_ENVIRONMENTS: "1"
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -72,3 +85,4 @@ jobs:
         run: |
           kubectl --context kind-a13n-local -n a13n-service get pods,jobs,pvc,events || true
           kubectl --context kind-a13n-local -n a13n-service logs deployment/a13n-a13n-control --all-containers --tail 200 || true
+          kubectl --context kind-a13n-local -n a13n-service logs deployment/a13n-a13n-worker --all-containers --tail 200 || true

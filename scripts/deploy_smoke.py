@@ -184,6 +184,10 @@ def kind_smoke() -> None:
     """The running local kind deployment serves Console and signs its generated administrator in."""
     admin = read_env(state_directory() / ADMIN_FILE)
     check(CONSOLE_URL, admin["EMAIL"], admin["PASSWORD"], first_run=False)
+    if os.environ.get("K8S_ENVIRONMENTS") == "1":
+        subprocess.run(
+            ["uv", "run", "--locked", "python", "-m", "e2e.service.deployed_kubernetes"], cwd=ROOT, check=True
+        )
 
 
 def main() -> None:

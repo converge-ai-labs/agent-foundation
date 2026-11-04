@@ -35,6 +35,7 @@ import { EnvironmentConnectionEditor } from "./instance-connection";
 import { EnvironmentNameEditor } from "./instance-name";
 import { EnvironmentStatus } from "./instance-status";
 import { useEnvironmentTypes } from "./providers";
+import { KubernetesDetails } from "./kubernetes-details";
 import { EnvironmentMonitoring } from "../monitoring/environment";
 
 /**
@@ -320,6 +321,13 @@ export function EnvironmentPanel({
                   />
                 )}
               </section>
+              {provider.data?.type === "kubernetes" && (
+                <KubernetesDetails
+                  key={value.id}
+                  environment={value}
+                  etag={detail.data?.etag}
+                />
+              )}
               <EnvironmentMonitoring
                 environment={value}
                 etag={detail.data?.etag}
@@ -385,8 +393,37 @@ export function EnvironmentPanel({
                 )}
               </section>
               <ErrorNotice error={template.error} />
-              {(!managed || template.data) && (
-                <RetentionDetails policy={template.data?.config ?? null} />
+              {value.reclamation ? (
+                <section className={styles.factGroup}>
+                  <h3>{t("Effective retention policy")}</h3>
+                  <dl className={styles.facts}>
+                    <Fact label={t("Delete after idle")}>
+                      {value.reclamation.idle_delete_seconds == null
+                        ? t("Disabled")
+                        : idleLimit(value.reclamation.idle_delete_seconds, t)}
+                    </Fact>
+                    <Fact label={t("Preparation deadline (seconds)")}>
+                      {value.reclamation.preparation_seconds}
+                    </Fact>
+                    <Fact label={t("Failed instance retention (seconds)")}>
+                      {value.reclamation.failed_retention_seconds}
+                    </Fact>
+                    {value.preparation_deadline && (
+                      <Fact label={t("Preparation deadline")}>
+                        <Timestamp value={value.preparation_deadline} />
+                      </Fact>
+                    )}
+                  </dl>
+                  <p className={styles.panelNote}>
+                    {t(
+                      "This policy was copied when the instance was reserved. Template edits apply to new instances.",
+                    )}
+                  </p>
+                </section>
+              ) : (
+                (!managed || template.data) && (
+                  <RetentionDetails policy={template.data?.config ?? null} />
+                )
               )}
             </>
           )

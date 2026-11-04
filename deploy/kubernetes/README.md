@@ -1,6 +1,6 @@
 # Kubernetes deployment
 
-`helm/` holds the Helm Chart for a13n Service, `helm/a13n-service/`, and its values for a local kind cluster, `helm/values-local.yaml`; `kind-local.yaml` configures that cluster, and `examples/` holds Secret templates and a shared objects claim. The same Service image runs a `control` Deployment (API, Console, maintenance and delivery), a `worker` Deployment (run execution) and a schema migration Job. The Chart does not provision external infrastructure, seed users or models, or provision agent environments.
+`helm/` holds the Helm Chart for a13n Service, `helm/a13n-service/`, and its values for a local kind cluster, `helm/values-local.yaml`; `kind-local.yaml` configures that cluster, and `examples/` holds Secret templates and a shared objects claim. The same Service image runs a `control` Deployment (API, Console, maintenance and delivery), a `worker` Deployment (run execution) and a schema migration Job. The Chart does not provision external infrastructure or seed users, models or Environment instances. Its optional Kubernetes Environment integration configures namespace-scoped management permissions and a separate sandbox identity.
 
 Each Service release publishes a Helm chart at `oci://ghcr.io/converge-ai-labs/charts/a13n-service` that selects the matching image. The checkout chart selects `ghcr.io/converge-ai-labs/a13n-service:dev` unless you override it. `make dev` uses a separate local stack.
 
@@ -31,6 +31,26 @@ The chart's 60-second default is shorter than the worker's default 300-second re
 By default the Chart creates a ServiceAccount named after the release. `serviceAccount.name` can choose a different name. To use an administrator-provisioned account, set `serviceAccount.create: false` and supply its name; the control and worker Pods, their init containers and the migration Job all use it. Configure annotations on an external account through its owner, leaving `serviceAccount.annotations` empty. Service Pods disable automatic API-token mounting even when the external account enables it; workload-identity admission must provide its own required credential projection.
 
 The runtime ServiceAccount is separate from the identity running Helm. When moving an existing release to an external account, provision a new account name first and switch references deliberately. Simply setting `create: false` removes the previously Chart-owned account from the release; it does not transfer ownership or preserve that account.
+
+### Kubernetes Environments
+
+Enable native Environment provisioning explicitly:
+
+```yaml
+kubernetesEnvironments:
+  enabled: true
+  namespace: agent-sandboxes
+  ownershipId: production-service
+  allowPlaintextEnvd: true
+```
+
+Create the target namespace first. Empty `namespace` selects the release namespace; empty `ownershipId` uses the release-derived name. Keep the ownership ID stable across upgrades and database recovery. The chart registers the `in-cluster` cluster profile, creates a namespace Role/RoleBinding for the runtime ServiceAccount, and creates `<release>-a13n-sandbox` in the target namespace. Control maintenance and Worker first-use preparation share that management identity. An optional monitoring writer is also a Control process and receives the same access.
+
+API credentials use a one-hour projected ServiceAccount token with the cluster CA and namespace, mounted only into runtime Service containers. The Kubernetes client refreshes the projected token. Migration/init containers and the vmagent sidecar receive no API credential mount; automatic mounting remains disabled. Sandbox Pods use the separate, unbound sandbox ServiceAccount with token mounting disabled. Ordinary execution uses Envd, so the Role grants no `pods/exec`, `pods/attach` or port-forward permission. Local development using an operator kubeconfig needs `create` on `pods/portforward` in addition to this Role's permissions.
+
+In Console, create a Kubernetes provider selecting `in-cluster` and the target namespace, then create a native Pod-template Environment. Use an image reachable by the cluster and a direct HTTP connection. `allowPlaintextEnvd` is an explicit trust decision: the instance bearer credential authenticates Envd but does not encrypt the network path. Restrict that path with cluster networking policy. Provider checks do not allocate a Pod; create a smoke instance to verify scheduling, storage and Envd readiness.
+
+Native Pod authors can reference namespace Secrets and workload identities and request native privileges. Restrict template authoring and enforce Pod Security/admission policy on the sandbox namespace; namespace RBAC alone does not make arbitrary recipes safe. Place sandboxes in a separate namespace from Service credentials for production. Helm manages the access configuration, while Service owns instance Pods and supporting resources; uninstalling the chart does not retire those instances. Delete instances through Service first, inspect retained PVC receipts, and explicitly decide whether retained data should be removed.
 
 ### Service metadata
 
@@ -131,11 +151,24 @@ With Docker running and `python3`, kind, kubectl and Helm installed, run from th
 make k8s-up
 ```
 
-The launcher creates or reuses the `a13n-local` kind cluster, checks its loopback port mapping, prepares Secrets in namespace `a13n-service`, builds and loads the image, waits for the migration and the Helm release, and creates the first administrator. Each build uses a new local image tag so deployments pick up rebuilt images. This command owns the local values; use the manual workflow below for customized deployments. All checkouts on the same machine share this named cluster and port.
+The launcher creates or reuses the `a13n-local` kind cluster, checks its loopback port mapping, prepares Secrets in namespace `a13n-service`, builds and loads the image, waits for the migration and the Helm release, and creates the first administrator. Each build uses a new local image tag so deployments pick up rebuilt images. This command owns the local values; use the manual workflow below for customized deployments. By default all checkouts on the same machine share this named cluster and port. Set `K8S_CLUSTER` and `K8S_PORT` together for an isolated installation; a custom cluster gets its own credential directory (`~/.config/a13n-service-kind-<cluster>`). Keep these selections for subsequent startup and smoke commands. Existing clusters must already have the selected loopback mapping.
 
 On a fresh installation it generates a random PostgreSQL password and encryption key, saves `service.env` and `postgres.env` under `~/.config/a13n-service-kind` with mode `600`, and creates the corresponding Secrets. It also generates the administrator password into `admin.env` in the same directory and bootstraps `admin@example.com`; set `K8S_ADMIN_EMAIL=you@example.com make k8s-up` to choose another email. `K8S_STATE_DIR` may select another protected directory outside the checkout. Existing local files and cluster Secrets are reused and must agree; the launcher refuses invalid keys, conflicting credentials, or new credential generation when PVCs already exist. Existing cluster Secrets can restore missing local files. Later runs keep the initialized administrator and its password.
 
-The terminal then prints the Console URL, <http://127.0.0.1:8080>, and where the administrator password is stored; it never prints the password. If existing data has no local administrator record, the launcher prints the manual bootstrap command instead. The launcher does not delete clusters, PVCs or existing Secrets. Node port 30080 must be free: uninstall any other release that holds it before `make k8s-up`. `make k8s-smoke` then checks the running deployment the way its administrator uses it: Console loads, the administrator signs in and a credential can be stored. `make k8s-check` runs the offline launcher and Chart tests and lints the Chart with its default and local values without building images or changing a cluster. Deployment CI runs both on a fresh kind cluster, then repeats `make k8s-up` to upgrade the release through a new migration Job.
+The terminal then prints the Console URL, <http://127.0.0.1:8080>, and where the administrator password is stored; it never prints the password. If existing data has no local administrator record, the launcher prints the manual bootstrap command instead. The launcher does not delete clusters, PVCs or existing Secrets. Node port 30080 must be free: uninstall any other release that holds it before `make k8s-up`. `make k8s-smoke` then checks the running deployment the way its administrator uses it: Console loads, the administrator signs in and a credential can be stored. `make k8s-check` runs the offline launcher and Chart tests and lints the Chart with its default and local values without building images or changing a cluster. Deployment CI enables the native Environment smoke overlay on install and upgrade, exercising the deployed Worker after both migrations.
+
+### Native Environment deployment smoke
+
+```sh
+export K8S_CLUSTER=a13n-sandbox-smoke K8S_PORT=18081 K8S_ENVIRONMENTS=1
+make k8s-up k8s-smoke
+```
+
+This opt-in path builds and loads both current-source images under a fresh tag, then applies `helm/values-environments-smoke.yaml` over the local values. The overlay enables the in-cluster profile, namespace RBAC and plaintext Envd on this local network. Its provider policy permits only the scripted model's HTTP origin; normal HTTPS requirements remain enabled.
+
+The smoke journey mounts `dev/fixtures/scripted_model.py` into a temporary fixture Pod. It signs in, creates a separate workspace, submits a fresh-environment Run, and verifies that the deployed Worker writes a file through `shell_exec` and reads it through `view`. It checks native diagnostics, logs, the sandbox ServiceAccount and exact resource disappearance after retirement. Worker-to-model and Worker-to-Envd traffic stays inside the cluster; only fixture controls use a local port-forward. Fixture resources are removed after the journey. The Service deployment and its smoke workspace remain available for inspection.
+
+Use this overlay only for local development and CI. Production should use a separate sandbox namespace, admission policy and an explicitly trusted Envd network path.
 
 ### Manual startup
 

@@ -13,6 +13,15 @@ TemplateName = Annotated[str, StringConstraints(strip_whitespace=True, min_lengt
 Description = Annotated[str, StringConstraints(max_length=2048)]
 
 
+class Reclamation(BaseModel):
+    """Instance-scoped reclamation settings copied at reservation; no stop/resume semantics."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    idle_delete_seconds: int | None = Field(default=1800, ge=60, le=31536000)
+    preparation_seconds: int = Field(default=600, ge=30, le=86400)
+    failed_retention_seconds: int = Field(default=3600, ge=0, le=604800)
+
+
 class TemplateConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     # What the provider type builds an instance from (image, resources, network policy, storage), validated by the
@@ -20,6 +29,7 @@ class TemplateConfig(BaseModel):
     recipe: dict[str, JsonValue] = Field(default_factory=dict)
     # The idle policy maintenance reads live: stop a ready environment no run has used for this long, and delete
     # one, with the threads' mounts of it. `null` turns either off.
+    reclamation: Reclamation | None = None
     stop_after_seconds: int | None = Field(default=1800, ge=60, le=2592000)
     delete_after_seconds: int | None = Field(default=None, ge=60, le=31536000)
 
@@ -78,5 +88,6 @@ class TemplateConfigurationChanges(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
     recipe: dict[str, JsonValue] | MISSING = Field(default=MISSING)
+    reclamation: Reclamation | MISSING | None = Field(default=MISSING)
     stop_after_seconds: int | MISSING | None = Field(default=MISSING, ge=60, le=2592000)
     delete_after_seconds: int | MISSING | None = Field(default=MISSING, ge=60, le=31536000)

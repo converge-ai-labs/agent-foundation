@@ -180,7 +180,16 @@ function RunDetails({ selected }: { selected: Run }) {
         </Section>
       )}
       <Section title={t("Environments and memory")} collapsible>
-        {/* What this Run started with; later Runs follow the conversation's mounts. */}
+        {/* The accepted snapshot, independent of current Thread mounts. */}
+        {run.options.environment && (
+          <p className={styles.note}>
+            {t(
+              run.options.environment.mode === "fresh"
+                ? "A fresh primary instance was reserved for this run. Retries reuse it; conversation mounts are unchanged."
+                : "This run selected an existing primary instance. Conversation mounts are unchanged.",
+            )}
+          </p>
+        )}
         {!run.environment_mounts.length && !run.memory_mounts.length ? (
           <ListRowsEmpty>
             {t("No environment or memory mounted.")}

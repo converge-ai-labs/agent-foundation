@@ -28,6 +28,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 @pytest.fixture
 def environment_journeys(pytestconfig):
+    pytestconfig.addinivalue_line("markers", "kubernetes: requires an explicit development cluster")
     pytestconfig.addinivalue_line("markers", "hosted(type): requires a hosted sandbox vendor account")
     from e2e.service import test_environments
 
@@ -137,6 +138,8 @@ def test_the_e2e_suite_collects_every_module_and_requires_opt_in_for_hosted_jour
         path.relative_to(ROOT).as_posix() for path in (ROOT / "e2e/service").glob("test_*.py")
     }
     assert f"{lifecycle}[docker]" in default
+    assert f"{lifecycle}[kubernetes]" not in default
+    assert f"{lifecycle}[kubernetes]" in collect_scenarios("-k", "kubernetes")
     workflow = yaml.safe_load((ROOT / ".github/workflows/ci-a13n-service-e2e.yml").read_text())
     shards = workflow["jobs"]["scenarios"]["strategy"]["matrix"]["include"]
     selected: set[str] = set()
@@ -158,9 +161,16 @@ def test_the_e2e_suite_collects_every_module_and_requires_opt_in_for_hosted_jour
 
 
 @pytest.mark.parametrize("worker_slots", [1, 4])
-def test_the_e2e_service_configuration_is_valid(tmp_path, monkeypatch, worker_slots):
+@pytest.mark.parametrize("kubernetes", [False, True])
+def test_the_e2e_service_configuration_is_valid(tmp_path, monkeypatch, worker_slots, kubernetes):
     for name in [name for name in os.environ if name.startswith("A13N_")]:
         monkeypatch.delenv(name)
+    monkeypatch.delenv("E2E_KUBERNETES_PROFILE", raising=False)
+    profile = {"namespaces": ["sandboxes"], "ownership_id": "e2e", "sandbox_service_account": "sandbox"}
+    if kubernetes:
+        path = tmp_path / "kubernetes.json"
+        path.write_text(json.dumps(profile))
+        monkeypatch.setenv("E2E_KUBERNETES_PROFILE", str(path))
     stores = Stores(
         postgres_url="postgresql+psycopg://e2e:fixture@127.0.0.1:5432/postgres",
         template="e2e_template",
@@ -173,6 +183,9 @@ def test_the_e2e_service_configuration_is_valid(tmp_path, monkeypatch, worker_sl
     journey = load_settings(
         write_config(tmp_path / "journey.toml", stores, "e2e_journey", tmp_path / "objects", worker_slots=worker_slots)
     )
+    assert bool(journey.environments.kubernetes_clusters) == kubernetes
+    if kubernetes:
+        assert journey.environments.kubernetes_clusters["e2e"].ownership_id == "e2e"
     assert journey.worker.slots == worker_slots
     assert journey.worker.lease_seconds == LEASE_SECONDS and journey.server.tls_certificate == stores.certificate
 

@@ -14,14 +14,14 @@ from typing import Literal
 
 import anyio
 from a13n_logging import exception_details, get_logger
-from sqlalchemy import Select, delete, func, or_, select, text
+from sqlalchemy import Integer, Select, and_, delete, func, or_, select, text
 
 from a13n_service.infra.audit import record
 from a13n_service.infra.db import transaction
 from a13n_service.infra.ids import new_object_id
 from a13n_service.infra.sweeps import Sweep
 from a13n_service.resources.environment_templates.service import idle_past
-from a13n_service.runs.environments.lifecycle import advance, begin, in_use, supports
+from a13n_service.runs.environments.lifecycle import PHASES, advance, begin, in_use, settled, supports
 from a13n_service.runs.environments.renewal import renew
 from a13n_service.runs.environments.tables import OPERATIONS, EnvironmentRow, ThreadEnvironmentRow
 from a13n_service.runs.runtime import Runtime
@@ -40,7 +40,17 @@ async def maintain_environments(runtime: Runtime, *, owner: str) -> None:
     due = select(EnvironmentRow.id).where(
         # Literal, so the partial index on unfinished operations applies.
         text(f"environments.status IN {OPERATIONS}"),
+        # Settled preparation failures wait for retirement, not another dispatch.
+        # Exclude them before LIMIT so retained/debug-held failures cannot starve other work.
+        or_(
+            EnvironmentRow.status.not_in(("creating", "starting")),
+            EnvironmentRow.preparation_failed_at.is_(None),
+            EnvironmentRow.lease_owner.is_not(None),
+            EnvironmentRow.operation_unsettled,
+            EnvironmentRow.failure["certainty"].astext == "unknown",
+        ),
         or_(EnvironmentRow.lease_expires_at.is_(None), EnvironmentRow.lease_expires_at < func.now()),
+        or_(EnvironmentRow.next_operation_at.is_(None), EnvironmentRow.next_operation_at <= func.now()),
     )
     await _each(runtime, due.order_by(EnvironmentRow.updated_at), partial(advance, runtime, owner=owner))
 
@@ -58,24 +68,46 @@ async def _retire_idle(runtime: Runtime, phase: Literal["stopping", "deleting"],
     if phase == "stopping":
         conditions = [
             EnvironmentRow.status == "ready",
+            EnvironmentRow.reclamation.is_(None),
             idle_past(EnvironmentRow.template_id, since, "stop_after_seconds"),
             # Stopping would clear the permanent failure that refuses its use, such as a lost sandbox's.
             or_(EnvironmentRow.failure.is_(None), ~EnvironmentRow.failure["permanent"].as_boolean()),
         ]
     else:
+        idle_seconds = EnvironmentRow.reclamation["idle_delete_seconds"].astext.cast(Integer)
+        retention = EnvironmentRow.reclamation["failed_retention_seconds"].astext.cast(Integer)
         conditions = [
-            EnvironmentRow.status.in_(("reserved", "ready", "stopped")),
-            idle_past(EnvironmentRow.template_id, since, "delete_after_seconds"),
+            or_(
+                and_(
+                    EnvironmentRow.status.in_(("reserved", "ready", "stopped")),
+                    or_(
+                        and_(
+                            EnvironmentRow.reclamation.is_(None),
+                            idle_past(EnvironmentRow.template_id, since, "delete_after_seconds"),
+                        ),
+                        since < func.clock_timestamp() - func.make_interval(0, 0, 0, 0, 0, 0, idle_seconds),
+                    ),
+                ),
+                and_(
+                    EnvironmentRow.status.in_(("creating", "starting")),
+                    EnvironmentRow.preparation_failed_at
+                    < func.clock_timestamp() - func.make_interval(0, 0, 0, 0, 0, 0, retention),
+                    EnvironmentRow.lease_owner.is_(None),
+                    EnvironmentRow.operation_unsettled.is_(False),
+                    EnvironmentRow.failure["certainty"].astext != "unknown",
+                ),
+            )
         ]
     idle = (
         select(EnvironmentRow)
         .where(
             EnvironmentRow.template_id.is_not(None),
             or_(
-                EnvironmentRow.status == "reserved",
+                EnvironmentRow.provider_identity.is_(None),
                 EnvironmentRow.provider_identity["type"].astext.in_(capable),
             ),
             ~in_use(EnvironmentRow.id),
+            or_(EnvironmentRow.debug_hold_until.is_(None), EnvironmentRow.debug_hold_until <= func.clock_timestamp()),
             *conditions,
         )
         .order_by(since)
@@ -100,14 +132,20 @@ async def _retire_idle(runtime: Runtime, phase: Literal["stopping", "deleting"],
         for environment in (await session.scalars(idle.with_for_update(skip_locked=True))).all():
             if await session.scalar(select(in_use(environment.id))):
                 continue
+            if environment.status in PHASES and not settled(environment):
+                continue
+            reason = "preparation_failed" if environment.preparation_failed_at is not None else "idle"
             if phase == "deleting":
                 mounts = ThreadEnvironmentRow.environment_id == environment.id
                 mounting = set(await session.scalars(select(ThreadEnvironmentRow.thread_id).where(mounts)))
                 if not mounting <= threads:
                     continue
                 await session.execute(delete(ThreadEnvironmentRow).where(mounts))
-            if environment.status == "reserved":
+            if environment.provider_identity is None:
                 environment.status = "deleted"
+                environment.operation_id = environment.operation_started_at = environment.operation_deadline = None
+                environment.next_operation_at = None
+                environment.operation_unsettled = False
             else:
                 await begin(session, environment, phase)
             record(
@@ -117,7 +155,7 @@ async def _retire_idle(runtime: Runtime, phase: Literal["stopping", "deleting"],
                 action="environment.stop" if phase == "stopping" else "environment.delete",
                 target_kind="environment",
                 target_id=environment.id,
-                details={"reason": "idle"},
+                details={"reason": reason},
             )
 
 

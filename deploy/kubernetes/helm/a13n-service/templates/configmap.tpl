@@ -38,6 +38,14 @@ data:
     addressing_style = {{ toJson . }}
     {{- end }}
     {{- end }}
+    {{- if .Values.kubernetesEnvironments.enabled }}
+    [environments.kubernetes_clusters.in-cluster]
+    authentication = "in_cluster"
+    namespaces = [{{ default .Release.Namespace .Values.kubernetesEnvironments.namespace | toJson }}]
+    ownership_id = {{ default (include "a13n.name" .) .Values.kubernetesEnvironments.ownershipId | toJson }}
+    sandbox_service_account = {{ printf "%s-sandbox" (include "a13n.name" .) | toJson }}
+    allow_plaintext_envd = {{ .Values.kubernetesEnvironments.allowPlaintextEnvd }}
+    {{- end }}
     {{- with .Values.extraConfig }}
     {{- . | nindent 4 }}
     {{- end }}

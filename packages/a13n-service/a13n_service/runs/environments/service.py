@@ -6,6 +6,8 @@ calls happen in the fenced lifecycle, never in the request. Registering an exter
 new endpoint or token, verifies the target outside any transaction first.
 """
 
+from datetime import timedelta
+
 import anyio
 from a13n_harness.environment.errors import EnvironmentProviderError
 from a13n_harness.environment.models import COMPUTER_ACTIONS, EnvironmentError
@@ -14,13 +16,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra import cursors
 from a13n_service.infra.audit import record
-from a13n_service.infra.db import Storage, short_session, transaction
+from a13n_service.infra.db import Storage, now, short_session, transaction
 from a13n_service.infra.errors import ServiceError, conflict, invalid, not_found
 from a13n_service.infra.http import require_match
 from a13n_service.infra.ids import new_object_id
 from a13n_service.resources.providers.service import resolve_provider
 from a13n_service.resources.providers.tables import EnvironmentProviderRow
-from a13n_service.runs.environments import external
+from a13n_service.runs.environments import bootstrap, external
 from a13n_service.runs.environments.adapters import Target, close, execution_connector, provider_identity
 from a13n_service.runs.environments.lifecycle import (
     PHASES,
@@ -37,6 +39,7 @@ from a13n_service.runs.environments.monitoring.bindings import Selection, select
 from a13n_service.runs.environments.mounts import require_usable
 from a13n_service.runs.environments.schemas import (
     ComputerCheck,
+    DebugHold,
     EnvironmentPage,
     EnvironmentUpdate,
     EnvironmentView,
@@ -259,6 +262,29 @@ async def _reconnect(
         return EnvironmentView.model_validate(environment)
 
 
+async def set_debug_hold(
+    runtime: Runtime,
+    actor: Principal,
+    workspace_id: str,
+    environment_id: str,
+    body: DebugHold,
+    *,
+    if_match: str | None,
+) -> EnvironmentView:
+    async with transaction(runtime.storage) as session:
+        environment = await _writable(session, actor, workspace_id, environment_id, if_match)
+        if environment.template_id is None:
+            raise conflict("environment", environment.id, "connect_only")
+        if environment.status in {"deleting", "deleted"}:
+            raise conflict("environment", environment.id, f"environment_{environment.status}")
+        environment.debug_hold_until = (
+            None if body.seconds is None else await now(session) + timedelta(seconds=body.seconds)
+        )
+        await session.flush()
+        _audit(session, actor, environment, "debug_hold.update")
+        return EnvironmentView.model_validate(environment)
+
+
 async def stop_environment(
     runtime: Runtime, actor: Principal, workspace_id: str, environment_id: str, *, if_match: str | None
 ) -> EnvironmentView:
@@ -350,7 +376,9 @@ async def check_computer(runtime: Runtime, actor: Principal, workspace_id: str, 
             if environment.provider_identity != provider_identity(runtime.registry, provider):
                 raise conflict("environment", environment.id, "provider_identity_changed")
             handle = Handle.model_validate(environment.handle)
-            target = Target(environment.id, provider, handle.recipe, handle.state)
+            target = Target(
+                environment.id, provider, handle.recipe, handle.state, bootstrap.restore(runtime.keys, environment)
+            )
     execution = None
     try:
         with anyio.fail_after(runtime.settings.providers.operation_seconds):

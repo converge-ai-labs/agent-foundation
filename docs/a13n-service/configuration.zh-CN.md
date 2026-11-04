@@ -253,6 +253,25 @@ workspace_ids = ["ws_example"]
 
 [单机 Compose 部署](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose)以 `all` 角色运行，包含 PostgreSQL、Redis 和通过宿主 Engine 提供的 Docker 环境。[Helm chart](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/kubernetes)提供分离的 control/worker Deployment 和迁移 Job。`all` 和 `control` 在 `server.public_url` 提供 Console 与 API。
 
+## Kubernetes 环境
+
+在 Control 和 Worker 上配置相同的可信集群配置。`environments.kubernetes_clusters` 为空时，provider 目录不提供 Kubernetes。集群配置由运维管理；工作空间 provider 只能选择配置名称和允许的命名空间。Service 提供 Kubernetes 所需的 Host 集成；Harness UI 不将它作为独立的内置 provider 提供。
+
+```toml
+[environments.kubernetes_clusters.in-cluster]
+authentication = "in_cluster"
+namespaces = ["agent-sandboxes"]
+ownership_id = "production-service"
+sandbox_service_account = "agent-sandbox"
+allow_plaintext_envd = true
+```
+
+使用此配置前，先创建命名空间、沙箱 ServiceAccount 和管理 RBAC。[Helm chart](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/kubernetes#kubernetes-environments) 可通过 `kubernetesEnvironments.enabled` 创建这些绑定。它仅向 Service 运行时容器投射 API 凭据，并禁用沙箱的令牌自动挂载。生产环境使用独立的沙箱命名空间：原生 Pod 作者可以引用命名空间内的 Secret 并请求特权，因此需要实施 Pod Security 和准入策略。仅限制命名空间不能构成工作负载隔离策略。
+
+集群外的开发进程使用 `authentication = "kubeconfig"`，并指定绝对 `kubeconfig` 路径和明确的 `context`。只接受运维管理的 kubeconfig 文件及认证插件。配方使用 `connection: port_forward` 时，设置 `allow_port_forward = true` 并安装 `kubectl`；还需要 Kubernetes 的 `pods/portforward` 权限。`direct` 要求 Service 能够路由到 Pod IP。`allow_plaintext_envd` 默认为 false；仅在可信私有网络中启用，因为 Envd 凭据只认证流量，不加密流量。API 请求超时默认为 15 秒，最大为 60 秒。
+
+实例存在期间，保持 `ownership_id`、集群配置名称、命名空间和沙箱身份稳定。移除集群配置或权限前，通过 Service 删除实例，并保留数据库及加密密钥环以便恢复。移除部署资源不会删除实例 Pod 或保留的存储卷。原生配方、存储处置、诊断和调试保留见 [Kubernetes 沙箱](environments.md#kubernetes-sandboxes)。
+
 ## 工作空间自动配置
 
 Local/Docker provider 和模板的自动创建只在 `all` 角色运行。通用设置中两者默认关闭；提供的挂载 socket 的 Compose 部署启用 Docker，关闭 Local。分离的 control/worker 部署需要明确配置执行资源。

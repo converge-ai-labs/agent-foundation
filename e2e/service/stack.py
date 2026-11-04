@@ -145,6 +145,13 @@ root = {json.dumps(str(objects.parent / "environments"))}
 log_format = "pretty"
 """
     )
+    from .kubernetes import profile
+
+    if selected := profile():
+        with path.open("a") as stream:
+            stream.write("\n[environments.kubernetes_clusters.e2e]\n")
+            for key, value in selected.model_dump(mode="json", exclude_none=True).items():
+                stream.write(f"{key} = {json.dumps(value)}\n")
     path.chmod(0o600)
     return path
 

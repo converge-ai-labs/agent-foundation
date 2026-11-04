@@ -21,10 +21,17 @@ from uuid import uuid4
 import docker
 import httpx2
 import pytest
+from a13n_harness.providers.environment.kubernetes.configuration import Resource
 from a13n_service.providers.environment.management import EnvironmentProvider
+from a13n_service.providers.environment.recipes.kubernetes import KubernetesRecipe
 from a13n_service.providers.environments import BUILT_IN_ENVIRONMENT_PROVIDERS
+from a13n_service.providers.environments.kubernetes.render import initial
 from docker.errors import DockerException, ImageNotFound
 
+from dev.service.kubernetes import cleanup as cleanup_kubernetes
+from dev.service.kubernetes import inventory
+
+from . import kubernetes
 from .api import eventually, expect
 from .scripted import tool_results
 from .stack import docker_host, unavailable
@@ -54,12 +61,26 @@ class Backend:
     credential: dict | None = field(repr=False)
     recipe: dict
     directory: Path
+    native_uids: dict[str, str] = field(default_factory=dict, repr=False)
+
+    async def kubernetes_resources(self, native, environment_id: str) -> list[dict]:
+        state = initial(KubernetesRecipe.model_validate(self.recipe), native.connection, environment_id)
+        return [row for row in await inventory(native) if row["instance"] == state.pod_name]
 
     async def exists(self, environment_id: str) -> bool:
         if self.type == "local":
             return (self.directory / environment_id).is_dir()
         if self.type == "docker":
             return bool(containers(environment_id))
+        if self.type == "kubernetes":
+            async with kubernetes.runtime() as native:
+                pods = [row for row in await self.kubernetes_resources(native, environment_id) if row["kind"] == "Pod"]
+                if not pods:
+                    return False
+                assert len(pods) == 1
+                uid = pods[0]["uid"]
+                assert self.native_uids.setdefault(environment_id, uid) == uid, "The native target changed"
+                return True
         adapter = await self._provider()
         try:
             return (await adapter.inspect(self.recipe, environment_id=environment_id, state=None)).status != "absent"
@@ -71,6 +92,16 @@ class Backend:
         if self.type == "docker":
             for container in containers(environment_id):
                 container.remove(force=True)
+        elif self.type == "kubernetes":
+            async with kubernetes.runtime() as native:
+                rows = await self.kubernetes_resources(native, environment_id)
+                resources = [Resource(kind=row["kind"], name=row["name"], uid=row["uid"]) for row in rows]
+                await cleanup_kubernetes(native, resources, delete_storage=True, confirmed=True)
+
+                async def absent():
+                    return not await self.kubernetes_resources(native, environment_id)
+
+                await eventually(absent, timeout=120)
         elif self.type != "local":
             adapter = await self._provider()
             try:
@@ -163,6 +194,34 @@ async def backend(provider: str, directory: Path, config: pytest.Config) -> Asyn
         shell = [{"profile_id": "default", "executable": "/bin/sh"}]
         yield Backend(provider, {}, None, {"root": {"path": str(directory)}, "shell_profiles": shell}, directory)
         return
+    if provider == "kubernetes":
+        selected = kubernetes.profile()
+        if selected is None:
+            unavailable(config, "Kubernetes needs E2E_KUBERNETES_PROFILE naming a trusted ClusterProfile JSON file")
+        assert selected is not None
+        yield Backend(
+            provider,
+            {"cluster": "e2e", "namespace": selected.namespaces[0]},
+            None,
+            {
+                "execution_container": "envd",
+                "connection": os.environ.get("E2E_KUBERNETES_CONNECTION", "port_forward"),
+                "pod_template": {
+                    "spec": {
+                        "restartPolicy": "Never",
+                        "containers": [
+                            {
+                                "name": "envd",
+                                "image": DOCKER_IMAGE,
+                                "imagePullPolicy": "IfNotPresent",
+                            }
+                        ],
+                    }
+                },
+            },
+            directory,
+        )
+        return
     try:
         with engine() as client:
             client.images.get(DOCKER_IMAGE)
@@ -178,7 +237,12 @@ async def backend(provider: str, directory: Path, config: pytest.Config) -> Asyn
 @pytest.mark.timeout(1500)
 @pytest.mark.parametrize(
     "provider",
-    ["local", "docker", *(pytest.param(provider, marks=pytest.mark.hosted(provider)) for provider in HOSTED)],
+    [
+        "local",
+        "docker",
+        pytest.param("kubernetes", marks=pytest.mark.kubernetes),
+        *(pytest.param(provider, marks=pytest.mark.hosted(provider)) for provider in HOSTED),
+    ],
 )
 async def test_a_run_uses_its_environment_across_its_lifecycle(stack, provider, request) -> None:  # type: ignore[no-untyped-def]
     directory = stack.directory / "environments"
@@ -195,6 +259,16 @@ async def test_a_run_uses_its_environment_across_its_lifecycle(stack, provider, 
         cleanup: list[str] = []
         try:
             await use_environment(stack, account, cleanup)
+        except Exception:
+            if account.type == "kubernetes":
+                for environment_id in cleanup:
+                    path = f"/api/v1/environments/{environment_id}/kubernetes"
+                    diagnostics = await stack.api.client.get(f"{path}/diagnostics")
+                    # The Service projection excludes the Pod spec and bootstrap material.
+                    print("Kubernetes diagnostics:", diagnostics.json().get("native", diagnostics.status_code))
+                    logs = await stack.api.client.get(f"{path}/logs", params={"container": "envd", "tail_lines": 100})
+                    print("Kubernetes logs:", logs.json())
+            raise
         finally:
             for environment_id in cleanup:
                 await account.remove(environment_id)
@@ -333,7 +407,7 @@ async def use_environment(stack, account: Backend, cleanup: list[str]) -> None: 
             return expect(await api.client.get(path), 200)["status"] == "stopped"
 
         await eventually(stopped, timeout=timeout)
-    if account.type == "docker":
+    if account.type in {"docker", "kubernetes"}:
         # Exercise the native file helper after restart as well as shell execution.
         await model.call("view", {"file_path": "/workspace/proof.txt"}, call_id="call_read", to="[read]")
     else:

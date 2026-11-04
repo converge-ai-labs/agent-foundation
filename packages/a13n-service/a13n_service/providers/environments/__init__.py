@@ -7,12 +7,15 @@ vendor API, never an endpoint. `local` is a development-only managed
 directory on the worker host. External envd targets are no provider type (`providers.envd`).
 """
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from pathlib import PurePosixPath
+
+from a13n_harness.providers.environment.kubernetes.configuration import ClusterProfile
 
 from a13n_service.providers.environments.daytona import DAYTONA
 from a13n_service.providers.environments.docker import DOCKER, docker
 from a13n_service.providers.environments.e2b import E2B
+from a13n_service.providers.environments.kubernetes import KUBERNETES, kubernetes
 from a13n_service.providers.environments.local import LOCAL
 from a13n_service.providers.environments.modal import MODAL
 from a13n_service.providers.environments.runloop import RUNLOOP
@@ -20,7 +23,7 @@ from a13n_service.providers.environments.sprites import SPRITES
 from a13n_service.providers.environments.vercel import VERCEL
 from a13n_service.providers.registry import RegisteredProvider
 
-BUILT_IN_ENVIRONMENT_PROVIDERS = (DOCKER, E2B, DAYTONA, MODAL, VERCEL, SPRITES, RUNLOOP, LOCAL)
+BUILT_IN_ENVIRONMENT_PROVIDERS = (DOCKER, E2B, DAYTONA, MODAL, VERCEL, SPRITES, RUNLOOP, LOCAL, KUBERNETES)
 
 
 def offered(
@@ -29,12 +32,14 @@ def offered(
     allow_local: bool,
     docker_host: str | None,
     docker_mount_roots: Sequence[PurePosixPath],
+    kubernetes_clusters: Mapping[str, ClusterProfile] | None = None,
 ) -> tuple[RegisteredProvider, ...]:
     """The definitions a deployment registers: `local` is no isolation boundary, so only development offers it,
     and `docker` follows the operator's engine and host directory choices."""
     configured = docker(host=docker_host, mount_roots=docker_mount_roots)
+    cluster_provider = kubernetes(kubernetes_clusters or {})
     return tuple(
-        configured if definition is DOCKER else definition
+        configured if definition is DOCKER else cluster_provider if definition is KUBERNETES else definition
         for definition in definitions
-        if allow_local or definition is not LOCAL
+        if (allow_local or definition is not LOCAL) and (kubernetes_clusters or definition is not KUBERNETES)
     )

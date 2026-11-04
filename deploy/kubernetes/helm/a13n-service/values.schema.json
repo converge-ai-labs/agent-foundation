@@ -77,6 +77,24 @@
     }
   },
   "properties": {
+    "kubernetesEnvironments": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "namespace": {
+          "type": "string",
+          "maxLength": 63,
+          "pattern": "^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+        },
+        "ownershipId": {
+          "type": "string",
+          "maxLength": 63,
+          "pattern": "^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+        },
+        "allowPlaintextEnvd": { "type": "boolean" }
+      }
+    },
     "monitoring": {
       "type": "object",
       "additionalProperties": false,

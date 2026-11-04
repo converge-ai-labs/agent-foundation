@@ -60,6 +60,15 @@ serviceAccount:
   # Empty uses the release-derived name when create is true; required when create is false.
   name: ""
   annotations: {}
+# Optional namespace-scoped Kubernetes Environment management for Control and Worker.
+# The target namespace must already exist. Empty selects the release namespace.
+kubernetesEnvironments:
+  enabled: false
+  namespace: ""
+  # Empty uses the release-derived name. Keep stable across upgrades.
+  ownershipId: ""
+  # Explicit opt-in for authenticated HTTP on the cluster network.
+  allowPlaintextEnvd: false
 podAnnotations: {}
 nodeSelector: {}
 tolerations: []

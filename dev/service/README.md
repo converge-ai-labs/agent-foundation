@@ -88,6 +88,29 @@ make dev
 
 These commands replace only this checkout's development stores. They do not reset the shared Langfuse stack or a hosted database. Recreate and reseed disposable hosted previews that used the earlier PR revisions before deploying this consolidated migration; do not apply this reset procedure to production data.
 
+## Kubernetes environments
+
+Use a trusted kubeconfig and explicit context for real sandbox Pods while Service runs locally:
+
+```sh
+make dev-kubernetes ARGS="configure --kubeconfig /absolute/path/kubeconfig --context kind-your-cluster --namespace sandboxes --service-account sandbox"
+make dev
+```
+
+Configuration saves `var/dev/kubernetes.json` and adds the `local` cluster profile to the ordinary Service settings on startup. Its ownership ID is `dev-<checkout instance>` and survives database resets. Configure the namespace and sandbox ServiceAccount in the cluster first. The profile permits development HTTP and consumer-owned port-forward; install `kubectl` in the local Service process's PATH. Create a Kubernetes Provider with `cluster: local` and the selected namespace, then a template with `connection: port_forward`. Profile changes require restarting the local applications. `make dev` creates no sandbox automatically.
+
+Delete live instances through Console or the Service API before resetting data. After a database reset, this operator-only tool can inventory resources by the saved profile's ownership ID:
+
+```sh
+make dev-kubernetes ARGS="list --namespace sandboxes"
+make dev-kubernetes ARGS="cleanup --namespace sandboxes --resource Pod/NAME/UID"
+# Review the preview; add --yes to request deletion of exactly those UIDs.
+```
+
+Repeat `--resource Kind/name/uid` for selected Pods, bootstrap Secrets and NetworkPolicies. PVCs require an additional `--delete-storage` opt-in even if their original recipe requested deletion: their retained data may be valuable. Borrowed resources and shared directories are not automatic cleanup targets. Inventory is metadata-only; it cannot infer whether a resource is orphaned after database loss. Stop the old Service and confirm the selection before cleanup. A successful request is not confirmation that finalizers have released the resource; list again. UID preconditions protect replacements, and the tool never strips finalizers.
+
+`--config /path/service.toml --cluster PROFILE` selects another operator-configured profile for inventory or cleanup. Save the profile/ownership ID before removing the checkout with `dev-env-list` cleanup; that operation removes `var/dev` but never changes cluster resources.
+
 ## Private development resources
 
 To use real providers in a seeded checkout, copy [dev-resources.example.toml](dev-resources.example.toml) to `~/.a13n/dev-resources.toml`, set its mode to `0600`, and fill in credentials. The file lives outside every checkout and is shared by all of them. It is read only as a regular file owned by the current user and not readable by others; errors name the offending location, never a value.

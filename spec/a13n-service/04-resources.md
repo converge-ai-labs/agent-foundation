@@ -367,9 +367,10 @@ environment_templates   (envtpl_)
   version  created_by_id NULL  updated_by_id NULL  created_at  updated_at
 ```
 
-A template is the live configuration managed environments are created from ([06](06-environments.md)). `config` is `{recipe, stop_after_seconds, delete_after_seconds}`:
+A template is the live configuration managed environments are created from ([06](06-environments.md)). `config` is `{recipe, reclamation, stop_after_seconds, delete_after_seconds}`:
 
 - `recipe` is validated by the provider type's environment schema and stored normalized; errors carry each location and the schema's own message, never the submitted value. The provider must be enabled. Creating a template, or changing its provider or normalized recipe, needs `write` on the provider, whose account the recipe runs on; changing only the idle policy needs `read`. The operator further restricts Docker recipes ([08](08-providers.md#registry)).
+- `reclamation` selects explicit instance-scoped idle deletion, preparation deadlines and failed retention ([06](06-environments.md#instance-reclamation-and-debug-holds)). It defaults to null except for Kubernetes, which uses the default reclamation settings. An explicit policy clears the legacy stop/delete timers and requires destroy support.
 - `stop_after_seconds` (default 1800, 60 to 2592000, null for never) and `delete_after_seconds` (default null, 60 to 31536000) are the idle policy; [06](06-environments.md#idle-policy) owns how it applies.
 
 A template is created enabled. `PATCH` (with `If-Match`) may change `provider_id`, `config`, `name`, `description`, `labels` and `enabled`; a disabled template refuses new environments. How template changes reach instances is [06](06-environments.md#templates-and-instances)'s.

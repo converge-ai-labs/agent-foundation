@@ -123,10 +123,13 @@ class HttpEnvdProviderRuntime:
         egress: EnvdEgressConfiguration | None = None,
         expected_boundary: EnvdBoundaryRequirement | None = None,
         session_recovery: EnvdSessionRecovery | None = None,
+        recovery_target: str | None = None,
     ) -> AsyncGenerator[EIPSessionBinding]:
         device = await self.acquire_device(expected_device_id=expected_device_id)
         async with DeviceEIPSessionSource(
-            device, target=self.configuration.endpoint, session_recovery=session_recovery
+            device,
+            target=self.configuration.endpoint if recovery_target is None else recovery_target,
+            session_recovery=session_recovery,
         ).open_session(
             expected_device_id=expected_device_id,
             required_methods=required_methods,

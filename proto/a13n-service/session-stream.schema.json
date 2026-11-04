@@ -1450,6 +1450,79 @@
       "title": "ExecutionOverride",
       "type": "object"
     },
+    "ExistingRunEnvironment": {
+      "additionalProperties": false,
+      "description": "Use this exact primary instance for the Run; absence never triggers allocation.",
+      "properties": {
+        "environment_id": {
+          "maxLength": 41,
+          "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+          "title": "Environment Id",
+          "type": "string"
+        },
+        "mode": {
+          "const": "existing",
+          "title": "Mode",
+          "type": "string"
+        },
+        "permission_ceiling": {
+          "$ref": "#/$defs/EnvironmentPermissionSet",
+          "default": {
+            "operations": [
+              "environment.file.copy_destination",
+              "environment.file.copy_source",
+              "environment.file.list",
+              "environment.file.mkdir",
+              "environment.file.move",
+              "environment.file.patch_text",
+              "environment.file.query",
+              "environment.file.read_bytes",
+              "environment.file.read_text",
+              "environment.file.remove",
+              "environment.file.search_text",
+              "environment.file.stat",
+              "environment.file.write_bytes",
+              "environment.file.write_text",
+              "environment.output.read",
+              "environment.output.release",
+              "environment.port.inspect",
+              "environment.port.wait",
+              "environment.process.close_stdin",
+              "environment.process.inspect",
+              "environment.process.kill",
+              "environment.process.list",
+              "environment.process.read_output",
+              "environment.process.release",
+              "environment.process.signal",
+              "environment.process.start",
+              "environment.process.wait",
+              "environment.process.write_stdin",
+              "environment.shell.exec",
+              "environment.state.export",
+              "environment.state.restore"
+            ]
+          }
+        },
+        "working_directory": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Working Directory"
+        }
+      },
+      "required": [
+        "mode",
+        "environment_id"
+      ],
+      "title": "ExistingRunEnvironment",
+      "type": "object"
+    },
     "Failed": {
       "additionalProperties": false,
       "description": "An explicit external tool failure, including an intentional unanswered question.",
@@ -1556,6 +1629,79 @@
         }
       },
       "title": "FragmentState",
+      "type": "object"
+    },
+    "FreshRunEnvironment": {
+      "additionalProperties": false,
+      "description": "Reserve a primary instance for this accepted Run without changing Thread mounts.",
+      "properties": {
+        "mode": {
+          "const": "fresh",
+          "title": "Mode",
+          "type": "string"
+        },
+        "permission_ceiling": {
+          "$ref": "#/$defs/EnvironmentPermissionSet",
+          "default": {
+            "operations": [
+              "environment.file.copy_destination",
+              "environment.file.copy_source",
+              "environment.file.list",
+              "environment.file.mkdir",
+              "environment.file.move",
+              "environment.file.patch_text",
+              "environment.file.query",
+              "environment.file.read_bytes",
+              "environment.file.read_text",
+              "environment.file.remove",
+              "environment.file.search_text",
+              "environment.file.stat",
+              "environment.file.write_bytes",
+              "environment.file.write_text",
+              "environment.output.read",
+              "environment.output.release",
+              "environment.port.inspect",
+              "environment.port.wait",
+              "environment.process.close_stdin",
+              "environment.process.inspect",
+              "environment.process.kill",
+              "environment.process.list",
+              "environment.process.read_output",
+              "environment.process.release",
+              "environment.process.signal",
+              "environment.process.start",
+              "environment.process.wait",
+              "environment.process.write_stdin",
+              "environment.shell.exec",
+              "environment.state.export",
+              "environment.state.restore"
+            ]
+          }
+        },
+        "template_id": {
+          "maxLength": 41,
+          "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+          "title": "Template Id",
+          "type": "string"
+        },
+        "working_directory": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Working Directory"
+        }
+      },
+      "required": [
+        "mode",
+        "template_id"
+      ],
+      "title": "FreshRunEnvironment",
       "type": "object"
     },
     "FrozenMemoryMount": {
@@ -2901,6 +3047,23 @@
       "title": "RunConfiguration",
       "type": "object"
     },
+    "RunEnvironment": {
+      "discriminator": {
+        "mapping": {
+          "existing": "#/$defs/ExistingRunEnvironment",
+          "fresh": "#/$defs/FreshRunEnvironment"
+        },
+        "propertyName": "mode"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/FreshRunEnvironment"
+        },
+        {
+          "$ref": "#/$defs/ExistingRunEnvironment"
+        }
+      ]
+    },
     "RunOptions": {
       "additionalProperties": false,
       "description": "What a message may choose for the run it starts. A steer joins a run with the defaults or equal options.",
@@ -2920,6 +3083,17 @@
           "anyOf": [
             {
               "$ref": "#/$defs/RequestContext"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "environment": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RunEnvironment"
             },
             {
               "type": "null"

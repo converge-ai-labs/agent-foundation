@@ -42,6 +42,59 @@ Docker 默认使用运维设置的 `environments.docker_host`。provider 单独�
 
 编辑 provider 时，省略凭据会保留原值，新值会替换原值，`null` 会移除凭据。保留的模板或实例引用会阻止删除 provider。删除无引用的 provider 只移除已保存的配置和凭据，不删除底层 Engine 或云账号。
 
+## Kubernetes 沙箱
+
+Kubernetes 将实例运行为原生 Pod，由选定容器中的 Envd 提供执行能力。运维配置受信任的集群 profile、允许的命名空间和沙箱 ServiceAccount 后，Kubernetes 才会出现在 provider 目录中。工作空间用户选择 profile 和命名空间；Kubernetes API 凭据由运维持有。
+
+1. 请运维在 Control 和 Worker 上配置 `environments.kubernetes_clusters`，或按 [Kubernetes 运维配置](configuration.md#kubernetes-environments)中的说明启用 Helm 选项。
+2. 创建 Kubernetes provider，使用 `config: {"cluster":"in-cluster","namespace":"a13n-service"}`，并替换为实际获准的名称。
+3. 使用下方原生 Pod recipe 创建模板。将镜像替换为集群可用、兼容 Envd 的镜像。
+4. 为运行选择此模板，让 agent 写入并读取文件。
+
+```json
+{
+  "recipe": {
+    "execution_container": "envd",
+    "connection": "direct",
+    "pod_template": {
+      "spec": {
+        "restartPolicy": "Never",
+        "containers": [{"name": "envd", "image": "a13n-sandbox:local"}]
+      }
+    }
+  },
+  "reclamation": {
+    "idle_delete_seconds": 1800,
+    "preparation_seconds": 600,
+    "failed_retention_seconds": 3600
+  }
+}
+```
+
+资源请求与限制、init 容器、sidecar、调度、安全上下文及 ConfigMap、Secret 引用保留在 `pod_template.spec` 中，由 Kubernetes admission 校验这些原生字段。Service 管理 Pod 身份、沙箱 ServiceAccount 和私有 Envd 凭据注入。选定的执行容器必须启动 Envd；Pod 处于 Running 并不代表执行能力已经就绪。
+
+`direct` 从 Service 连接 Pod IP。本地调试可使用 `port_forward`，前提是运维 profile 明确允许且已安装 `kubectl`；隧道仅属于使用它的进程。明文 HTTP Envd 需要 profile 显式启用 `allow_plaintext_envd`。此类流量应保留在可信私有网络内。
+
+需要持久文件时，在 `recipe.storage` 中添加绑定，包含 `name`、`mount_path`，以及原生 `claim_template` 或 `existing_claim` 二选一。新建 PVC 默认使用 `disposition: retain`；选择 `delete` 会在回收时删除拥有的 PVC。已有 PVC 始终视为借用资源，即使绑定指定删除也会保留。`shared_directory: true` 在已有 PVC 中使用实例专属目录，并保留该目录。引用的 ConfigMap 和 Secret 也属于借用资源。`recipe.network_policy` 接受原生 NetworkPolicy 模板，Pod selector 由 Service 填入；实际执行网络策略需要兼容的集群网络实现。
+
+Kubernetes 支持创建、复用和删除。回收设置在预留实例时复制到实例。默认空闲 30 分钟后删除，准备时间上限为 10 分钟，准备失败后保留一小时。Kubernetes 没有停止/恢复操作。删除会等待所拥有的资源消失；finalizer 可能使实例保持 `deleting`。保留和借用的资源仍可在回收记录中查看。
+
+在实例的 Kubernetes 面板查看 Pod UID、调度和容器状态、Events、存储处置与 Envd 就绪状态。`GET /api/v1/environments/{id}/kubernetes/diagnostics` 和 `/kubernetes/logs` 需要工作空间 `run` 权限。日志有大小限制，可选择容器和上一轮容器日志。这些查询不重置空闲计时。调试时，可用当前 `If-Match` 向 `PUT /api/v1/environments/{id}/debug-hold` 提交 `{"seconds":3600}`，暂缓自动回收；`{"seconds":null}` 清除保留。每次保留最长一天。Pod 被替换且 UID 改变时属于目标丢失，应创建新实例，不会静默接管替代 Pod。
+
+## 仅本次运行的环境选择
+
+会话的运行选项可以为一次运行新建工作空间，或选择已有实例。API 客户端提交 `options.environment`：
+
+```json
+{"mode":"fresh","template_id":"envtpl_..."}
+```
+
+```json
+{"mode":"existing","environment_id":"env_..."}
+```
+
+接收后的运行固定实例 ID 和权限。同一次已接收运行的重试保留原选择。覆盖只替换本次运行的 `workspace` 挂载，不修改线程的期望挂载。省略该选项时，继续使用正常的线程挂载和 agent 默认行为。选择不可用的已有实例会失败，不会自动创建替代实例。
+
 ## 模板
 
 通过 Console 创建第一个工作空间：

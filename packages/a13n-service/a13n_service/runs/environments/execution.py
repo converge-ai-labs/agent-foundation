@@ -33,7 +33,7 @@ from a13n_service.resources.environment_templates.service import read_template
 from a13n_service.resources.providers.service import resolve_provider
 from a13n_service.resources.providers.tables import EnvironmentProviderRow
 from a13n_service.runs.attempts import AuthorityRevoked, Lease, LeaseLost, lock_lease
-from a13n_service.runs.environments import external
+from a13n_service.runs.environments import bootstrap, external
 from a13n_service.runs.environments.adapters import Target, execution_connector, provider_identity
 from a13n_service.runs.environments.desktop import admission as desktop_admission
 from a13n_service.runs.environments.lifecycle import Operation, begin, claim_locked, dispatch
@@ -225,7 +225,9 @@ async def _inspect(
                 raise conflict("environment", environment.id, "provider_identity_changed")
             environment.last_used_at = await now(session)
             handle = Handle.model_validate(environment.handle)
-            return Target(environment.id, provider, handle.recipe, handle.state), None
+            return Target(
+                environment.id, provider, handle.recipe, handle.state, bootstrap.restore(runtime.keys, environment)
+            ), None
         if environment.status == "reserved":
             await begin(session, environment, "creating")
         elif environment.status == "stopped":

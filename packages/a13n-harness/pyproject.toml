@@ -44,6 +44,9 @@ e2b = [
     "e2b>=2.46.4,<3",
 ]
 modal = ["modal>=1.5.5,<2"]
+kubernetes = [
+    "kubernetes-asyncio>=34.3,<35",
+]
 
 [project.urls]
 Homepage = "https://a13n.dev/"

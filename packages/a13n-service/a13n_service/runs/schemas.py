@@ -32,7 +32,7 @@ from a13n_service.resources.connections.headers import normalize_headers
 from a13n_service.resources.memories.schemas import MemoryMount, MemoryMounts, SessionMemorySettings
 from a13n_service.runs.browsers.schemas import BrowserBinding
 from a13n_service.runs.display import Item
-from a13n_service.runs.environments.schemas import DEFAULT_MOUNT_PERMISSIONS, MAX_MOUNTS, MountCreate
+from a13n_service.runs.environments.schemas import DEFAULT_MOUNT_PERMISSIONS, MAX_MOUNTS, MountCreate, WorkingDirectory
 from a13n_service.runs.history import MessageHistory
 from a13n_service.runs.memories.schemas import FrozenMemoryMount
 from a13n_service.tenancy.schemas import PrincipalSummary
@@ -158,6 +158,28 @@ class RequestContext(_Frozen):
         return headers
 
 
+class _RunEnvironment(_Frozen):
+    working_directory: WorkingDirectory | None = None
+    permission_ceiling: EnvironmentPermissionSet = DEFAULT_MOUNT_PERMISSIONS
+
+
+class FreshRunEnvironment(_RunEnvironment):
+    """Reserve a primary instance for this accepted Run without changing Thread mounts."""
+
+    mode: Literal["fresh"]
+    template_id: ObjectId
+
+
+class ExistingRunEnvironment(_RunEnvironment):
+    """Use this exact primary instance for the Run; absence never triggers allocation."""
+
+    mode: Literal["existing"]
+    environment_id: ObjectId
+
+
+type RunEnvironment = Annotated[FreshRunEnvironment | ExistingRunEnvironment, Field(discriminator="mode")]
+
+
 class RunOptions(_Frozen):
     """What a message may choose for the run it starts. A steer joins a run with the defaults or equal options."""
 
@@ -167,6 +189,7 @@ class RunOptions(_Frozen):
     configuration: RunConfiguration | None = None
     execution: ExecutionOverride | None = Field(default=None, exclude_if=lambda value: value is None)
     max_usage: UsageLimit | None = None
+    environment: RunEnvironment | None = Field(default=None, exclude_if=lambda value: value is None)
     # Changes to the revision's configuration for this run only. Submission validates them; acceptance freezes
     # them into the run's options with their pins resolved, validating them again in any later transaction.
     overrides: AgentOverride | None = None

@@ -6,6 +6,7 @@ import os
 import shutil
 import stat
 import subprocess
+import tomllib
 
 import pytest
 import yaml
@@ -214,6 +215,53 @@ def test_runtime_identity_is_consistent_across_roles_and_migrations(arguments, a
 
 
 @helm
+@pytest.mark.parametrize("namespace", ["default", "sandboxes"])
+def test_kubernetes_environments_project_credentials_only_to_runtime_containers(namespace):
+    documents = render(
+        "--set",
+        "kubernetesEnvironments.enabled=true",
+        "--set",
+        f"kubernetesEnvironments.namespace={namespace}",
+        "--set",
+        "kubernetesEnvironments.allowPlaintextEnvd=true",
+        "--set",
+        "monitoring.vmagent.enabled=true",
+        "--set",
+        "monitoring.vmagent.prometheusUrl=http://prometheus:9090",
+    )
+    role = next(d for d in documents if d["kind"] == "Role")
+    binding = next(d for d in documents if d["kind"] == "RoleBinding")
+    assert role["metadata"]["namespace"] == namespace
+    assert binding["metadata"]["namespace"] == namespace
+    assert binding["subjects"] == [{"kind": "ServiceAccount", "name": "a13n-a13n", "namespace": "default"}]
+    assert all("*" not in rule["verbs"] and "pods/exec" not in rule["resources"] for rule in role["rules"])
+    sandbox = next(d for d in documents if d["kind"] == "ServiceAccount" and d["metadata"]["name"].endswith("-sandbox"))
+    assert sandbox["metadata"]["namespace"] == namespace
+    assert sandbox["automountServiceAccountToken"] is False
+    for workload in [d for d in documents if d["kind"] in {"Deployment", "Job"}]:
+        pod = workload["spec"]["template"]["spec"]
+        if workload["metadata"]["name"].endswith(("-postgres", "-redis")):
+            continue
+        assert pod["automountServiceAccountToken"] is False
+        for container in [*pod.get("initContainers", []), *pod["containers"]]:
+            mounted = any(v["name"] == "kubernetes-api" for v in container.get("volumeMounts", []))
+            assert mounted == (workload["kind"] == "Deployment" and container["name"] in {"service", "writer"})
+        projected = [v for v in pod["volumes"] if v["name"] == "kubernetes-api"]
+        assert bool(projected) == (workload["kind"] == "Deployment")
+        if projected:
+            assert projected[0]["projected"]["sources"][0]["serviceAccountToken"]["expirationSeconds"] == 3600
+    config = next(d for d in documents if d["kind"] == "ConfigMap" and "service.toml" in d["data"])
+    profile = tomllib.loads(config["data"]["service.toml"])["environments"]["kubernetes_clusters"]["in-cluster"]
+    assert profile == {
+        "authentication": "in_cluster",
+        "namespaces": [namespace],
+        "ownership_id": "a13n-a13n",
+        "sandbox_service_account": "a13n-a13n-sandbox",
+        "allow_plaintext_envd": True,
+    }
+
+
+@helm
 def test_extra_service_labels_do_not_change_workloads_or_selectors():
     plain = render(*LOCAL)
     labeled = render(*LOCAL, "--set-string", "service.labels.owner=platform")
@@ -397,7 +445,8 @@ def test_failed_captured_command_does_not_disclose_secrets(monkeypatch):
 
 
 @pytest.mark.parametrize("existing", [False, True])
-def test_startup_builds_loads_and_waits_before_bootstrapping(tmp_path, monkeypatch, capsys, existing):
+@pytest.mark.parametrize("environments", [False, True])
+def test_startup_builds_loads_and_waits_before_bootstrapping(tmp_path, monkeypatch, capsys, existing, environments):
     commands = []
 
     def run(*args, **kwargs):
@@ -417,11 +466,19 @@ def test_startup_builds_loads_and_waits_before_bootstrapping(tmp_path, monkeypat
     monkeypatch.setattr(k8s.shutil, "which", lambda name: "/bin/" + name)
     monkeypatch.setattr(k8s, "prepare", lambda path: commands.append(("prepare",)) or admin)
     monkeypatch.setattr(k8s, "bootstrap", lambda selected: commands.append(("bootstrap", selected["EMAIL"])) or True)
-    k8s.start(tmp_path)
+    k8s.start(tmp_path, environments=environments)
     builds = [c for c in commands if c[:2] == ("docker", "build")]
     load = next(c for c in commands if c[:3] == ("kind", "load", "docker-image"))
     helm = next(c for c in commands if c[0] == "helm")
-    assert len(builds) == 1
+    assert len(builds) == (2 if environments else 1)
+    assert ("deploy/kubernetes/helm/values-environments-smoke.yaml" in helm) is environments
+    deployment = json.loads((tmp_path / "deployment.json").read_text())
+    if environments:
+        sandbox = builds[1][builds[1].index("-t") + 1]
+        assert deployment["sandbox_image"] == sandbox
+        assert ("kind", "load", "docker-image", sandbox, "--name", k8s.CLUSTER) in commands
+    else:
+        assert deployment["sandbox_image"] is None
     image = builds[0][builds[0].index("-t") + 1]
     assert image in load
     assert "--wait" in helm and "--kube-context" in helm and k8s.NAMESPACE in helm
@@ -614,3 +671,34 @@ def test_managed_collector_bootstrap_clears_stale_targets_but_preserves_queue(tm
     assert stat.S_IMODE(fragment.parent.stat().st_mode) == 0o700
     assert lock.stat().st_ino == inode
     assert queue.read_text() == "pending samples"
+
+
+@helm
+def test_environment_smoke_overlay_preserves_https_policy_except_the_fixture():
+    arguments = (*LOCAL, "-f", str(k8s.ROOT / "deploy/kubernetes/helm/values-environments-smoke.yaml"))
+    documents = render(*arguments)
+    config = tomllib.loads(next(d for d in documents if d["kind"] == "ConfigMap")["data"]["service.toml"])
+    assert config["providers"]["http_origins"] == ["http://a13n-scripted-model:8000"]
+    assert "require_https" not in config["providers"]
+    assert config["environments"]["kubernetes_clusters"]["in-cluster"]["allow_plaintext_envd"] is True
+
+
+def test_isolated_launcher_target_uses_its_own_context_port_and_credentials(monkeypatch):
+    import sys
+
+    monkeypatch.setenv("K8S_CLUSTER", "isolated-check")
+    monkeypatch.setenv("K8S_PORT", "18081")
+    monkeypatch.delenv("K8S_STATE_DIR", raising=False)
+    output = subprocess.check_output(
+        [
+            sys.executable,
+            "-c",
+            "from scripts import k8s_local as k; import json; "
+            "print(json.dumps([k.CLUSTER,k.CONTEXT,k.CONSOLE_URL,str(k.state_directory())]))",
+        ],
+        cwd=k8s.ROOT,
+        text=True,
+    )
+    cluster, context, url, state = json.loads(output)
+    assert (cluster, context, url) == ("isolated-check", "kind-isolated-check", "http://127.0.0.1:18081")
+    assert state.endswith("a13n-service-kind-isolated-check")

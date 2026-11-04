@@ -42,6 +42,7 @@ from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.ids import new_object_id
 from a13n_service.resources.providers.service import read_provider
 from a13n_service.resources.providers.tables import EnvironmentProviderRow
+from a13n_service.runs.environments import bootstrap
 from a13n_service.runs.environments.adapters import Target, close, open_provider, provider_identity
 from a13n_service.runs.environments.desktop import identity
 from a13n_service.runs.environments.lifecycle import LOST, Fault, fault_of, lost, reached_with, record_failure
@@ -94,7 +95,9 @@ async def claim(runtime: Runtime, environment_id: str) -> Renewal | None:
             return None
         handle = Handle.model_validate(environment.handle)
         version, changed = reached_with(handle, provider)
-        target = Target(environment.id, provider, handle.recipe, handle.state)
+        target = Target(
+            environment.id, provider, handle.recipe, handle.state, bootstrap.restore(runtime.keys, environment)
+        )
         return Renewal(environment.id, claimed, target, seconds, version, changed)
 
 

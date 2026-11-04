@@ -42,6 +42,59 @@ Cloud instances use the saved account and are billed there. Configure idle stop 
 
 When editing a provider, an omitted credential stays unchanged; a new value replaces it and `null` removes it. Retained template or instance references block provider deletion. Deleting an unused provider removes its saved configuration and credentials, not the underlying engine or cloud account.
 
+## Kubernetes sandboxes
+
+Kubernetes runs an instance as a native Pod with Envd in one selected container. The operator configures trusted cluster profiles, allowed namespaces and a sandbox ServiceAccount. Kubernetes then appears in the provider catalog. Workspace users select a profile and namespace; Kubernetes API credentials remain with the operator.
+
+1. Ask the operator to configure `environments.kubernetes_clusters` on Control and Worker, or use the Helm opt-in described in [Kubernetes operator configuration](configuration.md#kubernetes-environments).
+2. Create a Kubernetes provider with `config: {"cluster":"in-cluster","namespace":"a13n-service"}`, using the actual approved names.
+3. Create a template with the native Pod recipe below. Replace the image with an Envd-compatible image available to the cluster.
+4. Select the template for a run and ask the agent to write and read a file.
+
+```json
+{
+  "recipe": {
+    "execution_container": "envd",
+    "connection": "direct",
+    "pod_template": {
+      "spec": {
+        "restartPolicy": "Never",
+        "containers": [{"name": "envd", "image": "a13n-sandbox:local"}]
+      }
+    }
+  },
+  "reclamation": {
+    "idle_delete_seconds": 1800,
+    "preparation_seconds": 600,
+    "failed_retention_seconds": 3600
+  }
+}
+```
+
+Keep resource requests and limits, init containers, sidecars, scheduling, security context and references to ConfigMaps or Secrets in `pod_template.spec`. Kubernetes admission validates these native fields. Service owns the Pod identity, sandbox ServiceAccount and private Envd credential injection. The selected execution container must start Envd; a Running Pod alone does not establish execution readiness.
+
+`direct` connects to the Pod IP from Service. For local debugging, `port_forward` uses an explicitly permitted operator profile and an installed `kubectl`; the tunnel is local to the process using it. Plain HTTP Envd requires the profile's explicit `allow_plaintext_envd` opt-in. Keep that traffic on a trusted private network.
+
+For persistent files, add `recipe.storage` bindings with `name`, `mount_path`, and either a native `claim_template` or `existing_claim`. New claims default to `disposition: retain`; select `delete` to remove an owned claim during retirement. Existing claims remain borrowed, even if a binding asks for deletion. `shared_directory: true` uses an instance-specific directory on an existing claim and retains that directory. Referenced ConfigMaps and Secrets also remain borrowed. `recipe.network_policy` accepts a native NetworkPolicy template whose Pod selector Service supplies; enforcement requires a compatible cluster network implementation.
+
+Kubernetes supports create, reuse and delete. Its reclamation settings are copied when an instance is reserved. The defaults delete after 30 minutes idle, bound preparation to 10 minutes, and retain a failed preparation for one hour. Kubernetes has no stop/resume operation. Deletion waits until owned resources are absent; a finalizer can keep the instance in `deleting`. Retained and borrowed resources remain visible in the retirement record.
+
+Inspect the instance's Kubernetes panel for Pod UID, scheduling and container status, Events, storage disposition and Envd readiness. `GET /api/v1/environments/{id}/kubernetes/diagnostics` and `/kubernetes/logs` require workspace `run` permission. Logs are bounded and support a container and previous-container selection. These observations do not reset idle time. Use `PUT /api/v1/environments/{id}/debug-hold` with the current `If-Match` and `{"seconds":3600}` to postpone automatic retirement while debugging; `{"seconds":null}` clears it. A hold lasts at most one day. A replacement Pod with a different UID is target loss; create a new instance rather than adopting it silently.
+
+## Run-only environment selection
+
+The conversation's run options can create a fresh workspace or select an existing instance for one run. API clients submit `options.environment`:
+
+```json
+{"mode":"fresh","template_id":"envtpl_..."}
+```
+
+```json
+{"mode":"existing","environment_id":"env_..."}
+```
+
+The accepted run captures the instance ID and permissions. Retries of that accepted run retain the same selection. The override replaces only that run's `workspace` mount and leaves the thread's desired mounts unchanged. Omitting it retains the normal thread and agent-default behavior. Selecting an unavailable existing instance fails instead of creating a replacement.
+
 ## Templates
 
 Create the first workspace through Console:

@@ -192,16 +192,17 @@ description: Service 设置的每个字段，及其环境变量、类型、范�
 
 ## `environments`
 
-| 设置                              | 环境变量                                | 类型 / 选项   | 约束与默认值                                  |
-| --------------------------------- | --------------------------------------- | ------------- | --------------------------------------------- |
-| `environments.scan_seconds`       | `A13N_ENVIRONMENTS__SCAN_SECONDS`       | 数值          | maximum=300; exclusiveMinimum=0; default=5    |
-| `environments.batch`              | `A13N_ENVIRONMENTS__BATCH`              | 整数          | minimum=1; maximum=1000; default=16           |
-| `environments.operation_seconds`  | `A13N_ENVIRONMENTS__OPERATION_SECONDS`  | 数值          | maximum=3600; exclusiveMinimum=0; default=120 |
-| `environments.renewal_seconds`    | `A13N_ENVIRONMENTS__RENEWAL_SECONDS`    | 数值          | maximum=60; exclusiveMinimum=0; default=20    |
-| `environments.wait_seconds`       | `A13N_ENVIRONMENTS__WAIT_SECONDS`       | 数值          | maximum=3600; exclusiveMinimum=0; default=300 |
-| `environments.managed_count`      | `A13N_ENVIRONMENTS__MANAGED_COUNT`      | 整数          | minimum=1; maximum=100000; default=100        |
-| `environments.docker_host`        | `A13N_ENVIRONMENTS__DOCKER_HOST`        | 字符串或 null | minLength=1; maxLength=2048; default=null     |
-| `environments.docker_mount_roots` | `A13N_ENVIRONMENTS__DOCKER_MOUNT_ROOTS` | 字符串数组    | maxItems=64; default=[]                       |
+| 设置                               | 环境变量                                 | 类型 / 选项   | 约束与默认值                                  |
+| ---------------------------------- | ---------------------------------------- | ------------- | --------------------------------------------- |
+| `environments.scan_seconds`        | `A13N_ENVIRONMENTS__SCAN_SECONDS`        | 数值          | maximum=300; exclusiveMinimum=0; default=5    |
+| `environments.batch`               | `A13N_ENVIRONMENTS__BATCH`               | 整数          | minimum=1; maximum=1000; default=16           |
+| `environments.operation_seconds`   | `A13N_ENVIRONMENTS__OPERATION_SECONDS`   | 数值          | maximum=3600; exclusiveMinimum=0; default=120 |
+| `environments.renewal_seconds`     | `A13N_ENVIRONMENTS__RENEWAL_SECONDS`     | 数值          | maximum=60; exclusiveMinimum=0; default=20    |
+| `environments.wait_seconds`        | `A13N_ENVIRONMENTS__WAIT_SECONDS`        | 数值          | maximum=3600; exclusiveMinimum=0; default=300 |
+| `environments.managed_count`       | `A13N_ENVIRONMENTS__MANAGED_COUNT`       | 整数          | minimum=1; maximum=100000; default=100        |
+| `environments.docker_host`         | `A13N_ENVIRONMENTS__DOCKER_HOST`         | 字符串或 null | minLength=1; maxLength=2048; default=null     |
+| `environments.docker_mount_roots`  | `A13N_ENVIRONMENTS__DOCKER_MOUNT_ROOTS`  | 字符串数组    | maxItems=64; default=[]                       |
+| `environments.kubernetes_clusters` | `A13N_ENVIRONMENTS__KUBERNETES_CLUSTERS` | 对象          | —                                             |
 
 ## `browsers`
 

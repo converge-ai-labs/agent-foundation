@@ -100,7 +100,7 @@ class Checkout:
     def settings(self, telemetry: Section) -> dict[str, Section]:
         """The Service settings of this checkout; `telemetry` selects the trace backend."""
         ports = self.instance.ports
-        return {
+        settings = {
             "server": {"host": "127.0.0.1", "port": ports.service, "public_url": self.console_url},
             "database": {"url": self.database_url},
             "redis": {"url": f"redis://127.0.0.1:{ports.redis}/0"},
@@ -115,6 +115,10 @@ class Checkout:
             "browsers": {"root": str(self.state / "browsers")},
             "telemetry": {"log_format": "pretty", **telemetry},
         }
+        kubernetes = self.state / "kubernetes.json"
+        if kubernetes.exists():
+            settings["environments.kubernetes_clusters.local"] = json.loads(kubernetes.read_text())
+        return settings
 
     def write_settings(self, telemetry: Section) -> Path:
         # JSON strings, numbers, booleans and arrays are valid TOML values.

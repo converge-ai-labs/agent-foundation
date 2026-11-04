@@ -253,6 +253,25 @@ The image uses the same executable and settings for all roles. Mount your TOML a
 
 Use the [single-host Compose stack](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose) for `all` with PostgreSQL, Redis and host-Engine Docker environments. Use the [Helm chart](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/kubernetes) for split control/worker Deployments and a migration Job. `all` and `control` serve Console and the API at `server.public_url`.
 
+## Kubernetes environments
+
+Configure the same trusted cluster profiles on Control and Worker. An empty `environments.kubernetes_clusters` map disables Kubernetes in the provider catalog. Profiles belong to operator settings; workspace providers select only a profile name and an allowed namespace. Service supplies the Host integration for Kubernetes; Harness UI does not offer it as a standalone built-in provider.
+
+```toml
+[environments.kubernetes_clusters.in-cluster]
+authentication = "in_cluster"
+namespaces = ["agent-sandboxes"]
+ownership_id = "production-service"
+sandbox_service_account = "agent-sandbox"
+allow_plaintext_envd = true
+```
+
+Provision the namespace, sandbox ServiceAccount and management RBAC before using this profile. The [Helm chart](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/kubernetes#kubernetes-environments) can create these bindings with `kubernetesEnvironments.enabled`. It projects API credentials into runtime Service containers and keeps sandbox token mounting disabled. Use a separate sandbox namespace in production: native Pod authors can reference namespace Secrets and request privileges, so enforce Pod Security and admission policy there. Namespace selection alone is not a workload isolation policy.
+
+For a development process outside the cluster, use `authentication = "kubeconfig"`, an absolute `kubeconfig` path and an explicit `context`. Only operator-owned kubeconfig files and authentication plugins are accepted. Set `allow_port_forward = true` and install `kubectl` when recipes use `connection: port_forward`; this also requires Kubernetes `pods/portforward` permission. `direct` requires Pod IP routing from Service. `allow_plaintext_envd` defaults to false; opt in only on a trusted private network, since the Envd credential authenticates traffic without encrypting it. The API request timeout defaults to 15 seconds and accepts values up to 60 seconds.
+
+Keep `ownership_id`, profile names, namespace and sandbox identity stable while instances exist. Retire instances through Service before removing a profile or its permissions, and preserve the database and encryption key ring for recovery. Removing deployment resources does not retire instance Pods or retained claims. See [Kubernetes sandboxes](environments.md#kubernetes-sandboxes) for native recipes, storage disposition, diagnostics and debug holds.
+
 ## Workspace provisioning
 
 Automatic Local/Docker provider and template creation runs only in the `all` role. Both are disabled in generic settings; the supplied socket-enabled Compose stack enables Docker and leaves Local off. Split control/worker deployments configure execution resources explicitly.
