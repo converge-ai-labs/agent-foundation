@@ -158,9 +158,9 @@
 .emptyState {
   display: grid;
   place-content: center;
-  min-height: 128px;
+  min-height: 48px;
   margin: 0;
-  padding: 24px 16px;
+  padding: 12px;
   border-radius: 8px;
   background: var(--a13n-surface);
   color: var(--a13n-secondary);
@@ -183,7 +183,7 @@
   line-height: 1.6;
 }
 .currentWork {
-  margin-bottom: 24px;
+  margin-bottom: 16px;
 }
 .currentTask {
   display: flex;

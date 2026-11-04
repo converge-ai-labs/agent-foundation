@@ -6,6 +6,7 @@ import {
   fireEvent,
   render,
   screen,
+  within,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TransportContext } from "../transport/context";
@@ -49,6 +50,7 @@ it("ticks the exact receipt and refreshes paired context without mixing live tok
   const usage = {
     first_observed_at: "2026-01-01T00:00:00Z",
     root: { model_requests: 0, tokens: [] },
+    descendants: { model_requests: 0, tokens: [] },
     models: [],
     other_models: { model_requests: 0 },
     combined: {
@@ -97,22 +99,18 @@ it("ticks the exact receipt and refreshes paired context without mixing live tok
     </QueryClientProvider>
   );
   const view = render(content(250, true));
-  const ring = screen.getByRole("button", { name: "Context details" });
-  expect(
-    ring.querySelector("[stroke-dasharray]")?.getAttribute("stroke-dasharray"),
-  ).toBe("10 100");
+  const trigger = screen.getByRole("button", { name: "Context details" });
+  expect(trigger.textContent).toBe("100 (10%)");
   await act(async () => {
     await vi.advanceTimersByTimeAsync(0);
   });
-  expect(
-    ring.querySelector("[stroke-dasharray]")?.getAttribute("stroke-dasharray"),
-  ).toBe("12.5 100");
+  expect(trigger.textContent).toBe("250 (13%)");
   expect(screen.queryByText("0.025")).toBeNull();
   expect(screen.queryByText("Speed")).toBeNull();
-  fireEvent.click(ring);
+  fireEvent.click(trigger);
   expect(screen.getByRole("heading", { name: "Context usage" })).toBeTruthy();
   expect(screen.getByRole("heading", { name: "Chat usage" })).toBeTruthy();
-  expect(screen.getByText("40.5%")).toBeTruthy();
+  expect(screen.getByText("$0.0250")).toBeTruthy();
   expect(screen.getByText("12,345")).toBeTruthy();
   fireEvent.keyDown(window, { code: "KeyD", ctrlKey: true, altKey: true });
   expect(screen.getByText("0s")).toBeTruthy();
@@ -134,16 +132,12 @@ it("ticks the exact receipt and refreshes paired context without mixing live tok
     latest_request_tokens: 400,
   };
   view.rerender(content(400, true));
-  expect(
-    ring.querySelector("[stroke-dasharray]")?.getAttribute("stroke-dasharray"),
-  ).toBe("12.5 100");
+  expect(trigger.textContent).toBe("250 (13%)");
   await act(async () => {
     await vi.advanceTimersByTimeAsync(0);
   });
-  expect(
-    ring.querySelector("[stroke-dasharray]")?.getAttribute("stroke-dasharray"),
-  ).toBe("40 100");
-  expect(screen.getByText("400")).toBeTruthy();
+  expect(trigger.textContent).toBe("400 (40%)");
+  expect(within(screen.getByRole("dialog")).getByText("400")).toBeTruthy();
   expect(screen.getByText("1,000")).toBeTruthy();
   act(() =>
     queries.setQueryData(["thread", "one", "context-usage"], {
@@ -155,8 +149,18 @@ it("ticks the exact receipt and refreshes paired context without mixing live tok
   await act(async () => {
     await vi.advanceTimersByTimeAsync(0);
   });
-  expect(ring.querySelector('[data-unknown="true"]')).toBeTruthy();
-  expect(ring.querySelector("[stroke-dasharray]")).toBeNull();
+  expect(trigger.textContent).toBe("400 (—)");
+  act(() =>
+    queries.setQueryData(["thread", "one", "context-usage"], {
+      thread_id: "one",
+      latest_request_tokens: 222950,
+      context_window: 350000,
+    }),
+  );
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0);
+  });
+  expect(trigger.textContent).toBe("222.95k (64%)");
   operation.status = "completed";
   operation.completed_at = "2026-01-01T00:00:02Z";
   act(() => {

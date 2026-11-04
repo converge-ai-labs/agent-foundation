@@ -1,5 +1,8 @@
 import { useTranslation } from "../i18n";
-import { DetailsOutlet } from "../conversations/details-outlet";
+import {
+  DetailsOutlet,
+  ChatDetailsPopover,
+} from "../conversations/details-outlet";
 import { ViewLink } from "./view-link";
 import {
   useContext,
@@ -155,35 +158,19 @@ export function NativeWorkspace({
   if (isWorkspace && !projectLoading) retainedRoots.current = selectedRoots;
   const localRoots = isWorkspace ? selectedRoots : retainedRoots.current;
   const projectRoot = localRoots[0] ?? "";
-  const hasResourceViews = !!(
+  const hasSupportingViews = !!(
     status.data?.features?.host_files ||
     status.data?.features?.host_git ||
     status.data?.features?.browser ||
     status.data?.features?.host_terminal
   );
-  const hasSupportingViews = !!threadId || hasResourceViews;
   const [tabLayout, setTabLayout] = useState(
     () => readPreference("native-layout", "sidebar") === "tabs",
   );
   const [nativeActive, setNativeActive] = useState(false);
-  const [detailsActive, setDetailsActive] = useState(true);
   const [detailsElement, setDetailsElement] = useState<HTMLDivElement | null>(
     null,
   );
-  const [detailsWidth, setDetailsWidth] = usePanelSize(
-    "a13n.details.width",
-    340,
-    260,
-    600,
-  );
-  const showDetails = !!threadId && detailsActive;
-  const openDetails = () => {
-    cancelOpening();
-    setDetailsActive(true);
-    setSidebarCollapsed(false);
-    setNativeActive(true);
-    setFocusedArea("page");
-  };
   const panelKey = `native-panel.${threadId ?? "new"}`;
   const [panelStates, setPanelStates] = useState<Record<string, boolean>>({});
   const sidebarCollapsed =
@@ -229,11 +216,11 @@ export function NativeWorkspace({
     animateLayout(
       () => {
         setTabLayout(false);
-        setNarrowSidebar(false);
+        setNarrowSidebar(narrow);
         setSidebarCollapsed(supportingExpanded);
         if (supportingExpanded) focusCenter();
         else {
-          if (!showDetails) applyTab(activeTab);
+          applyTab(activeTab);
           setNativeActive(true);
           requestAnimationFrame(() => paneElement.current?.focus());
         }
@@ -278,7 +265,6 @@ export function NativeWorkspace({
   const terminalVisible =
     isWorkspace &&
     pane === "terminal" &&
-    !showDetails &&
     !sidebarCollapsed &&
     (!singleView || nativeActive) &&
     !projectLoading;
@@ -401,7 +387,6 @@ export function NativeWorkspace({
     const restored = saved?.tabs ?? emptyTabs(nextTabId());
     dispatchTabs({ type: "restore", state: restored });
     applyTab(restored.items.find((tab) => tab.id === restored.active)!);
-    if (!saved) setDetailsActive(true);
     setFileLine(undefined);
     setTerminalRequest(undefined);
     setTerminalId(saved?.terminalId ?? "");
@@ -411,7 +396,6 @@ export function NativeWorkspace({
     return () => openingRequest.current?.abort();
   }, [location.pathname, location.search]);
   const applyTab = (tab: TabContent) => {
-    setDetailsActive(false);
     cancelOpening();
     setError(null);
     setFileLine(undefined);
@@ -477,16 +461,11 @@ export function NativeWorkspace({
     setSidebarCollapsed(false);
   };
   const addTab = () => {
-    if (showDetails && activeTab.kind === "new") activateTab(activeTab);
-    else revealTab({ kind: "new" }, false);
+    revealTab({ kind: "new" }, false);
   };
   const closeTab = (id: string) => {
     const action = { type: "close" as const, id, emptyId: nextTabId() };
     const next = workspaceTabs(tabs, action);
-    if (showDetails) {
-      dispatchTabs(action);
-      return;
-    }
     if (tabs.items.length === 1) {
       animateLayout(() => {
         dispatchTabs(action);
@@ -683,14 +662,6 @@ export function NativeWorkspace({
     setFocusedArea("page");
     requestAnimationFrame(() => pageElement.current?.focus());
   };
-  const previousResourceViews = useRef(hasResourceViews);
-  useEffect(() => {
-    if (previousResourceViews.current && !hasResourceViews) {
-      setDetailsActive(true);
-      focusCenter();
-    }
-    previousResourceViews.current = hasResourceViews;
-  }, [hasResourceViews]);
   const openTerminal = (cwd: string) => {
     if (!projectId) return;
     setTerminalRequest({ cwd, projectId });
@@ -796,12 +767,6 @@ export function NativeWorkspace({
     available: number,
     restoreWidth: number,
   ) => {
-    if (showDetails) {
-      setDetailsWidth(
-        Math.max(260, Math.min(600, (nextWidth / 100) * available)),
-      );
-      return;
-    }
     const next = panelResize(nextWidth, available);
     const start = resizeStart.current;
     if (next.kind === "resize") {
@@ -890,20 +855,7 @@ export function NativeWorkspace({
           },
         ]
       : []),
-    ...(threadId
-      ? [
-          {
-            key: "details",
-            label: t("Chat details"),
-            icon: SlidersHorizontal,
-            tab: null,
-          },
-        ]
-      : []),
-    ...(hasResourceViews
-      ? tabs.items.filter((tab) => !showDetails || tab.kind !== "new")
-      : []
-    ).map((tab) => ({
+    ...tabs.items.map((tab) => ({
       key: tab.id,
       label:
         tab.kind === "new"
@@ -952,12 +904,7 @@ export function NativeWorkspace({
       tab,
     })),
   ];
-  const activeView =
-    nativeActive || !singleView
-      ? showDetails
-        ? "details"
-        : tabs.active
-      : "conversation";
+  const activeView = nativeActive || !singleView ? tabs.active : "conversation";
   const splitLayout =
     isWorkspace && !singleView && !sidebarCollapsed && hasSupportingViews;
   return (
@@ -987,25 +934,12 @@ export function NativeWorkspace({
               </span>
             )}
             <ToolbarTitle className={styles.workspaceTitle}>
-              {threadId && isWorkspace && !unavailableThread ? (
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <button
-                        aria-label={t("Open chat details: {{title}}", {
-                          title,
-                        })}
-                        onClick={openDetails}
-                      />
-                    }
-                  >
-                    {title}
-                  </TooltipTrigger>
-                  <TooltipPopup>{title}</TooltipPopup>
-                </Tooltip>
-              ) : (
-                title
-              )}
+              <Tooltip>
+                <TooltipTrigger render={<span tabIndex={0} />}>
+                  {title}
+                </TooltipTrigger>
+                <TooltipPopup>{title}</TooltipPopup>
+              </Tooltip>
             </ToolbarTitle>
           </div>
           {isWorkspace && threadId && status.data?.features?.browser && (
@@ -1014,13 +948,11 @@ export function NativeWorkspace({
               threadId={threadId}
               occupied={
                 tabLayout ||
-                (!sidebarCollapsed &&
-                  (showDetails || pane !== null || view !== "page"))
+                (!sidebarCollapsed && (pane !== null || view !== "page"))
               }
               visible={
                 !sidebarCollapsed &&
                 pane === "browser" &&
-                !showDetails &&
                 (!singleView || nativeActive)
               }
               reveal={() => revealTab({ kind: "browser" })}
@@ -1028,6 +960,21 @@ export function NativeWorkspace({
             />
           )}
           {profile}
+          {isWorkspace && threadId && !unavailableThread && (
+            <ChatDetailsPopover
+              key={`details-${threadId}`}
+              title={title}
+              outletRef={setDetailsElement}
+              onRename={() => {
+                const search = new URLSearchParams(location.search);
+                search.set("dialog", "rename");
+                navigate({
+                  pathname: location.pathname,
+                  search: search.toString(),
+                });
+              }}
+            />
+          )}
           {threadId && !unavailableThread && (
             <Menu>
               <MenuTrigger
@@ -1086,11 +1033,7 @@ export function NativeWorkspace({
         </header>
         <div
           className={`${styles.layout} ${splitLayout ? styles.splitLayout : ""}`}
-          style={
-            {
-              "--panel-width": showDetails ? `${detailsWidth}px` : `${width}%`,
-            } as CSSProperties
-          }
+          style={{ "--panel-width": `${width}%` } as CSSProperties}
           data-resizing={resizing || undefined}
           onPointerMove={(event) => {
             const start = resizeStart.current;
@@ -1167,14 +1110,13 @@ export function NativeWorkspace({
                       size="sm"
                       role="tab"
                       id={`${workspaceId}-${key}-tab`}
-                      aria-controls={`${workspaceId}-${key === "conversation" ? "conversation" : key === "details" ? "details" : "native"}`}
+                      aria-controls={`${workspaceId}-${key === "conversation" ? "conversation" : "native"}`}
                       aria-selected={activeView === key}
                       disabled={!!tab && projectLoading}
                       tabIndex={activeView === key ? 0 : -1}
                       title={tab?.kind === "file" ? tab.path : label}
                       onClick={() => {
                         if (tab) activateTab(tab);
-                        else if (key === "details") openDetails();
                         else {
                           cancelOpening();
                           setNativeActive(false);
@@ -1199,18 +1141,16 @@ export function NativeWorkspace({
                   </span>
                 ))}
               </div>
-              {hasResourceViews && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label={t("New tab")}
-                  title={t("New tab")}
-                  disabled={projectLoading}
-                  onClick={addTab}
-                >
-                  <Plus />
-                </Button>
-              )}
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={t("New tab")}
+                title={t("New tab")}
+                disabled={projectLoading}
+                onClick={addTab}
+              >
+                <Plus />
+              </Button>
               <div className={styles.workspaceTools}>
                 <DebugOnly>
                   <EnvironmentMonitor />
@@ -1249,47 +1189,14 @@ export function NativeWorkspace({
                 }
               >
                 <DetailsOutlet
-                  value={{
-                    element: detailsElement,
-                    visible: isWorkspace && supportingExpanded && showDetails,
-                  }}
+                  value={{ element: detailsElement, visible: !!detailsElement }}
                 >
                   {children}
                 </DetailsOutlet>
               </OpenHostFile>
             </div>
           </div>
-          {isWorkspace && threadId && (
-            <aside
-              className={`${styles.pane} ${styles.detailsPane}`}
-              hidden={!supportingExpanded || !showDetails}
-              id={`${workspaceId}-details`}
-              role="tabpanel"
-              aria-labelledby={`${workspaceId}-details-tab`}
-            >
-              <div className={styles.detailsHeading}>
-                <h2>{title}</h2>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={t("Rename")}
-                  title={t("Rename")}
-                  onClick={() => {
-                    const search = new URLSearchParams(location.search);
-                    search.set("dialog", "rename");
-                    navigate({
-                      pathname: location.pathname,
-                      search: search.toString(),
-                    });
-                  }}
-                >
-                  <PencilSimple />
-                </Button>
-              </div>
-              <div ref={setDetailsElement} />
-            </aside>
-          )}
-          {isWorkspace && !pane && !showDetails && supportingExpanded && (
+          {isWorkspace && !pane && supportingExpanded && (
             <section
               className={`${styles.pane} ${styles.newTabPage}`}
               id={`${workspaceId}-native`}
@@ -1324,20 +1231,15 @@ export function NativeWorkspace({
               role="separator"
               aria-label={t("Resize supporting panel")}
               aria-orientation="vertical"
-              aria-valuemin={showDetails ? 260 : 0}
-              aria-valuemax={showDetails ? 600 : 100}
-              aria-valuenow={showDetails ? detailsWidth : width}
-              aria-valuetext={showDetails ? `${detailsWidth}px` : `${width}%`}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={width}
               tabIndex={0}
               onKeyDown={(event) => {
                 if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
                   event.preventDefault();
                   resizePanel(
-                    (showDetails
-                      ? (detailsWidth /
-                          event.currentTarget.parentElement!.clientWidth) *
-                        100
-                      : width) + (event.key === "ArrowLeft" ? 4 : -4),
+                    width + (event.key === "ArrowLeft" ? 4 : -4),
                     event.currentTarget.parentElement!.clientWidth,
                     width,
                   );
@@ -1354,11 +1256,7 @@ export function NativeWorkspace({
                 resizeStart.current = {
                   pointerId: event.pointerId,
                   x: event.clientX,
-                  width: showDetails
-                    ? (detailsWidth /
-                        event.currentTarget.parentElement!.clientWidth) *
-                      100
-                    : width,
+                  width,
                   available: event.currentTarget.parentElement!.clientWidth,
                   kind: "resize",
                 };
@@ -1371,7 +1269,7 @@ export function NativeWorkspace({
               id={`${workspaceId}-native`}
               role="tabpanel"
               aria-labelledby={`${workspaceId}-${tabs.active}-tab`}
-              hidden={!supportingExpanded || showDetails}
+              hidden={!supportingExpanded}
               style={{ "--panel-width": `${width}%` } as CSSProperties}
               ref={paneElement}
               tabIndex={-1}
@@ -1384,7 +1282,7 @@ export function NativeWorkspace({
                   {t("Opening…")}
                 </span>
               )}
-              {supportingExpanded && !showDetails && (
+              {supportingExpanded && (
                 <BrowserPanel
                   key={threadId ?? "new"}
                   threadId={threadId}
@@ -1401,7 +1299,7 @@ export function NativeWorkspace({
               id={`${workspaceId}-native`}
               role="tabpanel"
               aria-labelledby={`${workspaceId}-${tabs.active}-tab`}
-              hidden={!supportingExpanded || showDetails}
+              hidden={!supportingExpanded}
               style={{ "--panel-width": `${width}%` } as CSSProperties}
               ref={paneElement}
               tabIndex={-1}
@@ -1523,9 +1421,7 @@ export function NativeWorkspace({
                           aria-label={t("Up one level")}
                           title={
                             canGoUp
-                              ? t("Up to {{path}}", {
-                                  path: parentDirectory,
-                                })
+                              ? t("Up to {{path}}", { path: parentDirectory })
                               : fileRoot
                                 ? t("At the project root")
                                 : t("At the filesystem root")

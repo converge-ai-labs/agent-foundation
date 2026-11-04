@@ -25,7 +25,6 @@ import {
   List,
   Plus,
   UserCircle,
-  SidebarSimple,
 } from "@phosphor-icons/react";
 import {
   ApiError,
@@ -41,7 +40,10 @@ import {
 import { ComposerDrafts } from "./conversations/composer";
 import type { ThreadDraft } from "./conversations/draft";
 import { ConversationPage } from "./conversations/conversation";
-import { DetailsOutlet } from "./conversations/details-outlet";
+import {
+  DetailsOutlet,
+  ChatDetailsPopover,
+} from "./conversations/details-outlet";
 import { LiveThreadsProvider } from "./conversations/live-threads";
 import { ChildControlsProvider } from "./conversations/child-controls";
 import { useLiveWorkbench, type Profile } from "./shell/presence";
@@ -189,7 +191,6 @@ function GuestShell({
   const location = useLocation();
   const [search, setSearch] = useState("");
   const [sidebar, setSidebar] = useState(false);
-  const [detailsOpen, setDetailsOpen] = useState(false);
   const [detailsElement, setDetailsElement] = useState<HTMLDivElement | null>(
     null,
   );
@@ -278,7 +279,6 @@ function GuestShell({
               aria-expanded={sidebar}
               onClick={() => {
                 setSidebar(!sidebar);
-                setDetailsOpen(false);
               }}
             >
               <List />
@@ -297,18 +297,10 @@ function GuestShell({
         </div>
         <div className={styles.access}>
           {inChat && (
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label={t("Chat details")}
-              aria-expanded={detailsOpen}
-              onClick={() => {
-                setDetailsOpen(!detailsOpen);
-                setSidebar(false);
-              }}
-            >
-              <SidebarSimple />
-            </Button>
+            <ChatDetailsPopover
+              key={location.pathname}
+              outletRef={setDetailsElement}
+            />
           )}
           <span
             className={styles.expiry}
@@ -343,10 +335,7 @@ function GuestShell({
           </Button>
         </div>
       </header>
-      <div
-        className={styles.body}
-        data-details-open={(inChat && detailsOpen) || undefined}
-      >
+      <div className={styles.body}>
         {project && (
           <aside
             className={`${styles.sidebar} ${sidebar ? styles.sidebarOpen : ""}`}
@@ -430,7 +419,10 @@ function GuestShell({
         )}
         <section className={styles.conversation}>
           <DetailsOutlet
-            value={{ element: detailsElement, visible: inChat && detailsOpen }}
+            value={{
+              element: detailsElement,
+              visible: inChat && !!detailsElement,
+            }}
           >
             <Routes>
               <Route
@@ -479,14 +471,6 @@ function GuestShell({
             </Routes>
           </DetailsOutlet>
         </section>
-        <aside
-          className={styles.chatDetails}
-          hidden={!inChat || !detailsOpen}
-          aria-label={t("Chat details")}
-        >
-          <h2>{t("Chat details")}</h2>
-          <div ref={setDetailsElement} />
-        </aside>
       </div>
       <ModalFrame
         open={profileOpen}

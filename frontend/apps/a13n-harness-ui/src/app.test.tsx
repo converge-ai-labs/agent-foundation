@@ -284,7 +284,7 @@ it("observes Memory with the shared Thread viewer and scoped files without mount
     ),
   ).toBe(false);
   fireEvent.click(screen.getByRole("button", { name: "Usage & details" }));
-  await screen.findByRole("dialog", { name: "Chat details" });
+  await screen.findByRole("dialog", { name: "Chat settings" });
   expect(
     screen.getByRole("tab", { name: "Activity" }).getAttribute("aria-selected"),
   ).toBe("true");

@@ -97,10 +97,12 @@ export function ComposerStatus({
       ? { ...context.data, latest_request_tokens: tokens }
       : undefined,
   );
-  const occupancy =
-    tokens != null && capacity != null && capacity > 0
-      ? Math.max(0, Math.min(1, tokens / capacity))
-      : undefined;
+  const tokenLabel =
+    tokens == null
+      ? "—"
+      : tokens >= 1000
+        ? `${(tokens / 1000).toFixed(2).replace(/\.?0+$/, "")}k`
+        : String(tokens);
   const error =
     usage.error ||
     inspection.error ||
@@ -114,41 +116,32 @@ export function ComposerStatus({
         <TooltipTrigger
           render={
             <PopoverTrigger
-              render={<Button variant="ghost" size="icon-sm" />}
-              className={styles.ringTrigger}
+              render={<Button variant="ghost" size="sm" />}
+              className={styles.usageTrigger}
               aria-label={t("Context details")}
             />
           }
         >
           <svg
-            viewBox="0 0 24 24"
-            className={styles.ring}
-            data-unknown={occupancy === undefined || undefined}
-            data-full={
-              (occupancy !== undefined && occupancy >= 0.9) || undefined
-            }
+            viewBox="0 0 20 20"
+            className={styles.contextIcon}
             aria-hidden="true"
           >
-            <circle cx="12" cy="12" r="8" className={styles.ringTrack} />
-            {occupancy !== undefined ? (
-              <circle
-                cx="12"
-                cy="12"
-                r="8"
-                pathLength="100"
-                strokeDasharray={`${occupancy * 100} 100`}
-                className={styles.ringFill}
-              />
-            ) : (
-              <text x="12" y="16" textAnchor="middle">
-                ?
-              </text>
-            )}
+            <circle cx="10" cy="10" r="7.5" />
+            <path d="M7 3.2v13.6M10 2.5v15M13 3.2v13.6" />
           </svg>
+          <span>
+            {tokenLabel}{" "}
+            <span className={styles.percentage}>({summary.context})</span>
+          </span>
         </TooltipTrigger>
         <TooltipPopup>{hint}</TooltipPopup>
       </Tooltip>
-      <PopoverPopup side="top" align="end" className={styles.popup}>
+      <PopoverPopup
+        side="top"
+        align="end"
+        className={`${styles.popup} ${styles.contextPopup}`}
+      >
         <div className={styles.popupHeader}>
           <PopoverTitle>{t("Context usage")}</PopoverTitle>
           <HelpTip label={t("About context")}>
@@ -175,14 +168,16 @@ export function ComposerStatus({
           </Button>
         </div>
         <div className={styles.popupBody}>
-          <ContextDetails
-            used={tokens}
-            capacity={capacity}
-            compact
-            cacheRate={summary.cache}
-          />
+          <div className={styles.contextStats}>
+            <ContextDetails
+              used={tokens}
+              capacity={capacity}
+              compact
+              cacheRate={summary.cache}
+            />
+          </div>
           <h3 className={styles.sectionTitle}>{t("Chat usage")}</h3>
-          <UsageDetails usage={usage.data} />
+          <UsageDetails usage={usage.data} compact />
           {debug && (
             <dl className={styles.numbers}>
               {mainAccount && (

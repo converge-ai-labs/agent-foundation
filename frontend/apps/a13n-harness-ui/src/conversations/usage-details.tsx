@@ -167,7 +167,13 @@ function TokenRows({ totals }: { totals: Totals }) {
   );
 }
 
-export function UsageDetails({ usage }: { usage?: ThreadUsage }) {
+export function UsageDetails({
+  usage,
+  compact = false,
+}: {
+  usage?: ThreadUsage;
+  compact?: boolean;
+}) {
   const { t } = useTranslation();
   const count = useCount();
   const [scope, setScope] = useState<Scope>("combined");
@@ -202,30 +208,34 @@ export function UsageDetails({ usage }: { usage?: ThreadUsage }) {
         ]
       : [];
   return (
-    <div className={styles.usageDetails}>
-      <div
-        className={styles.scopeSelector}
-        role="group"
-        aria-label={t("Usage scope")}
-      >
-        {(
-          [
-            ["combined", t("All")],
-            ["root", t("This chat")],
-            ["descendants", t("Subagents")],
-          ] as const
-        ).map(([value, label]) => (
-          <Button
-            key={value}
-            variant="ghost"
-            size="sm"
-            aria-pressed={scope === value}
-            onClick={() => setScope(value)}
-          >
-            {label}
-          </Button>
-        ))}
-      </div>
+    <div
+      className={`${styles.usageDetails} ${compact ? styles.compactUsage : ""}`}
+    >
+      {(!compact || usage.descendants.model_requests > 0) && (
+        <div
+          className={styles.scopeSelector}
+          role="group"
+          aria-label={t("Usage scope")}
+        >
+          {(
+            [
+              ["combined", t("All")],
+              ["root", t("This chat")],
+              ["descendants", t("Subagents")],
+            ] as const
+          ).map(([value, label]) => (
+            <Button
+              key={value}
+              variant="ghost"
+              size="sm"
+              aria-pressed={scope === value}
+              onClick={() => setScope(value)}
+            >
+              {label}
+            </Button>
+          ))}
+        </div>
+      )}
       {totals.model_requests > 0 && (
         <dl className={styles.usageOverview}>
           <dt>{t("Total tokens")}</dt>
@@ -236,7 +246,7 @@ export function UsageDetails({ usage }: { usage?: ThreadUsage }) {
           </dd>
         </dl>
       )}
-      {total > 0 && (
+      {!compact && total > 0 && (
         <div className={styles.tokenDistribution}>
           <div className={styles.tokenBar} aria-hidden="true">
             <span style={{ width: `${(input / total) * 100}%` }} />
