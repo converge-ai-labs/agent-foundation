@@ -413,6 +413,90 @@ it("keeps the previous continuation until replacement turns are complete, includ
   queryClient.clear();
 });
 
+it.each([undefined, "turn-2"])(
+  "retains the loaded history range across checkpoints (selected=%s)",
+  async (selected) => {
+    const page = (continuation: string, index: number) => ({
+      continuation_id: continuation,
+      entries: [turnEntry(index * 2), turnEntry(index * 2 + 1)],
+      turns: [
+        {
+          ...turn,
+          turn_id: `turn-${index}`,
+          input_position: index * 2,
+          end_position: index * 2 + 2,
+        },
+      ],
+      earlier_turns_cursor: index > 0 ? `${continuation}:${index - 1}` : null,
+      later_turns_cursor: index < 4 ? `${continuation}:${index + 1}` : null,
+      next_cursor: null,
+    });
+    let finish!: (value: unknown) => void;
+    const GET = vi.fn((_path, options) => {
+      const query = options.params.query;
+      const index = query.cursor
+        ? Number(query.cursor.split(":")[1])
+        : selected
+          ? 2
+          : 4;
+      if (query.cursor === "C1:1")
+        return new Promise((resolve) => {
+          finish = resolve;
+        });
+      return Promise.resolve({ data: page("C1", index) });
+    });
+    const { queryClient, wrapper } = turnHistoryHarness(GET);
+    queryClient.setQueryData(
+      ["thread", "one", "history", "C0", ...(selected ? [selected] : [])],
+      {
+        pages: [page("C0", 3), page("C0", 2), page("C0", 1)],
+        pageParams: [undefined, "C0:2", "C0:1"],
+      },
+    );
+    const hook = renderHook(() => useHistory("one", "C1", true, selected), {
+      wrapper,
+    });
+    await waitFor(() =>
+      expect(
+        GET.mock.calls.some(
+          ([, options]) => options.params.query.cursor === "C1:1",
+        ),
+      ).toBe(true),
+    );
+    expect(hook.result.current.data?.pages[0].continuation_id).toBe("C0");
+    await act(async () => finish({ data: page("C1", 1) }));
+    await waitFor(() => expect(hook.result.current.isSuccess).toBe(true));
+    const pages = hook.result.current.data!.pages;
+    expect(
+      pages
+        .flatMap((page) => page.turns ?? [])
+        .map((turn) => turn.turn_id)
+        .sort(),
+    ).toEqual(
+      selected
+        ? ["turn-1", "turn-2", "turn-3"]
+        : ["turn-1", "turn-2", "turn-3", "turn-4"],
+    );
+    expect(
+      pages
+        .flatMap((page) => page.entries)
+        .map((entry) => entry.position)
+        .sort((a, b) => a - b),
+    ).toEqual(selected ? [2, 3, 4, 5, 6, 7] : [2, 3, 4, 5, 6, 7, 8, 9]);
+    expect(pages.at(-1)?.earlier_turns_cursor).toBe("C1:0");
+    expect(pages[0].later_turns_cursor).toBe(selected ? "C1:4" : null);
+    expect(
+      GET.mock.calls.every(
+        ([, options]) =>
+          options.params.query.expected_continuation_id === "C1" &&
+          !options.params.query.cursor?.startsWith("C0:"),
+      ),
+    ).toBe(true);
+    hook.unmount();
+    queryClient.clear();
+  },
+);
+
 it("publishes the initial history window without waiting for missing turn details", async () => {
   const page = {
     continuation_id: "C0",

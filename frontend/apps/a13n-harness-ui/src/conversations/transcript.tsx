@@ -122,6 +122,7 @@ type Row = {
   anchor?: string;
   position?: number;
   readingAnchor?: string;
+  turnId?: string;
 } & (
   | { kind: "input"; parts: InputPart[]; status?: string }
   | {
@@ -317,7 +318,13 @@ function liveRows(blocks: DisplayBlock[]): Row[] {
       const turn = block.id.includes(":input:")
         ? block.id.slice(0, block.id.lastIndexOf(":"))
         : block.id;
-      appendInput(rows, block, turn);
+      appendInput(
+        rows,
+        block,
+        block.inputGroup ?? (block.inputSource === "user" ? block.id : turn),
+      );
+      if (block.inputSource === "user" && !block.subagentRunId)
+        rows.at(-1)!.turnId = block.inputGroup ?? block.id;
     } else if (block.kind === "tool") {
       rows.push({
         id: block.id,
@@ -784,30 +791,68 @@ function TurnRows({
       .filter((input) => input.action === "send")
       .map((input) => [`input:${input.id}`, input]),
   );
-  const groups: { id: string; turn?: Schema<"TranscriptTurn">; rows: Row[] }[] =
-    [];
+  // Composer source identity spans preview -> live -> saved, while native
+  // turn identity owns navigation. They need not be the same identifier.
+  const presentationKeys = new Map(
+    turns.map((turn) => {
+      const input = indexed.byTurn
+        .get(turn.turn_id)
+        ?.find((entry) => entry.position === turn.input_position);
+      const source = input?.parts.map(inputSource).find(Boolean);
+      return [
+        turn.turn_id,
+        source ? `input:${source}` : `turn:${turn.turn_id}`,
+      ];
+    }),
+  );
+  const groups: {
+    id: string;
+    presentationKey: string;
+    turn?: Schema<"TranscriptTurn">;
+    rows: Row[];
+  }[] = [];
   for (const row of rows) {
     const turn =
       row.position === undefined
         ? undefined
         : indexed.byPosition.get(row.position);
     const local = row.kind === "input" ? localSends.get(row.id) : undefined;
-    const id = turn?.turn_id ?? local?.id ?? groups.at(-1)?.id ?? "ungrouped";
-    if (groups.at(-1)?.id !== id) groups.push({ id, turn, rows: [] });
+    const id =
+      turn?.turn_id ??
+      row.turnId ??
+      local?.id ??
+      groups.at(-1)?.id ??
+      "ungrouped";
+    if (groups.at(-1)?.id !== id) {
+      const source =
+        row.kind === "input"
+          ? row.parts.map(inputSource).find(Boolean)
+          : undefined;
+      const presentationKey = turn
+        ? presentationKeys.get(id)!
+        : source
+          ? `input:${source}`
+          : `turn:${id}`;
+      groups.push({ id, presentationKey, turn, rows: [] });
+    }
     groups.at(-1)!.rows.push(row);
   }
   if (!groups.length && (recovery || pending))
-    groups.push({ id: "ungrouped", rows: [] });
+    groups.push({
+      id: "ungrouped",
+      presentationKey: "turn:ungrouped",
+      rows: [],
+    });
   return groups.map((group, index) =>
     group.id === "ungrouped" && !recovery && !pending ? (
       <Rows
-        key={group.id}
+        key={group.presentationKey}
         rows={questionRows(group.rows)}
         threadId={threadId}
       />
     ) : (
       <Turn
-        key={group.id}
+        key={group.presentationKey}
         {...group}
         recovery={index === groups.length - 1 ? recovery : undefined}
         pending={index === groups.length - 1 ? pending : undefined}
@@ -1010,7 +1055,20 @@ function TurnSegments({
   failed?: boolean;
 }) {
   const { t } = useTranslation();
-  const rows = usePresentedRows(questionRows(sourceRows, pending), !missing);
+  const rows = usePresentedRows(
+    questionRows(
+      sourceRows.map((row) =>
+        row.kind === "input" &&
+        row.position === turn?.input_position &&
+        turn &&
+        !row.parts.some(inputSource)
+          ? { ...row, id: `input:${turn.turn_id}` }
+          : row,
+      ),
+      pending,
+    ),
+    !missing,
+  );
   const mountedExecution = useRef(new Set<string>());
   const complete =
     turn?.final_position != null &&
