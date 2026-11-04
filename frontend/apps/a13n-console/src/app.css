@@ -155,7 +155,15 @@ form:has(> [data-a13n-form-section]),
   transition: width 180ms ease-out;
 }
 
-[data-slot="disclosure-surface"] > [data-slot="collapsible-trigger"] {
+/* Disclosure rows stay anchored while pressed, including headings with actions. */
+[data-slot="collapsible-trigger"] {
+  scale: none;
+}
+:is([data-slot="disclosure-surface"], [data-slot="disclosure-heading"])
+  > [data-slot="collapsible-trigger"] {
+  width: 100%;
+  margin-inline: 0;
+  padding-inline: 12px;
   font-size: var(--a13n-text-sm);
   font-weight: 500;
 }

@@ -40,9 +40,7 @@
   font: inherit;
   text-align: left;
   cursor: pointer;
-  transition:
-    background-color 120ms ease,
-    transform 120ms ease;
+  transition: background-color 120ms ease;
 }
 .tile:hover {
   background: var(--a13n-hover);
@@ -52,7 +50,7 @@
   outline-offset: 2px;
 }
 .tile:active {
-  transform: scale(0.99);
+  background: var(--a13n-selected);
 }
 .tileCopy {
   display: grid;
