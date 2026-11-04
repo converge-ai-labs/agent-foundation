@@ -192,7 +192,8 @@ class Source:
             options=options.model_copy(
                 update={"overrides": overrides, "configuration": options.configuration or RunConfiguration()}
             ),
-            options_digest=submitted.digest(),
+            # Snapshot limits inherit even when omitted; an explicit equal steer must compare with that limit.
+            options_digest=(options if isinstance(revision, definitions.SelectedSnapshot) else submitted).digest(),
             occurrence_trigger_entry_id=entry.id if entry.schedule_occurrence_id is not None else None,
             entry=entry,
         )

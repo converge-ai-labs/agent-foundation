@@ -305,6 +305,10 @@ async def test_snapshot_options_reject_changes_and_preserve_omitted_values(servi
         if completed:
             scripted_model.say("Done")
             await (await runs_kit.attempt(service))
+            entries = await runs_kit.inbox(service, child.thread_id)
+            assert [(entry["status"], entry["assigned_run_id"]) for entry in entries] == [
+                ("consumed", child.execution_id)
+            ] * 2
         before = await runs_kit.inbox(service, child.thread_id)
         for delivery in ("steer", "next_run"):
             for field, value, reason in changes:
@@ -316,6 +320,11 @@ async def test_snapshot_options_reject_changes_and_preserve_omitted_values(servi
                 assert response.status_code == 409, response.text
                 assert response.json()["error"]["details"]["reason"] == reason
         assert await runs_kit.inbox(service, child.thread_id) == before
+        if not completed:
+            steer = await runs_kit.submit(
+                service, child.thread_id, runs_kit.message(parent, "Steer", delivery="steer", options=options)
+            )
+            assert steer.status_code == 201, steer.text
     # Explicit restatements are valid; omitted values retain the same frozen bindings.
     same = await runs_kit.submit(service, child.thread_id, runs_kit.message(parent, "Again", options=options))
     assert same.status_code == 201, same.text

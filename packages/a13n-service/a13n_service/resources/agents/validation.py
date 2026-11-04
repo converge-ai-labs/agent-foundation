@@ -151,7 +151,7 @@ async def validate_config(
     return config
 
 
-def require_subagent_tool_names(config: AgentConfig, *, controls: bool = False) -> None:
+def _subagent_tool_names(config: AgentConfig, *, controls: bool = False) -> set[str]:
     """Reserve only tools this definition exposes, including retained-child controls."""
     policy = config.subagents
     reserved = set()
@@ -161,6 +161,11 @@ def require_subagent_tool_names(config: AgentConfig, *, controls: bool = False) 
         reserved |= {"delegate", "resume_subagent"}
     if policy.dynamic.enabled:
         reserved.add("spawn_subagent")
+    return reserved
+
+
+def require_subagent_tool_names(config: AgentConfig, *, controls: bool = False) -> None:
+    reserved = _subagent_tool_names(config, controls=controls)
     for index, tool in enumerate(config.client_tools):
         if tool.name in reserved:
             raise invalid(f"client_tools.{index}.name", "is the name of a built-in tool")
@@ -172,7 +177,7 @@ def _check_rules(config: AgentConfig) -> None:
         if tool.provider_id is None:
             raise invalid(f"toolsets.web.tools.{operation}.config.provider_id", "required while the tool is enabled")
     reserved = toolsets.model_names(config.toolsets) | ({definition.QUESTION_TOOL} if config.user_questions else set())
-    require_subagent_tool_names(config)
+    reserved |= _subagent_tool_names(config)
     if config.summarize:
         reserved |= {"summarize"}
     for index, tool in enumerate(config.client_tools):

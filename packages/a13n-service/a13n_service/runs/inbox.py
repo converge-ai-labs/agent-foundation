@@ -348,7 +348,7 @@ def steers_into(entry: InboxEntryRow, run: RunRow, origin: RunRow | None) -> boo
     """A steer can retain, but never change, accepted configuration and request context.
 
     A steer that gives no options (the defaults) joins whatever options the run started with. Options it gives
-    compare as submitted: the run froze its own at acceptance, so it keeps the digest of what its source submitted.
+    compare as submitted on ordinary Runs. Snapshot Runs use their resolved options, including inherited limits.
     """
     if entry.kind in {"browser_handback", "desktop_handback"}:
         return (

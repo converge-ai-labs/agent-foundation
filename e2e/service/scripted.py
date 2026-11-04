@@ -13,7 +13,7 @@ RUNTIME_CONTEXT = (
     "<service-context ",
     "<file-context ",
 )
-# Custom Agents read this builtin guide from their primary environment; use skill_environment_template.
+# All Agents read this builtin guide through the host read-only mount, without a primary environment.
 GUIDE = "/platform-skills/platform-operations/SKILL.md"
 LOOKUP = {
     "builtin_skills": ["platform-operations"],

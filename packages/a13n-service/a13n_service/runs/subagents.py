@@ -168,7 +168,6 @@ class ChildRuns(SubagentOperator):
             options = stored.require(RunOptions, run.options, kind="run", id=run.id)
             config = None
             if spawn is not None:
-                limit = options.max_usage.requests if options.max_usage is not None else None
                 definition = await definitions.resolve(
                     session, thread, run.agent_id, run.agent_revision_id, options.overrides, accepting=False
                 )
@@ -207,18 +206,19 @@ class ChildRuns(SubagentOperator):
             if edge is None or edge.selection.environment.mode == "shared":
                 await adopt_mounts(session, child, [EnvironmentMount.model_validate(m) for m in run.environment_mounts])
             await adopt_memory_mounts(session, child, run.memory_mounts)
-            # Async Runs carry request limits: dynamic children inherit the parent's, named children use the
-            # edge's. Edge token and tool-call limits apply only to inline delegation.
+            # Snapshot admission owns dynamic inheritance. Named children use the edge's request limit;
+            # edge token and tool-call limits apply only to inline delegation.
             message = Message(
                 delivery="next_run",
                 payload=payload,
                 agent_id=edge.selection.agent_id if edge else run.agent_id,
                 agent_revision_id=edge.revision_id if edge else None,
-                options=RunOptions(
+                options=RunOptions()
+                if spawn is not None
+                else RunOptions(
                     max_usage=UsageLimit(requests=limit) if limit is not None else None,
                     configuration=options.configuration,
                     context=options.context,
-                    execution=options.execution if spawn is not None else None,
                 ),
             )
             entry = await inbox.append_message(

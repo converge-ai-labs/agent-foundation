@@ -78,6 +78,8 @@ Submission persists the normalized context in the existing inbox options before 
 
 Snapshot Threads retain their frozen context for new messages and retained-snapshot forks; an explicit different context is rejected rather than queued or overwritten.
 
+Snapshot Runs compare steering options after resolving inherited request limits, so an explicit equal limit can join a Run whose source omitted it. Request idempotency still uses the submitted body.
+
 A steer on an ordinary Thread with omitted context retains the accepted value. An equal explicit context can join; a different context remains queued for a later Run. Canonical request idempotency includes explicit normalized context, while omission preserves the pre-context request digest. Steering compares context separately from its other-options digest.
 
 Authorized ordinary HTTP reads retain context. MCP responses omit it from typed Run, inbox, Schedule and occurrence options before pagination, text fragmentation or search. Projection does not alter persisted data or unrelated business JSON fields named `context`. Context is not automatically included in prompts, logs, history, shell environments or tool results. [Outbound forwarding](04-resources.md#request-context-forwarding) is controlled separately from tool access through `ctx.deps.request_context.headers`.
