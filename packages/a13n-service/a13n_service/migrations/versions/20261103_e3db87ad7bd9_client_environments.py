@@ -7,8 +7,8 @@ The atomic DDL takes the environment table lock, scans it for the partial
 index and new checks, and backfills only existing HTTP targets. The constant
 managed default does not rewrite managed rows. The migration lock/statement
 timeouts bound contention; failure rolls back the revision before a retry.
-Legacy inserts remain compatible, but register clients only after old Workers
-and Controls have drained. Roll forward once registrations exist, including
+Drain and stop old Workers and Controls before applying this migration; old
+inserts omit the required kind. Roll forward once registrations exist, including
 tombstones; a downgrade cannot preserve their execution authority.
 """
 
@@ -85,12 +85,6 @@ def upgrade() -> None:
         op.f("ck_environments_kind"), "environments", "kind IN ('managed', 'external_http', 'client_envd')"
     )
     op.execute(
-        "CREATE FUNCTION classify_legacy_environment() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.template_id IS NOT NULL THEN NEW.kind := 'managed'; ELSIF NEW.endpoint IS NOT NULL THEN NEW.kind := 'external_http'; END IF; RETURN NEW; END $$"
-    )
-    op.execute(
-        "CREATE TRIGGER classify_legacy_environment BEFORE INSERT ON environments FOR EACH ROW WHEN (NEW.kind IS NULL) EXECUTE FUNCTION classify_legacy_environment()"
-    )
-    op.execute(
         "CREATE TRIGGER guard_environment_target BEFORE UPDATE ON environments FOR EACH ROW WHEN (ROW(OLD.kind, OLD.device_id, OLD.owner_principal_id) IS DISTINCT FROM ROW(NEW.kind, NEW.device_id, NEW.owner_principal_id)) EXECUTE FUNCTION refuse_mutation()"
     )
 
@@ -100,8 +94,6 @@ def downgrade() -> None:
     if op.get_bind().scalar(sa.text("SELECT EXISTS (SELECT FROM environments WHERE kind = 'client_envd')")):
         raise RuntimeError("Client registrations prevent downgrade")
     op.execute("DROP TRIGGER guard_environment_target ON environments")
-    op.execute("DROP TRIGGER classify_legacy_environment ON environments")
-    op.execute("DROP FUNCTION classify_legacy_environment()")
     _replace_checks(_OLD_CHECKS)
     op.drop_constraint(op.f("ck_environments_kind"), "environments", type_="check")
     op.drop_constraint(op.f("ck_environments_disabled"), "environments", type_="check")

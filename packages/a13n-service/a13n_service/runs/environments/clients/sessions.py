@@ -112,16 +112,33 @@ class Sessions:
         self.closed = False
 
     async def serve(self) -> None:
+        connections = self.runtime.client_connections
         try:
-            async with asyncio.TaskGroup() as group:
-                group.create_task(
-                    self.runtime.client_routing.serve(
-                        self.runtime.client_connections.node,
-                        self.dispatch,
-                        on_subscription_lost=self.runtime.client_connections.disconnect,
+            while True:
+                try:
+                    if connections.recovering:
+                        await connections.disconnect()
+                        await self._retire_all()
+                        connections.recovering = False
+                    async with asyncio.TaskGroup() as group:
+                        group.create_task(
+                            self.runtime.client_routing.serve(
+                                connections.node,
+                                self.dispatch,
+                                on_subscription_lost=connections.disconnect,
+                            )
+                        )
+                        group.create_task(self.renew())
+                except Exception as error:
+                    # The TaskGroup has joined all old dispatches. Retire their
+                    # carriers before admitting work on a fresh subscription.
+                    connections.recovering = True
+                    self.runtime.client_routing.ready.clear()
+                    logger.error(
+                        "Client environment service restarting",
+                        extra={"exception_details": exception_details(error)},
                     )
-                )
-                group.create_task(self.renew())
+                    await asyncio.sleep(1)
         finally:
             try:
                 await self.close()
@@ -132,6 +149,7 @@ class Sessions:
         connection = self.runtime.client_connections.entries.get(request.environment_id)
         if (
             self.closed
+            or self.runtime.client_connections.recovering
             or connection is None
             or connection.device is None
             or connection.device.is_closed
@@ -257,6 +275,12 @@ class Sessions:
             )
         await authority.resolve(self.runtime, request, connection.attachment, actions)
         await self.connection(request)
+        if self.scopes.get(request.scope_id) is not scope:
+            raise EnvironmentError(
+                "Client Session retired during authorization.",
+                code="environment_unavailable",
+                details={"dispatch_stage": "pre_dispatch"},
+            )
         scope.first_use_until = None
         scope.remember(request.caller)
         return scope
@@ -351,8 +375,14 @@ class Sessions:
         if self.scopes.get(identity) is not scope:
             return
         del self.scopes[identity]
-        with anyio.move_on_after(5, shield=True):
-            await scope.session.abort()
+        try:
+            with anyio.move_on_after(5, shield=True):
+                await scope.session.abort()
+        except Exception as error:
+            logger.warning(
+                "Client Session cleanup failed",
+                extra={"scope_id": identity, "exception_details": exception_details(error)},
+            )
 
     async def drop_connection(self, connection: Connection) -> None:
         await asyncio.gather(
@@ -421,4 +451,7 @@ class Sessions:
 
     async def close(self) -> None:
         self.closed = True
+        await self._retire_all()
+
+    async def _retire_all(self) -> None:
         await asyncio.gather(*(self.retire(identity, scope) for identity, scope in tuple(self.scopes.items())))

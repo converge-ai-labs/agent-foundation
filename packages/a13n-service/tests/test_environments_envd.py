@@ -819,3 +819,131 @@ async def test_client_environment_runs_on_reverse_daemon_and_streams_files(
                 process.terminate()
             _, stderr = await asyncio.wait_for(process.communicate(), 5)
             assert token_file.read_bytes() not in stderr
+
+
+@pytest.mark.parametrize("failure", ["session_cleanup", "supervisor"])
+async def test_client_service_failure_allows_same_and_other_devices_to_connect(
+    service, tmp_path, scripted_model, runs_kit, monkeypatch, failure
+):
+    from unittest.mock import AsyncMock
+    from uuid import uuid4
+
+    from a13n_service.runs.claim import claim
+    from a13n_service.runs.environments.clients.worker import Calls, Target
+
+    from .conftest import listening
+
+    await runs_kit.pause_sweeps(service)
+    runtime = service.runtime
+    pool, sessions = runtime.client_connections, runtime.client_sessions
+    agent = await runs_kit.create_agent(service, scripted_model)
+    clients = []
+    for device_id in ("device-original", "device-other"):
+        directory = tmp_path / device_id
+        directory.mkdir()
+        created = await service.client.post(
+            f"{service.api}/client-environments",
+            json={"device_id": device_id, "name": device_id, "default_working_directory": str(directory)},
+        )
+        assert created.status_code == 201, created.text
+        registration = created.json()
+        identity = registration["client"]["environment"]["id"]
+        accepted = await runs_kit.start_thread(
+            service, agent, "Inspect directory", environments=[{"name": "workspace", "environment_id": identity}]
+        )
+        token_file = directory / "token"
+        token_file.write_text(registration["token"])
+        token_file.chmod(0o600)
+        clients.append((registration, Target(identity, device_id, str(directory), "workspace"), accepted["run"]["id"]))
+    leases = {
+        lease.run_id: lease for lease in await claim(runtime, worker_id="recovery-test", worker_build="test", limit=2)
+    }
+    processes = []
+    async with listening(service.app) as origin:
+        monkeypatch.setitem(
+            runtime.settings.__dict__,
+            "client_environments",
+            runtime.settings.client_environments.model_copy(
+                update={"allow_loopback_ws": True, "transfer_origin": origin, "heartbeat_seconds": 0.1}
+            ),
+        )
+
+        async def launch(client):
+            registration, target, _ = client
+            processes.append(
+                await asyncio.create_subprocess_exec(
+                    BINARY,
+                    env={
+                        "PATH": os.environ["PATH"],
+                        "A13N_ENVD_DEVICE_ID": target.device_id,
+                        "A13N_ENVD_RUNTIME_DIR": str(tmp_path / target.device_id / "state"),
+                        "A13N_ENVD_TRANSPORT": "reverse_websocket",
+                        "A13N_ENVD_REVERSE_WS_URL": origin.replace("http://", "ws://")
+                        + registration["connection_path"],
+                        "A13N_ENVD_REVERSE_WS_CREDENTIAL_FILE": str(tmp_path / target.device_id / "token"),
+                        "A13N_ENVD_CONFIG_JSON": json.dumps(
+                            {"default_working_directory": target.directory, "full_control": True}
+                        ),
+                    },
+                    stdout=asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+            )
+
+        async def online_calls(client, previous_epoch=None):
+            _, target, run_id = client
+            async with asyncio.timeout(15):
+                while True:
+                    for process in processes:
+                        if process.returncode is not None:
+                            _, stderr = await process.communicate()
+                            pytest.fail(f"Reverse daemon exited: {stderr.decode()}")
+                    online = await pool.presence(target.environment_id)
+                    if online is not None and online.epoch != previous_epoch:
+                        return Calls(runtime, leases[run_id], target, online, uuid4().hex)
+                    await asyncio.sleep(0.02)
+
+        try:
+            await launch(clients[0])
+            original = await online_calls(clients[0])
+            await original.call("scope.open", {"working_directory": original.target.directory})
+            scope = sessions.scopes[original.scope_id]
+            failed = asyncio.Event()
+            renew = sessions._renew_scope
+            if failure == "session_cleanup":
+                monkeypatch.setattr(scope.session, "abort", AsyncMock(side_effect=RuntimeError("Cleanup failed")))
+
+            async def inject(identity, candidate):
+                if candidate is scope and not failed.is_set():
+                    if failure == "supervisor":
+                        failed.set()
+                        raise RuntimeError("Unexpected Session service failure")
+                    candidate.first_use_until = 0
+                    try:
+                        await renew(identity, candidate)
+                    finally:
+                        failed.set()
+                    return
+                await renew(identity, candidate)
+
+            monkeypatch.setattr(sessions, "_renew_scope", inject)
+            await asyncio.wait_for(failed.wait(), 15)
+            if failure == "session_cleanup":
+                # A cleanup error alone must leave the shared routing subscription alive.
+                assert runtime.client_routing.ready.is_set()
+                await pool.entries[original.target.environment_id].carrier.close()
+            reconnected = await online_calls(clients[0], original.online.epoch)
+            # This installation has never connected before the failure.
+            await launch(clients[1])
+            other = await online_calls(clients[1])
+            for calls in (reconnected, other):
+                await calls.call("scope.open", {"working_directory": calls.target.directory})
+                described = await calls.call("environment.describe", {"context": {"operation_id": uuid4().hex}})
+                assert described["descriptor"]["working_directory"] == calls.target.directory
+                assert await calls.call("scope.close", {}) == {"closed": True}
+            assert not sessions.closed and not pool.closed
+        finally:
+            for process in processes:
+                if process.returncode is None:
+                    process.terminate()
+                await asyncio.wait_for(process.communicate(), 5)

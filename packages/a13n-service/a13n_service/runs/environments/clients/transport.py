@@ -6,6 +6,8 @@ from a13n_logging import exception_details, get_logger
 from fastapi import WebSocket, WebSocketDisconnect
 from redis.exceptions import RedisError
 from sqlalchemy.exc import SQLAlchemyError
+from starlette.responses import Response
+from starlette.websockets import WebSocketState
 
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.websocket import AcceptedSocket, connection_token
@@ -40,7 +42,15 @@ async def connect(socket: WebSocket, environment_id: str) -> None:
             extra={"environment_id": environment_id, "exception_details": exception_details(error)},
         )
         with anyio.move_on_after(1, shield=True):
-            await carrier.close(1008)
+            temporary = isinstance(error, (RedisError, SQLAlchemyError, TimeoutError)) or (
+                isinstance(error, ServiceError) and error.code in {"unavailable", "conflict"}
+            )
+            if temporary and socket.application_state is WebSocketState.CONNECTING:
+                # A close before upgrade becomes HTTP 403, which envd correctly
+                # treats as a permanent credential failure rather than retrying.
+                await socket.send_denial_response(Response(status_code=503, headers={"Retry-After": "1"}))
+            else:
+                await carrier.close(1013 if temporary else 1008)
     finally:
         with anyio.move_on_after(1, shield=True):
             await carrier.close()

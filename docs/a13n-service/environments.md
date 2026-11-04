@@ -144,6 +144,8 @@ Worker recovery makes a best-effort attempt to reuse a checkpointed Envd Session
 
 Use this path when Envd can make an outbound connection to Control but Workers cannot dial the computer. You can register the environment and mount it on a thread before starting Envd.
 
+When upgrading to the client-environment schema, drain active work and stop all old Controls and Workers before applying the migration. Existing managed and HTTP environments are preserved, but old versions cannot write the new schema. After any client registration exists, including a deleted one, use forward repair instead of downgrading the schema.
+
 1. As the workspace principal that will run the agent, send `POST /api/v1/client-environments?workspace_id=…` with the installation's persistent device ID, an existing directory and the permitted actions. For example:
 
    ```json

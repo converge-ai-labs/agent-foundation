@@ -86,6 +86,7 @@ class Connections:
         self.node = uuid4().hex
         self.entries: dict[str, Connection] = {}
         self.closed = False
+        self.recovering = False
         self.lease_ms = int(max(3 * self.config.heartbeat_seconds, 2 * self.config.initialization_seconds) * 1000)
 
     async def presence(self, environment_id: str) -> Presence | None:
@@ -124,6 +125,7 @@ class Connections:
         environment_id = connection.attachment.environment_id
         if (
             self.closed
+            or self.recovering
             or self.entries.get(environment_id) is not connection
             or await self.runtime.redis.get(owner_key(environment_id)) != connection.epoch
         ):
@@ -136,6 +138,8 @@ class Connections:
         identity = attachment.environment_id
         if self.closed:
             raise ServiceError("unavailable", "Client environment connections are closing")
+        if self.recovering:
+            raise ServiceError("unavailable", "Client environment connections are recovering")
         if identity in self.entries:
             raise ServiceError("conflict", "Client environment already has a connection")
         if len(self.entries) >= self.config.max_connections:

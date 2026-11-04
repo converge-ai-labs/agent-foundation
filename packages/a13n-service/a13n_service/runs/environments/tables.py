@@ -113,12 +113,6 @@ class EnvironmentRow(Stamped, Base):
         ),
         rules(
             identity_guarded("environments"),
-            # Older Control replicas omit kind when inserting their two supported target shapes.
-            "CREATE FUNCTION classify_legacy_environment() RETURNS trigger LANGUAGE plpgsql AS $$"
-            " BEGIN IF NEW.template_id IS NOT NULL THEN NEW.kind := 'managed';"
-            " ELSIF NEW.endpoint IS NOT NULL THEN NEW.kind := 'external_http'; END IF; RETURN NEW; END $$",
-            "CREATE TRIGGER classify_legacy_environment BEFORE INSERT ON environments FOR EACH ROW"
-            " WHEN (NEW.kind IS NULL) EXECUTE FUNCTION classify_legacy_environment()",
             "CREATE TRIGGER guard_environment_target BEFORE UPDATE ON environments FOR EACH ROW"
             " WHEN (ROW(OLD.kind, OLD.device_id, OLD.owner_principal_id)"
             " IS DISTINCT FROM ROW(NEW.kind, NEW.device_id, NEW.owner_principal_id))"

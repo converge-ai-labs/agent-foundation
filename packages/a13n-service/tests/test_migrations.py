@@ -15,7 +15,7 @@ from a13n_service.runs.threads import new_thread
 from a13n_service.settings import Database
 from alembic import command
 from sqlalchemy import MetaData, create_engine, text
-from sqlalchemy.exc import DBAPIError
+from sqlalchemy.exc import DBAPIError, IntegrityError
 
 RULES = """
 SELECT 'function', p.proname, regexp_replace(pg_get_functiondef(p.oid), '\\s+', ' ', 'g')
@@ -102,10 +102,12 @@ async def test_client_environment_migration_preserves_legacy_target_and_refuses_
         original = rows(database, query)
         upgrade(database, OSS)
         assert rows(database, query) == original
-        # An old Control can still insert its original shape during a rolling upgrade.
-        with engine.begin() as connection:
-            connection.execute(insert, {**fields, "id": "env_rolling"})
-        assert rows(database, "SELECT kind FROM environments ORDER BY id") == [("external_http",)] * 2
+        assert rows(database, "SELECT kind FROM environments ORDER BY id") == [("external_http",)]
+        # Only existing rows are backfilled; old writers must stop before migration.
+        with pytest.raises(IntegrityError, match='null value in column "kind"'):
+            with engine.begin() as connection:
+                connection.execute(insert, {**fields, "id": "env_rolling"})
+        assert rows(database, "SELECT to_regprocedure('classify_legacy_environment()')") == [(None,)]
         with engine.begin() as connection:
             connection.execute(
                 text(
