@@ -268,7 +268,12 @@ def envd_update_command(
 
 @cli.command("update")
 def update_command() -> None:
-    """Update this uv-tool installation now, without starting the TUI or setup."""
+    """Update this uv-tool installation without starting the TUI or setup.
+
+    On Windows, hand off to an update window and exit to release locked files.
+    Check that window for the result. Scripts needing the installer's exit status
+    should run `uv tool upgrade a13n-harness-ui` directly.
+    """
     from a13n_harness_ui.updater import update
 
     update()

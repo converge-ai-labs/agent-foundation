@@ -63,7 +63,9 @@ WebUI 在你的浏览器中打开。可选的 **Browser** 旁栏会在 Linux 或
    a13n-harness-ui update
    ```
 
-   此命令要求 `PATH` 中有 `uv`，不会再次询问。也可运行 `uv tool upgrade a13n-harness-ui`；其他安装方式使用原来的包管理器。
+   此命令要求 `PATH` 中有 `uv`，不会再次确认。在 Windows 上，命令会打开更新窗口并退出，以便替换自身的可执行文件。等待该窗口报告成功，再按 Enter 关闭窗口。在 macOS 和 Linux 上，等待命令完成。
+
+   需要安装器退出状态的脚本应直接运行 `uv tool upgrade a13n-harness-ui`。Windows 上原命令的零退出状态只表示交接成功。其他安装方式使用原来的包管理器。
 
 3. 所有共享安装都升级完成后，重新启动应用，并刷新已打开的 WebUI 页面。
 

@@ -86,7 +86,7 @@ TUI 显示 `[System] Retrying model request…` 时，同一个 Run 正在从可
 
 对于识别出的 uv-tool 安装：
 
-1. 退出 Harness UI。
+1. 关闭所有运行中的 Harness UI TUI 和 WebUI 会话。
 
 2. 运行：
 
@@ -94,11 +94,13 @@ TUI 显示 `[System] Retrying model request…` 时，同一个 Run 正在从可
    a13n-harness-ui update
    ```
 
-3. 命令成功后重启 Harness UI。
+3. 在 Windows 上，等待独立的更新窗口报告成功，再按 Enter 关闭窗口。在 macOS 和 Linux 上，等待命令成功完成。安装完成后重启 Harness UI。
 
-命令会针对当前运行安装的工具目录，直接执行 `uv tool upgrade a13n-harness-ui`。它不会再次确认、打开设置，也不使用启动元数据缓存。PATH 中必须有 uv。其他安装类型应使用原来的包管理器。也可以直接调用 `uv tool upgrade a13n-harness-ui`。
+命令会针对当前运行安装的工具目录执行 `uv tool upgrade a13n-harness-ui`。它不会再次确认、打开设置，也不使用启动元数据缓存。PATH 中必须有 uv。其他安装类型应使用原来的包管理器。
 
-安装器失败时返回非零状态，不自动重试。更新中断时退出状态为 `130`；重试前先检查安装。更新 Python 包和准备原生 Envd runtime 是两个独立操作。
+在 Windows 上，原命令将工作交给更新窗口后退出。零退出状态表示交接成功，不代表安装成功。更新器最多等待 60 秒，让启动它的进程退出并释放文件，然后启动 uv。更新窗口显示安装器输出和最终结果。需要同步等待安装器退出状态的脚本应直接调用 `uv tool upgrade a13n-harness-ui`。
+
+安装器失败时，负责安装的更新器返回非零状态，不自动重试。更新中断时退出状态为 `130`；重试前先检查安装。更新 Python 包和准备原生 Envd runtime 是两个独立操作。
 
 ### 控制更新提示
 

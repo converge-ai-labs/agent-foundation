@@ -14,7 +14,7 @@ a13n-harness-ui
 
 For WebUI, run `a13n-harness-ui webui` and open the printed login link. Neither installed interface requires a checkout or Node.js. If the command is not on PATH, run `uv tool update-shell` and reopen your shell.
 
-Upgrade a uv-tool installation with `a13n-harness-ui update` or `uv tool upgrade a13n-harness-ui`, then restart it. Use the original package manager for other installations. For source development, run `make a13n-harness-ui` from the repository root; see [CONTRIBUTING.md](../../CONTRIBUTING.md).
+Close other Harness UI sessions, then upgrade a uv-tool installation with `a13n-harness-ui update` and restart it after the update completes. On Windows, the command opens an update window and exits; the updater waits for the launching processes to release their files before running uv. Check that window for the final result and press Enter to close it. The original command's exit status confirms handoff, not installation success. For scripts that need to wait for the installer and inspect its exit status, run `uv tool upgrade a13n-harness-ui` directly. Use the original package manager for other installations. For source development, run `make a13n-harness-ui` from the repository root; see [CONTRIBUTING.md](../../CONTRIBUTING.md).
 
 ## First Use
 

@@ -63,7 +63,9 @@ Upgrade all installations sharing a data root together:
    a13n-harness-ui update
    ```
 
-   This requires `uv` on `PATH` and proceeds without another prompt. `uv tool upgrade a13n-harness-ui` is equivalent; for other installation methods, use the original package manager.
+   This requires `uv` on `PATH` and proceeds without another confirmation. On Windows, the command opens an update window and exits so its executable can be replaced. Wait for that window to report success, then press Enter to close it. On macOS and Linux, wait for the command to finish.
+
+   Scripts that need the installer's exit status should run `uv tool upgrade a13n-harness-ui` directly. The Windows command's zero exit status confirms handoff only. For other installation methods, use the original package manager.
 
 3. After every shared installation has been upgraded, restart the applications and reload open WebUI pages.
 
