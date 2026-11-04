@@ -99,6 +99,9 @@ function ConversationContent({
   const transport = useTransport();
   const disconnected = useContext(ConnectionNoticeContext);
   const appContexts = useAppContextSelection();
+  const [activityPanel, setActivityPanel] = useState<HTMLDivElement | null>(
+    null,
+  );
   const queries = useQueryClient();
   const detail = useThread(threadId);
   const selectors = useSelectors();
@@ -687,528 +690,536 @@ function ConversationContent({
       label={t("Opening chat…")}
       onContinue={() => setShowAvailable(true)}
     >
-      <div className={styles.page}>
-        {!guest && !readOnly && thread?.archived && (
-          <div className={styles.warning}>
-            <p>{t("This chat is archived. Its history remains available.")}</p>
-            <Button
-              variant="outline"
-              loading={metadata.isPending}
-              onClick={() => metadata.mutate({ archived: false })}
-            >
-              {t("Restore chat")}
-            </Button>
-          </div>
-        )}
-        <div className={styles.readerFrame}>
-          <div
-            className={styles.readerFade}
-            data-edge="top"
-            aria-hidden="true"
-          />
-          <div
-            className={styles.readerFade}
-            data-edge="bottom"
-            aria-hidden="true"
-          />
-          <InputNavigation
-            threadId={threadId}
-            continuation={continuation}
-            localInputs={draft.localInputs}
-            reader={reader}
-            revision={visibleContent}
-            onSelect={jumpToInput}
-          />
-          <div
-            ref={reader}
-            className={`${styles.reading} a13n-scrollbar`}
-            onWheel={(event) => {
-              if (event.deltaY < 0) interruptScroll();
-            }}
-            onTouchStart={interruptScroll}
-            onPointerDown={interruptScroll}
-            onKeyDown={(event) => {
-              if (["ArrowUp", "PageUp", "Home"].includes(event.key))
-                interruptScroll();
-            }}
-            onScroll={() => {
-              if (!pageReady) return;
-              const element = reader.current!;
-              // Layout-driven scroll events must not detach an active follower.
-              // After a user gesture, resume only at the actual bottom.
-              if (scrollFrame.current === null && !follow.current)
-                follow.current =
-                  !hasLater &&
-                  element.scrollHeight -
-                    element.scrollTop -
-                    element.clientHeight <=
-                    1;
-              if (follow.current) setNewOutput(false);
-              readingAnchor.current = follow.current
-                ? undefined
-                : captureReadingAnchor(element);
-              if (
-                element.scrollTop < 160 &&
-                history.hasNextPage &&
-                !history.isFetching &&
-                !history.isFetchNextPageError &&
-                !olderAnchor.current
-              ) {
-                olderAnchor.current = {
-                  height: element.scrollHeight,
-                  top: element.scrollTop,
-                };
-                void history.fetchNextPage();
-              }
-            }}
-          >
-            <div className={styles.transcript}>
-              {history.isFetchingNextPage && (
-                <small role="status">
-                  {t("Loading earlier messages\u2026")}
-                </small>
-              )}
-              {history.isFetchNextPageError && (
-                <Button
-                  variant="ghost"
-                  onClick={() => {
-                    const element = reader.current;
-                    if (element)
-                      olderAnchor.current = {
-                        height: element.scrollHeight,
-                        top: element.scrollTop,
-                      };
-                    void history.fetchNextPage();
-                  }}
-                >
-                  {t("Retry loading")}
-                </Button>
-              )}
-              <PauseConversationFollowing value={interruptScroll}>
-                <ConversationTranscript
-                  currentFailureRunId={
-                    thread?.last_execution?.status === "failed"
-                      ? thread.last_execution.run_id
-                      : undefined
-                  }
-                  entries={entries}
-                  blocks={showLive ? liveBlocks : []}
-                  localInputs={hasLater ? [] : draft.localInputs}
-                  turns={turns}
-                  loadDetails
-                  onSavedEntries={reconcileSavedInputs}
-                  continuation={continuation}
-                  gap={showLive && display.gap}
-                  threadId={threadId}
-                  activity={
-                    !readOnly &&
-                    !showGoal &&
+      <div className={styles.workspace}>
+        <div className={styles.page}>
+          {!guest && !readOnly && thread?.archived && (
+            <div className={styles.warning}>
+              <p>
+                {t("This chat is archived. Its history remains available.")}
+              </p>
+              <Button
+                variant="outline"
+                loading={metadata.isPending}
+                onClick={() => metadata.mutate({ archived: false })}
+              >
+                {t("Restore chat")}
+              </Button>
+            </div>
+          )}
+          <div className={styles.readerFrame}>
+            <div
+              className={styles.readerFade}
+              data-edge="top"
+              aria-hidden="true"
+            />
+            <div
+              className={styles.readerFade}
+              data-edge="bottom"
+              aria-hidden="true"
+            />
+            <InputNavigation
+              threadId={threadId}
+              continuation={continuation}
+              localInputs={draft.localInputs}
+              reader={reader}
+              revision={visibleContent}
+              onSelect={jumpToInput}
+            />
+            <div
+              ref={reader}
+              className={`${styles.reading} a13n-scrollbar`}
+              onWheel={(event) => {
+                if (event.deltaY < 0) interruptScroll();
+              }}
+              onTouchStart={interruptScroll}
+              onPointerDown={interruptScroll}
+              onKeyDown={(event) => {
+                if (["ArrowUp", "PageUp", "Home"].includes(event.key))
+                  interruptScroll();
+              }}
+              onScroll={() => {
+                if (!pageReady) return;
+                const element = reader.current!;
+                // Layout-driven scroll events must not detach an active follower.
+                // After a user gesture, resume only at the actual bottom.
+                if (scrollFrame.current === null && !follow.current)
+                  follow.current =
                     !hasLater &&
-                    !thread?.archived &&
-                    !detail.data?.deferred_requests?.length &&
-                    display.recovery?.state !== "retrying" ? (
-                      <RunActivity
-                        activity={operation}
-                        submission={draft.submission}
-                        operation={observedOperation.data}
-                      />
-                    ) : undefined
-                  }
-                  pending={
-                    !hasLater && detail.data?.deferred_requests?.length
-                      ? {
-                          requestIds: detail.data.deferred_requests
-                            .filter(
-                              (request) =>
-                                request.tool_name === "ask_user_question",
-                            )
-                            .map((request) => request.request_id),
-                          content: decisions.slot,
-                        }
-                      : undefined
-                  }
-                  recovery={
-                    !hasLater && display.recovery?.state === "resumed"
-                      ? display.recovery
-                      : undefined
-                  }
-                />
-                {decisions.portal}
-                {!guest && (
-                  <McpInputs
-                    threadId={threadId}
-                    requests={mcpInputs.data}
-                    reconcile={() => void mcpInputs.refetch()}
-                  />
+                    element.scrollHeight -
+                      element.scrollTop -
+                      element.clientHeight <=
+                      1;
+                if (follow.current) setNewOutput(false);
+                readingAnchor.current = follow.current
+                  ? undefined
+                  : captureReadingAnchor(element);
+                if (
+                  element.scrollTop < 160 &&
+                  history.hasNextPage &&
+                  !history.isFetching &&
+                  !history.isFetchNextPageError &&
+                  !olderAnchor.current
+                ) {
+                  olderAnchor.current = {
+                    height: element.scrollHeight,
+                    top: element.scrollTop,
+                  };
+                  void history.fetchNextPage();
+                }
+              }}
+            >
+              <div className={styles.transcript}>
+                {history.isFetchingNextPage && (
+                  <small role="status">
+                    {t("Loading earlier messages\u2026")}
+                  </small>
                 )}
-              </PauseConversationFollowing>
-              {hasLater && (
-                <div className={styles.historyActions}>
+                {history.isFetchNextPageError && (
                   <Button
                     variant="ghost"
-                    loading={history.isFetchingPreviousPage}
-                    onClick={() => void history.fetchPreviousPage()}
-                  >
-                    {t("Load newer")}
-                  </Button>
-                  <Button variant="ghost" onClick={backToLatest}>
-                    {t("Back to latest")}
-                  </Button>
-                </div>
-              )}
-              <RootFailureNotice
-                lastExecution={thread?.last_execution}
-                threadId={threadId}
-                receipt={receipt}
-                display={display}
-                continuationId={detail.data?.continuation_id}
-                completedContinuationId={thread?.completion?.continuation_id}
-                retry={
-                  guest || readOnly || thread?.archived
-                    ? undefined
-                    : () => {
-                        void submitContinuation(
-                          draft,
-                          transport,
-                          threadId,
-                          tracker
-                            ? () => tracker.beforeRun(threadId)
-                            : undefined,
-                          () => appContexts?.capture(threadId) ?? [],
-                        ).finally(reconcile);
-                      }
-                }
-                retryDisabled={
-                  !detail.data?.available_actions?.includes("run") ||
-                  thread?.root_activity.state !== "inactive" ||
-                  agentSelection.isPending ||
-                  agentSelection.isError ||
-                  detail.isError ||
-                  draft.submission.kind === "pending" ||
-                  draft.submission.kind === "unknown" ||
-                  (draft.submission.kind === "accepted" &&
-                    draft.submission.receipt !== receipt)
-                }
-              />
-              {display.recovery?.state !== "resumed" && (
-                <RecoveryNotice recovery={display.recovery} />
-              )}
-              {((guest && !canCompose) || readOnly || isCoordinator) &&
-                !entries.length &&
-                !draft.localInputs.length &&
-                thread?.root_activity.state === "inactive" &&
-                !showLive &&
-                !history.isPending &&
-                !history.error && (
-                  <div
-                    className={`${styles.empty} ${isCoordinator ? coordinatorStyles.intro : ""}`}
-                  >
-                    {guest && !canCompose ? (
-                      <>
-                        <h2>{t("No messages yet")}</h2>
-                        <p>
-                          {t(
-                            "Messages will appear here when this chat gets started.",
-                          )}
-                        </p>
-                      </>
-                    ) : readOnly ? (
-                      <>
-                        <h2>{t("No organization history yet")}</h2>
-                        <p>
-                          {t(
-                            "Automatic memory updates appear here. Viewing this page won't start a run.",
-                          )}
-                        </p>
-                      </>
-                    ) : isCoordinator ? (
-                      <>
-                        <h2>{t("What are we working on?")}</h2>
-                        <p>
-                          {t(
-                            "Share a goal. I’ll help plan the work and bring results back here.",
-                          )}
-                        </p>
-                      </>
-                    ) : null}
-                  </div>
-                )}
-            </div>
-          </div>
-        </div>
-        {(newOutput ||
-          (hasLater && !!detail.data?.deferred_requests?.length)) && (
-          <Button
-            className={styles.newOutput}
-            variant="outline"
-            onClick={backToLatest}
-          >
-            <ArrowDown />
-            {detail.data?.deferred_requests?.length
-              ? t("Response needed")
-              : t("New output")}
-          </Button>
-        )}
-        {!readOnly && detail.data && (
-          <WorkInspector
-            threadId={threadId}
-            connectionStatus={connectionStatus}
-            status={
-              !guest && thread && !thread.archived ? (
-                <ComposerStatus
-                  threadId={threadId}
-                  receipt={receipt}
-                  busy={thread.root_activity.state !== "inactive"}
-                  liveTokens={
-                    showLive ? display.contextUsage?.tokens : undefined
-                  }
-                />
-              ) : undefined
-            }
-            display={display}
-            connected={connection === "Live"}
-            reconcile={reconcile}
-            goal={showGoal ? goal : null}
-            activity={thread?.root_activity}
-            onUseGoal={
-              goal &&
-              thread?.root_activity.state === "inactive" &&
-              detail.data?.available_actions?.includes("run") &&
-              draft.submission.kind !== "pending" &&
-              draft.submission.kind !== "unknown"
-                ? () => {
-                    const text = draft.doc.getText("text");
-                    text.insert(
-                      text.length,
-                      `${text.length ? "\n\n" : ""}${goal.objective}`,
-                    );
-                    draft.mode = "goal";
-                    draft.notify();
-                  }
-                : undefined
-            }
-          />
-        )}
-        {readOnly && connectionStatus && (
-          <div className={styles.conversationFeedback}>{connectionStatus}</div>
-        )}
-        {(!canCompose || thread?.archived) && feedback && (
-          <div className={styles.conversationFeedback}>{feedback}</div>
-        )}
-        {canCompose && !thread?.archived && (
-          <Composer
-            feedback={feedback}
-            feedbackError={pageError}
-            suppressConnectionNotice={
-              disconnected || connection !== "Live" || !!pageError
-            }
-            autoFocus={pageReady && search.get("compose") === "1"}
-            threadId={threadId}
-            activity={thread?.root_activity ?? { state: "inactive" }}
-            owner={
-              !guest && ownerId
-                ? {
-                    title: owner.data
-                      ? conversationTitle(owner.data.thread)
-                      : ownerId,
-                  }
-                : undefined
-            }
-            coordinator={
-              !guest && thread && thread.role !== "worker"
-                ? {
-                    active: thread.role === "coordinator",
-                    available: canPromoteCoordinator(
-                      thread,
-                      !!detail.data?.deferred_requests?.length,
-                    ),
-                  }
-                : undefined
-            }
-            canRun={
-              !agentSelection.isPending &&
-              !agentSelection.isError &&
-              !detail.isError &&
-              (detail.data?.available_actions?.includes("run") ?? false)
-            }
-            continuationId={detail.data?.continuation_id}
-            canClearContext={
-              !detail.isError &&
-              (detail.data?.available_actions?.includes("clear_context") ??
-                false)
-            }
-            unavailableReason={
-              agentSelection.isPending
-                ? t("Updating chat settings…")
-                : !detail.data
-                  ? t("Loading chat…")
-                  : undefined
-            }
-            modelId={draft.modelId}
-            leadingControls={
-              guest ? undefined : thread?.configuration.agent_source.kind ===
-                "live" ? (
-                <Link to="/settings#live">{t("Live settings")}</Link>
-              ) : (
-                <RunEnvironments
-                  catalog={selectors.data}
-                  configuration={thread?.configuration}
-                  value={draft.environment}
-                  onChange={(value) => {
-                    draft.environment = value;
-                    draft.notify();
-                  }}
-                  disabled={
-                    !thread ||
-                    draft.submission.kind === "pending" ||
-                    draft.submission.kind === "unknown"
-                  }
-                />
-              )
-            }
-            controls={() =>
-              guest ? null : thread?.configuration.agent_source.kind ===
-                "live" ? null : (
-                <ThreadRunChoices
-                  catalog={selectors.data}
-                  agentId={thread?.configuration.agent_source.id ?? ""}
-                  defaultModelId={thread?.configuration.default_model_id}
-                  modelId={draft.modelId}
-                  controls={draft.controls}
-                  onControlsChange={(value) => {
-                    draft.controls = value;
-                    draft.notify();
-                  }}
-                  disabled={
-                    !thread ||
-                    agentSelection.isPending ||
-                    draft.submission.kind === "pending" ||
-                    draft.submission.kind === "unknown"
-                  }
-                  onAgentChange={(value) => agentSelection.mutate(value)}
-                  onModelChange={(value) => {
-                    draft.modelId = value;
-                    draft.controls = {};
-                    draft.notify();
-                  }}
-                />
-              )
-            }
-            profile={profile}
-            unauthorized={unauthorized}
-            reconcile={reconcile}
-          />
-        )}
-        {guest && !canCompose && (
-          <p className={styles.composerConnection}>
-            {t("View-only link · Following this chat live.")}
-          </p>
-        )}
-        {!guest && !readOnly && (
-          <SharePanel
-            open={dialog === "share"}
-            onClose={closeDialog}
-            threadId={threadId}
-            projectId={thread?.configuration.project_id}
-          />
-        )}
-        <ModalFrame
-          open={rename}
-          onOpenChange={setRename}
-          title={t("Rename chat")}
-          closeLabel={t("Close")}
-        >
-          <form
-            className={styles.form}
-            onSubmit={(event) => {
-              event.preventDefault();
-              metadata.mutate({ title: title || null });
-            }}
-          >
-            <TextField
-              label={t("Title")}
-              value={title}
-              onChange={(value) => setTitle(value.slice(0, 512))}
-            />
-            <ErrorNotice error={metadata.error} />
-            <div className={layout.dialogActions} data-a13n-form-actions>
-              <Button
-                type="button"
-                variant="outline"
-                disabled={metadata.isPending}
-                onClick={() => setRename(false)}
-              >
-                {t("Cancel")}
-              </Button>
-              <Button
-                type="submit"
-                loading={metadata.isPending}
-                disabled={!thread}
-              >
-                {t("Save title")}
-              </Button>
-            </div>
-          </form>
-        </ModalFrame>
-        <ModalFrame
-          open={inspection}
-          onOpenChange={setInspection}
-          title={t("Chat details")}
-          closeLabel={t("Close dialog")}
-          footer={
-            <>
-              <Button variant="outline" onClick={() => setInspection(false)}>
-                {t("Close")}
-              </Button>
-              <div
-                ref={setInspectionActions}
-                className={styles.settingsActions}
-              />
-            </>
-          }
-          size="lg"
-        >
-          <ConversationDetails
-            actionsContainer={inspectionActions}
-            threadId={threadId}
-            receipt={receipt}
-            continuation={detail.data?.continuation_id}
-            reconcile={reconcile}
-            management={
-              <div className={styles.detailActions}>
-                {!readOnly && thread && (
-                  <CoordinatorSettings
-                    thread={thread}
-                    pending={!!detail.data?.deferred_requests?.length}
-                  />
-                )}
-                {!thread?.archived &&
-                  detail.data?.available_actions?.includes("archive") && (
-                    <Button
-                      variant="outline"
-                      loading={metadata.isPending}
-                      onClick={() => metadata.mutate({ archived: true })}
-                    >
-                      {t("Archive chat")}
-                    </Button>
-                  )}
-                {!guest && thread && canDeleteThread(thread) && (
-                  <Button
-                    variant="destructive-outline"
-                    disabled={thread.root_activity.state !== "inactive"}
                     onClick={() => {
-                      setInspection(false);
-                      setDeleting(true);
+                      const element = reader.current;
+                      if (element)
+                        olderAnchor.current = {
+                          height: element.scrollHeight,
+                          top: element.scrollTop,
+                        };
+                      void history.fetchNextPage();
                     }}
                   >
-                    {t("Delete chat")}
+                    {t("Retry loading")}
                   </Button>
                 )}
+                <PauseConversationFollowing value={interruptScroll}>
+                  <ConversationTranscript
+                    currentFailureRunId={
+                      thread?.last_execution?.status === "failed"
+                        ? thread.last_execution.run_id
+                        : undefined
+                    }
+                    entries={entries}
+                    blocks={showLive ? liveBlocks : []}
+                    localInputs={hasLater ? [] : draft.localInputs}
+                    turns={turns}
+                    loadDetails
+                    onSavedEntries={reconcileSavedInputs}
+                    continuation={continuation}
+                    gap={showLive && display.gap}
+                    threadId={threadId}
+                    activity={
+                      !readOnly &&
+                      !showGoal &&
+                      !hasLater &&
+                      !thread?.archived &&
+                      !detail.data?.deferred_requests?.length &&
+                      display.recovery?.state !== "retrying" ? (
+                        <RunActivity
+                          activity={operation}
+                          submission={draft.submission}
+                          operation={observedOperation.data}
+                        />
+                      ) : undefined
+                    }
+                    pending={
+                      !hasLater && detail.data?.deferred_requests?.length
+                        ? {
+                            requestIds: detail.data.deferred_requests
+                              .filter(
+                                (request) =>
+                                  request.tool_name === "ask_user_question",
+                              )
+                              .map((request) => request.request_id),
+                            content: decisions.slot,
+                          }
+                        : undefined
+                    }
+                    recovery={
+                      !hasLater && display.recovery?.state === "resumed"
+                        ? display.recovery
+                        : undefined
+                    }
+                  />
+                  {decisions.portal}
+                  {!guest && (
+                    <McpInputs
+                      threadId={threadId}
+                      requests={mcpInputs.data}
+                      reconcile={() => void mcpInputs.refetch()}
+                    />
+                  )}
+                </PauseConversationFollowing>
+                {hasLater && (
+                  <div className={styles.historyActions}>
+                    <Button
+                      variant="ghost"
+                      loading={history.isFetchingPreviousPage}
+                      onClick={() => void history.fetchPreviousPage()}
+                    >
+                      {t("Load newer")}
+                    </Button>
+                    <Button variant="ghost" onClick={backToLatest}>
+                      {t("Back to latest")}
+                    </Button>
+                  </div>
+                )}
+                <RootFailureNotice
+                  lastExecution={thread?.last_execution}
+                  threadId={threadId}
+                  receipt={receipt}
+                  display={display}
+                  continuationId={detail.data?.continuation_id}
+                  completedContinuationId={thread?.completion?.continuation_id}
+                  retry={
+                    guest || readOnly || thread?.archived
+                      ? undefined
+                      : () => {
+                          void submitContinuation(
+                            draft,
+                            transport,
+                            threadId,
+                            tracker
+                              ? () => tracker.beforeRun(threadId)
+                              : undefined,
+                            () => appContexts?.capture(threadId) ?? [],
+                          ).finally(reconcile);
+                        }
+                  }
+                  retryDisabled={
+                    !detail.data?.available_actions?.includes("run") ||
+                    thread?.root_activity.state !== "inactive" ||
+                    agentSelection.isPending ||
+                    agentSelection.isError ||
+                    detail.isError ||
+                    draft.submission.kind === "pending" ||
+                    draft.submission.kind === "unknown" ||
+                    (draft.submission.kind === "accepted" &&
+                      draft.submission.receipt !== receipt)
+                  }
+                />
+                {display.recovery?.state !== "resumed" && (
+                  <RecoveryNotice recovery={display.recovery} />
+                )}
+                {((guest && !canCompose) || readOnly || isCoordinator) &&
+                  !entries.length &&
+                  !draft.localInputs.length &&
+                  thread?.root_activity.state === "inactive" &&
+                  !showLive &&
+                  !history.isPending &&
+                  !history.error && (
+                    <div
+                      className={`${styles.empty} ${isCoordinator ? coordinatorStyles.intro : ""}`}
+                    >
+                      {guest && !canCompose ? (
+                        <>
+                          <h2>{t("No messages yet")}</h2>
+                          <p>
+                            {t(
+                              "Messages will appear here when this chat gets started.",
+                            )}
+                          </p>
+                        </>
+                      ) : readOnly ? (
+                        <>
+                          <h2>{t("No organization history yet")}</h2>
+                          <p>
+                            {t(
+                              "Automatic memory updates appear here. Viewing this page won't start a run.",
+                            )}
+                          </p>
+                        </>
+                      ) : isCoordinator ? (
+                        <>
+                          <h2>{t("What are we working on?")}</h2>
+                          <p>
+                            {t(
+                              "Share a goal. I’ll help plan the work and bring results back here.",
+                            )}
+                          </p>
+                        </>
+                      ) : null}
+                    </div>
+                  )}
               </div>
+            </div>
+          </div>
+          {(newOutput ||
+            (hasLater && !!detail.data?.deferred_requests?.length)) && (
+            <Button
+              className={styles.newOutput}
+              variant="outline"
+              onClick={backToLatest}
+            >
+              <ArrowDown />
+              {detail.data?.deferred_requests?.length
+                ? t("Response needed")
+                : t("New output")}
+            </Button>
+          )}
+          {!readOnly && detail.data && (
+            <WorkInspector
+              panel={activityPanel}
+              threadId={threadId}
+              connectionStatus={connectionStatus}
+              status={
+                !guest && thread && !thread.archived ? (
+                  <ComposerStatus
+                    threadId={threadId}
+                    receipt={receipt}
+                    busy={thread.root_activity.state !== "inactive"}
+                    liveTokens={
+                      showLive ? display.contextUsage?.tokens : undefined
+                    }
+                  />
+                ) : undefined
+              }
+              display={display}
+              connected={connection === "Live"}
+              reconcile={reconcile}
+              goal={showGoal ? goal : null}
+              activity={thread?.root_activity}
+              onUseGoal={
+                goal &&
+                thread?.root_activity.state === "inactive" &&
+                detail.data?.available_actions?.includes("run") &&
+                draft.submission.kind !== "pending" &&
+                draft.submission.kind !== "unknown"
+                  ? () => {
+                      const text = draft.doc.getText("text");
+                      text.insert(
+                        text.length,
+                        `${text.length ? "\n\n" : ""}${goal.objective}`,
+                      );
+                      draft.mode = "goal";
+                      draft.notify();
+                    }
+                  : undefined
+              }
+            />
+          )}
+          {readOnly && connectionStatus && (
+            <div className={styles.conversationFeedback}>
+              {connectionStatus}
+            </div>
+          )}
+          {(!canCompose || thread?.archived) && feedback && (
+            <div className={styles.conversationFeedback}>{feedback}</div>
+          )}
+          {canCompose && !thread?.archived && (
+            <Composer
+              feedback={feedback}
+              feedbackError={pageError}
+              suppressConnectionNotice={
+                disconnected || connection !== "Live" || !!pageError
+              }
+              autoFocus={pageReady && search.get("compose") === "1"}
+              threadId={threadId}
+              activity={thread?.root_activity ?? { state: "inactive" }}
+              owner={
+                !guest && ownerId
+                  ? {
+                      title: owner.data
+                        ? conversationTitle(owner.data.thread)
+                        : ownerId,
+                    }
+                  : undefined
+              }
+              coordinator={
+                !guest && thread && thread.role !== "worker"
+                  ? {
+                      active: thread.role === "coordinator",
+                      available: canPromoteCoordinator(
+                        thread,
+                        !!detail.data?.deferred_requests?.length,
+                      ),
+                    }
+                  : undefined
+              }
+              canRun={
+                !agentSelection.isPending &&
+                !agentSelection.isError &&
+                !detail.isError &&
+                (detail.data?.available_actions?.includes("run") ?? false)
+              }
+              continuationId={detail.data?.continuation_id}
+              canClearContext={
+                !detail.isError &&
+                (detail.data?.available_actions?.includes("clear_context") ??
+                  false)
+              }
+              unavailableReason={
+                agentSelection.isPending
+                  ? t("Updating chat settings…")
+                  : !detail.data
+                    ? t("Loading chat…")
+                    : undefined
+              }
+              modelId={draft.modelId}
+              leadingControls={
+                guest ? undefined : thread?.configuration.agent_source.kind ===
+                  "live" ? (
+                  <Link to="/settings#live">{t("Live settings")}</Link>
+                ) : (
+                  <RunEnvironments
+                    catalog={selectors.data}
+                    configuration={thread?.configuration}
+                    value={draft.environment}
+                    onChange={(value) => {
+                      draft.environment = value;
+                      draft.notify();
+                    }}
+                    disabled={
+                      !thread ||
+                      draft.submission.kind === "pending" ||
+                      draft.submission.kind === "unknown"
+                    }
+                  />
+                )
+              }
+              controls={() =>
+                guest ? null : thread?.configuration.agent_source.kind ===
+                  "live" ? null : (
+                  <ThreadRunChoices
+                    catalog={selectors.data}
+                    agentId={thread?.configuration.agent_source.id ?? ""}
+                    defaultModelId={thread?.configuration.default_model_id}
+                    modelId={draft.modelId}
+                    controls={draft.controls}
+                    onControlsChange={(value) => {
+                      draft.controls = value;
+                      draft.notify();
+                    }}
+                    disabled={
+                      !thread ||
+                      agentSelection.isPending ||
+                      draft.submission.kind === "pending" ||
+                      draft.submission.kind === "unknown"
+                    }
+                    onAgentChange={(value) => agentSelection.mutate(value)}
+                    onModelChange={(value) => {
+                      draft.modelId = value;
+                      draft.controls = {};
+                      draft.notify();
+                    }}
+                  />
+                )
+              }
+              profile={profile}
+              unauthorized={unauthorized}
+              reconcile={reconcile}
+            />
+          )}
+          {guest && !canCompose && (
+            <p className={styles.composerConnection}>
+              {t("View-only link · Following this chat live.")}
+            </p>
+          )}
+          {!guest && !readOnly && (
+            <SharePanel
+              open={dialog === "share"}
+              onClose={closeDialog}
+              threadId={threadId}
+              projectId={thread?.configuration.project_id}
+            />
+          )}
+          <ModalFrame
+            open={rename}
+            onOpenChange={setRename}
+            title={t("Rename chat")}
+            closeLabel={t("Close")}
+          >
+            <form
+              className={styles.form}
+              onSubmit={(event) => {
+                event.preventDefault();
+                metadata.mutate({ title: title || null });
+              }}
+            >
+              <TextField
+                label={t("Title")}
+                value={title}
+                onChange={(value) => setTitle(value.slice(0, 512))}
+              />
+              <ErrorNotice error={metadata.error} />
+              <div className={layout.dialogActions} data-a13n-form-actions>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={metadata.isPending}
+                  onClick={() => setRename(false)}
+                >
+                  {t("Cancel")}
+                </Button>
+                <Button
+                  type="submit"
+                  loading={metadata.isPending}
+                  disabled={!thread}
+                >
+                  {t("Save title")}
+                </Button>
+              </div>
+            </form>
+          </ModalFrame>
+          <ModalFrame
+            open={inspection}
+            onOpenChange={setInspection}
+            title={t("Chat details")}
+            closeLabel={t("Close dialog")}
+            footer={
+              <>
+                <Button variant="outline" onClick={() => setInspection(false)}>
+                  {t("Close")}
+                </Button>
+                <div
+                  ref={setInspectionActions}
+                  className={styles.settingsActions}
+                />
+              </>
             }
-            readOnly={readOnly}
-          />
-        </ModalFrame>
+            size="lg"
+          >
+            <ConversationDetails
+              actionsContainer={inspectionActions}
+              threadId={threadId}
+              receipt={receipt}
+              continuation={detail.data?.continuation_id}
+              reconcile={reconcile}
+              management={
+                <div className={styles.detailActions}>
+                  {!readOnly && thread && (
+                    <CoordinatorSettings
+                      thread={thread}
+                      pending={!!detail.data?.deferred_requests?.length}
+                    />
+                  )}
+                  {!thread?.archived &&
+                    detail.data?.available_actions?.includes("archive") && (
+                      <Button
+                        variant="outline"
+                        loading={metadata.isPending}
+                        onClick={() => metadata.mutate({ archived: true })}
+                      >
+                        {t("Archive chat")}
+                      </Button>
+                    )}
+                  {!guest && thread && canDeleteThread(thread) && (
+                    <Button
+                      variant="destructive-outline"
+                      disabled={thread.root_activity.state !== "inactive"}
+                      onClick={() => {
+                        setInspection(false);
+                        setDeleting(true);
+                      }}
+                    >
+                      {t("Delete chat")}
+                    </Button>
+                  )}
+                </div>
+              }
+              readOnly={readOnly}
+            />
+          </ModalFrame>
+        </div>
+        <div ref={setActivityPanel} className={styles.activityPanel} />
       </div>
       {deleting && thread && (
         <DeleteThread thread={thread} close={() => setDeleting(false)} />

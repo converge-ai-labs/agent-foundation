@@ -1909,6 +1909,7 @@ it.each([
       .map((item) => item.textContent),
   ).toEqual([
     "General",
+    "Appearance",
     "Agents",
     "Models",
     "Environments",

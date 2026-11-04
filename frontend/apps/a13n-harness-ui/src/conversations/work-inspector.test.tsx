@@ -47,6 +47,81 @@ function harness(GET: ReturnType<typeof vi.fn>, POST = vi.fn()) {
   );
   return { wrapper, queries };
 }
+it("docks activity in a wide chat, collapses it, and retains the view when narrowed", async () => {
+  let resize = () => {};
+  const OriginalObserver = globalThis.ResizeObserver;
+  globalThis.ResizeObserver = class {
+    constructor(callback: () => void) {
+      resize = callback;
+    }
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof ResizeObserver;
+  const workspace = document.createElement("div");
+  const panel = document.createElement("div");
+  workspace.append(panel);
+  document.body.append(workspace);
+  let width = 1100;
+  vi.spyOn(workspace, "getBoundingClientRect").mockImplementation(
+    () => ({ width }) as DOMRect,
+  );
+  const GET = vi.fn(async () => ({
+    data: {
+      thread_id: "root",
+      epoch: "epoch",
+      revision: 1,
+      source: "saved",
+      tasks: { total: 1, completed: 0, page: { tasks: [task] } },
+      notes: { total: 0 },
+      children: {},
+    },
+  }));
+  try {
+    render(
+      <WorkInspector
+        panel={panel}
+        threadId="root"
+        display={new FocusDisplay()}
+        reconcile={vi.fn()}
+      />,
+      harness(GET),
+    );
+    const user = userEvent.setup();
+    const trigger = screen.getByRole("button", { name: "Inspect tasks" });
+    await user.click(trigger);
+    await screen.findByText("Check output");
+    expect(
+      panel.contains(
+        screen.getByRole("complementary", { name: "Chat activity" }),
+      ),
+    ).toBe(true);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.activeElement).toBe(
+      screen.getByRole("heading", { name: "Chat activity" }),
+    );
+    await user.keyboard("{Escape}");
+    expect(panel.childElementCount).toBe(0);
+    expect(document.activeElement).toBe(trigger);
+    await user.click(trigger);
+    await user.click(trigger);
+    expect(panel.childElementCount).toBe(0);
+    await user.click(trigger);
+    act(() => {
+      width = 700;
+      resize();
+    });
+    await screen.findByRole("dialog", { name: "Chat activity" });
+    expect(panel.childElementCount).toBe(0);
+    expect(screen.getByText("Check output")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Close activity" }));
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
+  } finally {
+    cleanup();
+    workspace.remove();
+    globalThis.ResizeObserver = OriginalObserver;
+  }
+});
 it("observes closed badges and lazily reads current tasks and notes across Runs", async () => {
   let run = "run-one";
   const active = {

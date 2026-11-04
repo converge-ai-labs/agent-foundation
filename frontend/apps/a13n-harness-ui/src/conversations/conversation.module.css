@@ -569,6 +569,27 @@
   overflow-wrap: anywhere;
   font-size: var(--a13n-text-body);
 }
+.workspace {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  /* Saved conversations use the available pane rather than a fixed column. */
+  --harness-reading-width: 100%;
+}
+.workspace > .page {
+  flex: 1;
+  min-width: 0;
+}
+.activityPanel {
+  flex: 0 0 320px;
+  min-width: 0;
+  min-height: 0;
+  border-inline-start: 1px solid var(--a13n-border-soft);
+}
+.activityPanel:empty {
+  display: none;
+}
 .page {
   container: conversation-page / inline-size;
   position: relative;

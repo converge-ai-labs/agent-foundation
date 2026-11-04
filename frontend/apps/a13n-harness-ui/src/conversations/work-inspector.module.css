@@ -92,6 +92,42 @@
   font-size: var(--a13n-text-body);
   line-height: 1.6;
 }
+.docked {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  color: var(--a13n-text);
+  font-size: var(--a13n-text-body);
+  line-height: 1.6;
+}
+.docked .heading {
+  padding: 12px 16px;
+}
+.docked .heading h2 {
+  font-size: calc(var(--a13n-text-body) * 16 / 14);
+}
+.docked .activityLayout {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+.docked .tabs {
+  flex-direction: row;
+  flex-wrap: wrap;
+  padding: 8px;
+  background: transparent;
+  border-bottom: 1px solid var(--a13n-border-soft);
+}
+.docked .tabs button {
+  width: auto;
+}
+.docked .inspectorBody {
+  flex: 1;
+  max-height: none;
+  padding: 16px;
+}
 .activityLayout {
   display: grid;
   grid-template-columns: 164px minmax(0, 1fr);
