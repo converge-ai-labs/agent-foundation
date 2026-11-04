@@ -40,6 +40,7 @@ import { navigationGroups } from "./navigation";
 import { usePageTitle } from "./page-title";
 import { useAccess, useWorkspace } from "./workspace";
 import { WorkspaceMenu } from "./workspace-menu";
+import styles from "./layout.module.css";
 const SIDEBAR_STATE_KEY = "a13n-console-sidebar";
 function PageOutlet() {
   const { pathname } = useLocation();
@@ -142,7 +143,7 @@ function WorkspaceNavigation({
             <Button
               variant="ghost"
               size="icon-sm"
-              className="group/logo mx-auto"
+              className={`${styles.railButton} group/logo`}
               aria-label={t("Expand navigation")}
               onClick={() => onCollapsedChange(false)}
             >
@@ -158,13 +159,13 @@ function WorkspaceNavigation({
               />
             </Button>
           ) : (
-            <div className="flex items-center gap-2 px-2 text-foreground text-xl">
+            <div className={`${styles.navigationRow} text-foreground text-xl`}>
               <Logo alt="" width={28} height={28} />
               <Wordmark />
               <Button
                 variant="ghost"
                 size="icon-sm"
-                className="ml-auto hidden lg:inline-flex"
+                className="hidden lg:inline-flex"
                 aria-label={t("Collapse navigation")}
                 onClick={() => onCollapsedChange(true)}
               >
@@ -173,7 +174,7 @@ function WorkspaceNavigation({
               <Button
                 variant="ghost"
                 size="icon-sm"
-                className="ml-auto lg:hidden"
+                className="lg:hidden"
                 tooltip={false}
                 aria-label={t("Close navigation")}
                 onClick={close}
@@ -225,6 +226,7 @@ function WorkspaceNavigation({
                             {children.map(([childPath, childLabel]) => (
                               <SidebarMenuSubItem key={childPath}>
                                 <SidebarMenuSubButton
+                                  className="pl-4"
                                   isActive={pathname === `${base}/${childPath}`}
                                   render={
                                     <NavLink
@@ -323,14 +325,13 @@ function NavigationRow({
   return (
     <SidebarMenuButton
       isActive={selected}
+      className={styles.navigationRow}
       render={<NavLink to={to} onClick={onNavigate} />}
     >
       <Icon weight={active ? "duotone" : "regular"} />
-      <span>{label}</span>
+      <span className="min-w-0 truncate">{label}</span>
       {expandable && (
-        <CaretDownIcon
-          className={active ? "ml-auto size-3" : "ml-auto size-3 -rotate-90"}
-        />
+        <CaretDownIcon className={active ? "size-3" : "size-3 -rotate-90"} />
       )}
     </SidebarMenuButton>
   );

@@ -41,11 +41,11 @@ export function CreateMemory({
       trigger={
         <Button variant="default" type="button">
           <PlusIcon size={14} />
-          {t("Create memory")}
+          {t("Create collection")}
         </Button>
       }
       size="lg"
-      title={t("Create memory")}
+      title={t("Create collection")}
       description={t(
         "A memory keeps what agents read and write across sessions.",
       )}
@@ -238,7 +238,7 @@ function CreateForm({
         onCancel={onCancel}
         pending={create.isPending}
         disabled={record && !provider}
-        label={t("Create memory")}
+        label={t("Create collection")}
       />
     </form>
   );

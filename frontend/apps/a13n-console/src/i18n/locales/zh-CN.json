@@ -670,7 +670,7 @@
   "Spaces": "空间",
   "Space": "空间",
   "Standalone memories": "独立记忆",
-  "Standalone": "独立",
+  "Collections": "记忆集合",
   "Shared knowledge, session notes and automatic organization in one place.": "集中管理共享知识、会话笔记和自动整理。",
   "{{count}} connections_other": "{{count}} 个连接",
   "{{count}} data sources": "{{count}} 个数据源",
@@ -3755,5 +3755,13 @@
   "Input tokens per request": "每次请求输入 token 上限",
   "Tool call limit": "工具调用次数上限",
   "Cost limit (USD)": "费用上限（美元）",
-  "Model request limit": "模型请求次数上限"
+  "Model request limit": "模型请求次数上限",
+  "Search collections": "搜索记忆集合",
+  "{{count}} collections on this page": "本页共 {{count}} 个记忆集合",
+  "No matching collections": "没有匹配的记忆集合",
+  "No collections yet": "暂无记忆集合",
+  "Create a collection for the files and records agents keep across sessions.": "创建记忆集合，保存智能体跨会话使用的文件和记录。",
+  "Create collection": "创建记忆集合",
+  "Memory collection": "记忆集合",
+  "Memory collections": "记忆集合"
 }

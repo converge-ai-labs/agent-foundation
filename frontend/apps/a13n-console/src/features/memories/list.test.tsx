@@ -158,7 +158,7 @@ it("says when no memory matches the filters", async () => {
   await screen.findByText("Team handbook");
   await user.click(screen.getByRole("combobox", { name: "Kind" }));
   await user.click(await screen.findByRole("option", { name: "Record" }));
-  expect(await screen.findByText("No matching memories")).toBeTruthy();
+  expect(await screen.findByText("No matching collections")).toBeTruthy();
   expect(
     screen.getByText("Change or clear the search and filters."),
   ).toBeTruthy();
@@ -166,15 +166,17 @@ it("says when no memory matches the filters", async () => {
 
 it("offers creation from the empty state only to people who may configure memories", async () => {
   setup([], ["read", "run"]);
-  expect(await screen.findByText("No memories yet")).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "Create memory" })).toBeNull();
+  expect(await screen.findByText("No collections yet")).toBeTruthy();
+  expect(
+    screen.queryByRole("button", { name: "Create collection" }),
+  ).toBeNull();
 });
 
 it("creates a memory identified by its ID", async () => {
   const { user, requests } = setup([]);
-  await screen.findByText("No memories yet");
+  await screen.findByText("No collections yet");
   await user.click(
-    screen.getAllByRole("button", { name: "Create memory" })[0]!,
+    screen.getAllByRole("button", { name: "Create collection" })[0]!,
   );
   const dialog = await screen.findByRole("dialog");
   await user.type(
@@ -192,7 +194,7 @@ it("creates a memory identified by its ID", async () => {
     "README.md{Enter}",
   );
   await user.click(
-    within(dialog).getByRole("button", { name: "Create memory" }),
+    within(dialog).getByRole("button", { name: "Create collection" }),
   );
   await screen.findByText("Memory detail");
   expect(requests.find((item) => item.method === "POST")?.body).toEqual({
@@ -206,9 +208,9 @@ it("creates a memory identified by its ID", async () => {
 
 it("creates a record memory on an enabled provider, adopting a namespace", async () => {
   const { user, requests } = setup([]);
-  await screen.findByText("No memories yet");
+  await screen.findByText("No collections yet");
   await user.click(
-    screen.getAllByRole("button", { name: "Create memory" })[0]!,
+    screen.getAllByRole("button", { name: "Create collection" })[0]!,
   );
   const dialog = await screen.findByRole("dialog");
   await user.click(
@@ -245,7 +247,7 @@ it("creates a record memory on an enabled provider, adopting a namespace", async
     ),
   ).toBeTruthy();
   await user.click(
-    within(dialog).getByRole("button", { name: "Create memory" }),
+    within(dialog).getByRole("button", { name: "Create collection" }),
   );
   await screen.findByText("Memory detail");
   expect(requests.find((item) => item.method === "POST")?.body).toEqual({
@@ -260,9 +262,9 @@ it("creates a record memory on an enabled provider, adopting a namespace", async
 
 it("points to provider settings when no memory provider is enabled", async () => {
   const { user } = setup([], undefined, [provider("memprov_2", "Old", false)]);
-  await screen.findByText("No memories yet");
+  await screen.findByText("No collections yet");
   await user.click(
-    screen.getAllByRole("button", { name: "Create memory" })[0]!,
+    screen.getAllByRole("button", { name: "Create collection" })[0]!,
   );
   const dialog = await screen.findByRole("dialog");
   await user.click(
@@ -281,7 +283,7 @@ it("points to provider settings when no memory provider is enabled", async () =>
   expect(
     (
       within(dialog).getByRole("button", {
-        name: "Create memory",
+        name: "Create collection",
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
