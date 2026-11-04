@@ -97,9 +97,13 @@ async def test_a_steer_joins_with_the_default_options_or_the_runs_own(skill_serv
     gate = asyncio.Event()
     for _ in range(3):
         scripted_model.say("Done", gate=gate, to="Role: coordinator")
+    revision = await service.client.get(f"{service.api}/agents/{agent['id']}/revisions/{agent['default_revision_id']}")
+    helper = revision.json()["config"]["subagents"]["named"]["helper"]
     options = {
         "labels": {"team": "a"},
-        "overrides": {"subagents": {"mode": "inline", "named": {"helper": {"description": "Overridden helper"}}}},
+        "overrides": {
+            "subagents": {"mode": "inline", "named": {"helper": {**helper, "description": "Overridden helper"}}}
+        },
     }
     submitted = await runs_kit.start_thread(service, agent, "look around", options=options)
     thread_id, run_id = submitted["thread"]["id"], submitted["run"]["id"]

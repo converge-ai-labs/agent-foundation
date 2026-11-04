@@ -217,7 +217,7 @@ class ChildRuns(SubagentOperator):
                     max_usage=UsageLimit(requests=limit) if limit is not None else None,
                     configuration=options.configuration,
                     context=options.context,
-                    execution=options.execution,
+                    execution=options.execution if spawn is not None else None,
                 ),
             )
             entry = await inbox.append_message(

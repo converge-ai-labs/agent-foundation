@@ -14,7 +14,7 @@ RUNTIME_CONTEXT = (
     "<file-context ",
 )
 # Custom Agents read this builtin guide from their primary environment; use skill_environment_template.
-GUIDE = "/workspace/.agents/skills/platform-operations/SKILL.md"
+GUIDE = "/platform-skills/platform-operations/SKILL.md"
 LOOKUP = {
     "builtin_skills": ["platform-operations"],
     "toolsets": {"files": {"enabled": True}, "shell": {"enabled": False}},
