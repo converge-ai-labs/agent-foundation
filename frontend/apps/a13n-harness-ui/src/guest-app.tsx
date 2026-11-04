@@ -25,6 +25,7 @@ import {
   List,
   Plus,
   UserCircle,
+  SidebarSimple,
 } from "@phosphor-icons/react";
 import {
   ApiError,
@@ -40,6 +41,7 @@ import {
 import { ComposerDrafts } from "./conversations/composer";
 import type { ThreadDraft } from "./conversations/draft";
 import { ConversationPage } from "./conversations/conversation";
+import { DetailsOutlet } from "./conversations/details-outlet";
 import { LiveThreadsProvider } from "./conversations/live-threads";
 import { ChildControlsProvider } from "./conversations/child-controls";
 import { useLiveWorkbench, type Profile } from "./shell/presence";
@@ -187,6 +189,11 @@ function GuestShell({
   const location = useLocation();
   const [search, setSearch] = useState("");
   const [sidebar, setSidebar] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [detailsElement, setDetailsElement] = useState<HTMLDivElement | null>(
+    null,
+  );
+  const inChat = /^\/threads\/[^/]+$/.test(location.pathname);
   const [profileOpen, setProfileOpen] = useState(false);
   const [profile, setProfile] = useState<Profile>(() => ({
     display_name:
@@ -269,7 +276,10 @@ function GuestShell({
               size="icon-sm"
               aria-label={t("Show chats")}
               aria-expanded={sidebar}
-              onClick={() => setSidebar(!sidebar)}
+              onClick={() => {
+                setSidebar(!sidebar);
+                setDetailsOpen(false);
+              }}
             >
               <List />
             </Button>
@@ -286,6 +296,20 @@ function GuestShell({
           </div>
         </div>
         <div className={styles.access}>
+          {inChat && (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label={t("Chat details")}
+              aria-expanded={detailsOpen}
+              onClick={() => {
+                setDetailsOpen(!detailsOpen);
+                setSidebar(false);
+              }}
+            >
+              <SidebarSimple />
+            </Button>
+          )}
           <span
             className={styles.expiry}
             title={new Date(access.grant.expires_at).toLocaleString(
@@ -319,7 +343,10 @@ function GuestShell({
           </Button>
         </div>
       </header>
-      <div className={styles.body}>
+      <div
+        className={styles.body}
+        data-details-open={(inChat && detailsOpen) || undefined}
+      >
         {project && (
           <aside
             className={`${styles.sidebar} ${sidebar ? styles.sidebarOpen : ""}`}
@@ -402,49 +429,64 @@ function GuestShell({
           </aside>
         )}
         <section className={styles.conversation}>
-          <Routes>
-            <Route
-              path="/threads/:threadId"
-              element={
-                <ConversationPage
-                  profile={profile}
-                  unauthorized={refreshAccess}
-                />
-              }
-            />
-            <Route
-              path="*"
-              element={
-                project ? (
-                  <div className={styles.welcome}>
-                    <Folder size={32} style={{ margin: "auto" }} />
-                    <h2>{t("Shared project")}</h2>
-                    <p>
-                      {canPrompt
-                        ? t(
-                            "Choose a chat to catch up, or start a new one with the project’s agent.",
-                          )
-                        : t(
-                            "Choose a chat to catch up and follow along as the work unfolds.",
-                          )}
-                    </p>
-                    {canPrompt && (
-                      <Button
-                        loading={create.isPending}
-                        onClick={() => create.mutate()}
-                      >
-                        <Plus size={16} />
-                        {t("New chat")}
-                      </Button>
-                    )}
-                  </div>
-                ) : (
-                  <Navigate replace to={`/threads/${access.grant.target_id}`} />
-                )
-              }
-            />
-          </Routes>
+          <DetailsOutlet
+            value={{ element: detailsElement, visible: inChat && detailsOpen }}
+          >
+            <Routes>
+              <Route
+                path="/threads/:threadId"
+                element={
+                  <ConversationPage
+                    profile={profile}
+                    unauthorized={refreshAccess}
+                  />
+                }
+              />
+              <Route
+                path="*"
+                element={
+                  project ? (
+                    <div className={styles.welcome}>
+                      <Folder size={32} style={{ margin: "auto" }} />
+                      <h2>{t("Shared project")}</h2>
+                      <p>
+                        {canPrompt
+                          ? t(
+                              "Choose a chat to catch up, or start a new one with the project’s agent.",
+                            )
+                          : t(
+                              "Choose a chat to catch up and follow along as the work unfolds.",
+                            )}
+                      </p>
+                      {canPrompt && (
+                        <Button
+                          loading={create.isPending}
+                          onClick={() => create.mutate()}
+                        >
+                          <Plus size={16} />
+                          {t("New chat")}
+                        </Button>
+                      )}
+                    </div>
+                  ) : (
+                    <Navigate
+                      replace
+                      to={`/threads/${access.grant.target_id}`}
+                    />
+                  )
+                }
+              />
+            </Routes>
+          </DetailsOutlet>
         </section>
+        <aside
+          className={styles.chatDetails}
+          hidden={!inChat || !detailsOpen}
+          aria-label={t("Chat details")}
+        >
+          <h2>{t("Chat details")}</h2>
+          <div ref={setDetailsElement} />
+        </aside>
       </div>
       <ModalFrame
         open={profileOpen}

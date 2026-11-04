@@ -264,6 +264,31 @@
   flex-direction: column;
   padding-bottom: max(16px, env(safe-area-inset-bottom));
 }
+.chatDetails {
+  width: 340px;
+  flex-shrink: 0;
+  min-height: 0;
+  padding: 20px 16px;
+  overflow-y: auto;
+  border-left: 1px solid var(--a13n-border);
+}
+.chatDetails[hidden] {
+  display: none;
+}
+.chatDetails > h2 {
+  margin: 0 0 20px;
+  font-size: var(--a13n-text-body);
+  font-weight: 500;
+}
+@media (max-width: 760px) {
+  .body[data-details-open] > .conversation {
+    display: none;
+  }
+  .chatDetails {
+    width: 100%;
+    border-left: 0;
+  }
+}
 .welcome {
   margin: auto;
   padding: 48px;

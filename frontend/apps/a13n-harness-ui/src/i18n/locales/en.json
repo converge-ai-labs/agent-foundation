@@ -1,4 +1,10 @@
 {
+  "tokens": "tokens",
+  "Context details": "Context details",
+  "Tool executions": "Tool executions",
+  "Inactive": "Inactive",
+  "Open chat details: {{title}}": "Open chat details: {{title}}",
+  "Tokens in the latest request, using that request's model limit. The model selector applies to the next run.": "Tokens in the latest request, using that request's model limit. The model selector applies to the next run.",
   "Server returned an empty response.": "Server returned an empty response.",
   "Global settings are read-only.": "Global settings are read-only.",
   "Save or discard your global settings changes first.": "Save or discard your global settings changes first.",

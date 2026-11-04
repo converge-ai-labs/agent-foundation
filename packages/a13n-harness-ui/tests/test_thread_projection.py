@@ -220,3 +220,62 @@ def test_saved_tool_media_retains_order_and_never_reveals_supplements() -> None:
     assert [item["type"] for item in restored.content_parts] == ["text", "image", "text"]
     assert restored.content_parts[1]["source"]["value"] == "https://example.com/public.png"
     assert "private.png" not in restored.model_dump_json()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("saved", [False, True])
+async def test_context_pairs_live_request_with_its_captured_model(saved: bool) -> None:
+    from types import SimpleNamespace
+
+    from a13n_harness_ui.storage import ObjectKind, ObjectRef
+    from a13n_harness_ui.thread_projection import ThreadInspection
+
+    old = ObjectRef(object_kind=ObjectKind.run_composition, object_schema_version="1", logical_digest="a" * 64)
+    current = old.model_copy(update={"logical_digest": "b" * 64})
+    store = Mock(spec=LocalStore)
+    store.threads = Mock(get=AsyncMock(return_value=SimpleNamespace(continuation=old if saved else None)))
+    observed = SimpleNamespace(model_id="model-b", request_usage=SimpleNamespace(input_tokens=300, output_tokens=20))
+    store.usage = Mock(latest_root_request=AsyncMock(return_value=observed))
+    model = SimpleNamespace(
+        model_id="model-b",
+        model_characteristics=SimpleNamespace(context_window_tokens=2000),
+        thinking_override=None,
+        settings={},
+        route="openai:model-b",
+    )
+    store.objects = Mock(read_model=AsyncMock(return_value=SimpleNamespace(root=SimpleNamespace(model=model))))
+    projections = ThreadProjectionService(store=store, configurations=Mock(spec=CompositionAcceptanceService))
+    projections.inspection = AsyncMock(
+        return_value=ThreadInspection(
+            context_empty=not saved,
+            run_composition=old if saved else None,
+            latest_request_tokens=100 if saved else None,
+        )
+    )
+    result = await projections.context_usage("thread-one", live_run_id="run-b", live_composition=current)
+    assert (result.latest_request_tokens, result.context_window, result.model_id) == (320, 2000, "model-b")
+    store.usage.latest_root_request.assert_awaited_once_with(thread_id="thread-one", run_id="run-b")
+    assert store.objects.read_model.await_args.args[0] == current
+
+    # Admission of another Model does not relabel the previous request before
+    # that Run has reported usage. Next-Run configuration is never consulted.
+    if saved:
+        store.usage.latest_root_request.side_effect = [
+            None,
+            SimpleNamespace(
+                model_id="model-a",
+                request_usage=SimpleNamespace(input_tokens=90, output_tokens=10),
+            ),
+        ]
+        model.model_id = "model-a"
+        model.model_characteristics.context_window_tokens = 1000
+        result = await projections.context_usage("thread-one", live_run_id="run-b", live_composition=current)
+        assert (result.latest_request_tokens, result.context_window, result.model_id) == (100, 1000, "model-a")
+        assert store.objects.read_model.await_args.args[0] == old
+
+        # When only the older capture is available, retain tokens but expose
+        # an unknown limit instead of calculating a misleading percentage.
+        store.usage.latest_root_request.side_effect = None
+        store.usage.latest_root_request.return_value = observed
+        result = await projections.context_usage("thread-one")
+        assert (result.latest_request_tokens, result.context_window, result.model_id) == (320, None, "model-b")

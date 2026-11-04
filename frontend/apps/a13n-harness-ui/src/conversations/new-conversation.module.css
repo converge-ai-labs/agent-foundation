@@ -20,7 +20,7 @@
 .inputArea {
   --composer-inset: 4px;
   flex-shrink: 0;
-  width: min(100%, 680px);
+  width: min(100%, 800px);
   margin: 0 auto;
 }
 .inputArea > section {

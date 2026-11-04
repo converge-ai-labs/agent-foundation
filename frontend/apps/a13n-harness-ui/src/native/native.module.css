@@ -38,6 +38,41 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.workspaceTitle button {
+  display: block;
+  max-width: min(480px, 100%);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+.workspaceTitle button:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.pane.detailsPane {
+  padding: 20px 16px;
+}
+.detailsHeading {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+.detailsHeading h2 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--a13n-text-body);
+  font-weight: 500;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
 .panelTools {
   display: flex;
   align-items: center;

@@ -15,7 +15,7 @@ Harness is compact, quiet and softly contrasted. Settings supply the grouping an
 | Sidebar rows                                                              | 30px high; 2px between adjacent fills           |
 | Touch targets                                                             | At least 44px; determined by pointer capability |
 | Radius: control / group and overlay / composer                            | 8 / 16 / 20px                                   |
-| Reading width: saved conversation / New chat / settings                   | Available pane / 720px / 760px                  |
+| Reading width: saved conversation / New chat / settings                   | 800px / 800px / 760px                           |
 | Standard form dialog                                                      | 480px wide; 24px desktop and 16px narrow insets |
 | Field groups / page sections                                              | 16 / 32px gaps                                  |
 | Default type: navigation / interface / prose / composer / code / terminal | 13 / 14 / 15 / 16 / 12 / 13px                   |
@@ -57,7 +57,7 @@ Rows drag directly without a grip icon. Use a compact preview and thin insertion
 
 ### Reading and Execution Details
 
-Saved conversations use the available chat pane width with symmetric gutters; transcript, Activity row and composer share an axis. Left navigation retains its existing layout and controls. New chat retains its centered 720px entry column. User bubbles fit content within a bounded width. User messages and intermediate and final assistant prose share primary text color, the conversation size (15px by default) and 1.7 line height. Markdown tables follow that size; heading levels use 1.5, 1.25, 1.125 and 1em. Inline code stays relative to surrounding prose. Code blocks and line numbers use the independent code size; their toolbar labels use the interface size. Interface labels and tool rows retain their compact scale. Tool and Thought labels use quiet gray, regular text; only hover or focus strengthens them, not expansion.
+Saved conversations and New chat use a centered reading column capped at 800px with symmetric gutters; transcript and composer share an axis. Left navigation retains its existing layout and controls. Wide code blocks and tables scroll within their own bounds. The header title uses one ellipsized line capped at 480px, with the full title available on hover and keyboard focus. Chat details starts at 340px, independently of resource-pane proportions; its full title wraps above compact work sections. User bubbles fit content within a bounded width. User messages and intermediate and final assistant prose share primary text color, the conversation size (15px by default) and 1.7 line height. Markdown tables follow that size; heading levels use 1.5, 1.25, 1.125 and 1em. Inline code stays relative to surrounding prose. Code blocks and line numbers use the independent code size; their toolbar labels use the interface size. Interface labels and tool rows retain their compact scale. Tool and Thought labels use quiet gray, regular text; only hover or focus strengthens them, not expansion.
 
 Completed work collapses behind **Worked for …**, leaving the final response visible, under the [conversation contract](04-workbench-interaction.md#conversation-and-shared-composer). Omit **Work log**, tool-count summaries and tool elapsed times. Recorded Run/Thought timing uses muted tabular figures.
 
@@ -69,7 +69,7 @@ Input, output, commands, changes and errors remain inspectable in ordinary mode;
 
 The empty desktop composer aligns attachment, editor, options, Model and Send on one line. Content or limited pane width moves text above one stable action row. Avoid accumulated editor gutters, oversized action backgrounds and a disproportionately large Send button.
 
-One compact row immediately above the composer holds Activity at the left and context/cost at the right. Sustained live connection status uses quiet, unboxed text between them, collapsing to an accessible connection icon when space is limited; activation opens details on keyboard and touch as well as pointer. Its appearance does not shift the composer or usage controls. Narrow rows consolidate Activity shortcuts into their existing menu before crowding status and usage. There is no second routine footer row. Context uses an icon, compact token value and occupancy; cost retains `$`; cache belongs inside the context popover. Units and unavailable values follow the conversation contract.
+The composer has no routine status strip above or below it. Attachments and options stay at the left; a compact context-occupancy ring sits beside Model and Send at the right. Unknown occupancy is visually distinct from zero. One popup combines latest-request context with cumulative usage, cost and cache details; Debug values stay inside it. Tasks and other work inspection live in Chat details. Connection recovery, failures and response-needed notices remain adjacent to the chat. Units and unavailable values follow the conversation contract.
 
 Usage popovers lead with the requested figure and unit, then aligned supporting rows. Breakdowns expand inside one bounded reader; help carries accounting explanations. Avoid a card, subtitle or large gap for every metric. Scope changes preserve position and alignment.
 

@@ -587,21 +587,32 @@ class ThreadProjectionService:
             goal=goal,
         )
 
-    async def context_usage(self, thread_id: str) -> ContextUsageView:
+    async def context_usage(
+        self, thread_id: str, *, live_run_id: str | None = None, live_composition: ObjectRef | None = None
+    ) -> ContextUsageView:
         thread = await self._store.threads.get(thread_id)
         if thread is None:
             raise ThreadError("Session does not exist.", code="thread_missing")
-        if thread.continuation is None:
-            return ContextUsageView(thread_id=thread_id)
         inspection = await self.inspection(thread)
-        assert inspection.run_composition is not None
-        composition = await self._store.objects.read_model(inspection.run_composition, ResolvedRunComposition)
+        reference = inspection.run_composition
         latest = inspection.latest_request_tokens
-        if not inspection.context_empty:
-            observed = await self._store.usage.latest_root_request(thread_id=thread_id)
+        observed = None
+        if live_run_id is not None and live_composition is not None:
+            observed = await self._store.usage.latest_root_request(thread_id=thread_id, run_id=live_run_id)
             if observed is not None:
-                latest = observed.request_usage.input_tokens + observed.request_usage.output_tokens
+                reference = live_composition
+        if observed is None and not inspection.context_empty:
+            observed = await self._store.usage.latest_root_request(thread_id=thread_id)
+        if observed is not None:
+            latest = observed.request_usage.input_tokens + observed.request_usage.output_tokens
+        if reference is None:
+            return ContextUsageView(thread_id=thread_id, latest_request_tokens=latest)
+        composition = await self._store.objects.read_model(reference, ResolvedRunComposition)
         model = composition.root.model
+        # A newer request can precede its checkpoint. Never pair it with a
+        # different saved Model, or resolve its limit from next-Run selections.
+        if observed is not None and observed.model_id != model.model_id:
+            return ContextUsageView(thread_id=thread_id, latest_request_tokens=latest, model_id=observed.model_id)
         from a13n_harness_ui.model_thinking import summarize_thinking
 
         thinking = model.thinking_override if model.thinking_override is not None else model.settings.get("thinking")
