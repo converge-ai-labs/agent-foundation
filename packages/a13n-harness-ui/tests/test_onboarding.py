@@ -400,7 +400,7 @@ async def test_landing_chat_keeps_terminal_and_enables_composer_only_when_ready(
 @pytest.mark.parametrize("owner", ["root", "child"])
 @pytest.mark.parametrize("active_run", [False, True])
 async def test_chat_task_failure_preserves_error_after_terminal_cleanup(
-    tmp_path: Path, owner: str, active_run: bool
+    tmp_path: Path, owner: str, active_run: bool, terminal_app
 ) -> None:
     import asyncio
     from types import SimpleNamespace
@@ -422,6 +422,8 @@ async def test_chat_task_failure_preserves_error_after_terminal_cleanup(
         interaction=empty,
         skill_catalog=empty,
         cancel=empty,
+        receipt_id=None,
+        app=terminal_app,
     )
     loop = asyncio.get_running_loop()
     previous_handler = loop.get_exception_handler()

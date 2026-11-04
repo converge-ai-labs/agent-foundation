@@ -26,6 +26,12 @@ a13n-harness-ui
 
 Ctrl+J 或 Alt+Enter 用于换行。粘贴多行文本后，文本会留在草稿中，直到你发送。
 
+在普通提示词输入框中按 **Ctrl+G**，使用你配置的编辑器编辑草稿。Harness UI 优先使用 `VISUAL`，未设置或为空时使用 `EDITOR`；启动前设置其中一个，例如 `EDITOR=nano a13n-harness-ui` 或 `VISUAL='code --wait' a13n-harness-ui`。编辑器在运行 CLI 的 Host 上启动，SSH 场景也一样。保存并关闭编辑器后返回输入框，确认后再按 Enter 发送。编辑不会提交输入或取消 Agent 工作。
+
+折叠的长文本会展开。附件显示为可读标记：每个标记必须保持原样且只出现一次，可以随周围文本移动。标记无效或后台工作改变草稿时，保留当前草稿，并将编辑器中的文字保存到私有恢复文件；提示中会显示路径，不会覆盖已有的 `/recover` 草稿。打开恢复文件取回文字，使用后删除其目录。编辑器失败时保留原草稿。工作用临时文件限制访问权限，并在编辑结束后删除。审批、问答卡片和菜单输入不支持 Ctrl+G。
+
+GUI 编辑器必须等待编辑完成，例如按编辑器选择 `code --wait`、`subl --wait` 或 macOS 的 `open -W -t`。启动器立即退出时，稍后保存的内容无法返回输入框。Windows 使用原生双引号路径和 PATH/PATHEXT 查找，支持 `.cmd` 启动器。例如在 PowerShell 中设置 `$env:VISUAL = '"C:\Program Files\Neovim\bin\nvim.exe"'`。POSIX 使用 shell 风格的参数引号；提示词正文不会拼接到 shell 命令中。
+
 ### 选择 Agent 或 Model
 
 空闲时用 `/agent` 或 `/model` 打开选择器。选择后运行 `/status`，确认实际生效的设置。

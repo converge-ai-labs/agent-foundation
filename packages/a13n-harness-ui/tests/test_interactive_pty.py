@@ -318,3 +318,69 @@ assert asyncio.run(run_terminal(CliRequest(), runtime_loader=lambda: factory)) i
         assert output.count(b"\x1b[?1049l") == 1
     finally:
         _stop(process, master)
+
+
+@pytest.mark.xdist_group("harness-ui-pty-external-editor")
+def test_external_editor_owns_terminal_and_returns_without_submitting(tmp_path: Path) -> None:
+    editor = tmp_path / "editor.py"
+    editor.write_text(
+        "import os, sys\nfrom pathlib import Path\n"
+        "path = Path(sys.argv[-1])\n"
+        "assert sys.stdin.isatty() and sys.stdout.isatty()\n"
+        "print('EXTERNAL-EDITOR-READY', flush=True)\n"
+        "text = input()\n"
+        "assert os.tcgetpgrp(0) == os.getpgrp()\n"
+        "path.write_text(path.read_text(encoding='utf-8') + text, encoding='utf-8')\n",
+        encoding="utf-8",
+    )
+    script = r"""
+import asyncio, os, shlex, sys
+from pathlib import Path
+from a13n_harness_ui.cli import CliRequest
+from a13n_harness_ui.interactive.shell import CliShell
+import fcntl, termios
+os.setsid()
+fcntl.ioctl(0, termios.TIOCSCTTY, 0)
+os.environ['VISUAL'] = shlex.join([sys.executable, str(Path.cwd() / 'editor.py')])
+async def main():
+    shell = CliShell(CliRequest())
+    shell.ready = True
+    shell.composer.text = 'draft: '
+    shell.composer.buffer.cursor_position = len(shell.composer.text)
+    async def observe():
+        while shell.composer.text != 'draft: edited':
+            await asyncio.sleep(0.01)
+        assert os.tcgetpgrp(0) == os.getpgrp()
+        Path('returned').write_text(shell.composer.text)
+        while shell.composer.text != 'draft: edited!':
+            await asyncio.sleep(0.01)
+        Path('typed-after-editor').write_text(shell.composer.text)
+        shell.app.exit()
+    watcher = asyncio.create_task(observe())
+    try:
+        await shell.app.run_async()
+        await watcher
+    finally:
+        watcher.cancel()
+        await asyncio.gather(watcher, return_exceptions=True)
+        shell.renderer.transcript.close()
+asyncio.run(main())
+"""
+    process, master = _spawn(script, tmp_path)
+    try:
+        _read_until(master, b"draft:", timeout=15)
+        os.write(master, b"\x07")
+        _read_until(master, b"EXTERNAL-EDITOR-READY")
+        os.write(master, b"edited\n")
+        deadline = time.monotonic() + 8
+        while not (tmp_path / "returned").exists():
+            assert process.poll() is None
+            assert time.monotonic() < deadline
+            time.sleep(0.01)
+        os.write(master, b"!")
+        _read_until(master, b"draft: edited!")
+        process.wait(timeout=8)
+        assert process.returncode == 0
+        assert (tmp_path / "typed-after-editor").read_text() == "draft: edited!"
+    finally:
+        _stop(process, master)

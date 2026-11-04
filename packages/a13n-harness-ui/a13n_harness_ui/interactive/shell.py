@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from anyio import CancelScope
-from prompt_toolkit.application import Application
+from prompt_toolkit.application import Application, in_terminal
 from prompt_toolkit.buffer import Buffer
 from prompt_toolkit.completion import CompleteEvent, Completer, Completion
 from prompt_toolkit.document import Document
@@ -47,6 +47,7 @@ from .attachments import add_images, clipboard_images, read_attachment
 from .commands import CommandRegistry, Invocation
 from .composer import ComposerWindow, wrapped_height
 from .diagnostics import exception_report, pending_task_warning
+from .external_editor import edit_prompt, save_editor_draft
 from .history import HistoryBrowser
 from .inline_attachments import (
     AttachmentBuffer,
@@ -131,6 +132,7 @@ class CliShell:
         self.inline = InlineAttachments()
         self.clipboard = AttachmentClipboard()
         self._draft_generation = 0
+        self._editor_task: asyncio.Task[None] | None = None
         self._recoverable: Document | None = None
         self._submitted_draft: Document | None = None
         self._sending_draft: Document | None = None
@@ -319,6 +321,28 @@ class CliShell:
         if expanded is not None:
             text, position = expanded
             buffer.document = Document(text, position)
+
+    async def _edit_prompt(self) -> None:
+        buffer = self.composer.buffer
+        original = buffer.document
+        generation = self._draft_generation
+        expanded = self.pastes.expand(original.text)
+        try:
+            async with in_terminal():
+                edited = await edit_prompt(expanded, self.inline)
+            # Background admission recovery or attachment acquisition can change the
+            # draft while terminal input belongs to the editor. Never overwrite it.
+            if buffer.text != original.text or self._draft_generation != generation:
+                recovery = save_editor_draft(self.inline.display(edited))
+                self.emit(f"The draft changed while the editor was open. Editor text saved to {recovery}")
+                return
+            if edited != expanded:
+                buffer.save_to_undo_stack()
+                buffer.document = Document(edited, len(edited))
+        except (OSError, ValueError) as error:
+            self.emit(f"Could not edit prompt: {error}")
+        finally:
+            self.app.invalidate()
 
     def _style(self) -> Style:
         rules = prompt_toolkit_style_rules(self.renderer.transcript.theme)
@@ -562,6 +586,7 @@ class CliShell:
             hints = [
                 "Ctrl+T history",
                 "Ctrl+O details",
+                "Ctrl+G editor",
                 "F2 tasks",
                 "/notes",
                 "Esc select" if self.mouse else "Esc scroll",
@@ -1057,6 +1082,25 @@ class CliShell:
                 return
             event.app.create_background_task(self.cancel())
 
+        @keys.add(
+            "c-g", filter=Condition(lambda: self.ready and self.interaction is None and self.menu_handler is None)
+        )
+        def external_editor(event: KeyPressEvent) -> None:
+            if self._editor_task is not None and not self._editor_task.done():
+                return
+            editor = self._editor_task = event.app.create_background_task(self._edit_prompt())
+            application_done = event.app.future
+            assert application_done is not None
+
+            def cancel_editor(future: asyncio.Future[Any]) -> None:
+                # Application.run_async waits for in_terminal() before cancelling
+                # background tasks. Cancel at its completion signal instead, so
+                # editor cleanup can release that handoff and shutdown can finish.
+                editor.cancel()
+
+            application_done.add_done_callback(cancel_editor)
+            editor.add_done_callback(lambda task: application_done.remove_done_callback(cancel_editor))
+
         @keys.add("c-j")
         @keys.add("escape", "enter")
         def newline(event: KeyPressEvent) -> None:
@@ -1391,9 +1435,23 @@ class CliShell:
         try:
             with patch_stdout():
                 if terminal_task is None:
-                    await self.app.run_async(set_exception_handler=False)
-                else:
-                    await terminal_task
+                    terminal_task = asyncio.create_task(self.app.run_async(set_exception_handler=False))
+                try:
+                    await asyncio.shield(terminal_task)
+                except asyncio.CancelledError:
+                    # Application teardown is cancellable. Start shutdown once,
+                    # then let its editor finish before terminal input detaches.
+                    if not self.app.is_done:
+                        terminal_task.cancel()
+                    with CancelScope(shield=True):
+                        while not terminal_task.done():
+                            try:
+                                await asyncio.shield(terminal_task)
+                            except asyncio.CancelledError:
+                                pass
+                    with suppress(asyncio.CancelledError):
+                        terminal_task.result()
+                    raise
         except BaseException:
             # An App failure may leave its receipt unsettled. Stop the UI waiter
             # so cleanup can reach the App, which still owns the actual Run.
