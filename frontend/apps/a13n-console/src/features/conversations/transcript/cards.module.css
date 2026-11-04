@@ -167,3 +167,23 @@
   font-size: var(--a13n-text-xs);
   justify-self: start;
 }
+
+/* Embedded details retain a readable inset and a stable boundary in both states. */
+.inlineDisclosure {
+  margin-block: 8px;
+  border: 1px solid var(--a13n-border);
+  border-radius: 8px;
+}
+.inlineDisclosure
+  > [data-slot="disclosure-surface"]
+  > [data-slot="collapsible-trigger"] {
+  min-height: 40px;
+  padding: 8px 12px;
+}
+.inlineDisclosure
+  > [data-slot="disclosure-surface"]
+  > [data-slot="collapsible-panel"]
+  > div {
+  padding: 12px;
+  border-top: 1px solid var(--a13n-border);
+}
