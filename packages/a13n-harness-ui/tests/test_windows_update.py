@@ -69,6 +69,7 @@ def test_windows_wait_targets_only_launching_chain(tmp_path, monkeypatch, suffix
 
 
 def test_windows_handoff_uses_base_python_and_explicit_handles(tmp_path, monkeypatch):
+    monkeypatch.setattr(updater.sys, "platform", "win32")
     calls = []
     events = []
 
@@ -146,6 +147,7 @@ def test_worker_failure_never_retries_or_claims_success(monkeypatch, capsys, sta
 
 
 def test_wait_polls_for_cancellation_and_closes_handles(monkeypatch):
+    monkeypatch.setattr(worker.sys, "platform", "win32")
     results = iter([258, 0])
     closed = []
     kernel = SimpleNamespace(
@@ -158,6 +160,7 @@ def test_wait_polls_for_cancellation_and_closes_handles(monkeypatch):
 
 
 def test_wait_timeout_closes_handles(monkeypatch):
+    monkeypatch.setattr(worker.sys, "platform", "win32")
     closed = []
     kernel = SimpleNamespace(WaitForMultipleObjects=lambda *args: 258, CloseHandle=closed.append)
     monkeypatch.setattr(worker, "_kernel32", lambda: kernel)

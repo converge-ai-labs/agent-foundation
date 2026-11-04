@@ -56,6 +56,7 @@ def _windows_update_pids() -> list[int]:
 
 
 def _start_windows_update(command: UpdateCommand) -> None:
+    assert sys.platform == "win32"
     from a13n_harness_ui import _windows_update
 
     # Running from the tool's Python or importing its packages in the worker

@@ -17,6 +17,7 @@ from ctypes import wintypes
 
 
 def _kernel32():
+    assert sys.platform == "win32"
     kernel = ctypes.WinDLL("kernel32", use_last_error=True)
     kernel.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
     kernel.OpenProcess.restype = wintypes.HANDLE
@@ -35,6 +36,7 @@ def _kernel32():
 @contextmanager
 def process_handles(pids: Sequence[int]) -> Iterator[list[int]]:
     """Capture process identity before handoff; inherit only these wait handles."""
+    assert sys.platform == "win32"
     kernel = _kernel32()
     handles = []
     try:
@@ -51,6 +53,7 @@ def process_handles(pids: Sequence[int]) -> Iterator[list[int]]:
 
 def wait_for_exit(handles: Sequence[int], *, timeout: float = 60) -> None:
     """Wait for Python and its launchers, without holding any tool package open."""
+    assert sys.platform == "win32"
     kernel = _kernel32()
     array = (wintypes.HANDLE * len(handles))(*handles)
     deadline = time.monotonic() + timeout
