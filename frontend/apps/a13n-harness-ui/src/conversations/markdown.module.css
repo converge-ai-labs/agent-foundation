@@ -79,18 +79,18 @@
   color: var(--a13n-text);
 }
 .markdown h1 {
-  font-size: 20px;
+  font-size: 24px;
 }
 .markdown h2 {
-  font-size: 16px;
+  font-size: 20px;
 }
 .markdown h3 {
-  font-size: 16px;
+  font-size: 18px;
 }
 .markdown h4,
 .markdown h5,
 .markdown h6 {
-  font-size: 14px;
+  font-size: 1em;
 }
 .markdown code {
   font-family: var(--a13n-mono);
@@ -227,7 +227,7 @@
   overflow-wrap: normal;
   word-break: normal;
   border-collapse: collapse;
-  font-size: 14px;
+  font-size: inherit;
   line-height: 1.6;
   font-variant-numeric: tabular-nums;
 }

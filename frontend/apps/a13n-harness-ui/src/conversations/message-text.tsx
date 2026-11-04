@@ -4,6 +4,7 @@ import { useGuestAccess } from "../transport/context";
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
+import { remarkLatex } from "./remark-latex";
 import rehypeKatex from "rehype-katex";
 import "katex/dist/katex.min.css";
 import { MarkdownPre, MarkdownSource, MarkdownTable } from "./markdown-block";
@@ -108,7 +109,7 @@ export const MessageText = memo(function MessageText({
     <MarkdownSource value={text}>
       <div className={styles.markdown}>
         <Markdown
-          remarkPlugins={[remarkGfm, remarkMath]}
+          remarkPlugins={[remarkGfm, remarkMath, remarkLatex]}
           rehypePlugins={
             guest
               ? [rehypeKatex]

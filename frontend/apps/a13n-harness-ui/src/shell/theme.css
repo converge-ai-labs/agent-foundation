@@ -12,8 +12,8 @@
   --harness-section-gap: 32px;
   --harness-field-gap: 16px;
   --harness-group-inset: 16px;
-  --harness-prose-size: 14px;
-  --harness-prose-leading: 1.6;
+  --harness-prose-size: 16px;
+  --harness-prose-leading: 1.7;
   --harness-log-text: light-dark(#767676, #969696);
   --harness-code-keyword: light-dark(#8250df, #d2a8ff);
   --harness-code-string: light-dark(#116329, #a5d6ff);
