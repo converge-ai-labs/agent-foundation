@@ -44,7 +44,7 @@ async def resolve(
                         EnvironmentRow.id == attachment.environment_id,
                         EnvironmentRow.workspace_id == grant.workspace_id,
                         EnvironmentRow.owner_principal_id == grant.principal.id,
-                        EnvironmentRow.kind == "client_envd",
+                        EnvironmentRow.kind == "external",
                         EnvironmentRow.status == "ready",
                         EnvironmentRow.device_id == attachment.device_id,
                         ClientSettingsRow.credential_version == attachment.credential_version,

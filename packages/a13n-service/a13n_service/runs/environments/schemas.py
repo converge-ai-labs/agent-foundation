@@ -100,7 +100,7 @@ class ClientConnectionObservation(BaseModel):
 class EnvironmentView(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: str
-    kind: Literal["managed", "external_http", "client_envd"]
+    kind: Literal["managed", "external_http", "external"]
     client_connection: ClientConnectionObservation | None = None
     organization_id: str
     workspace_id: str

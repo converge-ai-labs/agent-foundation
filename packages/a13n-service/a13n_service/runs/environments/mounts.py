@@ -189,7 +189,7 @@ async def freeze_mounts(session: AsyncSession, thread: ThreadRow, *, principal_i
     environments = await lock_environments(
         session, thread.workspace_id, [mount.environment_id for mount in mounts], principal_id=principal_id
     )
-    client_ids = [environment.id for environment in environments if environment.kind == "client_envd"]
+    client_ids = [environment.id for environment in environments if environment.kind == "external"]
     configurations = (
         {
             config.environment_id: config

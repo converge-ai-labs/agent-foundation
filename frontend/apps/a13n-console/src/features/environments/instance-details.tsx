@@ -97,7 +97,7 @@ export function EnvironmentPanel({
     refetchInterval: (query) =>
       query.state.data?.value.operation_id
         ? 2000
-        : environment.kind === "client_envd"
+        : environment.kind === "external"
           ? 15_000
           : false,
   });
@@ -351,13 +351,7 @@ export function EnvironmentPanel({
                 <h3>{t("Source")}</h3>
                 <dl className={styles.facts}>
                   <Fact label={t("Ownership")}>
-                    {t(
-                      value.kind === "client_envd"
-                        ? "Client computer"
-                        : value.template_id
-                          ? "Managed"
-                          : "External",
-                    )}
+                    {t(value.template_id ? "Managed" : "External")}
                   </Fact>
                   {value.endpoint ? (
                     <Fact label={t("Endpoint")}>

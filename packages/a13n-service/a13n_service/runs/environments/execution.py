@@ -221,7 +221,7 @@ async def _inspect(
         if environment is None:
             raise not_found("environment", environment_id)
         require_usable(environment, principal.id)
-        if environment.kind == "client_envd":
+        if environment.kind == "external":
             assert environment.device_id is not None and mount.working_directory is not None
             return ClientTarget(environment.id, environment.device_id, mount.working_directory, mount.name), None
         if environment.kind == "external_http":
@@ -270,7 +270,7 @@ async def open_mounts(
             if environment is None:
                 raise not_found("environment", mount.environment_id)
             require_usable(environment, principal.id)
-            if environment.kind == "client_envd":
+            if environment.kind == "external":
                 definition = WEBSOCKET_ENVD
                 recipe = {"working_directory": mount.working_directory}
                 state = EnvironmentState(
@@ -312,7 +312,7 @@ async def open_mounts(
                     state,
                     configuration,
                     client=Incarnation(environment.device_id)
-                    if environment.kind == "client_envd" and environment.device_id
+                    if environment.kind == "external" and environment.device_id
                     else None,
                     skill_cache=skill_cache if mount.name == PRIMARY else None,
                     session_recovery=envd_sessions.setdefault(mount.name, EnvdSessionRecovery())

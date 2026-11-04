@@ -112,7 +112,7 @@ async def test_client_environment_migration_preserves_legacy_target_and_refuses_
             connection.execute(
                 text(
                     "INSERT INTO environments (id, kind, organization_id, workspace_id, owner_principal_id, created_by_id,"
-                    " name, status, device_id) VALUES ('env_client', 'client_envd', :org, :ws, :owner, :owner,"
+                    " name, status, device_id) VALUES ('env_client', 'external', :org, :ws, :owner, :owner,"
                     " 'My computer', 'deleted', 'device')"
                 ),
                 fields,

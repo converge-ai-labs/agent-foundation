@@ -29,7 +29,7 @@ from a13n_service.tenancy.credentials import new_secret
 
 
 async def settings(session: AsyncSession, environment: EnvironmentRow) -> ClientSettingsRow:
-    if environment.kind != "client_envd":
+    if environment.kind != "external":
         raise not_found("client_environment", environment.id)
     row = await session.get(ClientSettingsRow, environment.id)
     if row is None:
@@ -70,7 +70,7 @@ async def register(runtime: Runtime, actor: Principal, workspace_id: str, body: 
             insert(EnvironmentRow)
             .values(
                 id=new_object_id("env"),
-                kind="client_envd",
+                kind="external",
                 organization_id=scope.organization_id,
                 workspace_id=scope.workspace_id,
                 owner_principal_id=actor.id,
@@ -192,7 +192,7 @@ async def authenticate(runtime: Runtime, environment_id: str, token: str) -> Att
                 .join(ClientSettingsRow, ClientSettingsRow.environment_id == EnvironmentRow.id)
                 .where(
                     EnvironmentRow.id == environment_id,
-                    EnvironmentRow.kind == "client_envd",
+                    EnvironmentRow.kind == "external",
                     EnvironmentRow.status == "ready",
                 )
             )
@@ -217,7 +217,7 @@ async def validate_attachment(runtime: Runtime, attachment: Attachment) -> None:
                 .join(ClientSettingsRow, ClientSettingsRow.environment_id == EnvironmentRow.id)
                 .where(
                     EnvironmentRow.id == attachment.environment_id,
-                    EnvironmentRow.kind == "client_envd",
+                    EnvironmentRow.kind == "external",
                     EnvironmentRow.status == "ready",
                     EnvironmentRow.device_id == attachment.device_id,
                     ClientSettingsRow.credential_version == attachment.credential_version,

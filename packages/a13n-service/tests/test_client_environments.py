@@ -31,7 +31,7 @@ async def test_offline_registration_is_idempotent_and_keeps_secrets_private(serv
     body = created.json()
     environment = body["client"]["environment"]
     identity = environment["id"]
-    assert environment["kind"] == "client_envd" and environment["status"] == "ready"
+    assert environment["kind"] == "external" and environment["status"] == "ready"
     assert environment["endpoint"] is None and environment["device_id"] == "laptop"
     assert environment["owner_principal_id"] == service.tenant.principal_id
     assert body["connection_path"] == f"/api/v1/client-environments/{identity}/connect"

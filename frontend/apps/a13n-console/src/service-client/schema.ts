@@ -7464,7 +7464,7 @@ export interface components {
        * Kind
        * @enum {string}
        */
-      kind: "managed" | "external_http" | "client_envd";
+      kind: "managed" | "external_http" | "external";
       /** Last Used At */
       last_used_at: string | null;
       metrics_application?: components["schemas"]["MetricsApplication"] | null;

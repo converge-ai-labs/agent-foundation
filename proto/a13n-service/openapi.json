@@ -7690,7 +7690,7 @@
             "enum": [
               "managed",
               "external_http",
-              "client_envd"
+              "external"
             ],
             "title": "Kind",
             "type": "string"

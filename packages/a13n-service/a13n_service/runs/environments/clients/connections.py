@@ -97,7 +97,7 @@ class Connections:
 
     async def observe(self, environments: list[EnvironmentView]) -> None:
         """Project live connection state for an authorized page in one Redis read."""
-        clients = [item for item in environments if item.kind == "client_envd"]
+        clients = [item for item in environments if item.kind == "external"]
         if not clients:
             return
         keys = [key for item in clients for key in (owner_key(item.id), presence_key(item.id))]

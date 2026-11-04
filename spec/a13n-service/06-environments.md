@@ -25,9 +25,9 @@ environments   (env_)
   operation_id NULL  operation_started_at NULL  operation_deadline NULL
   lease_owner NULL  lease_token_hash NULL  lease_expires_at NULL
   failure NULL  last_used_at NULL  renew_at NULL  expires_at NULL  created_by_id  version  created_at  updated_at
-  kind IN ('managed', 'external_http', 'client_envd')
+  kind IN ('managed', 'external_http', 'external')
   status IN ('reserved', 'creating', 'starting', 'ready', 'stopping', 'stopped', 'deleting', 'deleted', 'disabled')
-  CHECK (status <> 'disabled' OR kind = 'client_envd')
+  CHECK (status <> 'disabled' OR kind = 'external')
   CHECK (status <> 'reserved' OR (handle IS NULL AND provider_identity IS NULL AND failure IS NULL))
   CHECK (template_id IS NULL OR status NOT IN ('ready', 'starting', 'stopping', 'stopped')
          OR handle IS NOT NULL)
@@ -41,9 +41,9 @@ environments   (env_)
   CHECK ((kind <> 'managed') = (device_id IS NOT NULL)
          AND (kind = 'external_http') = (endpoint IS NOT NULL)
          AND (kind = 'managed' OR (provider_identity IS NULL AND handle IS NULL))
-         AND (kind <> 'client_envd' OR owner_principal_id IS NOT NULL))
+         AND (kind <> 'external' OR owner_principal_id IS NOT NULL))
   CHECK ((token IS NOT NULL) = (kind = 'external_http' AND status <> 'deleted'))
-  UNIQUE (workspace_id, owner_principal_id, device_id) WHERE kind = 'client_envd' AND status <> 'deleted'
+  UNIQUE (workspace_id, owner_principal_id, device_id) WHERE kind = 'external' AND status <> 'deleted'
   CHECK ((renew_at IS NULL AND expires_at IS NULL) OR (status = 'ready' AND template_id IS NOT NULL))
   UNIQUE (operation_id) WHERE operation_id IS NOT NULL
   INDEX (renew_at) WHERE renew_at IS NOT NULL
@@ -229,7 +229,7 @@ The Service never creates, starts, stops or destroys a target, and maintenance n
 
 ## Client environments
 
-A `client_envd` environment identifies one registered installation owned by a principal in one workspace. Registration and connection are independent: a client environment can be registered, selected and mounted while offline. Its `status` is `ready`, `disabled` or `deleted`; `ready` means eligible for use, never proof of connectivity. It has no provider lifecycle operation. Connecting never creates an environment, changes a run's selected mounts or grants new operations.
+A `external` environment identifies one registered installation owned by a principal in one workspace. Registration and connection are independent: a client environment can be registered, selected and mounted while offline. Its `status` is `ready`, `disabled` or `deleted`; `ready` means eligible for use, never proof of connectivity. It has no provider lifecycle operation. Connecting never creates an environment, changes a run's selected mounts or grants new operations.
 
 The migration classifies existing managed and HTTP environments without changing their resource versions. New writes must supply `kind`; no trigger supports old writers. Old Controls and Workers must drain and stop before this schema migration. A client registration, including a deleted one, prevents downgrade because the old schema cannot preserve its execution authority.
 

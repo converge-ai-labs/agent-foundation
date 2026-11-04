@@ -29,7 +29,7 @@ from a13n_service.infra.db import Base, Stamped, identity_guarded, rules
 
 STATUSES = ("reserved", "creating", "starting", "ready", "stopping", "stopped", "deleting", "deleted", "disabled")
 OPERATIONS = "('creating', 'starting', 'stopping', 'deleting')"
-CLIENT_IDENTITY = text("kind = 'client_envd' AND status <> 'deleted'")
+CLIENT_IDENTITY = text("kind = 'external' AND status <> 'deleted'")
 
 
 class EnvironmentRow(Stamped, Base):
@@ -49,8 +49,8 @@ class EnvironmentRow(Stamped, Base):
             name="fk_environments_metrics_data_source",
         ),
         CheckConstraint(f"status IN {STATUSES}", name="status"),
-        CheckConstraint("kind IN ('managed', 'external_http', 'client_envd')", name="kind"),
-        CheckConstraint("status <> 'disabled' OR kind = 'client_envd'", name="disabled"),
+        CheckConstraint("kind IN ('managed', 'external_http', 'external')", name="kind"),
+        CheckConstraint("status <> 'disabled' OR kind = 'external'", name="disabled"),
         CheckConstraint(
             "template_id IS NULL OR status NOT IN ('ready', 'starting', 'stopping', 'stopped') OR handle IS NOT NULL",
             name="handle",
@@ -78,7 +78,7 @@ class EnvironmentRow(Stamped, Base):
         CheckConstraint(
             "(kind <> 'managed') = (device_id IS NOT NULL) AND (kind = 'external_http') = (endpoint IS NOT NULL)"
             " AND (kind = 'managed' OR (provider_identity IS NULL AND handle IS NULL))"
-            " AND (kind <> 'client_envd' OR owner_principal_id IS NOT NULL)",
+            " AND (kind <> 'external' OR owner_principal_id IS NOT NULL)",
             name="external",
         ),
         # The tombstone of an external target drops its token.

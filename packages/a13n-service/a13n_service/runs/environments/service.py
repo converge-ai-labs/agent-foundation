@@ -282,7 +282,7 @@ async def delete_environment(
             environment.status = "deleted"
             environment.operation_id = environment.operation_started_at = environment.operation_deadline = None
             environment.handle = environment.failure = environment.token = None
-            if environment.kind == "client_envd":
+            if environment.kind == "external":
                 config = await session.get(ClientSettingsRow, environment.id)
                 if config is not None:
                     config.token_hash = None
@@ -304,7 +304,7 @@ async def check_computer(runtime: Runtime, actor: Principal, workspace_id: str, 
         require_usable(environment, actor.id)
         if environment.status != "ready":
             return ComputerCheck(status="not_ready")
-        if environment.kind == "client_envd":
+        if environment.kind == "external":
             # Probing Computer readiness would create an execution Session outside a run.
             return ComputerCheck(status="unsupported")
         if environment.kind == "external_http":

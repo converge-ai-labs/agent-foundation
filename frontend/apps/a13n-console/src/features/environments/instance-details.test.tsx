@@ -143,7 +143,7 @@ function open(
 it("shows a registered client offline with the observation time", async () => {
   const laptop: Schema["EnvironmentView"] = {
     ...external,
-    kind: "client_envd",
+    kind: "external",
     endpoint: null,
     client_connection: {
       state: "offline",

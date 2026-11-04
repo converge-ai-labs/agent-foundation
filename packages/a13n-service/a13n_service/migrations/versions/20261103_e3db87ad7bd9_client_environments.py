@@ -33,7 +33,7 @@ _NEW_CHECKS = {
     "status": "status IN ('reserved', 'creating', 'starting', 'ready', 'stopping', 'stopped', 'deleting', 'deleted', 'disabled')",
     "connect_only": "kind = 'managed' OR status IN ('ready', 'disabled', 'deleted')",
     "managed": "(kind = 'managed') = (template_id IS NOT NULL) AND (template_id IS NULL) = (provider_id IS NULL)",
-    "external": "(kind <> 'managed') = (device_id IS NOT NULL) AND (kind = 'external_http') = (endpoint IS NOT NULL) AND (kind = 'managed' OR (provider_identity IS NULL AND handle IS NULL)) AND (kind <> 'client_envd' OR owner_principal_id IS NOT NULL)",
+    "external": "(kind <> 'managed') = (device_id IS NOT NULL) AND (kind = 'external_http') = (endpoint IS NOT NULL) AND (kind = 'managed' OR (provider_identity IS NULL AND handle IS NULL)) AND (kind <> 'external' OR owner_principal_id IS NOT NULL)",
     "token": "(token IS NOT NULL) = (kind = 'external_http' AND status <> 'deleted')",
 }
 
@@ -76,13 +76,13 @@ def upgrade() -> None:
         "environments",
         ["workspace_id", "owner_principal_id", "device_id"],
         unique=True,
-        postgresql_where=sa.text("kind = 'client_envd' AND status <> 'deleted'"),
+        postgresql_where=sa.text("kind = 'external' AND status <> 'deleted'"),
     )
     op.create_check_constraint(
-        op.f("ck_environments_disabled"), "environments", "status <> 'disabled' OR kind = 'client_envd'"
+        op.f("ck_environments_disabled"), "environments", "status <> 'disabled' OR kind = 'external'"
     )
     op.create_check_constraint(
-        op.f("ck_environments_kind"), "environments", "kind IN ('managed', 'external_http', 'client_envd')"
+        op.f("ck_environments_kind"), "environments", "kind IN ('managed', 'external_http', 'external')"
     )
     op.execute(
         "CREATE TRIGGER guard_environment_target BEFORE UPDATE ON environments FOR EACH ROW WHEN (ROW(OLD.kind, OLD.device_id, OLD.owner_principal_id) IS DISTINCT FROM ROW(NEW.kind, NEW.device_id, NEW.owner_principal_id)) EXECUTE FUNCTION refuse_mutation()"
@@ -91,7 +91,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     # No older schema can represent a client registration, even a deleted one.
-    if op.get_bind().scalar(sa.text("SELECT EXISTS (SELECT FROM environments WHERE kind = 'client_envd')")):
+    if op.get_bind().scalar(sa.text("SELECT EXISTS (SELECT FROM environments WHERE kind = 'external')")):
         raise RuntimeError("Client registrations prevent downgrade")
     op.execute("DROP TRIGGER guard_environment_target ON environments")
     _replace_checks(_OLD_CHECKS)
@@ -100,7 +100,7 @@ def downgrade() -> None:
     op.drop_index(
         "uq_environments_client_identity",
         table_name="environments",
-        postgresql_where=sa.text("kind = 'client_envd' AND status <> 'deleted'"),
+        postgresql_where=sa.text("kind = 'external' AND status <> 'deleted'"),
     )
     op.drop_column("environments", "kind")
     op.drop_table("client_environment_settings")
