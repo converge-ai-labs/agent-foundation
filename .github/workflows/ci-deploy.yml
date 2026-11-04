@@ -137,6 +137,7 @@ jobs:
 
       - name: Require all nine Kubernetes journeys without skips
         if: always()
+        shell: bash
         run: |
           python - <<'PYCODE' | tee -a "$GITHUB_STEP_SUMMARY"
           import xml.etree.ElementTree as ET

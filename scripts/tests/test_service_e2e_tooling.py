@@ -175,6 +175,37 @@ def test_the_e2e_suite_collects_every_module_and_requires_opt_in_for_external_jo
     assert collect_scenarios("-k", "environment") == {f"{lifecycle}[local]", f"{lifecycle}[docker]"}
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Deployment CI uses Bash")
+@pytest.mark.parametrize("report", ["passed", "short", "skipped", "failed", "error", "missing"])
+def test_kubernetes_report_gate_rejects_incomplete_or_unsuccessful_journeys(tmp_path, report):
+    workflow = yaml.safe_load((ROOT / ".github/workflows/ci-deploy.yml").read_text())
+    [step] = [
+        step
+        for step in workflow["jobs"]["kind"]["steps"]
+        if step.get("name") == "Require all nine Kubernetes journeys without skips"
+    ]
+    if report != "missing":
+        results = tmp_path / "test-results"
+        results.mkdir()
+        count = 8 if report == "short" else 9
+        marker = {"skipped": "<skipped/>", "failed": "<failure/>", "error": "<error/>"}.get(report, "")
+        cases = "<testcase/>" * (count - 1) + f"<testcase>{marker}</testcase>"
+        (results / "kubernetes-e2e.xml").write_text(f"<testsuite>{cases}</testsuite>")
+    # Match Actions' explicit Bash invocation; an unspecified shell omits pipefail.
+    command = (
+        ["bash", "--noprofile", "--norc", "-e", "-o", "pipefail"] if step.get("shell") == "bash" else ["bash", "-e"]
+    )
+    result = subprocess.run(
+        [*command, "-c", step["run"]],
+        cwd=tmp_path,
+        env={**os.environ, "GITHUB_STEP_SUMMARY": str(tmp_path / "summary.md")},
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert (result.returncode == 0) == (report == "passed"), result.stdout + result.stderr
+
+
 @pytest.mark.parametrize("worker_slots", [1, 4])
 @pytest.mark.parametrize("kubernetes", [False, True])
 def test_the_e2e_service_configuration_is_valid(tmp_path, monkeypatch, worker_slots, kubernetes):
