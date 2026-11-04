@@ -69,6 +69,9 @@ export function useAgentDraft(
     [maxTokens, setMaxTokens] = useState(initialMaxTokensText),
     [settings, setSettings] = useState(initialSettingsText),
     [advanced, setAdvanced] = useState(advancedConfig(initial)),
+    [environmentId, setEnvironmentId] = useState(
+      initial.default_environment_id ?? null,
+    ),
     [environmentTemplateId, setEnvironmentTemplateId] = useState(
       initial.default_environment_template_id ?? null,
     ),
@@ -105,6 +108,7 @@ export function useAgentDraft(
         (mediaUnderstanding[kind] ?? null) !==
         (initial.media_understanding?.[kind] ?? null),
     ) ||
+    environmentId !== (initial.default_environment_id ?? null) ||
     environmentTemplateId !==
       (initial.default_environment_template_id ?? null) ||
     JSON.stringify(toolsets) !== JSON.stringify(initial.toolsets ?? {}) ||
@@ -145,6 +149,8 @@ export function useAgentDraft(
     setSettings,
     advanced,
     setAdvanced,
+    environmentId,
+    setEnvironmentId,
     environmentTemplateId,
     setEnvironmentTemplateId,
     toolsets,
@@ -320,6 +326,7 @@ export function buildDraftConfig(
           memory_mounts: draft.memoryMounts,
           memory: draft.memory,
           default_environment_template_id: draft.environmentTemplateId,
+          default_environment_id: draft.environmentId,
         },
         draft.advanced,
       ),

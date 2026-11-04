@@ -54,6 +54,8 @@ Create the first workspace through Console:
 
 The agent field is `default_environment_template_id`. On acceptance of a root-thread run without a `workspace` mount, Service reserves an instance and mounts it as `workspace`. A `reserved` instance has an ID but no vendor resource yet. First use prepares it. Reservations count toward the managed-environment quota.
 
+To reuse an existing environment, set `agent.config.default_environment_id` instead. The two fields are mutually exclusive. A thread's explicit `workspace` mount takes precedence; changing the Agent default does not replace it or affect accepted runs. Client environments may be selected while offline. The execution principal must still be allowed to use the environment; this setting does not share a private computer with other users. Child runs keep the spawning edge's environment policy.
+
 For API setup, use the URL and workspace API key from [direct HTTP integration](connect-application.md#direct-http-integration). Replace `eprov_...` with your Docker provider ID. Creating or editing a template requires `write`:
 
 ```sh

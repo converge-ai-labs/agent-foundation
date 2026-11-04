@@ -238,6 +238,7 @@ class AgentConfig(_Frozen):
     retries: RetryConfig | None = None
     # Referenced, not pinned: read when an environment is created from it, never during execution.
     default_environment_template_id: ObjectId | None = None
+    default_environment_id: ObjectId | None = None
     # Otherwise create/start mounted instances before Harness; execution connections still open on first use.
     lazy_environment: bool = True
     # Added to a thread's memory mounts at its first acceptance, for names and memories it does not use yet.
@@ -247,6 +248,8 @@ class AgentConfig(_Frozen):
 
     @model_validator(mode="after")
     def unique_selections(self, info: ValidationInfo) -> Self:
+        if self.default_environment_id is not None and self.default_environment_template_id is not None:
+            raise ValueError("Choose either a default environment or a default environment template")
         for label, values in (
             ("Skills", [item.skill_id for item in self.skills]),
             ("Connections", [item.connection_id for item in self.connection_tools]),
@@ -310,6 +313,7 @@ class AgentConfigurationChanges(_Frozen):
     output_spec: OutputSpec | MISSING | None = Field(default=MISSING)
     retries: RetryConfig | MISSING | None = Field(default=MISSING)
     default_environment_template_id: ObjectId | MISSING | None = Field(default=MISSING)
+    default_environment_id: ObjectId | MISSING | None = Field(default=MISSING)
     lazy_environment: bool | MISSING = Field(default=MISSING)
     memory_mounts: MemoryMounts | MISSING = Field(default=MISSING)
     memory: SessionMemorySettings | MISSING = Field(default=MISSING)

@@ -62,7 +62,7 @@ Choose the setting that supplies the capability you need:
 | Review tool calls or interpret media | `reviewer`, `media_understanding`; see [media understanding](models.md#media-understanding)                           |
 | Require structured output            | `output_spec`: one JSON Schema or 2–32 named `variants`; omission returns text                                        |
 | Bound retries                        | `retries.tools` and `retries.output`, each 0–100                                                                      |
-| Supply a working environment         | `default_environment_template_id`, `lazy_environment`; see [Environments](environments.md)                            |
+| Supply a working environment         | `default_environment_id`, `default_environment_template_id`, `lazy_environment`; see [Environments](environments.md)  |
 | Retain knowledge                     | `memory`, `memory_mounts`; see [Memory](memory.md)                                                                    |
 | Tune long-running work               | `background_compaction`, `execution`; see [compaction](#context-compaction) and [execution policy](#execution-policy) |
 | Extend the runtime                   | `plugins`; see [Console plugins](#configure-plugins-in-console)                                                       |

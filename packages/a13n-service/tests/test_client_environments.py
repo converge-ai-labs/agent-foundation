@@ -327,3 +327,60 @@ async def test_device_credential_cannot_enroll_and_enrollment_is_not_an_mcp_tool
     assert rejected.status_code == 401, rejected.text
     operation = service.app.openapi()["paths"]["/api/v1/client-environments/connect"]["post"]
     assert operation["x-a13n-mcp"] is False
+
+
+async def test_agent_default_uses_offline_client_and_preserves_explicit_thread_mount(service, scripted_model, runs_kit):
+    identity = (await register(service, "agent-default")).json()["client"]["environment"]["id"]
+    other = (await register(service, "thread-choice")).json()["client"]["environment"]["id"]
+    agent = await runs_kit.create_agent(service, scripted_model, default_environment_id=identity)
+    accepted = await runs_kit.start_thread(service, agent, "Use my default computer")
+    [mount] = accepted["run"]["environment_mounts"]
+    assert mount["name"] == "workspace" and mount["environment_id"] == identity
+    assert mount["working_directory"] == "/work"
+    explicit = await runs_kit.start_thread(
+        service, agent, "Use this computer", environments=[{"name": "workspace", "environment_id": other}]
+    )
+    assert explicit["run"]["environment_mounts"][0]["environment_id"] == other
+    assert not service.runtime.client_connections.entries
+
+    # Revocation after publication is enforced again at acceptance, without blocking a different explicit mount.
+    from a13n_service.infra.db import transaction
+
+    async with transaction(service.runtime.storage) as session:
+        environment = await session.get_one(EnvironmentRow, identity)
+        environment.status = "disabled"
+    refused = await runs_kit.start_thread(service, agent, "Default is disabled")
+    assert refused["run"] is None
+    assert refused["entry"]["failure"]["code"] == "environment_disabled"
+    allowed = await runs_kit.start_thread(
+        service, agent, "Explicit still usable", environments=[{"name": "workspace", "environment_id": other}]
+    )
+    assert allowed["run"]["environment_mounts"][0]["environment_id"] == other
+
+
+async def test_agent_default_cannot_use_another_principals_device(service, scripted_model, runs_kit):
+    from a13n_service.resources.agents.schemas import AgentConfigurationChanges
+    from a13n_service.resources.agents.service import change_configuration
+
+    from .test_agent_configuration_changes import actor, etag
+
+    other = await builder(service)
+    registered = await clients.register(
+        service.runtime,
+        other,
+        service.tenant.workspace_id,
+        Registration(device_id="private-default", name="Private", default_working_directory="/work"),
+    )
+    agent = await runs_kit.create_agent(service, scripted_model)
+    with pytest.raises(ServiceError) as error:
+        await change_configuration(
+            service.runtime.storage,
+            actor(service),
+            service.tenant.workspace_id,
+            agent["id"],
+            AgentConfigurationChanges(default_environment_id=registered.client.environment.id),
+            expected_version=etag(agent),
+            registry=service.runtime.registry,
+            plugins=service.runtime.plugins,
+        )
+    assert error.value.code == "forbidden"

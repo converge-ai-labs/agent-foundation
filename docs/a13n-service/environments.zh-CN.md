@@ -54,6 +54,8 @@ Docker 默认使用运维设置的 `environments.docker_host`。provider 单独�
 
 agent 字段为 `default_environment_template_id`。根线程没有 `workspace` 挂载时，Service 在接收运行时预留实例，并以 `workspace` 挂载。`reserved` 实例有 ID，但还没有厂商资源，首次使用才准备环境。预留记录计入托管环境额度。
 
+要复用已有环境，可以改为设置 `agent.config.default_environment_id`，两个字段只能选择一个。线程已有的 `workspace` 挂载优先；修改 Agent 默认值不会替换它，也不会改变已接收的运行。客户端环境离线时也可以选择。执行身份仍须有权使用该环境，此设置不会将私有电脑共享给其他用户。子运行仍使用创建它的子 Agent 配置项中的环境策略。
+
 API 配置使用[直接 HTTP 集成](connect-application.md#direct-http-integration)中的 URL 和工作空间 API Key。将 `eprov_...` 替换为 Docker provider ID。创建或编辑模板需要 `write`：
 
 ```sh

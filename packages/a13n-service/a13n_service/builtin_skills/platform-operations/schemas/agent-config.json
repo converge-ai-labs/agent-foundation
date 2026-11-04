@@ -1333,6 +1333,20 @@
       "title": "Connection Tools",
       "type": "array"
     },
+    "default_environment_id": {
+      "anyOf": [
+        {
+          "maxLength": 41,
+          "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Default Environment Id"
+    },
     "default_environment_template_id": {
       "anyOf": [
         {

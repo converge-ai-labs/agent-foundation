@@ -421,3 +421,15 @@ it("remaps automatic discovery exclusions on connection replacement", () => {
     "con_source",
   ]);
 });
+
+it("keeps an existing environment as a remappable dependency", () => {
+  const config = { model: "model", default_environment_id: "env_source" };
+  const dependency = agentDependencies(config).find(
+    (item) => item.path === "default_environment_id",
+  )!;
+  expect(dependency.kind).toBe("environment");
+  expect(dependency.replace("env_target")).toEqual({
+    ...config,
+    default_environment_id: "env_target",
+  });
+});

@@ -67,6 +67,9 @@ class Recovery(AbstractModelContextCapability):
             if isinstance(mount.source, Source) and mount.source.client is not None
         }
         self.state_lock = asyncio.Lock()
+        # Healthy successes need no checkpoint entry. Keep their batch order until
+        # a failure requires persisting the observations, or model projection consumes them.
+        self.successes: dict[str, Observation] = {}
 
     def get_ordering(self) -> CapabilityOrdering:
         return CapabilityOrdering(position="outermost")
@@ -87,8 +90,13 @@ class Recovery(AbstractModelContextCapability):
             if observation.disconnected or observation.successes:
                 async with self.state_lock:
                     state = await self._state(ctx)
-                    state.observations[call.tool_call_id] = observation
-                    await ctx.deps.state.write(_NAMESPACE, state, version="1")
+                    if observation.disconnected or state.mounts or state.observations:
+                        state.observations.update(self.successes)
+                        self.successes.clear()
+                        state.observations[call.tool_call_id] = observation
+                        await ctx.deps.state.write(_NAMESPACE, state, version="1")
+                    else:
+                        self.successes[call.tool_call_id] = observation
             return result
         finally:
             current.reset(token)
@@ -124,7 +132,8 @@ class Recovery(AbstractModelContextCapability):
         if ctx.messages and isinstance(ctx.messages[-1], ModelRequest):
             for part in ctx.messages[-1].parts:
                 if isinstance(part, ToolReturnPart) and part.tool_call_id in request.tool_call_ids:
-                    await self._record(state, part)
+                    seen = self.successes.pop(part.tool_call_id, None)
+                    await self._record(state, part, seen)
         notices = []
         for name, (mount, source) in self.mounts.items():
             pending = state.mounts.get(name)
@@ -185,8 +194,8 @@ class Recovery(AbstractModelContextCapability):
             await ctx.deps.state.write(_NAMESPACE, state, version="1")
         return notices
 
-    async def _record(self, state: State, part: ToolReturnPart) -> None:
-        seen = state.observations.pop(part.tool_call_id, None)
+    async def _record(self, state: State, part: ToolReturnPart, seen: Observation | None = None) -> None:
+        seen = state.observations.pop(part.tool_call_id, seen)
         content = part.content
         losses: dict[str, str | None] = {}
         unknown_outcome = False

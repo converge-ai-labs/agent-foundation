@@ -190,6 +190,19 @@
             "title": "Connection Tools",
             "type": "array"
           },
+          "default_environment_id": {
+            "anyOf": [
+              {
+                "maxLength": 41,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Environment Id"
+          },
           "default_environment_template_id": {
             "anyOf": [
               {
@@ -408,6 +421,19 @@
             "maxItems": 128,
             "title": "Connection Tools",
             "type": "array"
+          },
+          "default_environment_id": {
+            "anyOf": [
+              {
+                "maxLength": 41,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Environment Id"
           },
           "default_environment_template_id": {
             "anyOf": [
@@ -4307,6 +4333,7 @@
           "output_spec",
           "retries",
           "default_environment_template_id",
+          "default_environment_id",
           "lazy_environment",
           "memory_mounts",
           "memory"
@@ -26981,6 +27008,7 @@
                 "output_spec",
                 "retries",
                 "default_environment_template_id",
+                "default_environment_id",
                 "lazy_environment",
                 "memory_mounts",
                 "memory"
@@ -43491,6 +43519,7 @@
                 "output_spec",
                 "retries",
                 "default_environment_template_id",
+                "default_environment_id",
                 "lazy_environment",
                 "memory_mounts",
                 "memory"

@@ -52,20 +52,20 @@ description: 配置 agent、继续对话，并处理结果、审批与恢复。
 
 按所需能力选择配置：
 
-| 任务               | 配置                                                                                                 |
-| ------------------ | ---------------------------------------------------------------------------------------------------- |
-| 选择行为与模型     | `model`、`instructions`、`model_settings`、`model_characteristics`；参阅[模型](models.md)            |
-| 提供工具           | `toolsets`、`connection_tools`、`tool_search`；参阅[工具与连接](tools.md)                            |
-| 加载可复用指令     | `skills: [{skill_id, revision_id}]`；参阅 [Skill](skills.md)                                         |
-| 向应用或用户提问   | `client_tools`、`user_questions`；参阅[客户端工具](#client-tools-and-questions)                      |
-| 委派工作           | `subagents`、`subagent_mode`；参阅[子 agent](#subagents)                                             |
-| 审查调用或理解媒体 | `reviewer`、`media_understanding`；参阅[媒体理解](models.md#media-understanding)                     |
-| 要求结构化输出     | `output_spec`：一个 JSON Schema 或 2–32 个命名 `variants`；省略时返回文本                            |
-| 限制重试           | `retries.tools` 和 `retries.output`，各为 0–100                                                      |
-| 提供工作环境       | `default_environment_template_id`、`lazy_environment`；参阅[环境](environments.md)                   |
-| 保留知识           | `memory`、`memory_mounts`；参阅[记忆](memory.md)                                                     |
-| 调整长时间工作     | `background_compaction`、`execution`；参阅[压缩](#context-compaction)和[执行策略](#execution-policy) |
-| 扩展运行时         | `plugins`；参阅 [Console 插件](#configure-plugins-in-console)                                        |
+| 任务               | 配置                                                                                                         |
+| ------------------ | ------------------------------------------------------------------------------------------------------------ |
+| 选择行为与模型     | `model`、`instructions`、`model_settings`、`model_characteristics`；参阅[模型](models.md)                    |
+| 提供工具           | `toolsets`、`connection_tools`、`tool_search`；参阅[工具与连接](tools.md)                                    |
+| 加载可复用指令     | `skills: [{skill_id, revision_id}]`；参阅 [Skill](skills.md)                                                 |
+| 向应用或用户提问   | `client_tools`、`user_questions`；参阅[客户端工具](#client-tools-and-questions)                              |
+| 委派工作           | `subagents`、`subagent_mode`；参阅[子 agent](#subagents)                                                     |
+| 审查调用或理解媒体 | `reviewer`、`media_understanding`；参阅[媒体理解](models.md#media-understanding)                             |
+| 要求结构化输出     | `output_spec`：一个 JSON Schema 或 2–32 个命名 `variants`；省略时返回文本                                    |
+| 限制重试           | `retries.tools` 和 `retries.output`，各为 0–100                                                              |
+| 提供工作环境       | `default_environment_id`, `default_environment_template_id`、`lazy_environment`；参阅[环境](environments.md) |
+| 保留知识           | `memory`、`memory_mounts`；参阅[记忆](memory.md)                                                             |
+| 调整长时间工作     | `background_compaction`、`execution`；参阅[压缩](#context-compaction)和[执行策略](#execution-policy)         |
+| 扩展运行时         | `plugins`；参阅 [Console 插件](#configure-plugins-in-console)                                                |
 
 保存时按工作空间校验引用。省略的 skill 和子 agent 修订版本 ID 会固定到当前默认版本。模型、连接、provider 和模板仍是实时资源，使用时重新解析。`lazy_environment` 默认为 true，首次使用时准备实例。设为 false 会在 Harness 开始前准备实例；执行连接仍在首次使用时打开。
 

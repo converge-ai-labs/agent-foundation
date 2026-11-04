@@ -4859,6 +4859,8 @@ export interface components {
        * @default []
        */
       connection_tools?: components["schemas"]["ConnectionSelection"][];
+      /** Default Environment Id */
+      default_environment_id?: string | null;
       /** Default Environment Template Id */
       default_environment_template_id?: string | null;
       execution?: components["schemas"]["ExecutionOverride"] | null;
@@ -4947,6 +4949,8 @@ export interface components {
        * @default []
        */
       connection_tools?: components["schemas"]["ConnectionSelection"][];
+      /** Default Environment Id */
+      default_environment_id?: string | null;
       /** Default Environment Template Id */
       default_environment_template_id?: string | null;
       execution?: components["schemas"]["ExecutionOverride"] | null;
@@ -6294,6 +6298,7 @@ export interface components {
       | "output_spec"
       | "retries"
       | "default_environment_template_id"
+      | "default_environment_id"
       | "lazy_environment"
       | "memory_mounts"
       | "memory";
@@ -14008,6 +14013,7 @@ export interface operations {
           | "output_spec"
           | "retries"
           | "default_environment_template_id"
+          | "default_environment_id"
           | "lazy_environment"
           | "memory_mounts"
           | "memory";
@@ -19905,6 +19911,7 @@ export interface operations {
           | "output_spec"
           | "retries"
           | "default_environment_template_id"
+          | "default_environment_id"
           | "lazy_environment"
           | "memory_mounts"
           | "memory";

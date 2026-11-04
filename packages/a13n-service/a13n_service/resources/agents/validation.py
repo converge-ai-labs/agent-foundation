@@ -34,6 +34,7 @@ from a13n_service.resources.rows import find_row
 from a13n_service.resources.skills.pins import require_distinct_names, require_pins
 from a13n_service.resources.skills.schemas import SkillPin
 from a13n_service.resources.skills.tables import SkillRow
+from a13n_service.runs.environments.mounts import lock_environments
 from a13n_service.tenancy.authorize import ExecutionAuthority, Principal, Verb, WorkspaceScope
 
 MAX_SUBAGENT_DEPTH = 16
@@ -112,6 +113,11 @@ async def validate_config(
             with at_field(path):
                 await resolve_template(session, actor, scope, template_id, verb=verb, authority=authority)
     if held is None:
+        if config.default_environment_id is not None:
+            with at_field("default_environment_id"):
+                await lock_environments(
+                    session, scope.workspace_id, [config.default_environment_id], principal_id=actor.id
+                )
         for index, binding in enumerate(config.memory.spaces):
             with at_field(f"memory.spaces.{index}.space_id"):
                 await find_row(session, actor, MemorySpaceRow, scope, binding.space_id, "read")

@@ -85,6 +85,7 @@ agent_revisions   revision columns; config: AgentConfig
 - `output_spec` and `retries`.
 - `execution`: sparse defaults for tool execution mode, foreground wait and steering, resolved per leaf with Thread and Run choices at acceptance ([05](05-runs.md#execution-policy)).
 - `default_environment_template_id`: referenced, not pinned; it is read when an environment is created from it, never during execution.
+- `default_environment_id`: an existing environment in the workspace, mutually exclusive with `default_environment_template_id`. Publication checks caller access; acceptance rechecks the execution principal. It supplies `workspace` only when a non-child thread has no primary mount and never grants access to another principal's private device.
 - `lazy_environment`: defaults to `true`; `false` creates or starts all frozen mounted instances before entering Harness, while execution connections still open on first use ([06](06-environments.md#execution)). A Run may override it through `options.overrides`.
 - `memory`: defaults for new sessions' memory settings, snapshotted at first business acceptance unless explicitly configured ([11](11-memory.md#session-selection-and-run-views)). A run override cannot change these defaults.
 - `memory_mounts`: default memory mounts `{name, memory_id, access, recall}`, at most 32 with unique names and memories, which a thread takes at its first acceptance ([11](11-memory.md#mounts)). They are referenced, not pinned, and a run's override cannot change them.

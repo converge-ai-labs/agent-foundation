@@ -3694,5 +3694,7 @@
   "MCP connections": "MCP connections",
   "About connection discovery": "About connection discovery",
   "Choose which connections use on-demand discovery. Unchecked connections provide tools directly. New connections follow the MCP tools setting.": "Choose which connections use on-demand discovery. Unchecked connections provide tools directly. New connections follow the MCP tools setting.",
-  "{{selected}} of {{total}} connections": "{{selected}} of {{total}} connections"
+  "{{selected}} of {{total}} connections": "{{selected}} of {{total}} connections",
+  "Optional. When a session has no primary environment, use an existing environment or create one from a template. Saving the agent does not connect or start an environment.": "Optional. When a session has no primary environment, use an existing environment or create one from a template. Saving the agent does not connect or start an environment.",
+  "Existing environments": "Existing environments"
 }

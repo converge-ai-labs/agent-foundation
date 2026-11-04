@@ -31,13 +31,16 @@ from a13n_service.runs import inbox
 from a13n_service.runs.admission import AcceptedIntent
 from a13n_service.runs.attachments import require_readable
 from a13n_service.runs.environments.mounts import (
+    PRIMARY,
     adopt_mounts,
     freeze_mounts,
     has_primary,
+    mount_environments,
     primary_mount,
     reserve_primary,
     thread_has_primary,
 )
+from a13n_service.runs.environments.schemas import MountCreate
 from a13n_service.runs.memories.mounts import freeze_memories, inherited_cursors
 from a13n_service.runs.memories.session_memory import inherit_defaults
 from a13n_service.runs.runtime import Runtime
@@ -280,13 +283,21 @@ async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, 
     parent, lineage = await parent_of(session, thread)
     # An instance reserved here is a new row that a refusal discards with it; freezing checks the mounts are usable.
     if not await thread_has_primary(session, thread):
-        primary = await primary_source(session, thread, revision.config)
-        if isinstance(primary, EnvironmentMount):
-            await adopt_mounts(session, thread, [primary])
-        elif primary is not None:
-            await reserve_primary(
-                session, principal, thread, template_id=primary, limit=runtime.settings.environments.managed_count
+        if thread.origin != "child" and revision.config.default_environment_id is not None:
+            await mount_environments(
+                session,
+                thread,
+                [MountCreate(name=PRIMARY, environment_id=revision.config.default_environment_id)],
+                principal_id=principal.id,
             )
+        else:
+            primary = await primary_source(session, thread, revision.config)
+            if isinstance(primary, EnvironmentMount):
+                await adopt_mounts(session, thread, [primary])
+            elif primary is not None:
+                await reserve_primary(
+                    session, principal, thread, template_id=primary, limit=runtime.settings.environments.managed_count
+                )
     from a13n_service.runs.browsers.service import freeze as freeze_browser
 
     browser_binding = await freeze_browser(

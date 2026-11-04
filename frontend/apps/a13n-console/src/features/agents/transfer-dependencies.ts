@@ -12,6 +12,7 @@ type DependencyKind =
   | "connection"
   | "memory"
   | "agent"
+  | "environment"
   | "environment_template"
   | "web";
 export interface AgentDependency {
@@ -64,6 +65,13 @@ export function agentDependencies(config: AgentConfig): AgentDependency[] {
           media_understanding: { ...config.media_understanding, [kind]: value },
         }),
       });
+  if (config.default_environment_id)
+    refs.push({
+      path: "default_environment_id",
+      kind: "environment",
+      value: config.default_environment_id,
+      replace: (value) => ({ ...config, default_environment_id: value }),
+    });
   if (config.default_environment_template_id)
     refs.push({
       path: "default_environment_template_id",
@@ -315,6 +323,25 @@ export async function inspectAgentDependencies(
             label: `${item.name} · ${item.id}`,
             id: item.id,
           }));
+      }
+      case "environment": {
+        const items = await allPages((cursor) =>
+          client
+            .workspace(workspaceId)
+            .GET("/api/v1/environments", {
+              params: { query: { cursor } },
+              signal,
+            })
+            .then(data),
+        );
+        return items
+          .filter(
+            (item) =>
+              !["disabled", "deleting", "deleted", "error"].includes(
+                item.status,
+              ),
+          )
+          .map((item) => ({ value: item.id, label: item.name, id: item.id }));
       }
       case "environment_template": {
         const items = await allPages((cursor) =>
