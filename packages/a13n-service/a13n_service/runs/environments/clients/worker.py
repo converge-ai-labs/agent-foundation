@@ -111,7 +111,23 @@ class Calls:
         await prove(self.runtime, self.lease, cleanup=request.allows_cancelled_owner)
         observed = tool_observation.get()
         try:
-            reply = await self.runtime.client_routing.call(self.online.node, request)
+            # The environment channel survives reconnects, but this Session does
+            # not follow another epoch. Reject stale handles before publishing.
+            try:
+                current_epoch = await self.runtime.redis.get(owner_key(self.target.environment_id))
+            except RedisError as error:
+                raise EnvironmentError(
+                    "Client connection ownership could not be checked.",
+                    code="environment_unavailable",
+                    details={"dispatch_stage": "pre_dispatch"},
+                ) from error
+            if current_epoch != self.online.epoch:
+                raise EnvironmentError(
+                    "Client connection changed; prepare the environment again.",
+                    code="environment_unavailable",
+                    details={"dispatch_stage": "pre_dispatch", "client_connection_failed": True},
+                )
+            reply = await self.runtime.client_routing.call(request)
         except EnvironmentError as error:
             if observed is not None and error.details.get("client_connection_failed") is True:
                 observed.disconnected[self.target.mount_name] = self.online.epoch
@@ -194,60 +210,62 @@ class Client:
             expected_boundary.check(online.descriptor.boundary)
         if egress is not None:
             raise EnvironmentError("Client mounts do not grant an egress policy.", code="environment_denied")
-        calls = Calls(self.runtime, self.lease, self.target, online, uuid4().hex)
-        try:
-            result = Opened.model_validate(
-                await calls.call(
-                    "scope.open",
-                    {
-                        "working_directory": working_directory,
-                        "required_methods": sorted(required_methods),
-                        "recovery": session_recovery.state.model_dump(mode="json")
-                        if session_recovery is not None and session_recovery.state
-                        else None,
-                    },
-                )
-            )
-        except EnvironmentError as error:
-            if error.details.get("client_connection_failed") is True:
-                self.incarnation.epoch = online.epoch
-                raise self.unavailable() from error
-            raise
-        if (result.device_descriptor.device_id, result.device_descriptor.generation) != (
-            expected_device_id,
-            online.descriptor.generation,
-        ):
-            raise EnvironmentError("Client changed during Session preparation.", code="environment_stale_mount")
-        transport = SessionTransport(calls, result)
-        coordinator = RequestCoordinator(
-            transport, request_timeout=self.runtime.settings.client_environments.request_seconds + _RECEIPT_SECONDS + 1
-        )
-        coordinator.configure_limits(result.device_descriptor.limits)
-        device = EIPDeviceConnection(coordinator, result.device_descriptor, max_in_flight=32)
-
-        async def owner_current() -> bool:
+        async with self.runtime.client_routing.replies(self.target.environment_id):
+            calls = Calls(self.runtime, self.lease, self.target, online, uuid4().hex)
             try:
-                await prove(self.runtime, self.lease, cleanup=execution_cleanup_active())
-                return await self.runtime.redis.get(owner_key(self.target.environment_id)) == online.epoch
-            except (AuthorityRevoked, LeaseLost, RedisError):
-                # No proof of ownership permits dispatch on this logical binding.
-                return False
-
-        async with device:
-            session = await device.bind_open_session(
-                result.descriptor, readiness_timeout=timeout, owner_current=owner_current
+                result = Opened.model_validate(
+                    await calls.call(
+                        "scope.open",
+                        {
+                            "working_directory": working_directory,
+                            "required_methods": sorted(required_methods),
+                            "recovery": session_recovery.state.model_dump(mode="json")
+                            if session_recovery is not None and session_recovery.state
+                            else None,
+                        },
+                    )
+                )
+            except EnvironmentError as error:
+                if error.details.get("client_connection_failed") is True:
+                    self.incarnation.epoch = online.epoch
+                    raise self.unavailable() from error
+                raise
+            if (result.device_descriptor.device_id, result.device_descriptor.generation) != (
+                expected_device_id,
+                online.descriptor.generation,
+            ):
+                raise EnvironmentError("Client changed during Session preparation.", code="environment_stale_mount")
+            transport = SessionTransport(calls, result)
+            coordinator = RequestCoordinator(
+                transport,
+                request_timeout=self.runtime.settings.client_environments.request_seconds + _RECEIPT_SECONDS + 1,
             )
-            async with session:
-                self.incarnation.epoch = online.epoch
-                self.incarnation.session = session
-                if session_recovery is not None:
-                    session_recovery.observe(self.target.environment_id, working_directory, session)
+            coordinator.configure_limits(result.device_descriptor.limits)
+            device = EIPDeviceConnection(coordinator, result.device_descriptor, max_in_flight=32)
+
+            async def owner_current() -> bool:
                 try:
-                    yield EIPSessionBinding(session, result.device_descriptor)
-                finally:
-                    self.incarnation.session = None
+                    await prove(self.runtime, self.lease, cleanup=execution_cleanup_active())
+                    return await self.runtime.redis.get(owner_key(self.target.environment_id)) == online.epoch
+                except (AuthorityRevoked, LeaseLost, RedisError):
+                    # No proof of ownership permits dispatch on this logical binding.
+                    return False
+
+            async with device:
+                session = await device.bind_open_session(
+                    result.descriptor, readiness_timeout=timeout, owner_current=owner_current
+                )
+                async with session:
+                    self.incarnation.epoch = online.epoch
+                    self.incarnation.session = session
                     if session_recovery is not None:
-                        session_recovery.closed(session)
+                        session_recovery.observe(self.target.environment_id, working_directory, session)
+                    try:
+                        yield EIPSessionBinding(session, result.device_descriptor)
+                    finally:
+                        self.incarnation.session = None
+                        if session_recovery is not None:
+                            session_recovery.closed(session)
 
 
 class SessionTransport:

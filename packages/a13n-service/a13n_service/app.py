@@ -326,7 +326,7 @@ def build_app(
                 if serves_api:
                     if ClientSettingsRow in distribution.tables:
                         runtime.tasks.start(
-                            runtime.client_sessions.serve(), name="client-environment-routing", service=True
+                            runtime.client_sessions.serve(), name="client-environment-sessions", service=True
                         )
                     if config.monitoring.enabled:
                         assert runtime.metrics_proxy is not None

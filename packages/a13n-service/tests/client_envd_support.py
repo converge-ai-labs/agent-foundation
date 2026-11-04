@@ -12,7 +12,7 @@ async def interrupt_control_subscription(service, owner, monkeypatch):
     from redis.asyncio.client import PubSub
     from redis.exceptions import ConnectionError
 
-    channel = request_channel(service.runtime.client_connections.node)
+    channel = request_channel(owner.attachment.environment_id)
     get_message = PubSub.get_message
 
     async def interrupted(subscription, *args, **kwargs):
@@ -142,8 +142,8 @@ async def check_lost_start_reply(execution, workspace, worker, monkeypatch):
     original = worker.client_routing.call
     operations = []
 
-    async def lose_reply(node, request):
-        response = await original(node, request)
+    async def lose_reply(request):
+        response = await original(request)
         if request.method == "process.start":
             operations.append((request.method, request.params["context"]["operation_id"]))
             raise EnvironmentError("Reply lost after dispatch", code="environment_unavailable")
@@ -189,7 +189,7 @@ async def check_stale_client_request(service, worker, workspace):
             "params": {"context": {"operation_id": "op-stale"}, "path": {"path": str(workspace / "unauthorized")}},
         }
     )
-    response = await worker.client_routing.call(service.runtime.client_connections.node, request)
+    response = await worker.client_routing.call(request)
     assert isinstance(response.outcome, Failure) and response.outcome.pre_dispatch
     assert response.outcome.code == "environment_denied"
     assert not (workspace / "unauthorized").exists()

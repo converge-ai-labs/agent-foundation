@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Annotated, Literal
 from uuid import uuid4
@@ -111,17 +112,18 @@ class Response(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     id: str
+    environment_id: str
     epoch: str
     scope_id: str
     outcome: Outcome
 
 
-def request_channel(node: str) -> str:
-    return f"a13n:client-environment:requests:{node}"
+def request_channel(environment_id: str) -> str:
+    return f"a13n:client-environment:requests:{environment_id}"
 
 
-def reply_channel(request_id: str) -> str:
-    return f"a13n:client-environment:replies:{request_id}"
+def reply_channel(environment_id: str) -> str:
+    return f"a13n:client-environment:replies:{environment_id}"
 
 
 async def subscribe(subscription: PubSub, channel: str) -> None:
@@ -131,6 +133,57 @@ async def subscribe(subscription: PubSub, channel: str) -> None:
         message = await subscription.get_message(timeout=1)
         if message is not None and message["type"] == "subscribe" and message["channel"] == channel:
             return
+
+
+class Replies:
+    """One environment subscription shared by this Worker's Sessions and calls."""
+
+    def __init__(self, redis: Redis, environment_id: str, message_bytes: int) -> None:
+        self.users = 0
+        self.pending: dict[str, tuple[Request, asyncio.Future[Response | None]]] = {}
+        self.ready = asyncio.Event()
+        self.start(redis, environment_id, message_bytes)
+
+    def start(self, redis: Redis, environment_id: str, message_bytes: int) -> None:
+        self.ready.clear()
+        self.task = asyncio.create_task(self._listen(redis, environment_id, message_bytes), name="client-replies")
+
+    async def _listen(self, redis: Redis, environment_id: str, message_bytes: int) -> None:
+        try:
+            async with redis.pubsub() as listener:
+                await subscribe(listener, reply_channel(environment_id))
+                self.ready.set()
+                while True:
+                    message = await listener.get_message(ignore_subscribe_messages=True, timeout=1)
+                    if message is None:
+                        continue
+                    raw = message["data"]
+                    if not isinstance(raw, str) or len(raw.encode()) > message_bytes:
+                        continue
+                    try:
+                        response = Response.model_validate_json(raw)
+                    except ValueError:
+                        continue
+                    waiting = self.pending.get(response.id)
+                    if waiting is None:
+                        continue
+                    request, future = waiting
+                    if (response.environment_id, response.epoch, response.scope_id) != (
+                        request.environment_id,
+                        request.epoch,
+                        request.scope_id,
+                    ):
+                        continue
+                    if not future.done():
+                        future.set_result(response)
+        except Exception as error:
+            logger.warning("Client reply subscription lost", extra={"exception_details": exception_details(error)})
+        finally:
+            # Wake admission and existing waits; neither one may replay a request.
+            self.ready.set()
+            for _, future in self.pending.values():
+                if not future.done():
+                    future.set_result(None)
 
 
 class Routing:
@@ -144,11 +197,39 @@ class Routing:
             decode_responses=True,
             retry=Retry(NoBackoff(), 0),
         )
-        self.ready = asyncio.Event()
+        self._replies: dict[str, Replies] = {}
+        self._ordinary: set[asyncio.Task[None]] = set()
+        self._cleanup: set[asyncio.Task[None]] = set()
+        self._closed = False
         self._pending = 0
         self._pending_cleanup = 0
 
-    async def call(self, node: str, request: Request) -> Response:
+    @asynccontextmanager
+    async def replies(self, environment_id: str) -> AsyncIterator[Replies]:
+        if self._closed:
+            raise EnvironmentError(
+                "Client routing is closed.", code="environment_unavailable", details={"dispatch_stage": "pre_dispatch"}
+            )
+        replies = self._replies.get(environment_id)
+        if replies is None:
+            replies = Replies(self.redis, environment_id, self.config.message_bytes)
+            self._replies[environment_id] = replies
+        elif replies.task.done():
+            # Existing Sessions still hold this subscription's lifetime. Restart
+            # its reader without losing their references or reviving failed calls.
+            replies.start(self.redis, environment_id, self.config.message_bytes)
+        replies.users += 1
+        try:
+            yield replies
+        finally:
+            replies.users -= 1
+            if replies.users == 0:
+                if self._replies.get(environment_id) is replies:
+                    del self._replies[environment_id]
+                replies.task.cancel()
+                await asyncio.gather(replies.task, return_exceptions=True)
+
+    async def call(self, request: Request) -> Response:
         remaining = (request.expires_at - datetime.now(UTC)).total_seconds()
         payload = request.model_dump_json()
         if len(payload.encode()) > self.config.message_bytes:
@@ -177,35 +258,37 @@ class Routing:
             self._pending += 1
         published = False
         try:
-            async with asyncio.timeout(min(remaining, self.config.request_seconds)), self.redis.pubsub() as listener:
-                await subscribe(listener, reply_channel(request.id))
-                # From this point failure may follow a delivered PUBLISH.
-                published = True
-                count = await self.redis.publish(request_channel(node), payload)
-                if count == 0:
+            async with (
+                asyncio.timeout(min(remaining, self.config.request_seconds)),
+                self.replies(request.environment_id) as replies,
+            ):
+                await replies.ready.wait()
+                if replies.task.done():
+                    raise RedisError("Client reply subscription is unavailable")
+                if request.id in replies.pending:
                     raise EnvironmentError(
-                        "Client connection owner is unavailable; the request was not dispatched.",
-                        code="environment_unavailable",
-                        details={"dispatch_stage": "pre_dispatch", "client_connection_failed": True},
+                        "Client request ID is already pending.",
+                        code="environment_request_invalid",
+                        details={"dispatch_stage": "pre_dispatch"},
                     )
-                while True:
-                    message = await listener.get_message(ignore_subscribe_messages=True, timeout=1)
-                    if message is None:
-                        continue
-                    raw = message["data"]
-                    if not isinstance(raw, str) or len(raw.encode()) > self.config.message_bytes:
-                        continue
-                    try:
-                        response = Response.model_validate_json(raw)
-                    except ValueError:
-                        continue
-                    if (response.id, response.epoch, response.scope_id) != (
-                        request.id,
-                        request.epoch,
-                        request.scope_id,
-                    ):
-                        continue
+                future: asyncio.Future[Response | None] = asyncio.get_running_loop().create_future()
+                replies.pending[request.id] = request, future
+                # From this point failure may follow a delivered PUBLISH.
+                try:
+                    published = True
+                    count = await self.redis.publish(request_channel(request.environment_id), payload)
+                    if count == 0:
+                        raise EnvironmentError(
+                            "Client connection owner is unavailable; the request was not dispatched.",
+                            code="environment_unavailable",
+                            details={"dispatch_stage": "pre_dispatch", "client_connection_failed": True},
+                        )
+                    response = await future
+                    if response is None:
+                        raise RedisError("Client reply subscription was interrupted")
                     return response
+                finally:
+                    replies.pending.pop(request.id, None)
         except (RedisError, TimeoutError):
             raise EnvironmentError(
                 "Client response was not received; the operation outcome is unknown. Do not repeat a mutation."
@@ -225,12 +308,13 @@ class Routing:
         if len(payload.encode()) > self.config.message_bytes:
             payload = Response(
                 id=response.id,
+                environment_id=response.environment_id,
                 epoch=response.epoch,
                 scope_id=response.scope_id,
                 outcome=Failure(message="Client result exceeds the transport limit; execution outcome is unknown."),
             ).model_dump_json()
         try:
-            await self.redis.publish(reply_channel(response.id), payload)
+            await self.redis.publish(reply_channel(response.environment_id), payload)
         except RedisError as error:
             logger.warning("Client environment reply lost", extra={"exception_details": exception_details(error)})
 
@@ -270,65 +354,77 @@ class Routing:
                     "Client environment request failed", extra={"exception_details": exception_details(error)}
                 )
                 outcome = Failure(message="Client operation outcome is unknown; inspect before retrying.")
-        await self._publish(Response(id=request.id, epoch=request.epoch, scope_id=request.scope_id, outcome=outcome))
+        await self._publish(
+            Response(
+                id=request.id,
+                environment_id=request.environment_id,
+                epoch=request.epoch,
+                scope_id=request.scope_id,
+                outcome=outcome,
+            )
+        )
 
     async def serve(
         self,
-        node: str,
+        environment_id: str,
+        epoch: str,
         dispatch: Callable[[Request], Awaitable[dict[str, JsonValue]]],
         *,
-        on_subscription_lost: Callable[[], Awaitable[None]] | None = None,
+        ready: asyncio.Event,
+        on_subscription_lost: Callable[[], Awaitable[None]],
     ) -> None:
-        ordinary: set[asyncio.Task[None]] = set()
-        cleanup: set[asyncio.Task[None]] = set()
+        """Serve only this connection; a lost subscription retires its carrier."""
         try:
-            async with asyncio.TaskGroup() as tasks:
+            async with asyncio.TaskGroup() as tasks, self.redis.pubsub() as listener:
+                async with asyncio.timeout(self.config.request_seconds):
+                    await subscribe(listener, request_channel(environment_id))
+                ready.set()
                 while True:
+                    message = await listener.get_message(ignore_subscribe_messages=True, timeout=1)
+                    if message is None:
+                        continue
+                    raw = message["data"]
+                    if not isinstance(raw, str) or len(raw.encode()) > self.config.message_bytes:
+                        continue
                     try:
-                        async with self.redis.pubsub() as listener:
-                            async with asyncio.timeout(self.config.request_seconds):
-                                await subscribe(listener, request_channel(node))
-                            self.ready.set()
-                            while True:
-                                message = await listener.get_message(ignore_subscribe_messages=True, timeout=1)
-                                if message is None:
-                                    continue
-                                raw = message["data"]
-                                if not isinstance(raw, str) or len(raw.encode()) > self.config.message_bytes:
-                                    continue
-                                try:
-                                    request = Request.model_validate_json(raw)
-                                except ValueError:
-                                    continue
-                                reserved = request.reserved_capacity
-                                active, limit = (cleanup, 8) if reserved else (ordinary, self.config.max_requests)
-                                if len(active) >= limit:
-                                    await self._publish(
-                                        Response(
-                                            id=request.id,
-                                            epoch=request.epoch,
-                                            scope_id=request.scope_id,
-                                            outcome=Failure(
-                                                message="Client request capacity is exhausted.", pre_dispatch=True
-                                            ),
-                                        )
-                                    )
-                                    continue
-                                task = tasks.create_task(self._reply(request, dispatch))
-                                active.add(task)
-                                task.add_done_callback(active.discard)
-                    except (RedisError, TimeoutError) as error:
-                        was_ready = self.ready.is_set()
-                        self.ready.clear()
-                        if was_ready and on_subscription_lost is not None:
-                            await on_subscription_lost()
-                        logger.warning(
-                            "Client environment routing interrupted",
-                            extra={"exception_details": exception_details(error)},
+                        request = Request.model_validate_json(raw)
+                    except ValueError:
+                        continue
+                    # Old and new subscribers may overlap while handlers unwind.
+                    # A subscriber must never answer for another connection epoch.
+                    if (request.environment_id, request.epoch) != (environment_id, epoch):
+                        continue
+                    active, limit = (
+                        (self._cleanup, 8) if request.reserved_capacity else (self._ordinary, self.config.max_requests)
+                    )
+                    if len(active) >= limit:
+                        await self._publish(
+                            Response(
+                                id=request.id,
+                                environment_id=environment_id,
+                                epoch=request.epoch,
+                                scope_id=request.scope_id,
+                                outcome=Failure(message="Client request capacity is exhausted.", pre_dispatch=True),
+                            )
                         )
-                        await asyncio.sleep(1)
+                        continue
+                    task = tasks.create_task(self._reply(request, dispatch))
+                    active.add(task)
+                    task.add_done_callback(active.discard)
+        except Exception as error:
+            logger.warning(
+                "Client environment routing interrupted",
+                extra={"environment_id": environment_id, "exception_details": exception_details(error)},
+            )
         finally:
-            self.ready.clear()
+            ready.clear()
+            await on_subscription_lost()
 
     async def close(self) -> None:
+        self._closed = True
+        tasks = [replies.task for replies in self._replies.values()]
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        self._replies.clear()
         await self.redis.aclose()

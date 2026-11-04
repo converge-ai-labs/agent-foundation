@@ -930,7 +930,7 @@ async def test_client_service_failure_allows_same_and_other_devices_to_connect(
             await asyncio.wait_for(failed.wait(), 15)
             if failure == "session_cleanup":
                 # A cleanup error alone must leave the shared routing subscription alive.
-                assert runtime.client_routing.ready.is_set()
+                assert await pool.presence(original.target.environment_id) is not None
                 await pool.entries[original.target.environment_id].carrier.close()
             reconnected = await online_calls(clients[0], original.online.epoch)
             # This installation has never connected before the failure.

@@ -120,20 +120,10 @@ class Sessions:
                         await connections.disconnect()
                         await self._retire_all()
                         connections.recovering = False
-                    async with asyncio.TaskGroup() as group:
-                        group.create_task(
-                            self.runtime.client_routing.serve(
-                                connections.node,
-                                self.dispatch,
-                                on_subscription_lost=connections.disconnect,
-                            )
-                        )
-                        group.create_task(self.renew())
+                    await self.renew()
                 except Exception as error:
-                    # The TaskGroup has joined all old dispatches. Retire their
-                    # carriers before admitting work on a fresh subscription.
+                    # Retire old carriers and scopes before admitting new work.
                     connections.recovering = True
-                    self.runtime.client_routing.ready.clear()
                     logger.error(
                         "Client environment service restarting",
                         extra={"exception_details": exception_details(error)},

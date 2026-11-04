@@ -65,7 +65,6 @@ def connection_channel(environment_id: str) -> str:
 class Presence(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    node: str
     epoch: str
     credential_version: int
     descriptor: DeviceDescriptor
@@ -83,7 +82,6 @@ class Connections:
     def __init__(self, runtime: Runtime) -> None:
         self.runtime = runtime
         self.config = runtime.settings.client_environments
-        self.node = uuid4().hex
         self.entries: dict[str, Connection] = {}
         self.closed = False
         self.recovering = False
@@ -181,6 +179,7 @@ class Connections:
         attachment = connection.attachment
         identity = attachment.environment_id
         renewal = asyncio.create_task(self._renew(connection), name="client-environment-connection-renewal")
+        routing = None
         try:
             device = await EIPDeviceConnection.initialize(
                 AcceptedWebSocketTransport(carrier),
@@ -188,11 +187,23 @@ class Connections:
                 initialization_timeout=self.config.initialization_seconds,
             )
             connection.device = device
+            ready = asyncio.Event()
+            routing = asyncio.create_task(
+                self.runtime.client_routing.serve(
+                    identity,
+                    connection.epoch,
+                    self.runtime.client_sessions.dispatch,
+                    ready=ready,
+                    on_subscription_lost=carrier.close,
+                ),
+                name="client-environment-requests",
+            )
             async with asyncio.timeout(self.config.initialization_seconds):
-                await self.runtime.client_routing.ready.wait()
+                await ready.wait()
+            if routing.done() or not ready.is_set():
+                raise ServiceError("unavailable", "Client environment request subscription is unavailable")
             await self.current(connection)
             online = Presence(
-                node=self.node,
                 epoch=connection.epoch,
                 credential_version=attachment.credential_version,
                 descriptor=device.descriptor,
@@ -212,7 +223,11 @@ class Connections:
             await carrier.wait_closed()
         finally:
             renewal.cancel()
-            await asyncio.gather(renewal, return_exceptions=True)
+            tasks = [renewal]
+            if routing is not None:
+                routing.cancel()
+                tasks.append(routing)
+            await asyncio.gather(*tasks, return_exceptions=True)
             logger.info(
                 "Client environment disconnected", extra={"environment_id": identity, "epoch": connection.epoch}
             )
