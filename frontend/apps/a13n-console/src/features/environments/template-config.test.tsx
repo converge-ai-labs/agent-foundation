@@ -909,6 +909,84 @@ it("saves structured host mounts and preserves them through JSON and preset swit
   );
 });
 
+it("preserves legacy timers when editing an opted-in template's reclamation policy", async () => {
+  unmountEditor?.();
+  state.PATCH.mockResolvedValue({ data: { id: "envtpl_test" } });
+  render(
+    <QueryClientProvider
+      client={
+        new QueryClient({
+          defaultOptions: { queries: { retry: false, gcTime: 0 } },
+        })
+      }
+    >
+      <TemplateConfig
+        template={{
+          etag: '"envtpl_test:4"',
+          value: {
+            id: "envtpl_test",
+            organization_id: "org_test",
+            workspace_id: "ws_test",
+            name: "Sandbox",
+            description: null,
+            provider_id: "eprov_e2b",
+            config: {
+              recipe: { template: "base" },
+              stop_after_seconds: 600,
+              delete_after_seconds: 3600,
+              reclamation: {
+                idle_delete_seconds: 1800,
+                preparation_seconds: 600,
+                failed_retention_seconds: 3600,
+              },
+            },
+            enabled: true,
+            labels: {},
+            version: 4,
+            created_by_id: "usr_test",
+            updated_by_id: "usr_test",
+            created_at: "2026-09-18T00:00:00Z",
+            updated_at: "2026-09-18T00:00:00Z",
+          },
+        }}
+        close={state.close}
+      />
+    </QueryClientProvider>,
+  );
+  const user = userEvent.setup();
+  await screen.findByRole("button", { name: "Official default" });
+  await user.click(screen.getByRole("button", { name: "Lifecycle" }));
+  expect(
+    screen.queryByRole("spinbutton", { name: "Stop after idle seconds" }),
+  ).toBeNull();
+  const idle = screen.getByRole("spinbutton", {
+    name: "Delete after idle seconds",
+  });
+  await user.clear(idle);
+  await user.type(idle, "900");
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() =>
+    expect(state.PATCH).toHaveBeenCalledWith(
+      "/api/v1/environment-templates/{template_id}",
+      expect.objectContaining({
+        body: {
+          provider_id: "eprov_e2b",
+          config: {
+            recipe: { template: "base" },
+            stop_after_seconds: 600,
+            delete_after_seconds: 3600,
+            reclamation: {
+              idle_delete_seconds: 900,
+              preparation_seconds: 600,
+              failed_retention_seconds: 3600,
+            },
+          },
+        },
+      }),
+    ),
+  );
+});
+
 it("saves Kubernetes idle-delete and preparation policy without VM stop timers", async () => {
   const user = userEvent.setup();
   await selectProvider(user, "Kubernetes");

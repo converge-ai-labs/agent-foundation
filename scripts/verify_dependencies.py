@@ -30,7 +30,12 @@ TEST_INPUTS: dict[str, tuple[str, ...]] = {
     ),
     "test_observability_tooling.py": ("dev/observability/*",),
     "test_mcp_apps_demo.py": ("dev/harness-ui/mcp_apps.py",),
-    "test_service_e2e_tooling.py": ("e2e/service/*", "dev/fixtures/*"),
+    "test_service_e2e_tooling.py": (
+        "e2e/service/*",
+        "dev/fixtures/*",
+        ".github/workflows/ci-a13n-service-e2e.yml",
+        ".github/workflows/ci-deploy.yml",
+    ),
     "test_fixture_process.py": ("dev/fixtures/*",),
     "test_harness_ui_development.py": ("dev/harness-ui/cli.py", "dev/harness-ui/review.py"),
     "test_pr_change_breakdown.py": (

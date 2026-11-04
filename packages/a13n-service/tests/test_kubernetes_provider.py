@@ -325,6 +325,88 @@ async def test_claim_before_consumer_does_not_wait_for_bound_and_retention_is_in
     assert not any("team-data" in path and method != "GET" for method, path, _ in native.requests)
 
 
+@pytest.mark.parametrize("metadata", ["labels", "annotations"])
+@pytest.mark.parametrize("disposition,known_uid", [("retain", True), ("retain", False), ("delete", True)])
+async def test_retained_claim_metadata_does_not_block_retirement(native, metadata, disposition, known_uid):
+    config = recipe(
+        storage=[
+            {
+                "name": "data",
+                "mount_path": "/data",
+                "disposition": disposition,
+                "claim_template": {
+                    "spec": {"accessModes": ["ReadWriteOnce"], "resources": {"requests": {"storage": "1Gi"}}}
+                },
+            }
+        ]
+    )
+    target = await allocated(native, config)
+    claim = next(r for r in target.resources if r.kind == "PersistentVolumeClaim")
+    path = native.runtime.path(claim.kind, claim.name)
+    native.objects[path]["metadata"][metadata] = {}
+    if not known_uid:
+        target = target.model_copy(
+            update={
+                "resources": tuple(r.model_copy(update={"uid": None}) if r == claim else r for r in target.resources)
+            }
+        )
+    state = target.envelope()
+    # The consumer is removed first, regardless of the claim's disposition.
+    result = await native.manager.destroy(config, environment_id="env_test", operation_id="delete", state=state)
+    assert isinstance(result, Pending)
+    state = result.state
+    if disposition == "delete" or not known_uid:
+        with pytest.raises(EnvironmentProviderError) as caught:
+            await native.manager.destroy(config, environment_id="env_test", operation_id="delete", state=state)
+        assert caught.value.category == "conflict"
+    else:
+        for _ in range(3):
+            result = await native.manager.destroy(config, environment_id="env_test", operation_id="delete", state=state)
+            state = result.state
+            if isinstance(result, Completed):
+                break
+        assert isinstance(result, Completed)
+        assert claim in KubernetesState.model_validate(state.state).resources
+        assert set(native.objects) == {path}
+    assert not any(method == "DELETE" and name == path for method, name, _ in native.requests)
+
+
+@pytest.mark.parametrize("host", ["10.1.2.3", "fd00::1"])
+@pytest.mark.parametrize("port", [80, 8888])
+async def test_private_http_origin_normalization_preserves_run_policy(native, monkeypatch, host, port):
+    from contextlib import asynccontextmanager
+
+    from a13n_harness.configuration import RunConfiguration
+    from a13n_harness.providers.endpoint_policy import EndpointPolicy, EndpointPolicyError
+    from a13n_harness.providers.environment.kubernetes import http
+
+    config = recipe(envd_port=port)
+    target = await allocated(native, config)
+    native.objects[native.runtime.path("Pod", target.pod_name)]["status"] = {"phase": "Running", "podIP": host}
+    original = EndpointPolicy.from_http_origins(require_https=True, http_origins=["http://existing.test"]).for_run(
+        RunConfiguration(allowed_hosts={host, "existing.test", "other.test"})
+    )
+    native.runtime.connection._endpoint_policy = original
+
+    @asynccontextmanager
+    async def carrier(**kwargs):
+        policy = kwargs["endpoint_policy"]
+        address = kwargs["connection"].endpoint
+        await policy.validate(address)
+        assert policy.configuration is original.configuration
+        assert policy.require_https and "http://existing.test" in policy.allowed_http_origins
+        with pytest.raises(EndpointPolicyError):
+            await policy.validate("http://other.test")
+        with pytest.raises(EndpointPolicyError):
+            await policy.validate("https://blocked.test")
+        yield None
+
+    monkeypatch.setattr(http, "managed_http_runtime", carrier)
+    async with http.http_runtime(native.runtime, target, config):
+        pass
+    assert native.runtime.connection._endpoint_policy is original
+
+
 async def test_finalizers_hold_deletion_and_are_never_removed(native):
     config = recipe()
     target = await allocated(native, config)

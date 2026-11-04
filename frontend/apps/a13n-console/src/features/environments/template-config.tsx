@@ -158,10 +158,8 @@ export function TemplateConfig({
         provider_id: providerId,
         config: {
           recipe: parsedConfiguration,
-          stop_after_seconds:
-            instancePolicy || stop === "" ? null : Number(stop),
-          delete_after_seconds:
-            instancePolicy || destroy === "" ? null : Number(destroy),
+          stop_after_seconds: stop === "" ? null : Number(stop),
+          delete_after_seconds: destroy === "" ? null : Number(destroy),
           ...(instancePolicy
             ? {
                 reclamation: {

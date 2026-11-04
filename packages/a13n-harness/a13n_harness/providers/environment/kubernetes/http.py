@@ -16,6 +16,7 @@ from a13n_harness.environment.attachments import EIPSessionBinding
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
 from a13n_harness.environment.errors import provider_error
 from a13n_harness.environment.session_recovery import EnvdSessionRecovery
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_harness.providers.environment.remote_envd.configuration import (
     HttpEnvdConnectionConfiguration,
     HttpEnvdCredential,
@@ -121,7 +122,8 @@ async def http_runtime(
         # resolved origin, retaining Run host restrictions and every other HTTPS rule.
         policy = replace(
             runtime.connection._endpoint_policy,
-            allowed_http_origins=runtime.connection._endpoint_policy.allowed_http_origins | {address},
+            allowed_http_origins=runtime.connection._endpoint_policy.allowed_http_origins
+            | EndpointPolicy.from_http_origins(http_origins=[address]).allowed_http_origins,
         )
 
         async def credential() -> HttpEnvdCredential:

@@ -164,7 +164,9 @@ class KubernetesManagement(EnvironmentProvider[KubernetesRecipe]):
             return Completed()
         # Pod first; only after its disappearance may claims and bootstrap be removed.
         for reference in reversed(target.resources):
-            if reference.disposition == "borrowed":
+            if reference.disposition == "borrowed" or (reference.disposition == "retain" and reference.uid is not None):
+                # Retained claims are already receipted and require no further ownership
+                # checks: operators may relabel or reuse them independently of retirement.
                 continue
             value = await self.runtime.get(reference.kind, reference.name)
             if value is None:

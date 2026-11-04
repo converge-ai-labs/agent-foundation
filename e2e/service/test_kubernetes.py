@@ -5,6 +5,7 @@ from copy import deepcopy
 from dataclasses import replace
 
 import pytest
+from a13n_harness.providers.environment.kubernetes.configuration import LABEL_PREFIX
 
 from . import kubernetes
 from .api import eventually, expect, message
@@ -68,6 +69,27 @@ async def test_kubernetes_claim_lifecycle_and_retained_shared_reuse(stack, reque
             identifier = await run_command(
                 stack, account, agent, cleanup, "[owned]", "echo storage-ok > proof.txt && cat proof.txt"
             )
+            if disposition == "retain":
+                from kubernetes_asyncio.client import CoreV1Api
+
+                async with kubernetes.runtime() as native:
+                    [owned_claim] = [
+                        r
+                        for r in await account.kubernetes_resources(native, identifier)
+                        if r["kind"] == "PersistentVolumeClaim"
+                    ]
+                    # Operator metadata edits must not strand the Pod's bootstrap Secret.
+                    await CoreV1Api(native.api).patch_namespaced_persistent_volume_claim(
+                        owned_claim["name"],
+                        native.connection.namespace,
+                        {
+                            "metadata": {
+                                "uid": owned_claim["uid"],
+                                "annotations": {LABEL_PREFIX + "recipe": "operator-edited"},
+                            }
+                        },
+                        _content_type="application/merge-patch+json",
+                    )
             await delete(stack.api, f"/api/v1/environments/{identifier}", 120)
             retired = expect(await stack.api.client.get(f"/api/v1/environments/{identifier}"), 200)
             assert retired["retirement_state"] is not None
@@ -258,6 +280,7 @@ async def test_kubernetes_fresh_run_survives_worker_and_control_restart(stack, r
 async def test_kubernetes_deletion_waits_for_finalizer_without_removing_it(stack, request):
     from a13n_harness.providers.environment.kubernetes.configuration import Resource
     from kubernetes_asyncio.client import CoreV1Api
+    from kubernetes_asyncio.client.exceptions import ApiException
 
     async with backend("kubernetes", stack.directory, request.config) as account:
         api = stack.api
@@ -271,21 +294,37 @@ async def test_kubernetes_deletion_waits_for_finalizer_without_removing_it(stack
             core = CoreV1Api(native.api)
 
             async def release():
-                if reference is None:
-                    return
-                pod = await native.get("Pod", reference.name)
-                if pod is not None and pod["metadata"]["uid"] == reference.uid:
-                    await core.patch_namespaced_pod(
-                        reference.name,
-                        native.connection.namespace,
-                        {
-                            "metadata": {
-                                "resourceVersion": pod["metadata"]["resourceVersion"],
-                                "finalizers": [f for f in pod["metadata"].get("finalizers", []) if f != finalizer],
-                            }
-                        },
-                        _content_type="application/merge-patch+json",
-                    )
+                async def remove_finalizer():
+                    if reference is None:
+                        return True
+                    pod = await native.get("Pod", reference.name)
+                    if pod is None or pod["metadata"]["uid"] != reference.uid:
+                        return True
+                    finalizers = pod["metadata"].get("finalizers", [])
+                    if finalizer not in finalizers:
+                        return True
+                    try:
+                        await core.patch_namespaced_pod(
+                            reference.name,
+                            native.connection.namespace,
+                            {
+                                "metadata": {
+                                    "uid": reference.uid,
+                                    "resourceVersion": pod["metadata"]["resourceVersion"],
+                                    "finalizers": [f for f in finalizers if f != finalizer],
+                                }
+                            },
+                            _content_type="application/merge-patch+json",
+                        )
+                    except ApiException as exc:
+                        if exc.status == 409:
+                            # Pod status and garbage collection can advance resourceVersion between GET and PATCH.
+                            return False
+                        if exc.status != 404:
+                            raise
+                    return True
+
+                await eventually(remove_finalizer)
 
             try:
 

@@ -75,12 +75,9 @@ def validate_config(registry: Registry, provider_type: str, config: TemplateConf
         reclamation = reclamation or Reclamation()
     if reclamation is not None and not definition.supports_destroy:
         raise invalid("config.reclamation", "This provider cannot destroy instances")
+    # Instances reserved before opt-in still use the live legacy timers.
     normalized = config.model_copy(
-        update={
-            "recipe": recipe.model_dump(mode="json", exclude_unset=True),
-            "reclamation": reclamation,
-            **({"stop_after_seconds": None, "delete_after_seconds": None} if reclamation is not None else {}),
-        }
+        update={"recipe": recipe.model_dump(mode="json", exclude_unset=True), "reclamation": reclamation}
     )
     return normalized.model_dump(mode="json")
 

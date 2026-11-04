@@ -143,6 +143,18 @@ def test_the_e2e_suite_collects_every_module_and_requires_opt_in_for_external_jo
     assert f"{lifecycle}[docker]" in default
     assert f"{lifecycle}[kubernetes]" not in default
     assert f"{lifecycle}[kubernetes]" in kubernetes
+    assert len(kubernetes) == 9
+    deployment = yaml.safe_load((ROOT / ".github/workflows/ci-deploy.yml").read_text())
+    [journey_step] = [
+        step for step in deployment["jobs"]["kind"]["steps"] if step.get("run", "").startswith("make service-e2e ")
+    ]
+    [arguments] = [
+        part.removeprefix("SERVICE_E2E_ARGS=")
+        for part in shlex.split(journey_step["run"])
+        if part.startswith("SERVICE_E2E_ARGS=")
+    ]
+    assert "--require-all" in shlex.split(arguments)
+    assert collect_scenarios(*shlex.split(arguments)) == kubernetes
     workflow = yaml.safe_load((ROOT / ".github/workflows/ci-a13n-service-e2e.yml").read_text())
     shards = workflow["jobs"]["scenarios"]["strategy"]["matrix"]["include"]
     selected: set[str] = set()

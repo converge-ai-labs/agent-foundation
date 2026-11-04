@@ -1772,6 +1772,49 @@ async def debug_hold(env, environment_id, seconds):
     )
 
 
+async def test_reclamation_opt_in_preserves_live_timers_for_existing_instances(env):
+    path = f"{env.api}/environment-templates/{env.template['id']}"
+    current = await env.client.get(path)
+    configured = await env.client.patch(
+        path,
+        json={"config": {"stop_after_seconds": 60, "delete_after_seconds": 180}},
+        headers={"if-match": current.headers["etag"]},
+    )
+    assert configured.status_code == 200, configured.text
+    legacy = await reserve(env, env.template["id"])
+    await dispatch_pending(env.runtime, legacy["id"], owner="create")
+    # The HTTP API replaces config; opting in must retain its supplied legacy timers.
+    opted_in = await env.client.patch(
+        path,
+        json={"config": {**configured.json()["config"], "reclamation": {"idle_delete_seconds": None}}},
+        headers={"if-match": configured.headers["etag"]},
+    )
+    assert opted_in.status_code == 200, opted_in.text
+    assert opted_in.json()["config"]["stop_after_seconds"] == 60
+    assert opted_in.json()["config"]["delete_after_seconds"] == 180
+    fresh = await reserve(env, env.template["id"])
+    await dispatch_pending(env.runtime, fresh["id"], owner="create")
+    assert legacy["reclamation"] is None
+    assert fresh["reclamation"]["idle_delete_seconds"] is None
+    for target in (legacy, fresh):
+        await backdate(env, target["id"], last_used_at=timedelta(seconds=120))
+    await maintain_environments(env.runtime, owner="stop")
+    assert (await environment(env, legacy["id"]))["status"] == "stopped"
+    assert (await environment(env, fresh["id"]))["status"] == "ready"
+    # Later template changes do not replace the new instance's captured policy.
+    changed = await env.client.patch(
+        path,
+        json={"config": {**opted_in.json()["config"], "reclamation": {"idle_delete_seconds": 60}}},
+        headers={"if-match": opted_in.headers["etag"]},
+    )
+    assert changed.status_code == 200, changed.text
+    for target in (legacy, fresh):
+        await backdate(env, target["id"], last_used_at=timedelta(seconds=240))
+    await maintain_environments(env.runtime, owner="delete")
+    assert (await environment(env, legacy["id"]))["status"] == "deleted"
+    assert (await environment(env, fresh["id"]))["status"] == "ready"
+
+
 async def test_instance_reclamation_is_frozen_and_debug_hold_only_delays_automatic_cleanup(env):
     await reclamation_template(env, idle_delete_seconds=60)
     target = await reserve(env, env.template["id"])
