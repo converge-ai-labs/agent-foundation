@@ -15,7 +15,7 @@
   align-items: center;
   gap: 4px 12px;
   min-height: 36px;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 20px;
 }
 .linkOption > svg {
@@ -62,7 +62,7 @@
   grid-column: 2 / -1;
   padding-block: 4px 8px;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 20px;
 }
 .linkFooter {
@@ -82,7 +82,7 @@
   gap: 4px;
   margin-left: -8px;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   font-weight: 400;
 }
 .manageButton > svg {
@@ -93,7 +93,7 @@
 }
 .hint {
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 1.6;
 }
 .permissionControl {
@@ -103,7 +103,7 @@
 }
 .authority {
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 1.6;
 }
 .linkResult {
@@ -136,11 +136,11 @@
 }
 .grant strong {
   font-weight: 500;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .grant p {
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   margin-top: 4px;
 }
 .guest {
@@ -177,7 +177,7 @@
   min-width: 0;
 }
 .identity h1 {
-  font-size: 16px;
+  font-size: calc(var(--a13n-text-body) * 16 / 14);
   font-weight: 500;
   margin: 0;
   white-space: nowrap;
@@ -186,7 +186,7 @@
 }
 .identity p {
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   margin: 4px 0 0;
 }
 .access {
@@ -195,7 +195,7 @@
   gap: 12px;
   align-items: center;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .body {
   display: flex;
@@ -220,7 +220,7 @@
 }
 .sidebarTop h2 {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   font-weight: 500;
 }
 .threadList {
@@ -253,7 +253,7 @@
 .thread small,
 .activeThread small {
   flex-shrink: 0;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   font-weight: 400;
   color: var(--a13n-secondary);
 }
@@ -272,7 +272,7 @@
 }
 .welcome h2,
 .unavailable h1 {
-  font-size: 20px;
+  font-size: calc(var(--a13n-text-body) * 20 / 14);
   font-weight: 500;
   letter-spacing: -0.02em;
   margin: 24px 0 12px;
@@ -280,7 +280,7 @@
 .welcome p,
 .unavailable p {
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 1.7;
   margin: 0 0 24px;
 }

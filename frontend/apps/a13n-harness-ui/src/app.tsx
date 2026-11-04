@@ -1,3 +1,4 @@
+import { AppearanceProvider } from "./appearance/react";
 import { LanguageProvider, LanguageChoice } from "./i18n/language";
 import { useTranslation } from "./i18n";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -63,9 +64,11 @@ function retainKey(key: string) {
 }
 export function BrowserApp() {
   return (
-    <LanguageProvider>
-      <BrowserContent />
-    </LanguageProvider>
+    <AppearanceProvider>
+      <LanguageProvider>
+        <BrowserContent />
+      </LanguageProvider>
+    </AppearanceProvider>
   );
 }
 function BrowserContent() {

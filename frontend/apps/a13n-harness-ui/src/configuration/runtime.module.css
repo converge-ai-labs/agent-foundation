@@ -23,12 +23,12 @@
 .hint {
   margin: 0;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 1.6;
 }
 
 .instructions {
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   overflow-wrap: anywhere;
 }
 
@@ -42,7 +42,7 @@
   grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
   gap: 12px 24px;
   padding-block: 12px;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 20px;
 }
 

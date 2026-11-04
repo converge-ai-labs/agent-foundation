@@ -19,7 +19,7 @@
 }
 .title[data-slot="dialog-title"] {
   min-width: 0;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -29,7 +29,7 @@
   align-items: center;
   gap: 12px;
   flex-shrink: 0;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .actions a {
   display: inline-flex;

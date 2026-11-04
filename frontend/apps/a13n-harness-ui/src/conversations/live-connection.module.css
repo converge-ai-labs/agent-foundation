@@ -3,7 +3,7 @@
   min-height: 32px;
   max-width: 100%;
   padding-inline: 6px;
-  font-size: 12px;
+  font-size: calc(var(--a13n-text-body) * 12 / 14);
   font-weight: 400;
   color: var(--a13n-secondary);
 }
@@ -33,7 +33,7 @@
 }
 .popup {
   width: min(280px, calc(100vw - 32px));
-  font-size: 13px;
+  font-size: calc(var(--a13n-text-body) * 13 / 14);
 }
 .popup p {
   margin: 8px 0 0;

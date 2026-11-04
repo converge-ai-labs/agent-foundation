@@ -26,7 +26,7 @@
   justify-content: flex-start;
   align-items: center;
   gap: 8px;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .previewHeading > span:not(.excerpt) {
   flex: none;
@@ -44,7 +44,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 20px;
 }
 .fullscreen[data-slot="dialog-popup"] {
@@ -78,11 +78,11 @@
   flex-shrink: 0;
 }
 .title[data-slot="dialog-title"] {
-  font-size: 16px;
+  font-size: calc(var(--a13n-text-body) * 16 / 14);
 }
 .metrics {
   margin-top: 4px;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   color: var(--a13n-secondary);
 }
 .fullscreen > [data-execution-reader] {

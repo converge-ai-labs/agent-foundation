@@ -8,7 +8,7 @@
   margin: 0;
   padding: 0;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 20px;
 }
 .collectionPage {
@@ -59,7 +59,7 @@
   white-space: nowrap;
   color: var(--a13n-secondary);
   border-bottom: 2px solid transparent;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .tabs a[aria-current="page"] {
   color: var(--a13n-text);
@@ -68,7 +68,7 @@
 }
 .hint {
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 @media (max-width: 600px) {
   .configurationFiles > header {
@@ -105,7 +105,7 @@
 .groupDisclosure > summary {
   min-height: var(--harness-control-height, 32px);
   padding-block: 4px;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   font-weight: 400;
 }
 .groupDisclosure[open] > summary {
@@ -122,7 +122,7 @@
   margin: 0;
   padding-block: 0;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 20px;
 }
 
@@ -140,7 +140,7 @@
   display: inline-flex;
   align-items: center;
   min-height: 32px;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   color: var(--a13n-text);
   text-decoration: underline;
   text-underline-offset: 3px;
@@ -149,7 +149,7 @@
   margin: 0;
   padding-block: 12px;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 20px;
 }
 @media (max-width: 600px), (pointer: coarse) {

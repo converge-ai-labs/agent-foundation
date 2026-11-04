@@ -3,6 +3,7 @@ import { useTranslation } from "../i18n";
 import { Link, useLocation } from "react-router";
 import {
   ArrowLeft,
+  PaintBrush,
   SlidersHorizontal,
   HeadCircuit,
   Cube,
@@ -21,6 +22,7 @@ export function SettingsNavigation({ backTo }: { backTo: string }) {
   const { t } = useTranslation();
   const sections = [
     { path: "/settings", label: t("General"), icon: SlidersHorizontal },
+    { path: "/settings/appearance", label: t("Appearance"), icon: PaintBrush },
     { path: "/settings/agents", label: t("Agents"), icon: HeadCircuit },
     { path: "/settings/models", label: t("Models"), icon: Cube },
     { path: "/settings/environments", label: t("Environments"), icon: Monitor },

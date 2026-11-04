@@ -32,7 +32,7 @@
   flex: 1;
   min-width: 0;
   margin: 0;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -65,7 +65,7 @@
   max-width: 180px;
   min-width: 0;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -185,13 +185,13 @@
 }
 .newTabChoices h2 {
   margin: 0 0 8px;
-  font-size: 20px;
+  font-size: calc(var(--a13n-text-body) * 20 / 14);
   font-weight: 500;
 }
 .newTabChoices > p {
   margin: 0 0 24px;
   color: var(--a13n-secondary);
-  font-size: 13px;
+  font-size: calc(var(--a13n-text-body) * 13 / 14);
 }
 .newTabChoices > button {
   display: flex;
@@ -222,7 +222,7 @@
 .newTabChoices small {
   margin-top: 4px;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: calc(var(--a13n-text-body) * 12 / 14);
   font-weight: 400;
 }
 .resizeHandle {
@@ -353,7 +353,7 @@
   flex-wrap: wrap;
 }
 .paneHeader strong {
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   font-weight: 500;
 }
 .paneHeader small {
@@ -361,19 +361,19 @@
 }
 .pane small {
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   overflow-wrap: anywhere;
 }
 .pane strong {
   font-weight: 500;
 }
 .pane h3 {
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   font-weight: 500;
   margin: 0;
 }
 .pane .authority {
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 1.5;
   margin: 8px 0 12px;
 }
@@ -454,7 +454,7 @@
   max-width: 180px;
   min-width: 0;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   padding-inline: 8px;
 }
 .breadcrumbs button span {
@@ -500,7 +500,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   color: var(--a13n-secondary);
 }
 .fileList {
@@ -533,7 +533,7 @@
   gap: 8px;
   min-height: 32px;
   padding: 4px 8px;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 20px;
   min-width: 0;
   width: 100%;
@@ -562,7 +562,7 @@
 .changeRow small {
   flex-shrink: 0;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .fileActions {
   flex-shrink: 0;
@@ -596,7 +596,7 @@
   gap: 8px;
   min-width: 0;
   min-height: 20px;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .fileHeader strong {
   min-width: 0;
@@ -637,11 +637,11 @@
 .operationHint {
   margin: 8px 0 0;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 1.5;
 }
 .path {
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   overflow-wrap: anywhere;
   color: var(--a13n-secondary);
 }
@@ -673,12 +673,12 @@
   border-radius: 6px;
   display: grid;
   gap: 12px;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .notice details,
 .metadata,
 .repo details {
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   overflow-wrap: anywhere;
 }
 .metadata p {
@@ -735,7 +735,7 @@
   padding: 4px;
 }
 .repo {
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   color: var(--a13n-secondary);
 }
 .repo > summary {
@@ -776,7 +776,7 @@
   padding: 8px 0;
   list-style: none;
   cursor: pointer;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   font-weight: 500;
   color: var(--a13n-secondary);
 }
@@ -806,14 +806,14 @@
   margin: 0;
   padding: 12px 0;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .changeNavigation {
   display: flex;
   align-items: center;
   gap: 4px;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   font-variant-numeric: tabular-nums;
 }
 @media (max-width: 760px), (pointer: coarse) {
@@ -840,7 +840,7 @@
 
 .location > summary {
   cursor: pointer;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   color: var(--a13n-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -858,7 +858,7 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   color: var(--a13n-secondary);
 }
 .diffSummary > nav {
@@ -915,7 +915,7 @@
   width: min(360px, calc(100vw - 24px));
 }
 .viewLink p {
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 1.5;
   color: var(--a13n-secondary);
   margin: 8px 0 16px;

@@ -1,6 +1,11 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
-import { useContext, useEffect, type ReactNode } from "react";
+import {
+  useContext,
+  useEffect,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
 import { ReturnToChat } from "./capture";
 import { ToolCall } from "../conversations/tool-call";
 import { MessageText } from "../conversations/message-text";
@@ -22,8 +27,26 @@ import { FileBuffers, joinPath } from "./buffer";
 
 const live = vi.hoisted(() => ({
   display: { browserActivityRunId: undefined as string | undefined },
+  listeners: new Set<() => void>(),
 }));
-vi.mock("../conversations/live-threads", () => ({ useLiveThread: () => live }));
+vi.mock("../conversations/live-threads", () => ({
+  useLiveThread: () => {
+    useSyncExternalStore(
+      (listener) => {
+        live.listeners.add(listener);
+        return () => live.listeners.delete(listener);
+      },
+      () => live.display.browserActivityRunId,
+    );
+    return live;
+  },
+}));
+function browserActivity(runId: string) {
+  act(() => {
+    live.display.browserActivityRunId = runId;
+    live.listeners.forEach((listener) => listener());
+  });
+}
 vi.mock("./files", () => ({
   Files: ({
     path,
@@ -1644,18 +1667,61 @@ it("keeps Browser and Files in one resizable tabbed supporting pane", async () =
   expect(screen.queryByRole("tabpanel", { name: "Browser" })).toBeNull();
 });
 
-it("opens new browser activity through the shared tab model in an empty split pane", async () => {
-  setup("/threads/current");
+it("opens browser activity from a closed pane once per Thread without moving composer focus", async () => {
+  setup(
+    "/threads/current",
+    true,
+    undefined,
+    "project-one",
+    "project-one",
+    ["/native"],
+    <textarea
+      aria-label="Draft"
+      data-composer-editor
+      defaultValue="Keep my draft"
+    />,
+  );
   await waitFor(() =>
     expect(
       screen.getByRole("button", { name: "New tab" }).hasAttribute("disabled"),
     ).toBe(false),
   );
-  live.display.browserActivityRunId = "run-new";
-  fireEvent.click(screen.getByRole("button", { name: "New tab" }));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Close supporting panel" }),
+  );
+  await waitFor(() =>
+    expect(document.activeElement).toBe(
+      screen.getByTestId("chat").parentElement,
+    ),
+  );
+  const draft = screen.getByRole("textbox", { name: "Draft" });
+  draft.focus();
+  browserActivity("run-new");
   const browser = await screen.findByRole("tab", { name: "Browser" });
   expect(browser.getAttribute("aria-selected")).toBe("true");
-  expect(screen.getAllByRole("tab", { name: "Browser" })).toHaveLength(1);
+  expect(
+    screen.getByRole("button", { name: "Close supporting panel" }),
+  ).toBeTruthy();
+  expect(document.activeElement).toBe(draft);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Close supporting panel" }),
+  );
+  browserActivity("run-later");
+  expect(
+    screen.getByRole("button", { name: "Open supporting panel" }),
+  ).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Another chat" }));
+  await screen.findByText("Chat remains mounted /threads/other");
+  browserActivity("other-run");
+  expect(
+    await screen.findByRole("tab", { name: "Browser", selected: true }),
+  ).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Current chat" }));
+  await screen.findByText("Chat remains mounted /threads/current");
+  browserActivity("run-returned");
+  expect(
+    screen.getByRole("button", { name: "Open supporting panel" }),
+  ).toBeTruthy();
 });
 
 it("browser activity suggests the existing Browser without replacing a new tab", async () => {

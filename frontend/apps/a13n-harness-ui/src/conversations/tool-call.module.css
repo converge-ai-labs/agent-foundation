@@ -6,7 +6,7 @@
   --tool-inset: 8px;
   min-width: 0;
   margin: 0;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: start;
@@ -26,7 +26,7 @@
   border-radius: 8px;
   line-height: 20px;
   gap: 8px;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   font-weight: 400;
   color: var(--harness-log-text);
   transition:
@@ -98,7 +98,7 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   white-space: nowrap;
   color: var(--muted-foreground);
   font-variant-numeric: tabular-nums;
@@ -142,7 +142,7 @@
 .fileLink {
   margin: 0;
   color: var(--muted-foreground);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   height: 1.5rem;
 }
 .details {
@@ -190,14 +190,14 @@
   white-space: pre-wrap;
 }
 .details h4 {
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   font-weight: 500;
   margin: 0 0 0.25rem;
 }
 .details small,
 .diff > small {
   color: var(--muted-foreground);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 1.5;
 }
 .content,
@@ -235,7 +235,7 @@
   min-height: 32px;
   padding: 0 4px 0 12px;
   color: var(--muted-foreground);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   border-bottom: 0;
   background: transparent;
 }
@@ -243,7 +243,7 @@
 .diff pre {
   margin: 0;
   overflow-x: auto;
-  font: 12px/1.6 var(--font-mono);
+  font: var(--harness-code-size)/1.6 var(--font-mono);
   tab-size: 4;
 }
 .content pre {
@@ -295,7 +295,7 @@
 .format > button {
   height: 32px;
   padding-inline: 12px;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 @media (max-width: 600px) {
   .tool > [data-slot] [data-slot="disclosure-surface"] > button {
@@ -342,7 +342,7 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   max-width: 15rem;
   overflow-wrap: anywhere;
   color: var(--foreground);
@@ -426,7 +426,7 @@
   flex-wrap: wrap;
   gap: 0.5rem 1.5rem;
   margin: 0;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .selection dt {
   color: var(--muted-foreground);
@@ -447,7 +447,7 @@
 }
 .questionStatus {
   padding: 12px 12px 0;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   font-weight: 500;
   color: var(--muted-foreground);
 }
@@ -466,19 +466,19 @@
   display: none;
 }
 .questionHeader {
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   font-weight: 500;
   color: var(--muted-foreground);
 }
 .questionText {
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 1.6;
 }
 .answers dd {
   display: grid;
   gap: 0.5rem;
   margin: 0.5rem 0 0;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 1.6;
 }
 .answerLabel {
@@ -486,7 +486,7 @@
 }
 .answerDescription {
   color: var(--muted-foreground);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .answers p,
 .questionContext p,
@@ -503,14 +503,14 @@
   margin-inline: 4px;
   padding: 4px 8px;
   border-radius: 4px;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   color: var(--muted-foreground);
 }
 .questionReceipt .details {
   padding: 4px 12px 12px;
 }
 .originalQuestion {
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   overflow-wrap: anywhere;
 }
 .originalQuestion ul {
@@ -535,7 +535,7 @@
   text-align: left;
   cursor: zoom-in;
   color: var(--muted-foreground);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .screenshot img {
   width: min(100%, 36rem);

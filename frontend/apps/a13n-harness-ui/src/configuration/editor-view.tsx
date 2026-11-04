@@ -1,4 +1,5 @@
 import { useEffect, useImperativeHandle, useRef, type Ref } from "react";
+import { useAppearance } from "../appearance/react";
 import { basicSetup, EditorView } from "codemirror";
 import {
   Annotation,
@@ -128,6 +129,7 @@ export function SourceEditor({
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<EditorView | null>(null);
   const wrapMode = useRef(new Compartment());
+  const { appearance } = useAppearance();
   const contentAttributes = useRef(new Compartment());
   const cursor = useRef(onCursor);
   cursor.current = onCursor;
@@ -226,7 +228,7 @@ export function SourceEditor({
         }),
         EditorView.theme({
           "&": {
-            fontSize: "12px",
+            fontSize: "var(--harness-code-size, 12px)",
             ...(fill
               ? { height: "100%" }
               : {
@@ -271,6 +273,7 @@ export function SourceEditor({
             borderColor: "var(--a13n-border)",
           },
           ".cm-panel.cm-search": {
+            fontSize: "var(--a13n-text-body)",
             padding: "8px 32px 8px 8px",
             lineHeight: "2.4",
           },
@@ -308,7 +311,7 @@ export function SourceEditor({
             overscrollBehavior: "contain",
           },
           "@media (max-width: 640px) and (pointer: coarse)": {
-            "&": { fontSize: "16px" },
+            "&": { fontSize: "max(16px, var(--harness-code-size, 12px))" },
           },
         }),
         extensions ?? [],
@@ -347,6 +350,9 @@ export function SourceEditor({
     // External values are synchronized below without replacing editor state on typing.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [readOnly, language, filename, fill, extensions]);
+  useEffect(() => {
+    editor.current?.requestMeasure();
+  }, [appearance.sizes.code]);
   useEffect(() => {
     editor.current?.dispatch({
       effects: contentAttributes.current.reconfigure(

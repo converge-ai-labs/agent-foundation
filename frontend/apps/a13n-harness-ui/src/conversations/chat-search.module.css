@@ -19,7 +19,7 @@
   border: 0;
   box-shadow: none;
   background: transparent;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .search > [data-slot="input-control"] {
   flex: 1;
@@ -51,7 +51,7 @@
   padding: 4px 8px;
   border-radius: 5px;
   background: var(--a13n-surface);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   color: var(--a13n-secondary);
 }
 .results {
@@ -81,18 +81,18 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   font-weight: 500;
 }
 .result small {
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 20px;
 }
 .empty {
   padding: 16px 16px;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 @media (max-width: 600px) {
   .search input {

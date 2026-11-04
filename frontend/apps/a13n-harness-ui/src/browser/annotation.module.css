@@ -47,7 +47,7 @@
   min-height: 44px;
   gap: 10px;
   padding: 4px 20px 8px;
-  font-size: 12px;
+  font-size: calc(var(--a13n-text-body) * 12 / 14);
   color: var(--a13n-secondary);
 }
 .spacer {
@@ -62,7 +62,7 @@
   border-radius: 6px;
   background: var(--a13n-elevated);
   color: var(--a13n-text);
-  font-size: 12px;
+  font-size: calc(var(--a13n-text-body) * 12 / 14);
 }
 .swatch {
   width: 20px;
@@ -126,7 +126,7 @@
   gap: 12px;
   min-height: 42px;
   padding: 8px 20px;
-  font-size: 12px;
+  font-size: calc(var(--a13n-text-body) * 12 / 14);
   color: var(--a13n-secondary);
 }
 .footer span {
