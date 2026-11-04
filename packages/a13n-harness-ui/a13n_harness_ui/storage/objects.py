@@ -245,6 +245,23 @@ class ImmutableObjectStore:
                 details=details,
             ) from exc
 
+    async def read_unverified_projection(self, reference: ObjectRef, model_type: type[_ObjectModelT]) -> _ObjectModelT:
+        """Decode selected envelope fields for filtering, never as deletion or recovery authority.
+
+        Size and frame checks still apply. Callers must use a verified read before
+        acting on a match; ignored fields, canonical encoding and identity are not checked.
+        """
+        return await to_thread.run_sync(self._read_unverified_projection, reference, model_type)
+
+    def _read_unverified_projection(self, reference: ObjectRef, model_type: type[_ObjectModelT]) -> _ObjectModelT:
+        uncompressed = self._decompress_path(self._path_for(reference))
+        try:
+            return model_type.model_validate_json(uncompressed, strict=True, extra="ignore")
+        except ValueError as exc:
+            raise ObjectIntegrityError(
+                "Immutable object projection is malformed or incompatible.", code="object_payload_incompatible"
+            ) from exc
+
     async def remove(self, reference: ObjectRef) -> None:
         """Remove an object whose owner has released it; callers coordinate reference use."""
         await to_thread.run_sync(partial(self._path_for(reference).unlink, missing_ok=True))
@@ -374,7 +391,7 @@ class ImmutableObjectStore:
             )
         return envelope
 
-    def _read_path(self, path: Path) -> ObjectEnvelope:
+    def _decompress_path(self, path: Path) -> bytes:
         try:
             compressed_size = path.stat().st_size
             if compressed_size > self._settings.max_object_bytes * 2:
@@ -426,6 +443,10 @@ class ImmutableObjectStore:
                     "max_object_bytes": self._settings.max_object_bytes,
                 },
             )
+        return uncompressed
+
+    def _read_path(self, path: Path) -> ObjectEnvelope:
+        uncompressed = self._decompress_path(path)
         try:
             envelope = ObjectEnvelope.model_validate_json(uncompressed, strict=True)
         except ValueError as exc:
