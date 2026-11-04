@@ -57,6 +57,7 @@ description: Service 设置的每个字段，及其环境变量、类型、范�
 | `objects.access_key_id`         | `A13N_OBJECTS__ACCESS_KEY_ID`         | 字符串或 null                     | format="password"; default=null                   |
 | `objects.secret_access_key`     | `A13N_OBJECTS__SECRET_ACCESS_KEY`     | 字符串或 null                     | format="password"; default=null                   |
 | `objects.max_bytes`             | `A13N_OBJECTS__MAX_BYTES`             | 整数                              | minimum=65536; maximum=67108864; default=16777216 |
+| `objects.max_pool_connections` | `A13N_OBJECTS__MAX_POOL_CONNECTIONS` | 整数 | minimum=1; maximum=1024; default=32 |
 | `objects.timeout`               | `A13N_OBJECTS__TIMEOUT`               | 数值                              | maximum=60; exclusiveMinimum=0; default=5         |
 | `objects.upload_bytes`          | `A13N_OBJECTS__UPLOAD_BYTES`          | 整数                              | minimum=1; maximum=33554432; default=1048576      |
 | `objects.upload_limit`          | `A13N_OBJECTS__UPLOAD_LIMIT`          | 整数                              | minimum=1; maximum=1000; default=60               |
