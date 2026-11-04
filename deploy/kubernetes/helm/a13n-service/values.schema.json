@@ -234,6 +234,11 @@
         "endpointUrl": {
           "type": "string"
         },
+        "maxPoolConnections": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1024
+        },
         "addressingStyle": {
           "enum": ["", "auto", "path", "virtual"]
         }
