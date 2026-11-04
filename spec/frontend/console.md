@@ -92,6 +92,8 @@ The Agent editor exposes a Context summary section under Advanced with a Summari
 
 ### Command environment overrides
 
+Execution fields use behavior-oriented labels and persistent descriptions for long-running tools, new-message handling and the foreground wait. Agent controls show the Service defaults for omitted tool mode and steering without an inheritance choice; an omitted wait displays “Default” without assuming the deployment's numeric value. Thread and Run overrides name their source as “Use agent settings” and “Use thread settings”. Displaying a default never writes an override by itself.
+
 The shared execution-policy form exposes ordinary environment-variable maps in Agent defaults, Thread policy and single-Run options, and renders the accepted map in Run details. It reuses the environment template variable editor and its draft validation. Thread save submits a whole-map replacement; removing every row resets that layer. Values remain readable configuration, not credentials. The [Run execution policy](../a13n-service/05-runs.md#execution-policy) owns precedence and freezing.
 
 ## Agent Configuration Transfer

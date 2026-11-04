@@ -3788,5 +3788,14 @@
   "Additional models": "Additional models",
   "No additional models available.": "No additional models available.",
   "Choose existing agents that this agent can delegate tasks to by name.": "Choose existing agents that this agent can delegate tasks to by name.",
-  "No named subagents added.": "No named subagents added."
+  "No named subagents added.": "No named subagents added.",
+  "Long-running tools": "Long-running tools",
+  "When new messages arrive": "When new messages arrive",
+  "Wait before backgrounding (seconds)": "Wait before backgrounding (seconds)",
+  "Choose whether the agent waits for tools to finish or continues while supported tools run in the background.": "Choose whether the agent waits for tools to finish or continues while supported tools run in the background.",
+  "Choose whether new input waits for the next model step or interrupts the current response. Unsupported calls still wait for a safe boundary.": "Choose whether new input waits for the next model step or interrupts the current response. Unsupported calls still wait for a safe boundary.",
+  "Use agent settings": "Use agent settings",
+  "Use thread settings": "Use thread settings",
+  "Wait before letting a tool continue in the background. Applies to Auto and process-backed shell commands; does not stop the tool. Empty uses the parent settings.": "Wait before letting a tool continue in the background. Applies to Auto and process-backed shell commands; does not stop the tool. Empty uses the parent settings.",
+  "Wait before letting a tool continue in the background. Applies to Auto and process-backed shell commands; does not stop the tool. Empty uses the default (normally 5 seconds).": "Wait before letting a tool continue in the background. Applies to Auto and process-backed shell commands; does not stop the tool. Empty uses the default (normally 5 seconds)."
 }

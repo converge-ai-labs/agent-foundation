@@ -57,6 +57,7 @@ The tables are generated from `Settings`. Contributors updating those definition
 | `objects.access_key_id`         | `A13N_OBJECTS__ACCESS_KEY_ID`         | string or null                    | format="password"; default=null                   |
 | `objects.secret_access_key`     | `A13N_OBJECTS__SECRET_ACCESS_KEY`     | string or null                    | format="password"; default=null                   |
 | `objects.max_bytes`             | `A13N_OBJECTS__MAX_BYTES`             | integer                           | minimum=65536; maximum=67108864; default=16777216 |
+| `objects.max_pool_connections`  | `A13N_OBJECTS__MAX_POOL_CONNECTIONS`  | integer                           | minimum=1; maximum=1024; default=32               |
 | `objects.timeout`               | `A13N_OBJECTS__TIMEOUT`               | number                            | maximum=60; exclusiveMinimum=0; default=5         |
 | `objects.upload_bytes`          | `A13N_OBJECTS__UPLOAD_BYTES`          | integer                           | minimum=1; maximum=33554432; default=1048576      |
 | `objects.upload_limit`          | `A13N_OBJECTS__UPLOAD_LIMIT`          | integer                           | minimum=1; maximum=1000; default=60               |

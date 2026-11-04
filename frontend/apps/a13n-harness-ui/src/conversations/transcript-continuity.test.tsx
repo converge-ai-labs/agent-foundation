@@ -85,9 +85,14 @@ it("retains live output nodes and reading anchors through repeated saves", () =>
   }
 });
 
-it.each([false, true])(
-  "retains first-turn content and the open execution reader during slow multi-page saving (mobile=%s)",
-  async (mobile) => {
+it.each([
+  { mobile: false, sender: true },
+  { mobile: true, sender: true },
+  { mobile: false, sender: false },
+  { mobile: true, sender: false },
+])(
+  "retains first-turn content and the open execution reader during slow multi-page saving ($mobile, sender=$sender)",
+  async ({ mobile, sender }) => {
     vi.stubGlobal("matchMedia", () => ({
       matches: mobile,
       addEventListener: vi.fn(),
@@ -102,13 +107,15 @@ it.each([false, true])(
       parts: [{ kind: "thinking", text: "Plan" }],
     };
     const reply = { ...output, position: 2 };
-    const savedTurn = { ...turn, end_position: 3 };
+    const savedTurn = { ...turn, turn_id: "attempt-one", end_position: 3 };
     const blocks: DisplayBlock[] = [
       {
         id: "round:input:0",
         kind: "user",
         text: "Prompt",
-        metadata: { source_id: "round" },
+        metadata: local.parts[0].metadata ?? undefined,
+        inputSource: "user",
+        inputGroup: "attempt-one",
       },
       { id: "run:plan", kind: "thinking", text: "Plan" },
       { id: "run:reply", kind: "assistant", text: "Visible reply" },
@@ -149,7 +156,7 @@ it.each([false, true])(
       return (
         <ConversationTranscript
           threadId="one"
-          localInputs={[local]}
+          localInputs={sender ? [local] : []}
           loadDetails
           entries={page?.entries ?? []}
           turns={page?.turns ?? []}
@@ -349,3 +356,171 @@ it("never assigns a still-live message identity to matching saved text", () => {
   expect(messages).toHaveLength(2);
   expect(readingAnchor(messages[0])).not.toBe(readingAnchor(messages[1]));
 });
+
+it.each([true, false])(
+  "keeps an observer's second turn separate from completed work (source metadata=%s)",
+  (withSource) => {
+    const parts = withSource
+      ? previewInput("second-source", ["Second prompt"])
+      : [{ kind: "user" as const, text: "Second prompt" }];
+    const firstEntries: Schema<"TranscriptEntry">[] = [
+      input,
+      {
+        ...output,
+        parts: [
+          { kind: "assistant", text: "Old commentary" },
+          { kind: "thinking", text: "Old plan" },
+        ],
+      },
+      { ...output, position: 2 },
+    ];
+    const firstTurn = { ...turn, end_position: 3, final_position: 2 };
+    const secondTurn = {
+      turn_id: "second-attempt",
+      input_position: 3,
+      end_position: 6,
+      preview: "Second prompt",
+    };
+    const blocks: DisplayBlock[] = [
+      {
+        id: "second-item",
+        kind: "user",
+        text: "Second prompt",
+        metadata: parts[0].metadata ?? undefined,
+        inputSource: "user",
+        inputGroup: "second-attempt",
+      },
+      { id: "second-plan", kind: "thinking", text: "Second plan" },
+      { id: "second-answer", kind: "assistant", text: "Second reply" },
+    ];
+    const view = render(
+      <ConversationTranscript
+        {...props}
+        entries={firstEntries}
+        turns={[firstTurn]}
+        blocks={blocks}
+      />,
+    );
+    const oldAnswer = screen.getByText("Visible reply");
+    const prompt = screen.getByText("Second prompt");
+    const answer = screen.getByText("Second reply");
+    expect(prompt.closest("[data-turn-id]")?.getAttribute("data-turn-id")).toBe(
+      "second-attempt",
+    );
+    expect(screen.queryByText("Old commentary")).toBeNull();
+    const logs = screen.getAllByRole("button", { name: /Work log/ });
+    fireEvent.click(logs[1]);
+    const reader = screen.getByRole("region", { name: "Work log" });
+    view.rerender(
+      <ConversationTranscript
+        {...props}
+        continuation="C1"
+        entries={[
+          ...firstEntries,
+          {
+            position: 3,
+            message_kind: "request",
+            parts: parts as Schema<"TranscriptPart">[],
+          },
+          {
+            position: 4,
+            message_kind: "response",
+            parts: [{ kind: "thinking", text: "Second plan" }],
+          },
+          {
+            position: 5,
+            message_kind: "response",
+            parts: [{ kind: "assistant", text: "Second reply" }],
+          },
+        ]}
+        turns={[firstTurn, secondTurn]}
+        blocks={[]}
+      />,
+    );
+    expect(screen.getByText("Second prompt")).toBe(prompt);
+    expect(screen.getByText("Second reply")).toBe(answer);
+    expect(screen.getByText("Visible reply")).toBe(oldAnswer);
+    expect(screen.getByRole("region", { name: "Work log" })).toBe(reader);
+    expect(screen.queryByText("Old commentary")).toBeNull();
+  },
+);
+
+it("keeps accepted preview identity when native turn identity arrives", () => {
+  const view = render(
+    <ConversationTranscript
+      {...props}
+      entries={[]}
+      turns={[]}
+      localInputs={[local]}
+      blocks={[]}
+    />,
+  );
+  const prompt = screen.getByText("Prompt");
+  view.rerender(
+    <ConversationTranscript
+      {...props}
+      entries={[]}
+      turns={[]}
+      localInputs={[local]}
+      blocks={[
+        {
+          id: "native-item",
+          kind: "user",
+          text: "Prompt",
+          metadata: local.parts[0].metadata ?? undefined,
+          inputSource: "user",
+          inputGroup: "native-attempt",
+        },
+      ]}
+    />,
+  );
+  expect(screen.getByText("Prompt")).toBe(prompt);
+  expect(prompt.closest("[data-turn-id]")?.getAttribute("data-turn-id")).toBe(
+    "native-attempt",
+  );
+  view.rerender(
+    <ConversationTranscript
+      {...props}
+      turns={[{ ...turn, turn_id: "native-attempt" }]}
+      localInputs={[local]}
+      blocks={[]}
+      continuation="C1"
+    />,
+  );
+  expect(screen.getByText("Prompt")).toBe(prompt);
+});
+
+it.each(["steering", "child", "resume"])(
+  "does not create a root turn for %s output",
+  (kind) => {
+    const blocks: DisplayBlock[] =
+      kind === "resume"
+        ? []
+        : [
+            {
+              id: "additional-input",
+              kind: "user",
+              text: "Additional input",
+              inputGroup: "other-group",
+              inputSource: kind === "steering" ? "steering" : "user",
+              subagentRunId: kind === "child" ? "child-run" : undefined,
+            },
+          ];
+    const view = render(
+      <ConversationTranscript
+        {...props}
+        blocks={[
+          ...blocks,
+          { id: "continued", kind: "assistant", text: "Continued reply" },
+        ]}
+      />,
+    );
+    expect(view.container.querySelectorAll("[data-turn-id]")).toHaveLength(1);
+    expect(
+      screen
+        .getByText("Continued reply")
+        .closest("[data-turn-id]")
+        ?.getAttribute("data-turn-id"),
+    ).toBe("round");
+  },
+);

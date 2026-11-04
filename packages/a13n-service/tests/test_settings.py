@@ -279,3 +279,17 @@ def test_browser_control_max_rejects_unrepresentable_durations(tmp_path, clean_e
     config.write_text("[control]\nbrowser_control_max_seconds = 999999999999999999999\n")
     with pytest.raises(ValueError, match="browser_control_max_seconds"):
         load_settings(config)
+
+
+def test_object_pool_environment_overrides_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, clean_environment: None
+) -> None:
+    config = tmp_path / "service.toml"
+    config.write_text("[objects]\nmax_pool_connections = 48\n")
+    assert load_settings(config).objects.max_pool_connections == 48
+    monkeypatch.setenv("A13N_OBJECTS__MAX_POOL_CONNECTIONS", "128")
+    assert load_settings(config).objects.max_pool_connections == 128
+    for invalid in ("0", "1025"):
+        monkeypatch.setenv("A13N_OBJECTS__MAX_POOL_CONNECTIONS", invalid)
+        with pytest.raises(ValueError, match="max_pool_connections"):
+            load_settings(config)
