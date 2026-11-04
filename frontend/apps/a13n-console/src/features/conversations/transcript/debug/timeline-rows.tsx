@@ -381,7 +381,9 @@ export function AgentRow({
           {executed.data && (
             <>
               <span className={styles.lineVersion}>
-                v{executed.data.revision.number}
+                {executed.data.revision
+                  ? `v${executed.data.revision.number}`
+                  : t("Task snapshot")}
               </span>
               <ModelKeyLabel
                 className={styles.lineModel}

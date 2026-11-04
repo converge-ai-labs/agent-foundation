@@ -80,7 +80,11 @@ export function ThreadExecutionDialog({
         }}
       >
         <fieldset disabled={pending} className="fieldset-reset">
-          <ExecutionFields value={execution} onChange={setExecution} />
+          <ExecutionFields
+            scope="thread"
+            value={execution}
+            onChange={setExecution}
+          />
         </fieldset>
         {conflict ? (
           <ConflictNotice

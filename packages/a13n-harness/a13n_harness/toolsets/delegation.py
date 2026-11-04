@@ -19,6 +19,7 @@ from pydantic_ai.toolsets import FunctionToolset
 from pydantic_ai.usage import UsageLimits
 
 from a13n_harness._json import dump_json_bytes
+from a13n_harness.builder import DelegationContextPolicy
 from a13n_harness.capabilities.context import restored_history_summary
 from a13n_harness.context import AgentContext, BuiltSubagent, RunBindings
 from a13n_harness.environment.models import EnvironmentError
@@ -635,7 +636,15 @@ def _build_child_input(
     child: BuiltSubagent,
     task: JsonValue,
 ) -> str:
-    policy = child.declaration.context
+    return project_delegation_input(ctx, child.declaration.context, task)
+
+
+def project_delegation_input(
+    ctx: RunContext[AgentContext],
+    policy: DelegationContextPolicy,
+    task: JsonValue,
+) -> str:
+    """Project only the selected parent context for a declared or Host-defined child."""
     payload: dict[str, JsonValue] = {
         "delegated_task": _JSON_ADAPTER.validate_python(task),
     }

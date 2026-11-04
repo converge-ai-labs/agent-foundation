@@ -1,3 +1,4 @@
+import { useAppearance } from "../appearance/react";
 import { useContext, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { SearchAddon } from "@xterm/addon-search";
@@ -59,6 +60,10 @@ export default function TerminalScreen({
 }) {
   const { t } = useTranslation();
   const transport = useTransport();
+  const { appearance } = useAppearance();
+  const fontSize = useRef(appearance.sizes.terminal);
+  fontSize.current = appearance.sizes.terminal;
+  const scheduleResize = useRef<(() => void) | null>(null);
   const shortcuts = terminalShortcutLabels();
   const shown = useRef(visible);
   shown.current = visible;
@@ -95,7 +100,7 @@ export default function TerminalScreen({
       // Search decorations use xterm's proposed decoration API.
       allowProposedApi: true,
       cursorBlink: true,
-      fontSize: 13,
+      fontSize: fontSize.current,
       fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
       scrollback: 2000,
       disableStdin: true,
@@ -187,6 +192,7 @@ export default function TerminalScreen({
         }
       });
     };
+    scheduleResize.current = resize;
     let lastLayout = "";
     let controlled = false;
     let lastState = "";
@@ -241,6 +247,7 @@ export default function TerminalScreen({
       session.dispose();
       connection.current = null;
       terminal.current = null;
+      scheduleResize.current = null;
       observer.disconnect();
       themeObserver.disconnect();
       cancelAnimationFrame(animation);
@@ -253,6 +260,11 @@ export default function TerminalScreen({
       term.dispose();
     };
   }, [id, transport, unauthorized]);
+  useEffect(() => {
+    if (terminal.current)
+      terminal.current.options.fontSize = appearance.sizes.terminal;
+    scheduleResize.current?.();
+  }, [appearance.sizes.terminal, visible]);
   useEffect(() => {
     const session = connection.current;
     if (!session) return;

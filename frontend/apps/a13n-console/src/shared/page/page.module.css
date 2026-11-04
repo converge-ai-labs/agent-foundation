@@ -276,7 +276,7 @@
   margin-block: -4px;
 }
 .sectionHeader p {
-  margin: 4px 0 0;
+  margin: 1px 0 0;
   color: var(--a13n-secondary);
   font-size: var(--a13n-text-sm);
   line-height: 20px;
@@ -306,9 +306,6 @@
   font-size: var(--a13n-text-sm);
   font-weight: 500;
   line-height: 20px;
-}
-.subsection > .sectionHeader p {
-  margin-top: 1px;
 }
 .subsection > .sectionHeader .sectionActions {
   margin-block: 0;

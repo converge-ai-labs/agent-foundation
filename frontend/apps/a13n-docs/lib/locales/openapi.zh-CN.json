@@ -622,5 +622,7 @@
   "Filter by Run execution identity; requires workspace admin.": "按 Run 执行身份筛选；需要工作空间管理员权限。",
   "List Usage Members": "列出成员用量",
   "Group Service-owned sources individually, following the agent's selections.": "按 agent 的选择，自动为 Service 管理的各工具来源分组。",
-  "A collection member whose stored configuration requires operator repair.": "存储的配置需要运维人员修复的集合成员。"
+  "A collection member whose stored configuration requires operator repair.": "存储的配置需要运维人员修复的集合成员。",
+  "Root-only task-specific delegation within the parent's capability boundary.": "仅根 Agent 可在自身能力范围内，按任务需要创建子 Agent。",
+  "What one run changes of its revision's configuration; an omitted or null field keeps the revision's.\n\n`toolsets` replaces whole toolsets; `retries` replaces supplied members.\nEvery other field, including `subagents`, replaces the whole value.": "单次运行对修订版本配置的覆盖；省略或为 null 的字段保留修订版本值。\n\n`toolsets` 替换整个工具集；`retries` 替换已提供的成员。其他字段（包括 `subagents`）均整体替换。"
 }

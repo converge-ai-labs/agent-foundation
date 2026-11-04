@@ -45,7 +45,7 @@
 }
 .heading h3 {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   font-weight: 500;
   line-height: 20px;
 }
@@ -53,7 +53,7 @@
 .count {
   margin: 0;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 20px;
 }
 .count {
@@ -94,19 +94,19 @@
 }
 .directory > div {
   min-width: 0;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .directory p {
   overflow-wrap: anywhere;
 }
 .directory small {
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .advanced {
   composes: details from "../shell/workbench.module.css";
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 20px;
 }
 .defaultDirectory [data-slot="settings-row"] {
@@ -162,7 +162,7 @@
   gap: 4px;
   padding-inline-start: 12px;
   border-inline-start: 2px solid var(--a13n-border);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 20px;
 }
 .summaryEnvironment > p {

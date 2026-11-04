@@ -2185,3 +2185,60 @@ it("retains context recovery warnings after successful recovery without retry st
   );
   expect(warning[0].recoveryOutcome).toBe("resumed");
 });
+
+it.each(["user", "steering", "media"])(
+  "preserves %s input ownership through live frames and compact reopen",
+  (kind) => {
+    const source = kind === "steering" ? "steering" : "user";
+    const display = new FocusDisplay();
+    display.accept(snapshot(0));
+    display.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
+    display.accept(
+      rawFrame(
+        101,
+        1,
+        {
+          type: "CUSTOM",
+          name: `a13n.input.${kind}`,
+          value: {
+            event: {
+              source,
+              input_id: "native-attempt",
+              message_id: "input-message",
+              content:
+                kind === "media"
+                  ? { url: "https://example.test/image.png" }
+                  : "Prompt",
+            },
+          },
+        },
+        "input-item",
+      ),
+    );
+    const live = [...display.blocks.values()].find(
+      (block) => block.inputGroup === "native-attempt",
+    );
+    expect(live).toMatchObject({
+      id: "input-item",
+      inputSource: source,
+      inputGroup: "native-attempt",
+    });
+    const reopened = new FocusDisplay();
+    reopened.accept(snapshot(0));
+    reopened.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
+    reopened.accept(
+      compactFrame(102, [
+        compactItem("input-item", 1, {
+          role: "user",
+          text: "Prompt",
+          input_source: source,
+          input_group: "native-attempt",
+        }),
+      ]),
+    );
+    expect(reopened.blocks.get("input-item")).toMatchObject({
+      inputSource: source,
+      inputGroup: "native-attempt",
+    });
+  },
+);

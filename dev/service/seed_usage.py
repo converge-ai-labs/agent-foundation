@@ -133,6 +133,7 @@ async def _history(checkout: Checkout, source_runs: list[Json]) -> dict[str, str
             templates = []
             for source in source_runs:
                 row = await session.get_one(RunRow, source["id"])
+                assert row.agent_revision_id is not None, "Usage seed sources must use a published Agent revision"
                 templates.append(
                     Template(
                         row.organization_id,

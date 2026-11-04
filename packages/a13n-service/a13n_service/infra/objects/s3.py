@@ -1,9 +1,11 @@
 """S3-compatible object store; keys are written once, so every write is a plain `PutObject`."""
 
 from collections.abc import AsyncGenerator
-from contextlib import AsyncExitStack, asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager, contextmanager
+from time import monotonic
 from typing import TYPE_CHECKING, Any, Literal, cast
 
+from a13n_logging import get_logger
 from aiobotocore.config import AioConfig
 from aiobotocore.session import get_session
 from anyio import fail_after
@@ -13,7 +15,11 @@ from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.objects.interface import ObjectRef, reference, validate_key
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from types_aiobotocore_s3.client import S3Client
+
+logger = get_logger(__name__)
 
 
 def _unavailable(error: Exception) -> ServiceError:
@@ -34,11 +40,30 @@ class S3Objects:
     def _key(self, key: str) -> str:
         return self.prefix + validate_key(key)
 
+    @contextmanager
+    def _deadline(self, operation: str) -> "Iterator[None]":
+        started = monotonic()
+        try:
+            with fail_after(self.timeout):
+                yield
+        except TimeoutError as error:
+            # Keep request log context, but never include keys, endpoints or credentials.
+            logger.warning(
+                "Object store request timed out",
+                extra={
+                    "operation": operation,
+                    "timeout_seconds": self.timeout,
+                    "duration_ms": round((monotonic() - started) * 1000),
+                    "error_type": type(error).__name__,
+                },
+            )
+            raise _unavailable(error) from None
+
     async def put(self, key: str, data: bytes, *, content_type: str) -> ObjectRef:
         if len(data) > self.max_bytes:
             raise ServiceError("payload_too_large", "Object exceeds its byte limit", {"limit": self.max_bytes})
         try:
-            with fail_after(self.timeout):
+            with self._deadline("put"):
                 await self.client.put_object(
                     Bucket=self.bucket, Key=self._key(key), Body=data, ContentType=content_type
                 )
@@ -48,7 +73,7 @@ class S3Objects:
 
     async def get(self, key: str) -> bytes | None:
         try:
-            with fail_after(self.timeout):
+            with self._deadline("get"):
                 response = await self.client.get_object(Bucket=self.bucket, Key=self._key(key))
                 if response["ContentLength"] > self.max_bytes:
                     raise ServiceError("unavailable", "Stored object exceeds its byte limit", {"dependency": "objects"})
@@ -65,7 +90,7 @@ class S3Objects:
         found: list[str] = []
         token: str | None = None
         try:
-            with fail_after(self.timeout):
+            with self._deadline("list"):
                 while len(found) < limit:
                     continuation: dict[str, Any] = (
                         {"ContinuationToken": token}
@@ -88,7 +113,7 @@ class S3Objects:
 
     async def delete(self, key: str) -> None:
         try:
-            with fail_after(self.timeout):
+            with self._deadline("delete"):
                 await self.client.delete_object(Bucket=self.bucket, Key=self._key(key))
         except (ClientError, BotoCoreError) as error:
             raise _unavailable(error) from None
@@ -106,6 +131,7 @@ async def open_s3(
     secret_access_key: str | None,
     max_bytes: int,
     timeout: float,
+    max_pool_connections: int,
 ) -> AsyncGenerator[S3Objects]:
     """Credentials default to the standard AWS provider chain when no static keys are configured."""
     async with AsyncExitStack() as stack:
@@ -117,6 +143,7 @@ async def open_s3(
                 aws_access_key_id=access_key_id,
                 aws_secret_access_key=secret_access_key,
                 config=AioConfig(
+                    max_pool_connections=max_pool_connections,
                     connect_timeout=timeout,
                     read_timeout=timeout,
                     retries={"max_attempts": 2},

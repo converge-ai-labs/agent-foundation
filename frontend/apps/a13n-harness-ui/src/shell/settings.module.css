@@ -3,7 +3,7 @@
 }
 .section > :first-child > h3 {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 20px;
   font-weight: 500;
   color: var(--a13n-secondary);
@@ -11,7 +11,7 @@
 .section > :first-child:has(> h3) > p {
   margin: 4px 0 0;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 20px;
 }
 .section > [data-slot="settings-section-content"]:not([data-variant="plain"]) {
@@ -31,7 +31,7 @@
   min-height: 48px;
   gap: 4px 16px;
   padding-block: 8px;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 20px;
 }
 .row > :first-child {
@@ -46,7 +46,7 @@
 .row > :first-child > p {
   margin: 4px 0 0;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 20px;
 }
 .row > :last-child {
@@ -71,7 +71,7 @@
 .row [data-slot="input-control"],
 .row [data-slot="select-trigger"],
 .row [data-slot="combobox-trigger"] {
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .row [data-slot="select-value"] {
   text-align: right;

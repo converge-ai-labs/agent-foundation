@@ -606,8 +606,8 @@ QUESTION = {
 }
 
 
-# Custom agents read the builtin guide from their primary environment; use skill_service/skill_executing.
-GUIDE = "/workspace/.agents/skills/platform-operations/SKILL.md"
+# All Agents read built-in guides from the host read-only mount.
+GUIDE = "/platform-skills/platform-operations/SKILL.md"
 LOOKUP: dict[str, Any] = {
     "builtin_skills": ["platform-operations"],
     "toolsets": {"files": {"enabled": True}, "shell": {"enabled": False}},
@@ -672,8 +672,10 @@ async def delegating(service: SimpleNamespace, model: ScriptedModel, mode: str, 
         "coordinator",
         key,
         instructions="Role: coordinator",
-        subagent_mode=mode,
-        subagents={"helper": {"agent_id": worker["id"], "description": "Computes answers", **edge}},
+        subagents={
+            "mode": mode,
+            "named": {"helper": {"agent_id": worker["id"], "description": "Computes answers", **edge}},
+        },
         **config,
     )
 

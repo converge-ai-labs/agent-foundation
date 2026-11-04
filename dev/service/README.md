@@ -132,6 +132,10 @@ python3 -m dev.service.envs rm ID1 ID2 --yes
 
 Removal stops the checkout's applications, deletes its Compose containers and volumes and its `var/dev`, and releases its port reservation. It keeps the worktree itself and the shared Langfuse. Unregistered projects are listed for investigation only.
 
+## Subagent configuration cutover
+
+The unified `subagents` policy and dynamic Thread snapshots require an offline Service/Console cutover. Follow [the cutover procedure](subagent-cutover.md) for retained data, including queued overrides, idempotency keys and MCP App history. Disposable checkout data can be reset through the existing Make targets; hosted data requires an explicit scope and backup.
+
 ## Recovery and checks
 
 - A migration failure because the database's migration history does not match this checkout: `make dev-reset STATE=empty` or `STATE=seeded` rebuilds this checkout's database.

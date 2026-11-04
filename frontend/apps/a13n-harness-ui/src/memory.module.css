@@ -12,7 +12,7 @@
 .navigation h2 {
   margin: 16px 0 8px;
   padding: 0 8px;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 20px;
   font-weight: 500;
   color: var(--a13n-secondary);
@@ -36,7 +36,7 @@
 }
 .hint {
   margin: 8px;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   color: var(--a13n-secondary);
 }
 .workspace {
@@ -61,7 +61,7 @@
   flex-shrink: 0;
 }
 .pageHeading [data-slot="tabs-tab"] {
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .history,
 .filesPanel {
@@ -88,7 +88,7 @@
   margin-inline: auto;
   padding-block: 12px;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .historyToolbar > button {
   flex-shrink: 0;
@@ -117,7 +117,7 @@
   margin-bottom: 16px;
   margin-inline: auto;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .picker {
   width: min(100%, 320px);
@@ -131,7 +131,7 @@
 .loading {
   margin: 0;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .empty {
   display: flex;
@@ -145,7 +145,7 @@
   width: 100%;
   padding: 48px 24px;
   text-align: center;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   color: var(--a13n-secondary);
 }
 .empty > svg {
@@ -153,7 +153,7 @@
 }
 .empty h2 {
   margin: 0;
-  font-size: 16px;
+  font-size: calc(var(--a13n-text-body) * 16 / 14);
   font-weight: 500;
   color: var(--a13n-text);
 }

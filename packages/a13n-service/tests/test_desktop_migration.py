@@ -19,6 +19,12 @@ OLD_HEAD = "ed5de523fc26"
 NEW_HEAD = "91abbf7b03c8"
 
 
+def upgrade_desktop(database):
+    """Exercise the desktop revision independently of later data cutovers."""
+    with migration_connection(database, OSS) as config:
+        command.upgrade(config, NEW_HEAD)
+
+
 @pytest.fixture
 async def legacy(database, service, desktop):
     run = desktop[0]["run"]
@@ -75,7 +81,7 @@ async def test_cutover_refuses_unsettled_legacy_state(database, service, legacy,
         connection.execute(text(mutation), {"principal": service.tenant.principal_id, "run": run["id"]})
     before = rows(database, "SELECT to_jsonb(r)::text FROM desktop_assistance_requests r")
     with pytest.raises(DBAPIError, match="Desktop cutover requires verified legacy"):
-        upgrade(database, OSS)
+        upgrade_desktop(database)
     assert rows(database, "SELECT version_num FROM alembic_version") == [(OLD_HEAD,)]
     assert rows(database, "SELECT to_regclass('desktop_controls')::text") == [(None,)]
     assert rows(database, "SELECT to_jsonb(r)::text FROM desktop_assistance_requests r") == before
@@ -105,7 +111,7 @@ async def test_cutover_refuses_latest_sealed_desktop_wait(database, legacy, pend
             {"run": run["id"], "thread": run["thread_id"]},
         )
     with pytest.raises(DBAPIError, match="Desktop cutover requires verified legacy"):
-        upgrade(database, OSS)
+        upgrade_desktop(database)
     assert rows(database, "SELECT version_num FROM alembic_version") == [(OLD_HEAD,)]
 
 
@@ -133,10 +139,10 @@ async def test_cutover_preserves_historical_wait_after_a_new_run(database, servi
         for table in ("runs", "threads", "agent_revisions", "inbox_entries")
     ]
     before = [rows(database, query) for query in queries]
-    upgrade(database, OSS)
+    upgrade_desktop(database)
     assert [rows(database, query) for query in queries] == before
     assert rows(database, "SELECT to_regclass('desktop_assistance_requests')::text") == [(None,)]
-    check(database, OSS)
+    assert rows(database, "SELECT version_num FROM alembic_version") == [(NEW_HEAD,)]
     try:
         with pytest.raises(DBAPIError, match="sealed run facts are immutable"):
             with engine.begin() as connection:
@@ -147,24 +153,28 @@ async def test_cutover_preserves_historical_wait_after_a_new_run(database, servi
 
 async def test_cutover_accepts_revoked_records_without_rewriting_run_selection(database, legacy):
     before = rows(database, "SELECT to_jsonb(r)::text FROM runs r")
-    upgrade(database, OSS)
+    upgrade_desktop(database)
     assert rows(database, "SELECT to_jsonb(r)::text FROM runs r") == before
-    check(database, OSS)
+    assert rows(database, "SELECT version_num FROM alembic_version") == [(NEW_HEAD,)]
 
 
 async def test_downgrade_refuses_live_computer_control_without_changing_data(database, service, desktop):
     await begin(service, desktop)
+    with migration_connection(database, OSS) as config:
+        command.downgrade(config, NEW_HEAD)
     before = rows(database, "SELECT to_jsonb(c)::text FROM desktop_controls c")
     with pytest.raises(DBAPIError, match="Cannot downgrade Computer-scoped desktop data"):
         with migration_connection(database, OSS) as config:
             command.downgrade(config, OLD_HEAD)
-    check(database, OSS)
+    assert rows(database, "SELECT version_num FROM alembic_version") == [(NEW_HEAD,)]
     assert rows(database, "SELECT to_jsonb(c)::text FROM desktop_controls c") == before
     assert rows(database, "SELECT to_regclass('desktop_assistance_requests')::text") == [(None,)]
 
 
 @pytest.mark.parametrize("table", ["runs", "inbox_entries", "outbox"])
 async def test_downgrade_preserves_handback_history_after_control_pruning(database, service, desktop, table):
+    with migration_connection(database, OSS) as config:
+        command.downgrade(config, NEW_HEAD)
     engine = create_engine(database.url.get_secret_value())
     try:
         with engine.begin() as connection:
@@ -190,7 +200,7 @@ async def test_downgrade_preserves_handback_history_after_control_pruning(databa
         with pytest.raises(DBAPIError, match="Cannot downgrade Computer-scoped desktop data"):
             with migration_connection(database, OSS) as config:
                 command.downgrade(config, OLD_HEAD)
-        check(database, OSS)
+        assert rows(database, "SELECT version_num FROM alembic_version") == [(NEW_HEAD,)]
         assert rows(database, f"SELECT to_jsonb(t)::text FROM {table} t ORDER BY id") == before
     finally:
         engine.dispose()
@@ -208,8 +218,8 @@ async def test_desktop_cutover_is_one_revision_from_legacy_and_roundtrips(empty_
     original_rules = rows(empty_database, RULES)
     original_objects = rows(empty_database, OBJECTS)
 
-    upgrade(empty_database, OSS)
-    check(empty_database, OSS)
+    upgrade_desktop(empty_database)
+    assert rows(empty_database, "SELECT version_num FROM alembic_version") == [(NEW_HEAD,)]
     assert rows(empty_database, "SELECT to_regclass('computer_operations')::text") == [(None,)]
     assert rows(
         empty_database,

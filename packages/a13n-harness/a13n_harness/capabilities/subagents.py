@@ -176,6 +176,7 @@ class AsyncExecutionView(BaseModel):
     execution_id: str = Field(min_length=1, max_length=256)
     subagent_name: str = Field(min_length=1, max_length=63)
     child_definition_id: str = Field(min_length=1, max_length=256)
+    source: Literal["declared", "host"] = Field(default="declared", exclude_if=lambda value: value == "declared")
     status: SubagentStatus
     resumed_from: str | None = Field(default=None, min_length=1, max_length=256)
     failure: JsonValue | None = None
@@ -355,6 +356,18 @@ class SubagentOperator(ABC):
         *,
         tool_call: SubagentToolCallContext | None = None,
     ) -> AsyncExecutionView: ...
+
+    async def resume_host(
+        self,
+        context: SubagentOperatorContext,
+        request: AsyncResumeRequest,
+        *,
+        tool_call: SubagentToolCallContext | None = None,
+    ) -> AsyncExecutionView:
+        """Opt in to continuing a trusted Host-defined execution; default deny."""
+        from pydantic_ai.exceptions import ToolFailed
+
+        raise ToolFailed("This Host does not support resuming Host-defined subagents.")
 
 
 @dataclass(init=False)

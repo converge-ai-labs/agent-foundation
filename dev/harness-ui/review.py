@@ -65,6 +65,14 @@ $$
 \Pr(\text{success within } n \text{ attempts}) = \sum_{k=1}^{n} (1-p)p^{k-1} = 1-p^n
 $$
 
+### Adoption and revenue
+
+For business volume \(N\), adoption share \(a\), and spend per transaction \(b\):
+
+\[
+R = N \times a \times b
+\]
+
 The changes are ready to review. I would keep the retry behavior explicit so a failed payment never looks like a successful order.
 """
 

@@ -501,7 +501,9 @@ it("keeps retry identity until the message or execution policy changes", async (
   await user.click(screen.getByRole("button", { name: "Run options" }));
   await user.click(screen.getByRole("button", { name: "Execution policy" }));
   fireEvent.change(
-    screen.getByRole("spinbutton", { name: "Foreground wait (seconds)" }),
+    screen.getByRole("spinbutton", {
+      name: "Wait before backgrounding (seconds)",
+    }),
     {
       target: { value: "2" },
     },
@@ -537,12 +539,14 @@ it("sends execution overrides once with next_run and returns the next message to
     target: { value: '{"model_settings":{"thinking":"high"},"skills":[]}' },
   });
   await user.click(screen.getByRole("button", { name: "Execution policy" }));
-  screen.getByRole("combobox", { name: "Tool execution" }).focus();
+  screen.getByRole("combobox", { name: "Long-running tools" }).focus();
   await user.keyboard("[ArrowDown]");
   await user.click(
     await screen.findByRole("option", { name: "Inline — wait for tools" }),
   );
-  await user.click(screen.getByRole("combobox", { name: "Steering" }));
+  await user.click(
+    screen.getByRole("combobox", { name: "When new messages arrive" }),
+  );
   await user.click(
     await screen.findByRole("option", { name: "At the next boundary" }),
   );
@@ -572,11 +576,12 @@ it("sends execution overrides once with next_run and returns the next message to
   ).toBe("false");
   expect(screen.queryByRole("img", { name: "Settings modified" })).toBeNull();
   expect(
-    screen.getByRole("combobox", { name: "Tool execution" }).textContent,
-  ).toBe("Inherit");
-  expect(screen.getByRole("combobox", { name: "Steering" }).textContent).toBe(
-    "Inherit",
-  );
+    screen.getByRole("combobox", { name: "Long-running tools" }).textContent,
+  ).toBe("Use thread settings");
+  expect(
+    screen.getByRole("combobox", { name: "When new messages arrive" })
+      .textContent,
+  ).toBe("Use thread settings");
 });
 
 function TestDock(props: ComponentProps<typeof RunDock>) {

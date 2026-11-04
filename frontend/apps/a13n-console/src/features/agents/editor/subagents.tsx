@@ -15,6 +15,8 @@ import { AgentAvatar } from "../avatar";
 import { agentRevisionsQuery } from "../queries";
 import { subagentLimitsError } from "../subagents";
 import type { AgentDraft } from "./draft";
+import { DynamicSubagentsSettings } from "./dynamic-subagents";
+import styles from "./subagents.module.css";
 import { SubagentSettings } from "./subagent-settings";
 
 export function SubagentsSection({
@@ -67,140 +69,157 @@ export function SubagentsSection({
         id={sectionId}
         title={t("Subagents")}
         description={t(
-          "Delegate work to other agents with their own instructions, model and tools.",
+          "Delegate to configured agents or create task-specific agents as needed.",
         )}
-        actions={
-          <>
-            {mark}
-            {!readOnly && (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={entries.length >= 128}
-                onClick={(event) => editor.activate({}, event.currentTarget)}
-              >
-                <PlusIcon />
-                {t("Add subagent")}
-              </Button>
-            )}
-          </>
-        }
+        actions={mark}
       >
-        <ChoiceField
-          label={t("Execution mode")}
-          readOnly={readOnly}
-          value={draft.subagentMode}
-          onValueChange={(value) =>
-            draft.setSubagentMode(value as "inline" | "async")
-          }
-          labelAction={
-            <FieldHelp label={t("About subagent execution")}>
-              {t(
-                "Applies to all subagents. Async runs children in the background: the parent continues and can inspect, steer or cancel them before receiving results. Inline (sync) waits for the child to finish within the current call.",
-              )}
-            </FieldHelp>
-          }
-          options={[
-            { value: "async", label: t("Async") },
-            { value: "inline", label: t("Inline (sync)") },
-          ]}
-        />
-        {incompatible && (
-          <p role="alert" className="text-destructive-foreground text-sm">
-            {t(
-              "Async supports only a model request limit. Clear the other limits or choose Inline (sync).",
-            )}
-          </p>
+        {(entries.length > 0 || draft.subagentMode === "inline") && (
+          <div className={styles.settings}>
+            <ChoiceField
+              label={t("Execution mode")}
+              readOnly={readOnly}
+              value={draft.subagentMode}
+              onValueChange={(value) =>
+                draft.setSubagentMode(value as "inline" | "async")
+              }
+              labelAction={
+                <FieldHelp label={t("About subagent execution")}>
+                  {t(
+                    "Applies to all subagents. Async runs children in the background: the parent continues and can inspect, steer or cancel them before receiving results. Inline (sync) waits for the child to finish within the current call.",
+                  )}
+                </FieldHelp>
+              }
+              options={[
+                { value: "async", label: t("Async") },
+                {
+                  value: "inline",
+                  label: t("Inline (sync)"),
+                },
+              ]}
+            />
+          </div>
         )}
-        <ErrorNotice error={validation} />
-        <ErrorNotice error={agents.error} retry={() => void agents.refetch()} />
-        {entries.length ? (
-          <ListRows>
-            {entries.map(([name, child], index) => {
-              const agent = agents.data?.find(
-                (item) => item.id === child.agent_id,
-              );
-              const versions = revisions[index];
-              const revision = versions?.data?.find(
-                (item) => item.id === child.revision_id,
-              );
-              const missing = agents.isSuccess && !agent;
-              return (
-                <ListRow
-                  key={name}
-                  icon={
-                    <AgentAvatar
-                      name={agent?.name ?? name}
-                      id={child.agent_id}
-                      url={agent?.image_url}
-                    />
-                  }
-                  name={agent?.name ?? name}
-                  secondary={
-                    <>
-                      {name}
-                      {child.revision_id
-                        ? ` · ${revision ? `v${revision.number}` : child.revision_id}`
-                        : ` · ${t("Default version pinned on save")}`}
-                      <br />
-                      {child.description ||
-                        agent?.description ||
-                        t("No description")}
-                    </>
-                  }
-                  control={
-                    (missing || agent?.archived_at) && (
-                      <Badge variant="warning">
-                        {t(missing ? "Unavailable agent" : "Archived")}
-                      </Badge>
-                    )
-                  }
-                  actions={
-                    <>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        aria-label={t("Configure subagent {{name}}", { name })}
-                        onClick={(event) =>
-                          editor.activate({ name }, event.currentTarget)
-                        }
-                      >
-                        {t(readOnly ? "View configuration" : "Configure")}
-                      </Button>
-                      {!readOnly && (
+        <DynamicSubagentsSettings draft={draft} readOnly={readOnly} />
+        <div className={styles.named}>
+          <div className={styles.namedHeader}>
+            <div className={styles.heading}>
+              <h3>{t("Named subagents")}</h3>
+              {!readOnly && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={entries.length >= 128}
+                  onClick={(event) => editor.activate({}, event.currentTarget)}
+                >
+                  <PlusIcon />
+                  {t("Add subagent")}
+                </Button>
+              )}
+            </div>
+            <p className={styles.hint}>
+              {t(
+                "Choose existing agents that this agent can delegate tasks to by name.",
+              )}
+            </p>
+          </div>
+          {incompatible && (
+            <p role="alert" className="text-destructive-foreground text-sm">
+              {t(
+                "Async supports only a model request limit. Clear the other limits or choose Inline (sync).",
+              )}
+            </p>
+          )}
+          <ErrorNotice error={validation} />
+          <ErrorNotice
+            error={agents.error}
+            retry={() => void agents.refetch()}
+          />
+          {entries.length ? (
+            <ListRows>
+              {entries.map(([name, child], index) => {
+                const agent = agents.data?.find(
+                  (item) => item.id === child.agent_id,
+                );
+                const versions = revisions[index];
+                const revision = versions?.data?.find(
+                  (item) => item.id === child.revision_id,
+                );
+                const missing = agents.isSuccess && !agent;
+                return (
+                  <ListRow
+                    key={name}
+                    icon={
+                      <AgentAvatar
+                        name={agent?.name ?? name}
+                        id={child.agent_id}
+                        url={agent?.image_url}
+                      />
+                    }
+                    name={agent?.name ?? name}
+                    secondary={
+                      <>
+                        {name}
+                        {child.revision_id
+                          ? ` · ${revision ? `v${revision.number}` : child.revision_id}`
+                          : ` · ${t("Default version pinned on save")}`}
+                        <br />
+                        {child.description ||
+                          agent?.description ||
+                          t("No description")}
+                      </>
+                    }
+                    control={
+                      (missing || agent?.archived_at) && (
+                        <Badge variant="warning">
+                          {t(missing ? "Unavailable agent" : "Archived")}
+                        </Badge>
+                      )
+                    }
+                    actions={
+                      <>
                         <Button
                           type="button"
+                          size="sm"
                           variant="ghost"
-                          size="icon-xs"
-                          aria-label={t("Remove subagent {{name}}", { name })}
-                          onClick={() =>
-                            draft.setSubagents((current) =>
-                              Object.fromEntries(
-                                Object.entries(current).filter(
-                                  ([key]) => key !== name,
-                                ),
-                              ),
-                            )
+                          aria-label={t("Configure subagent {{name}}", {
+                            name,
+                          })}
+                          onClick={(event) =>
+                            editor.activate({ name }, event.currentTarget)
                           }
                         >
-                          <XIcon />
+                          {t(readOnly ? "View configuration" : "Configure")}
                         </Button>
-                      )}
-                    </>
-                  }
-                />
-              );
-            })}
-          </ListRows>
-        ) : (
-          <ListRowsEmpty>
-            {t(
-              "No subagents added. Add an agent to make it available for delegation.",
-            )}
-          </ListRowsEmpty>
-        )}
+                        {!readOnly && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-xs"
+                            aria-label={t("Remove subagent {{name}}", { name })}
+                            onClick={() =>
+                              draft.setSubagents((current) =>
+                                Object.fromEntries(
+                                  Object.entries(current).filter(
+                                    ([key]) => key !== name,
+                                  ),
+                                ),
+                              )
+                            }
+                          >
+                            <XIcon />
+                          </Button>
+                        )}
+                      </>
+                    }
+                  />
+                );
+              })}
+            </ListRows>
+          ) : (
+            <ListRowsEmpty>{t("No named subagents added.")}</ListRowsEmpty>
+          )}
+        </div>
       </Section>
       {editor.selected && (
         <SubagentSettings

@@ -1,4 +1,4 @@
-"""Builtin skill discovery and identity-based placement through real Service runs."""
+"""Builtin skill discovery and Host read-only placement through real Service runs."""
 
 import hashlib
 import json
@@ -103,7 +103,7 @@ async def test_builtin_detail_is_discoverable_and_callable_through_mcp(service):
 
 
 @pytest.mark.parametrize("mode", ["shared", "isolated"])
-async def test_custom_agent_materializes_builtin_and_workspace_skills_together(
+async def test_custom_agent_uses_host_builtin_and_publishes_only_workspace_skills(
     skill_service, scripted_model, runs_kit, mode
 ):
     service = skill_service
@@ -117,16 +117,9 @@ async def test_custom_agent_materializes_builtin_and_workspace_skills_together(
         skills=[{"skill_id": skill["id"]}],
         skill_sync=config,
     )
-    bundled = service.runtime.builtin_skills[NAME]
-    directory = (
-        f"/workspace/.agents/skills/{NAME}"
-        if mode == "shared"
-        else f"/workspace/.agents/skill-cache/{bundled.digest}/{NAME}"
-    )
+    directory = f"/platform-skills/{NAME}"
     scripted_model.call("view", {"file_path": f"{directory}/SKILL.md"}, call_id="guide")
-    scripted_model.call(
-        "view", {"file_path": f"{directory}/instance/catalog.json", "line_limit": 10}, call_id="catalog"
-    )
+    scripted_model.call("view", {"file_path": "/platform-instance/catalog.json", "line_limit": 10}, call_id="catalog")
     scripted_model.say("Read both files")
     submitted = await runs_kit.start_thread(service, agent, "Read the platform guide")
     await (await runs_kit.attempt(service))
@@ -136,28 +129,27 @@ async def test_custom_agent_materializes_builtin_and_workspace_skills_together(
     first = json.dumps(requests[0])
     assert first.count("<available-skills>") == 1
     assert NAME in first and "code-review" in first
-    assert "/platform-skills" not in first and "/platform-instance" not in first
+    assert "/platform-skills" in first and "/platform-instance" in first
     assert "# Platform operations" in json.dumps(requests[-1])
     root = service.runtime.settings.provisioning.local.root / run["environment_mounts"][0]["environment_id"]
-    relative = directory.removeprefix("/workspace/")
-    assert (root / relative / "SKILL.md").exists()
-    assert json.loads((root / relative / "instance/catalog.json").read_bytes())["providers"]
-    assert len(list((root / ".agents").rglob("SKILL.md"))) == 2
+    assert not list(root.rglob(NAME))
+    assert len(list((root / ".agents").rglob("SKILL.md"))) == 1
 
 
-async def test_custom_agent_without_primary_environment_fails_before_model_call(service, scripted_model, runs_kit):
+async def test_custom_agent_reads_host_skills_without_primary_environment(service, scripted_model, runs_kit):
     await runs_kit.pause_sweeps(service)
     agent = await runs_kit.create_agent(service, scripted_model, builtin_skills=[NAME])
+    scripted_model.call("view", {"file_path": f"/platform-skills/{NAME}/SKILL.md"}, call_id="guide")
+    scripted_model.say("Read on Host")
     submitted = await runs_kit.start_thread(service, agent, "Read the guide")
     await (await runs_kit.attempt(service))
     run = await runs_kit.get_run(service, submitted["run"]["id"])
-    assert run["status"] == "failed", run
-    assert run["failure"]["code"] == "invalid_argument"
-    assert "primary environment" in run["failure"]["message"]
-    assert scripted_model.requests.empty()
+    assert run["status"] == "completed" and run["environment_mounts"] == [], run
+    assert "/platform-skills" in json.dumps(await scripted_model.request())
+    assert "# Platform operations" in json.dumps(await scripted_model.request())
 
 
-async def test_composer_keeps_host_mount_but_custom_copy_requires_primary(service, scripted_model, runs_kit):
+async def test_composer_and_custom_copy_share_host_skill_mounts(service, scripted_model, runs_kit):
     await runs_kit.pause_sweeps(service)
     await runs_kit.create_model(service, scripted_model)
     prepared = await service.client.post(f"{service.api}/agent-composer")
@@ -178,12 +170,15 @@ async def test_composer_keeps_host_mount_but_custom_copy_requires_primary(servic
     copied = await service.client.post(f"{service.api}/agents/{composer['id']}/duplicate", json={"name": "My composer"})
     assert copied.status_code == 201, copied.text
     assert copied.json()["source"] == "custom"
+    scripted_model.call("view", {"file_path": f"/platform-skills/{NAME}/SKILL.md"}, call_id="copied-guide")
+    scripted_model.say("Copied agent read on Host")
     submitted = await runs_kit.start_thread(service, copied.json(), "Read the guide")
-    await (await runs_kit.attempt(service))
+    async with runs_kit.platform_runtime(service) as runtime:
+        await (await runs_kit.attempt(service, runtime=runtime))
     run = await runs_kit.get_run(service, submitted["run"]["id"])
-    assert run["status"] == "failed", run
-    assert "primary environment" in run["failure"]["message"]
-    assert scripted_model.requests.empty()
+    assert run["status"] == "completed" and run["environment_mounts"] == [], run
+    assert "/platform-skills" in json.dumps(await scripted_model.request())
+    assert "# Platform operations" in json.dumps(await scripted_model.request())
 
 
 async def test_workspace_skill_cannot_overwrite_selected_builtin_name(service, scripted_model, runs_kit):

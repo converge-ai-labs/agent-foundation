@@ -67,16 +67,25 @@ export function ExecutionFields({
   onChange,
   readOnly = false,
   compact = false,
+  scope = "run",
 }: {
   value: ExecutionOverride;
   onChange?: (value: ExecutionOverride) => void;
   readOnly?: boolean;
   compact?: boolean;
+  scope?: "agent" | "thread" | "run";
 }) {
   const { t } = useTranslation();
   const id = useId();
+  const agentDefaults = scope === "agent";
+  const inheritedLabel = t(
+    scope === "thread" ? "Use agent settings" : "Use thread settings",
+  );
+  const toolMode = value.tools?.mode ?? (agentDefaults ? "auto" : "inherit");
+  const steeringMode =
+    value.steering ?? (agentDefaults ? "immediate" : "inherit");
   const toolModes = [
-    { value: "inherit", label: t("Inherit") },
+    ...(!agentDefaults ? [{ value: "inherit", label: inheritedLabel }] : []),
     {
       value: "inline",
       label: t(compact ? "Wait for tools" : "Inline — wait for tools"),
@@ -87,7 +96,7 @@ export function ExecutionFields({
     },
   ];
   const steeringModes = [
-    { value: "inherit", label: t("Inherit") },
+    ...(!agentDefaults ? [{ value: "inherit", label: inheritedLabel }] : []),
     {
       value: "boundary",
       label: t(compact ? "Between steps" : "At the next boundary"),
@@ -104,20 +113,22 @@ export function ExecutionFields({
       {readOnly ? (
         <ReadOnlyField
           data-field-layout="setting"
-          label={t(compact ? "Tool calls" : "Tool execution")}
+          label={t("Long-running tools")}
+          description={t(
+            "Choose whether the agent waits for tools to finish or continues while supported tools run in the background.",
+          )}
         >
-          {
-            toolModes.find(
-              (item) => item.value === (value.tools?.mode ?? "inherit"),
-            )?.label
-          }
+          {toolModes.find((item) => item.value === toolMode)?.label}
         </ReadOnlyField>
       ) : (
         <ChoiceField
           popupClassName={compact ? formStyles.compactChoicePopup : undefined}
           id={`${id}-tools`}
-          label={t(compact ? "Tool calls" : "Tool execution")}
-          value={value.tools?.mode ?? "inherit"}
+          label={t("Long-running tools")}
+          description={t(
+            "Choose whether the agent waits for tools to finish or continues while supported tools run in the background.",
+          )}
+          value={toolMode}
           options={toolModes}
           onValueChange={(mode) =>
             onChange?.({
@@ -133,20 +144,22 @@ export function ExecutionFields({
       {readOnly ? (
         <ReadOnlyField
           data-field-layout="setting"
-          label={t(compact ? "New messages" : "Steering")}
+          label={t("When new messages arrive")}
+          description={t(
+            "Choose whether new input waits for the next model step or interrupts the current response. Unsupported calls still wait for a safe boundary.",
+          )}
         >
-          {
-            steeringModes.find(
-              (item) => item.value === (value.steering ?? "inherit"),
-            )?.label
-          }
+          {steeringModes.find((item) => item.value === steeringMode)?.label}
         </ReadOnlyField>
       ) : (
         <ChoiceField
           popupClassName={compact ? formStyles.compactChoicePopup : undefined}
           id={`${id}-steering`}
-          label={t(compact ? "New messages" : "Steering")}
-          value={value.steering ?? "inherit"}
+          label={t("When new messages arrive")}
+          description={t(
+            "Choose whether new input waits for the next model step or interrupts the current response. Unsupported calls still wait for a safe boundary.",
+          )}
+          value={steeringMode}
           options={steeringModes}
           onValueChange={(steering) =>
             onChange?.({
@@ -162,22 +175,19 @@ export function ExecutionFields({
       {readOnly ? (
         <ReadOnlyField
           data-field-layout="setting"
-          label={t(
-            compact ? "Wait time (seconds)" : "Foreground wait (seconds)",
-          )}
+          label={t("Wait before backgrounding (seconds)")}
         >
-          {value.tools?.foreground_wait_seconds ?? t("Inherit")}
+          {value.tools?.foreground_wait_seconds ??
+            (agentDefaults ? t("Default") : inheritedLabel)}
         </ReadOnlyField>
       ) : (
         <FormField
           data-field-layout="setting"
-          label={t(
-            compact ? "Wait time (seconds)" : "Foreground wait (seconds)",
-          )}
+          label={t("Wait before backgrounding (seconds)")}
           description={t(
-            compact
-              ? "How long Auto waits for tools. Empty uses the default."
-              : "Used by Auto mode. Leave empty to inherit.",
+            agentDefaults
+              ? "Wait before letting a tool continue in the background. Applies to Auto and process-backed shell commands; does not stop the tool. Empty uses the default (normally 5 seconds)."
+              : "Wait before letting a tool continue in the background. Applies to Auto and process-backed shell commands; does not stop the tool. Empty uses the parent settings.",
           )}
         >
           <Input
@@ -185,7 +195,7 @@ export function ExecutionFields({
             min={0}
             max={300}
             step="any"
-            placeholder={t("Inherit")}
+            placeholder={agentDefaults ? t("Default") : inheritedLabel}
             value={value.tools?.foreground_wait_seconds ?? ""}
             onChange={(event) =>
               onChange?.({

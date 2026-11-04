@@ -1,14 +1,14 @@
 """add paced environment operation progress
 
 Revision ID: f0d13c7fb3f8
-Revises: 91abbf7b03c8
+Revises: 03610e577d35
 """
 
 import sqlalchemy as sa
 from alembic import op
 
 revision = "f0d13c7fb3f8"
-down_revision = "91abbf7b03c8"
+down_revision = "03610e577d35"
 branch_labels = None
 depends_on = None
 

@@ -140,7 +140,11 @@ function RunDetails({ selected }: { selected: Run }) {
               <CopyableId value={run.thread_id} />
             </Fact>
             <Fact term={t("Agent revision")}>
-              <CopyableId value={run.agent_revision_id} />
+              {run.agent_revision_id ? (
+                <CopyableId value={run.agent_revision_id} />
+              ) : (
+                t("Task snapshot")
+              )}
             </Fact>
             {can("read") && (
               <Fact term={t("Traces")}>

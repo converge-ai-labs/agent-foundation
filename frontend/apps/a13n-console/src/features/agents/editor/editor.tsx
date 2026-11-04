@@ -329,7 +329,7 @@ export function AgentEditor({
                 subagentValidation ??
                 (error instanceof ApiError &&
                 typeof error.details.field === "string" &&
-                /^subagents(?:\.|$)|^subagent_mode$/.test(error.details.field)
+                /^subagents(?:\.|$)/.test(error.details.field)
                   ? error
                   : undefined)
               }
@@ -413,6 +413,7 @@ export function AgentEditor({
                 description={t("Control tool runs and incoming messages.")}
               >
                 <ExecutionFields
+                  scope="agent"
                   compact
                   value={draft.execution}
                   onChange={draft.setExecution}

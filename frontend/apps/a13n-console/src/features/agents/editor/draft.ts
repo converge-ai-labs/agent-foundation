@@ -77,9 +77,12 @@ export function useAgentDraft(
     [reviewer, setReviewer] = useState(initial.reviewer),
     [skills, setSkills] = useState(initial.skills ?? []),
     [connections, setConnections] = useState(initial.connection_tools ?? []),
-    [subagents, setSubagents] = useState(initial.subagents ?? {}),
+    [subagents, setSubagents] = useState(initial.subagents?.named ?? {}),
     [subagentMode, setSubagentMode] = useState(
-      initial.subagent_mode ?? "inline",
+      initial.subagents?.mode ?? "async",
+    ),
+    [dynamicSubagents, setDynamicSubagents] = useState(
+      initial.subagents?.dynamic ?? {},
     ),
     [plugins, setPlugins] = useState(initial.plugins ?? []),
     [toolSearch, setToolSearch] = useState(
@@ -97,8 +100,11 @@ export function useAgentDraft(
     ? linkedBuiltinSkills(initial.builtin_skills ?? [], toolsets, catalog)
     : (initial.builtin_skills ?? []);
   const dirty =
-    subagentMode !== (initial.subagent_mode ?? "inline") ||
-    JSON.stringify(subagents) !== JSON.stringify(initial.subagents ?? {}) ||
+    JSON.stringify(dynamicSubagents) !==
+      JSON.stringify(initial.subagents?.dynamic ?? {}) ||
+    subagentMode !== (initial.subagents?.mode ?? "async") ||
+    JSON.stringify(subagents) !==
+      JSON.stringify(initial.subagents?.named ?? {}) ||
     summarize !== (initial.summarize ?? false) ||
     JSON.stringify(backgroundCompaction) !==
       JSON.stringify(initial.background_compaction ?? {}) ||
@@ -133,6 +139,8 @@ export function useAgentDraft(
     initial,
     subagents,
     setSubagents,
+    dynamicSubagents,
+    setDynamicSubagents,
     subagentMode,
     setSubagentMode,
     summarize,
@@ -298,6 +306,12 @@ export function buildDraftConfig(
           : new Error(t("Invalid configuration")),
     };
   }
+  if (draft.dynamicSubagents.enabled && draft.subagentMode !== "async")
+    return {
+      ok: false,
+      stage: "subagents",
+      error: new Error(t("Dynamic subagents require Async mode.")),
+    };
   for (const child of Object.values(draft.subagents)) {
     const message = subagentLimitsError(draft.subagentMode, child.usage_limits);
     if (message)
@@ -338,8 +352,11 @@ export function buildDraftConfig(
             : {}),
           connection_tools: draft.connections,
           plugins: draft.plugins,
-          subagents: draft.subagents,
-          subagent_mode: draft.subagentMode,
+          subagents: {
+            mode: draft.subagentMode,
+            named: draft.subagents,
+            dynamic: draft.dynamicSubagents,
+          },
           tool_search: proxy,
           memory_mounts: draft.memoryMounts,
           memory: draft.memory,

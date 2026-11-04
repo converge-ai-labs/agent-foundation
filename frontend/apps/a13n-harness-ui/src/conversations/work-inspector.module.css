@@ -12,7 +12,7 @@
   min-width: 0;
 }
 .strip button {
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   color: var(--a13n-secondary);
 }
 .shortcuts,
@@ -61,7 +61,7 @@
   }
 }
 .count {
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   font-variant-numeric: tabular-nums;
   color: var(--a13n-secondary);
 }
@@ -73,7 +73,7 @@
   flex: 1;
   min-width: 0;
   padding-inline: 8px;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .active > svg {
   flex-shrink: 0;
@@ -89,7 +89,7 @@
   padding: 0;
   gap: 0;
   overflow: hidden;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 1.6;
 }
 .activityLayout {
@@ -106,7 +106,7 @@
   border-bottom: 1px solid var(--a13n-border-soft);
 }
 .heading h2 {
-  font-size: 20px;
+  font-size: calc(var(--a13n-text-body) * 20 / 14);
   font-weight: 500;
 }
 .tabs {
@@ -151,7 +151,7 @@
   .tabs button {
     min-height: var(--harness-control-height);
     padding: 4px 8px;
-    font-size: 14px;
+    font-size: var(--a13n-text-body);
     gap: 4px;
   }
   .tabs button svg {
@@ -165,7 +165,7 @@
 .caption {
   overflow-wrap: anywhere;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   margin: 0 0 8px;
 }
 .tasks {
@@ -202,7 +202,7 @@
 .tasks dl {
   display: grid;
   gap: 4px;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .tasks dl > div {
   display: flex;
@@ -244,7 +244,7 @@
   margin-top: 2px;
 }
 .processSummary code {
-  font-size: 12px;
+  font-size: var(--harness-code-size);
   line-height: 1.8;
 }
 .executionBody {
@@ -357,7 +357,7 @@
 
 .panelTitle {
   margin: 0 0 8px;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   font-weight: 500;
   color: var(--a13n-secondary);
 }

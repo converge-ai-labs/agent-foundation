@@ -8,16 +8,13 @@ import { createRoot } from "react-dom/client";
 import { i18n } from "./i18n";
 import { BrowserApp } from "./app";
 import { InstallProvider } from "./shell/install";
-import { readPreference } from "./shell/preferences";
+import { appearanceStore } from "./appearance/store";
 import { desktopPlatform, isDesktop } from "./platform";
 
 document.documentElement.lang = i18n.resolvedLanguage ?? "en";
 
 // Apply the same theme to startup and authenticated content, before first paint.
-document.documentElement.classList.toggle(
-  "dark",
-  readPreference("theme", "light") === "dark",
-);
+appearanceStore().start();
 
 // Desktop shells own the window chrome; styles key off these attributes.
 if (isDesktop()) {

@@ -3,6 +3,7 @@ import {
   useInfiniteQuery,
   useQuery,
   useQueryClient,
+  type InfiniteData,
   type Query,
   type QueryClient,
 } from "@tanstack/react-query";
@@ -280,30 +281,98 @@ export function useHistory(
     staleTime: Infinity,
     initialPageParam: undefined as string | undefined,
     queryFn: async ({ pageParam, signal }) => {
-      const replacing =
-        pageParam === undefined &&
-        queries.getQueryCache().findAll({
-          queryKey: ["thread", threadId, "history"],
-          predicate: (candidate) =>
-            candidate.queryKey[3] !== continuation &&
-            candidate.queryKey[4] === turnId &&
-            candidate.state.data !== undefined,
-        }).length > 0;
-      const page = await result(
-        client.GET("/api/threads/{thread_id}/transcript", {
-          params: {
-            path: { thread_id: threadId },
-            query: {
-              expected_continuation_id: continuation ?? undefined,
-              cursor: pageParam,
-              turn_id: turnId,
-              limit: 30,
+      const previous =
+        pageParam === undefined
+          ? queries
+              .getQueryCache()
+              .findAll({
+                queryKey: ["thread", threadId, "history"],
+                predicate: (candidate) =>
+                  candidate.queryKey[3] !== continuation &&
+                  candidate.queryKey[4] === turnId &&
+                  candidate.state.data !== undefined,
+              })
+              .sort((a, b) => b.state.dataUpdatedAt - a.state.dataUpdatedAt)[0]
+          : undefined;
+      const readPage = (cursor: string | undefined) =>
+        result(
+          client.GET("/api/threads/{thread_id}/transcript", {
+            params: {
+              path: { thread_id: threadId },
+              query: {
+                expected_continuation_id: continuation ?? undefined,
+                cursor,
+                turn_id: turnId,
+                limit: 30,
+              },
             },
-          },
-          signal,
-        }),
-      );
-      if (!replacing) return page;
+            signal,
+          }),
+        );
+      let page = await readPage(pageParam);
+      if (!previous) return page;
+      // Rebuild the loaded range using only the incoming continuation's cursors.
+      // Collapsing it to the latest page would unmount older turns and destroy
+      // their reading anchors before outer pagination can bring them back.
+      const old = previous.state.data as InfiniteData<Schema<"TranscriptPage">>;
+      const bounds = (pages: Schema<"TranscriptPage">[]) => {
+        const starts = pages.flatMap((page) => [
+          ...page.entries.map((entry) => entry.position),
+          ...(page.turns ?? []).map((turn) => turn.input_position),
+        ]);
+        const ends = pages.flatMap((page) => [
+          ...page.entries.map((entry) => entry.position + 1),
+          ...(page.turns ?? []).map((turn) => turn.end_position),
+        ]);
+        return { start: Math.min(...starts), end: Math.max(...ends) };
+      };
+      const target = bounds(old.pages);
+      const pages = [page];
+      const seen = new Set<string>();
+      for (const direction of ["earlier", "later"] as const) {
+        let edge = page;
+        while (
+          direction === "earlier"
+            ? bounds(pages).start > target.start
+            : bounds(pages).end < target.end
+        ) {
+          const cursor =
+            direction === "earlier"
+              ? earlierHistoryCursor(edge)
+              : laterHistoryCursor(edge);
+          if (!cursor) break;
+          if (seen.has(cursor))
+            throw new Error("History window is incomplete.");
+          seen.add(cursor);
+          signal.throwIfAborted();
+          edge = await readPage(cursor);
+          pages.push(edge);
+        }
+        page =
+          direction === "earlier"
+            ? {
+                ...page,
+                earlier_turns_cursor: earlierHistoryCursor(edge),
+                next_cursor: edge.next_cursor,
+              }
+            : {
+                ...page,
+                later_turns_cursor: laterHistoryCursor(edge),
+                newer_cursor: edge.newer_cursor,
+              };
+      }
+      page = {
+        ...page,
+        entries: pages.flatMap((page) => page.entries),
+        boundary_entries: pages.flatMap((page) => page.boundary_entries ?? []),
+        turns: [
+          ...new Map(
+            pages
+              .flatMap((page) => page.turns ?? [])
+              .map((turn) => [turn.turn_id, turn]),
+          ).values(),
+        ],
+      };
       // Keep the old source (and its live suffix) until the replacement is
       // readable. Publishing only boundaries would unmount loaded messages and
       // execution readers on every checkpoint, then flash a turn-loading gap.
@@ -332,14 +401,8 @@ export function useHistory(
         entries: [...entries.values()].sort((a, b) => a.position - b.position),
       };
     },
-    getNextPageParam: (last) =>
-      (last.earlier_turns_cursor === undefined
-        ? last.next_cursor
-        : last.earlier_turns_cursor) ?? undefined,
-    getPreviousPageParam: (first) =>
-      (first.later_turns_cursor === undefined
-        ? first.newer_cursor
-        : first.later_turns_cursor) ?? undefined,
+    getNextPageParam: (last) => earlierHistoryCursor(last) ?? undefined,
+    getPreviousPageParam: (first) => laterHistoryCursor(first) ?? undefined,
   });
   // Keep the last successful history, with its real continuation identity, while
   // a replacement loads or fails. Query placeholder data disappears on errors.
@@ -371,6 +434,18 @@ export function useHistory(
     hasNextPage: !!query.data && query.hasNextPage,
     isPreviousHistory: !query.data && !!retained,
   };
+}
+
+function earlierHistoryCursor(page: Schema<"TranscriptPage">) {
+  return page.earlier_turns_cursor === undefined
+    ? page.next_cursor
+    : page.earlier_turns_cursor;
+}
+
+function laterHistoryCursor(page: Schema<"TranscriptPage">) {
+  return page.later_turns_cursor === undefined
+    ? page.newer_cursor
+    : page.later_turns_cursor;
 }
 
 function turnHistoryKey(

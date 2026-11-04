@@ -141,7 +141,7 @@ def test_plan_uses_selected_instances_and_child_has_its_own_configuration() -> N
                 }
             },
         },
-        subagents={"helper": {"agent_id": HELPER, "revision_id": HELPER_REVISION}},
+        subagents={"mode": "inline", "named": {"helper": {"agent_id": HELPER, "revision_id": HELPER_REVISION}}},
     )
     sources = {CONNECTION: connection, "platform": platform, "environment": environment}
     plan = definition.tool_search(
@@ -157,7 +157,7 @@ def test_plan_uses_selected_instances_and_child_has_its_own_configuration() -> N
         new_object_id("apr"),
         selected,
         connections={CONNECTION: toolsets.ConnectionInfo(name="Knowledge", type="mcp")},
-        subagents={"helper": ResolvedSubagent(selected.subagents["helper"], HELPER_REVISION, "Help", child)},
+        subagents={"helper": ResolvedSubagent(selected.subagents.named["helper"], HELPER_REVISION, "Help", child)},
     )
     executable = build(
         root,

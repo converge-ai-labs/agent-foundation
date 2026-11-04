@@ -14,14 +14,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.execution_policy import matches
 from a13n_service.infra.db import transaction
-from a13n_service.infra.errors import ServiceError, conflict
+from a13n_service.infra.errors import ServiceError, conflict, invalid
 from a13n_service.resources.agents import stored
 from a13n_service.resources.agents.schemas import AgentOverride
-from a13n_service.resources.agents.service import SelectedRevision
 from a13n_service.resources.assets.service import require_usable
 from a13n_service.resources.connections.service import validate_caller_headers
-from a13n_service.runs import checkpoints
-from a13n_service.runs.accept import Source, accept, primary_source, run_revision
+from a13n_service.runs import checkpoints, definitions
+from a13n_service.runs.accept import (
+    Source,
+    accept,
+    primary_source,
+    require_thread_tool_names,
+    run_revision,
+    snapshot_options,
+)
 from a13n_service.runs.attachments import asset_fields, require_readable
 from a13n_service.runs.environments.mounts import mount_environments, shared_mounts, thread_has_primary
 from a13n_service.runs.inbox import Request, append_message, check_replay, find_request
@@ -50,40 +56,44 @@ async def validate_message(
     message: Message,
     *,
     authority: ExecutionAuthority,
-) -> tuple[SelectedRevision, AgentOverride | None]:
+) -> tuple[definitions.Definition, AgentOverride | None, RunOptions]:
     """Malformed or unauthorized input fails before anything is appended, and a pending edit before it applies.
-    Returns the revision the message selects and its overrides as a run accepted now freezes them.
+    Returns the selected definition, validated overrides and resolved execution options.
 
     Each asset must reach the model of the run the message would start on `thread`, with the primary environment
     the thread mounts or acceptance would reserve. Acceptance checks the assets again against the mounts it
     freezes; an acceptance in a later transaction validates the overrides again too, under the authority current
     then.
     """
-    if message.delivery == "steer" and thread.current_run_id is not None and message.options.configuration is not None:
-        current = await session.get(RunRow, thread.current_run_id)
-        assert current is not None
-        accepted = (
-            stored.require(RunOptions, current.options, kind="run", id=current.id).configuration or RunConfiguration()
-        )
-        if message.options.configuration != accepted:
-            raise conflict("run", current.id, "run_configuration_immutable")
-    if message.delivery == "steer" and thread.current_run_id is not None and message.options.execution is not None:
-        current = await session.get(RunRow, thread.current_run_id)
-        assert current is not None
-        if not matches(
-            stored.require(RunOptions, current.options, kind="run", id=current.id).execution, message.options.execution
+    options = message.options
+    if thread.agent_snapshot is not None:
+        options = await snapshot_options(session, thread, options)
+    elif message.delivery == "steer" and thread.current_run_id is not None:
+        current = await session.get_one(RunRow, thread.current_run_id)
+        accepted = stored.require(RunOptions, current.options, kind="run", id=current.id)
+        if options.configuration is not None and options.configuration != (
+            accepted.configuration or RunConfiguration()
         ):
+            raise conflict("run", current.id, "run_configuration_immutable")
+        if not matches(accepted.execution, options.execution):
             raise conflict("run", current.id, "execution_policy_immutable")
-    revision, overrides = await run_revision(
-        session,
-        runtime,
-        principal,
-        scope,
-        message.agent_id,
-        message.agent_revision_id,
-        message.options.overrides,
-        authority=authority,
-    )
+    if thread.agent_snapshot is not None:
+        revision = await definitions.resolve(
+            session, thread, message.agent_id, message.agent_revision_id, message.options.overrides, accepting=True
+        )
+        overrides = None
+    else:
+        revision, overrides = await run_revision(
+            session,
+            runtime,
+            principal,
+            scope,
+            message.agent_id,
+            message.agent_revision_id,
+            message.options.overrides,
+            authority=authority,
+        )
+    await require_thread_tool_names(session, thread, revision, overrides)
     await require_usable(session, scope.workspace_id, asset_fields(message.payload))
     primary = (
         message.options.environment is not None
@@ -93,7 +103,7 @@ async def validate_message(
     await require_readable(
         session, principal, scope, revision, overrides, message.payload, authority=authority, primary=primary
     )
-    return revision, overrides
+    return revision, overrides, options
 
 
 async def prepare_message(
@@ -109,7 +119,9 @@ async def prepare_message(
     schedule_occurrence_id: str | None = None,
 ) -> Source:
     """Validate and append the command's message; the source it returns starts a run if the thread accepts now."""
-    revision, overrides = await validate_message(session, runtime, actor, scope, thread, message, authority=authority)
+    revision, overrides, options = await validate_message(
+        session, runtime, actor, scope, thread, message, authority=authority
+    )
     entry = await append_message(
         session,
         thread,
@@ -121,7 +133,7 @@ async def prepare_message(
         schedule_occurrence_id=schedule_occurrence_id,
     )
     runtime.mailbox.notify(session, entry)
-    return Source.message(entry, "input", actor, revision, overrides)
+    return Source.message(entry, "input", actor, revision, overrides, options=options)
 
 
 async def receipt(session: AsyncSession, thread: ThreadRow, entry: InboxEntryRow) -> Submitted:
@@ -271,6 +283,18 @@ async def fork(
             origin_thread_id=origin_thread.id,
             origin_run_id=origin.id,
         )
+        retained = (
+            origin_thread.agent_snapshot is not None
+            and body.agent_id == origin.agent_id
+            and body.agent_revision_id is None
+        )
+        if retained and body.fresh_environments:
+            raise invalid(
+                "fresh_environments",
+                "Snapshot forks retain shared environments; select a published revision for fresh environments",
+            )
+        if retained:
+            thread.agent_snapshot = origin_thread.agent_snapshot
         session.add(thread)
         await session.flush()
         shared = [] if body.fresh_environments else await shared_mounts(session, origin_thread)

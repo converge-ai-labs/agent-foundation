@@ -19,7 +19,7 @@ Enable the relevant [platform tools](tools.md#platform-tools) too. Selecting the
 
 `GET /api/v1/builtin-skills` lists release-owned skills. In Console, open one to browse `SKILL.md`, references and the deployment catalog, preview source, or download its ZIP. Built-in skills update with the deployment; they have no workspace ID or independent revision history. The platform package includes `schemas/agent-config.json` and `instance/catalog.json`.
 
-Custom agents, including Agent Composer copies, load both built-in and imported skills into their primary environment using `skill_sync`. Choose a session environment or a default environment template before running them; a missing primary environment fails before the model call. Built-in agents use their read-only Host files instead. Selected built-in and imported skills must have distinct declared names.
+All agents, including custom copies and dynamic children, read selected built-in skills from read-only Host mounts at `/platform-skills` and `/platform-instance`. They require no primary environment. Only imported workspace skills use the primary environment and `skill_sync`. Host files are available through authorized file tools, not user shell processes. Selected built-in and imported skills must have distinct declared names.
 
 ## Package format
 

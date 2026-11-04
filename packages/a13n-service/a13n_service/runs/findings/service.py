@@ -4,7 +4,7 @@ from collections.abc import Sequence
 
 from a13n_harness.observation import redact_json
 from pydantic import JsonValue
-from sqlalchemy import select, tuple_
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra import cursors
@@ -184,7 +184,7 @@ CONTEXT_BYTES = 12000
 
 
 async def analysis_context(
-    storage: Storage, actor: Principal, workspace_id: str, revisions: set[tuple[str, str]]
+    storage: Storage, actor: Principal, workspace_id: str, revisions: set[tuple[str, str | None]]
 ) -> dict[str, JsonValue]:
     """Capture bounded exact-revision diagnoses and review values for the ordinary analysis input."""
     async with short_session(storage) as session:
@@ -194,7 +194,12 @@ async def analysis_context(
                 select(FindingRow)
                 .where(
                     FindingRow.workspace_id == scope.workspace_id,
-                    tuple_(FindingRow.agent_id, FindingRow.agent_revision_id).in_(sorted(revisions)),
+                    or_(
+                        *(
+                            and_(FindingRow.agent_id == agent_id, FindingRow.agent_revision_id == revision_id)
+                            for agent_id, revision_id in revisions
+                        )
+                    ),
                 )
                 .order_by(FindingRow.updated_at.desc(), FindingRow.id.desc())
                 .limit(CONTEXT_ITEMS + 1)

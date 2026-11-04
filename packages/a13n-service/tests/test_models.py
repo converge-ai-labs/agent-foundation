@@ -343,8 +343,7 @@ async def test_calls_are_attributed_to_the_model_they_select_whatever_upstream_m
         "parent",
         "parent",
         instructions="Role: parent",
-        subagent_mode="inline",
-        subagents={"helper": {"agent_id": child["id"], "description": "Computes answers"}},
+        subagents={"mode": "inline", "named": {"helper": {"agent_id": child["id"], "description": "Computes answers"}}},
     )
     scripted_model.call("delegate", {"subagent": "helper", "prompt": "compute"}, call_id="call_d", to="parent")
     scripted_model.say("42", to="child")

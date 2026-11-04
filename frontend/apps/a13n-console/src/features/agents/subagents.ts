@@ -1,7 +1,11 @@
 import type { AgentConfig } from "./configuration";
 
-export type Subagent = NonNullable<AgentConfig["subagents"]>[string];
-export type SubagentMode = NonNullable<AgentConfig["subagent_mode"]>;
+export type Subagent = NonNullable<
+  NonNullable<AgentConfig["subagents"]>["named"]
+>[string];
+export type SubagentMode = NonNullable<
+  NonNullable<AgentConfig["subagents"]>["mode"]
+>;
 export type SubagentLimits = NonNullable<Subagent["usage_limits"]>;
 
 export function suggestedSubagentName(name: string, used: string[]) {

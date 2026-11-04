@@ -19,7 +19,7 @@ description: 将工作流导入为 skill，固定到 agent，并选择文件发�
 
 `GET /api/v1/builtin-skills` 列出随版本发布的内置 skill。在 Console 中打开一个条目，可以浏览 `SKILL.md`、参考文件和部署目录、查看源码，或下载 ZIP。内置 skill 随部署更新，没有工作空间 ID 或独立修订历史。平台操作包包含 `schemas/agent-config.json` 和 `instance/catalog.json`。
 
-自定义 agent（包括 Agent Composer 副本）通过 `skill_sync` 将内置和导入 skill 加载到主环境。运行前选择会话环境或默认环境模板；缺少主环境时，会在调用模型前失败。内置 agent 使用 Host 上的只读文件。选中的内置和导入 skill 必须声明互不相同的名称。
+所有 agent（包括自定义副本和动态子 agent）都通过 `/platform-skills` 和 `/platform-instance` 的宿主只读挂载读取内置 skill，不需要主环境。只有工作空间导入的 skill 使用主环境和 `skill_sync`。宿主文件由获准的文件工具读取，不会出现在用户 shell 中。选中的内置和导入 skill 必须声明互不相同的名称。
 
 ## 软件包格式
 

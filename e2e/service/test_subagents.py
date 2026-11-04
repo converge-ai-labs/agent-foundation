@@ -16,8 +16,7 @@ async def test_an_async_child_reports_its_result_to_the_parent_thread(stack) -> 
         "Coordinator",
         model_key,
         instructions="Role: coordinator",
-        subagent_mode="async",
-        subagents={"helper": {"agent_id": helper["id"], "description": "Computes answers"}},
+        subagents={"mode": "async", "named": {"helper": {"agent_id": helper["id"], "description": "Computes answers"}}},
     )
     await model.call(
         "delegate",

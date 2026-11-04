@@ -7,7 +7,7 @@
   flex-wrap: nowrap;
   gap: 0 4px;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: calc(var(--a13n-text-body) * 12 / 14);
   font-variant-numeric: tabular-nums;
 }
 .metric {
@@ -35,7 +35,7 @@ button.metric {
 }
 .popup {
   width: min(360px, calc(100vw - 24px));
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 1.6;
   font-variant-numeric: tabular-nums;
 }
@@ -74,7 +74,7 @@ button.metric {
 }
 .contextCapacity {
   margin-top: 16px;
-  font-size: 20px;
+  font-size: calc(var(--a13n-text-body) * 20 / 14);
   font-weight: 500;
   letter-spacing: -0.02em;
 }
@@ -103,12 +103,12 @@ button.metric {
 .usageOverview dt {
   grid-row: 1;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .usageOverview dd {
   grid-row: 2;
   margin: 0;
-  font-size: 20px;
+  font-size: calc(var(--a13n-text-body) * 20 / 14);
   font-weight: 500;
   letter-spacing: -0.02em;
 }
@@ -117,7 +117,7 @@ button.metric {
 }
 .usageOverview .scope {
   margin: 4px 0 0;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   letter-spacing: normal;
 }
 .tokenDistribution {
@@ -141,7 +141,7 @@ button.metric {
   gap: 12px;
   margin-top: 8px;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .tokenLegend > span {
   display: flex;
@@ -168,7 +168,7 @@ button.metric {
   background: var(--a13n-surface);
   text-align: center;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .breakdown {
   margin-block: 8px;
@@ -192,7 +192,7 @@ button.metric {
   border-radius: 5px;
   list-style: none;
   cursor: pointer;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .breakdown > summary:hover,
 .modelHeader:hover {
@@ -229,7 +229,7 @@ button.metric {
   margin: 8px 0 0;
   padding-block: 12px;
   border-top: 1px solid var(--a13n-border-soft);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .popup .analyticsLink {
   margin: 8px -12px -12px;
@@ -257,7 +257,7 @@ button.metric {
   margin-block: 16px 12px;
 }
 .contextNumbers[data-unknown-limit] dd {
-  font-size: 20px;
+  font-size: calc(var(--a13n-text-body) * 20 / 14);
   line-height: 1.2;
   letter-spacing: -0.02em;
 }
@@ -265,12 +265,12 @@ button.metric {
   display: block;
   margin: 8px 0;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   font-weight: 400;
 }
 .sectionTitle {
   margin: 12px 0 0;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   font-weight: 500;
 }
 .models {
@@ -290,7 +290,7 @@ button.metric {
   gap: 8px;
   align-items: center;
   cursor: pointer;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   min-height: 32px;
   margin-inline: -4px;
   padding: 4px;
@@ -331,7 +331,7 @@ button.metric {
 .attribution summary {
   cursor: pointer;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .attribution summary:focus-visible {
   outline: 1px solid var(--ring);
@@ -346,7 +346,7 @@ button.metric {
 .models .numbers {
   margin: 8px 0;
   gap: 4px 16px;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .modelName {
   overflow: hidden;
@@ -450,24 +450,24 @@ button.metric:focus-visible {
   gap: 8px;
 }
 .contextHero strong {
-  font-size: 28px;
+  font-size: calc(var(--a13n-text-body) * 28 / 14);
   line-height: 1.2;
   font-weight: 500;
   letter-spacing: -0.04em;
 }
 .contextHero span {
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: calc(var(--a13n-text-body) * 12 / 14);
 }
 .contextHero .contextPercent {
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   color: var(--a13n-text);
 }
 .contextStats .numbers {
   margin: 0;
   gap: 4px 16px;
   align-items: baseline;
-  font-size: 12px;
+  font-size: calc(var(--a13n-text-body) * 12 / 14);
 }
 .contextStats .numbers:empty {
   display: none;
@@ -492,7 +492,7 @@ button.metric:focus-visible {
   margin: 12px 0 0;
   padding-top: 12px;
   border-top: 1px solid var(--a13n-border-soft);
-  font-size: 12px;
+  font-size: calc(var(--a13n-text-body) * 12 / 14);
 }
 .contextCache dt {
   color: var(--a13n-secondary);

@@ -9,7 +9,7 @@ from a13n_service.resources.connections.schemas import ConnectionSelection
 class AppReference(BaseModel):
     app_id: str
     connection_id: str
-    agent_revision_id: str
+    agent_definition_id: str
     source_run_id: str
     tool_call_id: str
     tool_name: str

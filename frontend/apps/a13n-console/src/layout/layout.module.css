@@ -1,3 +1,38 @@
+/* Shared icon columns keep shell identities and navigation on the same axes. */
+.navigationRow {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 28px;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding-inline: 4px;
+  scale: none;
+}
+/* Button borders occupy one pixel inside the shared column inset. */
+.navigationRow[data-a13n-button] {
+  padding-inline: 3px;
+}
+.navigationRow > :first-child,
+.navigationRow > :last-child:not(:nth-child(2)) {
+  justify-self: center;
+}
+.navigationRow > svg {
+  margin-inline: 0;
+}
+
+/* Explicit height wins over Button's responsive 32px default. */
+.accountTrigger {
+  height: 44px;
+  padding-block: 7px;
+}
+.railButton {
+  width: 36px;
+  height: 36px;
+  margin-inline: auto;
+  padding: 3px;
+  scale: none;
+}
+
 /* Shell menus ----------------------------------------------------------- */
 .menuName {
   flex: 1 1 auto;

@@ -11,7 +11,7 @@
   background: transparent;
   color: var(--a13n-secondary);
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 1;
   white-space: nowrap;
   overflow: hidden;
@@ -31,7 +31,7 @@
   border: 1px dashed var(--a13n-border);
   border-radius: 10px;
   background: var(--a13n-surface);
-  font-size: 12px;
+  font-size: var(--harness-code-size);
 }
 .data > details > summary {
   flex-wrap: wrap;
@@ -40,7 +40,7 @@
   gap: 8px;
   min-height: 40px;
   padding: 8px 88px 8px 12px;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 20px;
   color: var(--a13n-secondary);
   cursor: pointer;
@@ -59,7 +59,7 @@
   padding: 12px 12px;
   border-top: 1px dashed var(--a13n-border);
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 12px;
+  font-size: var(--harness-code-size);
   line-height: 1.5;
   white-space: pre;
 }
@@ -68,7 +68,7 @@
   border-radius: 999px;
   background: color-mix(in srgb, #d97706 16%, transparent);
   color: #92400e;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   font-weight: 500;
 }
 :global(.dark) .badge {
@@ -84,7 +84,7 @@
   border: 0;
   background: transparent;
   color: inherit;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   cursor: pointer;
 }
 .copy:hover {
@@ -95,7 +95,7 @@
   margin: 0;
   padding: 8px 12px;
   color: var(--a13n-danger);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .data > details > pre:focus-visible {
   outline: 2px solid var(--a13n-focus);

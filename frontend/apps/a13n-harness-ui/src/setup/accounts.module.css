@@ -12,21 +12,21 @@
 .identity p {
   margin: 0;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 20px;
   overflow-wrap: anywhere;
 }
 .accountStatus {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .identity .accountStatus {
   color: var(--a13n-text);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .advanced {
   composes: details from "../shell/workbench.module.css";
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   color: var(--a13n-text-supporting);
 }
 .advanced summary {
@@ -56,12 +56,12 @@
 }
 .loginHeader h3 {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   font-weight: 500;
 }
 .loginStatus {
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .loginSteps {
   display: grid;
@@ -69,7 +69,7 @@
   margin: 0;
   padding-left: 24px;
   list-style: decimal;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .loginSteps li {
   min-width: 0;
@@ -87,7 +87,7 @@
   max-width: 100%;
   margin-top: 8px;
   color: var(--a13n-text);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   font-weight: 500;
   text-decoration: underline;
   text-decoration-thickness: 1px;
@@ -122,7 +122,7 @@
   border-radius: 6px;
   background: var(--a13n-canvas);
   color: var(--a13n-text);
-  font-size: 20px;
+  font-size: calc(var(--a13n-text-body) * 20 / 14);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.12em;
@@ -136,7 +136,7 @@
 .help {
   margin: 0;
   color: var(--a13n-text-supporting);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 1.6;
   overflow-wrap: anywhere;
 }
@@ -148,7 +148,7 @@
     padding: 16px;
   }
   .deviceCode {
-    font-size: 20px;
+    font-size: calc(var(--a13n-text-body) * 20 / 14);
   }
 }
 
@@ -167,7 +167,7 @@
 .tabs a {
   flex-shrink: 0;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   padding: 8px 0 8px;
   text-decoration: none;
   border-bottom: 2px solid transparent;
