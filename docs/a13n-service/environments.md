@@ -15,6 +15,16 @@ Three resources connect the workflow:
 
 For a computer you already operate, [connect Envd outbound](#connect-a-client-computer), or [register its HTTP endpoint](#register-an-external-target) if Service can reach it directly. You own its lifecycle. Every accepted run captures its mounts and permissions, so changes apply to later runs.
 
+## Outbound WebSocket for managed sandboxes
+
+Set `execution: "envd_ws"` in a Docker, E2B, Daytona, Modal, Sprites or Vercel template recipe to let its Envd connect to Control. The existing Provider still manages creation, stop/start and destruction. Runs continue selecting the same environment ID; no client registration or ordinary API token is needed inside the sandbox.
+
+Configure `server.public_url` as an HTTPS origin reachable from the sandbox and allow WebSocket forwarding. Use an updated compatible Envd image/template with `a13n-sandbox-entrypoint`. E2B and Vercel need their compatible template/snapshot; Sprites needs its desktop mode. In Console, choose the execution connection in template configuration (Docker: select a custom environment).
+
+Service supplies a private per-environment connection credential and waits for EIP initialization before marking creation/start ready. A failed connection preserves the allocated sandbox for retry or cleanup. Worker tools use the outbound connection without reaching an Envd HTTP port. Provider lifecycle APIs, human desktop access and metrics retain their own network requirements. Binary transfer currently still uses the Control relay; it has not moved to Redis Stream.
+
+Existing templates keep their native or HTTP default. This execution mode requires Service; standalone Harness provider connectors reject it. Changing a template affects new environments, not already-created instances.
+
 ## Workspace provisioning
 
 Check **Environments → Templates** before creating anything. The single-host Compose deployment with a Docker socket prepares a **Docker** provider and **Linux Sandbox** template when the Engine is reachable. Select that template for the first file task. Its image includes Python, Node.js, Git and common development tools; commands run as `sandbox`, with writable `/workspace` and `/tmp/a13n`.

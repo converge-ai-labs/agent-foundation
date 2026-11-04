@@ -14,6 +14,7 @@ from pydantic import BaseModel
 
 from .desktop_access import Reply, Request
 from .metrics import DeviceObservation, MetricsLaunch, ScrapeTarget
+from .websocket import WebSocketBootstrap
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,6 +44,9 @@ class EnvironmentProvider[E: BaseModel](ABC):
     The recipe accompanies saved state because existing state codecs deliberately
     exclude execution options and the complete provisioning configuration.
     """
+
+    def configure_websocket(self, bootstrap: WebSocketBootstrap) -> None:
+        raise NotImplementedError("Outbound WebSocket bootstrap is unavailable for this provider")
 
     @abstractmethod
     async def create(

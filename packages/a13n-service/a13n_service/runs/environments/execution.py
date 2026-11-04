@@ -239,6 +239,20 @@ async def _inspect(
                 raise conflict("environment", environment.id, "provider_identity_changed")
             environment.last_used_at = await now(session)
             handle = Handle.model_validate(environment.handle)
+            if handle.recipe.get("execution") == "envd_ws":
+                from a13n_service.runs.environments import outbound
+
+                binding = await outbound.authorize_use(session, runtime, environment, principal, authority)
+                descriptor = runtime.registry.get("environment", provider.type).describe_environment(
+                    runtime.registry.get("environment", provider.type).validate_environment(handle.recipe)
+                )
+                return ClientTarget(
+                    environment.id,
+                    binding.device_id,
+                    mount.working_directory or descriptor.working_directory,
+                    mount.name,
+                    handle.state,
+                ), None
             return Target(environment.id, provider, handle.recipe, handle.state), None
         if environment.status == "reserved":
             await begin(session, environment, "creating")
@@ -300,6 +314,22 @@ async def open_mounts(
             descriptor = definition.describe_environment(definition.validate_environment(recipe))
             # Service Local uses the shared Direct Local execution provider key.
             provider_key = "direct_local" if definition.type == "local" else definition.type
+            device_id = (
+                environment.device_id
+                if environment.kind == "external"
+                else environment.id
+                if recipe.get("execution") == "envd_ws"
+                else None
+            )
+            if recipe.get("execution") == "envd_ws":
+                provider_key = WEBSOCKET_ENVD.type
+                descriptor = WEBSOCKET_ENVD.describe_environment(
+                    WEBSOCKET_ENVD.validate_environment(
+                        {
+                            "working_directory": mount.working_directory or descriptor.working_directory,
+                        }
+                    )
+                )
             sources.append(
                 Source(
                     runtime,
@@ -311,9 +341,7 @@ async def open_mounts(
                     provider_key,
                     state,
                     configuration,
-                    client=Incarnation(environment.device_id)
-                    if environment.kind == "external" and environment.device_id
-                    else None,
+                    client=Incarnation(device_id) if device_id else None,
                     skill_cache=skill_cache if mount.name == PRIMARY else None,
                     session_recovery=envd_sessions.setdefault(mount.name, EnvdSessionRecovery())
                     if envd_sessions is not None

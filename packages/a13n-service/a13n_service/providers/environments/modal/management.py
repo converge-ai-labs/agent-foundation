@@ -85,21 +85,28 @@ class ModalManagement(ModalReference, NativeManagement[ModalEnvironmentConfigura
                 cpu=self.config.cpu,
                 memory=self.config.memory,
                 workdir="/workspace",
-                encrypted_ports=[8888, *([access.PORT] if self.recipe.desktop_assistance else [])],
+                encrypted_ports=[
+                    *([8888] if self.config.execution == "envd_http" else []),
+                    *([access.PORT] if self.recipe.desktop_assistance else []),
+                ],
                 experimental_options={"vm_runtime": True} if self.config.desktop else None,
-                env={
-                    **self.config.environment,
-                    "A13N_ENVD_DEVICE_ID": self.owner,
-                    "A13N_ENVD_TRANSPORT": "http",
-                    "A13N_ENVD_HTTP_BIND": "0.0.0.0:8888",
-                    "A13N_ENVD_HTTP_PLAINTEXT_SCOPE": "provider_private_link",
-                    "A13N_ENVD_EXECUTION_UID": "1000",
-                    "A13N_ENVD_EXECUTION_GID": "1000",
-                    "A13N_ENVD_FULL_CONTROL": "true",
-                    "A13N_ENVD_STATE_DIR": "/var/lib/a13n-envd",
-                    "A13N_ENVD_RUNTIME_DIR": "/run/a13n-envd-state",
-                    "A13N_DESKTOP_ACCESS": "true" if self.recipe.desktop_assistance else "false",
-                },
+                env=dict(
+                    self.bootstrap_environment(
+                        {
+                            **self.config.environment,
+                            "A13N_ENVD_DEVICE_ID": self.owner,
+                            "A13N_ENVD_TRANSPORT": "http",
+                            "A13N_ENVD_HTTP_BIND": "0.0.0.0:8888",
+                            "A13N_ENVD_HTTP_PLAINTEXT_SCOPE": "provider_private_link",
+                            "A13N_ENVD_EXECUTION_UID": "1000",
+                            "A13N_ENVD_EXECUTION_GID": "1000",
+                            "A13N_ENVD_FULL_CONTROL": "true",
+                            "A13N_ENVD_STATE_DIR": "/var/lib/a13n-envd",
+                            "A13N_ENVD_RUNTIME_DIR": "/run/a13n-envd-state",
+                            "A13N_DESKTOP_ACCESS": "true" if self.recipe.desktop_assistance else "false",
+                        }
+                    )
+                ),
             )
         self._remember_running(sandbox)
         return sandbox
@@ -142,6 +149,8 @@ class ModalManagement(ModalReference, NativeManagement[ModalEnvironmentConfigura
         await self.cleanup_snapshots()
 
     async def _check_envd(self) -> None:
+        if self.config.execution == "envd_ws":
+            return
         assert self.sandbox is not None
         probe = """import socket,time
 end=time.monotonic()+30

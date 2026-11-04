@@ -3696,5 +3696,12 @@
   "Choose which connections use on-demand discovery. Unchecked connections provide tools directly. New connections follow the MCP tools setting.": "Choose which connections use on-demand discovery. Unchecked connections provide tools directly. New connections follow the MCP tools setting.",
   "{{selected}} of {{total}} connections": "{{selected}} of {{total}} connections",
   "Optional. When a session has no primary environment, use an existing environment or create one from a template. Saving the agent does not connect or start an environment.": "Optional. When a session has no primary environment, use an existing environment or create one from a template. Saving the agent does not connect or start an environment.",
-  "Existing environments": "Existing environments"
+  "Existing environments": "Existing environments",
+  "Envd ws": "Envd outbound WebSocket",
+  "Envd outbound WebSocket (Service)": "Envd outbound WebSocket (Service)",
+  "Native Docker exec, Envd HTTP, or Service-managed outbound WebSocket. HTTP alone requires inbound routing.": "Native Docker exec, Envd HTTP, or Service-managed outbound WebSocket. HTTP alone requires inbound routing.",
+  "Require an observable, input-ready desktop from the image-managed envd. Requires envd_http or envd_ws execution and a desktop image. Computer permissions remain separate.": "Require an observable, input-ready desktop from the image-managed envd. Requires envd_http or envd_ws execution and a desktop image. Computer permissions remain separate.",
+  "Native E2B Files & Shell, Envd HTTP, or Service-managed outbound WebSocket. Envd modes require a compatible template.": "Native E2B Files & Shell, Envd HTTP, or Service-managed outbound WebSocket. Envd modes require a compatible template.",
+  "Require Computer operations from a13n-envd. Requires envd_http or envd_ws and a compatible template.": "Require Computer operations from a13n-envd. Requires envd_http or envd_ws and a compatible template.",
+  "Requires a desktop image and Envd HTTP or outbound WebSocket execution. Agent tools and mount permissions are configured separately.": "Requires a desktop image and Envd HTTP or outbound WebSocket execution. Agent tools and mount permissions are configured separately."
 }

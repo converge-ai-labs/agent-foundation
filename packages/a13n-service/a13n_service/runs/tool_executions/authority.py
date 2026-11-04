@@ -19,7 +19,7 @@ from a13n_service.runs.attempts import Lease, LeaseLost, authorize_execution, ex
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import EnvironmentMount
 from a13n_service.runs.tables import AttemptRow, RunRow, ToolExecutionRow
-from a13n_service.tenancy.authorize import Principal
+from a13n_service.tenancy.authorize import ExecutionAuthority, Principal
 
 if TYPE_CHECKING:
     from a13n_service.runs.tool_executions.routing import Caller
@@ -72,6 +72,7 @@ class ControlGrant:
     principal: Principal
     workspace_id: str
     mount: EnvironmentMount
+    authority: ExecutionAuthority
 
 
 async def authorize_control(
@@ -125,7 +126,9 @@ async def authorize_control(
         if value["environment_id"] == environment_id:
             mount = EnvironmentMount.model_validate(value)
             if actions <= mount.permission_ceiling.operations:
-                return ControlGrant(principal, run.workspace_id, mount)
+                return ControlGrant(
+                    principal, run.workspace_id, mount, ExecutionAuthority.model_validate(run.authority)
+                )
     raise LeaseLost()
 
 

@@ -425,6 +425,7 @@ def build_app(
             install_device_transport(app)
         if ClientSettingsRow in distribution.tables:
             app.add_api_websocket_route(client_streaming.PATH, client_streaming.relay)
+            app.add_api_websocket_route("/api/v1/environments/{environment_id}/connect", connect_client_environment)
             app.add_api_websocket_route(
                 "/api/v1/client-environments/{environment_id}/connect", connect_client_environment
             )

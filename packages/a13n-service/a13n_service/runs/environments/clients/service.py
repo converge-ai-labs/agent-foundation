@@ -222,6 +222,14 @@ class Attachment:
 async def authenticate(runtime: Runtime, environment_id: str, token: str) -> Attachment:
     """Detached connection identity; never hold this read across a WebSocket."""
     async with short_session(runtime.storage) as session:
+        environment = await session.get(EnvironmentRow, environment_id)
+        if environment is not None and environment.kind == "managed":
+            from a13n_service.runs.environments import outbound
+
+            binding = await outbound.admitted(session, runtime, environment)
+            if not secrets.compare_digest(binding.token_hash, secret_hash(token)):
+                raise ServiceError("unauthenticated", "Invalid managed environment credential")
+            return Attachment(environment_id, binding.device_id, binding.credential_version)
         result = (
             await session.execute(
                 select(
@@ -253,6 +261,14 @@ async def authenticate(runtime: Runtime, environment_id: str, token: str) -> Att
 async def validate_attachment(runtime: Runtime, attachment: Attachment) -> None:
     """A live carrier retains admission only while its original registration is current."""
     async with short_session(runtime.storage) as session:
+        environment = await session.get(EnvironmentRow, attachment.environment_id)
+        if environment is not None and environment.kind == "managed":
+            from a13n_service.runs.environments import outbound
+
+            binding = await outbound.admitted(session, runtime, environment)
+            if binding.device_id != attachment.device_id or binding.credential_version != attachment.credential_version:
+                raise ServiceError("unauthenticated", "Managed connection binding changed")
+            return
         result = (
             await session.execute(
                 select(EnvironmentRow.owner_principal_id, EnvironmentRow.workspace_id)

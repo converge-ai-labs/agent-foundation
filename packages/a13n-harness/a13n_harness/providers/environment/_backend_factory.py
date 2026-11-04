@@ -67,6 +67,13 @@ class BackendFactory[C: BaseModel, K: BaseModel, E: BaseModel, R]:
         runtime: R | None,
         session_recovery: EnvdSessionRecovery | None = None,
     ) -> EnvironmentConnector:
+        if getattr(environment, "execution", None) == "envd_ws":
+            raise provider_error(
+                self.key,
+                "envd_ws_requires_host_connection",
+                Category.UNSUPPORTED,
+                description="Outbound WebSocket execution requires a Service-managed connection",
+            )
         self.target_identity(configuration=environment, state=state)
         return BackendConnector(
             self, configuration, credential, environment, environment_id, state, runtime, session_recovery

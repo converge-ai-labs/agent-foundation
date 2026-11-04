@@ -384,8 +384,15 @@ async def _refusal(
                 vercel_preparation = await bind(runtime, session, environment, provider)
             except (EnvironmentProviderError, ServiceError) as error:
                 return fault_of(error, dispatched=False)
+        from a13n_service.runs.environments import outbound
+
+        try:
+            binding = outbound.freeze(runtime, environment) if getattr(recipe, "execution", None) == "envd_ws" else None
+        except ServiceError as error:
+            return fault_of(error, dispatched=False)
         environment.handle = Handle(
             recipe=recipe.model_dump(mode="json"),
+            outbound=binding,
             e2b_desktop_template=preparation,
             modal_desktop_image=modal_preparation,
             daytona_desktop_snapshot=daytona_preparation,
@@ -474,13 +481,23 @@ async def claim_locked(
     environment.lease_expires_at = deadline + timedelta(seconds=PUBLISH_SECONDS)
     handle = Handle.model_validate(environment.handle)
     version, changed = reached_with(handle, provider)
+    from a13n_service.runs.environments import outbound
+
     return Operation(
         environment_id=environment.id,
         phase=phase,
         generation=environment.generation,
         operation_id=environment.operation_id,
         token=token,
-        target=Target(environment.id, provider, handle.recipe, handle.state),
+        target=Target(
+            environment.id,
+            provider,
+            handle.recipe,
+            handle.state,
+            outbound.restore(runtime, environment, handle.outbound)
+            if handle.outbound and phase in {"creating", "starting"}
+            else None,
+        ),
         unresolved=unresolved,
         seconds=seconds,
         credential_version=version,

@@ -307,3 +307,28 @@ async def test_cancelled_management_close_finishes_once_and_fences_new_work(monk
     await manager.close()
     await manager.close()
     assert runtimes[0].closed == 1
+
+
+async def test_outbound_bootstrap_waits_for_admission_and_retains_allocation_on_failure():
+    from a13n_service.providers.environment.websocket import WebSocketBootstrap
+    from pydantic import SecretStr
+
+    provider, runtimes, targets = definition()
+    management = await provider.open_provider()
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    async def ready():
+        entered.set()
+        await release.wait()
+        raise TimeoutError("Device did not become ready")
+
+    management.configure_websocket(WebSocketBootstrap("env-test", "wss://control/connect", SecretStr("private"), ready))
+    task = asyncio.create_task(management.create({}, environment_id="env-test", operation_id="create"))
+    await asyncio.wait_for(entered.wait(), 1)
+    assert not task.done() and targets[0].state == STATE
+    release.set()
+    with pytest.raises(EnvironmentManagementError) as failed:
+        await task
+    assert observed_environment_state(failed.value, None) == STATE
+    await management.close()
+    assert runtimes[0].closed == 1

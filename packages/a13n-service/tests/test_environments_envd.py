@@ -1028,3 +1028,115 @@ async def test_native_service_first_enrollment_and_saved_reconnect(service, tmp_
             if process is not None and process.returncode is None:
                 process.terminate()
                 await process.wait()
+
+
+async def test_managed_outbound_uses_existing_identity_and_executes_without_http(
+    service, tmp_path, scripted_model, runs_kit, monkeypatch
+):
+    from contextlib import AsyncExitStack
+
+    from a13n_service.app import open_runtime
+    from a13n_service.distribution import OSS
+    from a13n_service.infra.db import short_session, transaction
+    from a13n_service.runs.environments import lifecycle
+    from a13n_service.runs.environments.clients.tables import ClientSettingsRow
+    from a13n_service.runs.environments.tables import EnvironmentRow
+    from sqlalchemy import func, select
+
+    from .conftest import listening
+    from .test_managed_outbound import managed_state, reserve_outbound
+
+    workspace = tmp_path / "managed-project"
+    workspace.mkdir()
+    async with listening(service.app) as origin, AsyncExitStack() as stack:
+        settings = service.runtime.settings
+        monkeypatch.setitem(
+            settings.__dict__,
+            "client_environments",
+            settings.client_environments.model_copy(update={"allow_loopback_ws": True, "transfer_origin": origin}),
+        )
+        identity, operation = await reserve_outbound(service, runs_kit, monkeypatch, origin)
+        bootstrap = operation.target.websocket
+        assert bootstrap is not None
+        token_file = tmp_path / "managed-token"
+        token_file.write_text(bootstrap.credential.get_secret_value())
+        token_file.chmod(0o600)
+        worker = await open_runtime(stack, OSS, settings, executes=True)
+        process = await asyncio.create_subprocess_exec(
+            BINARY,
+            env={
+                "PATH": os.environ["PATH"],
+                "A13N_ENVD_DEVICE_ID": identity,
+                "A13N_ENVD_RUNTIME_DIR": str(tmp_path / "managed-runtime"),
+                "A13N_ENVD_TRANSPORT": "reverse_websocket",
+                "A13N_ENVD_REVERSE_WS_URL": bootstrap.url,
+                "A13N_ENVD_REVERSE_WS_CREDENTIAL_FILE": str(token_file),
+                "A13N_ENVD_CONFIG_JSON": json.dumps(
+                    {"full_control": True, "default_working_directory": str(workspace)}
+                ),
+            },
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            await asyncio.wait_for(bootstrap.wait_ready(), 10)
+            before = await service.client.get(f"{service.api}/environments/{identity}")
+            assert before.json()["kind"] == "managed" and before.json()["status"] == "creating"
+            await lifecycle.publish(service.runtime, operation, lifecycle.Outcome(state=managed_state(operation)))
+            agent = await runs_kit.create_agent(service, scripted_model)
+            accepted = await runs_kit.start_thread(
+                service,
+                agent,
+                "Write the proof",
+                environments=[
+                    {
+                        "name": "workspace",
+                        "environment_id": identity,
+                        "working_directory": str(workspace),
+                    }
+                ],
+            )
+            scripted_model.call("shell_exec", {"command": "echo managed-ws > managed-proof"}, call_id="managed_ws")
+            scripted_model.say("Done")
+            await asyncio.wait_for(await runs_kit.attempt(service, runtime=worker), 20)
+            assert (await runs_kit.get_run(service, accepted["run"]["id"]))["status"] == "completed"
+            await scripted_model.request()
+            result = await scripted_model.request()
+            assert (workspace / "managed-proof").exists(), json.dumps(result["messages"])
+            assert (workspace / "managed-proof").read_text().strip() == "managed-ws"
+            async with short_session(service.runtime.storage) as session:
+                assert await session.scalar(select(func.count()).select_from(EnvironmentRow)) == 1
+                assert await session.scalar(select(func.count()).select_from(ClientSettingsRow)) == 0
+                row = await session.get_one(EnvironmentRow, identity)
+                assert row.handle["state"]["provider_key"] == "docker"
+
+            # A suspended allocation rejects admission temporarily; its daemon can
+            # reconnect with the same private binding when lifecycle starts it again.
+            owner = service.runtime.client_connections.entries[identity]
+            async with transaction(service.runtime.storage) as session:
+                row = await session.get_one(EnvironmentRow, identity)
+                await lifecycle.begin(session, row, "stopping")
+            stopped = await lifecycle.claim(service.runtime, identity, owner="test-stop")
+            assert stopped is not None
+            await lifecycle.publish(service.runtime, stopped, lifecycle.Outcome(state=managed_state(operation)))
+            assert owner.carrier is not None
+            await owner.carrier.close()
+            async with asyncio.timeout(5):
+                while await worker.client_connections.presence(identity) is not None:
+                    await asyncio.sleep(0.02)
+            await asyncio.sleep(0.3)
+            assert process.returncode is None
+            async with transaction(service.runtime.storage) as session:
+                row = await session.get_one(EnvironmentRow, identity)
+                await lifecycle.begin(session, row, "starting")
+            started = await lifecycle.claim(service.runtime, identity, owner="test-start")
+            assert started is not None and started.target.websocket is not None
+            assert started.target.websocket.credential == bootstrap.credential
+            await asyncio.wait_for(started.target.websocket.wait_ready(), 10)
+            await lifecycle.publish(service.runtime, started, lifecycle.Outcome(state=managed_state(operation)))
+            reconnected = await worker.client_connections.presence(identity)
+            assert reconnected is not None and reconnected.epoch != owner.epoch
+        finally:
+            if process.returncode is None:
+                process.terminate()
+            await asyncio.wait_for(process.communicate(), 5)

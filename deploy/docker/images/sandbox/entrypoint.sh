@@ -27,4 +27,22 @@ finally:
 '
     export A13N_ENVD_HTTP_CREDENTIAL_FILE="${A13N_ENVD_HTTP_CREDENTIAL_FILE:-/var/lib/a13n-envd/http-token}"
 fi
+if [ "${A13N_ENVD_TRANSPORT:-}" = "reverse_websocket" ] && [ -n "${A13N_ENVD_SERVICE_BOOTSTRAP_TOKEN:-}" ]; then
+    python3 -I -c '
+import os, tempfile
+from pathlib import Path
+path = Path(os.environ["A13N_ENVD_REVERSE_WS_CREDENTIAL_FILE"])
+path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+fd, temporary = tempfile.mkstemp(prefix=".service-token-", dir=path.parent)
+try:
+    with os.fdopen(fd, "w") as stream:
+        stream.write(os.environ["A13N_ENVD_SERVICE_BOOTSTRAP_TOKEN"])
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(temporary, path)
+finally:
+    Path(temporary).unlink(missing_ok=True)
+'
+    unset A13N_ENVD_SERVICE_BOOTSTRAP_TOKEN
+fi
 exec "$@"

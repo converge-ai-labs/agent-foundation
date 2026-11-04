@@ -30,7 +30,7 @@ async def runtime(
 def describe(configuration: SpritesEnvironmentConfiguration) -> EnvironmentDescriptor:
     return (
         configured_descriptor(working_directory="/workspace")
-        if configuration.execution == "envd_http"
+        if configuration.execution != "native"
         else descriptor(configuration)
     )
 

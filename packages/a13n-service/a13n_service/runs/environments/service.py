@@ -315,6 +315,8 @@ async def check_computer(runtime: Runtime, actor: Principal, workspace_id: str, 
             if environment.provider_identity != provider_identity(runtime.registry, provider):
                 raise conflict("environment", environment.id, "provider_identity_changed")
             handle = Handle.model_validate(environment.handle)
+            if handle.recipe.get("execution") == "envd_ws":
+                return ComputerCheck(status="unsupported")
             target = Target(environment.id, provider, handle.recipe, handle.state)
     execution = None
     try:

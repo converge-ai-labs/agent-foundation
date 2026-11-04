@@ -2,6 +2,10 @@
 
 [Environment Execution](08a-environment-execution.md) owns connection, state, operations, failure, and resource-lifetime boundaries. This document owns backend-specific execution and local/remote Device guarantees. [Service Environment Management](../a13n-service/06a-environment-management.md) owns native target allocation, stop/resume, destruction, and renewal guarantees. The Host selects and authorizes targets; Harness execution scopes use those targets and release their acquired resources.
 
+## Service-managed outbound connection
+
+The shared Docker, E2B, Daytona, Modal, Sprites and Vercel recipe schemas also represent `execution="envd_ws"`. This mode requires the [Service-managed outbound connection](../a13n-service/06-environments.md#managed-outbound-execution); built-in standalone Harness provider connectors reject it with `envd_ws_requires_host_connection`. Service supplies the fixed WebSocket execution connector while retaining the Provider's native state for lifecycle and managed target admission. This does not change existing native/HTTP defaults or give standalone Harness lifecycle ownership.
+
 ## Execution Backend Boundary
 
 Harness has two execution paths:

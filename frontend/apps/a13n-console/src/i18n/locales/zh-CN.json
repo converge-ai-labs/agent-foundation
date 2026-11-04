@@ -3696,5 +3696,12 @@
   "Choose which connections use on-demand discovery. Unchecked connections provide tools directly. New connections follow the MCP tools setting.": "选择需要按需发现的连接。未勾选的连接会直接提供工具。新增连接遵循 MCP 工具的设置。",
   "{{selected}} of {{total}} connections": "{{selected}} / {{total}} 个连接",
   "Optional. When a session has no primary environment, use an existing environment or create one from a template. Saving the agent does not connect or start an environment.": "可选。会话尚未挂载主环境时，使用已有环境或通过模板创建环境。保存 Agent 不会连接或启动环境。",
-  "Existing environments": "已有环境"
+  "Existing environments": "已有环境",
+  "Envd ws": "Envd 主动 WebSocket",
+  "Envd outbound WebSocket (Service)": "Envd 主动 WebSocket（Service）",
+  "Native Docker exec, Envd HTTP, or Service-managed outbound WebSocket. HTTP alone requires inbound routing.": "选择 Docker 原生命令执行、Envd HTTP 或 Service 管理的主动 WebSocket。只有 HTTP 需要配置入站连接。",
+  "Require an observable, input-ready desktop from the image-managed envd. Requires envd_http or envd_ws execution and a desktop image. Computer permissions remain separate.": "要求镜像中的 envd 提供可观察、可操作的桌面。需要桌面镜像，以及 envd_http 或 envd_ws 执行方式。Computer 权限单独配置。",
+  "Native E2B Files & Shell, Envd HTTP, or Service-managed outbound WebSocket. Envd modes require a compatible template.": "选择 E2B 原生文件与命令执行、Envd HTTP 或 Service 管理的主动 WebSocket。Envd 模式需要兼容模板。",
+  "Require Computer operations from a13n-envd. Requires envd_http or envd_ws and a compatible template.": "使用 a13n-envd 提供 Computer 操作，需要 envd_http 或 envd_ws 和兼容模板。",
+  "Requires a desktop image and Envd HTTP or outbound WebSocket execution. Agent tools and mount permissions are configured separately.": "需要桌面镜像，以及 Envd HTTP 或主动 WebSocket 执行方式。Agent 工具和挂载权限单独配置。"
 }

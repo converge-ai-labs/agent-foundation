@@ -73,22 +73,22 @@ class E2BEnvironmentConfiguration(BaseModel):
         title="E2B template name or ID",
         description="Use an existing E2B template. Preinstalled software, CPU and memory are configured when building that template in E2B.",
     )
-    execution: Literal["native", "envd_http"] = Field(
+    execution: Literal["native", "envd_http", "envd_ws"] = Field(
         default="native",
         title="Execution connection",
-        description="Native E2B Files & Shell, or a template with a13n-envd over authenticated HTTP EIP.",
+        description="Native E2B Files & Shell, Envd HTTP, or Service-managed outbound WebSocket. Envd modes require a compatible template.",
     )
     desktop: bool = Field(
         default=False,
         title="Desktop environment",
-        description="Require Computer operations from a13n-envd. Requires envd_http and a compatible template.",
+        description="Require Computer operations from a13n-envd. Requires envd_http or envd_ws and a compatible template.",
     )
 
     @model_validator(mode="after")
     def _execution(self) -> Self:
-        if self.desktop and self.execution != "envd_http":
-            raise ValueError("Desktop requires execution=envd_http and an a13n-envd template")
-        if self.execution == "envd_http" and self.template in {"base", "desktop"}:
+        if self.desktop and self.execution == "native":
+            raise ValueError("Desktop requires Envd execution and an a13n-envd template")
+        if self.execution != "native" and self.template in {"base", "desktop"}:
             raise ValueError("Envd execution requires an operator-built a13n-envd template")
         return self
 

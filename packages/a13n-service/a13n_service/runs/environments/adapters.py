@@ -20,6 +20,7 @@ from pydantic import JsonValue
 from a13n_service.infra.crypto import Envelope, KeyRing, SecretLocation
 from a13n_service.providers import envd
 from a13n_service.providers.environment.management import EnvironmentProvider
+from a13n_service.providers.environment.websocket import WebSocketBootstrap
 from a13n_service.providers.registry import Registry
 from a13n_service.resources.providers.service import ResolvedProvider
 from a13n_service.runs.runtime import Runtime
@@ -50,6 +51,7 @@ class Target:
     account: ResolvedProvider | ExternalAccount = field(repr=False)
     recipe: Mapping[str, JsonValue]
     state: EnvironmentState | None
+    websocket: WebSocketBootstrap | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         # Old persisted handles omitted the then-fixed image, even for interrupted creates.
@@ -81,11 +83,14 @@ async def open_provider(runtime: Runtime, target: Target) -> EnvironmentProvider
     ):
         connection._endpoint_policy = runtime.endpoint_policy
     borrowed = _modal_runtime(runtime, account, connection)
-    return await definition.open_provider(
+    provider = await definition.open_provider(
         configuration=connection,
         credential=account.reveal_credential(runtime.keys) if borrowed is None else None,
         runtime=borrowed,
     )
+    if target.websocket is not None:
+        provider.configure_websocket(target.websocket)
+    return provider
 
 
 async def execution_connector(

@@ -56,9 +56,14 @@ class Target:
     device_id: str
     directory: str
     mount_name: str
+    managed_state: EnvironmentState | None = None
 
     @property
     def state(self) -> EnvironmentState:
+        return self.managed_state or self.transport_state
+
+    @property
+    def transport_state(self) -> EnvironmentState:
         return EnvironmentState(
             provider_key=WEBSOCKET_ENVD.type, state_version="1", state={"device_id": self.device_id}
         )
@@ -73,7 +78,7 @@ class Target:
         return WEBSOCKET_ENVD.execution_connector(
             {"working_directory": self.directory},
             environment_id=self.environment_id,
-            state=self.state,
+            state=self.transport_state,
             configuration={},
             session_recovery=recovery,
             runtime=WebSocketEnvdProviderRuntime(

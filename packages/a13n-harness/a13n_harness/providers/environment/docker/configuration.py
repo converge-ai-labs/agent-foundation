@@ -58,20 +58,24 @@ class DockerEnvironmentConfiguration(BaseModel):
     )
 
     image: Annotated[str, Field(min_length=1, max_length=1024)] = DEFAULT_DOCKER_IMAGE
-    execution: Literal["native", "envd_http"] = Field(
+    execution: Literal["native", "envd_http", "envd_ws"] = Field(
         default="native",
         title="Execution connection",
         json_schema_extra={
-            "oneOf": [{"const": "native", "title": "Native Docker"}, {"const": "envd_http", "title": "Envd HTTP (EIP)"}]
+            "oneOf": [
+                {"const": "native", "title": "Native Docker"},
+                {"const": "envd_http", "title": "Envd HTTP (EIP)"},
+                {"const": "envd_ws", "title": "Envd outbound WebSocket (Service)"},
+            ]
         },
-        description="Native Docker exec, or the image-managed envd over HTTP EIP. Configure HTTP routing on the Docker connection.",
+        description="Native Docker exec, Envd HTTP, or Service-managed outbound WebSocket. HTTP alone requires inbound routing.",
     )
     desktop: bool = Field(
         default=False,
         title="X11 desktop",
         description=(
             "Require an observable, input-ready desktop from the image-managed envd. "
-            "Requires envd_http execution and a desktop image. Computer permissions remain separate."
+            "Requires envd_http or envd_ws execution and a desktop image. Computer permissions remain separate."
         ),
     )
     mounts: tuple[DockerMountConfiguration, ...] = Field(
@@ -131,11 +135,11 @@ class DockerEnvironmentConfiguration(BaseModel):
             raise ValueError("Invalid container environment variables")
         if self.max_output_preview_bytes > self.max_output_bytes_per_stream:
             raise ValueError("Output preview exceeds the per-stream capture limit")
-        if self.desktop and self.execution != "envd_http":
-            raise ValueError("Desktop capability requires envd_http execution")
-        if self.execution == "envd_http":
+        if self.desktop and self.execution == "native":
+            raise ValueError("Desktop capability requires envd_http or envd_ws execution")
+        if self.execution != "native":
             if self.disable_network:
-                raise ValueError("HTTP EIP port publication requires networking")
+                raise ValueError("Envd execution requires networking")
             if self.max_spool_bytes < 2 * self.max_output_bytes_per_stream:
                 raise ValueError("Envd spool capacity must hold both output streams")
             if self.user is not None:

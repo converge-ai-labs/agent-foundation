@@ -15,6 +15,16 @@ description: 为文件和命令任务创建工作空间、复用已有机器，�
 
 已有自行维护的计算机时，可以让 Envd 主动连接 Control（见下文“连接客户端电脑”）；如果 Service 可以直连电脑，也可以注册其 HTTP 端点。计算机的生命周期由你管理。每次接收运行都会固定其挂载和权限，因此修改对后续运行生效。
 
+## 托管沙箱主动连接 WebSocket
+
+在 Docker、E2B、Daytona、Modal、Sprites 或 Vercel 的模板 recipe 中设置 `execution: "envd_ws"`，即可让沙箱内的 Envd 主动连接 Control。创建、停止、启动和销毁仍由原 Provider 管理。Run 继续通过原 environment ID 选择环境，不需要再注册客户端环境，也不用把普通 API token 放进沙箱。
+
+将 `server.public_url` 配置为沙箱能够访问的 HTTPS 地址，并允许 WebSocket 转发。镜像或模板需包含更新后的兼容 Envd 和 `a13n-sandbox-entrypoint`。E2B、Vercel 仍需兼容模板或快照，Sprites 仍需桌面模式。Console 的模板配置可以选择执行连接方式；Docker 需先选择自定义环境。
+
+Service 自动下发该环境的专用连接凭据，完成 EIP 初始化后才将创建或启动标记为成功。连接失败时保留已分配的沙箱，便于重试或清理。Worker 调用工具无需访问沙箱的 Envd HTTP 端口。Provider 生命周期接口、人工桌面访问和监控仍有各自的网络要求。二进制传输目前仍使用 Control 转发，尚未改为 Redis Stream。
+
+已有模板的 native 或 HTTP 默认行为保持不变。此连接方式需要 Service，独立 Harness 的 Provider 连接器会明确拒绝。修改模板只影响新环境，不改变已经创建的实例。
+
 ## 工作空间自动配置
 
 创建资源前，先检查**环境 → 模板**。挂载 Docker socket 的单机 Compose 部署会在 Engine 可达时准备 **Docker** provider 和 **Linux Sandbox** 模板。首次文件任务可以直接选择该模板。镜像包含 Python、Node.js、Git 和常用开发工具；命令以 `sandbox` 用户运行，可写目录为 `/workspace` 和 `/tmp/a13n`。

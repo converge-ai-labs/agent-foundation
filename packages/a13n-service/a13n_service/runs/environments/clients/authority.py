@@ -35,6 +35,19 @@ async def resolve(
                 actions=actions,
                 cleanup=renewing or request.allows_cancelled_owner,
             )
+            environment = await session.get(EnvironmentRow, request.environment_id)
+            if environment is not None and environment.kind == "managed":
+                from a13n_service.runs.environments import outbound
+
+                if environment.workspace_id != grant.workspace_id or environment.id != attachment.environment_id:
+                    raise LeaseLost()
+                binding = await outbound.authorize_use(session, runtime, environment, grant.principal, grant.authority)
+                if (
+                    binding.device_id != attachment.device_id
+                    or binding.credential_version != attachment.credential_version
+                ):
+                    raise LeaseLost()
+                return grant.mount
             row = (
                 await session.execute(
                     select(EnvironmentRow.organization_id, ClientSettingsRow.permission_ceiling)

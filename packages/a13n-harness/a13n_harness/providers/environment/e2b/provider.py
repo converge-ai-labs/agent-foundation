@@ -40,7 +40,7 @@ async def _runtime(*, configuration: BaseModel, credential: BaseModel | None) ->
 def _describe(configuration: E2BEnvironmentConfiguration) -> EnvironmentDescriptor:
     if not isinstance(configuration, E2BEnvironmentConfiguration):
         raise TypeError("E2B requires E2BEnvironmentConfiguration")
-    if configuration.execution == "envd_http":
+    if configuration.execution != "native":
         return configured_descriptor(working_directory="/workspace")
     return descriptor(configuration)
 

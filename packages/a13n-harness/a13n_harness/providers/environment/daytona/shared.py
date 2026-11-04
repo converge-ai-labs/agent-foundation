@@ -32,7 +32,7 @@ class DaytonaConnectionConfiguration(BaseModel):
 
 class DaytonaEnvironmentConfiguration(BaseModel):
     model_config = ConfigDict(
-        frozen=True, extra="forbid", json_schema_extra={"x-primary-fields": ["desktop", "snapshot"]}
+        frozen=True, extra="forbid", json_schema_extra={"x-primary-fields": ["execution", "desktop", "snapshot"]}
     )
     snapshot: str = Field(
         min_length=1,
@@ -44,13 +44,17 @@ class DaytonaEnvironmentConfiguration(BaseModel):
         title="Desktop environment",
         description="Enable Envd Computer use with the snapshot's shared X11 desktop. Human access is configured separately.",
     )
+    execution: Literal["envd_http", "envd_ws"] = Field(default="envd_http", title="Execution connection")
     environment: EnvironmentVariables = Field(default_factory=dict)
     request_timeout_seconds: float = Field(default=120, gt=0, le=600, allow_inf_nan=False)
 
     @property
     def fingerprint(self) -> str:
         return hashlib.sha256(
-            self.model_dump_json(exclude={"environment"} if not self.environment else set()).encode()
+            self.model_dump_json(
+                exclude=({"environment"} if not self.environment else set())
+                | ({"execution"} if self.execution == "envd_http" else set())
+            ).encode()
         ).hexdigest()
 
 
