@@ -5,7 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Query, Response
 
 from a13n_service.infra.http import IfMatch, PageLimit, etag, tagged
-from a13n_service.providers.environments.kubernetes.diagnostics import LogQuery, Logs
+from a13n_service.providers.environment.kubernetes import LogQuery, Logs
 from a13n_service.providers.metrics import QueryResult
 from a13n_service.runs.environments import desktop_preview, e2b_creation, kubernetes, mounts, service
 from a13n_service.runs.environments.monitoring.bindings import Selection

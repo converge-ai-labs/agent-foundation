@@ -5,14 +5,11 @@ from contextlib import asynccontextmanager
 
 import anyio
 from a13n_harness.environment.errors import EnvironmentProviderError
-from a13n_harness.providers.environment.kubernetes.configuration import KubernetesState
 from pydantic import BaseModel
 
 from a13n_service.infra.db import short_session
 from a13n_service.infra.errors import ServiceError, conflict
-from a13n_service.providers.environment.recipes.kubernetes import KubernetesRecipe
-from a13n_service.providers.environments.kubernetes import diagnostics
-from a13n_service.providers.environments.kubernetes.management import KubernetesManagement
+from a13n_service.providers.environment.kubernetes import Diagnostics, KubernetesObserver, LogQuery, Logs
 from a13n_service.resources.providers.service import resolve_provider
 from a13n_service.resources.providers.tables import EnvironmentProviderRow
 from a13n_service.runs.environments import bootstrap
@@ -26,7 +23,7 @@ from a13n_service.tenancy.authorize import Principal
 
 class InstanceDiagnostics(BaseModel):
     environment: EnvironmentView
-    native: diagnostics.Diagnostics
+    native: Diagnostics
 
 
 @asynccontextmanager
@@ -35,7 +32,7 @@ async def observation(
     actor: Principal,
     workspace_id: str,
     environment_id: str,
-) -> AsyncIterator[tuple[EnvironmentView, KubernetesManagement, KubernetesRecipe, KubernetesState]]:
+) -> AsyncIterator[tuple[EnvironmentView, KubernetesObserver, Target]]:
     async with short_session(runtime.storage) as session:
         # Native status and logs can contain guest content, not only resource metadata.
         scope = await workspace_scope(session, actor, workspace_id, "run")
@@ -54,12 +51,11 @@ async def observation(
     try:
         with anyio.fail_after(runtime.settings.providers.operation_seconds):
             manager = await open_provider(runtime, target)
-            if not isinstance(manager, KubernetesManagement):
+            if not isinstance(manager, KubernetesObserver):
                 raise conflict("environment", environment_id, "kubernetes_required")
-            recipe, state = manager.target(target.recipe, target.environment_id, target.state)
-            if state is None:
+            if target.state is None:
                 raise conflict("environment", environment_id, "environment_state_unavailable")
-            yield view, manager, recipe, state
+            yield view, manager, target
     except (EnvironmentProviderError, TimeoutError) as error:
         raise ServiceError(
             "unavailable",
@@ -74,8 +70,12 @@ async def observation(
 
 
 async def inspect(runtime: Runtime, actor: Principal, workspace_id: str, environment_id: str) -> InstanceDiagnostics:
-    async with observation(runtime, actor, workspace_id, environment_id) as (view, manager, recipe, state):
-        return InstanceDiagnostics(environment=view, native=await diagnostics.inspect(manager.runtime, recipe, state))
+    async with observation(runtime, actor, workspace_id, environment_id) as (view, manager, target):
+        assert target.state is not None
+        native = await manager.kubernetes_diagnostics(
+            target.recipe, environment_id=target.environment_id, state=target.state
+        )
+        return InstanceDiagnostics(environment=view, native=native)
 
 
 async def logs(
@@ -83,7 +83,10 @@ async def logs(
     actor: Principal,
     workspace_id: str,
     environment_id: str,
-    query: diagnostics.LogQuery,
-) -> diagnostics.Logs:
-    async with observation(runtime, actor, workspace_id, environment_id) as (_, manager, recipe, state):
-        return await diagnostics.logs(manager.runtime, recipe, state, query)
+    query: LogQuery,
+) -> Logs:
+    async with observation(runtime, actor, workspace_id, environment_id) as (_, manager, target):
+        assert target.state is not None
+        return await manager.kubernetes_logs(
+            target.recipe, environment_id=target.environment_id, state=target.state, query=query
+        )

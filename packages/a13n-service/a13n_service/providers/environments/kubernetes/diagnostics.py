@@ -5,71 +5,17 @@ from __future__ import annotations
 import json
 import shlex
 from datetime import UTC, datetime
-from typing import Any, Literal
+from typing import Any
 
 from a13n_harness.environment.errors import EnvironmentProviderError, provider_error
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
-from a13n_harness.providers.environment.kubernetes.configuration import KEY, KubernetesState, Resource
+from a13n_harness.providers.environment.kubernetes.configuration import KEY, KubernetesState
 from a13n_harness.providers.environment.kubernetes.runtime import KubernetesRuntime, check_resource
-from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
+from a13n_service.providers.environment.kubernetes import Diagnostics, Event, LogQuery, Logs, ResourceObservation
 from a13n_service.providers.environment.recipes.kubernetes import KubernetesRecipe
 
 from .render import render
-
-
-class ResourceObservation(BaseModel):
-    reference: Resource
-    observation: Literal["present", "absent", "unknown", "conflict"]
-    reason: str | None = None
-    created_at: str | None = None
-    deleting_at: str | None = None
-    finalizers: list[str] = Field(default_factory=list)
-    status: dict[str, JsonValue] = Field(default_factory=dict)
-
-
-class Event(BaseModel):
-    resource_uid: str
-    type: str | None = None
-    reason: str | None = None
-    message: str | None = None
-    count: int | None = None
-    first_timestamp: str | None = None
-    last_timestamp: str | None = None
-
-
-class Diagnostics(BaseModel):
-    observed_at: datetime
-    cluster: str
-    namespace: str
-    ownership_id: str
-    pod_name: str
-    pod_uid: str | None
-    stage: str
-    connection: str
-    # This is the last published lifecycle observation, never a new readiness grant.
-    envd: Literal["previously_ready", "not_verified"]
-    resources: list[ResourceObservation]
-    rendered: list[dict[str, JsonValue]]
-    events: list[Event]
-    events_truncated: bool
-    errors: list[str]
-    commands: list[str]
-
-
-class LogQuery(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    container: str | None = None
-    previous: bool = False
-    tail_lines: int = Field(default=100, ge=1, le=1000)
-
-
-class Logs(BaseModel):
-    pod_uid: str
-    container: str
-    previous: bool
-    text: str
-    limit_bytes: int = 65536
 
 
 def redact(runtime: KubernetesRuntime, value: Any) -> Any:

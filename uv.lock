@@ -93,6 +93,7 @@ e2b = [
     { name = "e2b" },
 ]
 kubernetes = [
+    { name = "aiohttp" },
     { name = "kubernetes-asyncio" },
 ]
 modal = [
@@ -109,6 +110,7 @@ test = [
 requires-dist = [
     { name = "a13n-envd-client", editable = "packages/a13n-envd-client" },
     { name = "a13n-logging", editable = "packages/a13n-logging" },
+    { name = "aiohttp", marker = "extra == 'kubernetes'", specifier = ">=3.9,<4" },
     { name = "anthropic", specifier = ">=1.3,<2" },
     { name = "anyio", specifier = ">=4,<5" },
     { name = "botocore", specifier = ">=1.43.3,<1.43.57" },

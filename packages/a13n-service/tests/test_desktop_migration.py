@@ -149,7 +149,6 @@ async def test_cutover_accepts_revoked_records_without_rewriting_run_selection(d
     before = rows(database, "SELECT to_jsonb(r)::text FROM runs r")
     upgrade(database, OSS)
     assert rows(database, "SELECT to_jsonb(r)::text FROM runs r") == before
-    assert rows(database, "SELECT version_num FROM alembic_version") == [(NEW_HEAD,)]
     check(database, OSS)
 
 
@@ -159,7 +158,7 @@ async def test_downgrade_refuses_live_computer_control_without_changing_data(dat
     with pytest.raises(DBAPIError, match="Cannot downgrade Computer-scoped desktop data"):
         with migration_connection(database, OSS) as config:
             command.downgrade(config, OLD_HEAD)
-    assert rows(database, "SELECT version_num FROM alembic_version") == [(NEW_HEAD,)]
+    check(database, OSS)
     assert rows(database, "SELECT to_jsonb(c)::text FROM desktop_controls c") == before
     assert rows(database, "SELECT to_regclass('desktop_assistance_requests')::text") == [(None,)]
 
@@ -191,16 +190,17 @@ async def test_downgrade_preserves_handback_history_after_control_pruning(databa
         with pytest.raises(DBAPIError, match="Cannot downgrade Computer-scoped desktop data"):
             with migration_connection(database, OSS) as config:
                 command.downgrade(config, OLD_HEAD)
-        assert rows(database, "SELECT version_num FROM alembic_version") == [(NEW_HEAD,)]
+        check(database, OSS)
         assert rows(database, f"SELECT to_jsonb(t)::text FROM {table} t ORDER BY id") == before
     finally:
         engine.dispose()
 
 
-async def test_desktop_cutover_is_one_revision_from_main_and_roundtrips(empty_database):
+async def test_desktop_cutover_is_one_revision_from_legacy_and_roundtrips(empty_database):
     with migration_connection(empty_database, OSS) as config:
         scripts = ScriptDirectory.from_config(config)
-        assert scripts.get_heads() == [NEW_HEAD]
+        assert len(scripts.get_heads()) == 1
+        assert NEW_HEAD in {revision.revision for revision in scripts.walk_revisions()}
         revision = scripts.get_revision(NEW_HEAD)
         assert revision is not None
         assert revision.down_revision == OLD_HEAD

@@ -79,6 +79,7 @@ async def test_kubernetes_claim_lifecycle_and_retained_shared_reuse(stack, reque
                 [retained] = remaining
                 assert retained["kind"] == "PersistentVolumeClaim"
                 saved = await native.get("PersistentVolumeClaim", retained["name"])
+                assert saved is not None
                 assert saved["status"]["phase"] == "Bound"
                 storage_class = await native.call(
                     "GET", "/apis/storage.k8s.io/v1/storageclasses/" + saved["spec"]["storageClassName"]
@@ -114,6 +115,7 @@ async def test_kubernetes_claim_lifecycle_and_retained_shared_reuse(stack, reque
             await delete(stack.api, f"/api/v1/environments/{shared_id}", 120)
             async with kubernetes.runtime() as native:
                 saved = await native.get("PersistentVolumeClaim", retained["name"])
+                assert saved is not None
                 assert saved["metadata"]["uid"] == retained["uid"]
                 assert not await shared.kubernetes_resources(native, shared_cleanup[0])
             receipt = expect(await stack.api.client.get(f"/api/v1/environments/{shared_cleanup[0]}"), 200)
@@ -294,6 +296,7 @@ async def test_kubernetes_deletion_waits_for_finalizer_without_removing_it(stack
                 details = await diagnostics(api, identifier)
                 reference = Resource(kind="Pod", name=details["pod_name"], uid=details["pod_uid"])
                 pod = await native.get("Pod", reference.name)
+                assert pod is not None
                 await core.patch_namespaced_pod(
                     reference.name,
                     native.connection.namespace,

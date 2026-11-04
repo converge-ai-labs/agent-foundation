@@ -130,16 +130,19 @@ def collect_scenarios(*arguments: str) -> set[str]:
     return {line for line in result.stdout.splitlines() if "::" in line}
 
 
-def test_the_e2e_suite_collects_every_module_and_requires_opt_in_for_hosted_journeys():
+def test_the_e2e_suite_collects_every_module_and_requires_opt_in_for_external_journeys():
     environments = "e2e/service/test_environments.py"
     lifecycle = f"{environments}::test_a_run_uses_its_environment_across_its_lifecycle"
     default = collect_scenarios()
-    assert {node.split("::")[0] for node in default} == {
+    kubernetes = collect_scenarios("-m", "kubernetes")
+    assert kubernetes and not default.intersection(kubernetes)
+    assert kubernetes == collect_scenarios("-k", "kubernetes")
+    assert {node.split("::")[0] for node in default | kubernetes} == {
         path.relative_to(ROOT).as_posix() for path in (ROOT / "e2e/service").glob("test_*.py")
     }
     assert f"{lifecycle}[docker]" in default
     assert f"{lifecycle}[kubernetes]" not in default
-    assert f"{lifecycle}[kubernetes]" in collect_scenarios("-k", "kubernetes")
+    assert f"{lifecycle}[kubernetes]" in kubernetes
     workflow = yaml.safe_load((ROOT / ".github/workflows/ci-a13n-service-e2e.yml").read_text())
     shards = workflow["jobs"]["scenarios"]["strategy"]["matrix"]["include"]
     selected: set[str] = set()

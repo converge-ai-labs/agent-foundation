@@ -19,10 +19,12 @@ from a13n_harness.providers.environment.kubernetes.configuration import KEY, Kub
 from a13n_harness.providers.environment.kubernetes.http import execution
 from a13n_harness.providers.environment.kubernetes.runtime import KubernetesRuntime, check_resource
 
+from a13n_service.providers.environment.kubernetes import Diagnostics, LogQuery, Logs
 from a13n_service.providers.environment.management import Completed, EnvironmentProvider, EnvironmentStatus, Pending
 from a13n_service.providers.environment.metrics import MetricsLaunch
 from a13n_service.providers.environment.recipes.kubernetes import KubernetesRecipe
 
+from . import diagnostics
 from .render import initial, recipe_fingerprint, render
 
 
@@ -51,6 +53,20 @@ class KubernetesManagement(EnvironmentProvider[KubernetesRecipe]):
             if target.environment_id != environment_id or target.recipe_fingerprint != recipe_fingerprint(recipe):
                 raise provider_error(KEY, "provider_target_conflict", Category.CONFLICT)
         return recipe, target
+
+    async def kubernetes_diagnostics(
+        self, environment: object, *, environment_id: str, state: EnvironmentState
+    ) -> Diagnostics:
+        recipe, target = self.target(environment, environment_id, state)
+        assert target is not None
+        return await diagnostics.inspect(self.runtime, recipe, target)
+
+    async def kubernetes_logs(
+        self, environment: object, *, environment_id: str, state: EnvironmentState, query: LogQuery
+    ) -> Logs:
+        recipe, target = self.target(environment, environment_id, state)
+        assert target is not None
+        return await diagnostics.logs(self.runtime, recipe, target, query)
 
     async def create(
         self,
