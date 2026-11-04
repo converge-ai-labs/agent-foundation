@@ -222,6 +222,30 @@ def test_bundled_service_docs_select_package_and_image_builds(path: str) -> None
             }
 
 
+@pytest.mark.parametrize(
+    "path,selected",
+    [
+        ("dev/service/__main__.py", True),
+        ("dev/service/tests/test_instance.py", True),
+        ("dev/fixtures/model.py", True),
+        ("dev/observability/state.py", True),
+        ("dev/observability/langfuse.compose.yaml", True),
+        ("dev/harness-ui/review.py", False),
+        ("dev/harness/.env.example", False),
+        ("dev/observation-demo/agent.py", False),
+        ("dev/README.md", False),
+    ],
+)
+def test_service_ci_selects_only_its_development_inputs(path: str, selected: bool) -> None:
+    workflow = yaml.safe_load((WORKFLOWS / "ci-a13n-service.yml").read_text())
+    classifier = next(step for step in workflow["jobs"]["changes"]["steps"] if step.get("id") == "filter")
+    filters = yaml.safe_load(classifier["with"]["filters"])
+    selections = [workflow[True][event]["paths"] for event in ("pull_request", "push")]
+    selections.append(filters["tests"])
+    for patterns in selections:
+        assert any(Path(path).full_match(pattern) for pattern in patterns) == selected
+
+
 def _service_matrix(workflow: dict, tests_changed: str, tmp_path: Path, *, root: Path = ROOT) -> list[dict[str, str]]:
     step = next(step for step in workflow["jobs"]["changes"]["steps"] if step.get("id") == "matrix")
     output = tmp_path / "output"

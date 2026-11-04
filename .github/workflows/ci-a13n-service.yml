@@ -9,7 +9,9 @@ on:
       - "conftest.py"
       - "scripts/run_python_tests.py"
       - ".github/service-test-durations.json"
-      - "dev/**"
+      - "dev/service/**"
+      - "dev/fixtures/**"
+      - "dev/observability/**"
       - "packages/a13n-service/**"
       - "docs/a13n-service/**"
       - "packages/a13n-logging/**"
@@ -36,7 +38,9 @@ on:
       - "conftest.py"
       - "scripts/run_python_tests.py"
       - ".github/service-test-durations.json"
-      - "dev/**"
+      - "dev/service/**"
+      - "dev/fixtures/**"
+      - "dev/observability/**"
       - "packages/a13n-service/**"
       - "docs/a13n-service/**"
       - "packages/a13n-logging/**"
@@ -96,7 +100,9 @@ jobs:
               - 'conftest.py'
               - 'scripts/run_python_tests.py'
               - '.github/service-test-durations.json'
-              - 'dev/**'
+              - 'dev/service/**'
+              - 'dev/fixtures/**'
+              - 'dev/observability/**'
               - 'packages/a13n-service/pyproject.toml'
               - 'packages/a13n-service/*.py'
               - 'packages/a13n-service/.importlinter'
