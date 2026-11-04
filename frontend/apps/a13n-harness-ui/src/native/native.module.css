@@ -38,13 +38,6 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.workspaceTitle > span {
-  display: block;
-  max-width: min(480px, 100%);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .panelTools {
   display: flex;
   align-items: center;

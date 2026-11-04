@@ -47,10 +47,132 @@ function harness(GET: ReturnType<typeof vi.fn>, POST = vi.fn()) {
   );
   return { wrapper, queries };
 }
+it("observes closed badges and lazily reads current tasks and notes across Runs", async () => {
+  let run = "run-one";
+  const active = {
+    ...task,
+    status: "in_progress",
+    active_form: "Checking output",
+    blocked_by: ["task-before"],
+    blocks: ["task-after"],
+  };
+  const GET = vi.fn(
+    async (
+      _path: string,
+      options: { params: { query: { include: string[] } } },
+    ) => ({
+      data: {
+        thread_id: "root",
+        epoch: "epoch",
+        sequence: 1,
+        run_id: run,
+        revision: 1,
+        source: "live",
+        tasks: {
+          total: 2,
+          completed: 1,
+          active,
+          page: options.params.query.include.includes("tasks")
+            ? {
+                tasks: [
+                  active,
+                  { ...task, task_id: "done", status: "completed" },
+                ],
+              }
+            : null,
+        },
+        notes: {
+          total: 3,
+          page: options.params.query.include.includes("notes")
+            ? {
+                notes: [{ key: "Decision", value: "Keep the user's draft" }],
+                omitted: 2,
+              }
+            : null,
+        },
+        children: { running: 1, succeeded: 4, active: 1 },
+      },
+    }),
+  );
+  const setup = harness(GET);
+  const display = new FocusDisplay();
+  const view = render(
+    <WorkInspector threadId="root" display={display} reconcile={vi.fn()} />,
+    setup,
+  );
+  await screen.findByText("Checking output");
+  expect(screen.queryByText(/Work observation.*unavailable/)).toBeNull();
+  expect(
+    screen.getByRole("button", { name: "Inspect tasks" }).textContent,
+  ).toContain("1/2");
+  expect(
+    screen.getByRole("button", { name: "Inspect notes" }).textContent,
+  ).toContain("3");
+  expect(
+    screen.getByRole("button", { name: "Inspect subagents" }).textContent,
+  ).toContain("1");
+  expect(
+    GET.mock.calls.every(
+      ([, options]) => options.params.query.include.length === 0,
+    ),
+  ).toBe(true);
+  const user = userEvent.setup();
+  await user.click(
+    await screen.findByRole("button", { name: "Inspect tasks" }),
+  );
+  await screen.findAllByText("Task outside this list");
+  expect(screen.queryByText("task-before")).toBeNull();
+  const summary = screen
+    .getAllByText("Checking output")
+    .find((element) => element.tagName === "SUMMARY")!;
+  fireEvent.click(summary);
+  fireEvent.keyDown(window, {
+    code: "KeyD",
+    ctrlKey: true,
+    metaKey: true,
+    altKey: true,
+  });
+  expect(screen.getByText("task-before")).toBeTruthy();
+  expect(screen.getByText("task-after")).toBeTruthy();
+  fireEvent.keyDown(window, {
+    code: "KeyD",
+    ctrlKey: true,
+    metaKey: true,
+    altKey: true,
+  });
+  await user.click(screen.getByRole("button", { name: "Close activity" }));
+  await waitFor(() =>
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: "Inspect tasks" }),
+    ),
+  );
+  await user.click(screen.getByRole("button", { name: "Inspect notes" }));
+  await screen.findByText("Decision");
+  await user.hover(screen.getByRole("button", { name: "About activity" }));
+  expect(await screen.findByText(/Not saved yet/)).toBeTruthy();
+  expect(screen.getByText("2 notes omitted by the server.")).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "Close activity" }));
+  run = "run-two";
+  display.reset();
+  refreshThread(setup.queries, "root", "lifecycle");
+  view.rerender(
+    <WorkInspector threadId="root" display={display} reconcile={vi.fn()} />,
+  );
+  await waitFor(() =>
+    expect(
+      setup.queries.getQueryData<Schema<"ThreadWork">>([
+        "thread",
+        "root",
+        "work",
+        "summary",
+      ])?.run_id,
+    ).toBe("run-two"),
+  );
+  expect(screen.getByText("Checking output")).toBeTruthy();
+});
 it.each([false, true])(
-  "expands tasks by default and lazily reads notes with guest boundaries (%s)",
+  "opens overflow views by keyboard and restores focus (guest: %s)",
   async (guest) => {
-    let run = "run-one";
     const GET = vi.fn(
       async (
         _path: string,
@@ -59,33 +181,26 @@ it.each([false, true])(
         data: {
           thread_id: "root",
           epoch: "epoch",
-          sequence: 1,
-          run_id: run,
           revision: 1,
-          source: "live",
-          tasks: {
-            total: 1,
-            completed: 0,
-            active: null,
-            page: options.params.query.include.includes("tasks")
-              ? { tasks: [task] }
-              : null,
-          },
+          source: "saved",
+          tasks: { total: 0 },
           notes: {
-            total: 3,
+            total: 1,
             page: options.params.query.include.includes("notes")
-              ? {
-                  notes: [{ key: "Decision", value: "Keep the draft" }],
-                  omitted: 2,
-                }
+              ? { notes: [{ key: "Decision", value: "Keep the draft" }] }
               : null,
           },
-          children: { active: 0 },
+          children: { active: 0, succeeded: 5 },
         },
       }),
     );
-    const setup = harness(GET);
     const display = new FocusDisplay();
+    display.processes.result(
+      "run-one",
+      "shell_exec",
+      { command: "pnpm dev" },
+      { process_id: "process-one", status: { phase: "running" } },
+    );
     render(
       <GuestAccessContext
         value={
@@ -106,46 +221,54 @@ it.each([false, true])(
       >
         <WorkInspector threadId="root" display={display} reconcile={vi.fn()} />
       </GuestAccessContext>,
-      setup,
+      harness(GET),
     );
-    await screen.findByText("Check output");
+    const user = userEvent.setup();
+    const more = screen.getByRole("button", { name: "More activity" });
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Inspect notes" }).textContent,
+      ).toContain("1"),
+    );
+    expect(
+      screen.getByRole("button", { name: "Inspect subagents" }).textContent,
+    ).toBe("Subagents");
+    expect(more.textContent.includes("1")).toBe(!guest);
+    expect(GET).toHaveBeenCalledTimes(1);
+    more.focus();
+    await user.keyboard("{Enter}");
+    await screen.findByRole("menuitem", { name: /Notes/ });
+    if (guest) {
+      expect(
+        screen.queryByRole("menuitem", { name: /Processes|Tools/ }),
+      ).toBeNull();
+    }
+    await user.keyboard("{Home}{ArrowDown}{Enter}");
+    await screen.findByText("Decision");
     expect(
       screen
-        .getByRole("button", { name: /Tasks/ })
-        .getAttribute("aria-expanded"),
+        .getByRole("button", { name: "Inspect notes" })
+        .getAttribute("aria-pressed"),
     ).toBe("true");
     expect(
       GET.mock.calls.some(([, options]) =>
-        options.params.query.include.includes("notes"),
+        options.params.query.include.includes("tasks"),
       ),
     ).toBe(false);
-    expect(!!screen.queryByRole("button", { name: /Processes/ })).toBe(!guest);
-    expect(!!screen.queryByRole("button", { name: "Tool executions" })).toBe(
-      !guest,
-    );
-    const user = userEvent.setup();
-    const notes = screen.getByRole("button", { name: /Notes/ });
-    notes.focus();
-    await user.keyboard("{Enter}");
-    await screen.findByText("Decision");
-    expect(screen.getByText("2 notes omitted by the server.")).toBeTruthy();
-    expect(screen.getByText("Check output")).toBeTruthy();
-    await user.click(notes);
-    expect(notes.getAttribute("aria-expanded")).toBe("false");
-    run = "run-two";
-    refreshThread(setup.queries, "root", "lifecycle");
-    await waitFor(() =>
+    if (guest) {
       expect(
-        setup.queries.getQueryData<Schema<"ThreadWork">>([
-          "thread",
-          "root",
-          "work",
-          "summary",
-        ])?.run_id,
-      ).toBe("run-two"),
-    );
+        screen.queryByRole("button", { name: "Inspect processes" }),
+      ).toBeNull();
+      expect(
+        screen.queryByRole("button", { name: "Inspect tools" }),
+      ).toBeNull();
+    }
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(document.activeElement).toBe(more));
+    expect(screen.queryByRole("dialog")).toBeNull();
   },
 );
+
 it("orders active tasks first and distinguishes unavailable from empty", () => {
   const view = render(
     <TaskList
@@ -397,7 +520,7 @@ it("inspects observed processes in place, updates status and discloses missing o
     harness(GET),
   );
   const user = userEvent.setup();
-  await user.click(screen.getByRole("button", { name: /^Processes/ }));
+  await user.click(screen.getByRole("button", { name: "Inspect processes" }));
   expect(screen.getByText("No background processes observed.")).toBeTruthy();
   display.processes.result(
     "run-one",
@@ -410,7 +533,7 @@ it("inspects observed processes in place, updates status and discloses missing o
   );
   expect(screen.getByText("pnpm dev")).toBeTruthy();
   expect(
-    screen.getByRole("button", { name: /^Processes/ }).textContent,
+    screen.getByRole("button", { name: "Inspect processes" }).textContent,
   ).toContain("1");
   fireEvent.click(screen.getByText("pnpm dev"));
   expect(screen.queryByText("process-one")).toBeNull();
@@ -441,10 +564,10 @@ it("inspects observed processes in place, updates status and discloses missing o
   expect(screen.getByText("Failed (exit 3)")).toBeTruthy();
   expect(screen.getByText(/Status may be stale/)).toBeTruthy();
   expect(
-    screen.getByRole("button", { name: /^Processes/ }).textContent,
+    screen.getByRole("button", { name: "Inspect processes" }).textContent,
   ).not.toContain("1");
   expect(GET.mock.calls.some(([path]) => path.includes("process"))).toBe(false);
-  await user.click(screen.getByRole("button", { name: /^Processes/ }));
+  await user.click(screen.getByRole("button", { name: "Close activity" }));
   await waitFor(() => expect(screen.queryByText("pnpm dev")).toBeNull());
 });
 
@@ -486,7 +609,7 @@ it("inspects retained tools without consuming results and cancels the exact chil
   expect(GET.mock.calls.length).toBeGreaterThan(1);
 });
 
-it("opens Goal details over the work sections and forgets a cleared Goal selection", async () => {
+it("shares one open inspector with Goal and forgets a cleared Goal selection", async () => {
   const GET = vi.fn(async () => ({
     data: {
       thread_id: "root",
@@ -512,11 +635,22 @@ it("opens Goal details over the work sections and forgets a cleared Goal selecti
     screen.getByRole("button", { name: "Inspect Goal: Verified" }),
   );
   await screen.findByRole("heading", { name: "Verified by the Agent" });
-  expect(
-    screen
-      .getByRole("button", { name: /^Tasks/ })
-      .getAttribute("aria-expanded"),
-  ).toBe("true");
+  await user.click(
+    await screen.findByRole("button", { name: "Inspect tasks" }),
+  );
+  await screen.findByRole("heading", { name: "Chat activity" });
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("heading", { name: "Verified by the Agent" }),
+    ).toBeNull(),
+  );
+  await user.click(
+    screen.getByRole("button", { name: "Inspect Goal: Verified" }),
+  );
+  await screen.findByRole("heading", { name: "Verified by the Agent" });
+  await waitFor(() =>
+    expect(screen.queryByRole("heading", { name: "Chat activity" })).toBeNull(),
+  );
   await user.keyboard("{Escape}");
   await waitFor(() =>
     expect(document.activeElement).toBe(

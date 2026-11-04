@@ -1,10 +1,4 @@
 {
-  "tokens": "token",
-  "Context details": "上下文详情",
-  "Tool executions": "工具执行",
-  "Inactive": "空闲",
-  "Open chat details: {{title}}": "打开对话详情：{{title}}",
-  "Tokens in the latest request, using that request's model limit. The model selector applies to the next run.": "最近一次请求的 token 数，按该请求的模型上限计算。模型选择器用于下一次运行。",
   "Server returned an empty response.": "服务器返回了空响应。",
   "Global settings are read-only.": "全局设置为只读。",
   "Save or discard your global settings changes first.": "请先保存或放弃对全局设置的更改。",

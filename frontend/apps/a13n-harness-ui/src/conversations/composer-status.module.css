@@ -1,3 +1,38 @@
+.bar {
+  min-width: 0;
+}
+.metrics {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 0 4px;
+  color: var(--a13n-secondary);
+  font-size: calc(var(--a13n-text-body) * 12 / 14);
+  font-variant-numeric: tabular-nums;
+}
+.metric {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: var(--conversation-footer-control-height, 24px);
+  padding: 4px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: 20px;
+  white-space: nowrap;
+}
+button.metric {
+  cursor: pointer;
+}
+.metrics strong {
+  font-weight: 400;
+  color: var(--a13n-text);
+}
+.stale {
+  color: var(--warning-foreground);
+}
 .popup {
   width: min(360px, calc(100vw - 24px));
   font-size: var(--a13n-text-body);
@@ -393,7 +428,7 @@ button.metric:focus-visible {
 }
 
 .contextPopup {
-  width: min(320px, calc(100vw - 24px));
+  width: min(280px, calc(100vw - 24px));
 }
 .contextPopup .popupHeader {
   padding: 12px 16px 8px;
@@ -468,45 +503,4 @@ button.metric:focus-visible {
 }
 .contextStats .numbers:empty + .contextCache {
   margin-top: 0;
-}
-
-.usageTrigger {
-  flex-shrink: 0;
-  gap: 6px;
-  padding-inline: 6px;
-  color: var(--a13n-secondary);
-  font-variant-numeric: tabular-nums;
-  font-weight: 400;
-}
-.usageTrigger .contextIcon {
-  width: 14px;
-  height: 14px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.4;
-}
-.percentage {
-  color: var(--a13n-text);
-}
-.compactUsage .usageOverview {
-  grid-template-columns: minmax(0, 1fr) auto;
-  margin: 8px 0 16px;
-  gap: 6px 16px;
-  align-items: baseline;
-}
-.compactUsage .usageOverview dt,
-.compactUsage .usageOverview dd {
-  grid-row: auto;
-  font-size: var(--a13n-text-body);
-  letter-spacing: normal;
-}
-.compactUsage .usageOverview dd {
-  justify-content: flex-end;
-}
-.compactUsage .breakdown {
-  background: transparent;
-  margin-block: 4px;
-}
-.compactUsage .breakdown > summary {
-  padding-inline: 0;
 }

@@ -994,15 +994,7 @@ class HarnessUiApp:
     async def context_usage(self, thread_id: str) -> ContextUsageView:
         """Last reported root request footprint, not accumulated Run usage."""
         async with self._operation():
-            active = await self._root_runs.active(thread_id)
-            reference = (
-                await self._root_runs.composition_reference(active.receipt.receipt_id) if active is not None else None
-            )
-            return await self._projections.context_usage(
-                thread_id,
-                live_run_id=None if active is None else active.run_id,
-                live_composition=reference,
-            )
+            return await self._projections.context_usage(thread_id)
 
     async def resolve_launch_project(
         self,

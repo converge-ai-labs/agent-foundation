@@ -1913,34 +1913,3 @@ it("explicit native links reopen only their destination chat's saved closed pane
     "closed",
   );
 });
-
-it("opens floating chat details without changing resource selection or unmounting the chat", async () => {
-  setup("/threads/current?native=files&native_path=%2Fnative%2Ffirst.txt");
-  await screen.findByText("Editor /native/first.txt");
-  const chat = screen.getByTestId("chat");
-  const trigger = screen.getByRole("button", { name: "Chat details" });
-  fireEvent.click(trigger);
-  const popup = await screen.findByRole("dialog", { name: "Chat details" });
-  expect(
-    screen.getByRole("tab", { name: "first.txt", selected: true }),
-  ).toBeTruthy();
-  expect(screen.getByTestId("chat")).toBe(chat);
-  expect(popup.closest("[role=tabpanel]")).toBeNull();
-  fireEvent.click(within(popup).getByRole("button", { name: "Close" }));
-  await waitFor(() =>
-    expect(screen.queryByRole("dialog", { name: "Chat details" })).toBeNull(),
-  );
-  expect(screen.getByTestId("chat")).toBe(chat);
-  expect(
-    screen.getByRole("tab", { name: "first.txt", selected: true }),
-  ).toBeTruthy();
-});
-
-it("offers chat details when native resource sharing is disabled", async () => {
-  setup("/threads/current", false);
-  await screen.findByText("Current project");
-  fireEvent.click(screen.getByRole("button", { name: "Chat details" }));
-  await screen.findByRole("dialog", { name: "Chat details" });
-  expect(screen.getByTestId("chat").closest("[hidden]")).toBeNull();
-  expect(screen.queryByRole("button", { name: /supporting panel/ })).toBeNull();
-});

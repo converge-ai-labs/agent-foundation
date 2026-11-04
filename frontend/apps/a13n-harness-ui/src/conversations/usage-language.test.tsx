@@ -239,8 +239,8 @@ it("translates the status metrics and context help without replaying usage reque
     ctrlKey: true,
     altKey: true,
   });
-  expect(screen.getByText("速度").nextElementSibling?.textContent).toBe("快速");
-  expect(screen.getByText("模型费用 · 美元")).toBeTruthy();
+  expect(screen.getByText("速度").textContent).toBe("速度 快速");
+  expect(screen.getByRole("button", { name: "Tokens详情" })).toBeTruthy();
   expect(screen.getByText("耗时")).toBeTruthy();
   queries.clear();
 });

@@ -74,7 +74,7 @@ export function ConversationDetails({
           ?.scrollTo({ top: 0 });
       }}
     >
-      <TabsList variant="underline" aria-label={t("Chat settings")}>
+      <TabsList variant="underline" aria-label={t("Chat details")}>
         <TabsTab value="execution">{t("Activity")}</TabsTab>
         <TabsTab value="configuration">{t("Configuration")}</TabsTab>
         <TabsTab value="context">{t("Tasks & usage")}</TabsTab>

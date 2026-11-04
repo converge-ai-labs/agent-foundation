@@ -6,7 +6,6 @@ import {
   fireEvent,
   render,
   screen,
-  within,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TransportContext } from "../transport/context";
@@ -19,7 +18,7 @@ afterEach(() => {
   localStorage.clear();
   vi.useRealTimers();
 });
-it("ticks the exact receipt and refreshes paired context without mixing live tokens with a stale limit", async () => {
+it("ticks the exact current receipt and paints live context and speed without waiting for a saved transcript", async () => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
   const queries = new QueryClient({
@@ -50,7 +49,6 @@ it("ticks the exact receipt and refreshes paired context without mixing live tok
   const usage = {
     first_observed_at: "2026-01-01T00:00:00Z",
     root: { model_requests: 0, tokens: [] },
-    descendants: { model_requests: 0, tokens: [] },
     models: [],
     other_models: { model_requests: 0 },
     combined: {
@@ -66,11 +64,6 @@ it("ticks the exact receipt and refreshes paired context without mixing live tok
     },
   };
   queries.setQueryData(usageKey, usage);
-  let contextResponse = {
-    thread_id: "one",
-    context_window: 2000,
-    latest_request_tokens: 250,
-  };
   const transport = {
     client: {
       GET: vi.fn(async (path: string) => ({
@@ -79,7 +72,11 @@ it("ticks the exact receipt and refreshes paired context without mixing live tok
           : path.includes("activity")
             ? { rows: [], next_cursor: null }
             : path.includes("context-usage")
-              ? contextResponse
+              ? {
+                  thread_id: "one",
+                  context_window: 1000,
+                  latest_request_tokens: 100,
+                }
               : { root: { tokens: [] } },
       })),
     },
@@ -99,21 +96,25 @@ it("ticks the exact receipt and refreshes paired context without mixing live tok
     </QueryClientProvider>
   );
   const view = render(content(250, true));
-  const trigger = screen.getByRole("button", { name: "Context details" });
-  expect(trigger.textContent).toBe("100 (10%)");
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(0);
-  });
-  expect(trigger.textContent).toBe("250 (13%)");
-  expect(screen.queryByText("0.025")).toBeNull();
+  expect(screen.getByText("(25%)")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Tokens details" })).toBeNull();
+  expect(
+    screen.getByRole("button", { name: "Cost details" }).textContent,
+  ).toContain("0.025");
   expect(screen.queryByText("Speed")).toBeNull();
-  fireEvent.click(trigger);
+  expect(screen.getByText("0.25k")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Cache details" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Context details" }));
   expect(screen.getByRole("heading", { name: "Context usage" })).toBeTruthy();
-  expect(screen.getByRole("heading", { name: "Chat usage" })).toBeTruthy();
-  expect(screen.getByText("$0.0250")).toBeTruthy();
-  expect(screen.getByText("12,345")).toBeTruthy();
+  expect(screen.getByText("Cache rate")).toBeTruthy();
+  expect(screen.getByText("40.5%")).toBeTruthy();
+  fireEvent.keyDown(document.activeElement!, { key: "Escape" });
   fireEvent.keyDown(window, { code: "KeyD", ctrlKey: true, altKey: true });
+  expect(
+    screen.getByRole("button", { name: "Tokens details" }).textContent,
+  ).toBe("Tokens 12.3K");
   expect(screen.getByText("0s")).toBeTruthy();
+  expect(screen.getByText("Speed").textContent).toBe("Speed —");
   act(() =>
     queries.setQueryData(configurationKey, {
       capture_source: "active_operation",
@@ -125,42 +126,41 @@ it("ticks the exact receipt and refreshes paired context without mixing live tok
     await vi.advanceTimersByTimeAsync(2000);
   });
   expect(screen.getByText("2s")).toBeTruthy();
-  expect(screen.getByText("Standard")).toBeTruthy();
-  contextResponse = {
-    thread_id: "one",
-    context_window: 1000,
-    latest_request_tokens: 400,
-  };
+  expect(screen.getByText("Speed").textContent).toBe("Speed Standard");
   view.rerender(content(400, true));
-  expect(trigger.textContent).toBe("250 (13%)");
+  expect(screen.getByText("40%")).toBeTruthy();
+  expect(screen.getByText("12.3K")).toBeTruthy();
+  act(() =>
+    queries.setQueryData(usageKey, {
+      ...usage,
+      combined: {
+        ...usage.combined,
+        tokens: [
+          ["input_tokens", 11000],
+          ["output_tokens", 2345],
+          ["cache_read_tokens", 6000],
+        ],
+      },
+    }),
+  );
   await act(async () => {
     await vi.advanceTimersByTimeAsync(0);
   });
-  expect(trigger.textContent).toBe("400 (40%)");
-  expect(within(screen.getByRole("dialog")).getByText("400")).toBeTruthy();
+  expect(screen.getByText("13.3K")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Tokens details" }));
+  expect(screen.getByText("13,345")).toBeTruthy();
+  expect(screen.getByText("11,000", { selector: "strong" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Context details" }));
+  expect(screen.getByRole("heading", { name: "Context usage" })).toBeTruthy();
+  expect(screen.queryByRole("heading", { name: "Chat usage" })).toBeNull();
+  expect(screen.getByText("400")).toBeTruthy();
   expect(screen.getByText("1,000")).toBeTruthy();
-  act(() =>
-    queries.setQueryData(["thread", "one", "context-usage"], {
-      thread_id: "one",
-      latest_request_tokens: 400,
-      context_window: null,
-    }),
-  );
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(0);
-  });
-  expect(trigger.textContent).toBe("400 (—)");
-  act(() =>
-    queries.setQueryData(["thread", "one", "context-usage"], {
-      thread_id: "one",
-      latest_request_tokens: 222950,
-      context_window: 350000,
-    }),
-  );
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(0);
-  });
-  expect(trigger.textContent).toBe("222.95k (64%)");
+  expect(screen.getByText("600")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Cost details" }));
+  expect(screen.getByRole("heading", { name: "Chat usage" })).toBeTruthy();
+  expect(screen.getByText("13,345")).toBeTruthy();
+  fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+  expect(screen.getByText("Speed").textContent).toBe("Speed Standard");
   operation.status = "completed";
   operation.completed_at = "2026-01-01T00:00:02Z";
   act(() => {
@@ -171,6 +171,14 @@ it("ticks the exact receipt and refreshes paired context without mixing live tok
     await vi.advanceTimersByTimeAsync(3000);
   });
   expect(screen.getByText("2s")).toBeTruthy();
+  fireEvent.keyDown(window, { code: "KeyD", ctrlKey: true, altKey: true });
+  expect(screen.queryByRole("button", { name: "Tokens details" })).toBeNull();
+  expect(screen.queryByText("Time")).toBeNull();
+  expect(screen.queryByText("Speed")).toBeNull();
+  expect(screen.getByText("0.4k")).toBeTruthy();
+  expect(screen.getByText("(40%)")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Context details" }));
+  expect(screen.getByText("45.0%")).toBeTruthy();
   view.unmount();
   queries.clear();
 });

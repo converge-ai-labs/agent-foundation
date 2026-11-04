@@ -42,33 +42,7 @@ async def test_workbench_deep_links_and_api_not_found_remain_distinct(tmp_path: 
             assert "Workbench test" in response.text
             assert response.headers["cache-control"] == "no-cache"
             assert "script-src 'self'" in response.headers["content-security-policy"]
-            directives = {
-                parts[0]: set(parts[1:])
-                for directive in response.headers["content-security-policy"].split(";")
-                if (parts := directive.split())
-            }
-            assert directives["img-src"] == {
-                "'self'",
-                "data:",
-                "blob:",
-                "https://cdn.jsdelivr.net",
-                "https://svgl.app",
-                "https://cdn.simpleicons.org",
-                "https://deepwiki.com",
-                "https://composio.dev",
-                "https://parallel.ai",
-                "https://serpapi.com",
-                "https://www.tinyfish.ai",
-                "https://e2b.dev",
-                "https://modal.com",
-                "https://framerusercontent.com",
-                "https://docs.runloop.ai",
-                "https://fly.io",
-            }
-            assert directives["script-src"] == {"'self'"}
-            assert directives["connect-src"] == {"'self'"}
-            assert directives["frame-src"] == {"'none'"}
-            assert directives["frame-ancestors"] == {"'none'"}
+            assert "img-src 'self' data: blob:;" in response.headers["content-security-policy"]
             assert "media-src 'self' blob:;" in response.headers["content-security-policy"]
         for path in (
             "/new/draft-demo",

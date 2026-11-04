@@ -10,9 +10,6 @@ import {
   PopoverTrigger,
   PopoverPopup,
   PopoverTitle,
-  Tooltip,
-  TooltipTrigger,
-  TooltipPopup,
 } from "a13n-ui";
 import { useOperation, useThreads } from "./queries";
 import { HelpTip } from "../shell/help-tip";
@@ -28,7 +25,11 @@ import {
 import { ContextDetails, UsageDetails } from "./usage-details";
 import styles from "./composer-status.module.css";
 import { useDebug } from "../shell/debug";
-import { ArrowClockwise } from "@phosphor-icons/react";
+import {
+  ArrowClockwise,
+  CircleHalf,
+  CurrencyDollar,
+} from "@phosphor-icons/react";
 
 export function ComposerStatus({
   threadId,
@@ -41,7 +42,7 @@ export function ComposerStatus({
   busy?: boolean;
   liveTokens?: number;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { enabled: debug } = useDebug();
   const activity = useThreads(threadId, undefined, true, { enabled: !receipt });
   const observed = useOperation(threadId, receipt);
@@ -77,136 +78,190 @@ export function ComposerStatus({
   const usage = useThreadUsage(threadId);
   const context = useContextUsage(threadId);
   const [now, setNow] = useState(Date.now);
-  const [open, setOpen] = useState(false);
+  const [detail, setDetail] = useState<string | null>(null);
   useEffect(() => {
-    if (!active || !open || !debug) return;
+    if (!active) return;
     setNow(Date.now());
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
-  }, [active, open, debug, operation?.receipt.receipt_id]);
-  const { refetch: refreshContext } = context;
-  useEffect(() => {
-    if (liveTokens !== undefined) void refreshContext();
-  }, [liveTokens, refreshContext]);
-  // Keep the request footprint and its captured Model limit from one response.
-  const tokens = context.data?.latest_request_tokens;
-  const capacity = context.data?.context_window;
+  }, [active, operation?.receipt.receipt_id]);
+  const tokens = liveTokens ?? context.data?.latest_request_tokens;
   const summary = usageSummary(
     usage.data,
     context.data
       ? { ...context.data, latest_request_tokens: tokens }
       : undefined,
   );
-  const tokenLabel =
-    tokens == null
-      ? "—"
-      : tokens >= 1000
-        ? `${(tokens / 1000).toFixed(2).replace(/\.?0+$/, "")}k`
-        : String(tokens);
-  const error =
+  const stale = !!(
     usage.error ||
     inspection.error ||
     context.error ||
     observed.error ||
-    activity.error;
-  const hint = `${t("Context")}: ${tokens?.toLocaleString() ?? "—"} / ${capacity?.toLocaleString() ?? "—"} ${t("tokens")} · ${summary.context}${error ? ` · ${t("Update unavailable")}` : ""}`;
+    activity.error
+  );
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <PopoverTrigger
-              render={<Button variant="ghost" size="sm" />}
-              className={styles.usageTrigger}
-              aria-label={t("Context details")}
-            />
-          }
-        >
-          <svg
-            viewBox="0 0 20 20"
-            className={styles.contextIcon}
-            aria-hidden="true"
+    <div className={styles.bar}>
+      <div className={styles.metrics}>
+        {debug && mainAccount && (
+          <span
+            className={styles.metric}
+            title={`${mainAccount.group_id} · ${mainAccount.reason.replaceAll("_", " ")}`}
           >
-            <circle cx="10" cy="10" r="7.5" />
-            <path d="M7 3.2v13.6M10 2.5v15M13 3.2v13.6" />
-          </svg>
-          <span>
-            {tokenLabel}{" "}
-            <span className={styles.percentage}>({summary.context})</span>
+            {t("Account")} <strong>{mainAccount.account_name}</strong>
           </span>
-        </TooltipTrigger>
-        <TooltipPopup>{hint}</TooltipPopup>
-      </Tooltip>
-      <PopoverPopup
-        side="top"
-        align="end"
-        className={`${styles.popup} ${styles.contextPopup}`}
-      >
-        <div className={styles.popupHeader}>
-          <PopoverTitle>{t("Context usage")}</PopoverTitle>
-          <HelpTip label={t("About context")}>
-            {t(
-              "Tokens in the latest request, using that request's model limit. The model selector applies to the next run.",
-            )}
-            {!capacity &&
-              ` ${t("This model has not provided a context limit, so its used percentage is unavailable.")}`}
-          </HelpTip>
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            aria-label={t("Refresh usage")}
-            loading={usage.isFetching || context.isFetching}
-            onClick={() => {
-              void usage.refetch();
-              void context.refetch();
-              void inspection.refetch();
-              if (receipt) void observed.refetch();
-              else void activity.refetch();
-            }}
-          >
-            <ArrowClockwise />
-          </Button>
-        </div>
-        <div className={styles.popupBody}>
-          <div className={styles.contextStats}>
-            <ContextDetails
-              used={tokens}
-              capacity={capacity}
-              compact
-              cacheRate={summary.cache}
-            />
-          </div>
-          <h3 className={styles.sectionTitle}>{t("Chat usage")}</h3>
-          <UsageDetails usage={usage.data} compact />
-          {debug && (
-            <dl className={styles.numbers}>
-              {mainAccount && (
-                <>
-                  <dt>{t("Account")}</dt>
-                  <dd>{mainAccount.account_name}</dd>
-                </>
-              )}
-              <dt>{active ? t("Working") : t("Time")}</dt>
-              <dd>{elapsedTime(operation, now)}</dd>
-              <dt>{t("Speed")}</dt>
-              <dd>{modelControlMessage(speedLabel(capturedAgent?.fast), t)}</dd>
-              {capturedAgent?.reasoning_mode &&
-                capturedAgent.reasoning_mode !== "default" && (
-                  <>
-                    <dt>{t("Mode")}</dt>
-                    <dd>
-                      {modelControlMessage(
-                        reasoningModeLabel(capturedAgent.reasoning_mode),
-                        t,
-                      )}
-                    </dd>
-                  </>
+        )}
+        {(
+          [
+            // The first element identifies the metric; the last is its label.
+            ["Tokens", summary.tokens, t("Chat usage"), t("Tokens")],
+            ["Context", summary.context, t("Context usage"), t("Context")],
+            ["Cost", summary.cost, t("Chat usage"), t("Cost")],
+          ] as const
+        )
+          .filter(([label]) => debug || label !== "Tokens")
+          .map(([label, value, title, name]) => (
+            <Popover
+              key={label}
+              open={detail === label}
+              onOpenChange={(open) =>
+                setDetail((current) =>
+                  open ? label : current === label ? null : current,
+                )
+              }
+            >
+              <PopoverTrigger
+                className={styles.metric}
+                aria-label={t("{{metric}} details", { metric: name })}
+                title={t("{{metric}}: {{value}}", { metric: name, value })}
+              >
+                {debug ? (
+                  name
+                ) : label === "Context" ? (
+                  <CircleHalf aria-hidden />
+                ) : (
+                  <CurrencyDollar aria-hidden />
+                )}{" "}
+                {label === "Context" && !debug && tokens != null && (
+                  <span>
+                    {Intl.NumberFormat(i18n.resolvedLanguage, {
+                      minimumFractionDigits: 1,
+                      maximumFractionDigits: 2,
+                    }).format(tokens / 1000)}
+                    k
+                  </span>
                 )}
-            </dl>
+                <strong>
+                  {label === "Context" && !debug && tokens != null
+                    ? `(${value})`
+                    : label === "Cost" && !debug
+                      ? value.replace(/^\$/, "")
+                      : value}
+                </strong>
+              </PopoverTrigger>
+              <PopoverPopup
+                side="top"
+                align="end"
+                className={`${styles.popup} ${label === "Context" ? styles.contextPopup : ""}`}
+              >
+                <div className={styles.popupHeader}>
+                  <PopoverTitle>{title}</PopoverTitle>
+                  {label === "Context" && (
+                    <HelpTip label={t("About context")}>
+                      {t(
+                        "Tokens in the latest request. Chat totals are in Usage. The context limit depends on the model.",
+                      )}
+                      {!context.data?.context_window &&
+                        ` ${t("This model has not provided a context limit, so its used percentage is unavailable.")}`}
+                    </HelpTip>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    aria-label={t("Refresh usage")}
+                    title={t("Refresh usage")}
+                    loading={usage.isFetching || context.isFetching}
+                    onClick={() => {
+                      void usage.refetch();
+                      void context.refetch();
+                      void inspection.refetch();
+                      if (receipt) void observed.refetch();
+                      else void activity.refetch();
+                    }}
+                  >
+                    <ArrowClockwise />
+                  </Button>
+                </div>
+                <div className={styles.popupBody}>
+                  {label === "Context" ? (
+                    <div className={styles.contextStats}>
+                      <ContextDetails
+                        used={tokens}
+                        capacity={context.data?.context_window}
+                        compact
+                        cacheRate={summary.cache}
+                      />
+                    </div>
+                  ) : (
+                    <UsageDetails usage={usage.data} />
+                  )}
+                  <ErrorNotice
+                    inline
+                    error={
+                      usage.error ||
+                      context.error ||
+                      inspection.error ||
+                      observed.error ||
+                      activity.error
+                    }
+                  />
+                </div>
+              </PopoverPopup>
+            </Popover>
+          ))}
+        {debug && (
+          <span
+            className={styles.metric}
+            title={t("Elapsed time for the current or latest operation.")}
+          >
+            {active ? t("Working") : t("Time")}{" "}
+            <strong>{elapsedTime(operation, now)}</strong>
+          </span>
+        )}
+        {debug && (
+          <span
+            className={styles.metric}
+            title={t(
+              "Speed requested for this run. Changes apply next time. Actual speed depends on the provider.",
+            )}
+          >
+            {t("Speed")}{" "}
+            <strong>
+              {modelControlMessage(speedLabel(capturedAgent?.fast), t)}
+            </strong>
+          </span>
+        )}
+        {debug &&
+          capturedAgent?.reasoning_mode &&
+          capturedAgent.reasoning_mode !== "default" && (
+            <span
+              className={styles.metric}
+              title={t(
+                "Reasoning mode requested for this run. Provider access may vary. Changes apply next time.",
+              )}
+            >
+              {t("Mode")}{" "}
+              <strong>
+                {modelControlMessage(
+                  reasoningModeLabel(capturedAgent.reasoning_mode),
+                  t,
+                )}
+              </strong>
+            </span>
           )}
-          <ErrorNotice inline error={error} />
-        </div>
-      </PopoverPopup>
-    </Popover>
+        {stale && (
+          <span className={styles.stale}>{t("Update unavailable")}</span>
+        )}
+      </div>
+    </div>
   );
 }

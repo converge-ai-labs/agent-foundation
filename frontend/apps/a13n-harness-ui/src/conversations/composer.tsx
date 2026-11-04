@@ -360,7 +360,6 @@ export function Composer({
   onSubmitted,
   onReviewOutcome,
   controls,
-  usage,
   leadingControls,
   modelId,
   threadId,
@@ -399,7 +398,6 @@ export function Composer({
   onSubmitted?: () => void | Promise<void>;
   onReviewOutcome?: () => void;
   controls?: () => ReactNode;
-  usage?: ReactNode;
   leadingControls?: ReactNode;
   modelId?: string;
 }) {
@@ -1360,10 +1358,7 @@ export function Composer({
                 }
               />
             )}
-            <div className={styles.composerChoices}>
-              {usage}
-              {controls?.()}
-            </div>
+            <div className={styles.composerChoices}>{controls?.()}</div>
           </div>
           <Button
             ref={sendButton}

@@ -41,7 +41,6 @@ import {
   CoordinatorSettings,
 } from "./coordinator-settings";
 import { WorkInspector } from "./work-inspector";
-import { ConversationDetailsPortal } from "./details-outlet";
 import { RootFailureNotice } from "./failure-notice";
 import { useHistory, useOperation, useThread } from "./queries";
 import { refreshThread } from "./refresh";
@@ -647,7 +646,7 @@ function ConversationContent({
     <span role="status">{t("Loading messages\u2026")}</span>
   ) : null;
   const connectionStatus =
-    !disconnected && !feedback && connection !== "Live" ? (
+    !disconnected && !feedback ? (
       <LiveConnectionStatus
         connection={connection}
         reconnections={reconnections}
@@ -951,44 +950,11 @@ function ConversationContent({
           </Button>
         )}
         {!readOnly && detail.data && (
-          <ConversationDetailsPortal>
-            <WorkInspector
-              threadId={threadId}
-              display={display}
-              connected={connection === "Live"}
-              reconcile={reconcile}
-              goal={showGoal ? goal : null}
-              activity={thread?.root_activity}
-              onUseGoal={
-                goal &&
-                thread?.root_activity.state === "inactive" &&
-                detail.data?.available_actions?.includes("run") &&
-                draft.submission.kind !== "pending" &&
-                draft.submission.kind !== "unknown"
-                  ? () => {
-                      const text = draft.doc.getText("text");
-                      text.insert(
-                        text.length,
-                        `${text.length ? "\n\n" : ""}${goal.objective}`,
-                      );
-                      draft.mode = "goal";
-                      draft.notify();
-                    }
-                  : undefined
-              }
-            />
-          </ConversationDetailsPortal>
-        )}
-        {connectionStatus && (
-          <div className={styles.conversationFeedback}>{connectionStatus}</div>
-        )}
-        {(!canCompose || thread?.archived) && feedback && (
-          <div className={styles.conversationFeedback}>{feedback}</div>
-        )}
-        {canCompose && !thread?.archived && (
-          <Composer
-            usage={
-              !guest && thread ? (
+          <WorkInspector
+            threadId={threadId}
+            connectionStatus={connectionStatus}
+            status={
+              !guest && thread && !thread.archived ? (
                 <ComposerStatus
                   threadId={threadId}
                   receipt={receipt}
@@ -999,6 +965,38 @@ function ConversationContent({
                 />
               ) : undefined
             }
+            display={display}
+            connected={connection === "Live"}
+            reconcile={reconcile}
+            goal={showGoal ? goal : null}
+            activity={thread?.root_activity}
+            onUseGoal={
+              goal &&
+              thread?.root_activity.state === "inactive" &&
+              detail.data?.available_actions?.includes("run") &&
+              draft.submission.kind !== "pending" &&
+              draft.submission.kind !== "unknown"
+                ? () => {
+                    const text = draft.doc.getText("text");
+                    text.insert(
+                      text.length,
+                      `${text.length ? "\n\n" : ""}${goal.objective}`,
+                    );
+                    draft.mode = "goal";
+                    draft.notify();
+                  }
+                : undefined
+            }
+          />
+        )}
+        {readOnly && connectionStatus && (
+          <div className={styles.conversationFeedback}>{connectionStatus}</div>
+        )}
+        {(!canCompose || thread?.archived) && feedback && (
+          <div className={styles.conversationFeedback}>{feedback}</div>
+        )}
+        {canCompose && !thread?.archived && (
+          <Composer
             feedback={feedback}
             feedbackError={pageError}
             suppressConnectionNotice={
@@ -1155,7 +1153,7 @@ function ConversationContent({
         <ModalFrame
           open={inspection}
           onOpenChange={setInspection}
-          title={t("Chat settings")}
+          title={t("Chat details")}
           closeLabel={t("Close dialog")}
           footer={
             <>

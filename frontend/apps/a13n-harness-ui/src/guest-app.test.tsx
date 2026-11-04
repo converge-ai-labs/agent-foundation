@@ -195,19 +195,6 @@ it("keeps Project navigation inside the sharing basename", async () => {
   expect(window.location.pathname).toBe("/share/share-one/threads/thread-one");
 });
 
-it("opens the permitted work sections for guests without exposing host tools", async () => {
-  render(<BrowserApp />);
-  await screen.findByText("View-only link · Following this chat live.");
-  fireEvent.click(screen.getByRole("button", { name: "Chat details" }));
-  await screen.findByRole("button", { name: /^Tasks/ });
-  expect(screen.getByRole("button", { name: /^Notes/ })).toBeTruthy();
-  expect(screen.getByRole("button", { name: /^Subagents/ })).toBeTruthy();
-  expect(screen.queryByRole("button", { name: /^Processes/ })).toBeNull();
-  expect(screen.queryByRole("button", { name: "Tool executions" })).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Chat details" }));
-  expect(screen.queryByRole("button", { name: /^Tasks/ })).toBeNull();
-});
-
 it("shows expired sharing access rather than instance login", async () => {
   vi.mocked(fetch).mockResolvedValue(
     json({ error: { code: "share_unavailable", message: "Unavailable" } }, 401),

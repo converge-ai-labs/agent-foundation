@@ -1,8 +1,4 @@
 import { useTranslation } from "../i18n";
-import {
-  DetailsOutlet,
-  ChatDetailsPopover,
-} from "../conversations/details-outlet";
 import { ViewLink } from "./view-link";
 import {
   useContext,
@@ -23,9 +19,6 @@ import {
   MenuItem,
   MenuPopup,
   MenuTrigger,
-  Tooltip,
-  TooltipTrigger,
-  TooltipPopup,
   useMediaQuery,
 } from "a13n-ui";
 import {
@@ -168,9 +161,6 @@ export function NativeWorkspace({
     () => readPreference("native-layout", "sidebar") === "tabs",
   );
   const [nativeActive, setNativeActive] = useState(false);
-  const [detailsElement, setDetailsElement] = useState<HTMLDivElement | null>(
-    null,
-  );
   const panelKey = `native-panel.${threadId ?? "new"}`;
   const [panelStates, setPanelStates] = useState<Record<string, boolean>>({});
   const sidebarCollapsed =
@@ -934,12 +924,7 @@ export function NativeWorkspace({
               </span>
             )}
             <ToolbarTitle className={styles.workspaceTitle}>
-              <Tooltip>
-                <TooltipTrigger render={<span tabIndex={0} />}>
-                  {title}
-                </TooltipTrigger>
-                <TooltipPopup>{title}</TooltipPopup>
-              </Tooltip>
+              {title}
             </ToolbarTitle>
           </div>
           {isWorkspace && threadId && status.data?.features?.browser && (
@@ -960,21 +945,6 @@ export function NativeWorkspace({
             />
           )}
           {profile}
-          {isWorkspace && threadId && !unavailableThread && (
-            <ChatDetailsPopover
-              key={`details-${threadId}`}
-              title={title}
-              outletRef={setDetailsElement}
-              onRename={() => {
-                const search = new URLSearchParams(location.search);
-                search.set("dialog", "rename");
-                navigate({
-                  pathname: location.pathname,
-                  search: search.toString(),
-                });
-              }}
-            />
-          )}
           {threadId && !unavailableThread && (
             <Menu>
               <MenuTrigger
@@ -988,7 +958,7 @@ export function NativeWorkspace({
                 {(
                   [
                     ["rename", "Rename", PencilSimple],
-                    ["details", "Chat settings", SlidersHorizontal],
+                    ["details", "Chat details", SlidersHorizontal],
                     ["share", "Share", ShareNetwork],
                   ] as const
                 ).map(([action, label, Icon]) => (
@@ -1188,11 +1158,7 @@ export function NativeWorkspace({
                     : undefined
                 }
               >
-                <DetailsOutlet
-                  value={{ element: detailsElement, visible: !!detailsElement }}
-                >
-                  {children}
-                </DetailsOutlet>
+                {children}
               </OpenHostFile>
             </div>
           </div>
