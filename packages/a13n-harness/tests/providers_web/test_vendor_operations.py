@@ -4,7 +4,13 @@ import json
 
 import httpx2
 import pytest
-from a13n_harness.providers.web import ScrapeOptions, SearchOptions, WebScrapeRequest, WebSearchRequest
+from a13n_harness.providers.web import (
+    ScrapeOptions,
+    SearchOptions,
+    WebProviderError,
+    WebScrapeRequest,
+    WebSearchRequest,
+)
 from a13n_harness.providers.web.configuration import ApiKeyCredential
 from a13n_harness.providers.web.transport import WebProviderTransport
 from a13n_harness.providers.web.vendors import (
@@ -151,6 +157,48 @@ async def test_keenable_search_works_with_or_without_credential(keyed: bool, pro
         ("Good", "https://example.com/a", "Summary"),
         ("Snippet", "https://example.com/b", "x" * keenable.SNIPPET_CHARS),
     ]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("keyed", [False, True])
+@pytest.mark.parametrize(
+    ("limit", "max_results", "expected"),
+    [(50, 100, 50), (51, 100, 50), (100, 100, 50), (100, 2, 2), (2, 100, 2)],
+)
+async def test_keenable_caps_search_results(
+    keyed: bool, limit: int, max_results: int, expected: int, providers
+) -> None:
+    def handle(request: httpx2.Request) -> httpx2.Response:
+        assert json.loads(request.content)["max_results"] == expected
+        return httpx2.Response(200, json={"results": []})
+
+    async with providers["keenable"].open(
+        {},
+        ApiKeyCredential(api_key="secret") if keyed else None,
+        transport=transport(handle),
+        options=SearchOptions(max_results=max_results),
+    ) as web:
+        assert (await web.search(WebSearchRequest(query="query", limit=limit))).results == ()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("snippet", [None, "", "Summary", "x" * 2000, 1, False, [], {"text": "Summary"}])
+async def test_keenable_validates_snippet_before_truncating(snippet: object, providers) -> None:
+    async with providers["keenable"].open(
+        {},
+        transport=transport(
+            lambda _request: httpx2.Response(
+                200, json={"results": [{"url": "https://example.com/a", "snippet": snippet}]}
+            )
+        ),
+    ) as web:
+        request = WebSearchRequest(query="query", limit=1)
+        if snippet is None or isinstance(snippet, str):
+            result = await web.search(request)
+            assert result.results[0].snippet == (snippet or "")[:1000]
+        else:
+            with pytest.raises(WebProviderError, match="web_search_response_invalid"):
+                await web.search(request)
 
 
 @pytest.mark.anyio

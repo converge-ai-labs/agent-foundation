@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 
 PUBLIC_SEARCH_URL = "https://api.keenable.ai/v1/search/public"
 SEARCH_URL = "https://api.keenable.ai/v1/search"
+MAX_RESULTS = 50
 SNIPPET_CHARS = 1000
 
 
@@ -30,7 +31,7 @@ async def search(
     headers = {"X-Keenable-Title": "a13n"}
     if key:
         headers["X-API-Key"] = key
-    limit = min(request.limit, options.max_results)
+    limit = min(request.limit, options.max_results, MAX_RESULTS)
     payload = await transport.exchange_json(
         lambda client: client.build_request(
             "POST",
@@ -51,6 +52,15 @@ async def search(
         lambda item: (
             item.get("title") or "",
             item["url"],
-            item.get("description") or (item.get("snippet") or "")[:SNIPPET_CHARS],
+            item.get("description") or _snippet(item),
         ),
     )
+
+
+def _snippet(item: dict[str, object]) -> str:
+    snippet = item.get("snippet")
+    if snippet is None:
+        return ""
+    if not isinstance(snippet, str):
+        raise ValueError("invalid search snippet")
+    return snippet[:SNIPPET_CHARS]

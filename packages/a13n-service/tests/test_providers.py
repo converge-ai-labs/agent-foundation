@@ -75,6 +75,28 @@ async def create(service, kind: str, body: dict, workspace_id: str | None = None
     return response.json()
 
 
+async def test_keenable_is_discoverable_and_accepts_optional_credentials(service) -> None:
+    response = await service.client.get("/api/v1/provider-types/web")
+    assert response.status_code == 200, response.text
+    definition = next(item for item in response.json()["items"] if item["type"] == "keenable")
+    assert definition["display_name"] == "Keenable"
+    assert definition["authentication"]["mode"] == "optional"
+    assert definition["operations"] == ["search"]
+    assert "api_key" in definition["credential_schema"]["properties"]
+
+    created = await create(service, "web", {"type": "keenable", "name": "Keenable"})
+    assert created["credential_configured"] is False
+    path = f"{service.api}/web-providers/{created['id']}"
+    for credential, configured in [({"api_key": SECRET}, True), (None, False)]:
+        response = await service.client.patch(
+            path, json={"credential": credential}, headers={"if-match": etag(created)}
+        )
+        assert response.status_code == 200, response.text
+        created = response.json()
+        assert created["credential_configured"] is configured
+        assert SECRET not in response.text
+
+
 async def test_a_provider_keeps_its_credential_write_only(service) -> None:  # type: ignore[no-untyped-def]
     body = {"type": "openai", "name": "OpenAI", "credential": {"api_key": SECRET}}
     created = await create(service, "model", body)
