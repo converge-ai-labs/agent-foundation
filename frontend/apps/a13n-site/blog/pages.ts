@@ -113,7 +113,7 @@ export function indexPage(posts: Post[]) {
   // the nav links every page to /blog/, so the index needs a post to lead
   if (!lead) throw new Error("posts/ has no posts");
   const description =
-    "Notes from the team building a13n, the open-source foundation for AI agents.";
+    "Notes from the team building a13n, the open-source managed agent service.";
   const body = `    <main>
       <header class="wrap head">
         <h1 class="statement">Blog. <span class="dim">Notes from the team building a13n.</span></h1>
