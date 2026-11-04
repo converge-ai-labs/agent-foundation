@@ -52,7 +52,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   color: var(--a13n-secondary);
 }
 .title > span {
@@ -75,7 +75,7 @@
 .people .avatar {
   width: 30px;
   height: 30px;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .identity {
   min-width: 0;
@@ -83,13 +83,13 @@
   gap: 4px;
 }
 .name {
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   overflow-wrap: anywhere;
 }
 .you,
 .identity small {
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .identity small {
   display: flex;

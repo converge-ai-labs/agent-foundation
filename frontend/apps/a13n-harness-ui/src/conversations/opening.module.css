@@ -23,7 +23,7 @@
   padding: 24px;
   color: var(--a13n-secondary);
   text-align: center;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .status {
   display: flex;

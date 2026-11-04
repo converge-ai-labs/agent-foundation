@@ -28,13 +28,13 @@
 }
 .status {
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   white-space: nowrap;
 }
 .message {
   margin: 0;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .details {
   composes: details from "./workbench.module.css";
@@ -42,7 +42,7 @@
 .details p {
   margin: 0;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 20px;
 }
 @media (max-width: 639px) {

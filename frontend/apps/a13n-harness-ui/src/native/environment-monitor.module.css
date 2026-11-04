@@ -4,7 +4,7 @@
   min-width: 0;
 }
 .monitor h3 {
-  font-size: 16px;
+  font-size: calc(var(--a13n-text-body) * 16 / 14);
   font-weight: 600;
   margin: 0;
 }
@@ -43,7 +43,7 @@
 .axis,
 .timeAxis,
 .readout {
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   color: var(--a13n-secondary);
 }
 .note {
@@ -64,7 +64,7 @@
   flex-shrink: 0;
 }
 .freshness strong {
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   font-weight: 500;
 }
 .gauges {
@@ -82,14 +82,14 @@
   gap: 4px 12px;
 }
 .gauges span {
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   color: var(--a13n-secondary);
 }
 .gauges small {
   grid-column: 1 / -1;
 }
 .gauges strong {
-  font-size: 20px;
+  font-size: calc(var(--a13n-text-body) * 20 / 14);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
@@ -110,11 +110,11 @@
 }
 .chartToolbar select {
   width: auto;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .liveState,
 .chartHint {
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   color: var(--a13n-secondary);
 }
 .chartHint {
@@ -133,7 +133,7 @@
   display: grid;
   place-items: center;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   pointer-events: none;
 }
 .trendHeading {
@@ -262,7 +262,7 @@
   border-radius: 8px;
 }
 .monitor details {
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   overflow-wrap: anywhere;
 }
 .monitor summary {
@@ -314,7 +314,7 @@
   }
   .gauges strong {
     text-align: right;
-    font-size: 20px;
+    font-size: calc(var(--a13n-text-body) * 20 / 14);
   }
   .gauges small {
     grid-column: 1 / -1;
@@ -348,12 +348,12 @@
 }
 .metricList dt {
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   margin-bottom: 8px;
 }
 .metricList dd {
   margin: 0;
-  font-size: 16px;
+  font-size: calc(var(--a13n-text-body) * 16 / 14);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
@@ -363,7 +363,7 @@
 .counterTable table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   font-variant-numeric: tabular-nums;
 }
 .counterTable th,

@@ -1,8 +1,23 @@
 /* Compact system typography and neutral surfaces carry the whole workbench. */
 :root {
   color-scheme: light;
-  --text-sm: 0.875rem;
-  --text-sm--line-height: 1.25rem;
+  --text-sm: var(--a13n-text-body);
+  --text-sm--line-height: 1.45;
+  --text-xs: calc(var(--a13n-text-body) * 12 / 14);
+  --text-base: calc(var(--a13n-text-body) * 16 / 14);
+  --text-lg: calc(var(--a13n-text-body) * 18 / 14);
+  --text-xl: calc(var(--a13n-text-body) * 20 / 14);
+  --a13n-text-2xs: calc(var(--a13n-text-body) * 11 / 14);
+  --a13n-text-xs: calc(var(--a13n-text-body) * 12 / 14);
+  --a13n-text-sm: calc(var(--a13n-text-body) * 13 / 14);
+  --a13n-text-md: var(--a13n-text-body);
+  --a13n-text-lg: calc(var(--a13n-text-body) * 15 / 14);
+  --a13n-text-xl: calc(var(--a13n-text-body) * 17 / 14);
+  --a13n-text-2xl: calc(var(--a13n-text-body) * 24 / 14);
+  --harness-nav-font: 13px;
+  --composer-font-size: 16px;
+  --harness-code-size: 12px;
+  --harness-terminal-size: 13px;
   --a13n-text-body: 14px;
   /* Compact controls, softer containers, and clearly rounded overlays. */
   --harness-radius-control: 8px;
@@ -12,7 +27,7 @@
   --harness-section-gap: 32px;
   --harness-field-gap: 16px;
   --harness-group-inset: 16px;
-  --harness-prose-size: 16px;
+  --harness-prose-size: 15px;
   --harness-prose-leading: 1.7;
   --harness-log-text: light-dark(#767676, #969696);
   --harness-code-keyword: light-dark(#8250df, #d2a8ff);
@@ -146,17 +161,17 @@
 :where([data-slot="tooltip-popup"]) {
   border-radius: var(--harness-radius-control);
   padding: 4px 8px;
-  font-size: 14px;
-  line-height: 20px;
+  font-size: var(--a13n-text-body);
+  line-height: 1.45;
 }
 :where([data-slot="popover-viewport"]) {
   --viewport-inline-padding: 12px;
   padding-block: 12px;
 }
 :where([data-slot="popover-title"]) {
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   font-weight: 500;
-  line-height: 20px;
+  line-height: 1.45;
 }
 :where([data-slot="select-list"], [data-slot="combobox-list"]) {
   padding: 4px;
@@ -207,13 +222,13 @@
   gap: 8px;
 }
 :where([data-a13n-modal] [data-slot="dialog-title"]) {
-  font-size: 20px;
+  font-size: calc(var(--a13n-text-body) * 20 / 14);
   font-weight: 500;
   line-height: 24px;
 }
 :where([data-a13n-modal] [data-slot="dialog-description"]) {
-  font-size: 14px;
-  line-height: 20px;
+  font-size: var(--a13n-text-body);
+  line-height: 1.45;
 }
 :where([data-a13n-modal] [data-slot="dialog-panel"]) {
   display: grid;
@@ -257,8 +272,8 @@
 [data-slot="field-label"],
 [data-slot="select-button"],
 [data-slot="toggle"] {
-  font-size: 14px;
-  line-height: 20px;
+  font-size: var(--a13n-text-body);
+  line-height: 1.45;
 }
 
 [data-slot="combobox-positioner"] > span {
@@ -275,8 +290,8 @@
 [data-slot="menu-sub-trigger"] {
   min-height: var(--harness-menu-row);
   padding-block: 4px;
-  font-size: 14px;
-  line-height: 20px;
+  font-size: var(--a13n-text-body);
+  line-height: 1.45;
 }
 
 /* Match leading icons to the inset used by labels inside switch rows. */
@@ -290,20 +305,23 @@
 [data-slot="combobox-item"] {
   min-height: var(--harness-menu-row);
   padding-block: 4px;
-  font-size: 14px;
-  line-height: 20px;
+  font-size: var(--a13n-text-body);
+  line-height: 1.45;
 }
 
 /* A narrow desktop panel still uses compact controls. Only touch input
    enlarges targets; width breakpoints govern wrapping and layout. */
 @media (max-width: 639px) {
-  [data-slot="input"],
-  [data-slot="textarea"] {
-    font-size: 16px;
-  }
   [data-slot="select-item"] .truncate {
     white-space: normal;
     overflow-wrap: anywhere;
+  }
+}
+
+@media (max-width: 639px) and (pointer: coarse) {
+  [data-slot="input"],
+  [data-slot="textarea"] {
+    font-size: max(16px, var(--a13n-text-body));
   }
 }
 

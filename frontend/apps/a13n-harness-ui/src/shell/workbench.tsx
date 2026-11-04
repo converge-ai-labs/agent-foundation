@@ -1,3 +1,5 @@
+import { useAppearance } from "../appearance/react";
+import { AppearanceSettings } from "../configuration/appearance";
 import { useTranslation } from "../i18n";
 import { UsagePage } from "../usage/page";
 import { ShareButton } from "../sharing";
@@ -136,7 +138,7 @@ function WorkbenchContent({
   const voiceSettings = useVoiceSettings();
   const statusQuery = useStatus();
   const status = statusQuery.data ?? initialStatus;
-  const [theme, setTheme] = useState(() => readPreference("theme", "light"));
+  const { dark, store: appearance } = useAppearance();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
     () => readPreference("sidebar", "expanded") === "collapsed",
   );
@@ -200,10 +202,6 @@ function WorkbenchContent({
   useEffect(() => {
     setMenu(false);
   }, [location.key]);
-  useEffect(() => {
-    document.documentElement.classList.toggle("dark", theme === "dark");
-    writePreference("theme", theme);
-  }, [theme]);
   useEffect(() => {
     writePreference("display-name", profile.display_name);
     writePreference("color", profile.color);
@@ -301,10 +299,10 @@ function WorkbenchContent({
             </MenuItem>
             <MenuSeparator />
             <MenuItem
-              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+              onClick={() => appearance.setTheme(dark ? "light" : "dark")}
             >
-              {theme === "dark" ? <Sun /> : <Moon />}
-              {theme === "dark" ? t("Light appearance") : t("Dark appearance")}
+              {dark ? <Sun /> : <Moon />}
+              {dark ? t("Light appearance") : t("Dark appearance")}
             </MenuItem>
             <MenuCheckboxItem
               checked={debug.enabled}
@@ -559,6 +557,10 @@ function WorkbenchContent({
                 <Route path="/projects" element={<ProjectsPage />} />
                 <Route path="/projects/:projectId" element={<ProjectPage />} />
                 <Route path="/settings" element={<GeneralSettings />} />
+                <Route
+                  path="/settings/appearance"
+                  element={<AppearanceSettings />}
+                />
                 <Route
                   path="/settings/notifications"
                   element={<Navigate to="/settings#notifications" replace />}

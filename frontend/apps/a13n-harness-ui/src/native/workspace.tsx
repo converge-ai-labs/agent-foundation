@@ -88,6 +88,7 @@ const PAGE_TITLES: Record<string, string> = {
   "/setup": "Set up Harness",
   "/projects": "Projects",
   "/settings": "General settings",
+  "/settings/appearance": "Appearance",
   "/settings/agents": "Agents",
   "/settings/models": "Models",
   "/settings/environments": "Environments",

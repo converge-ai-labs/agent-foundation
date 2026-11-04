@@ -8,22 +8,22 @@ Harness is compact, quiet and softly contrasted. Settings supply the grouping an
 
 ## Geometry and Type
 
-| Role                                                   | Baseline                                        |
-| ------------------------------------------------------ | ----------------------------------------------- |
-| Relationship spacing                                   | 4, 8, 12, 16, 24, 32, 48, 64px                  |
-| Desktop controls / menu rows                           | 32px                                            |
-| Sidebar rows                                           | 30px high; 2px between adjacent fills           |
-| Touch targets                                          | At least 44px; determined by pointer capability |
-| Radius: control / group and overlay / composer         | 8 / 16 / 20px                                   |
-| Reading width: conversation / settings                 | 720 / 760px, centered in the available pane     |
-| Standard form dialog                                   | 480px wide; 24px desktop and 16px narrow insets |
-| Field groups / page sections                           | 16 / 32px gaps                                  |
-| Type: sidebar / interface and tool rows / prose / code | 13 / 14 / 16 / 12px                             |
-| Type: content heading / page and dialog title          | 16 / 20px                                       |
-| Weight                                                 | 400 regular; 500 interface emphasis             |
-| Line height: prose / large heading                     | About 1.7 / 1.1–1.3                             |
+| Role                                                                      | Baseline                                        |
+| ------------------------------------------------------------------------- | ----------------------------------------------- |
+| Relationship spacing                                                      | 4, 8, 12, 16, 24, 32, 48, 64px                  |
+| Desktop controls / menu rows                                              | 32px                                            |
+| Sidebar rows                                                              | 30px high; 2px between adjacent fills           |
+| Touch targets                                                             | At least 44px; determined by pointer capability |
+| Radius: control / group and overlay / composer                            | 8 / 16 / 20px                                   |
+| Reading width: conversation / settings                                    | 720 / 760px, centered in the available pane     |
+| Standard form dialog                                                      | 480px wide; 24px desktop and 16px narrow insets |
+| Field groups / page sections                                              | 16 / 32px gaps                                  |
+| Default type: navigation / interface / prose / composer / code / terminal | 13 / 14 / 15 / 16 / 12 / 13px                   |
+| Type: content heading / page and dialog title                             | 16 / 20px                                       |
+| Weight                                                                    | 400 regular; 500 interface emphasis             |
+| Line height: prose / large heading                                        | About 1.7 / 1.1–1.3                             |
 
-Use system sans-serif and normally no more than four sizes per view. De-emphasize supporting text through color or weight. Heading levels must be visibly distinct. Narrow touch editors use 16px input text to avoid focus zoom; narrow desktop windows retain compact controls.
+Use the existing system sans-serif and monospace stacks. The six independent sizes are viewer-local preferences under [Appearance](04-workbench-interaction.md#appearance); interface titles and secondary text scale from the interface baseline. De-emphasize supporting text through color or weight. Heading levels must be visibly distinct. Narrow touch editors retain at least 16px effective input text to avoid focus zoom without changing the stored size; narrow desktop windows retain compact controls. Navigation rows grow when needed to fit their text while retaining action space and touch targets. Browser root font size, zoom, spacing and reading width remain unchanged.
 
 Spacing expresses relationships: within an item < between peers < between groups < outer breathing room. Semantic levels differ clearly, usually by about 1.5× or more; this is not a multiplier for every phone gutter. Optical offsets, hairlines and control geometry are separate from relationship spacing.
 
@@ -57,7 +57,7 @@ Rows drag directly without a grip icon. Use a compact preview and thin insertion
 
 ### Reading and Execution Details
 
-Transcript and composer share a center axis. User bubbles fit content within a bounded width. User messages and intermediate and final assistant prose share primary text color, 16px size and 1.7 line height. Markdown tables follow the prose size; Markdown heading levels use 24, 20, 18 and 16px. Interface labels and tool rows retain their compact scale. Tool and Thought labels use quiet gray, regular text; only hover or focus strengthens them, not expansion.
+Transcript and composer share a center axis. User bubbles fit content within a bounded width. User messages and intermediate and final assistant prose share primary text color, the conversation size (15px by default) and 1.7 line height. Markdown tables follow that size; heading levels use 1.5, 1.25, 1.125 and 1em. Inline code stays relative to surrounding prose. Code blocks and line numbers use the independent code size; their toolbar labels use the interface size. Interface labels and tool rows retain their compact scale. Tool and Thought labels use quiet gray, regular text; only hover or focus strengthens them, not expansion.
 
 Completed work collapses behind **Worked for …**, leaving the final response visible, under the [conversation contract](04-workbench-interaction.md#conversation-and-shared-composer). Omit **Work log**, tool-count summaries and tool elapsed times. Recorded Run/Thought timing uses muted tabular figures.
 

@@ -69,6 +69,9 @@ async function language(name: string) {
   await userEvent.click(await screen.findByRole("option", { name }));
 }
 
+import { AppearanceProvider } from "../appearance/react";
+import { AppearanceStore } from "../appearance/store";
+
 function mount({
   draft = new ThreadDraft(),
   local = false,
@@ -94,27 +97,30 @@ function mount({
     client: { POST: post, GET: get },
     fetch: vi.fn(),
   } as unknown as Transport;
+  const appearance = new AppearanceStore(window);
   const view = render(
-    <QueryClientProvider client={query}>
-      <TransportContext value={transport}>
-        <LanguageProvider>
-          <LanguageChoice />
-          <ComposerDrafts value={new Map([["chat-one", draft]])}>
-            <Composer
-              threadId="chat-one"
-              activity={activity}
-              local={local}
-              canRun
-              profile={{ display_name: "Alice", color: "#2563eb" }}
-              unauthorized={() => {}}
-              reconcile={() => {}}
-            />
-          </ComposerDrafts>
-        </LanguageProvider>
-      </TransportContext>
-    </QueryClientProvider>,
+    <AppearanceProvider store={appearance}>
+      <QueryClientProvider client={query}>
+        <TransportContext value={transport}>
+          <LanguageProvider>
+            <LanguageChoice />
+            <ComposerDrafts value={new Map([["chat-one", draft]])}>
+              <Composer
+                threadId="chat-one"
+                activity={activity}
+                local={local}
+                canRun
+                profile={{ display_name: "Alice", color: "#2563eb" }}
+                unauthorized={() => {}}
+                reconcile={() => {}}
+              />
+            </ComposerDrafts>
+          </LanguageProvider>
+        </TransportContext>
+      </QueryClientProvider>
+    </AppearanceProvider>,
   );
-  return { ...view, draft, post, get, transport, connect, close };
+  return { ...view, draft, post, get, transport, connect, close, appearance };
 }
 
 function synchronizedDraft(text = "") {
@@ -180,7 +186,9 @@ it("switches the real language control without replacing the editor, selection, 
       static revokeObjectURL = revokeObjectURL;
     },
   );
-  const { draft, container, post, transport } = mount({ local: true });
+  const { draft, container, post, transport, appearance } = mount({
+    local: true,
+  });
   const textbox = screen.getByRole("textbox", { name: "Message" });
   const editor = EditorView.findFromDOM(textbox)!;
   const document = draft.doc;
@@ -220,6 +228,10 @@ it("switches the real language control without replacing the editor, selection, 
   const imageReleases = revokeObjectURL.mock.calls.length;
   const selection = editor.state.selection.toJSON();
   await language("English");
+  act(() => {
+    appearance.setSize("composer", 20);
+    appearance.setTheme("dark");
+  });
   expect(screen.getByRole("textbox", { name: "Message" })).toBe(textbox);
   expect(EditorView.findFromDOM(textbox)).toBe(editor);
   expect(editor.state.selection.toJSON()).toEqual(selection);

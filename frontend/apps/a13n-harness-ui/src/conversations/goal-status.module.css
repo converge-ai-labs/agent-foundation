@@ -21,7 +21,7 @@
   width: min(320px, calc(100vw - 24px));
   max-height: min(600px, calc(100dvh - 40px));
   overflow: hidden;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 1.6;
 }
 .popup > [data-slot="popover-viewport"] {
@@ -37,13 +37,13 @@
   margin-bottom: 12px;
 }
 .heading h2 {
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   font-weight: 500;
   color: var(--a13n-secondary);
 }
 .outcome h3 {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   font-weight: 500;
   color: var(--a13n-text);
 }
@@ -63,7 +63,7 @@
   border: 0;
   color: var(--a13n-secondary);
   font: inherit;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   cursor: pointer;
 }
 .objective button:hover {
@@ -96,7 +96,7 @@
   display: grid;
   gap: 4px;
   margin: 12px 0 0;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   color: var(--a13n-secondary);
 }
 .metrics > div {
@@ -112,5 +112,5 @@
 .reuse {
   margin: 16px 0 0 -8px;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }

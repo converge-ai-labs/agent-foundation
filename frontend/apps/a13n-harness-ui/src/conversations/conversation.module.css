@@ -1,6 +1,5 @@
 .navigation {
   --harness-nav-height: 30px;
-  --harness-nav-font: 13px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -8,7 +7,7 @@
   flex: 1;
 }
 .navigation label {
-  font-size: 13px;
+  font-size: var(--harness-nav-font);
 }
 .navigationHeading {
   display: flex;
@@ -17,7 +16,7 @@
   gap: 8px;
   padding-inline: 8px 4px;
   color: var(--a13n-secondary);
-  font-size: 13px;
+  font-size: var(--harness-nav-font);
   font-weight: 500;
   margin-top: 4px;
 }
@@ -66,18 +65,18 @@
   margin-inline-start: auto;
   min-width: 16px;
   text-align: center;
-  font-size: 13px;
+  font-size: var(--harness-nav-font);
   font-variant-numeric: tabular-nums;
 }
 .draftsPopup {
   width: min(280px, var(--available-width));
 }
 .draftsTitle {
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .draftsDescription {
   margin-block: 8px 12px;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .draftsList {
   list-style: none;
@@ -95,7 +94,7 @@
   border-radius: 8px;
   color: var(--a13n-text);
   text-decoration: none;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .draftShortcut:hover {
   background: var(--a13n-hover);
@@ -113,7 +112,7 @@
 .draftShortcut > small,
 .draftsEmpty {
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .draftsEmpty {
   margin: 0;
@@ -134,7 +133,7 @@
   min-height: 30px;
   padding: 8px;
   color: var(--a13n-secondary);
-  font-size: 13px;
+  font-size: var(--harness-nav-font);
 }
 .initialLoading > span {
   animation: revealLoading 0s 180ms both;
@@ -167,7 +166,7 @@
   padding: 8px 4px;
   text-align: start;
   text-wrap: wrap;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 1.5;
 }
 .projectSummary strong,
@@ -180,7 +179,7 @@
 }
 .projectSummary strong {
   margin-bottom: 12px;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   font-weight: 500;
 }
 .projectSummary svg {
@@ -206,7 +205,7 @@
   align-items: center;
   justify-content: space-between;
   color: var(--a13n-text);
-  font-size: 13px;
+  font-size: var(--harness-nav-font);
   border-radius: 8px;
   margin-bottom: 0;
 }
@@ -439,7 +438,7 @@
   border-radius: 8px;
   color: var(--a13n-text);
   text-decoration: none;
-  font-size: 13px;
+  font-size: var(--harness-nav-font);
   line-height: 20px;
 }
 .threadLink:hover,
@@ -480,7 +479,7 @@
 .threadLink small {
   display: block;
   color: var(--a13n-secondary);
-  font-size: 13px;
+  font-size: var(--harness-nav-font);
   margin-top: 4px;
 }
 .threadLink .coordinatorActivity {
@@ -491,7 +490,7 @@
   white-space: nowrap;
   margin: 0;
   line-height: 20px;
-  font-size: 13px;
+  font-size: var(--harness-nav-font);
   font-variant-numeric: tabular-nums;
   order: 1;
 }
@@ -529,7 +528,7 @@
   border-radius: 8px;
   background: color-mix(in srgb, var(--info-foreground) 12%, transparent);
   color: var(--info-foreground);
-  font-size: 13px;
+  font-size: var(--harness-nav-font);
   font-variant-numeric: tabular-nums;
   text-align: center;
 }
@@ -568,7 +567,7 @@
   padding: 12px;
   background: var(--a13n-surface);
   overflow-wrap: anywhere;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .page {
   container: conversation-page / inline-size;
@@ -592,7 +591,7 @@
   align-items: center;
   justify-content: flex-end;
   gap: 12px;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   color: var(--a13n-secondary);
 }
 .toolbar {
@@ -685,7 +684,7 @@
 }
 .copyError {
   color: var(--a13n-danger);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .userInput > .messageActions:has([role="alert"]),
 .assistantMessage > .messageActions:has([role="alert"]) {
@@ -710,7 +709,7 @@
 }
 .userMessage header,
 .assistantMessage header {
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   color: var(--a13n-secondary);
   margin-bottom: 8px;
 }
@@ -767,7 +766,7 @@
   overflow: hidden;
   overflow-wrap: anywhere;
   color: var(--a13n-text);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 1.6;
   mask-image: linear-gradient(to bottom, #000 2.4em, transparent 4.8em);
 }
@@ -777,7 +776,7 @@
   justify-content: center;
   gap: 4px;
   padding: 8px 0 4px;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   font-weight: 500;
   transition: color 150ms ease;
 }
@@ -798,12 +797,12 @@
 }
 .inputStatus {
   display: inline;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   margin-inline-start: 8px;
 }
 .code {
   font-family: var(--a13n-mono);
-  font-size: 12px;
+  font-size: var(--harness-code-size);
   line-height: 1.6;
   background: var(--a13n-surface);
   padding: 12px;
@@ -816,7 +815,7 @@
 .reasoning {
   margin: 0;
   color: var(--harness-log-text);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 1.6;
 }
 .reasoning > summary {
@@ -870,7 +869,7 @@
 }
 .activity {
   margin: 4px 0;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .activity summary,
 .rawSource summary {
@@ -963,7 +962,7 @@
   margin-top: 8px;
 }
 .rawSource {
-  font-size: 14px;
+  font-size: var(--harness-code-size);
   color: var(--a13n-secondary);
 }
 .liveOutput > small {
@@ -971,7 +970,7 @@
 }
 .composer {
   container: composer / inline-size;
-  --composer-font-size: 16px;
+
   --composer-content-height: 32px;
   flex-shrink: 0;
   /* Match the transcript column: reader inset (36px) plus scrollbar gutter on
@@ -1021,7 +1020,7 @@
 }
 .composerConnection {
   margin: 4px 4px 0;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   color: var(--harness-log-text);
 }
 .sendButton {
@@ -1030,13 +1029,13 @@
   box-shadow: none;
 }
 .composerContext {
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   color: var(--harness-log-text);
 }
 .executionLoad {
   padding-block: 8px;
   color: var(--harness-log-text);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .executionLoad > button {
   padding: 8px 12px;
@@ -1074,7 +1073,7 @@
   gap: 8px;
   padding: 8px 8px;
   color: var(--harness-log-text);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   white-space: nowrap;
 }
 .workerIdentity {
@@ -1087,7 +1086,7 @@
   border-radius: 8px;
   background: var(--a13n-hover);
   color: var(--harness-log-text);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .workerIdentity > span {
   overflow: hidden;
@@ -1179,7 +1178,6 @@
 }
 @container composer (max-width: 480px) {
   .composerBody {
-    --composer-font-size: 16px;
     --composer-content-height: 32px;
   }
   /* Phone chrome keeps desktop type: 13px labels and 16px glyphs. */
@@ -1188,7 +1186,7 @@
   }
   .composerHeader button {
     height: 32px;
-    font-size: 14px;
+    font-size: var(--a13n-text-body);
   }
   .composerHeader button svg {
     width: 16px;
@@ -1245,7 +1243,7 @@
   align-items: center;
   gap: 4px 12px;
   padding: 8px 0;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   color: var(--harness-log-text);
 }
 .composerStatus p {
@@ -1256,7 +1254,7 @@
   color: var(--a13n-text);
 }
 .warning {
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   color: var(--a13n-text);
   background: var(--a13n-surface);
   border-left: 3px solid var(--warning-foreground);
@@ -1264,7 +1262,7 @@
   margin: 12px 0;
 }
 .receipt {
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   padding: 8px 0;
   overflow-wrap: anywhere;
 }
@@ -1282,7 +1280,7 @@
 }
 .empty h2 {
   color: var(--a13n-text);
-  font-size: 20px;
+  font-size: calc(var(--a13n-text-body) * 20 / 14);
   font-weight: 500;
 }
 .newOutput {
@@ -1308,12 +1306,12 @@
 }
 .detailGrid dt {
   color: var(--harness-log-text);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .detailGrid dd {
   margin: 4px 0 12px;
   overflow-wrap: anywhere;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 dl.detailGrid {
   display: block;
@@ -1328,7 +1326,7 @@ dl.detailGrid > div {
 }
 dl.detailGrid dt {
   color: var(--a13n-text);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 20px;
 }
 dl.detailGrid dd {
@@ -1358,14 +1356,14 @@ dl.detailGrid > .detailLongRow dd {
   gap: 24px;
 }
 .inspection [data-slot="tabs-tab"] {
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .inspection [data-slot="tabs-content"] > section + section {
   margin-top: 24px;
 }
 .inspection section > h3 {
   margin: 0 0 8px;
-  font-size: 16px;
+  font-size: calc(var(--a13n-text-body) * 16 / 14);
   font-weight: 500;
   line-height: 20px;
 }
@@ -1373,7 +1371,7 @@ dl.detailGrid > .detailLongRow dd {
 .inspection [data-slot="tabs-content"] > .form > section > p {
   margin-block: 8px;
   color: var(--harness-log-text);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 1.6;
 }
 .inspection dl.detailGrid {
@@ -1406,18 +1404,18 @@ dl.detailGrid > .detailLongRow dd {
   border-radius: 8px;
 }
 .decision h2 {
-  font-size: 16px;
+  font-size: calc(var(--a13n-text-body) * 16 / 14);
   font-weight: 500;
   margin-bottom: 8px;
 }
 .decision p {
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 1.6;
 }
 .decision > p {
   margin: 0 0 8px;
   color: var(--harness-log-text);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 20px;
 }
 .decision > form {
@@ -1437,12 +1435,12 @@ dl.detailGrid > .detailLongRow dd {
 }
 .question legend {
   color: var(--harness-log-text);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   margin-bottom: 4px;
 }
 .question > p {
   margin-bottom: 12px;
-  font-size: 16px;
+  font-size: calc(var(--a13n-text-body) * 16 / 14);
   font-weight: 500;
 }
 .answerOption {
@@ -1453,7 +1451,7 @@ dl.detailGrid > .detailLongRow dd {
   margin: 8px 0;
   border-radius: 6px;
   background: var(--a13n-surface);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   cursor: pointer;
 }
 .answerOption input {
@@ -1475,7 +1473,7 @@ dl.detailGrid > .detailLongRow dd {
   display: block;
   color: var(--harness-log-text);
   margin-top: 4px;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 20px;
 }
 
@@ -1489,7 +1487,7 @@ dl.detailGrid > .detailLongRow dd {
 }
 .settingsHint {
   color: var(--harness-log-text);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 20px;
 }
 .settingsFields {
@@ -1534,7 +1532,7 @@ dl.detailGrid > .detailLongRow dd {
   margin-block: 8px 0;
   padding-inline: 8px 4px;
   color: var(--harness-log-text);
-  font-size: 12px;
+  font-size: calc(var(--a13n-text-body) * 12 / 14);
   font-weight: 400;
 }
 .sectionHeading:first-child {
@@ -1553,7 +1551,7 @@ dl.detailGrid > .detailLongRow dd {
 .showMore {
   margin: 4px 0 0 8px;
   color: var(--harness-log-text);
-  font-size: 12px;
+  font-size: calc(var(--a13n-text-body) * 12 / 14);
   font-weight: 400;
 }
 
@@ -1568,7 +1566,7 @@ dl.detailGrid > .detailLongRow dd {
   border-radius: 9px;
   background: var(--a13n-surface);
   font-family: inherit;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 1.4;
   overflow: hidden;
 }
@@ -1634,7 +1632,7 @@ dl.detailGrid > .detailLongRow dd {
   border: 1px solid var(--a13n-border);
   border-radius: 8px;
   background: var(--a13n-surface);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .inputAttachment > details > summary {
   display: flex;
@@ -1707,7 +1705,7 @@ dl.detailGrid > .detailLongRow dd {
   align-items: center;
   gap: 8px;
   margin: 12px 0;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   color: var(--harness-log-text);
 }
 .recoveryNotice > svg {
@@ -1720,7 +1718,7 @@ dl.detailGrid > .detailLongRow dd {
   min-height: 24px;
   margin: 8px 0 16px;
   color: var(--harness-log-text);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .runActivity > svg {
   flex-shrink: 0;
@@ -1738,7 +1736,7 @@ dl.detailGrid > .detailLongRow dd {
   margin-block: 12px;
   border: 0;
   border-radius: 10px;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 1.5;
   background: var(--a13n-surface);
 }
@@ -1783,7 +1781,7 @@ dl.detailGrid > .detailLongRow dd {
 }
 .contextActivity > summary {
   color: var(--harness-log-text);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   font-weight: 500;
   cursor: pointer;
 }
@@ -1797,7 +1795,7 @@ dl.detailGrid > .detailLongRow dd {
 .contextStatus {
   margin-left: 12px;
   color: var(--harness-log-text);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   font-weight: 400;
 }
 .contextPreview {
@@ -1824,7 +1822,7 @@ dl.detailGrid > .detailLongRow dd {
   min-width: 0;
 }
 .childAnswer > header {
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   color: var(--harness-log-text);
   margin-block: 12px;
 }
@@ -1945,7 +1943,7 @@ dl.detailGrid > .detailLongRow dd {
   border-radius: 8px;
   background: transparent;
   color: var(--harness-log-text);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   padding: 4px 8px;
   cursor: pointer;
   transition:
@@ -1960,7 +1958,7 @@ dl.detailGrid > .detailLongRow dd {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: inherit;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 20px;
 }
 .executionDuration {
@@ -2010,7 +2008,7 @@ dl.detailGrid > .detailLongRow dd {
 .executionContent .assistantMessage {
   margin-block: 8px 12px;
   padding-inline: 8px;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 1.6;
   color: var(--a13n-text);
 }
@@ -2139,7 +2137,7 @@ dl.detailGrid > .detailLongRow dd {
   padding: 10px 12px;
   border-radius: 12px;
   background: var(--a13n-surface);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 1.5;
 }
 .composerFeedback:empty {

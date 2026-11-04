@@ -19,12 +19,12 @@
   flex-wrap: wrap;
   gap: 8px;
   margin: 0;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   font-weight: 500;
 }
 .heading h3 span {
   color: var(--a13n-secondary);
-  font-size: 13px;
+  font-size: calc(var(--a13n-text-body) * 13 / 14);
   font-weight: 400;
 }
 .heading button {
@@ -46,11 +46,11 @@
 }
 .bulk button {
   color: var(--a13n-secondary);
-  font-size: 13px;
+  font-size: calc(var(--a13n-text-body) * 13 / 14);
 }
 .note {
   color: var(--a13n-secondary);
-  font-size: 13px;
+  font-size: calc(var(--a13n-text-body) * 13 / 14);
   margin: 8px 0;
 }
 .list {
@@ -104,14 +104,14 @@
   transform: rotate(90deg);
 }
 .toolName {
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   font-weight: 400;
   overflow-wrap: anywhere;
 }
 .toolDescription {
   display: block;
   color: var(--a13n-secondary);
-  font-size: 13px;
+  font-size: calc(var(--a13n-text-body) * 13 / 14);
   line-height: 20px;
   overflow: hidden;
   white-space: nowrap;
@@ -124,7 +124,7 @@
   border-radius: 4px;
 }
 .detail {
-  font-size: 13px;
+  font-size: calc(var(--a13n-text-body) * 13 / 14);
   padding: 8px 0;
 }
 .detail p {
@@ -134,7 +134,7 @@
   overflow-wrap: anywhere;
 }
 .detail h4 {
-  font-size: 13px;
+  font-size: calc(var(--a13n-text-body) * 13 / 14);
   font-weight: 500;
   margin: 12px 0 8px;
 }
@@ -144,18 +144,18 @@
   overflow: auto;
   background: var(--a13n-surface);
   border-radius: 8px;
-  font-size: 12px;
+  font-size: var(--harness-code-size);
   max-height: 240px;
 }
 .unavailable {
   color: var(--a13n-secondary);
   margin-left: 8px;
-  font-size: 12px;
+  font-size: calc(var(--a13n-text-body) * 12 / 14);
 }
 .empty {
   color: var(--a13n-secondary);
   padding: 24px 16px;
-  font-size: 13px;
+  font-size: calc(var(--a13n-text-body) * 13 / 14);
 }
 .footer {
   display: flex;
@@ -166,7 +166,7 @@
 .footer > span {
   flex: 1;
   color: var(--a13n-secondary);
-  font-size: 13px;
+  font-size: calc(var(--a13n-text-body) * 13 / 14);
 }
 .footer > div {
   display: flex;

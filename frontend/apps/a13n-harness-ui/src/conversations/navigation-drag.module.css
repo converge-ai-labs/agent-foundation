@@ -18,7 +18,7 @@
   background: var(--popover);
   box-shadow: 0 3px 12px #00000014;
   color: var(--a13n-text);
-  font-size: 13px;
+  font-size: var(--harness-nav-font);
 }
 .preview > svg {
   width: 14px;

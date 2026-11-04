@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef } from "react";
+import { useAppearance } from "../appearance/react";
 import { useTranslation } from "../i18n";
 import {
   drawSelection,
@@ -92,6 +93,7 @@ export function ComposerEditor({
   send.current = submit;
   report.current = presence;
   person.current = profile;
+  const { appearance } = useAppearance();
   const doc = draft.doc;
   useEffect(() => {
     if (!host.current) return;
@@ -210,8 +212,11 @@ export function ComposerEditor({
           "&": {
             backgroundColor: "transparent",
             color: "var(--a13n-text)",
-            fontSize: "var(--composer-font-size, 14px)",
+            fontSize: "var(--composer-font-size, 16px)",
             minHeight: "var(--composer-content-height, 28px)",
+          },
+          "@media (max-width: 640px) and (pointer: coarse)": {
+            "&": { fontSize: "max(16px, var(--composer-font-size, 16px))" },
           },
           ".cm-content": {
             fontFamily: "inherit",
@@ -242,7 +247,7 @@ export function ComposerEditor({
           ".cm-ySelectionCaretDot": { display: "none" },
           ".cm-ySelectionInfo": {
             fontFamily: "inherit",
-            fontSize: "14px",
+            fontSize: "var(--a13n-text-body)",
             fontWeight: "500",
             lineHeight: "20px",
             top: "-20px",
@@ -299,6 +304,9 @@ export function ComposerEditor({
       });
     };
   }, [draft, doc, editor]);
+  useEffect(() => {
+    currentView.current?.requestMeasure();
+  }, [appearance.sizes.composer]);
   useEffect(() => {
     if (autoFocus) currentView.current?.focus();
   }, [autoFocus, draft, doc, editor]);
@@ -371,7 +379,7 @@ export function ComposerEditor({
                 },
                 ".cm-tooltip.cm-tooltip-autocomplete > ul": {
                   fontFamily: "var(--a13n-font)",
-                  fontSize: "14px",
+                  fontSize: "var(--a13n-text-body)",
                   boxSizing: "border-box",
                   minWidth: "0",
                   maxWidth: "100%",
@@ -409,7 +417,7 @@ export function ComposerEditor({
                 ".cm-tooltip-autocomplete .cm-completionDetail": {
                   display: "block",
                   margin: "4px 0 0",
-                  fontSize: "14px",
+                  fontSize: "var(--a13n-text-body)",
                   lineHeight: "21px",
                   color: "var(--a13n-secondary)",
                   fontStyle: "normal",

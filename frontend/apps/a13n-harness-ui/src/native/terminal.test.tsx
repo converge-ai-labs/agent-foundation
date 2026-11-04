@@ -14,6 +14,8 @@ import { i18n } from "../i18n";
 import { TransportContext } from "../transport/context";
 import type { Schema, Transport } from "../transport/client";
 import TerminalScreen from "./terminal-screen";
+import { AppearanceProvider } from "../appearance/react";
+import { AppearanceStore } from "../appearance/store";
 import { TerminalPanel } from "./terminal";
 import { ComposerDrafts } from "../conversations/composer";
 import { ThreadDraft, encode } from "../conversations/draft";
@@ -126,17 +128,20 @@ function setup(sessions: Schema<"TerminalView">[] = [view]) {
     client: { GET: get, POST: post, DELETE: remove },
     key: "test-only",
   } as unknown as Transport;
+  const appearance = new AppearanceStore(window);
   const queries = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   function Wrapper({ children }: { children: ReactNode }) {
     return (
-      <QueryClientProvider client={queries}>
-        <TransportContext value={transport}>{children}</TransportContext>
-      </QueryClientProvider>
+      <AppearanceProvider store={appearance}>
+        <QueryClientProvider client={queries}>
+          <TransportContext value={transport}>{children}</TransportContext>
+        </QueryClientProvider>
+      </AppearanceProvider>
     );
   }
-  return { Wrapper, post, remove };
+  return { Wrapper, post, remove, appearance };
 }
 const view: Schema<"TerminalView"> = {
   terminal_id: "terminal-one",
@@ -716,4 +721,43 @@ it("relocalizes terminal controls and local errors without translating server de
   await act(async () => {
     await i18n.changeLanguage("en");
   });
+});
+
+it("changes terminal size in place and resizes the PTY only with control", async () => {
+  const f = setup();
+  const width = vi
+    .spyOn(HTMLElement.prototype, "clientWidth", "get")
+    .mockReturnValue(600);
+  const height = vi
+    .spyOn(HTMLElement.prototype, "clientHeight", "get")
+    .mockReturnValue(400);
+  const unauthorized = vi.fn();
+  render(
+    <TerminalScreen id="terminal-one" visible unauthorized={unauthorized} />,
+    { wrapper: f.Wrapper },
+  );
+  const socket = Socket.all[0];
+  act(() => emit(socket, null, 0));
+  await waitFor(() => expect(emulator.resized).toHaveBeenCalledWith(80, 24));
+  socket.send.mockClear();
+  emulator.resized.mockClear();
+  act(() => f.appearance.setSize("terminal", 20));
+  await waitFor(() => expect(emulator.resized).toHaveBeenCalledWith(80, 24));
+  expect(socket.send).not.toHaveBeenCalled();
+  expect(Socket.all).toHaveLength(1);
+  expect(socket.close).not.toHaveBeenCalled();
+  expect(emulator.disposed).not.toHaveBeenCalled();
+  act(() => emit(socket, "participant-me", 1));
+  await waitFor(() =>
+    expect(
+      socket.send.mock.calls.some(
+        ([text]) => JSON.parse(text).kind === "resize",
+      ),
+    ).toBe(true),
+  );
+  expect(emulator.resized).toHaveBeenCalledWith(90, 20);
+  expect(Socket.all).toHaveLength(1);
+  expect(f.post).not.toHaveBeenCalled();
+  width.mockRestore();
+  height.mockRestore();
 });

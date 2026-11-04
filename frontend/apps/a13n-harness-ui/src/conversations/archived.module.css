@@ -26,10 +26,10 @@
   border-top: 1px solid var(--a13n-border-soft);
 }
 .row strong {
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .row small {
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .empty {
   display: flex;
@@ -43,6 +43,6 @@
 .empty h2 {
   margin: 0;
   color: var(--a13n-text);
-  font-size: 16px;
+  font-size: calc(var(--a13n-text-body) * 16 / 14);
   font-weight: 500;
 }

@@ -52,7 +52,7 @@
   color: var(--a13n-text);
   text-decoration: none;
   white-space: nowrap;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   font-weight: 500;
   letter-spacing: -0.01em;
   border-radius: 8px;
@@ -66,11 +66,11 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 16px;
+  font-size: calc(var(--a13n-text-body) * 16 / 14);
   font-weight: 500;
 }
 .sidebarCaption {
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   font-weight: 500;
   color: var(--a13n-secondary);
   padding: 0 12px 12px;
@@ -105,7 +105,7 @@
   flex-shrink: 0;
   border-radius: 50%;
   color: white;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .profileName {
   overflow: hidden;
@@ -144,13 +144,13 @@
   overflow-wrap: anywhere;
 }
 .personInfo strong {
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   font-weight: 500;
 }
 .personInfo > span,
 .personYou {
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   font-weight: 400;
 }
 @media (max-width: 700px) {
@@ -165,7 +165,7 @@
   margin-top: auto;
   padding-top: 12px;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 /* The footer shares the navigation icon and label columns. */
 .sidebarFooter small {
@@ -204,7 +204,7 @@
   overflow: hidden;
 }
 .main :where(h1) {
-  font-size: 20px;
+  font-size: calc(var(--a13n-text-body) * 20 / 14);
   font-weight: 500;
   line-height: 1.25;
   letter-spacing: -0.015em;
@@ -212,7 +212,7 @@
   overflow-wrap: anywhere;
 }
 .main :where(h2) {
-  font-size: 16px;
+  font-size: calc(var(--a13n-text-body) * 16 / 14);
   font-weight: 500;
   line-height: 1.4;
   margin: 0 0 16px;
@@ -226,7 +226,7 @@
 .main code {
   overflow-wrap: anywhere;
   font-family: var(--a13n-mono);
-  font-size: 12px;
+  font-size: var(--harness-code-size);
 }
 .main a:not([data-slot="button"]) {
   color: inherit;
@@ -255,7 +255,7 @@
   grid-row: 2;
   max-width: 660px;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 20px;
 }
 .pageHeader > .actions {
@@ -280,7 +280,7 @@
 .dialogSecondaryAction {
   margin-right: auto;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 @media (max-width: 400px) {
   .dialogSecondaryAction {
@@ -329,7 +329,7 @@
   background: var(--a13n-surface);
 }
 .hero h2 {
-  font-size: 20px;
+  font-size: calc(var(--a13n-text-body) * 20 / 14);
   letter-spacing: -0.015em;
   margin: 12px 0;
 }
@@ -337,7 +337,7 @@
   max-width: 480px;
 }
 .eyebrow {
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   font-weight: 500;
   color: var(--a13n-secondary);
 }
@@ -350,12 +350,12 @@
   align-items: baseline;
 }
 .heroStats strong {
-  font-size: 20px;
+  font-size: calc(var(--a13n-text-body) * 20 / 14);
   font-weight: 500;
 }
 .heroStats span {
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .resourceList {
   display: flex;
@@ -378,7 +378,7 @@
   border-radius: calc(var(--harness-radius-panel) - 4px);
   text-decoration: none;
   border-bottom: 1px solid var(--a13n-border);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 20px;
   overflow-wrap: anywhere;
 }
@@ -393,7 +393,7 @@
   color: var(--a13n-secondary);
   display: block;
   margin-top: 4px;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 20px;
 }
 .resourceRow small:empty {
@@ -406,7 +406,7 @@
 .kind {
   flex-shrink: 0;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   white-space: nowrap;
 }
 .tag {
@@ -419,7 +419,7 @@
   border-radius: 999px;
   background: var(--a13n-canvas);
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 1;
   white-space: nowrap;
 }
@@ -445,7 +445,7 @@
   align-items: center;
   gap: 8px;
   color: var(--a13n-text-supporting);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
@@ -474,7 +474,7 @@
   padding: 8px 12px;
   background: var(--a13n-surface);
   color: var(--a13n-text-supporting);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
@@ -522,7 +522,7 @@
   column-gap: 4px;
   max-width: 640px;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 20px;
   overflow-wrap: anywhere;
 }
@@ -554,7 +554,7 @@
   background: none;
   color: var(--a13n-text);
   font: inherit;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   text-decoration: none;
   cursor: pointer;
 }
@@ -584,7 +584,7 @@
   padding: 4px 0;
   list-style: none;
   cursor: pointer;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   font-weight: 500;
   line-height: 20px;
   user-select: none;
@@ -634,7 +634,7 @@
   grid-row: 2;
   margin: 0;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   font-weight: 400;
   line-height: 20px;
 }
@@ -642,7 +642,7 @@
   margin-bottom: 8px;
 }
 :where(.details) pre {
-  font-size: 14px;
+  font-size: var(--harness-code-size);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -651,7 +651,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .checks {
   display: flex;
@@ -681,7 +681,7 @@
   border-bottom: 0;
 }
 .definitionList dt {
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   color: var(--a13n-secondary);
 }
 .definitionList dd {
@@ -690,19 +690,19 @@
 .definitionList small {
   display: block;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .back {
   display: inline-flex;
   gap: 8px;
   align-items: center;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   text-decoration: none;
   align-self: flex-start;
 }
 .muted {
   color: var(--a13n-secondary) !important;
-  font-size: 14px !important;
+  font-size: var(--a13n-text-body) !important;
 }
 .access {
   min-height: 100dvh;
@@ -721,13 +721,13 @@
   gap: 24px;
 }
 .accessCard h1 {
-  font-size: 20px;
+  font-size: calc(var(--a13n-text-body) * 20 / 14);
   font-weight: 500;
   letter-spacing: -0.03em;
 }
 .accessCard p {
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .accessCard .accessError {
   color: var(--a13n-danger);
@@ -788,14 +788,14 @@
     gap: 24px;
   }
   .hero h2 {
-    font-size: 20px;
+    font-size: calc(var(--a13n-text-body) * 20 / 14);
   }
   .heroStats {
     display: flex;
     gap: 12px;
   }
   .heroStats strong {
-    font-size: 20px;
+    font-size: calc(var(--a13n-text-body) * 20 / 14);
   }
   .panel {
     padding: 16px;
@@ -819,7 +819,6 @@
 
 .settingsNavigation {
   --harness-nav-height: 30px;
-  --harness-nav-font: 13px;
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -835,7 +834,7 @@
 .settingsNavigationTitle {
   padding: 0 8px;
   margin: 0 0 8px;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   font-weight: 500;
   color: var(--a13n-secondary);
 }
@@ -892,16 +891,16 @@
 }
 .settingsContent .pageHeader > div > h1 {
   min-height: var(--harness-control-height);
-  font-size: 20px;
+  font-size: calc(var(--a13n-text-body) * 20 / 14);
   line-height: 24px;
 }
 .settingsContent .pageHeader > div > h2 {
   min-height: 24px;
-  font-size: 16px;
+  font-size: calc(var(--a13n-text-body) * 16 / 14);
   line-height: 20px;
 }
 .settingsContent .pageHeader p {
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .settingsContent:has(.editorActions) {
   padding-bottom: 0;
@@ -919,7 +918,7 @@
   padding: 16px 12px;
   border-radius: 8px;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 20px;
   text-align: center;
 }
@@ -966,12 +965,12 @@
 }
 .sourceCode > header > h3 {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   font-weight: 500;
 }
 .sourceCode > header > p {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   color: var(--a13n-secondary);
 }
 .sourceHeader {
@@ -1007,7 +1006,7 @@
   flex-direction: column;
   gap: 4px;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .configurationForm {
   display: flex;
@@ -1025,7 +1024,7 @@
 .sectionNote {
   padding-block: 12px;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 20px;
 }
 .sectionNote > :is(h3, p) {
@@ -1056,7 +1055,7 @@
   gap: 12px;
   padding: 8px;
   border-radius: 6px;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   cursor: pointer;
   overflow-wrap: anywhere;
 }
@@ -1131,18 +1130,18 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 20px;
   font-weight: 500;
 }
 .workspaceMenu .profileAvatar {
   width: 20px;
   height: 20px;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .sidebarFooter .workspacePerson small {
   padding: 0;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   color: var(--a13n-secondary);
 }
 .workspacePopup {
@@ -1152,7 +1151,7 @@
   display: block;
   padding: 12px 8px 4px;
   color: var(--a13n-tertiary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .debugMenuLabel,
 .debugIndicator {
@@ -1166,12 +1165,12 @@
   padding: 4px 8px;
   border: 0;
   border-radius: 6px;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   cursor: pointer;
 }
 
 .pageHeader > div > h1 {
-  font-size: 20px;
+  font-size: calc(var(--a13n-text-body) * 20 / 14);
   font-weight: 500;
 }
 

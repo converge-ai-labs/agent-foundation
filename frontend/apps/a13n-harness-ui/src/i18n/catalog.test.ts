@@ -70,6 +70,10 @@ const surfaces = sourceFiles(new URL("../", import.meta.url));
 // scoped to their source file so unrelated application copy is still detected.
 const untranslatedExceptions: Record<string, string[]> = {
   "app.tsx": ["Harness"],
+  "configuration/appearance.tsx": [
+    'const greeting = "Hello, 世界";',
+    'echo "Hello, 世界"',
+  ],
   "configuration/device-fields.tsx": ["/api/devices/", "/connect"],
   "configuration/envd.tsx": ["envd"],
   "configuration/envd-fields.tsx": ["envd"],

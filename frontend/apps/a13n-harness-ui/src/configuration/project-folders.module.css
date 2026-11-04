@@ -17,7 +17,7 @@
 }
 .label {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   font-weight: 400;
   line-height: 20px;
 }
@@ -41,7 +41,7 @@
 .hint {
   margin: 0;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .browser {
   padding: 12px;
@@ -62,7 +62,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .entries {
   max-height: min(200px, 30dvh);
