@@ -161,6 +161,8 @@ Async is the default. Enable `subagents.dynamic.enabled` in Console or the API t
 
 Dynamic children retain a Thread snapshot, not a published Agent version. Archiving the source Agent blocks new child Runs and continuations but does not stop already accepted Runs. Unarchiving allows continuation of the same snapshot.
 
+Dynamic children inherit the parent Run's request limit, if set, as a per-Run cap. Follow-ups retain that limit, execution settings, configuration and context: omission inherits, while explicit changes are rejected. Forking with the source Agent and no revision retains the snapshot and shared environments; `fresh_environments=true` is rejected. Select a published revision explicitly to fork into ordinary Agent execution.
+
 ## Start a conversation
 
 In Console, choose **Sessions → New session**, or **Try agent** on an agent's page. Through the API, `POST /threads` creates a thread and its first inbox message. Omit `session_id` to create a session too; supply it to add a thread to an existing session.
@@ -259,7 +261,7 @@ Pass business metadata shared by model and MCP requests through the message body
 
 Forwarding is enabled by default. Include only values intended for those providers and MCP servers. Values are readable run options; store secrets in provider or connection credentials. Inbound HTTP headers are not copied automatically. The map allows 32 case-insensitively unique names, printable ASCII values up to 4096 characters, and 8 KiB overall; authentication and transport names are reserved.
 
-Recovery, resume and children retain the accepted context. New messages and forks start with their own context, empty when omitted. A steer can omit or repeat context; a different value queues for a later run. HTTP reads expose it, while MCP query projections remove it. Prompts, history and command environments receive no automatic copy.
+Recovery, resume and children retain the accepted context. Ordinary new messages and forks start with their own context, empty when omitted. Snapshot Threads instead retain frozen context and reject explicit changes. An ordinary steer can omit or repeat context; a different value queues for a later run. HTTP reads expose it, while MCP query projections remove it. Prompts, history and command environments receive no automatic copy.
 
 Model request headers and per-connection `mcp_headers` override shared names; credentials and protected protocol headers remain authoritative. Forwarding requires both the deployment category switch and the target's `config.forward_context_headers`. Omitted target settings use `A13N_HARNESS_FORWARD_CONTEXT_HEADERS` (default true); MCP saves store the resolved value. Disable a category with `A13N_PROVIDERS__FORWARD_MODEL_CONTEXT_HEADERS=false` or `A13N_PROVIDERS__FORWARD_MCP_CONTEXT_HEADERS=false`. Fetch, browser and shell operations do not automatically forward these headers.
 

@@ -24,6 +24,8 @@ from a13n_service.resources.models.service import model_settings, resolve_model
 from a13n_service.runs.runtime import Runtime
 from a13n_service.tenancy.authorize import ExecutionAuthority, Principal, WorkspaceScope
 
+SpawnName = Annotated[str, Field(min_length=1, max_length=63)]
+SpawnPrompt = Annotated[str, Field(min_length=1, max_length=1024 * 1024)]
 SelectionKeys = Annotated[tuple[str, ...], Field(max_length=512)]
 
 
@@ -39,9 +41,9 @@ class CapabilitySelection(BaseModel):
 
 class Spawn(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
-    name: str = Field(min_length=1, max_length=63)
+    name: SpawnName
     instructions: Instructions
-    prompt: str = Field(min_length=1, max_length=1024 * 1024)
+    prompt: SpawnPrompt
     model: str | None = None
     thinking: str | bool | None = None
     selection: CapabilitySelection | None = None
@@ -76,7 +78,7 @@ async def derive(
     settings = dict(parent.model_settings) if same_model else {}
     thinking = request.thinking if request.thinking is not None else policy.default_thinking
     if thinking is None and same_model:
-        thinking = settings.get("thinking", target.config.defaults().get("thinking"))
+        thinking = settings.get("thinking")
     if thinking is None:
         thinking = target.config.defaults().get("thinking")
     if thinking is not None:
@@ -211,9 +213,9 @@ class SpawnCapability(AbstractCapability[AgentContext]):
     async def spawn_subagent(
         self,
         ctx: RunContext[AgentContext],
-        name: Annotated[str, Field(min_length=1, max_length=63)],
+        name: SpawnName,
         instructions: Instructions,
-        prompt: Annotated[str, Field(min_length=1, max_length=1024 * 1024)],
+        prompt: SpawnPrompt,
         model: str | None = None,
         thinking: str | bool | None = None,
         selection: CapabilitySelection | None = None,

@@ -9,6 +9,7 @@ from a13n_service.resources.agents.schemas import AgentConfig
 from a13n_service.resources.agents.tables import AgentRevisionRow
 from a13n_service.resources.models.schemas import ModelConfig
 from a13n_service.resources.models.tables import ModelRow
+from a13n_service.runs import definitions
 from a13n_service.runs.schemas import RunOptions
 from a13n_service.runs.tables import AttemptRow, RunRow, ThreadRow, UsageRecordRow
 from a13n_service.runs.threads import get_run, get_thread
@@ -80,10 +81,10 @@ async def read_context_usage(
             and observed.get("source", "agent") == "agent"
         ):
             if revision is None:
-                from a13n_service.runs.definitions import AgentSnapshot
-
                 thread = await session.get_one(ThreadRow, run.thread_id)
-                config = stored.read(AgentSnapshot, thread.agent_snapshot, kind="thread", id=thread.id).config
+                snapshot = definitions.snapshot(thread)
+                assert snapshot is not None
+                config = snapshot.config
             else:
                 config = stored.read(AgentConfig, revision.config, kind=revision.KIND, id=revision.id)
             override = stored.read(RunOptions, run.options, kind="run", id=run.id).overrides

@@ -220,9 +220,7 @@ async def _read(
             value = run.options.overrides
         else:
             value = agent_reads.config_section(
-                (configuration.revision.config if configuration.revision else configuration.config)
-                if source.section == "original"
-                else configuration.config,
+                configuration.original_config if source.section == "original" else configuration.config,
                 source.part,
             )
     else:

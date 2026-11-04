@@ -157,10 +157,18 @@ class ChildRuns(SubagentOperator):
             depth = (await delegation(session, thread, run.id)).depth
             if thread.agent_snapshot is not None or (spawn is not None and depth != 0):
                 raise invalid("subagents", "Only an ordinary root agent can spawn dynamic subagents")
+            if depth >= settings.child_depth:
+                raise conflict("run", run.id, "child_depth_exceeded")
+            spawned = await session.scalar(
+                select(func.count()).select_from(ThreadRow).where(ThreadRow.origin_run_id == run.id)
+            )
+            if (spawned or 0) >= settings.child_count:
+                raise conflict("run", run.id, "child_count_exceeded")
             principal = await authorize_execution(session, self.runtime.access, run)
             options = stored.require(RunOptions, run.options, kind="run", id=run.id)
             config = None
             if spawn is not None:
+                limit = options.max_usage.requests if options.max_usage is not None else None
                 definition = await definitions.resolve(
                     session, thread, run.agent_id, run.agent_revision_id, options.overrides, accepting=False
                 )
@@ -176,13 +184,6 @@ class ChildRuns(SubagentOperator):
                     effective,
                     spawn,
                 )
-            if depth >= settings.child_depth:
-                raise conflict("run", run.id, "child_depth_exceeded")
-            spawned = await session.scalar(
-                select(func.count()).select_from(ThreadRow).where(ThreadRow.origin_run_id == run.id)
-            )
-            if (spawned or 0) >= settings.child_count:
-                raise conflict("run", run.id, "child_count_exceeded")
             owner = await session.get_one(SessionRow, run.session_id)
             origin = (await origins(session, [run.id])).get(run.id) if run.occurrence_trigger_entry_id else None
             child = new_thread(
@@ -206,8 +207,8 @@ class ChildRuns(SubagentOperator):
             if edge is None or edge.selection.environment.mode == "shared":
                 await adopt_mounts(session, child, [EnvironmentMount.model_validate(m) for m in run.environment_mounts])
             await adopt_memory_mounts(session, child, run.memory_mounts)
-            # A run's `max_usage` bounds model requests only, so the edge's request limit is all a child run
-            # carries; the edge's token and tool-call limits apply to inline delegation.
+            # Async Runs carry request limits: dynamic children inherit the parent's, named children use the
+            # edge's. Edge token and tool-call limits apply only to inline delegation.
             message = Message(
                 delivery="next_run",
                 payload=payload,
@@ -449,7 +450,8 @@ class ChildRuns(SubagentOperator):
 def _view(execution: _Execution) -> AsyncExecutionView:
     run, thread = execution.run, execution.thread
     assert thread.subagent is not None, "every child thread records the edge that delegated it"
-    definition_id = thread.agent_snapshot["definition_id"] if thread.agent_snapshot else run.agent_revision_id
+    snapshot = definitions.snapshot(thread)
+    definition_id = snapshot.definition_id if snapshot else run.agent_revision_id
     assert definition_id is not None
     return AsyncExecutionView(
         execution_id=run.id,

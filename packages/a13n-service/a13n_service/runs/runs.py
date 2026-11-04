@@ -15,7 +15,7 @@ from a13n_service.infra.reads import UnavailableConfiguration
 from a13n_service.resources.agents import stored
 from a13n_service.resources.agents.schemas import AgentRevision
 from a13n_service.resources.agents.tables import AgentRevisionRow, AgentRow
-from a13n_service.runs import checkpoints, read_views
+from a13n_service.runs import checkpoints, definitions, read_views
 from a13n_service.runs.checkpoints import PageRef, TailPointer
 from a13n_service.runs.contents import MAX_IMAGE_BYTES, ContentObject, decode
 from a13n_service.runs.display import Page, Tail
@@ -97,9 +97,8 @@ async def agent(storage: Storage, actor: Principal, workspace_id: str, run_id: s
         run = await get_run(session, scope.workspace_id, run_id)
         thread = await session.get_one(ThreadRow, run.thread_id)
         if thread.agent_snapshot is not None:
-            from a13n_service.runs.definitions import AgentSnapshot
-
-            snapshot = stored.read(AgentSnapshot, thread.agent_snapshot, kind="thread", id=thread.id)
+            snapshot = definitions.snapshot(thread)
+            assert snapshot is not None
             return stored.read(
                 RunAgent,
                 {

@@ -5,7 +5,7 @@ fork and spawn call it with their own source. A source arrives loaded and checke
 the revision and the options it runs with. Both are SQL-only and run under the caller's thread lock.
 """
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from functools import partial
 from typing import Literal
 
@@ -14,9 +14,9 @@ from a13n_logging import exception_details, get_logger
 from sqlalchemy import and_, case, exists, func, select, true, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a13n_service.execution_policy import ExecutionOverride, ExecutionPolicy, ToolExecutionOverride
+from a13n_service.execution_policy import ExecutionOverride, ExecutionPolicy, ToolExecutionOverride, matches
 from a13n_service.infra.db import after_commit, now, transaction
-from a13n_service.infra.errors import ServiceError
+from a13n_service.infra.errors import ServiceError, conflict
 from a13n_service.infra.ids import new_object_id
 from a13n_service.infra.telemetry import meter
 from a13n_service.resources.agents import stored
@@ -27,6 +27,7 @@ from a13n_service.resources.agents.service import (
     select_revision,
     validate_override,
 )
+from a13n_service.resources.agents.validation import require_subagent_tool_names
 from a13n_service.runs import definitions, inbox
 from a13n_service.runs.admission import AcceptedIntent
 from a13n_service.runs.attachments import require_readable
@@ -41,7 +42,15 @@ from a13n_service.runs.environments.mounts import (
 from a13n_service.runs.memories.mounts import freeze_memories, inherited_cursors
 from a13n_service.runs.memories.session_memory import inherit_defaults
 from a13n_service.runs.runtime import Runtime
-from a13n_service.runs.schemas import EnvironmentMount, Failure, MessagePayload, Resume, RunOptions, Trigger
+from a13n_service.runs.schemas import (
+    EnvironmentMount,
+    Failure,
+    MessagePayload,
+    RequestContext,
+    Resume,
+    RunOptions,
+    Trigger,
+)
 from a13n_service.runs.search import seed, vector
 from a13n_service.runs.tables import InboxEntryRow, RunRow, SessionRow, ThreadRow
 from a13n_service.runs.webhooks import notify_subscribers
@@ -102,6 +111,39 @@ async def _authorized(
     return principal
 
 
+async def require_thread_tool_names(
+    session: AsyncSession, thread: ThreadRow, revision: definitions.Definition, overrides: AgentOverride | None
+) -> None:
+    """Creation-disabled definitions can still expose controls in a Thread with children."""
+    if thread.agent_snapshot is not None:
+        return
+    effective = stored.require_effective(revision.config, overrides, revision_id=revision.definition_id)
+    if effective.subagents.mode == "async" and effective.client_tools:
+        controls = await session.scalar(
+            select(exists().where(ThreadRow.origin_thread_id == thread.id, ThreadRow.origin == "child"))
+        )
+        require_subagent_tool_names(effective, controls=bool(controls))
+
+
+async def snapshot_options(session: AsyncSession, thread: ThreadRow, requested: RunOptions) -> RunOptions:
+    """Retain snapshot execution bindings; reject explicit changes before accepting input."""
+    previous = await session.get_one(RunRow, thread.current_run_id or thread.last_run_id or thread.origin_run_id)
+    frozen = stored.require(RunOptions, previous.options, kind="run", id=previous.id)
+    if not matches(frozen.execution, requested.execution):
+        raise conflict("run", previous.id, "execution_policy_immutable")
+    for field, default, reason in (
+        ("configuration", RunConfiguration(), "run_configuration_immutable"),
+        ("context", RequestContext(), "request_context_immutable"),
+        ("max_usage", None, "usage_limit_immutable"),
+    ):
+        value = getattr(requested, field)
+        if value is not None and value != (getattr(frozen, field) or default):
+            raise conflict("run", previous.id, reason)
+    return requested.model_copy(
+        update={field: getattr(frozen, field) for field in ("execution", "configuration", "context", "max_usage")}
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class Source:
     """What a run starts from, a queued entry or the answers resuming a waiting run, with the principal it runs
@@ -131,9 +173,12 @@ class Source:
         principal: Principal,
         revision: definitions.Definition,
         overrides: AgentOverride | None,
+        *,
+        options: RunOptions | None = None,
     ) -> "Source":
         """A message whose principal the caller authorized and whose revision and overrides it validated."""
-        options = stored.require(RunOptions, entry.options, kind="inbox_entry", id=entry.id)
+        submitted = stored.require(RunOptions, entry.options, kind="inbox_entry", id=entry.id)
+        options = options if options is not None else submitted
         return cls(
             trigger=trigger,
             principal=principal,
@@ -147,7 +192,7 @@ class Source:
             options=options.model_copy(
                 update={"overrides": overrides, "configuration": options.configuration or RunConfiguration()}
             ),
-            options_digest=options.digest(),
+            options_digest=submitted.digest(),
             occurrence_trigger_entry_id=entry.id if entry.schedule_occurrence_id is not None else None,
             entry=entry,
         )
@@ -161,29 +206,19 @@ class Source:
         scope = WorkspaceScope(thread.organization_id, thread.workspace_id)
         authority = ExecutionAuthority.model_validate(entry.authority)
         principal = await _authorized(session, runtime, scope, entry.principal_id, authority)
-        overrides = stored.require(RunOptions, entry.options, kind="inbox_entry", id=entry.id).overrides
+        requested = stored.require(RunOptions, entry.options, kind="inbox_entry", id=entry.id)
+        overrides = requested.overrides
         if thread.agent_snapshot is not None:
             revision = await definitions.resolve(
                 session, thread, entry.agent_id, entry.agent_revision_id, overrides, accepting=True
             )
-            source = cls.message(entry, trigger, principal, revision, None)
-            previous = await session.get_one(RunRow, thread.last_run_id or thread.origin_run_id)
-            frozen = stored.require(RunOptions, previous.options, kind="run", id=previous.id)
-            if source.options.execution is not None and source.options.execution != frozen.execution:
-                raise ServiceError("invalid_argument", "Snapshot execution policy is immutable")
-            return replace(
-                source,
-                options=source.options.model_copy(
-                    update={
-                        "execution": frozen.execution,
-                        "configuration": frozen.configuration,
-                        "context": frozen.context,
-                    }
-                ),
+            return cls.message(
+                entry, trigger, principal, revision, None, options=await snapshot_options(session, thread, requested)
             )
         revision, overrides = await run_revision(
             session, runtime, principal, scope, entry.agent_id, entry.agent_revision_id, overrides, authority=authority
         )
+        await require_thread_tool_names(session, thread, revision, overrides)
         return cls.message(entry, trigger, principal, revision, overrides)
 
     @classmethod

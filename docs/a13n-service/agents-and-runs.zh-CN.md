@@ -161,6 +161,8 @@ description: 配置 agent、继续对话，并处理结果、审批与恢复。
 
 动态子 agent 使用线程快照，不创建临时 Agent 版本。归档来源 Agent 会阻止新的子运行及续接，已接受的运行仍可完成；取消归档后可以继续原快照。
 
+动态子运行继承父运行设置的请求次数上限，按每个 Run 单独计数。后续消息保留该上限、执行设置、configuration 和 context：省略时继承，显式修改会被拒绝。使用来源 Agent 且不指定 revision 的分叉保留快照与共享环境，不允许 `fresh_environments=true`；显式选择已发布版本可切换为普通 Agent 执行。
+
 ## 开始对话
 
 在 Console 选择**会话 → 新建会话**，或在 agent 页选择**试用 Agent**。API 的 `POST /threads` 创建线程和第一条收件箱消息。省略 `session_id` 会同时创建会话；提供它则向已有会话添加线程。
@@ -259,7 +261,7 @@ Resume 和自动子结果续接保留前一运行的选项。Console 的**运行
 
 默认开启转发。只放入允许发送给这些 provider 和 MCP 服务器的值。值作为可读运行选项保存；密钥应放在 provider 或连接凭据中。入站 HTTP 头不会自动复制。映射最多 32 个不区分大小写且唯一的名称，值为最多 4096 字符的可打印 ASCII，合计 8 KiB；认证和传输名称属于保留字段。
 
-故障恢复、resume 和子 agent 保留已接受的上下文。新消息和分叉使用自己的上下文，省略时为空。Steer 可以省略或重复上下文，不同值会排队等待后续运行。HTTP 读取提供这些值，MCP 查询投影则移除它们。提示词、历史和命令环境不会自动获得副本。
+故障恢复、resume 和子 agent 保留已接受的上下文。普通线程的新消息和分叉使用自己的上下文，省略时为空。快照线程保留冻结的上下文，拒绝显式修改。普通线程的 Steer 可以省略或重复上下文，不同值会排队等待后续运行。HTTP 读取提供这些值，MCP 查询投影则移除它们。提示词、历史和命令环境不会自动获得副本。
 
 模型请求头和各连接的 `mcp_headers` 优先于共享同名字段；凭据和受保护协议头始终优先。转发需要同时启用部署类别开关及目标的 `config.forward_context_headers`。省略目标设置时使用 `A13N_HARNESS_FORWARD_CONTEXT_HEADERS`（默认 true）；MCP 保存时写入解析后的值。通过 `A13N_PROVIDERS__FORWARD_MODEL_CONTEXT_HEADERS=false` 或 `A13N_PROVIDERS__FORWARD_MCP_CONTEXT_HEADERS=false` 关闭相应类别。Fetch、浏览器和 Shell 操作不会自动转发这些头。
 

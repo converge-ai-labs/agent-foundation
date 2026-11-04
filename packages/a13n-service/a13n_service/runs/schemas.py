@@ -728,6 +728,10 @@ class RunAgent(BaseModel):
     source: Literal["revision", "thread_snapshot"]
     config: AgentConfig
 
+    @property
+    def original_config(self) -> AgentConfig:
+        return self.revision.config if self.revision else self.config
+
 
 class RunLabels(_Frozen):
     labels: Labels

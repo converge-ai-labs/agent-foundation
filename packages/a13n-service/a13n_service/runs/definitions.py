@@ -31,6 +31,14 @@ class SelectedSnapshot:
     revision_id: None = None
 
 
+def snapshot(thread: ThreadRow, *, executing: bool = False) -> AgentSnapshot | None:
+    """Inspect retained configuration, or require today's contract before execution."""
+    if thread.agent_snapshot is None:
+        return None
+    parse = stored.require if executing else stored.read
+    return parse(AgentSnapshot, thread.agent_snapshot, kind="thread", id=thread.id)
+
+
 type Definition = SelectedRevision | SelectedSnapshot
 
 
@@ -51,12 +59,13 @@ async def resolve(
         origin = await session.get_one(RunRow, thread.origin_run_id)
         if agent_id != origin.agent_id:
             raise invalid("agent_id", "Snapshot threads retain their source Agent")
-        snapshot = stored.require(AgentSnapshot, thread.agent_snapshot, kind="thread", id=thread.id)
-        if snapshot.config.subagents.named or snapshot.config.subagents.dynamic.enabled:
+        selected = snapshot(thread, executing=True)
+        assert selected is not None
+        if selected.config.subagents.named or selected.config.subagents.dynamic.enabled:
             raise invalid("subagents", "Snapshot agents cannot delegate")
         if accepting:
             await require_active_agent(session, thread.workspace_id, agent_id)
-        return SelectedSnapshot(agent_id, snapshot.definition_id, snapshot.config)
+        return SelectedSnapshot(agent_id, selected.definition_id, selected.config)
     if accepting:
         return await select_revision(session, thread.workspace_id, agent_id, revision_id)
     if revision_id is None:

@@ -73,7 +73,7 @@ from a13n_service.providers.model_settings import effective_settings
 from a13n_service.providers.registry import Registry
 from a13n_service.resources.agents import definition, stored, toolsets
 from a13n_service.resources.agents.schemas import AgentConfig, AgentOverride, SubagentSelection
-from a13n_service.resources.agents.validation import connection_info, subagent_graph
+from a13n_service.resources.agents.validation import connection_info, require_subagent_tool_names, subagent_graph
 from a13n_service.resources.models.media import workspace_media
 from a13n_service.resources.models.runtime import open_model
 from a13n_service.resources.models.service import ResolvedModel, model_settings, require_understanding, resolve_model
@@ -346,6 +346,7 @@ class _Host:
         self, agent: ResolvedAgent, *, compaction: CompactionOperator | None = None, controls: bool = False
     ) -> AgentDefinition[Any]:
         config = agent.config
+        require_subagent_tool_names(config, controls=controls and agent.revision_id is not None)
         sources = dict(self.tool_sources(agent) if self.tool_sources else {})
         environment = DynamicEnvironmentCapability(toolsets.environment_configuration(config.toolsets))
         sources["environment"] = environment

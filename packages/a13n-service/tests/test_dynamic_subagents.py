@@ -85,6 +85,20 @@ async def test_dynamic_snapshot_archive_replay_execution_resume_and_fork(service
     assert successor.child_definition_id == spawned.child_definition_id
     continued = await runs_kit.get_run(service, successor.execution_id)
     assert continued["revision_selection"] == "snapshot" and continued["agent_revision_id"] is None
+    fresh = await service.client.post(
+        f"{service.api}/runs/{child['id']}/fork",
+        json={**runs_kit.message(parent, "Fresh fork"), "fresh_environments": True},
+        headers=runs_kit.fresh_key(),
+    )
+    assert fresh.status_code == 400, fresh.text
+    published = await service.client.post(
+        f"{service.api}/runs/{child['id']}/fork",
+        json=runs_kit.message(parent, "Published fork", agent_revision_id=parent["default_revision_id"]),
+        headers=runs_kit.fresh_key(),
+    )
+    assert published.status_code == 201, published.text
+    assert published.json()["run"]["revision_selection"] == "pinned"
+    await service.client.post(f"{service.api}/runs/{published.json()['run']['id']}/interrupt")
     forked = await service.client.post(
         f"{service.api}/runs/{child['id']}/fork",
         json=runs_kit.message(parent, "Fork task"),
@@ -262,3 +276,142 @@ async def test_model_and_thinking_defaults_and_cross_model_settings(service, scr
         await operator.spawn(
             Spawn(name="bad", instructions="Role", prompt="Work", thinking="invented-effort"), "bad-thinking"
         )
+
+
+@pytest.mark.anyio
+async def test_snapshot_options_reject_changes_and_preserve_omitted_values(service, scripted_model, runs_kit):
+    await runs_kit.pause_sweeps(service)
+    parent = await runs_kit.create_agent(service, scripted_model, subagents={"dynamic": {"enabled": True}})
+    options = {
+        "context": {"headers": {"x-task": "original"}},
+        "configuration": {"extensions": {"test.role": "original"}},
+        "execution": {"environment": {"TASK": "original"}},
+        "max_usage": {"requests": 3},
+    }
+    submitted = await runs_kit.start_thread(service, parent, "Task", options=options)
+    (lease,) = await claim(service.runtime, worker_id="parent", worker_build="test", limit=1)
+    operator = ChildRuns(service.runtime, lease, AttemptControl(), {})
+    child = await operator.spawn(Spawn(name="worker", instructions="Role", prompt="Work"), "spawn")
+    frozen = (await runs_kit.get_run(service, child.execution_id))["options"]
+    for field in options:
+        assert frozen[field] == submitted["run"]["options"][field]
+    changes = (
+        ("context", {"headers": {"x-task": "different"}}, "request_context_immutable"),
+        ("configuration", {"extensions": {"test.role": "different"}}, "run_configuration_immutable"),
+        ("execution", {"environment": {"TASK": "different"}}, "execution_policy_immutable"),
+        ("max_usage", {"requests": 4}, "usage_limit_immutable"),
+    )
+    for completed in (False, True):
+        if completed:
+            scripted_model.say("Done")
+            await (await runs_kit.attempt(service))
+        before = await runs_kit.inbox(service, child.thread_id)
+        for delivery in ("steer", "next_run"):
+            for field, value, reason in changes:
+                response = await runs_kit.submit(
+                    service,
+                    child.thread_id,
+                    runs_kit.message(parent, "Change", delivery=delivery, options={field: value}),
+                )
+                assert response.status_code == 409, response.text
+                assert response.json()["error"]["details"]["reason"] == reason
+        assert await runs_kit.inbox(service, child.thread_id) == before
+    # Explicit restatements are valid; omitted values retain the same frozen bindings.
+    same = await runs_kit.submit(service, child.thread_id, runs_kit.message(parent, "Again", options=options))
+    assert same.status_code == 201, same.text
+    scripted_model.say("Done again")
+    await (await runs_kit.attempt(service))
+    omitted = await runs_kit.submit(service, child.thread_id, runs_kit.message(parent, "Again"))
+    assert omitted.status_code == 201, omitted.text
+    for field in options:
+        assert omitted.json()["run"]["options"][field] == frozen[field]
+
+
+@pytest.mark.anyio
+async def test_dynamic_child_enforces_parent_request_limit(service, scripted_model, runs_kit):
+    await runs_kit.pause_sweeps(service)
+    parent = await runs_kit.create_agent(service, scripted_model, subagents={"dynamic": {"enabled": True}})
+    await runs_kit.start_thread(service, parent, "Task", options={"max_usage": {"requests": 1}})
+    (lease,) = await claim(service.runtime, worker_id="parent", worker_build="test", limit=1)
+    child = await ChildRuns(service.runtime, lease, AttemptControl(), {}).spawn(
+        Spawn(name="worker", instructions="Role", prompt="Work", selection={"toolsets": []}), "spawn"
+    )
+    scripted_model.call("missing_tool", {}, call_id="retry")
+    await (await runs_kit.attempt(service))
+    failed = await runs_kit.get_run(service, child.execution_id)
+    assert (failed["status"], failed["failure"]["code"]) == ("failed", "usage_limit_exceeded"), failed
+    resumed = await runs_kit.submit(service, child.thread_id, runs_kit.message(parent, "Continue"))
+    assert resumed.status_code == 201, resumed.text
+    assert resumed.json()["run"]["options"]["max_usage"] == {"requests": 1}
+
+
+@pytest.mark.anyio
+async def test_control_names_are_reserved_only_when_tools_are_exposed(service, scripted_model, runs_kit):
+    await runs_kit.pause_sweeps(service)
+    key = await runs_kit.create_model(service, scripted_model)
+    client = {"name": "subagent_info", "description": "Client status", "parameters_json_schema": {"type": "object"}}
+    ordinary = await runs_kit.add_agent(service, "ordinary", key, client_tools=[client])
+    invalid = await service.client.post(
+        f"{service.api}/agents",
+        json={
+            "name": "Conflicting",
+            "config": {"model": key, "client_tools": [client], "subagents": {"dynamic": {"enabled": True}}},
+        },
+    )
+    assert invalid.status_code == 400, invalid.text
+    parent = await runs_kit.add_agent(service, "parent", key, subagents={"dynamic": {"enabled": True}})
+    root = await runs_kit.start_thread(service, parent, "Task")
+    (lease,) = await claim(service.runtime, worker_id="parent", worker_build="test", limit=1)
+    await ChildRuns(service.runtime, lease, AttemptControl(), {}).spawn(
+        Spawn(name="worker", instructions="Role", prompt="Work"), "spawn"
+    )
+    cancelled = await service.client.post(f"{service.api}/runs/{root['run']['id']}/interrupt")
+    assert cancelled.status_code == 200, cancelled.text
+    # Even with creation disabled, this Thread still exposes controls for its existing child.
+    collision = await runs_kit.submit(service, root["thread"]["id"], runs_kit.message(ordinary, "Use client tool"))
+    assert collision.status_code == 400, collision.text
+    assert collision.json()["error"]["details"]["field"] == "client_tools.0.name"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("default", [None, "low"])
+async def test_concrete_model_thinking_is_frozen_but_unspecified_default_stays_live(
+    service, scripted_model, runs_kit, default
+):
+    await runs_kit.pause_sweeps(service)
+    key = await runs_kit.create_model(service, scripted_model)
+    model = await service.client.get(f"{service.api}/models/{key}")
+    configured = await service.client.patch(
+        f"{service.api}/models/{key}",
+        json={
+            "config": {
+                **model.json()["config"],
+                "model_name": "gpt-5",
+                "settings": {} if default is None else {"thinking": default},
+            }
+        },
+        headers={"if-match": model.headers["etag"]},
+    )
+    assert configured.status_code == 200, configured.text
+    parent = await runs_kit.add_agent(service, "parent", key, subagents={"dynamic": {"enabled": True}})
+    await runs_kit.start_thread(service, parent, "Task")
+    (lease,) = await claim(service.runtime, worker_id="parent", worker_build="test", limit=1)
+    child = await ChildRuns(service.runtime, lease, AttemptControl(), {}).spawn(
+        Spawn(name="worker", instructions="Role", prompt="Work"), "spawn"
+    )
+    changed = await service.client.patch(
+        f"{service.api}/models/{key}",
+        json={"config": {**configured.json()["config"], "settings": {"thinking": "high"}}},
+        headers={"if-match": configured.headers["etag"]},
+    )
+    assert changed.status_code == 200, changed.text
+    view = await service.client.get(f"{service.api}/runs/{child.execution_id}/agent")
+    assert view.status_code == 200, view.text
+    settings = view.json()["config"]["model_settings"]
+    assert settings.get("thinking") == default
+    if default is None:
+        assert "thinking" not in settings
+    scripted_model.say("Done")
+    await (await runs_kit.attempt(service))
+    request = await scripted_model.request()
+    assert request["reasoning_effort"] == (default or "high")
