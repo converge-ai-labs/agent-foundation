@@ -62,6 +62,28 @@ it("sends a pending message again with the options it was accepted with", () => 
   });
 });
 
+it("resubmits snapshot input without inventing a revision or changing frozen options", () => {
+  const options = {
+    execution: { tools: { foreground_wait_seconds: 6 } },
+    context: { headers: { "x-task": "research" } },
+    overrides: null,
+  };
+  expect(
+    runResubmission(
+      fixtureRun({
+        status: "failed",
+        revision_selection: "snapshot",
+        agent_revision_id: null,
+        options,
+      }),
+    ),
+  ).toEqual({
+    payload: textInput("Run the checks"),
+    agent_revision_id: null,
+    options,
+  });
+});
+
 it("never resubmits what a message did not start", () => {
   expect(
     runResubmission(

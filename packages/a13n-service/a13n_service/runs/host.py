@@ -50,7 +50,7 @@ from a13n_service.runs.builtin_instructions import BuiltinInstructionsCapability
 from a13n_service.runs.calls import CallCheck
 from a13n_service.runs.environments.desktop.freshness import Freshness
 from a13n_service.runs.environments.desktop.notify import HandbackNotifications
-from a13n_service.runs.environments.mounts import PRIMARY, has_primary
+from a13n_service.runs.environments.mounts import PRIMARY
 from a13n_service.runs.mcp_apps.capture import Captures
 from a13n_service.runs.memories.execution import (
     PlannedMemory,
@@ -87,7 +87,7 @@ class _Parts:
 @dataclass(frozen=True, slots=True)
 class HostPlan:
     parts: Mapping[str, _Parts]
-    root_revision_id: str
+    root_definition_id: str
     execution: ExecutionPolicy
     memories: tuple[PlannedMemory, ...]
     # The root agent's enabled memory tools of each kind.
@@ -123,17 +123,15 @@ async def resolve_host(
         .all()
     )
     for node in agent.agents():
-        if node.revision_id in parts:
+        if node.definition_id in parts:
             continue
         config = node.config
-        host_skills = bool(config.builtin_skills) and node.revision_id in builtin
-        if config.builtin_skills and not host_skills and not has_primary(run.environment_mounts):
-            raise invalid("builtin_skills", "builtin skills of custom agents need the run's primary environment")
+        host_skills = bool(config.builtin_skills)
         skills = await resolve_skills(session, run, config.skills, sync=config.skill_sync)
         # Reject before any shared directory is written, including configurations saved before this check existed.
         if any(skill.name in config.builtin_skills for skill in skills):
             raise invalid("builtin_skills", "a selected workspace skill has the same name as a builtin skill")
-        parts[node.revision_id] = _Parts(
+        parts[node.definition_id] = _Parts(
             connections=await resolve_connections(
                 session,
                 principal,
@@ -146,14 +144,16 @@ async def resolve_host(
             skills=skills,
             platform=platform_tools(config.toolsets),
             host_skills=host_skills,
-            builtin_instructions=instructions.for_preset(builtin.get(node.revision_id)),
+            builtin_instructions=instructions.for_preset(
+                builtin.get(node.revision_id) if node.revision_id is not None else None
+            ),
             browser_tools=enabled_tools(config.toolsets, "browser"),
             computer_notify=enabled_tool(config.toolsets, "computer", "notify") is not None,
             assets=enabled_tool(config.toolsets, "assets", "publish") is not None,
         )
     return HostPlan(
         parts,
-        agent.revision_id,
+        agent.definition_id,
         execution=ExecutionPolicy().overlay(stored.require(RunOptions, run.options, kind="run", id=run.id).execution),
         memories=await resolve_memories(session, run),
         file_tools=memory_file_tools(agent.config.toolsets),
@@ -185,20 +185,14 @@ class Host:
         if retain_tools:
             # Only conversation roots retain calls; inline children and memory organizers stay inline.
             features.append(ToolExecutionCapability(self.plan.execution.tools))
-        parts = self.plan.parts[agent.revision_id]
-        if agent.revision_id in self.browsers:
+        parts = self.plan.parts[agent.definition_id]
+        if agent.definition_id in self.browsers:
             features.append(
-                BrowserContextCapability(self.runtime, self.lease, self.browsers[agent.revision_id].binding)
+                BrowserContextCapability(self.runtime, self.lease, self.browsers[agent.definition_id].binding)
             )
         if parts.builtin_instructions is not None:
             features.append(BuiltinInstructionsCapability(parts.builtin_instructions))
         skills = parts.skills
-        if not parts.host_skills:
-            skills += tuple(
-                SkillPackage(package.archive, package.digest, package.definition.name, package.definition.description)
-                for name in sorted(agent.config.builtin_skills)
-                for package in (self.runtime.builtin_skills[name],)
-            )
         sync = agent.config.skill_sync
         if parts.host_skills or skills or (isinstance(sync, SharedSkillSync) and sync.cleanup):
             features.append(
@@ -216,15 +210,15 @@ class Host:
 
     def sources(self, agent: ResolvedAgent) -> Mapping[str, AbstractCapability[AgentContext]]:
         """Already-constructed host sources, shared by direct and grouped presentation."""
-        return self.tools[agent.revision_id]
+        return self.tools[agent.definition_id]
 
     def bindings(self, agent: ResolvedAgent, given: RunBindings) -> RunBindings:
         """`given` with what the agent binds of its own: its web backends and its media understanding."""
         return replace(
             given,
             model_context=ModelContext(self.lease.run_id, self.runtime.storage),
-            web=self.webs.get(agent.revision_id),
-            browser_backend=self.browsers.get(agent.revision_id),
+            web=self.webs.get(agent.definition_id),
+            browser_backend=self.browsers.get(agent.definition_id),
             file_media_understanding=media_understanding(agent, self.models) if agent.media else None,
         )
 
@@ -253,7 +247,7 @@ async def open_host(
         tools: dict[str, dict[str, AbstractCapability[AgentContext]]] = {}
         webs: dict[str, WebBinding] = {}
         browsers: dict[str, BrowserBackend] = {}
-        for revision_id, parts in plan.parts.items():
+        for definition_id, parts in plan.parts.items():
             connections = await stack.enter_async_context(
                 open_connections(
                     parts.connections,
@@ -264,19 +258,21 @@ async def open_host(
                     registry=runtime.registry,
                     policy=runtime.endpoint_policy.for_run(configuration),
                     settings=runtime.settings.providers,
-                    capture=partial(app_captures.add, revision_id) if app_captures is not None else None,
+                    capture=partial(app_captures.add, definition_id) if app_captures is not None else None,
                     request_context=request_context,
                 )
             )
-            tools[revision_id] = dict(zip((item.connection.id for item in parts.connections), connections, strict=True))
+            tools[definition_id] = dict(
+                zip((item.connection.id for item in parts.connections), connections, strict=True)
+            )
             if parts.platform:
                 platform = await stack.enter_async_context(platform_capability(runtime, lease, parts.platform))
-                tools[revision_id]["platform"] = platform
+                tools[definition_id]["platform"] = platform
             if plan.browser is not None and parts.browser_tools:
-                browsers[revision_id] = await stack.enter_async_context(
+                browsers[definition_id] = await stack.enter_async_context(
                     open_backend(runtime, lease, plan.browser, check, parts.browser_tools)
                 )
-                tools[revision_id]["browser"] = BrowserUseCapability(
+                tools[definition_id]["browser"] = BrowserUseCapability(
                     enabled_tools=parts.browser_tools,
                     on_human_control=lambda: BROWSER_GUIDANCE,
                     file_instructions=(
@@ -289,11 +285,11 @@ async def open_host(
                     ),
                 )
             if parts.computer_notify:
-                tools[revision_id]["computer-notify"] = HandbackNotifications(runtime, lease)
+                tools[definition_id]["computer-notify"] = HandbackNotifications(runtime, lease)
             if parts.assets:
-                tools[revision_id]["assets"] = AssetsCapability(runtime, lease, principal, authority)
+                tools[definition_id]["assets"] = AssetsCapability(runtime, lease, principal, authority)
             if parts.web is not None:
-                webs[revision_id] = await stack.enter_async_context(
+                webs[definition_id] = await stack.enter_async_context(
                     open_web(parts.web, check, runtime=runtime, configuration=configuration)
                 )
         files = file_memory(
@@ -318,7 +314,7 @@ async def open_host(
         )
         memory = [capability for capability in (files, records) if capability is not None]
         if memory:
-            tools[plan.root_revision_id]["memory"] = CombinedCapability(memory)
+            tools[plan.root_definition_id]["memory"] = CombinedCapability(memory)
         yield Host(
             runtime,
             lease,

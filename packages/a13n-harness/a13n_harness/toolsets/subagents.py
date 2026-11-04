@@ -75,7 +75,11 @@ class AsyncSubagentToolset:
 
     def get_toolset(self) -> FunctionToolset[AgentContext]:
         tools = [
-            self._tool(self.delegate, "subagents.async.delegate", {"execute"}, "none"),
+            *(
+                [self._tool(self.delegate, "subagents.async.delegate", {"execute"}, "none")]
+                if self._context.subagents
+                else []
+            ),
             self._tool(self.subagent_info, "subagents.async.info", {"read"}, "read_only"),
             self._tool(
                 self.wait_subagent,
@@ -206,10 +210,24 @@ class AsyncSubagentToolset:
             await self._operator.info(self._operator_context(), info_request, tool_call=_tool_call_context(ctx)),
         )
         previous = _require_exact_execution(info.executions, execution_id)
-        child = self._require_child(previous.subagent_name)
         if not previous.resumable:
             raise ToolFailed("The retained subagent execution is not resumable.")
         request = AsyncResumeRequest(execution_id=execution_id, prompt=prompt)
+        if previous.source == "host":
+            result = _validate_model(
+                AsyncExecutionView,
+                await self._operator.resume_host(self._operator_context(), request, tool_call=_tool_call_context(ctx)),
+            )
+            if (
+                result.source != "host"
+                or result.child_definition_id != previous.child_definition_id
+                or result.subagent_name != previous.subagent_name
+                or result.resumed_from != execution_id
+                or result.execution_id == execution_id
+            ):
+                raise TypeError("subagent operator returned incompatible Host continuation")
+            return result.model_dump(mode="json")
+        child = self._require_child(previous.subagent_name)
         result = _validate_model(
             AsyncExecutionView,
             await self._operator.resume(
@@ -321,6 +339,8 @@ def _validate_execution(
     resumed_from: str | None,
     allow_definition_replacement: bool = False,
 ) -> None:
+    if result.source != "declared":
+        raise TypeError("declared subagent operator returned a Host-defined execution")
     if result.subagent_name != child.declaration.name:
         raise TypeError("subagent operator retargeted the selected child")
     if not allow_definition_replacement and result.child_definition_id != child.definition.definition_id:

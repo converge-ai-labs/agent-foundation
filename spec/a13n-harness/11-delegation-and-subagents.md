@@ -96,7 +96,7 @@ An async `execution_id` is a bounded public Host execution reference. It is not 
 
 ## Harness-Resolved Async Authority
 
-Before async admission or resume, Harness resolves the authored child and constructs a detached immutable plan:
+Before declared async admission or resume, Harness resolves the authored child and constructs a detached immutable plan:
 
 ```python
 @dataclass(frozen=True, slots=True)
@@ -139,6 +139,10 @@ Neither the plan nor operator context contains a live `AgentContext`, `RunContex
 Each standard async tool also projects its originating Pydantic tool-call correlation into a detached `SubagentToolCallContext` supplied separately to the operator method. Harness forwards the available `tool_call_id` and assembled `tool_name` without generating an idempotency key, defining a replay scope, or assigning persistence meaning. An operator may combine that correlation with the plan, request, and its own Host authority to implement idempotency or diagnostics. A missing call ID remains `None`; Harness does not synthesize one. The correlation grants no authority and does not become parent or child state.
 
 `BuiltSubagent` is a process-local invocation reference. A durable or remote operator persists its own exact definition revision and reconstructs the authorized child rather than serializing the executable object.
+
+Trusted Host results may set `AsyncExecutionView.source="host"`; the default `declared` value is omitted from serialization. Host-defined creation is a Host tool and does not insert a fake child into the immutable roster. On resume, only this trusted discriminator selects `SubagentOperator.resume_host(context, request, tool_call=...)`. Its default implementation refuses the request. It receives detached parent context, not a fabricated `SubagentDelegationPlan`. The Host resolves retained configuration, checks ownership, authority and limits, and constructs fresh bindings. Harness requires unchanged source, label and definition identity, a new execution ID, and exact `resumed_from` linkage. A missing roster name never activates this path. Declared resume retains its existing roster and plan rules. Empty-roster async capabilities expose controls without `delegate`.
+
+`project_delegation_input` shares the existing context projection with Host-defined creation. It does not authorize a child or retain its state.
 
 ## Host Operator Contract
 
@@ -318,7 +322,7 @@ For async work, the Host owns observation storage, subscriptions, wake policy, a
 01. `SubagentCapability()` provides inline delegate and resume without a Host scheduler or store.
 02. Async mode requires an explicit `SubagentOperator` and never falls back to inline execution.
 03. Inline and async standard Toolsets are mutually exclusive.
-04. Harness resolves the current roster child, context, Identity policy, and usage ceilings before Host admission; an authorized async resume replacement must derive its own definition identity and intersect its own limits within those ceilings.
+04. For declared children, Harness resolves the current roster child, context, Identity policy, and usage ceilings before Host admission; an authorized async resume replacement must derive its own definition identity and intersect its own limits within those ceilings.
 05. Operator inputs contain detached correlation, never live parent Run or Environment authority.
 06. Inline continuation is stored only under the Subagent Capability namespace in parent Agent state.
 07. Async child state and current execution status remain Host-owned and are not projected into parent Harness state.

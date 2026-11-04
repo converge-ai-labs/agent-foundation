@@ -497,3 +497,87 @@ async def test_async_operator_return_type_mismatch_is_rejected() -> None:
     )
     with pytest.raises(TypeError, match="must return AsyncExecutionView"):
         await executable.run("start", bindings=_bindings())
+
+
+@pytest.mark.parametrize(
+    "change", [None, "source", "child_definition_id", "subagent_name", "resumed_from", "execution_id"]
+)
+async def test_host_resume_without_roster_preserves_retained_identity(change: str | None) -> None:
+    class HostOperator(RecordingSubagentOperator):
+        async def info(self, context, request, *, tool_call=None):
+            return SubagentInfoResult(
+                executions=(
+                    self._view("execution-1", status="succeeded", resumable=True).model_copy(update={"source": "host"}),
+                ),
+                total=1,
+            )
+
+        async def resume_host(self, context, request, *, tool_call=None):
+            self.calls.append("resume_host")
+            self.requests.append(request)
+            self.tool_calls.append(tool_call)
+            value = AsyncExecutionView(
+                execution_id="execution-2",
+                subagent_name="reviewer",
+                child_definition_id="child-v1",
+                status="running",
+                resumed_from="execution-1",
+                source="host",
+            )
+            replacement = "declared" if change == "source" else "execution-1" if change == "execution_id" else "other"
+            return value.model_copy(update={change: replacement}) if change else value
+
+    operator = HostOperator()
+    observed: set[str] = set()
+
+    async def model(messages, info):
+        observed.update(tool.name for tool in info.function_tools)
+        if not any(
+            isinstance(part, ToolReturnPart)
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+        ):
+            yield {
+                0: DeltaToolCall(
+                    name="resume_subagent",
+                    json_args='{"execution_id":"execution-1","prompt":"continue"}',
+                    tool_call_id="resume-1",
+                )
+            }
+        else:
+            yield "done"
+
+    definition = AgentDefinition(
+        agent=AgentSpec(),
+        output_type=str,
+        definition_id="parent-v1",
+        model=FunctionModel(stream_function=model),
+        capabilities=(SubagentCapability(async_enabled=True, operator=operator),),
+    )
+    executable = HarnessBuilder().build(definition)
+    if change:
+        with pytest.raises(TypeError, match="incompatible Host continuation"):
+            await executable.run("continue", bindings=_bindings())
+    else:
+        assert (await executable.run("continue", bindings=_bindings())).output_or_raise() == "done"
+        assert "delegate" not in observed and "resume_subagent" in observed
+        assert operator.calls == ["resume_host"]
+        assert operator.requests == [AsyncResumeRequest(execution_id="execution-1", prompt="continue")]
+        assert operator.tool_calls[0].tool_call_id == "resume-1"
+        assert not operator.plans
+
+
+async def test_host_resume_is_opt_in_and_declared_wire_shape_is_unchanged() -> None:
+    from pydantic_ai.exceptions import ToolFailed
+
+    operator = RecordingSubagentOperator()
+    view = operator._view("execution-1")
+    assert "source" not in view.model_dump(mode="json")
+    with pytest.raises(ToolFailed, match="does not support"):
+        await operator.resume_host(
+            SubagentOperatorContext(
+                parent_thread_id="parent", parent_run_id="run", parent_agent_instance_id="instance", host_refs={}
+            ),
+            AsyncResumeRequest(execution_id="execution-1", prompt="continue"),
+        )

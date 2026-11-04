@@ -20,7 +20,7 @@ class AcceptedIntent:
     run_id: str
     principal_id: str
     agent_id: str
-    agent_revision_id: str
+    agent_revision_id: str | None
     trigger: str
     root_run_id: str
 

@@ -34,7 +34,7 @@ class Captures:
 
     def add(
         self,
-        revision_id: str,
+        definition_id: str,
         selected: SelectedConnection,
         context: AgentContext,
         call_id: str,
@@ -50,7 +50,7 @@ class Captures:
         reference = AppReference(
             app_id=new_object_id("app"),
             connection_id=connection.id,
-            agent_revision_id=revision_id,
+            agent_definition_id=definition_id,
             source_run_id=context.run_id,
             tool_call_id=call_id,
             tool_name=tool.name,

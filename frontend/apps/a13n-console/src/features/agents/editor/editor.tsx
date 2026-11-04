@@ -329,7 +329,7 @@ export function AgentEditor({
                 subagentValidation ??
                 (error instanceof ApiError &&
                 typeof error.details.field === "string" &&
-                /^subagents(?:\.|$)|^subagent_mode$/.test(error.details.field)
+                /^subagents(?:\.|$)/.test(error.details.field)
                   ? error
                   : undefined)
               }

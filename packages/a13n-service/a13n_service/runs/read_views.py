@@ -32,8 +32,8 @@ class RunSummary(BaseModel):
     thread_id: str
     agent_id: str
     agent_name: str | None
-    agent_revision_id: str
-    revision_selection: Literal["pinned", "default", "inherited"]
+    agent_revision_id: str | None
+    revision_selection: Literal["pinned", "default", "inherited", "snapshot"]
     principal_id: str
     parent_run_id: str | None
     source_entry_id: str | None

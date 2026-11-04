@@ -230,6 +230,7 @@ export function RunDock({
                 disabled={!can("run") || (following && latest !== run.id)}
                 options={
                   !active &&
+                  run.revision_selection !== "snapshot" &&
                   !resubmit && (
                     <RunOptions
                       options={options}
@@ -245,12 +246,19 @@ export function RunDock({
                   if (!active) onSubmissionChange?.({ payload });
                   try {
                     const nextOptions =
-                      !active && !resubmit ? options.build() : undefined;
+                      !active &&
+                      !resubmit &&
+                      run.revision_selection !== "snapshot"
+                        ? options.build()
+                        : undefined;
                     const body: Schema["Message"] = {
                       kind: "message",
                       delivery: active ? "steer" : "next_run",
                       payload,
                       agent_id: run.agent_id,
+                      ...(run.revision_selection === "snapshot"
+                        ? { agent_revision_id: null, options: run.options }
+                        : {}),
                       ...(nextOptions?.options
                         ? { options: nextOptions.options }
                         : {}),

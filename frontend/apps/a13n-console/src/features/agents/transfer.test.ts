@@ -53,9 +53,11 @@ const config = {
     },
   },
   subagents: {
-    helper: {
-      agent_id: "ap_0123456789abcdef0123",
-      revision_id: "apr_0123456789abcdef01234567",
+    named: {
+      helper: {
+        agent_id: "ap_0123456789abcdef0123",
+        revision_id: "apr_0123456789abcdef01234567",
+      },
     },
   },
   retries: { tools: 2, output: 1 },

@@ -4801,16 +4801,7 @@ export interface components {
        * @default []
        */
       skills?: components["schemas"]["SkillSelection"][];
-      /**
-       * Subagent Mode
-       * @default inline
-       * @enum {string}
-       */
-      subagent_mode?: "inline" | "async";
-      /** Subagents */
-      subagents?: {
-        [key: string]: components["schemas"]["SubagentSelection-Input"];
-      };
+      subagents?: components["schemas"]["Subagents-Input"];
       /**
        * Summarize
        * @default false
@@ -4889,16 +4880,7 @@ export interface components {
        * @default []
        */
       skills?: components["schemas"]["SkillSelection"][];
-      /**
-       * Subagent Mode
-       * @default inline
-       * @enum {string}
-       */
-      subagent_mode?: "inline" | "async";
-      /** Subagents */
-      subagents?: {
-        [key: string]: components["schemas"]["SubagentSelection-Output"];
-      };
+      subagents?: components["schemas"]["Subagents-Output"];
       /**
        * Summarize
        * @default false
@@ -4971,8 +4953,8 @@ export interface components {
      * AgentOverride
      * @description What one run changes of its revision's configuration; an omitted or null field keeps the revision's.
      *
-     *     `toolsets` replaces whole toolsets; `retries` and each subagent edge replace the fields they set, and a null
-     *     edge removes it; every other field replaces the revision's value.
+     *     `toolsets` replaces whole toolsets; `retries` replaces supplied members.
+     *     Every other field, including `subagents`, replaces the whole value.
      */
     "AgentOverride-Input": {
       /** Builtin Skills */
@@ -5009,10 +4991,7 @@ export interface components {
         | null;
       /** Skills */
       skills?: components["schemas"]["SkillSelection"][] | null;
-      /** Subagents */
-      subagents?: {
-        [key: string]: components["schemas"]["SubagentOverride-Input"] | null;
-      } | null;
+      subagents?: components["schemas"]["Subagents-Input"] | null;
       tool_search?: components["schemas"]["ToolSearch"] | null;
       /** Toolsets */
       toolsets?: {
@@ -5023,8 +5002,8 @@ export interface components {
      * AgentOverride
      * @description What one run changes of its revision's configuration; an omitted or null field keeps the revision's.
      *
-     *     `toolsets` replaces whole toolsets; `retries` and each subagent edge replace the fields they set, and a null
-     *     edge removes it; every other field replaces the revision's value.
+     *     `toolsets` replaces whole toolsets; `retries` replaces supplied members.
+     *     Every other field, including `subagents`, replaces the whole value.
      */
     "AgentOverride-Output": {
       /** Builtin Skills */
@@ -5061,10 +5040,7 @@ export interface components {
         | null;
       /** Skills */
       skills?: components["schemas"]["SkillSelection"][] | null;
-      /** Subagents */
-      subagents?: {
-        [key: string]: components["schemas"]["SubagentOverride-Output"] | null;
-      } | null;
+      subagents?: components["schemas"]["Subagents-Output"] | null;
       tool_search?: components["schemas"]["ToolSearch"] | null;
       /** Toolsets */
       toolsets?: {
@@ -5309,8 +5285,8 @@ export interface components {
     };
     /** AppReference */
     AppReference: {
-      /** Agent Revision Id */
-      agent_revision_id: string;
+      /** Agent Definition Id */
+      agent_definition_id: string;
       /** App Id */
       app_id: string;
       /** Connection Id */
@@ -6115,7 +6091,6 @@ export interface components {
       | "builtin_skills"
       | "client_tools"
       | "user_questions"
-      | "subagent_mode"
       | "subagents"
       | "reviewer"
       | "media_understanding"
@@ -6920,6 +6895,43 @@ export interface components {
       /** Truncated */
       truncated: boolean;
     };
+    /**
+     * DynamicSubagents
+     * @description Root-only task-specific delegation within the parent's capability boundary.
+     */
+    "DynamicSubagents-Input": {
+      /**
+       * Allowed Models
+       * @default []
+       */
+      allowed_models?: string[];
+      /** Default Model */
+      default_model?: string | null;
+      /** Default Thinking */
+      default_thinking?: string | boolean | null;
+      /**
+       * Enabled
+       * @default false
+       */
+      enabled?: boolean;
+    };
+    /**
+     * DynamicSubagents
+     * @description Root-only task-specific delegation within the parent's capability boundary.
+     */
+    "DynamicSubagents-Output": {
+      /** Allowed Models */
+      allowed_models?: string[];
+      /** Default Model */
+      default_model?: string | null;
+      /** Default Thinking */
+      default_thinking?: string | boolean | null;
+      /**
+       * Enabled
+       * @default false
+       */
+      enabled?: boolean;
+    };
     /** EmailChangeConfirm */
     EmailChangeConfirm: {
       /** Token */
@@ -7588,7 +7600,7 @@ export interface components {
       /** Agent Id */
       agent_id: string;
       /** Agent Revision Id */
-      agent_revision_id: string;
+      agent_revision_id: string | null;
       /** Analysis Id */
       analysis_id: string | null;
       assessment: components["schemas"]["Assessment"];
@@ -7641,7 +7653,7 @@ export interface components {
       /** Agent Id */
       agent_id: string;
       /** Agent Revision Id */
-      agent_revision_id: string;
+      agent_revision_id: string | null;
       /** @description One primary issue type for the central evidenced claim, separate from analysis presets, impact and review. Put uncertainty in explanation/limitations; do not invent categories. */
       category: components["schemas"]["Category"];
       /** Evidence */
@@ -10617,7 +10629,14 @@ export interface components {
      */
     RunAgent: {
       config: components["schemas"]["AgentConfig-Output"];
-      revision: components["schemas"]["AgentRevision"];
+      /** Definition Id */
+      definition_id: string;
+      revision: components["schemas"]["AgentRevision"] | null;
+      /**
+       * Source
+       * @enum {string}
+       */
+      source: "revision" | "thread_snapshot";
     };
     /** RunAgentSummary */
     RunAgentSummary: {
@@ -10638,7 +10657,7 @@ export interface components {
       /** References Truncated */
       references_truncated: boolean;
       /** Revision Id */
-      revision_id: string;
+      revision_id: string | null;
       /** Skill Ids */
       skill_ids: string[];
       /** Subagent Ids */
@@ -10742,7 +10761,7 @@ export interface components {
       /** Agent Id */
       agent_id: string;
       /** Agent Revision Id */
-      agent_revision_id: string;
+      agent_revision_id: string | null;
       /** Attempts */
       attempts: number;
       /**
@@ -10839,7 +10858,7 @@ export interface components {
       /** Agent Name */
       agent_name: string | null;
       /** Agent Revision Id */
-      agent_revision_id: string;
+      agent_revision_id: string | null;
       /** Attempts */
       attempts: number;
       /**
@@ -10884,7 +10903,7 @@ export interface components {
        * Revision Selection
        * @enum {string}
        */
-      revision_selection: "pinned" | "default" | "inherited";
+      revision_selection: "pinned" | "default" | "inherited" | "snapshot";
       schedule_origin?: components["schemas"]["ScheduleOrigin"] | null;
       /** Sealed At */
       sealed_at: string | null;
@@ -10942,7 +10961,7 @@ export interface components {
       /** Agent Id */
       agent_id: string;
       /** Agent Revision Id */
-      agent_revision_id: string;
+      agent_revision_id: string | null;
       /** Attempts */
       attempts: number;
       browser_binding?: components["schemas"]["BrowserBinding"] | null;
@@ -10994,7 +11013,7 @@ export interface components {
        * Revision Selection
        * @enum {string}
        */
-      revision_selection: "pinned" | "default" | "inherited";
+      revision_selection: "pinned" | "default" | "inherited" | "snapshot";
       schedule_origin?: components["schemas"]["ScheduleOrigin"] | null;
       /** Sealed At */
       sealed_at: string | null;
@@ -11945,36 +11964,6 @@ export interface components {
       | "capacity";
     /** @enum {string} */
     Steering: "boundary" | "immediate";
-    /**
-     * SubagentOverride
-     * @description Replaces the fields it sets of an edge; an edge the revision lacks sets at least `agent_id`.
-     */
-    "SubagentOverride-Input": {
-      /** Agent Id */
-      agent_id?: string | null;
-      context?: components["schemas"]["DelegationContextPolicy"] | null;
-      /** Description */
-      description?: string | null;
-      environment?: components["schemas"]["ChildEnvironmentPolicy"] | null;
-      /** Revision Id */
-      revision_id?: string | null;
-      usage_limits?: components["schemas"]["UsageLimits-Input"] | null;
-    };
-    /**
-     * SubagentOverride
-     * @description Replaces the fields it sets of an edge; an edge the revision lacks sets at least `agent_id`.
-     */
-    "SubagentOverride-Output": {
-      /** Agent Id */
-      agent_id?: string | null;
-      context?: components["schemas"]["DelegationContextPolicy"] | null;
-      /** Description */
-      description?: string | null;
-      environment?: components["schemas"]["ChildEnvironmentPolicy"] | null;
-      /** Revision Id */
-      revision_id?: string | null;
-      usage_limits?: components["schemas"]["UsageLimits-Output"] | null;
-    };
     /** SubagentSelection */
     "SubagentSelection-Input": {
       /** Agent Id */
@@ -11998,6 +11987,34 @@ export interface components {
       /** Revision Id */
       revision_id?: string | null;
       usage_limits?: components["schemas"]["UsageLimits-Output"] | null;
+    };
+    /** Subagents */
+    "Subagents-Input": {
+      dynamic?: components["schemas"]["DynamicSubagents-Input"];
+      /**
+       * Mode
+       * @default async
+       * @enum {string}
+       */
+      mode?: "inline" | "async";
+      /** Named */
+      named?: {
+        [key: string]: components["schemas"]["SubagentSelection-Input"];
+      };
+    };
+    /** Subagents */
+    "Subagents-Output": {
+      dynamic?: components["schemas"]["DynamicSubagents-Output"];
+      /**
+       * Mode
+       * @default async
+       * @enum {string}
+       */
+      mode?: "inline" | "async";
+      /** Named */
+      named?: {
+        [key: string]: components["schemas"]["SubagentSelection-Output"];
+      };
     };
     /**
      * Submitted
@@ -12354,7 +12371,7 @@ export interface components {
       /** Agent Id */
       agent_id: string;
       /** Agent Revision Id */
-      agent_revision_id: string;
+      agent_revision_id: string | null;
       /** Attempts */
       attempts: number;
       /** Cost */
@@ -13702,7 +13719,6 @@ export interface operations {
           | "builtin_skills"
           | "client_tools"
           | "user_questions"
-          | "subagent_mode"
           | "subagents"
           | "reviewer"
           | "media_understanding"
@@ -19405,7 +19421,6 @@ export interface operations {
           | "builtin_skills"
           | "client_tools"
           | "user_questions"
-          | "subagent_mode"
           | "subagents"
           | "reviewer"
           | "media_understanding"

@@ -138,6 +138,7 @@ class ThreadRow(Stamped, Base):
             name="origin_links",
         ),
         CheckConstraint("(origin = 'child') = (subagent IS NOT NULL)", name="subagent"),
+        CheckConstraint("agent_snapshot IS NULL OR origin IN ('child', 'fork')", name="agent_snapshot"),
         CheckConstraint("origin = 'new' OR message_history::jsonb = '[]'::jsonb", name="imported_history"),
         # A spawn is identified by its tool call, so the parent's recovery finds the same child thread.
         Index(
@@ -167,6 +168,8 @@ class ThreadRow(Stamped, Base):
             BEGIN
                 IF NEW.message_history::text IS DISTINCT FROM OLD.message_history::text
                 THEN RAISE EXCEPTION 'thread initial history is immutable'; END IF;
+                IF NEW.agent_snapshot IS DISTINCT FROM OLD.agent_snapshot
+                THEN RAISE EXCEPTION 'thread agent snapshot is immutable'; END IF;
                 IF NEW.schedule_occurrence_id IS DISTINCT FROM OLD.schedule_occurrence_id
                 THEN RAISE EXCEPTION 'thread schedule occurrence is immutable'; END IF;
                 RETURN NEW;
@@ -190,6 +193,7 @@ class ThreadRow(Stamped, Base):
     message_history: Mapped[list] = mapped_column(JSON, default=list, server_default=text("'[]'::jsonb"))
     # The name of the async subagent edge that spawned a child thread, as its parent's graph declared it then.
     subagent: Mapped[str | None]
+    agent_snapshot: Mapped[dict | None] = mapped_column(JSONB)
     # current: accepted or running. last: most recently sealed, the history a successor continues.
     current_run_id: Mapped[str | None] = mapped_column(String(72))
     last_run_id: Mapped[str | None] = mapped_column(String(72))
@@ -519,7 +523,10 @@ class RunRow(Stamped, Base):
             postgresql_using="gin",
             postgresql_where=text("status IN ('accepted', 'running')"),
         ),
-        CheckConstraint("revision_selection IN ('pinned', 'default', 'inherited')", name="revision_selection"),
+        CheckConstraint("(revision_selection = 'snapshot') = (agent_revision_id IS NULL)", name="agent_source"),
+        CheckConstraint(
+            "revision_selection IN ('pinned', 'default', 'inherited', 'snapshot')", name="revision_selection"
+        ),
         CheckConstraint(
             "trigger IN ('input', 'queued', 'resume', 'child_result', 'tool_result', 'browser_handback', 'desktop_handback', 'spawned')",
             name="trigger",
@@ -573,6 +580,21 @@ class RunRow(Stamped, Base):
                 RETURN NEW;
             END $$
             """,
+            """
+            CREATE FUNCTION check_run_agent_source() RETURNS trigger LANGUAGE plpgsql AS $$
+            DECLARE owner threads;
+            BEGIN
+                SELECT * INTO STRICT owner FROM threads WHERE id = NEW.thread_id;
+                IF (owner.agent_snapshot IS NOT NULL) <> (NEW.revision_selection = 'snapshot')
+                THEN RAISE EXCEPTION 'run source must match its thread'; END IF;
+                IF owner.agent_snapshot IS NOT NULL AND (
+                    NEW.agent_id IS DISTINCT FROM (SELECT agent_id FROM runs WHERE id = owner.origin_run_id)
+                    OR NEW.options->'overrides' IS NOT NULL AND NEW.options->'overrides' <> 'null'::jsonb
+                ) THEN RAISE EXCEPTION 'snapshot source and configuration are immutable'; END IF;
+                RETURN NEW;
+            END $$
+            """,
+            "CREATE TRIGGER check_run_agent_source BEFORE INSERT ON runs FOR EACH ROW EXECUTE FUNCTION check_run_agent_source()",
             trigger("runs", "guard_run"),
             _thread_pointer_check("runs"),
             # A checkpoint commit keeps the run's version, so session streams send its state only on real changes.
@@ -586,7 +608,7 @@ class RunRow(Stamped, Base):
     session_id: Mapped[str]
     thread_id: Mapped[str]
     agent_id: Mapped[str]
-    agent_revision_id: Mapped[str]
+    agent_revision_id: Mapped[str | None]
     revision_selection: Mapped[str]
     principal_id: Mapped[str] = mapped_column(ForeignKey("principals.id"))
     authority: Mapped[dict] = mapped_column(JSONB)

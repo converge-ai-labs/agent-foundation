@@ -58,7 +58,7 @@ Choose the setting that supplies the capability you need:
 | Give the agent tools                 | `toolsets`, `connection_tools`, `tool_search`; see [Tools and connections](tools.md)                                  |
 | Load reusable instructions           | `skills: [{skill_id, revision_id}]`; see [Skills](skills.md)                                                          |
 | Ask the application or a person      | `client_tools`, `user_questions`; see [client tools](#client-tools-and-questions)                                     |
-| Delegate work                        | `subagents`, `subagent_mode`; see [subagents](#subagents)                                                             |
+| Delegate work                        | `subagents`; see [subagents](#subagents)                                                                              |
 | Review tool calls or interpret media | `reviewer`, `media_understanding`; see [media understanding](models.md#media-understanding)                           |
 | Require structured output            | `output_spec`: one JSON Schema or 2–32 named `variants`; omission returns text                                        |
 | Bound retries                        | `retries.tools` and `retries.output`, each 0–100                                                                      |
@@ -130,23 +130,38 @@ Configure `subagents` with workspace agent IDs. Each named edge can provide a de
 
 ```json
 {
-  "subagent_mode": "async",
   "subagents": {
-    "researcher": {
-      "agent_id": "ap_...",
-      "description": "Finds and summarizes sources.",
-      "usage_limits": {"request_limit": 20},
-      "environment": {"mode": "shared"}
+    "mode": "async",
+    "named": {
+      "researcher": {
+        "agent_id": "ap_...",
+        "description": "Finds and summarizes sources.",
+        "usage_limits": {
+          "request_limit": 20
+        },
+        "environment": {
+          "mode": "shared"
+        }
+      }
+    },
+    "dynamic": {
+      "enabled": true
     }
   }
 }
 ```
 
-**Inline** is the default: children execute inside the parent run and attempt. Their graph must not lead back to the delegating agent. Per-delegation limits can bound requests, tokens and tool calls.
+**Inline** is available for named-only policies: children execute inside the parent run and attempt. Their graph must not lead back to the delegating agent. Per-delegation limits can bound requests, tokens and tool calls.
 
 **Async** creates child threads in the same session under the parent run's principal. The parent uses [delegation tools](../a13n-harness/delegation-and-codeact.md#asynchronous-children) to inspect, wait, steer, cancel or continue them. Child results enter the parent inbox and can steer its active run or start a later run. A child waiting for a person appears as `running` to these tools. Async edges apply only `usage_limits.request_limit`.
 
 Async environments follow the edge: `shared` mounts the parent's environments, `dedicated` reserves one from `template_id`, and `none` mounts nothing. The child's own default environment template is unused. Deployment settings `worker.child_count` and `worker.child_depth` bound child count and nesting.
+
+Async is the default. Enable `subagents.dynamic.enabled` in Console or the API to let a root Agent call `spawn_subagent` with task instructions and an initial prompt. Dynamic children share the parent's environments, select only subsets of its capabilities, and cannot delegate. `allowed_models`, `default_model` and `default_thinking` configure model choices; a spawn can choose an allowed model and thinking effort, including `false`.
+
+Dynamic children retain a Thread snapshot, not a published Agent version. Archiving the source Agent blocks new child Runs and continuations but does not stop already accepted Runs. Unarchiving allows continuation of the same snapshot.
+
+Dynamic children inherit the parent Run's request limit, if set, as a per-Run cap. Follow-ups retain that limit, execution settings, configuration and context: omission inherits, while explicit changes are rejected. Forking with the source Agent and no revision retains the snapshot and shared environments; `fresh_environments=true` is rejected. Select a published revision explicitly to fork into ordinary Agent execution.
 
 ## Start a conversation
 
@@ -232,7 +247,7 @@ Use `options` for a one-run change. For example, this fragment sets a request bu
 {"options": {"max_usage": {"requests": 40}, "overrides": {"instructions": "Answer in German."}}}
 ```
 
-`max_usage.requests` accepts 1–10,000; exceeding it fails the run with `usage_limit_exceeded`. `labels` tag the run. `overrides` is validated on submission and acceptance, then frozen. Most override fields replace their revision value; `toolsets` replaces each supplied toolset, while `retries` and each `subagents` edge merge supplied fields. A null subagent edge removes it.
+`max_usage.requests` accepts 1–10,000; exceeding it fails the run with `usage_limit_exceeded`. `labels` tag the run. `overrides` is validated on submission and acceptance, then frozen. Most override fields replace their revision value; `toolsets` replaces each supplied toolset, while `retries` merges supplied fields. `subagents` replaces the whole policy, including named and dynamic settings; a null override inherits it.
 
 Resume and automatic child-result continuation retain the previous run's options. Console's **Run options** sets choices for the next run. Use [execution policy](#execution-policy) for tool handoff and steering timing.
 
@@ -246,7 +261,7 @@ Pass business metadata shared by model and MCP requests through the message body
 
 Forwarding is enabled by default. Include only values intended for those providers and MCP servers. Values are readable run options; store secrets in provider or connection credentials. Inbound HTTP headers are not copied automatically. The map allows 32 case-insensitively unique names, printable ASCII values up to 4096 characters, and 8 KiB overall; authentication and transport names are reserved.
 
-Recovery, resume and children retain the accepted context. New messages and forks start with their own context, empty when omitted. A steer can omit or repeat context; a different value queues for a later run. HTTP reads expose it, while MCP query projections remove it. Prompts, history and command environments receive no automatic copy.
+Recovery, resume and children retain the accepted context. Ordinary new messages and forks start with their own context, empty when omitted. Snapshot Threads instead retain frozen context and reject explicit changes. An ordinary steer can omit or repeat context; a different value queues for a later run. HTTP reads expose it, while MCP query projections remove it. Prompts, history and command environments receive no automatic copy.
 
 Model request headers and per-connection `mcp_headers` override shared names; credentials and protected protocol headers remain authoritative. Forwarding requires both the deployment category switch and the target's `config.forward_context_headers`. Omitted target settings use `A13N_HARNESS_FORWARD_CONTEXT_HEADERS` (default true); MCP saves store the resolved value. Disable a category with `A13N_PROVIDERS__FORWARD_MODEL_CONTEXT_HEADERS=false` or `A13N_PROVIDERS__FORWARD_MCP_CONTEXT_HEADERS=false`. Fetch, browser and shell operations do not automatically forward these headers.
 
@@ -356,7 +371,7 @@ Use `execution.environment` at the same three layers for non-secret command defa
 
 Each key resolves **command → run → thread → agent → frozen environment recipe**. Thread PATCH replaces a supplied map; null or `{}` clears that layer. Empty strings set empty values, and removing a key reveals lower defaults rather than unsetting it. Explicit command unsets follow provider support. Use consistent name spelling on Windows.
 
-The run freezes its agent/thread/run overlay. Shell commands, background processes and their ordinary children receive it without changing global sandbox variables. Inline children share it; forks and independent child threads use their own agent and choices. Keep credentials in the appropriate secret store.
+The run freezes its agent/thread/run overlay. Shell commands, background processes and their ordinary children receive it without changing global sandbox variables. Inline children share it; async children inherit the frozen policy, and retained-snapshot forks keep it. Ordinary forks resolve their selected agent and choices. Keep credentials in the appropriate secret store.
 
 ## Retained tool executions
 

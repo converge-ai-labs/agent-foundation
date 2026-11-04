@@ -61,6 +61,8 @@ Groups follow identity, connection/storage, behavior and advanced controls. Use 
 
 Labels are 13px medium; help is 12px secondary. Question-mark help controls sit immediately beside their labels, with both centered against the field control; they do not occupy the far edge of the label column. Validation names the correction without discarding input. Optional labels say “(optional)”; required fields have no asterisk. Schema fields use property names, not schema type names. Read-only long content retains its surface; short values have no box; model values retain brand, name and key.
 
+Section titles, subsection titles and field labels use a 20px line height, with 1px between the title or label and its description. Adjacent action buttons do not increase the title line's height.
+
 Disclosure headers and catalog rows keep their geometry on press; use color feedback without scaling. Embedded transcript disclosures retain an outlined boundary and 12px content insets.
 
 Inputs are 32px (36px below `sm`) with 8px corners. Header/toolbars use 32px controls, section/footer actions 28px, extra-small icon buttons 24px; peers share heights. Compact filters omit the visible label column. Narrow layouts stack when controls cannot fit.

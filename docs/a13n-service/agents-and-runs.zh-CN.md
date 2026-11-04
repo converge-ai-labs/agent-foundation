@@ -58,7 +58,7 @@ description: 配置 agent、继续对话，并处理结果、审批与恢复。
 | 提供工具           | `toolsets`、`connection_tools`、`tool_search`；参阅[工具与连接](tools.md)                            |
 | 加载可复用指令     | `skills: [{skill_id, revision_id}]`；参阅 [Skill](skills.md)                                         |
 | 向应用或用户提问   | `client_tools`、`user_questions`；参阅[客户端工具](#client-tools-and-questions)                      |
-| 委派工作           | `subagents`、`subagent_mode`；参阅[子 agent](#subagents)                                             |
+| 委派工作           | `subagents`；参阅[子 agent](#subagents)                                                              |
 | 审查调用或理解媒体 | `reviewer`、`media_understanding`；参阅[媒体理解](models.md#media-understanding)                     |
 | 要求结构化输出     | `output_spec`：一个 JSON Schema 或 2–32 个命名 `variants`；省略时返回文本                            |
 | 限制重试           | `retries.tools` 和 `retries.output`，各为 0–100                                                      |
@@ -126,27 +126,42 @@ description: 配置 agent、继续对话，并处理结果、审批与恢复。
 
 ### 子 agent
 
-在 `subagents` 中配置工作空间 agent ID。每条命名调用边可指定描述、固定版本、上下文共享方式和用量限制。将下列片段中的 `ap_...` 替换为真实 agent ID：
+在 `subagents.named` 中配置工作空间 agent ID。每条命名调用边可指定描述、固定版本、上下文共享方式和用量限制。将下列片段中的 `ap_...` 替换为真实 agent ID：
 
 ```json
 {
-  "subagent_mode": "async",
   "subagents": {
-    "researcher": {
-      "agent_id": "ap_...",
-      "description": "Finds and summarizes sources.",
-      "usage_limits": {"request_limit": 20},
-      "environment": {"mode": "shared"}
+    "mode": "async",
+    "named": {
+      "researcher": {
+        "agent_id": "ap_...",
+        "description": "Finds and summarizes sources.",
+        "usage_limits": {
+          "request_limit": 20
+        },
+        "environment": {
+          "mode": "shared"
+        }
+      }
+    },
+    "dynamic": {
+      "enabled": true
     }
   }
 }
 ```
 
-默认**内联**：子 agent 在父运行及其尝试内部执行。调用图不能回到发起委派的 agent。每次委派可限制请求数、token 和工具调用。
+仅命名子 agent 的配置可以选择**内联**：子 agent 在父运行及其尝试内部执行。调用图不能回到发起委派的 agent。每次委派可限制请求数、token 和工具调用。
 
 **异步**在同一会话中创建子线程，使用父运行的主体。父 agent 通过[委派工具](../a13n-harness/delegation-and-codeact.md#asynchronous-children)检查、等待、引导、取消或继续子 agent。子结果进入父收件箱，可以引导活跃运行或启动后续运行。等待用户的子运行在这些工具中显示为 `running`。异步调用边只应用 `usage_limits.request_limit`。
 
 异步环境由调用边决定：`shared` 挂载父环境，`dedicated` 从 `template_id` 预留环境，`none` 不挂载。子 agent 自身的默认环境模板不生效。部署设置 `worker.child_count` 和 `worker.child_depth` 限制子 agent 数量及嵌套深度。
+
+默认执行模式为异步。在 Console 或 API 中启用 `subagents.dynamic.enabled` 后，根 Agent 可以用 `spawn_subagent` 按任务创建子 agent，提供任务指令和首条输入。动态子 agent 共享父环境，只能选择父 agent 已有能力的子集，不能再次委派。`allowed_models`、`default_model` 和 `default_thinking` 配置可选模型及默认值；spawn 时也可以指定允许的模型和 thinking effort，`false` 表示关闭思考。
+
+动态子 agent 使用线程快照，不创建临时 Agent 版本。归档来源 Agent 会阻止新的子运行及续接，已接受的运行仍可完成；取消归档后可以继续原快照。
+
+动态子运行继承父运行设置的请求次数上限，按每个 Run 单独计数。后续消息保留该上限、执行设置、configuration 和 context：省略时继承，显式修改会被拒绝。使用来源 Agent 且不指定 revision 的分叉保留快照与共享环境，不允许 `fresh_environments=true`；显式选择已发布版本可切换为普通 Agent 执行。
 
 ## 开始对话
 
@@ -232,7 +247,7 @@ Service 为每个文件选择传递方式：
 {"options": {"max_usage": {"requests": 40}, "overrides": {"instructions": "Answer in German."}}}
 ```
 
-`max_usage.requests` 接受 1–10,000；超出后运行以 `usage_limit_exceeded` 失败。`labels` 标记运行。`overrides` 在提交和接受时校验，然后固定。大多数字段替换修订版本中的值；`toolsets` 替换所提供的各个工具集，`retries` 和每条 `subagents` 调用边合并指定字段。null 子 agent 调用边会将其移除。
+`max_usage.requests` 接受 1–10,000；超出后运行以 `usage_limit_exceeded` 失败。`labels` 标记运行。`overrides` 在提交和接受时校验，然后固定。大多数字段替换修订版本中的值；`toolsets` 替换所提供的各个工具集，`retries` 合并指定字段。`subagents` 整体替换命名和动态设置，null override 表示继承。
 
 Resume 和自动子结果续接保留前一运行的选项。Console 的**运行选项**为下次运行设置参数。工具交还和引导时机见[执行策略](#execution-policy)。
 
@@ -246,7 +261,7 @@ Resume 和自动子结果续接保留前一运行的选项。Console 的**运行
 
 默认开启转发。只放入允许发送给这些 provider 和 MCP 服务器的值。值作为可读运行选项保存；密钥应放在 provider 或连接凭据中。入站 HTTP 头不会自动复制。映射最多 32 个不区分大小写且唯一的名称，值为最多 4096 字符的可打印 ASCII，合计 8 KiB；认证和传输名称属于保留字段。
 
-故障恢复、resume 和子 agent 保留已接受的上下文。新消息和分叉使用自己的上下文，省略时为空。Steer 可以省略或重复上下文，不同值会排队等待后续运行。HTTP 读取提供这些值，MCP 查询投影则移除它们。提示词、历史和命令环境不会自动获得副本。
+故障恢复、resume 和子 agent 保留已接受的上下文。普通线程的新消息和分叉使用自己的上下文，省略时为空。快照线程保留冻结的上下文，拒绝显式修改。普通线程的 Steer 可以省略或重复上下文，不同值会排队等待后续运行。HTTP 读取提供这些值，MCP 查询投影则移除它们。提示词、历史和命令环境不会自动获得副本。
 
 模型请求头和各连接的 `mcp_headers` 优先于共享同名字段；凭据和受保护协议头始终优先。转发需要同时启用部署类别开关及目标的 `config.forward_context_headers`。省略目标设置时使用 `A13N_HARNESS_FORWARD_CONTEXT_HEADERS`（默认 true）；MCP 保存时写入解析后的值。通过 `A13N_PROVIDERS__FORWARD_MODEL_CONTEXT_HEADERS=false` 或 `A13N_PROVIDERS__FORWARD_MCP_CONTEXT_HEADERS=false` 关闭相应类别。Fetch、浏览器和 Shell 操作不会自动转发这些头。
 

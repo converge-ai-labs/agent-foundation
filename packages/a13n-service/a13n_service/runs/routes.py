@@ -657,7 +657,8 @@ async def get_run_agent(
             selected = run.options.overrides
         else:
             selected = agent_reads.config_section(
-                value.revision.config if section == "original" else value.config, part
+                value.original_config if section == "original" else value.config,
+                part,
             )
         return reads.read_value(
             selected,
