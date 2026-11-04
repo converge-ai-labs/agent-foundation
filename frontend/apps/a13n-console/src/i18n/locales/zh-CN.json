@@ -3763,5 +3763,14 @@
   "Create a collection for the files and records agents keep across sessions.": "创建记忆集合，保存智能体跨会话使用的文件和记录。",
   "Create collection": "创建记忆集合",
   "Memory collection": "记忆集合",
-  "Memory collections": "记忆集合"
+  "Memory collections": "记忆集合",
+  "Long-running tools": "长时间工具调用",
+  "When new messages arrive": "新消息处理时机",
+  "Wait before backgrounding (seconds)": "转后台前等待时间（秒）",
+  "Choose whether the agent waits for tools to finish or continues while supported tools run in the background.": "选择等待工具完成，还是让支持后台执行的工具继续运行，同时让智能体处理后续工作。",
+  "Choose whether new input waits for the next model step or interrupts the current response. Unsupported calls still wait for a safe boundary.": "选择让新消息等到下一次模型请求再处理，还是打断当前回复。不支持后台执行的调用仍需等待安全边界。",
+  "Use agent settings": "使用智能体设置",
+  "Use thread settings": "使用线程设置",
+  "Wait before letting a tool continue in the background. Applies to Auto and process-backed shell commands; does not stop the tool. Empty uses the parent settings.": "等待多久后让工具转入后台、智能体继续工作。适用于 Auto 和支持进程管理的 Shell 命令，不会终止工具。留空使用上级设置。",
+  "Wait before letting a tool continue in the background. Applies to Auto and process-backed shell commands; does not stop the tool. Empty uses the default (normally 5 seconds).": "等待多久后让工具转入后台、智能体继续工作。适用于 Auto 和支持进程管理的 Shell 命令，不会终止工具。留空使用默认值（通常为 5 秒）。"
 }
