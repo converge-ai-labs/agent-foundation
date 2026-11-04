@@ -28,6 +28,8 @@ export type DisplayBlock = {
   durationMs?: number;
   id: string;
   shellCommand?: string;
+  inputSource?: string;
+  inputGroup?: string;
   toolCallId?: string;
   kind:
     "assistant" | "user" | "thinking" | "tool" | "activity" | "media" | "task";
@@ -692,6 +694,11 @@ export class FocusDisplay {
         item.kind === "tool_call" ? content.arguments : content.text,
       ),
       metadata,
+      inputSource:
+        content.role === "user"
+          ? string(content.input_source) || "user"
+          : undefined,
+      inputGroup: string(content.input_group) || undefined,
       subagentRunId: string(content.subagentRunId) || undefined,
       done: item.state !== "in_progress",
     };
@@ -1044,6 +1051,8 @@ export class FocusDisplay {
       setBlock(key, {
         id: key,
         kind: "user",
+        inputSource: string(source.source) || "user",
+        inputGroup: string(source.input_id) || undefined,
         text: string(source.content),
         done: true,
         metadata: object(event.metadata) ? event.metadata : undefined,
@@ -1057,6 +1066,8 @@ export class FocusDisplay {
       setBlock(key, {
         id: key,
         kind: "media",
+        inputSource: string(source.source),
+        inputGroup: string(source.input_id) || undefined,
         text: "",
         value: source.content,
         metadata: object(event.metadata) ? event.metadata : undefined,
