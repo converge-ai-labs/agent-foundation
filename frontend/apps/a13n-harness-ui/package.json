@@ -24,8 +24,12 @@
     "@types/react-dom": "^19.2.7",
     "fake-indexeddb": "^6.2.5",
     "jsdom": "^29.1.1",
+    "mdast-util-from-markdown": "^2.0.3",
+    "micromark-util-types": "^2.0.2",
     "openapi-typescript": "^7.13.0",
+    "remark-parse": "^11.0.0",
     "typescript": "^5.9.3",
+    "unified": "^11.0.5",
     "vite": "^8.2.2",
     "vitest": "^5.0.0"
   },

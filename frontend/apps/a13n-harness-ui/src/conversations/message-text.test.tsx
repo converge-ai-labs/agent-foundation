@@ -66,6 +66,105 @@ $$
     expect(region.tabIndex).toBe(0);
 });
 
+it("renders backslash-delimited math before Markdown can consume its escapes", () => {
+  const view = render(
+    <MessageText
+      text={String.raw`Inline \(N\), \(a\), and \(b\).
+
+\[
+R = N\times a\times b
+\]
+
+Same-line display: \[x_1 + x_2\].
+
+> A quote with \(x_i^2\).
+
+- A list with \(\text{a * b} + x_i\).`}
+    />,
+  );
+  expect(view.container.querySelectorAll(".katex")).toHaveLength(7);
+  expect(screen.getAllByRole("region", { name: "Math formula" })).toHaveLength(
+    2,
+  );
+  expect(
+    Array.from(
+      view.container.querySelectorAll("annotation"),
+      (node) => node.textContent,
+    ),
+  ).toEqual([
+    "N",
+    "a",
+    "b",
+    "R = N\\times a\\times b",
+    "x_1 + x_2",
+    "x_i^2",
+    "\\text{a * b} + x_i",
+  ]);
+});
+
+it("leaves backslash examples, escaped delimiters, links and ordinary brackets literal", () => {
+  const source =
+    "`\\(x\\)`" +
+    String.raw` and \\(y\\) and [N] and (a).
+
+[Link](https://example.com/\(x\))
+
+~~~latex
+\[
+x_i
+\]
+~~~
+
+    \(indented\)
+
+$\text{literal \(x\)}$`;
+  const view = render(<MessageText text={source} />);
+  expect(view.container.querySelectorAll(".katex")).toHaveLength(1);
+  expect(view.container.textContent).toContain("[N] and (a)");
+  expect(screen.getByRole("link", { name: "Link" }).getAttribute("href")).toBe(
+    "https://example.com/(x)",
+  );
+  expect(view.container.querySelector("pre code")?.textContent).toBe(
+    "\\[\nx_i\n\\]\n",
+  );
+});
+
+it("completes streamed backslash math without swallowing later paragraphs", () => {
+  const view = render(<MessageText text={String.raw`Before \(\frac{1}`} />);
+  expect(view.container.querySelector(".katex")).toBeNull();
+  view.rerender(
+    <MessageText text={String.raw`Before \(\frac{1}{2}\) after`} />,
+  );
+  expect(view.container.querySelector("annotation")?.textContent).toBe(
+    "\\frac{1}{2}",
+  );
+  view.rerender(
+    <MessageText text={"\\[incomplete\n\nStill readable\n\n\\(x\\)"} />,
+  );
+  expect(screen.getByText("Still readable")).toBeTruthy();
+  expect(view.container.querySelectorAll(".katex")).toHaveLength(1);
+});
+
+it("preserves code and diagram source positions after backslash math", async () => {
+  vi.mocked(renderDiagram).mockResolvedValue("data:image/svg+xml,diagram");
+  const source = String.raw`\(x\)
+
+\[
+y
+\]
+
+~~~mermaid
+flowchart LR
+A --> B
+~~~`;
+  render(<MessageText text={source} />);
+  await screen.findByAltText("Mermaid diagram");
+  expect(renderDiagram).toHaveBeenCalledWith(
+    "flowchart LR\nA --> B\n",
+    expect.anything(),
+  );
+});
+
 it("keeps escaped dollars, inline code and ordinary code fences literal", () => {
   const source = "\\$5 and \\$10; `$x$`\n\n```latex\n$E = mc^2$\n```";
   const view = render(<MessageText text={source} />);
