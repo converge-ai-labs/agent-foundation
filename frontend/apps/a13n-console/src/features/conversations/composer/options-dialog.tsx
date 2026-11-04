@@ -438,6 +438,7 @@ export function RunOptionsDialog({
             defaultOpen={focus === "run-environment"}
           >
             <FormField
+              data-field-layout="stacked"
               label={t("Primary environment for this run")}
               description={t(
                 "Inherit follows the conversation. Create from template reserves a fresh instance for this run; reuse selects an exact existing instance. Retries keep the accepted instance. Conversation mounts are unchanged.",
