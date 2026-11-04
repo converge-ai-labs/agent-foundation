@@ -150,7 +150,7 @@ it("keeps resource categories in sidebar links and restores the selected categor
   await user.click(screen.getByRole("link", { name: "Models" }));
   expect(screen.getByText("Model directory")).toBeTruthy();
   await user.click(screen.getByRole("link", { name: "Memories" }));
-  expect(screen.getByText("Space directory")).toBeTruthy();
+  expect(screen.getByText("Memory directory")).toBeTruthy();
   await user.click(screen.getByRole("link", { name: "Collections" }));
   expect(screen.getByText("Memory directory")).toBeTruthy();
   // The group stays open, with its selected child highlighted.

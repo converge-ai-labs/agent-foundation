@@ -3755,5 +3755,12 @@
   "Input tokens per request": "Input tokens per request",
   "Tool call limit": "Tool call limit",
   "Cost limit (USD)": "Cost limit (USD)",
-  "Model request limit": "Model request limit"
+  "Model request limit": "Model request limit",
+  "Search collections": "Search collections",
+  "{{count}} collections on this page": "{{count}} collections on this page",
+  "No matching collections": "No matching collections",
+  "No collections yet": "No collections yet",
+  "Create a collection for the files and records agents keep across sessions.": "Create a collection for the files and records agents keep across sessions.",
+  "Create collection": "Create collection",
+  "Memory collection": "Memory collection"
 }

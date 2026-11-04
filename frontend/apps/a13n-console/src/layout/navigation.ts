@@ -31,7 +31,7 @@ export const navigationGroups: {
       ["models", "Models", CubeIcon],
       ["skills", "Skills", PuzzlePieceIcon],
       [
-        "memory-spaces",
+        "memories",
         "Memories",
         BrainIcon,
         [
