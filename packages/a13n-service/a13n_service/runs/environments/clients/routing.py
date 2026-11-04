@@ -24,6 +24,7 @@ from a13n_service.runs.tool_executions.routing import Caller
 from a13n_service.settings import ClientEnvironments, RedisSettings
 
 logger = get_logger(__name__)
+_CLEANUP_CAPACITY = 8
 _RESERVED_METHODS = frozenset(
     {
         "session.close",
@@ -229,6 +230,10 @@ class Routing:
                 replies.task.cancel()
                 await asyncio.gather(replies.task, return_exceptions=True)
 
+    def _capacity_exhausted(self, request: Request, count: int) -> bool:
+        limit = _CLEANUP_CAPACITY if request.reserved_capacity else self.config.max_requests
+        return count >= limit
+
     async def call(self, request: Request) -> Response:
         remaining = (request.expires_at - datetime.now(UTC)).total_seconds()
         payload = request.model_dump_json()
@@ -245,8 +250,8 @@ class Routing:
                 details={"dispatch_stage": "pre_dispatch"},
             )
         cleanup = request.reserved_capacity
-        pending, limit = (self._pending_cleanup, 8) if cleanup else (self._pending, self.config.max_requests)
-        if pending >= limit:
+        pending = self._pending_cleanup if cleanup else self._pending
+        if self._capacity_exhausted(request, pending):
             raise EnvironmentError(
                 "Client request capacity is exhausted.",
                 code="environment_unavailable",
@@ -394,10 +399,8 @@ class Routing:
                     # A subscriber must never answer for another connection epoch.
                     if (request.environment_id, request.epoch) != (environment_id, epoch):
                         continue
-                    active, limit = (
-                        (self._cleanup, 8) if request.reserved_capacity else (self._ordinary, self.config.max_requests)
-                    )
-                    if len(active) >= limit:
+                    active = self._cleanup if request.reserved_capacity else self._ordinary
+                    if self._capacity_exhausted(request, len(active)):
                         await self._publish(
                             Response(
                                 id=request.id,

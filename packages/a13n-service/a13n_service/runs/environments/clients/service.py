@@ -219,6 +219,30 @@ class Attachment:
     credential_version: int
 
 
+async def active_registration(
+    session: AsyncSession, environment_id: str, *, attachment: Attachment | None = None
+) -> tuple[EnvironmentRow, ClientSettingsRow] | None:
+    """Read a usable client registration within the caller's short database session."""
+    query = (
+        select(EnvironmentRow, ClientSettingsRow)
+        .join(ClientSettingsRow, ClientSettingsRow.environment_id == EnvironmentRow.id)
+        .where(
+            EnvironmentRow.id == environment_id,
+            EnvironmentRow.kind == "external",
+            EnvironmentRow.status == "ready",
+            ClientSettingsRow.token_hash.is_not(None),
+        )
+    )
+    if attachment is not None:
+        query = query.where(
+            EnvironmentRow.id == attachment.environment_id,
+            EnvironmentRow.device_id == attachment.device_id,
+            ClientSettingsRow.credential_version == attachment.credential_version,
+        )
+    row = (await session.execute(query)).one_or_none()
+    return (row[0], row[1]) if row is not None else None
+
+
 async def authenticate(runtime: Runtime, environment_id: str, token: str) -> Attachment:
     """Detached connection identity; never hold this read across a WebSocket."""
     async with short_session(runtime.storage) as session:
@@ -230,32 +254,16 @@ async def authenticate(runtime: Runtime, environment_id: str, token: str) -> Att
             if not secrets.compare_digest(binding.token_hash, secret_hash(token)):
                 raise ServiceError("unauthenticated", "Invalid managed environment credential")
             return Attachment(environment_id, binding.device_id, binding.credential_version)
-        result = (
-            await session.execute(
-                select(
-                    EnvironmentRow.device_id,
-                    EnvironmentRow.owner_principal_id,
-                    EnvironmentRow.workspace_id,
-                    ClientSettingsRow.token_hash,
-                    ClientSettingsRow.credential_version,
-                )
-                .join(ClientSettingsRow, ClientSettingsRow.environment_id == EnvironmentRow.id)
-                .where(
-                    EnvironmentRow.id == environment_id,
-                    EnvironmentRow.kind == "external",
-                    EnvironmentRow.status == "ready",
-                )
-            )
-        ).one_or_none()
-        if (
-            result is None
-            or result.token_hash is None
-            or not secrets.compare_digest(result.token_hash, secret_hash(token))
-        ):
+        registration = await active_registration(session, environment_id)
+        if registration is None:
             raise ServiceError("unauthenticated", "Invalid client environment credential")
-        owner = await principal_for(session, runtime.access, result.owner_principal_id)
-        await workspace_scope(session, owner, result.workspace_id, "write")
-        return Attachment(environment_id, result.device_id, result.credential_version)
+        environment, config = registration
+        if config.token_hash is None or not secrets.compare_digest(config.token_hash, secret_hash(token)):
+            raise ServiceError("unauthenticated", "Invalid client environment credential")
+        assert environment.owner_principal_id is not None and environment.device_id is not None
+        owner = await principal_for(session, runtime.access, environment.owner_principal_id)
+        await workspace_scope(session, owner, environment.workspace_id, "write")
+        return Attachment(environment_id, environment.device_id, config.credential_version)
 
 
 async def validate_attachment(runtime: Runtime, attachment: Attachment) -> None:
@@ -269,21 +277,10 @@ async def validate_attachment(runtime: Runtime, attachment: Attachment) -> None:
             if binding.device_id != attachment.device_id or binding.credential_version != attachment.credential_version:
                 raise ServiceError("unauthenticated", "Managed connection binding changed")
             return
-        result = (
-            await session.execute(
-                select(EnvironmentRow.owner_principal_id, EnvironmentRow.workspace_id)
-                .join(ClientSettingsRow, ClientSettingsRow.environment_id == EnvironmentRow.id)
-                .where(
-                    EnvironmentRow.id == attachment.environment_id,
-                    EnvironmentRow.kind == "external",
-                    EnvironmentRow.status == "ready",
-                    EnvironmentRow.device_id == attachment.device_id,
-                    ClientSettingsRow.credential_version == attachment.credential_version,
-                    ClientSettingsRow.token_hash.is_not(None),
-                )
-            )
-        ).one_or_none()
-        if result is None:
+        registration = await active_registration(session, attachment.environment_id, attachment=attachment)
+        if registration is None:
             raise ServiceError("unauthenticated", "Client environment connection is no longer authorized")
-        owner = await principal_for(session, runtime.access, result.owner_principal_id)
-        await workspace_scope(session, owner, result.workspace_id, "write")
+        environment, _ = registration
+        assert environment.owner_principal_id is not None
+        owner = await principal_for(session, runtime.access, environment.owner_principal_id)
+        await workspace_scope(session, owner, environment.workspace_id, "write")
