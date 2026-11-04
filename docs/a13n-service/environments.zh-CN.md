@@ -146,6 +146,10 @@ Worker 恢复会尽力复用检查点中的 Envd 会话。会话已关闭或过�
 
 升级到客户端环境 schema 时，先等待活跃任务结束并停止全部旧 Control 和 Worker，再执行迁移。已有托管环境和 HTTP 环境会保留，但旧版本不能写入新 schema。一旦创建过客户端注册（包括已删除的注册），应向前修复，不能降级 schema。
 
+首次自动登记可使用 `a13n-envd connect-service`，传入普通 API token、工作空间 ID 和本地工作目录。命令与凭据恢复步骤见[连接 Service](../a13n-envd/configuration.md#connect-to-service)。接入接口为 `POST /api/v1/client-environments/connect?workspace_id=…`，接受下方的登记字段和可选的 `environment_id`。不传 ID 时，只有当前所有者、工作空间和设备的绑定不存在才会创建；传 ID 时必须匹配该已有环境。已有配置不会修改，禁用、删除或撤销凭据的环境会被拒绝。重复请求不返回 token；丢失凭据时使用显式轮换接口。
+
+如果要在电脑离线时登记，或在连接前限制操作权限，可按以下步骤：
+
 1. 使用将来执行 run 的工作空间账号调用 `POST /api/v1/client-environments?workspace_id=…`。传入安装时保存在本地的设备 ID、电脑上已有的目录，以及允许的操作。例如：
 
    ```json

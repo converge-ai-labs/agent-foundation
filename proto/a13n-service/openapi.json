@@ -4729,6 +4729,106 @@
         "title": "ConnectionPage",
         "type": "object"
       },
+      "ConnectionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "declared_capabilities": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EnvironmentPermissionSet-Input"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "default_working_directory": {
+            "title": "Default Working Directory",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "device_id": {
+            "minLength": 1,
+            "title": "Device Id",
+            "type": "string"
+          },
+          "environment_id": {
+            "anyOf": [
+              {
+                "maxLength": 72,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment Id"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "permission_ceiling": {
+            "$ref": "#/components/schemas/EnvironmentPermissionSet-Input",
+            "default": {
+              "operations": [
+                "environment.file.copy_destination",
+                "environment.file.copy_source",
+                "environment.file.list",
+                "environment.file.mkdir",
+                "environment.file.move",
+                "environment.file.patch_text",
+                "environment.file.query",
+                "environment.file.read_bytes",
+                "environment.file.read_text",
+                "environment.file.remove",
+                "environment.file.search_text",
+                "environment.file.stat",
+                "environment.file.write_bytes",
+                "environment.file.write_text",
+                "environment.output.read",
+                "environment.output.release",
+                "environment.port.inspect",
+                "environment.port.wait",
+                "environment.process.close_stdin",
+                "environment.process.inspect",
+                "environment.process.kill",
+                "environment.process.list",
+                "environment.process.read_output",
+                "environment.process.release",
+                "environment.process.signal",
+                "environment.process.start",
+                "environment.process.wait",
+                "environment.process.write_stdin",
+                "environment.shell.exec",
+                "environment.state.export",
+                "environment.state.restore"
+              ]
+            }
+          }
+        },
+        "required": [
+          "default_working_directory",
+          "device_id",
+          "name"
+        ],
+        "title": "ConnectionRequest",
+        "type": "object"
+      },
       "ConnectionSelection": {
         "description": "An agent's selected tools and permissions.",
         "properties": {
@@ -29463,6 +29563,85 @@
           }
         ],
         "summary": "Register Client Environment",
+        "tags": [
+          "client-environments"
+        ],
+        "x-a13n-mcp": false
+      }
+    },
+    "/api/v1/client-environments/connect": {
+      "post": {
+        "operationId": "connect_client_environment",
+        "parameters": [
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Registered"
+                }
+              }
+            },
+            "description": "Existing registration; no token is returned"
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Registered"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Connect Client Environment",
         "tags": [
           "client-environments"
         ],

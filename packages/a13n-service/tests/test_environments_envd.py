@@ -947,3 +947,84 @@ async def test_client_service_failure_allows_same_and_other_devices_to_connect(
                 if process.returncode is None:
                     process.terminate()
                 await asyncio.wait_for(process.communicate(), 5)
+
+
+async def test_native_service_first_enrollment_and_saved_reconnect(service, tmp_path, monkeypatch):
+    from .conftest import bearer, listening
+
+    token_file = tmp_path / "api-token"
+    token_file.write_text((await bearer(service))["authorization"].removeprefix("Bearer "))
+    token_file.chmod(0o600)
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+    state = tmp_path / "installation"
+    profile_path = state / "instances/default/services/test/service.json"
+    process = None
+    runtime = service.runtime
+    async with listening(service.app) as origin:
+        monkeypatch.setitem(
+            runtime.settings.__dict__,
+            "client_environments",
+            runtime.settings.client_environments.model_copy(
+                update={"allow_loopback_ws": True, "transfer_origin": origin, "heartbeat_seconds": 0.1}
+            ),
+        )
+
+        async def launch(target, *options):
+            return await asyncio.create_subprocess_exec(
+                BINARY,
+                "connect-service",
+                target,
+                "--host",
+                "test",
+                "--state-dir",
+                str(state),
+                "--default-working-directory",
+                str(workspace),
+                *options,
+                env={"PATH": os.environ["PATH"], "A13N_ENVD_FULL_CONTROL": "1"},
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.PIPE,
+            )
+
+        async def online(previous_epoch=None):
+            async with asyncio.timeout(15):
+                while True:
+                    if process.returncode is not None:
+                        _, stderr = await process.communicate()
+                        pytest.fail(f"Enrollment daemon exited: {stderr.decode()}")
+                    if profile_path.exists():
+                        profile = json.loads(profile_path.read_text())
+                        if identity := profile["environment_id"]:
+                            presence = await runtime.client_connections.presence(identity)
+                            if presence is not None and presence.epoch != previous_epoch:
+                                return profile, presence
+                    await asyncio.sleep(0.02)
+
+        try:
+            process = await launch(
+                origin, "--workspace-id", service.tenant.workspace_id, "--api-token-file", str(token_file)
+            )
+            profile, first = await online()
+            identity = profile["environment_id"]
+            result = await service.client.get(f"{service.api}/client-environments/{identity}")
+            assert result.status_code == 200, result.text
+            assert result.json()["environment"]["device_id"] == profile["device_id"]
+            assert result.json()["environment"]["owner_principal_id"] == service.tenant.principal_id
+            assert result.json()["environment"]["client_connection"]["state"] == "online"
+            assert result.json()["configuration"]["default_working_directory"] == str(workspace.resolve())
+            process.terminate()
+            await process.wait()
+            async with asyncio.timeout(10):
+                while await runtime.client_connections.presence(identity) is not None:
+                    await asyncio.sleep(0.02)
+            token_file.unlink()
+            process = await launch("test")
+            restored, second = await online(first.epoch)
+            assert restored == profile and second.epoch != first.epoch
+            listed = (await service.client.get(f"{service.api}/environments")).json()["items"]
+            assert [item["id"] for item in listed] == [identity]
+        finally:
+            if process is not None and process.returncode is None:
+                process.terminate()
+                await process.wait()

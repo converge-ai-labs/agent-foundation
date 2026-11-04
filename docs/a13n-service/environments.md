@@ -146,6 +146,10 @@ Use this path when Envd can make an outbound connection to Control but Workers c
 
 When upgrading to the client-environment schema, drain active work and stop all old Controls and Workers before applying the migration. Existing managed and HTTP environments are preserved, but old versions cannot write the new schema. After any client registration exists, including a deleted one, use forward repair instead of downgrading the schema.
 
+For automatic first registration, run `a13n-envd connect-service` with an ordinary API token, workspace ID and local working directory. See [Connect to Service](../a13n-envd/configuration.md#connect-to-service) for the command and credential recovery. The enrollment endpoint is `POST /api/v1/client-environments/connect?workspace_id=…`; it accepts the registration fields below plus optional `environment_id`. Without an ID, only an absent owner/workspace/device binding creates an environment. Supplying an ID requires that exact existing binding. Existing configuration is unchanged, and disabled, deleted or revoked registrations are rejected. A repeated request returns no token; explicit rotation handles lost delivery.
+
+To register while the computer is offline or set a narrower permission ceiling before connecting:
+
 1. As the workspace principal that will run the agent, send `POST /api/v1/client-environments?workspace_id=…` with the installation's persistent device ID, an existing directory and the permitted actions. For example:
 
    ```json

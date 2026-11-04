@@ -63,6 +63,7 @@
   "Change Client Environment Status": "更改客户端环境状态",
   "Existing registration; no token is returned": "该环境已注册，不返回凭据",
   "Get Client Environment": "获取客户端环境",
+  "Connect Client Environment": "接入客户端环境",
   "Register Client Environment": "注册客户端环境",
   "Revoke Client Environment Credential": "撤销客户端环境凭据",
   "Rotate Client Environment Credential": "轮换客户端环境凭据",

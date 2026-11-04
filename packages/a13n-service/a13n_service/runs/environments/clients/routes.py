@@ -4,11 +4,39 @@ from fastapi import APIRouter, Response
 
 from a13n_service.infra.http import IfMatch, tagged
 from a13n_service.runs.environments.clients import service
-from a13n_service.runs.environments.clients.schemas import ClientEnvironment, Registered, Registration, StatusChange
+from a13n_service.runs.environments.clients.schemas import (
+    ClientEnvironment,
+    ConnectionRequest,
+    Registered,
+    Registration,
+    StatusChange,
+)
 from a13n_service.runs.requests import CurrentRuntime
 from a13n_service.tenancy.requests import Actor, WorkspaceId
 
 router = APIRouter(prefix="/api/v1/client-environments", tags=["client-environments"])
+
+
+@router.post(
+    "/connect",
+    response_model=Registered,
+    status_code=201,
+    responses={200: {"model": Registered, "description": "Existing registration; no token is returned"}},
+    openapi_extra={"x-a13n-mcp": False},
+)
+async def connect_client_environment(
+    response: Response,
+    workspace_id: WorkspaceId,
+    body: ConnectionRequest,
+    actor: Actor,
+    runtime: CurrentRuntime,
+) -> Registered:
+    result = await service.connect(runtime, actor, workspace_id, body)
+    tagged(response, result.client.environment)
+    response.headers["cache-control"] = "no-store"
+    if result.token is None:
+        response.status_code = 200
+    return result
 
 
 @router.post(

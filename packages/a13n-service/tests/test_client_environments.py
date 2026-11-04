@@ -222,3 +222,108 @@ async def test_same_installation_has_separate_owner_bindings_and_tokens(service)
     assert other.token is not None
     with pytest.raises(ServiceError):
         await clients.authenticate(service.runtime, identity, other.token)
+
+
+async def connect(service, **overrides):
+    return await service.client.post(
+        f"{service.api}/client-environments/connect",
+        json={"device_id": "laptop", "name": "Laptop", "default_working_directory": "/work", **overrides},
+    )
+
+
+async def test_first_connection_creates_once_and_existing_configuration_is_unchanged(service):
+    responses = await asyncio.gather(*(connect(service) for _ in range(3)))
+    assert sorted(response.status_code for response in responses) == [200, 200, 201]
+    created = next(response for response in responses if response.status_code == 201)
+    identity = created.json()["client"]["environment"]["id"]
+    assert created.json()["token"]
+    for response in responses:
+        assert response.json()["client"]["environment"]["id"] == identity
+        assert response.headers["cache-control"] == "no-store"
+        if response.status_code == 200:
+            assert response.json()["token"] is None
+    again = await connect(service, environment_id=identity, name="Changed", default_working_directory="/changed")
+    assert again.status_code == 200, again.text
+    assert again.json()["token"] is None
+    assert again.json()["client"]["environment"]["name"] == "Laptop"
+    assert again.json()["client"]["configuration"]["default_working_directory"] == "/work"
+    assert not service.runtime.client_connections.entries
+
+
+async def test_explicit_connection_never_creates_or_rebinds(service):
+    missing = await connect(service, environment_id="env_missing")
+    assert missing.status_code == 404, missing.text
+    created = await connect(service)
+    identity = created.json()["client"]["environment"]["id"]
+    mismatch = await connect(service, environment_id=identity, device_id="other-device")
+    assert mismatch.status_code == 409, mismatch.text
+    assert mismatch.json()["error"]["details"]["reason"] == "device_id_mismatch"
+    from a13n_service.runs.environments.clients.schemas import ConnectionRequest
+
+    other = await builder(service)
+    with pytest.raises(ServiceError) as denied:
+        await clients.connect(
+            service.runtime,
+            other,
+            service.tenant.workspace_id,
+            ConnectionRequest(
+                environment_id=identity, device_id="laptop", name="Other", default_working_directory="/other"
+            ),
+        )
+    assert denied.value.code == "not_found"
+    binding = await clients.connect(
+        service.runtime,
+        other,
+        service.tenant.workspace_id,
+        ConnectionRequest(device_id="laptop", name="Other", default_working_directory="/other"),
+    )
+    assert binding.client.environment.id != identity
+    async with short_session(service.runtime.storage) as session:
+        assert await session.scalar(select(func.count()).select_from(EnvironmentRow)) == 2
+
+
+@pytest.mark.parametrize("state", ["disabled", "deleted", "revoked"])
+async def test_connection_cannot_restore_disabled_deleted_or_revoked_registration(service, state):
+    created = await connect(service)
+    identity = created.json()["client"]["environment"]["id"]
+    headers = {"if-match": created.headers["etag"]}
+    path = f"{service.api}/client-environments/{identity}"
+    if state == "disabled":
+        changed = await service.client.patch(f"{path}/status", json={"status": "disabled"}, headers=headers)
+    elif state == "deleted":
+        changed = await service.client.delete(f"{service.api}/environments/{identity}", headers=headers)
+    else:
+        changed = await service.client.post(f"{path}/revoke-credential", headers=headers)
+    assert changed.is_success, changed.text
+    for selected in ({}, {"environment_id": identity}):
+        rejected = await connect(service, **selected)
+        assert rejected.status_code == 409, rejected.text
+        assert rejected.json()["error"]["details"]["reason"] == (
+            "client_credential_revoked" if state == "revoked" else f"client_environment_{state}"
+        )
+    async with short_session(service.runtime.storage) as session:
+        assert await session.scalar(select(func.count()).select_from(EnvironmentRow)) == 1
+    if state == "deleted":
+        replacement = await register(service)
+        assert replacement.status_code == 201, replacement.text
+        resolved = await connect(service)
+        assert resolved.status_code == 200
+        assert resolved.json()["client"]["environment"]["id"] == replacement.json()["client"]["environment"]["id"]
+
+
+async def test_device_credential_cannot_enroll_and_enrollment_is_not_an_mcp_tool(service):
+    import httpx2
+
+    created = await connect(service)
+    async with httpx2.AsyncClient(
+        transport=httpx2.ASGITransport(app=service.app), base_url="https://service.test"
+    ) as client:
+        rejected = await client.post(
+            f"{service.api}/client-environments/connect",
+            params={"workspace_id": service.tenant.workspace_id},
+            headers={"authorization": f"Bearer {created.json()['token']}"},
+            json={"device_id": "another-device", "name": "Laptop", "default_working_directory": "/work"},
+        )
+    assert rejected.status_code == 401, rejected.text
+    operation = service.app.openapi()["paths"]["/api/v1/client-environments/connect"]["post"]
+    assert operation["x-a13n-mcp"] is False

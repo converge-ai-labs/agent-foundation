@@ -30,6 +30,22 @@ a13n-envd
 
 Scalar settings cover identity, execution, discovery, metadata and lifetimes: `A13N_ENVD_ALLOW_SUDO`, `A13N_ENVD_EXECUTION_UID`, `A13N_ENVD_EXECUTION_GID`, `A13N_ENVD_EGRESS_MODE`, `A13N_ENVD_FULL_CONTROL`, `A13N_ENVD_COMPUTER_USE`, `A13N_ENVD_COMPUTER_USE_PERMISSION_TIMEOUT_MS`, `A13N_ENVD_DIRECTORY_DISCOVERY`, `A13N_ENVD_DEVICE_ID`, `A13N_ENVD_NAME`, `A13N_ENVD_DESCRIPTION`, `A13N_ENVD_DEFAULT_WORKING_DIRECTORY`, `A13N_ENVD_IDLE_TIMEOUT_MS` and `A13N_ENVD_DISCONNECT_GRACE_MS`. Boolean values accept `true`, `false`, `1` and `0`.
 
+## Connect to Service
+
+Use a regular Service API token belonging to the principal that will run the agent. Save it in a private file, then run:
+
+```sh
+a13n-envd connect-service https://control.example.com --host work \
+  --workspace-id ws_example --api-token-file /private/path/api-token \
+  --default-working-directory /path/to/project
+```
+
+The first connection registers the installation if it has no environment under that owner and workspace. Envd saves the environment ID and dedicated device credential locally. Restart with `a13n-envd connect-service work`; the API token file is no longer needed. Add `--environment-id env_example` on first use to require an existing environment. `--device-id` overrides the local identity file; keep using the same override on subsequent starts. Common daemon options, including `--computer-use`, remain available.
+
+Service profiles live under `instances/<instance>/services/<name>` in `--state-dir` (default `~/.a13n-envd`, or the platform state directory on Windows). Use separate names for different accounts or workspaces. A disabled, deleted or revoked registration is not recreated automatically. An offline registration remains available for explicit [thread mounting](../a13n-service/environments.md#mount-environments-on-a-thread); connecting does not mount it.
+
+If enrollment succeeded but its credential was lost, envd reports `client_credential_required` and the environment ID. Read the environment's current ETag and explicitly call `POST /api/v1/client-environments/{id}/rotate-credential?workspace_id=…` using the ordinary API token and `If-Match`. Save the returned `token` in a private file and restart with `a13n-envd connect-service work --credential-file /private/path/device-token`. Startup never rotates automatically. Keep token files private (mode `0600` on Unix); API tokens are not saved in profiles or used for WebSocket connections.
+
 ## Connect to Harness UI
 
 Start an outbound connection from the computer that will run the work:
@@ -42,7 +58,7 @@ a13n-envd connect https://host.example.com --host work
 2. Approve the matching verification code.
 3. Keep Envd running. On subsequent starts, use `a13n-envd connect work` to reuse the registration.
 
-Envd generates the credential on the Device, so pairing needs only the verification code in the browser. Reconnecting with saved state reuses approval. For Service, [register an HTTP daemon](../environments/remote-envd.md#connect-to-the-service) instead.
+Envd generates the credential on the Device, so pairing needs only the verification code in the browser. Reconnecting with saved state reuses approval. For Service, use [first-connection enrollment](#connect-to-service).
 
 Use a Host URL reachable from this computer. HTTPS is required except for loopback HTTP such as `http://127.0.0.1:8765`. Add `--ca-file /path/to/ca.pem` for a private CA; certificate verification stays enabled. Set `--name` for the approval display, `--default-working-directory` for an existing native directory, and `--config` for daemon JSON settings.
 

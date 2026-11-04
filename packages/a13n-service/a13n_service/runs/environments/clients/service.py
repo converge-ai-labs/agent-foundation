@@ -8,13 +8,14 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra.crypto import secret_hash
-from a13n_service.infra.db import now, short_session, transaction
+from a13n_service.infra.db import advisory_lock, now, short_session, transaction
 from a13n_service.infra.errors import ServiceError, conflict, not_found
 from a13n_service.infra.ids import new_object_id
 from a13n_service.runs.environments.access import audit, find, writable
 from a13n_service.runs.environments.clients.schemas import (
     ClientEnvironment,
     ClientEnvironmentConfiguration,
+    ConnectionRequest,
     Registered,
     Registration,
     StatusChange,
@@ -24,7 +25,7 @@ from a13n_service.runs.environments.schemas import EnvironmentView
 from a13n_service.runs.environments.tables import CLIENT_IDENTITY, EnvironmentRow
 from a13n_service.runs.runtime import Runtime
 from a13n_service.tenancy.access import principal_for, workspace_scope
-from a13n_service.tenancy.authorize import Principal
+from a13n_service.tenancy.authorize import Principal, WorkspaceScope
 from a13n_service.tenancy.credentials import new_secret
 
 
@@ -66,61 +67,102 @@ async def read(runtime: Runtime, actor: Principal, workspace_id: str, environmen
 async def register(runtime: Runtime, actor: Principal, workspace_id: str, body: Registration) -> Registered:
     async with transaction(runtime.storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "write")
-        environment = await session.scalar(
-            insert(EnvironmentRow)
-            .values(
-                id=new_object_id("env"),
-                kind="external",
-                organization_id=scope.organization_id,
-                workspace_id=scope.workspace_id,
-                owner_principal_id=actor.id,
-                device_id=body.device_id,
-                name=body.name,
-                status="ready",
-                created_by_id=actor.id,
-            )
-            .on_conflict_do_nothing(
-                index_elements=[
-                    EnvironmentRow.workspace_id,
-                    EnvironmentRow.owner_principal_id,
-                    EnvironmentRow.device_id,
-                ],
-                index_where=CLIENT_IDENTITY,
-            )
-            .returning(EnvironmentRow)
-        )
-        if environment is None:
-            existing = (
-                await session.execute(
-                    select(EnvironmentRow, ClientSettingsRow)
-                    .join(ClientSettingsRow, ClientSettingsRow.environment_id == EnvironmentRow.id)
-                    .where(
-                        CLIENT_IDENTITY,
-                        EnvironmentRow.workspace_id == scope.workspace_id,
-                        EnvironmentRow.owner_principal_id == actor.id,
-                        EnvironmentRow.device_id == body.device_id,
-                    )
+        await advisory_lock(session, "client-registration", scope.workspace_id, actor.id, body.device_id)
+        return await _register(session, actor, scope, body)
+
+
+async def connect(runtime: Runtime, actor: Principal, workspace_id: str, body: ConnectionRequest) -> Registered:
+    """Resolve or create a registration using ordinary API authority, never rotate it."""
+    async with transaction(runtime.storage) as session:
+        scope = await workspace_scope(session, actor, workspace_id, "write")
+        await advisory_lock(session, "client-registration", scope.workspace_id, actor.id, body.device_id)
+        if body.environment_id is not None:
+            environment = await find(session, scope, body.environment_id, lock=True)
+            if environment.owner_principal_id != actor.id or environment.kind != "external":
+                raise not_found("client_environment", body.environment_id)
+            if environment.device_id != body.device_id:
+                raise conflict("environment", environment.id, "device_id_mismatch")
+        else:
+            environment = await session.scalar(
+                select(EnvironmentRow)
+                .where(
+                    EnvironmentRow.kind == "external",
+                    EnvironmentRow.workspace_id == scope.workspace_id,
+                    EnvironmentRow.owner_principal_id == actor.id,
+                    EnvironmentRow.device_id == body.device_id,
                 )
-            ).one_or_none()
-            if existing is None:
-                raise conflict("workspace", workspace_id, "client_registration_changed")
-            return registered(existing[0], existing[1])
-        token = new_secret()
-        config = ClientSettingsRow(
-            environment_id=environment.id,
-            token_hash=secret_hash(token),
-            credential_version=1,
-            default_working_directory=body.default_working_directory,
-            permission_ceiling=body.permission_ceiling.model_dump(mode="json"),
-            declared_capabilities=body.declared_capabilities.model_dump(mode="json")
-            if body.declared_capabilities is not None
-            else None,
-            description=body.description,
+                # An explicit registration can replace a tombstone. Prefer that
+                # live registration, but never recreate a deleted binding here.
+                .order_by((EnvironmentRow.status == "deleted"), EnvironmentRow.created_at.desc())
+                .limit(1)
+                .with_for_update()
+            )
+            if environment is None:
+                return await _register(session, actor, scope, body)
+        if environment.status != "ready":
+            raise conflict("environment", environment.id, f"client_environment_{environment.status}")
+        config = await settings(session, environment)
+        if config.token_hash is None:
+            raise conflict("environment", environment.id, "client_credential_revoked")
+        return registered(environment, config)
+
+
+async def _register(session: AsyncSession, actor: Principal, scope: WorkspaceScope, body: Registration) -> Registered:
+    environment = await session.scalar(
+        insert(EnvironmentRow)
+        .values(
+            id=new_object_id("env"),
+            kind="external",
+            organization_id=scope.organization_id,
+            workspace_id=scope.workspace_id,
+            owner_principal_id=actor.id,
+            device_id=body.device_id,
+            name=body.name,
+            status="ready",
+            created_by_id=actor.id,
         )
-        session.add(config)
-        audit(session, actor, environment, "client.register")
-        await session.flush()
-        return registered(environment, config, token)
+        .on_conflict_do_nothing(
+            index_elements=[
+                EnvironmentRow.workspace_id,
+                EnvironmentRow.owner_principal_id,
+                EnvironmentRow.device_id,
+            ],
+            index_where=CLIENT_IDENTITY,
+        )
+        .returning(EnvironmentRow)
+    )
+    if environment is None:
+        existing = (
+            await session.execute(
+                select(EnvironmentRow, ClientSettingsRow)
+                .join(ClientSettingsRow, ClientSettingsRow.environment_id == EnvironmentRow.id)
+                .where(
+                    CLIENT_IDENTITY,
+                    EnvironmentRow.workspace_id == scope.workspace_id,
+                    EnvironmentRow.owner_principal_id == actor.id,
+                    EnvironmentRow.device_id == body.device_id,
+                )
+            )
+        ).one_or_none()
+        if existing is None:
+            raise conflict("workspace", scope.workspace_id, "client_registration_changed")
+        return registered(existing[0], existing[1])
+    token = new_secret()
+    config = ClientSettingsRow(
+        environment_id=environment.id,
+        token_hash=secret_hash(token),
+        credential_version=1,
+        default_working_directory=body.default_working_directory,
+        permission_ceiling=body.permission_ceiling.model_dump(mode="json"),
+        declared_capabilities=body.declared_capabilities.model_dump(mode="json")
+        if body.declared_capabilities is not None
+        else None,
+        description=body.description,
+    )
+    session.add(config)
+    audit(session, actor, environment, "client.register")
+    await session.flush()
+    return registered(environment, config, token)
 
 
 async def change_status(

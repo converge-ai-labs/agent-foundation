@@ -728,6 +728,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/client-environments/connect": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Connect Client Environment */
+    post: operations["connect_client_environment"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/client-environments/{environment_id}": {
     parameters: {
       query?: never;
@@ -6404,6 +6421,59 @@ export interface components {
       items: components["schemas"]["Connection"][];
       /** Next Cursor */
       next_cursor: string | null;
+    };
+    /** ConnectionRequest */
+    ConnectionRequest: {
+      declared_capabilities?:
+        components["schemas"]["EnvironmentPermissionSet-Input"] | null;
+      /** Default Working Directory */
+      default_working_directory: string;
+      /** Description */
+      description?: string | null;
+      /** Device Id */
+      device_id: string;
+      /** Environment Id */
+      environment_id?: string | null;
+      /** Name */
+      name: string;
+      /**
+       * @default {
+       *       "operations": [
+       *         "environment.file.copy_destination",
+       *         "environment.file.copy_source",
+       *         "environment.file.list",
+       *         "environment.file.mkdir",
+       *         "environment.file.move",
+       *         "environment.file.patch_text",
+       *         "environment.file.query",
+       *         "environment.file.read_bytes",
+       *         "environment.file.read_text",
+       *         "environment.file.remove",
+       *         "environment.file.search_text",
+       *         "environment.file.stat",
+       *         "environment.file.write_bytes",
+       *         "environment.file.write_text",
+       *         "environment.output.read",
+       *         "environment.output.release",
+       *         "environment.port.inspect",
+       *         "environment.port.wait",
+       *         "environment.process.close_stdin",
+       *         "environment.process.inspect",
+       *         "environment.process.kill",
+       *         "environment.process.list",
+       *         "environment.process.read_output",
+       *         "environment.process.release",
+       *         "environment.process.signal",
+       *         "environment.process.start",
+       *         "environment.process.wait",
+       *         "environment.process.write_stdin",
+       *         "environment.shell.exec",
+       *         "environment.state.export",
+       *         "environment.state.restore"
+       *       ]
+       *     }
+       */
+      permission_ceiling?: components["schemas"]["EnvironmentPermissionSet-Input"];
     };
     /**
      * ConnectionSelection
@@ -14951,6 +15021,44 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": components["schemas"]["Registration"];
+      };
+    };
+    responses: {
+      /** @description Existing registration; no token is returned */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Registered"];
+        };
+      };
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Registered"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  connect_client_environment: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ConnectionRequest"];
       };
     };
     responses: {

@@ -27,6 +27,10 @@ class Registration(ClientEnvironmentConfiguration):
     name: EnvironmentName
 
 
+class ConnectionRequest(Registration):
+    environment_id: str | None = Field(default=None, min_length=1, max_length=72)
+
+
 class ClientEnvironment(BaseModel):
     environment: EnvironmentView
     configuration: ClientEnvironmentConfiguration
