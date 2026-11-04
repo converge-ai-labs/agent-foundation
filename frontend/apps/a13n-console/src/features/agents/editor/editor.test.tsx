@@ -113,13 +113,28 @@ it("keeps execution edits across disclosure toggles and opens invalid JSON on sa
   });
   expect(execution.getAttribute("aria-expanded")).toBe("false");
   fireEvent.click(execution);
-  fireEvent.change(screen.getByLabelText("Wait time (seconds)"), {
-    target: { value: "12" },
-  });
+  expect(
+    screen.getByRole("combobox", { name: "Long-running tools" }).textContent,
+  ).toBe("Auto");
+  expect(
+    screen.getByRole("combobox", { name: "When new messages arrive" })
+      .textContent,
+  ).toBe("Immediately");
+  expect(screen.queryByText("Inherit")).toBeNull();
+  fireEvent.change(
+    screen.getByLabelText("Wait before backgrounding (seconds)"),
+    {
+      target: { value: "12" },
+    },
+  );
   fireEvent.click(execution);
   fireEvent.click(execution);
   expect(
-    (screen.getByLabelText("Wait time (seconds)") as HTMLInputElement).value,
+    (
+      screen.getByLabelText(
+        "Wait before backgrounding (seconds)",
+      ) as HTMLInputElement
+    ).value,
   ).toBe("12");
   const json = execution;
   fireEvent.change(screen.getByLabelText("Configuration JSON"), {

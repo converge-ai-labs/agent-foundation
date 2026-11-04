@@ -413,6 +413,7 @@ export function AgentEditor({
                 description={t("Control tool runs and incoming messages.")}
               >
                 <ExecutionFields
+                  scope="agent"
                   compact
                   value={draft.execution}
                   onChange={draft.setExecution}

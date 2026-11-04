@@ -78,10 +78,16 @@ it("clears inherited leaves under the original ETag and reloads a conflicting po
     screen.getByRole("textbox", { name: "Variable value {{number}}" }),
     "updated",
   );
-  await user.click(screen.getByRole("combobox", { name: "Tool execution" }));
-  await user.click(await screen.findByRole("option", { name: "Inherit" }));
+  await user.click(
+    screen.getByRole("combobox", { name: "Long-running tools" }),
+  );
+  await user.click(
+    await screen.findByRole("option", { name: "Use agent settings" }),
+  );
   await user.clear(
-    screen.getByRole("spinbutton", { name: "Foreground wait (seconds)" }),
+    screen.getByRole("spinbutton", {
+      name: "Wait before backgrounding (seconds)",
+    }),
   );
   await user.click(screen.getByRole("button", { name: "Save changes" }));
   await screen.findByText("This thread changed");
@@ -98,8 +104,12 @@ it("clears inherited leaves under the original ETag and reloads a conflicting po
   expect(close).not.toHaveBeenCalled();
   await user.click(screen.getByRole("button", { name: "Reload saved policy" }));
   await screen.findByText("At the next boundary");
-  await user.click(screen.getByRole("combobox", { name: "Steering" }));
-  await user.click(await screen.findByRole("option", { name: "Inherit" }));
+  await user.click(
+    screen.getByRole("combobox", { name: "When new messages arrive" }),
+  );
+  await user.click(
+    await screen.findByRole("option", { name: "Use agent settings" }),
+  );
   await user.click(screen.getByRole("button", { name: "Save changes" }));
   await waitFor(() => expect(close).toHaveBeenCalledOnce());
   expect(patches[1]).toEqual({
