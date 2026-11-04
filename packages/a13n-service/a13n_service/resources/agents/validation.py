@@ -72,14 +72,42 @@ async def validate_config(
                 () if held is None else held.skills,
                 builtin_names=config.builtin_skills,
             ),
-            "subagents": await _pin_subagents(
-                session, scope.workspace_id, config.subagents, {} if held is None else held.subagents
+            "subagents": config.subagents.model_copy(
+                update={
+                    "named": await _pin_subagents(
+                        session,
+                        scope.workspace_id,
+                        config.subagents.named,
+                        {} if held is None else held.subagents.named,
+                    )
+                }
             ),
         }
     )
     with at_field("model"):
         model = await resolve_model(session, actor, scope, config.model, verb=verb, authority=authority)
     model_settings(model.config, model.provider, config.model_settings, registry=registry, field="model_settings")
+    policy = config.subagents.dynamic
+    if policy.default_model is not None and policy.default_model not in {config.model, *policy.allowed_models}:
+        raise invalid("subagents.dynamic.default_model", "Must be the parent model or an allowed model")
+    for key in policy.allowed_models:
+        with at_field("subagents.dynamic.allowed_models"):
+            await resolve_model(session, actor, scope, key, verb=verb, authority=authority)
+    if policy.default_thinking is not None:
+        target = (
+            model
+            if policy.default_model in {None, config.model}
+            else await resolve_model(
+                session, actor, scope, policy.default_model or config.model, verb=verb, authority=authority
+            )
+        )
+        model_settings(
+            target.config,
+            target.provider,
+            {"thinking": policy.default_thinking},
+            registry=registry,
+            field="subagents.dynamic.default_thinking",
+        )
     if config.reviewer is not None:
         with at_field("reviewer.model"):
             reviewer = await resolve_model(session, actor, scope, config.reviewer.model, verb=verb, authority=authority)
@@ -104,8 +132,8 @@ async def validate_config(
         raise invalid("connection_tools", "declares more tool permissions than an agent may have") from None
     await _check_web(session, actor, scope, config, registry=registry, verb=verb, authority=authority)
     templates = {"default_environment_template_id": config.default_environment_template_id} | {
-        f"subagents.{name}.environment.template_id": edge.environment.template_id
-        for name, edge in config.subagents.items()
+        f"subagents.named.{name}.environment.template_id": edge.environment.template_id
+        for name, edge in config.subagents.named.items()
     }
     for path, template_id in templates.items():
         if template_id is not None:
@@ -129,6 +157,12 @@ def _check_rules(config: AgentConfig) -> None:
         if tool.provider_id is None:
             raise invalid(f"toolsets.web.tools.{operation}.config.provider_id", "required while the tool is enabled")
     reserved = toolsets.model_names(config.toolsets) | ({definition.QUESTION_TOOL} if config.user_questions else set())
+    if config.subagents.mode == "async":
+        reserved |= {"subagent_info", "wait_subagent", "steer_subagent", "cancel_subagent", "resume_subagent"}
+    if config.subagents.named:
+        reserved |= {"delegate", "resume_subagent"}
+    if config.subagents.dynamic.enabled:
+        reserved |= {"spawn_subagent"}
     if config.summarize:
         reserved |= {"summarize"}
     for index, tool in enumerate(config.client_tools):
@@ -138,12 +172,12 @@ def _check_rules(config: AgentConfig) -> None:
             raise invalid(f"client_tools.{index}.parameters_json_schema", error)
     if config.reviewer is None and "review" in definition.declared_permissions(config):
         raise invalid("reviewer", "required by the review permission")
-    if config.subagent_mode == "async":
+    if config.subagents.mode == "async":
         # A child run's usage bound counts model requests only; the other limits bound inline delegation.
-        for name, edge in config.subagents.items():
+        for name, edge in config.subagents.named.items():
             limits = edge.usage_limits
             if limits is not None and limits != UsageLimits(request_limit=limits.request_limit):
-                raise invalid(f"subagents.{name}.usage_limits", "an async child run takes only request_limit")
+                raise invalid(f"subagents.named.{name}.usage_limits", "an async child run takes only request_limit")
 
 
 def _provider_tools(config: AgentConfig) -> dict[WebOperation, SearchConfiguration | ScrapeConfiguration]:
@@ -262,7 +296,7 @@ async def _pin_subagents(
     )
     pinned = {}
     for name, edge in subagents.items():
-        with at_field(f"subagents.{name}"):
+        with at_field(f"subagents.named.{name}"):
             head = heads.get(edge.agent_id)
             if head is None:
                 raise not_found(AgentRow.KIND, edge.agent_id)
@@ -354,7 +388,9 @@ async def subagent_graph(
     level: dict[str | None, tuple[AgentConfig, str | None]] = {None: (config, None)}
     depth = 0
     while level:
-        wanted = {edge.revision_id for node, _ in level.values() for edge in node.subagents.values()} - graph.keys()
+        wanted = {
+            edge.revision_id for node, _ in level.values() for edge in node.subagents.named.values()
+        } - graph.keys()
         if wanted:
             rows = await session.execute(
                 select(AgentRevisionRow, AgentRow)
@@ -371,12 +407,12 @@ async def subagent_graph(
         depth += 1
         following: dict[str | None, tuple[AgentConfig, str | None]] = {}
         for node, via in level.values():
-            for name, edge in node.subagents.items():
-                path = via or f"subagents.{name}"
+            for name, edge in node.subagents.named.items():
+                path = via or f"subagents.named.{name}"
                 child = graph.get(edge.revision_id or "")
                 if child is None or child.agent_id != edge.agent_id:
                     raise invalid(path, "a pinned subagent revision is missing")
-                if node.subagent_mode != "inline":
+                if node.subagents.mode != "inline":
                     continue
                 if child.agent_id == agent_id:
                     raise invalid(path, "the subagents lead back to this agent")

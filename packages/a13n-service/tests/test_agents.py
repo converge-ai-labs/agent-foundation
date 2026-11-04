@@ -44,7 +44,7 @@ from a13n_service.resources.agents.schemas import (
     OutputSpec,
     RetryConfig,
     SkillSelection,
-    SubagentOverride,
+    SubagentSelection,
     apply_override,
     freeze_override,
 )
@@ -208,8 +208,11 @@ def test_overrides_replace_or_merge_the_revision_fields() -> None:
         model_settings={"temperature": 0.2},
         instructions="Be brief.",
         subagents={
-            "helper": {"agent_id": HELPER, "revision_id": HELPER_REVISION, "description": "Helps"},
-            "other": {"agent_id": other, "revision_id": new_object_id("apr")},
+            "mode": "inline",
+            "named": {
+                "helper": {"agent_id": HELPER, "revision_id": HELPER_REVISION, "description": "Helps"},
+                "other": {"agent_id": other, "revision_id": new_object_id("apr")},
+            },
         },
         retries={"tools": 2},
     )
@@ -218,7 +221,13 @@ def test_overrides_replace_or_merge_the_revision_fields() -> None:
             "model_settings": {"max_tokens": 100},
             "instructions": "Be thorough.",
             "toolsets": {"shell": {"enabled": False}},
-            "subagents": {"helper": {"description": "Helps more"}, "other": None, "fresh": {"agent_id": FRESH}},
+            "subagents": {
+                "mode": "inline",
+                "named": {
+                    "helper": {"agent_id": HELPER, "revision_id": HELPER_REVISION, "description": "Helps more"},
+                    "fresh": {"agent_id": FRESH},
+                },
+            },
             "retries": {"output": 1},
         }
     )
@@ -227,26 +236,32 @@ def test_overrides_replace_or_merge_the_revision_fields() -> None:
     assert applied.model == MODEL and applied.model_settings == {"max_tokens": 100}
     assert applied.instructions == "Be thorough." and applied.retries == RetryConfig(tools=2, output=1)
     assert not applied.toolsets["shell"].enabled and applied.toolsets["files"] == revision.toolsets["files"]
-    assert set(applied.subagents) == {"helper", "fresh"} and applied.subagents["fresh"].revision_id is None
-    helper = applied.subagents["helper"]
+    assert set(applied.subagents.named) == {"helper", "fresh"} and applied.subagents.named["fresh"].revision_id is None
+    helper = applied.subagents.named["helper"]
     assert (helper.revision_id, helper.description) == (HELPER_REVISION, "Helps more")
     # Another agent on an existing edge runs that agent's default revision, never the old pin.
-    moved = apply_override(revision, AgentOverride(subagents={"helper": SubagentOverride(agent_id=FRESH)}))
-    assert moved.subagents["helper"].revision_id is None
+    moved = apply_override(
+        revision, AgentOverride(subagents={"mode": "inline", "named": {"helper": SubagentSelection(agent_id=FRESH)}})
+    )
+    assert moved.subagents.named["helper"].revision_id is None
 
     pinned = new_object_id("apr")
     validated = applied.model_copy(
         update={
-            "subagents": {
-                **applied.subagents,
-                "fresh": applied.subagents["fresh"].model_copy(update={"revision_id": pinned}),
-            }
+            "subagents": applied.subagents.model_copy(
+                update={
+                    "named": {
+                        **applied.subagents.named,
+                        "fresh": applied.subagents.named["fresh"].model_copy(update={"revision_id": pinned}),
+                    }
+                }
+            )
         }
     )
     frozen = freeze_override(override, validated)
-    assert frozen.subagents is not None and frozen.subagents["other"] is None
-    assert cast(SubagentOverride, frozen.subagents["fresh"]).revision_id == pinned
-    assert cast(SubagentOverride, frozen.subagents["helper"]).revision_id == HELPER_REVISION
+    assert frozen.subagents is not None and "other" not in frozen.subagents.named
+    assert frozen.subagents.named["fresh"].revision_id == pinned
+    assert frozen.subagents.named["helper"].revision_id == HELPER_REVISION
 
 
 @pytest.mark.parametrize("baseline", [False, True])
@@ -317,7 +332,9 @@ def resolved(agent_id: str, revision_id: str, selected: AgentConfig, **fields: A
         provider=cast(Any, None),
     )
     values: dict[str, Any] = {"reviewer": None, "media": {}, "connections": {}, "subagents": {}} | fields
-    return ResolvedAgent(agent_id=agent_id, revision_id=revision_id, config=selected, model=model, **values)
+    return ResolvedAgent(
+        agent_id=agent_id, revision_id=revision_id, definition_id=revision_id, config=selected, model=model, **values
+    )
 
 
 def test_build_composes_the_definition_without_io() -> None:
@@ -331,14 +348,14 @@ def test_build_composes_the_definition_without_io() -> None:
         client_tools=[{"name": "lookup", "description": "Look up", "parameters_json_schema": {"type": "object"}}],
         reviewer={"model": MODEL},
         plugins=[{"instance_name": "audit", "plugin_key": "test.audit"}],
-        subagents={"helper": {"agent_id": HELPER, "revision_id": HELPER_REVISION}},
+        subagents={"mode": "inline", "named": {"helper": {"agent_id": HELPER, "revision_id": HELPER_REVISION}}},
     )
     root = resolved(
         new_object_id("ap"),
         root_revision,
         selected,
         reviewer=child.model,
-        subagents={"helper": ResolvedSubagent(selected.subagents["helper"], child.revision_id, "Helps", child)},
+        subagents={"helper": ResolvedSubagent(selected.subagents.named["helper"], child.revision_id, "Helps", child)},
     )
     asked: list[str] = []
 
@@ -378,14 +395,14 @@ def test_background_compaction_build_preserves_policy_and_keeps_children_synchro
 
     selected = config(
         background_compaction={"enabled": enabled, "blocking_threshold": 0.925},
-        subagents={"helper": {"agent_id": HELPER, "revision_id": HELPER_REVISION}},
+        subagents={"mode": "inline", "named": {"helper": {"agent_id": HELPER, "revision_id": HELPER_REVISION}}},
     )
     child = resolved(HELPER, HELPER_REVISION, config(background_compaction={"enabled": True}))
     root = resolved(
         new_object_id("ap"),
         new_object_id("apr"),
         selected,
-        subagents={"helper": ResolvedSubagent(selected.subagents["helper"], child.revision_id, "Helps", child)},
+        subagents={"helper": ResolvedSubagent(selected.subagents.named["helper"], child.revision_id, "Helps", child)},
     )
     operator = AsyncMock(spec=CompactionOperator) if enabled else None
     built = build(root, capabilities=lambda _: [], plugins=PLUGINS, instrumentation=None, compaction=operator)
@@ -413,14 +430,14 @@ async def test_summarize_selection_controls_tools_and_continues_from_saved_summa
     selected = config(
         summarize=enabled,
         model_characteristics={"context_window_tokens": 10000},
-        subagents={"helper": {"agent_id": HELPER, "revision_id": HELPER_REVISION}},
+        subagents={"mode": "inline", "named": {"helper": {"agent_id": HELPER, "revision_id": HELPER_REVISION}}},
     )
     child = resolved(HELPER, HELPER_REVISION, config(summarize=not enabled))
     root = resolved(
         new_object_id("ap"),
         new_object_id("apr"),
         selected,
-        subagents={"helper": ResolvedSubagent(selected.subagents["helper"], child.revision_id, "Helps", child)},
+        subagents={"helper": ResolvedSubagent(selected.subagents.named["helper"], child.revision_id, "Helps", child)},
     )
     executable = build(root, capabilities=lambda _: [], plugins=PLUGINS, instrumentation=None)
     assert any(isinstance(item, HandoffCapability) for item in executable.definition.capabilities) is enabled
@@ -656,7 +673,7 @@ async def test_references_are_checked_at_their_field_path(service) -> None:  # t
         ({"reviewer": {"model": model, "model_settings": {"unknown": 1}}}, "reviewer.model_settings"),
         ({"media_understanding": {"image": model}}, "media_understanding.image"),
         ({"skills": [{"skill_id": new_object_id("sk")}]}, "skills.0"),
-        ({"subagents": {"helper": {"agent_id": missing["ap"]}}}, "subagents.helper"),
+        ({"subagents": {"mode": "inline", "named": {"helper": {"agent_id": missing["ap"]}}}}, "subagents.named.helper"),
         ({"connection_tools": [{"connection_id": missing["con"]}]}, "connection_tools.0"),
         ({"toolsets": {"web": {"tools": {"search": {}}}}}, "toolsets.web.tools.search.config.provider_id"),
         (
@@ -671,8 +688,8 @@ async def test_references_are_checked_at_their_field_path(service) -> None:  # t
         ({"plugins": [{"instance_name": "audit", "plugin_key": "test.audit"}]}, "plugins.0"),
         ({"default_environment_template_id": missing["et"]}, "default_environment_template_id"),
         (
-            {"subagents": {"helper": {"agent_id": child["id"], "environment": dedicated}}},
-            "subagents.helper.environment.template_id",
+            {"subagents": {"mode": "inline", "named": {"helper": {"agent_id": child["id"], "environment": dedicated}}}},
+            "subagents.named.helper.environment.template_id",
         ),
         ({"output_spec": {"schema": {"$ref": "missing"}}}, "output_spec"),
     ]
@@ -721,43 +738,54 @@ async def test_revisions_pin_skills_and_subagents(service) -> None:  # type: ign
     skill = await create_skill(service)
     child = await create_agent(service, "child", model)
     parent = await create_agent(
-        service, "parent", model, skills=[{"skill_id": skill["id"]}], subagents={"helper": {"agent_id": child["id"]}}
+        service,
+        "parent",
+        model,
+        skills=[{"skill_id": skill["id"]}],
+        subagents={"mode": "inline", "named": {"helper": {"agent_id": child["id"]}}},
     )
 
     pinned = await revision_config(service, parent)
     assert pinned["skills"] == [{"skill_id": skill["id"], "revision_id": skill["default_revision_id"]}]
-    assert pinned["subagents"]["helper"]["revision_id"] == child["default_revision_id"]
+    assert pinned["subagents"]["named"]["helper"]["revision_id"] == child["default_revision_id"]
 
     # An inline path back to the agent itself is refused; an async child starts a child run of its own.
     revisions = f"{service.api}/agents/{child['id']}/revisions"
-    back = {"model": model, "subagents": {"back": {"agent_id": parent["id"]}}}
+    back = {"model": model, "subagents": {"mode": "inline", "named": {"back": {"agent_id": parent["id"]}}}}
     cycle = await service.client.post(revisions, json={"config": back}, headers={"if-match": etag(child)})
     assert cycle.status_code == 400, cycle.text
     assert cycle.json()["error"]["details"] == {
-        "field": "subagents.back",
+        "field": "subagents.named.back",
         "reason": "the subagents lead back to this agent",
     }
     delegated = await service.client.post(
-        revisions, json={"config": {**back, "subagent_mode": "async"}}, headers={"if-match": etag(child)}
+        revisions,
+        json={"config": {**back, "subagents": {**back["subagents"], "mode": "async"}}},
+        headers={"if-match": etag(child)},
     )
     assert delegated.status_code == 201, delegated.text
 
     # A child run carries only its edge's request limit; token and tool-call limits bound inline delegation.
     current = {"if-match": (await service.client.get(f"{service.api}/agents/{child['id']}")).headers["etag"]}
     limited = {"back": {"agent_id": parent["id"], "usage_limits": {"request_limit": 3, "total_tokens_limit": 1000}}}
-    async_config = {**back, "subagent_mode": "async", "subagents": limited}
+    async_config = {**back, "subagents": {"mode": "async", "named": limited}}
     refused = await service.client.post(revisions, json={"config": async_config}, headers=current)
     assert refused.status_code == 400, refused.text
     assert refused.json()["error"]["details"] == {
-        "field": "subagents.back.usage_limits",
+        "field": "subagents.named.back.usage_limits",
         "reason": "an async child run takes only request_limit",
     }
     requests_only = {"back": {"agent_id": parent["id"], "usage_limits": {"request_limit": 3}}}
     bounded = await service.client.post(
-        revisions, json={"config": {**async_config, "subagents": requests_only}}, headers=current
+        revisions,
+        json={"config": {**async_config, "subagents": {"mode": "async", "named": requests_only}}},
+        headers=current,
     )
     assert bounded.status_code == 201, bounded.text
-    inline = {"model": model, "subagents": {"helper": limited["back"] | {"agent_id": child["id"]}}}
+    inline = {
+        "model": model,
+        "subagents": {"mode": "inline", "named": {"helper": limited["back"] | {"agent_id": child["id"]}}},
+    }
     assert (await service.client.post(f"{service.api}/agents/validate", json={"config": inline})).status_code == 204
 
 
@@ -770,9 +798,11 @@ def viewer(service) -> Principal:  # type: ignore[no-untyped-def]
 async def test_configurations_validate_as_revision_creation_would_without_storing(service) -> None:  # type: ignore[no-untyped-def]
     model = await create_model(service)
     child = await create_agent(service, "child", model)
-    parent = await create_agent(service, "parent", model, subagents={"helper": {"agent_id": child["id"]}})
+    parent = await create_agent(
+        service, "parent", model, subagents={"mode": "inline", "named": {"helper": {"agent_id": child["id"]}}}
+    )
     validate = f"{service.api}/agents/validate"
-    valid = {"model": model, "subagents": {"helper": {"agent_id": child["id"]}}}
+    valid = {"model": model, "subagents": {"mode": "inline", "named": {"helper": {"agent_id": child["id"]}}}}
     checked = await service.client.post(validate, json={"config": valid})
     assert checked.status_code == 204, checked.text
 
@@ -786,7 +816,7 @@ async def test_configurations_validate_as_revision_creation_would_without_storin
         assert refused.json()["error"]["details"]["field"] == field
 
     # Naming the agent applies the rule that its inline subagents may not lead back to it, as its revisions do.
-    back = {"model": model, "subagents": {"back": {"agent_id": parent["id"]}}}
+    back = {"model": model, "subagents": {"mode": "inline", "named": {"back": {"agent_id": parent["id"]}}}}
     assert (await service.client.post(validate, json={"config": back})).status_code == 204
     cycle = await service.client.post(validate, json={"config": back, "agent_id": child["id"]})
     revision = await service.client.post(
@@ -797,7 +827,7 @@ async def test_configurations_validate_as_revision_creation_would_without_storin
         cycle.json()["error"]["details"]
         == revision.json()["error"]["details"]
         == {
-            "field": "subagents.back",
+            "field": "subagents.named.back",
             "reason": "the subagents lead back to this agent",
         }
     )
@@ -1047,14 +1077,14 @@ async def test_overrides_are_validated_and_pinned_as_the_run_freezes_them(servic
                 plugins=service.runtime.plugins,
             )
 
-    frozen = await validate(AgentOverride(subagents={"extra": SubagentOverride(agent_id=child["id"])}))
-    assert frozen.subagents == {
-        "extra": SubagentOverride(agent_id=child["id"], revision_id=child["default_revision_id"])
+    frozen = await validate(
+        AgentOverride(subagents={"mode": "inline", "named": {"extra": SubagentSelection(agent_id=child["id"])}})
+    )
+    assert frozen.subagents is not None
+    assert frozen.subagents.named == {
+        "extra": SubagentSelection(agent_id=child["id"], revision_id=child["default_revision_id"])
     }
-    for override, field in (
-        (AgentOverride(model="missing-model"), "model"),
-        (AgentOverride(subagents={"extra": SubagentOverride(description="No agent")}), "subagents.extra.agent_id"),
-    ):
+    for override, field in ((AgentOverride(model="missing-model"), "model"),):
         with pytest.raises(ServiceError) as refused:
             await validate(override)
         assert refused.value.code == "invalid_argument" and refused.value.details["field"] == field
@@ -1067,7 +1097,7 @@ async def test_overrides_are_validated_and_pinned_as_the_run_freezes_them(servic
         "pinning",
         model,
         skills=[{"skill_id": skill["id"]}],
-        subagents={"helper": {"agent_id": child["id"]}},
+        subagents={"mode": "inline", "named": {"helper": {"agent_id": child["id"]}}},
     )
     for path, head in ((f"skills/{skill['id']}", skill), (f"agents/{child['id']}", child)):
         archived = await service.client.post(f"{service.api}/{path}/archive", headers={"if-match": etag(head)})
@@ -1075,7 +1105,10 @@ async def test_overrides_are_validated_and_pinned_as_the_run_freezes_them(servic
     kept = await validate(AgentOverride(instructions="Only this run."), pinning["id"])
     assert kept.instructions == "Only this run."
     for override, field in (
-        (AgentOverride(subagents={"extra": SubagentOverride(agent_id=child["id"])}), "subagents.extra"),
+        (
+            AgentOverride(subagents={"mode": "inline", "named": {"extra": SubagentSelection(agent_id=child["id"])}}),
+            "subagents.named.extra",
+        ),
         (AgentOverride(skills=(SkillSelection(skill_id=skill["id"]),)), "skills.0"),
     ):
         with pytest.raises(ServiceError) as archived_pin:

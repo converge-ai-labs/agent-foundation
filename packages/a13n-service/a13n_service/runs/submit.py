@@ -17,10 +17,9 @@ from a13n_service.infra.db import transaction
 from a13n_service.infra.errors import ServiceError, conflict
 from a13n_service.resources.agents import stored
 from a13n_service.resources.agents.schemas import AgentOverride
-from a13n_service.resources.agents.service import SelectedRevision
 from a13n_service.resources.assets.service import require_usable
 from a13n_service.resources.connections.service import validate_caller_headers
-from a13n_service.runs import checkpoints
+from a13n_service.runs import checkpoints, definitions
 from a13n_service.runs.accept import Source, accept, primary_source, run_revision
 from a13n_service.runs.attachments import asset_fields, require_readable
 from a13n_service.runs.environments.mounts import mount_environments, shared_mounts, thread_has_primary
@@ -50,7 +49,7 @@ async def validate_message(
     message: Message,
     *,
     authority: ExecutionAuthority,
-) -> tuple[SelectedRevision, AgentOverride | None]:
+) -> tuple[definitions.Definition, AgentOverride | None]:
     """Malformed or unauthorized input fails before anything is appended, and a pending edit before it applies.
     Returns the revision the message selects and its overrides as a run accepted now freezes them.
 
@@ -74,16 +73,22 @@ async def validate_message(
             stored.require(RunOptions, current.options, kind="run", id=current.id).execution, message.options.execution
         ):
             raise conflict("run", current.id, "execution_policy_immutable")
-    revision, overrides = await run_revision(
-        session,
-        runtime,
-        principal,
-        scope,
-        message.agent_id,
-        message.agent_revision_id,
-        message.options.overrides,
-        authority=authority,
-    )
+    if thread.agent_snapshot is not None:
+        revision = await definitions.resolve(
+            session, thread, message.agent_id, message.agent_revision_id, message.options.overrides, accepting=True
+        )
+        overrides = None
+    else:
+        revision, overrides = await run_revision(
+            session,
+            runtime,
+            principal,
+            scope,
+            message.agent_id,
+            message.agent_revision_id,
+            message.options.overrides,
+            authority=authority,
+        )
     await require_usable(session, scope.workspace_id, asset_fields(message.payload))
     primary = (
         await thread_has_primary(session, thread) or await primary_source(session, thread, revision.config) is not None
@@ -119,6 +124,8 @@ async def prepare_message(
         schedule_occurrence_id=schedule_occurrence_id,
     )
     runtime.mailbox.notify(session, entry)
+    if thread.agent_snapshot is not None:
+        return await Source.load(session, runtime, thread, entry, "input")
     return Source.message(entry, "input", actor, revision, overrides)
 
 
@@ -269,6 +276,13 @@ async def fork(
             origin_thread_id=origin_thread.id,
             origin_run_id=origin.id,
         )
+        retained = (
+            origin_thread.agent_snapshot is not None
+            and body.agent_id == origin.agent_id
+            and body.agent_revision_id is None
+        )
+        if retained:
+            thread.agent_snapshot = origin_thread.agent_snapshot
         session.add(thread)
         await session.flush()
         shared = [] if body.fresh_environments else await shared_mounts(session, origin_thread)

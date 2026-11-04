@@ -58,7 +58,7 @@ description: 配置 agent、继续对话，并处理结果、审批与恢复。
 | 提供工具           | `toolsets`、`connection_tools`、`tool_search`；参阅[工具与连接](tools.md)                            |
 | 加载可复用指令     | `skills: [{skill_id, revision_id}]`；参阅 [Skill](skills.md)                                         |
 | 向应用或用户提问   | `client_tools`、`user_questions`；参阅[客户端工具](#client-tools-and-questions)                      |
-| 委派工作           | `subagents`、`subagent_mode`；参阅[子 agent](#subagents)                                             |
+| 委派工作           | `subagents`；参阅[子 agent](#subagents)                                                              |
 | 审查调用或理解媒体 | `reviewer`、`media_understanding`；参阅[媒体理解](models.md#media-understanding)                     |
 | 要求结构化输出     | `output_spec`：一个 JSON Schema 或 2–32 个命名 `variants`；省略时返回文本                            |
 | 限制重试           | `retries.tools` 和 `retries.output`，各为 0–100                                                      |
@@ -126,27 +126,40 @@ description: 配置 agent、继续对话，并处理结果、审批与恢复。
 
 ### 子 agent
 
-在 `subagents` 中配置工作空间 agent ID。每条命名调用边可指定描述、固定版本、上下文共享方式和用量限制。将下列片段中的 `ap_...` 替换为真实 agent ID：
+在 `subagents.named` 中配置工作空间 agent ID。每条命名调用边可指定描述、固定版本、上下文共享方式和用量限制。将下列片段中的 `ap_...` 替换为真实 agent ID：
 
 ```json
 {
-  "subagent_mode": "async",
   "subagents": {
-    "researcher": {
-      "agent_id": "ap_...",
-      "description": "Finds and summarizes sources.",
-      "usage_limits": {"request_limit": 20},
-      "environment": {"mode": "shared"}
+    "mode": "async",
+    "named": {
+      "researcher": {
+        "agent_id": "ap_...",
+        "description": "Finds and summarizes sources.",
+        "usage_limits": {
+          "request_limit": 20
+        },
+        "environment": {
+          "mode": "shared"
+        }
+      }
+    },
+    "dynamic": {
+      "enabled": true
     }
   }
 }
 ```
 
-默认**内联**：子 agent 在父运行及其尝试内部执行。调用图不能回到发起委派的 agent。每次委派可限制请求数、token 和工具调用。
+仅命名子 agent 的配置可以选择**内联**：子 agent 在父运行及其尝试内部执行。调用图不能回到发起委派的 agent。每次委派可限制请求数、token 和工具调用。
 
 **异步**在同一会话中创建子线程，使用父运行的主体。父 agent 通过[委派工具](../a13n-harness/delegation-and-codeact.md#asynchronous-children)检查、等待、引导、取消或继续子 agent。子结果进入父收件箱，可以引导活跃运行或启动后续运行。等待用户的子运行在这些工具中显示为 `running`。异步调用边只应用 `usage_limits.request_limit`。
 
 异步环境由调用边决定：`shared` 挂载父环境，`dedicated` 从 `template_id` 预留环境，`none` 不挂载。子 agent 自身的默认环境模板不生效。部署设置 `worker.child_count` 和 `worker.child_depth` 限制子 agent 数量及嵌套深度。
+
+默认执行模式为异步。在 Console 或 API 中启用 `subagents.dynamic.enabled` 后，根 Agent 可以用 `spawn_subagent` 按任务创建子 agent，提供任务指令和首条输入。动态子 agent 共享父环境，只能选择父 agent 已有能力的子集，不能再次委派。`allowed_models`、`default_model` 和 `default_thinking` 配置可选模型及默认值；spawn 时也可以指定允许的模型和 thinking effort，`false` 表示关闭思考。
+
+动态子 agent 使用线程快照，不创建临时 Agent 版本。归档来源 Agent 会阻止新的子运行及续接，已接受的运行仍可完成；取消归档后可以继续原快照。
 
 ## 开始对话
 
@@ -232,7 +245,7 @@ Service 为每个文件选择传递方式：
 {"options": {"max_usage": {"requests": 40}, "overrides": {"instructions": "Answer in German."}}}
 ```
 
-`max_usage.requests` 接受 1–10,000；超出后运行以 `usage_limit_exceeded` 失败。`labels` 标记运行。`overrides` 在提交和接受时校验，然后固定。大多数字段替换修订版本中的值；`toolsets` 替换所提供的各个工具集，`retries` 和每条 `subagents` 调用边合并指定字段。null 子 agent 调用边会将其移除。
+`max_usage.requests` 接受 1–10,000；超出后运行以 `usage_limit_exceeded` 失败。`labels` 标记运行。`overrides` 在提交和接受时校验，然后固定。大多数字段替换修订版本中的值；`toolsets` 替换所提供的各个工具集，`retries` 合并指定字段。`subagents` 整体替换命名和动态设置，null override 表示继承。
 
 Resume 和自动子结果续接保留前一运行的选项。Console 的**运行选项**为下次运行设置参数。工具交还和引导时机见[执行策略](#execution-policy)。
 

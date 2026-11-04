@@ -358,6 +358,8 @@ async def test_legacy_toolsets_and_platform_selections_are_rewritten(database, s
     agent = await runs_kit.create_agent(service, scripted_model)
     overridden = {"overrides": {"toolsets": {"web": {"enabled": False}}}}
     run = (await runs_kit.start_thread(service, agent, "hi", options=overridden))["run"]
+    scripted_model.say("Done")
+    await (await runs_kit.attempt(service))
     legacy = json.dumps({key: {"enabled": True} for key in ("configuration", "traces", "findings")})
     groups = "'{" + ",".join(PLATFORM_GROUPS) + "}'::text[]"
     # The revision selects two groups and asks before reads; the run selects one group and allows writes.
@@ -478,9 +480,12 @@ async def test_completion_migration_preserves_submission_and_refuses_lossy_downg
 
     from .test_schedule_dispatch import schedule_for, trigger
 
-    schedule, _ = await schedule_for(service, scripted_model, runs_kit)
+    schedule, _ = await schedule_for(service, scripted_model, runs_kit, user_questions=True)
     await trigger(service, schedule, runs_kit)
     await dispatch.process(service.runtime, schedule["id"])
+    scripted_model.call("ask_user_question", {"questions": [runs_kit.QUESTION]}, call_id="question")
+    await (await runs_kit.attempt(service))
+    waiting_id = rows(database, "SELECT id FROM runs WHERE status = 'waiting'")[0][0]
     query = "SELECT id, status, thread_id, entry_id, finished_at::text, version::text FROM schedule_occurrences"
     original = rows(database, query)
     with migration_connection(database, OSS) as config:
@@ -488,6 +493,12 @@ async def test_completion_migration_preserves_submission_and_refuses_lossy_downg
     assert rows(database, query) == original
     upgrade(database, OSS)
     assert rows(database, query) == original
+    response = await service.client.post(
+        f"{service.api}/runs/{waiting_id}/resume",
+        json={"approvals": {}, "calls": {"question": {"status": "returned", "value": {"response": "Blue"}}}},
+        headers=runs_kit.fresh_key(),
+    )
+    assert response.status_code == 201, response.text
     scripted_model.say("Done")
     await (await runs_kit.attempt(service))
     assert rows(database, "SELECT status, execution_outcome FROM schedule_occurrences") == [("completed", "succeeded")]
@@ -808,7 +819,7 @@ async def test_browser_retention_migration_preserves_legacy_and_refuses_lossy_ro
             with pytest.raises(DBAPIError, match="rollback_retention"):
                 with migration_connection(database, OSS) as config:
                     command.downgrade(config, "29270d0290da")
-            assert rows(database, "SELECT version_num FROM alembic_version") == [("91abbf7b03c8",)]
+            assert rows(database, "SELECT version_num FROM alembic_version") == [("03610e577d35",)]
         # Legacy rows retain the original idle_seconds meaning and gain no new idle policy on upgrade.
         with engine.begin() as connection:
             connection.execute(
@@ -837,3 +848,63 @@ async def test_browser_retention_migration_preserves_legacy_and_refuses_lossy_ro
         check(database, OSS)
     finally:
         engine.dispose()
+
+
+@pytest.mark.anyio
+async def test_unified_subagents_cutover_materializes_legacy_patches_and_digests(
+    database, service, scripted_model, runs_kit
+):  # type: ignore[no-untyped-def]
+    from a13n_service.resources.agents.schemas import AgentConfig
+    from a13n_service.runs.schemas import RunOptions
+
+    await runs_kit.pause_sweeps(service)
+    parent = await runs_kit.delegating(service, scripted_model, "async")
+    scripted_model.say("Done")
+    submitted = await runs_kit.start_thread(
+        service, parent, "Task", options={"overrides": {"instructions": "Migration fixture"}}
+    )
+    await (await runs_kit.attempt(service))
+    run_id = submitted["run"]["id"]
+    assert (await runs_kit.get_run(service, run_id))["status"] == "completed"
+    with migration_connection(database, OSS) as config:
+        command.downgrade(config, "91abbf7b03c8")
+        connection = config.attributes["connection"]
+        connection.execute(text("SET CONSTRAINTS ALL IMMEDIATE"))
+        patch = json.dumps({"helper": {"description": "Review 资料"}})
+        for table in ("runs", "inbox_entries"):
+            connection.execute(text(f"ALTER TABLE {table} DISABLE TRIGGER USER"))
+            condition = "id = :id" if table == "runs" else "assigned_run_id = :id"
+            connection.execute(
+                text(
+                    f"UPDATE {table} SET options = jsonb_set(options, '{{overrides,subagents}}', CAST(:patch AS jsonb)) WHERE {condition}"
+                ),
+                {"patch": patch, "id": run_id},
+            )
+            connection.execute(text(f"ALTER TABLE {table} ENABLE TRIGGER USER"))
+        connection.commit()
+    upgrade(database, OSS)
+    check(database, OSS)
+    with migration_connection(database, OSS) as config:
+        connection = config.attributes["connection"]
+        for row in connection.execute(text("SELECT config, digest FROM agent_revisions")):
+            validated = AgentConfig.model_validate(row.config)
+            assert validated.subagents.mode == "async"
+            assert row.digest == config_digest(validated.model_dump(mode="json"))
+        entry = connection.execute(
+            text("SELECT options FROM inbox_entries WHERE assigned_run_id = :id"), {"id": run_id}
+        ).one()
+        options = RunOptions.model_validate(entry.options)
+        edge = options.overrides.subagents.named["helper"]
+        assert edge.agent_id and edge.description == "Review 资料"
+        assert edge.environment.mode == "shared"
+        run = connection.execute(text("SELECT options, options_digest FROM runs WHERE id = :id"), {"id": run_id}).one()
+        assert RunOptions.model_validate(run.options).overrides.subagents == options.overrides.subagents
+        assert run.options_digest == options.digest()
+        assert not connection.scalar(
+            text("SELECT EXISTS (SELECT 1 FROM pg_trigger WHERE tgenabled = 'D' AND NOT tgisinternal)")
+        )
+    # An unpinned inbox entry still owns the exact revision selected by its assigned Run.
+    with migration_connection(database, OSS) as config:
+        command.downgrade(config, "91abbf7b03c8")
+    upgrade(database, OSS)
+    check(database, OSS)

@@ -5,7 +5,7 @@ fork and spawn call it with their own source. A source arrives loaded and checke
 the revision and the options it runs with. Both are SQL-only and run under the caller's thread lock.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import partial
 from typing import Literal
 
@@ -27,7 +27,7 @@ from a13n_service.resources.agents.service import (
     select_revision,
     validate_override,
 )
-from a13n_service.runs import inbox
+from a13n_service.runs import definitions, inbox
 from a13n_service.runs.admission import AcceptedIntent
 from a13n_service.runs.attachments import require_readable
 from a13n_service.runs.environments.mounts import (
@@ -110,8 +110,8 @@ class Source:
     trigger: Trigger
     principal: Principal
     authority: ExecutionAuthority
-    revision: SelectedRevision
-    revision_selection: Literal["pinned", "default", "inherited"]
+    revision: definitions.Definition
+    revision_selection: Literal["pinned", "default", "inherited", "snapshot"]
     # Frozen: a message's overrides validated against `revision`; inherited options as their run froze them.
     options: RunOptions
     # The digest of the options as submitted, which inherited sources keep from the run they come from.
@@ -129,7 +129,7 @@ class Source:
         entry: InboxEntryRow,
         trigger: Trigger,
         principal: Principal,
-        revision: SelectedRevision,
+        revision: definitions.Definition,
         overrides: AgentOverride | None,
     ) -> "Source":
         """A message whose principal the caller authorized and whose revision and overrides it validated."""
@@ -139,7 +139,11 @@ class Source:
             principal=principal,
             authority=ExecutionAuthority.model_validate(entry.authority),
             revision=revision,
-            revision_selection="pinned" if entry.agent_revision_id else "default",
+            revision_selection="snapshot"
+            if isinstance(revision, definitions.SelectedSnapshot)
+            else "pinned"
+            if entry.agent_revision_id
+            else "default",
             options=options.model_copy(
                 update={"overrides": overrides, "configuration": options.configuration or RunConfiguration()}
             ),
@@ -158,6 +162,25 @@ class Source:
         authority = ExecutionAuthority.model_validate(entry.authority)
         principal = await _authorized(session, runtime, scope, entry.principal_id, authority)
         overrides = stored.require(RunOptions, entry.options, kind="inbox_entry", id=entry.id).overrides
+        if thread.agent_snapshot is not None:
+            revision = await definitions.resolve(
+                session, thread, entry.agent_id, entry.agent_revision_id, overrides, accepting=True
+            )
+            source = cls.message(entry, trigger, principal, revision, None)
+            previous = await session.get_one(RunRow, thread.last_run_id or thread.origin_run_id)
+            frozen = stored.require(RunOptions, previous.options, kind="run", id=previous.id)
+            if source.options.execution is not None and source.options.execution != frozen.execution:
+                raise ServiceError("invalid_argument", "Snapshot execution policy is immutable")
+            return replace(
+                source,
+                options=source.options.model_copy(
+                    update={
+                        "execution": frozen.execution,
+                        "configuration": frozen.configuration,
+                        "context": frozen.context,
+                    }
+                ),
+            )
         revision, overrides = await run_revision(
             session, runtime, principal, scope, entry.agent_id, entry.agent_revision_id, overrides, authority=authority
         )
@@ -181,12 +204,17 @@ class Source:
         principal's current grants allow them and its agent is not archived."""
         scope = WorkspaceScope(run.organization_id, run.workspace_id)
         authority = ExecutionAuthority.model_validate(run.authority)
+        thread = await session.get_one(ThreadRow, run.thread_id)
+        options = stored.require(RunOptions, run.options, kind="run", id=run.id)
+        revision = await definitions.resolve(
+            session, thread, run.agent_id, run.agent_revision_id, options.overrides, accepting=True
+        )
         return cls(
             trigger=trigger,
             principal=await _authorized(session, runtime, scope, run.principal_id, authority),
             authority=authority,
-            revision=await select_revision(session, run.workspace_id, run.agent_id, run.agent_revision_id),
-            revision_selection="inherited",
+            revision=revision,
+            revision_selection="snapshot" if thread.agent_snapshot is not None else "inherited",
             options=stored.require(RunOptions, run.options, kind="run", id=run.id),
             options_digest=run.options_digest,
             occurrence_trigger_entry_id=run.occurrence_trigger_entry_id if trigger == "resume" else None,
@@ -243,14 +271,17 @@ async def primary_source(
     mount to share. It is the agent's default template, except on a child thread, whose spawning edge decides, never
     the child agent: the edge's template when dedicated, and when shared the parent thread's primary, which a parent
     without one cannot give until its own acceptance reserves one."""
+    if thread.agent_snapshot is not None:
+        return None
     if thread.origin != "child":
         return config.default_environment_template_id
     origin = await session.get(RunRow, thread.origin_run_id)
     assert origin is not None and thread.origin_thread_id is not None and thread.subagent is not None
+    assert origin.agent_revision_id is not None
     revision = await load_revision(session, origin.agent_id, origin.agent_revision_id)
     override = stored.require(RunOptions, origin.options, kind="run", id=origin.id).overrides
     spawning = stored.require_effective(revision.config, override, revision_id=revision.revision_id)
-    policy = spawning.subagents[thread.subagent].environment
+    policy = spawning.subagents.named[thread.subagent].environment
     if policy.mode == "shared":
         return await primary_mount(session, thread.origin_thread_id)
     return policy.template_id
@@ -265,7 +296,7 @@ async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, 
     scope = WorkspaceScope(thread.organization_id, thread.workspace_id)
     await require_active_workspace(session, thread.workspace_id)
     principal, revision, options = source.principal, source.revision, source.options
-    if source.revision_selection != "inherited":
+    if source.revision_selection not in {"inherited", "snapshot"}:
         policy = ExecutionPolicy().overlay(
             ExecutionOverride(
                 tools=ToolExecutionOverride(

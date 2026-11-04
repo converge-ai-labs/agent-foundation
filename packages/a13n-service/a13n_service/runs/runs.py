@@ -32,7 +32,7 @@ from a13n_service.runs.schemas import (
     RunView,
 )
 from a13n_service.runs.seal import stop
-from a13n_service.runs.tables import AttemptRow, InboxEntryRow, RunItemPageRow, RunRow
+from a13n_service.runs.tables import AttemptRow, InboxEntryRow, RunItemPageRow, RunRow, ThreadRow
 from a13n_service.runs.threads import get_run, get_thread
 from a13n_service.tenancy.access import workspace_scope
 from a13n_service.tenancy.authorize import Principal
@@ -95,7 +95,23 @@ async def agent(storage: Storage, actor: Principal, workspace_id: str, run_id: s
     async with short_session(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "read")
         run = await get_run(session, scope.workspace_id, run_id)
-        # The run's foreign key keeps its revision, and revisions are never deleted.
+        thread = await session.get_one(ThreadRow, run.thread_id)
+        if thread.agent_snapshot is not None:
+            from a13n_service.runs.definitions import AgentSnapshot
+
+            snapshot = stored.read(AgentSnapshot, thread.agent_snapshot, kind="thread", id=thread.id)
+            return stored.read(
+                RunAgent,
+                {
+                    "revision": None,
+                    "definition_id": snapshot.definition_id,
+                    "source": "thread_snapshot",
+                    "config": snapshot.config,
+                },
+                kind="run",
+                id=run.id,
+            )
+        assert run.agent_revision_id is not None
         revision = stored.read(
             AgentRevision,
             await session.get(AgentRevisionRow, run.agent_revision_id),
@@ -104,7 +120,12 @@ async def agent(storage: Storage, actor: Principal, workspace_id: str, run_id: s
         )
     override = stored.read(RunOptions, run.options, kind="run", id=run.id).overrides
     config = stored.read_effective(revision.config, override, run_id=run.id)
-    return stored.read(RunAgent, {"revision": revision, "config": config}, kind="run", id=run.id)
+    return stored.read(
+        RunAgent,
+        {"revision": revision, "definition_id": revision.id, "source": "revision", "config": config},
+        kind="run",
+        id=run.id,
+    )
 
 
 async def _summaries(session: AsyncSession, values: Sequence[RunView]) -> list[read_views.RunSummary]:

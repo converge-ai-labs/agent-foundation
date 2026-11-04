@@ -44,7 +44,7 @@
     },
     "AgentOverride": {
       "additionalProperties": false,
-      "description": "What one run changes of its revision's configuration; an omitted or null field keeps the revision's.\n\n`toolsets` replaces whole toolsets; `retries` and each subagent edge replace the fields they set, and a null\nedge removes it; every other field replaces the revision's value.",
+      "description": "What one run changes of its revision's configuration; an omitted or null field keeps the revision's.\n\n`toolsets` replaces whole toolsets; `retries` replaces supplied members.\nEvery other field, including `subagents`, replaces the whole value.",
       "properties": {
         "builtin_skills": {
           "anyOf": [
@@ -263,27 +263,13 @@
         "subagents": {
           "anyOf": [
             {
-              "maxProperties": 128,
-              "patternProperties": {
-                "^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/$defs/SubagentOverride"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                }
-              },
-              "type": "object"
+              "$ref": "#/$defs/Subagents"
             },
             {
               "type": "null"
             }
           ],
-          "default": null,
-          "title": "Subagents"
+          "default": null
         },
         "tool_search": {
           "anyOf": [
@@ -442,8 +428,8 @@
     },
     "AppReference": {
       "properties": {
-        "agent_revision_id": {
-          "title": "Agent Revision Id",
+        "agent_definition_id": {
+          "title": "Agent Definition Id",
           "type": "string"
         },
         "app_id": {
@@ -479,7 +465,7 @@
       "required": [
         "app_id",
         "connection_id",
-        "agent_revision_id",
+        "agent_definition_id",
         "source_run_id",
         "tool_call_id",
         "tool_name",
@@ -1097,6 +1083,54 @@
         "next_ordinal"
       ],
       "title": "DisplayContinuation",
+      "type": "object"
+    },
+    "DynamicSubagents": {
+      "additionalProperties": false,
+      "description": "Root-only task-specific delegation within the parent's capability boundary.",
+      "properties": {
+        "allowed_models": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Allowed Models",
+          "type": "array"
+        },
+        "default_model": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z0-9][a-z0-9.-]{0,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Default Model"
+        },
+        "default_thinking": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Default Thinking"
+        },
+        "enabled": {
+          "default": false,
+          "title": "Enabled",
+          "type": "boolean"
+        }
+      },
+      "title": "DynamicSubagents",
       "type": "object"
     },
     "EntryStatus": {
@@ -3043,8 +3077,15 @@
           "type": "string"
         },
         "agent_revision_id": {
-          "title": "Agent Revision Id",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Agent Revision Id"
         },
         "attempts": {
           "title": "Attempts",
@@ -3220,7 +3261,8 @@
           "enum": [
             "pinned",
             "default",
-            "inherited"
+            "inherited",
+            "snapshot"
           ],
           "title": "Revision Selection",
           "type": "string"
@@ -3513,34 +3555,17 @@
       "title": "StreamPosition",
       "type": "object"
     },
-    "SubagentOverride": {
+    "SubagentSelection": {
       "additionalProperties": false,
-      "description": "Replaces the fields it sets of an edge; an edge the revision lacks sets at least `agent_id`.",
       "properties": {
         "agent_id": {
-          "anyOf": [
-            {
-              "maxLength": 41,
-              "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Agent Id"
+          "maxLength": 41,
+          "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+          "title": "Agent Id",
+          "type": "string"
         },
         "context": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/DelegationContextPolicy"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
+          "$ref": "#/$defs/DelegationContextPolicy"
         },
         "description": {
           "anyOf": [
@@ -3556,15 +3581,7 @@
           "title": "Description"
         },
         "environment": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ChildEnvironmentPolicy"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
+          "$ref": "#/$defs/ChildEnvironmentPolicy"
         },
         "revision_id": {
           "anyOf": [
@@ -3592,7 +3609,39 @@
           "default": null
         }
       },
-      "title": "SubagentOverride",
+      "required": [
+        "agent_id"
+      ],
+      "title": "SubagentSelection",
+      "type": "object"
+    },
+    "Subagents": {
+      "additionalProperties": false,
+      "properties": {
+        "dynamic": {
+          "$ref": "#/$defs/DynamicSubagents"
+        },
+        "mode": {
+          "default": "async",
+          "enum": [
+            "inline",
+            "async"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "named": {
+          "maxProperties": 128,
+          "patternProperties": {
+            "^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$": {
+              "$ref": "#/$defs/SubagentSelection"
+            }
+          },
+          "title": "Named",
+          "type": "object"
+        }
+      },
+      "title": "Subagents",
       "type": "object"
     },
     "TextPart": {

@@ -114,8 +114,11 @@ def seed_agents(api: Api, local: Local, connection: Json, search: Json, skills: 
             "Release coordinator",
             "Delegates reviews to the documentation assistant.",
             {"team": "docs"},
-            subagent_mode="async",
-            subagents={"reviewer": {"agent_id": assistant["id"], "description": "Reviews one release note."}},
+            subagents={
+                "mode": "async",
+                "named": {"reviewer": {"agent_id": assistant["id"], "description": "Reviews one release note."}},
+                "dynamic": {"enabled": True},
+            },
         ),
         analyst=agent(
             "Workspace analyst",

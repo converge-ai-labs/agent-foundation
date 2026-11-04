@@ -45,10 +45,11 @@ from sqlalchemy.orm import aliased
 from a13n_service.infra.db import lock, short_session, transaction
 from a13n_service.infra.errors import ServiceError, conflict, invalid, not_found
 from a13n_service.resources.agents import stored
-from a13n_service.runs import inbox
+from a13n_service.runs import definitions, inbox
 from a13n_service.runs.accept import Source, accept, delegation, start_run
 from a13n_service.runs.agent import ResolvedSubagent
-from a13n_service.runs.attempts import AttemptControl, Lease, LeaseLost
+from a13n_service.runs.attempts import AttemptControl, Lease, LeaseLost, authorize_execution
+from a13n_service.runs.dynamic_subagents import Spawn, derive
 from a13n_service.runs.environments.mounts import adopt_mounts
 from a13n_service.runs.memories.mounts import adopt_memory_mounts
 from a13n_service.runs.runtime import Runtime
@@ -67,7 +68,7 @@ from a13n_service.runs.tables import InboxEntryRow, RunRow, SessionRow, ThreadRo
 from a13n_service.runs.threads import new_thread
 from a13n_service.runs.tool_executions.authority import lock_owner, prove
 from a13n_service.runs.tools import tool_failures
-from a13n_service.tenancy.authorize import ExecutionAuthority
+from a13n_service.tenancy.authorize import ExecutionAuthority, WorkspaceScope
 
 _STATUS: dict[str, SubagentStatus] = {
     "accepted": "running",
@@ -110,12 +111,35 @@ class ChildRuns(SubagentOperator):
     async def _delegate(
         self, plan: SubagentDelegationPlan, request: AsyncDelegateRequest, tool_call: SubagentToolCallContext | None
     ) -> AsyncExecutionView:
-        if tool_call is None or tool_call.tool_call_id is None:
-            raise invalid("tool_call", "a child is identified by the tool call that delegates it")
         edge = self.edges.get(request.subagent_name)
         if edge is None:
             raise not_found("subagent", request.subagent_name)
-        payload = _payload(plan.context.input, request.prompt)
+        return await self._start(
+            request.subagent_name,
+            _payload(plan.context.input, request.prompt),
+            tool_call.tool_call_id if tool_call else None,
+            edge=edge,
+            limit=plan.usage_limits.request_limit if plan.usage_limits is not None else None,
+        )
+
+    async def spawn(self, request: Spawn, tool_call_id: str | None) -> AsyncExecutionView:
+        with tool_failures():
+            return await self._start(
+                request.name, _payload(request.prompt, request.prompt), tool_call_id, spawn=request
+            )
+
+    async def _start(
+        self,
+        name: str,
+        payload: MessagePayload,
+        tool_call_id: str | None,
+        *,
+        edge: ResolvedSubagent | None = None,
+        spawn: Spawn | None = None,
+        limit: int | None = None,
+    ) -> AsyncExecutionView:
+        if tool_call_id is None:
+            raise invalid("tool_call", "a child is identified by the tool call that delegates it")
         settings = self.runtime.settings.worker
         async with transaction(self.runtime.storage) as session:
             thread = await lock(session, ThreadRow, self.lease.thread_id)
@@ -124,13 +148,35 @@ class ChildRuns(SubagentOperator):
             run, _ = await lock_owner(session, self.runtime, self.lease)
             existing = await session.scalar(
                 select(ThreadRow).where(
-                    ThreadRow.origin_run_id == run.id, ThreadRow.origin_tool_call_id == tool_call.tool_call_id
+                    ThreadRow.origin_run_id == run.id, ThreadRow.origin_tool_call_id == tool_call_id
                 )
             )
             if existing is not None:
                 # A recovered parent delegating the same call again gets the child it already started.
                 return _view(await _first(session, existing))
-            if (await delegation(session, thread, run.id)).depth >= settings.child_depth:
+            depth = (await delegation(session, thread, run.id)).depth
+            if thread.agent_snapshot is not None or (spawn is not None and depth != 0):
+                raise invalid("subagents", "Only an ordinary root agent can spawn dynamic subagents")
+            principal = await authorize_execution(session, self.runtime.access, run)
+            options = stored.require(RunOptions, run.options, kind="run", id=run.id)
+            config = None
+            if spawn is not None:
+                definition = await definitions.resolve(
+                    session, thread, run.agent_id, run.agent_revision_id, options.overrides, accepting=False
+                )
+                effective = stored.require_effective(
+                    definition.config, options.overrides, revision_id=definition.definition_id
+                )
+                config = await derive(
+                    session,
+                    self.runtime,
+                    principal,
+                    WorkspaceScope(run.organization_id, run.workspace_id),
+                    ExecutionAuthority.model_validate(run.authority),
+                    effective,
+                    spawn,
+                )
+            if depth >= settings.child_depth:
                 raise conflict("run", run.id, "child_depth_exceeded")
             spawned = await session.scalar(
                 select(func.count()).select_from(ThreadRow).where(ThreadRow.origin_run_id == run.id)
@@ -145,29 +191,33 @@ class ChildRuns(SubagentOperator):
                 origin="child",
                 origin_thread_id=thread.id,
                 origin_run_id=run.id,
-                origin_tool_call_id=tool_call.tool_call_id,
-                subagent=request.subagent_name,
+                origin_tool_call_id=tool_call_id,
+                subagent=name,
                 schedule_occurrence_id=origin.occurrence_id if origin else None,
             )
+            if config is not None:
+                child.agent_snapshot = definitions.AgentSnapshot(definition_id=child.id, config=config).model_dump(
+                    mode="json"
+                )
             session.add(child)
             await session.flush()
             # A child's environments come from its edge, never its agent's template: a shared child mounts what the
             # parent run froze, and acceptance reserves a dedicated child's primary from the edge's template.
-            if edge.selection.environment.mode == "shared":
+            if edge is None or edge.selection.environment.mode == "shared":
                 await adopt_mounts(session, child, [EnvironmentMount.model_validate(m) for m in run.environment_mounts])
             await adopt_memory_mounts(session, child, run.memory_mounts)
             # A run's `max_usage` bounds model requests only, so the edge's request limit is all a child run
             # carries; the edge's token and tool-call limits apply to inline delegation.
-            limit = plan.usage_limits.request_limit if plan.usage_limits is not None else None
             message = Message(
                 delivery="next_run",
                 payload=payload,
-                agent_id=edge.selection.agent_id,
-                agent_revision_id=edge.revision_id,
+                agent_id=edge.selection.agent_id if edge else run.agent_id,
+                agent_revision_id=edge.revision_id if edge else None,
                 options=RunOptions(
                     max_usage=UsageLimit(requests=limit) if limit is not None else None,
-                    configuration=stored.require(RunOptions, run.options, kind="run", id=run.id).configuration,
-                    context=stored.require(RunOptions, run.options, kind="run", id=run.id).context,
+                    configuration=options.configuration,
+                    context=options.context,
+                    execution=options.execution,
                 ),
             )
             entry = await inbox.append_message(
@@ -272,9 +322,23 @@ class ChildRuns(SubagentOperator):
         tool_call: SubagentToolCallContext | None = None,
     ) -> AsyncExecutionView:
         """The child thread's next run, continuing the ended execution's history with a new message."""
+        return await self._resume(request, snapshot=False)
+
+    async def resume_host(
+        self,
+        context: SubagentOperatorContext,
+        request: AsyncResumeRequest,
+        *,
+        tool_call: SubagentToolCallContext | None = None,
+    ) -> AsyncExecutionView:
+        return await self._resume(request, snapshot=True)
+
+    async def _resume(self, request: AsyncResumeRequest, *, snapshot: bool) -> AsyncExecutionView:
         with tool_failures():
             async with transaction(self.runtime.storage) as session:
                 thread, run = await self._child(session, request.execution_id)
+                if (thread.agent_snapshot is not None) != snapshot:
+                    raise invalid("execution_id", "The execution source does not match this resume operation")
                 if thread.current_run_id is not None or thread.last_run_id != run.id:
                     raise conflict("run", run.id, "execution_not_resumable")
                 entry = await self._append(session, thread, run, request.prompt, delivery="next_run")
@@ -385,10 +449,13 @@ class ChildRuns(SubagentOperator):
 def _view(execution: _Execution) -> AsyncExecutionView:
     run, thread = execution.run, execution.thread
     assert thread.subagent is not None, "every child thread records the edge that delegated it"
+    definition_id = thread.agent_snapshot["definition_id"] if thread.agent_snapshot else run.agent_revision_id
+    assert definition_id is not None
     return AsyncExecutionView(
         execution_id=run.id,
         subagent_name=thread.subagent,
-        child_definition_id=run.agent_revision_id,
+        child_definition_id=definition_id,
+        source="host" if thread.agent_snapshot else "declared",
         status=_STATUS[run.status],
         resumed_from=run.parent_run_id if execution.segment > 0 else None,
         failure=run.failure,

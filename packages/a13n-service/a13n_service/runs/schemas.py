@@ -600,8 +600,8 @@ class RunView(BaseModel):
     session_id: str
     thread_id: str
     agent_id: str
-    agent_revision_id: str
-    revision_selection: Literal["pinned", "default", "inherited"]
+    agent_revision_id: str | None
+    revision_selection: Literal["pinned", "default", "inherited", "snapshot"]
     principal_id: str
     status: RunStatus
     trigger: Trigger
@@ -677,7 +677,7 @@ class RunListItem(BaseModel):
     session_id: str
     thread_id: str
     agent_id: str
-    agent_revision_id: str
+    agent_revision_id: str | None
     principal_id: str
     status: RunStatus
     trigger: Trigger
@@ -723,7 +723,9 @@ class RunAgent(BaseModel):
     """The agent a run executes: its frozen revision, and that revision's configuration with the run's override
     applied. Models, connections and templates the configuration names stay live."""
 
-    revision: AgentRevision
+    revision: AgentRevision | None
+    definition_id: str
+    source: Literal["revision", "thread_snapshot"]
     config: AgentConfig
 
 

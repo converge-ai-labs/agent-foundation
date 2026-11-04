@@ -244,7 +244,8 @@ async def test_service_composition_binds_affinity_per_thread_without_mutating_cl
     model.provider.config = configuration
     root = ResolvedAgent(
         new_object_id("ap"),
-        new_object_id("apr"),
+        (definition_id := new_object_id("apr")),
+        definition_id,
         AgentConfig.model_validate({"model": model.key, "toolsets": {}}),
         model,
         None,
@@ -323,7 +324,8 @@ async def test_media_affinity_uses_calling_thread_and_its_own_model_defaults() -
     }
     root = ResolvedAgent(
         new_object_id("ap"),
-        new_object_id("apr"),
+        (definition_id := new_object_id("apr")),
+        definition_id,
         AgentConfig.model_validate({"model": primary.key, "toolsets": {}}),
         primary,
         None,
@@ -531,8 +533,7 @@ async def test_child_and_continuation_requests_keep_thread_affinity(
         "coordinator",
         model["key"],
         instructions="Role: coordinator",
-        subagent_mode=mode,
-        subagents={"helper": {"agent_id": worker["id"], "description": "Computes answers"}},
+        subagents={"mode": mode, "named": {"helper": {"agent_id": worker["id"], "description": "Computes answers"}}},
     )
     scripted_model.call(
         "delegate",
@@ -716,7 +717,8 @@ async def test_selected_model_image_policy_is_independent_of_agent_context(polic
     )
     agent = ResolvedAgent(
         new_object_id("ap"),
-        new_object_id("apr"),
+        (definition_id := new_object_id("apr")),
+        definition_id,
         AgentConfig.model_validate(
             {
                 "model": model.key,
@@ -787,7 +789,8 @@ async def test_auxiliary_image_policy_comes_from_image_target_not_primary_or_vid
     )
     agent = ResolvedAgent(
         new_object_id("ap"),
-        new_object_id("apr"),
+        (definition_id := new_object_id("apr")),
+        definition_id,
         AgentConfig.model_validate({"model": primary.key, "toolsets": {}}),
         primary,
         None,
@@ -874,7 +877,8 @@ def test_inline_child_image_policy_is_bound_from_its_own_resolved_model():
     )
     root = ResolvedAgent(
         new_object_id("ap"),
-        new_object_id("apr"),
+        (definition_id := new_object_id("apr")),
+        definition_id,
         AgentConfig.model_validate({"model": primary.key, "toolsets": {}}),
         primary,
         None,
@@ -885,7 +889,8 @@ def test_inline_child_image_policy_is_bound_from_its_own_resolved_model():
     child = replace(
         root,
         agent_id=new_object_id("ap"),
-        revision_id=new_object_id("apr"),
+        definition_id=(child_definition_id := new_object_id("apr")),
+        revision_id=child_definition_id,
         model=child_model,
         config=root.config.model_copy(update={"model": child_model.key}),
     )

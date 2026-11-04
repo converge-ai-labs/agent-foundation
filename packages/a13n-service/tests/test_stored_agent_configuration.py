@@ -85,7 +85,10 @@ async def test_historical_database_reads_and_executable_mutations(service, scrip
             "name": "Pinned child",
             "config": {
                 "model": frozen["config"]["model"],
-                "subagents": {"child": {"agent_id": agent["id"], "revision_id": agent["default_revision_id"]}},
+                "subagents": {
+                    "mode": "inline",
+                    "named": {"child": {"agent_id": agent["id"], "revision_id": agent["default_revision_id"]}},
+                },
             },
         },
     )

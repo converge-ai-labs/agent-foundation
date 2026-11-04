@@ -60,7 +60,7 @@ class FindingRow(Stamped, Base):
     organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"))
     workspace_id: Mapped[str]
     agent_id: Mapped[str]
-    agent_revision_id: Mapped[str]
+    agent_revision_id: Mapped[str | None]
     title: Mapped[str]
     category: Mapped[str]
     severity: Mapped[str]

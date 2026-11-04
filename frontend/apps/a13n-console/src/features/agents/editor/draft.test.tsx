@@ -556,13 +556,13 @@ it("preserves existing subagent pins and context when moving them out of advance
       },
     },
   };
-  const draft = draftFor({ subagents, subagent_mode: "inline" });
+  const draft = draftFor({ subagents: { mode: "inline", named: subagents } });
   expect(draft.current.dirty).toBe(false);
   expect(JSON.parse(draft.current.advanced)).not.toHaveProperty("subagents");
   act(() => draft.current.setInstructions("Updated"));
   expect(buildDraftConfig(draft.current, undefined, asIs)).toMatchObject({
     ok: true,
-    config: { subagents, subagent_mode: "inline" },
+    config: { subagents: { mode: "inline", named: subagents } },
   });
   act(() =>
     draft.current.setSubagents({
@@ -582,9 +582,43 @@ it("preserves existing subagent pins and context when moving them out of advance
   });
 });
 
-it("starts new agents in background mode and preserves legacy inline behavior", () => {
-  expect(initialConfig().subagent_mode).toBe("async");
-  expect(draftFor({ subagent_mode: undefined }).current.subagentMode).toBe(
-    "inline",
+it("defaults new and omitted subagent policies to async", () => {
+  expect(initialConfig().subagents?.mode).toBe("async");
+  expect(draftFor({ subagents: undefined }).current.subagentMode).toBe("async");
+});
+
+it("round-trips the unified named and dynamic policy, including explicit thinking off", () => {
+  const subagents = {
+    mode: "async" as const,
+    named: {
+      reviewer: {
+        agent_id: "agt_00000000000000000001",
+        revision_id: "agr_00000000000000000001",
+      },
+    },
+    dynamic: {
+      enabled: true,
+      allowed_models: [vision],
+      default_model: vision,
+      default_thinking: false,
+    },
+  };
+  const draft = draftFor({ subagents });
+  expect(draft.current.dirty).toBe(false);
+  const built = buildDraftConfig(draft.current, undefined, asIs);
+  expect(built.ok && built.config.subagents).toEqual(subagents);
+  act(() =>
+    draft.current.setDynamicSubagents({
+      ...draft.current.dynamicSubagents,
+      default_thinking: "high",
+    }),
   );
+  expect(draft.current.dirty).toBe(true);
+  const changed = buildDraftConfig(draft.current, undefined, asIs);
+  expect(changed.ok && changed.config.subagents).toMatchObject({
+    named: subagents.named,
+    dynamic: { default_thinking: "high" },
+  });
+  act(() => draft.current.setSubagentMode("inline"));
+  expect(buildDraftConfig(draft.current, undefined, asIs).ok).toBe(false);
 });

@@ -37,10 +37,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from a13n_service.infra.errors import ServiceError
 from a13n_service.resources.agents import stored
 from a13n_service.resources.agents.schemas import AgentOverride
-from a13n_service.resources.agents.service import SelectedRevision
 from a13n_service.resources.assets.tables import AssetRow
 from a13n_service.resources.models.service import resolve_model
 from a13n_service.runs import placement
+from a13n_service.runs.definitions import Definition
 from a13n_service.runs.schemas import AssetPart, MessagePayload
 from a13n_service.tenancy.authorize import ExecutionAuthority, Principal, WorkspaceScope
 
@@ -195,7 +195,7 @@ async def require_readable(
     session: AsyncSession,
     principal: Principal,
     scope: WorkspaceScope,
-    revision: SelectedRevision,
+    revision: Definition,
     overrides: AgentOverride | None,
     payload: MessagePayload,
     *,
@@ -207,7 +207,7 @@ async def require_readable(
     fields = asset_fields(payload)
     if not fields:
         return
-    config = stored.require_effective(revision.config, overrides, revision_id=revision.revision_id)
+    config = stored.require_effective(revision.config, overrides, revision_id=revision.definition_id)
     model = await resolve_model(session, principal, scope, config.model, authority=authority)
     recipient = Recipient(model.config.characteristics.capabilities, primary)
     rows = await session.execute(

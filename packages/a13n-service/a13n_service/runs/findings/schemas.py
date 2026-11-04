@@ -37,7 +37,7 @@ class Evidence(_Input):
 
 class FindingCreate(_Input):
     agent_id: ObjectId
-    agent_revision_id: ObjectId
+    agent_revision_id: ObjectId | None
     title: str = Field(min_length=1, max_length=256)
     category: Category = Field(
         description="One primary issue type for the central evidenced claim, separate from analysis presets, impact and review. Put uncertainty in explanation/limitations; do not invent categories."

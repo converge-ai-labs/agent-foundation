@@ -10,7 +10,7 @@ from a13n_service.resources.agents.tables import AgentRevisionRow
 from a13n_service.resources.models.schemas import ModelConfig
 from a13n_service.resources.models.tables import ModelRow
 from a13n_service.runs.schemas import RunOptions
-from a13n_service.runs.tables import AttemptRow, RunRow, UsageRecordRow
+from a13n_service.runs.tables import AttemptRow, RunRow, ThreadRow, UsageRecordRow
 from a13n_service.runs.threads import get_run, get_thread
 from a13n_service.tenancy.access import workspace_scope
 from a13n_service.tenancy.authorize import Principal
@@ -25,7 +25,7 @@ async def read_context_usage(
         select(UsageRecordRow, RunRow, ModelRow, AgentRevisionRow)
         .join(RunRow, RunRow.id == UsageRecordRow.run_id)
         .join(AttemptRow, AttemptRow.id == UsageRecordRow.run_attempt_id)
-        .join(AgentRevisionRow, AgentRevisionRow.id == RunRow.agent_revision_id)
+        .outerjoin(AgentRevisionRow, AgentRevisionRow.id == RunRow.agent_revision_id)
         .outerjoin(ModelRow, ModelRow.id == UsageRecordRow.model_id)
         .where(UsageRecordRow.workspace_id == workspace_id, record["kind"].astext == "model")
     )
@@ -67,7 +67,7 @@ async def read_context_usage(
                 raise not_found("usage_record", query.record_id)
             assert selected is not None
             run = selected
-            revision = await session.get_one(AgentRevisionRow, run.agent_revision_id)
+            revision = await session.get(AgentRevisionRow, run.agent_revision_id) if run.agent_revision_id else None
             contribution, model = None, None
         else:
             contribution, run, model, revision = row
@@ -79,7 +79,13 @@ async def read_context_usage(
             and not observed.get("delegation_id")
             and observed.get("source", "agent") == "agent"
         ):
-            config = stored.read(AgentConfig, revision.config, kind=revision.KIND, id=revision.id)
+            if revision is None:
+                from a13n_service.runs.definitions import AgentSnapshot
+
+                thread = await session.get_one(ThreadRow, run.thread_id)
+                config = stored.read(AgentSnapshot, thread.agent_snapshot, kind="thread", id=thread.id).config
+            else:
+                config = stored.read(AgentConfig, revision.config, kind=revision.KIND, id=revision.id)
             override = stored.read(RunOptions, run.options, kind="run", id=run.id).overrides
             if override is not None:
                 config = stored.read_effective(config, override, run_id=run.id)

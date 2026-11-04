@@ -532,16 +532,26 @@ class SelectedRevision:
     digest: str
     config: AgentConfig
 
+    @property
+    def definition_id(self) -> str:
+        return self.revision_id
 
-async def select_revision(
-    session: AsyncSession, workspace_id: str, agent_id: str, revision_id: str | None
-) -> SelectedRevision:
-    """The revision a new run executes: the requested one, else the head's default. Archived heads refuse."""
+
+async def require_active_agent(session: AsyncSession, workspace_id: str, agent_id: str) -> AgentRow:
+    """Check new-run eligibility without selecting an execution revision."""
     head = await session.scalar(select(AgentRow).where(AgentRow.workspace_id == workspace_id, AgentRow.id == agent_id))
     if head is None:
         raise not_found(AgentRow.KIND, agent_id)
     if head.archived_at is not None:
         raise disabled(AgentRow.KIND, agent_id)
+    return head
+
+
+async def select_revision(
+    session: AsyncSession, workspace_id: str, agent_id: str, revision_id: str | None
+) -> SelectedRevision:
+    """The revision a new run executes: the requested one, else the head's default. Archived heads refuse."""
+    head = await require_active_agent(session, workspace_id, agent_id)
     selected = revision_id or head.default_revision_id
     revision = (
         await session.scalar(
