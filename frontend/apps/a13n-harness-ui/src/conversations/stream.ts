@@ -131,7 +131,7 @@ export class FocusDisplay {
   snapshot?: Schema<"ThreadFocusSnapshot">;
   cursor?: string;
   runId?: string;
-  // Live-only notification, retained across reconnect snapshots for once-per-Run reveal.
+  // Live-only activity signal retained across reconnect snapshots; the viewer owns reveal policy.
   browserActivityRunId?: string;
   baseContinuation?: string | null;
   blocks = new Map<string, DisplayBlock>();

@@ -1,10 +1,13 @@
 import { useTranslation } from "../i18n";
 import { HelpTip } from "../shell/help-tip";
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Button,
   Dialog,
+  DialogTrigger,
   DialogPopup,
+  DialogTitle,
+  DialogClose,
   Skeleton,
   Menu,
   MenuTrigger,
@@ -20,7 +23,6 @@ import {
   X,
   CaretDown,
 } from "@phosphor-icons/react";
-import { createPortal } from "react-dom";
 import { type Schema } from "../transport/client";
 import { useGuestAccess } from "../transport/context";
 import { useThreadWork, workCaption } from "./work";
@@ -61,9 +63,7 @@ export function WorkInspector({
   onUseGoal,
   status,
   connectionStatus,
-  panel,
 }: {
-  panel?: HTMLElement | null;
   status?: ReactNode;
   connectionStatus?: ReactNode;
   threadId: string;
@@ -88,26 +88,6 @@ export function WorkInspector({
   const returnFocus = useRef<HTMLElement | null>(null);
   const moreTrigger = useRef<HTMLButtonElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
-  const titleId = useId();
-  const [docked, setDocked] = useState(false);
-  const open = tab !== null && tab !== "goal";
-  useEffect(() => {
-    const workspace = panel?.parentElement;
-    if (!workspace) return;
-    const update = () =>
-      setDocked(workspace.getBoundingClientRect().width >= 900);
-    update();
-    const observer = new ResizeObserver(update);
-    observer.observe(workspace);
-    return () => observer.disconnect();
-  }, [panel]);
-  useEffect(() => {
-    if (docked && open) heading.current?.focus();
-  }, [docked, open]);
-  const close = () => {
-    setTab(null);
-    if (docked) returnFocus.current?.focus();
-  };
   useEffect(() => {
     if (!goal && tab === "goal") setTab(null);
   }, [goal, tab]);
@@ -138,123 +118,6 @@ export function WorkInspector({
     ["tasks", "notes", "children", "processes", "tools"] as const
   ).filter((key) => !guest || (key !== "processes" && key !== "tools"));
   const key = tab && tab !== "goal" ? tab : "tasks";
-  const content = (
-    <>
-      <div className={styles.heading}>
-        <h2 id={titleId} ref={heading} tabIndex={-1}>
-          {t("Chat activity")}
-        </h2>
-        <HelpTip label={t("About activity")}>
-          {key === "processes" &&
-            t(
-              "Recent processes from this chat and its subagents. Other server processes are not shown. ",
-            )}
-          {workCaption(
-            t,
-            key === "notes" ? work.notes.data : work.tasks.data,
-            work.stale || !connected,
-            work.summary.isFetching,
-            debug.enabled,
-          )}
-        </HelpTip>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          onClick={close}
-          aria-label={t("Close activity")}
-        >
-          <X />
-        </Button>
-      </div>
-      <div className={styles.activityLayout}>
-        <div className={styles.tabs} aria-label={t("Activity views")}>
-          {tabs.map((item) => {
-            const { Icon } = activityViews[item];
-            const label = labels[item];
-            const count = counts[item];
-            return (
-              <Button
-                key={item}
-                variant="ghost"
-                size="sm"
-                aria-label={t("Inspect {{activity}}", {
-                  activity: label.toLowerCase(),
-                })}
-                aria-pressed={key === item}
-                onClick={() => setTab(item)}
-              >
-                <Icon />
-                {label}
-                {!!count && <span className={styles.count}>{count}</span>}
-              </Button>
-            );
-          })}
-        </div>
-        <div className={styles.inspectorBody}>
-          {key !== "tools" && (
-            <h3 className={styles.panelTitle}>{labels[key]}</h3>
-          )}
-          {key === "tasks" && (
-            <>
-              <ErrorNotice
-                error={saved.error}
-                retry={() => void saved.refetch()}
-              />
-              {!page && saved.isPending && (
-                <Loading label={t("Loading tasks")} />
-              )}
-              {!saved.isPending && !page && (
-                <p>{t("Task state unavailable.")}</p>
-              )}
-              <TaskList page={page} />
-            </>
-          )}
-          {key === "tools" && tab === key && (
-            <ToolExecutions threadId={threadId} />
-          )}
-          {key === "processes" && tab === key && (
-            <Processes
-              observations={processes}
-              omitted={display.processes.omitted}
-              incomplete={incomplete}
-            />
-          )}
-          {key === "notes" && tab === key && (
-            <>
-              <ErrorNotice
-                error={work.notes.error}
-                retry={() => void work.notes.refetch()}
-              />
-              {work.notes.isPending && <Loading label={t("Loading notes")} />}
-              {!work.notes.isPending && !work.notes.data?.notes.page && (
-                <p>{t("Notes unavailable.")}</p>
-              )}
-              <NoteList page={work.notes.data?.notes.page} />
-            </>
-          )}
-          {key === "children" && tab === key && (
-            <>
-              {summary &&
-                ((summary.children.active ?? 0) > 0 ||
-                  (summary.children.unavailable ?? 0) > 0) && (
-                  <p className={styles.caption}>
-                    {t("{{active}} active · {{unavailable}} unavailable", {
-                      active: summary.children.active ?? 0,
-                      unavailable: summary.children.unavailable ?? 0,
-                    })}
-                  </p>
-                )}
-              <Children
-                threadId={threadId}
-                reconcile={reconcile}
-                display={display}
-              />
-            </>
-          )}
-        </div>
-      </div>
-    </>
-  );
   return (
     <div className={styles.strip} aria-label={t("Work inspection")}>
       {(goal || active) && (
@@ -284,7 +147,7 @@ export function WorkInspector({
         </div>
       )}
       <Dialog
-        open={open && !docked}
+        open={tab !== null && tab !== "goal"}
         onOpenChange={(open) => {
           if (!open) setTab((current) => (current === "goal" ? current : null));
         }}
@@ -294,12 +157,9 @@ export function WorkInspector({
             const { Icon } = activityViews[item];
             const label = labels[item];
             return (
-              <Button
+              <DialogTrigger
                 key={item}
-                variant="ghost"
-                size="sm"
-                aria-expanded={tab === item}
-                aria-haspopup={docked ? undefined : "dialog"}
+                render={<Button variant="ghost" size="sm" />}
                 className={
                   item === "tasks" || item === "children"
                     ? undefined
@@ -317,7 +177,7 @@ export function WorkInspector({
                 }
                 onClick={(event) => {
                   returnFocus.current = event.currentTarget;
-                  setTab(docked && tab === item ? null : item);
+                  setTab(item);
                 }}
               >
                 <Icon />
@@ -325,7 +185,7 @@ export function WorkInspector({
                 {!!counts[item] && (
                   <span className={styles.count}>{counts[item]}</span>
                 )}
-              </Button>
+              </DialogTrigger>
             );
           })}
           <Menu>
@@ -380,36 +240,127 @@ export function WorkInspector({
           <div className={styles.connection}>{connectionStatus}</div>
           {status && <div className={styles.status}>{status}</div>}
         </div>
-        {!docked && (
-          <DialogPopup
-            aria-labelledby={titleId}
-            showCloseButton={false}
-            className={styles.popup}
-            initialFocus={heading}
-            finalFocus={() => (tab === "goal" ? false : returnFocus.current)}
-          >
-            {content}
-          </DialogPopup>
-        )}
+        <DialogPopup
+          showCloseButton={false}
+          className={styles.popup}
+          initialFocus={heading}
+          finalFocus={() => (tab === "goal" ? false : returnFocus.current)}
+        >
+          <div className={styles.heading}>
+            <DialogTitle ref={heading} tabIndex={-1}>
+              {t("Chat activity")}
+            </DialogTitle>
+            <HelpTip label={t("About activity")}>
+              {key === "processes" &&
+                t(
+                  "Recent processes from this chat and its subagents. Other server processes are not shown. ",
+                )}
+              {workCaption(
+                t,
+                key === "notes" ? work.notes.data : work.tasks.data,
+                work.stale || !connected,
+                work.summary.isFetching,
+                debug.enabled,
+              )}
+            </HelpTip>
+            <DialogClose
+              render={<Button variant="ghost" size="icon-sm" />}
+              aria-label={t("Close activity")}
+            >
+              <X />
+            </DialogClose>
+          </div>
+          <div className={styles.activityLayout}>
+            <div className={styles.tabs} aria-label={t("Activity views")}>
+              {tabs.map((item) => {
+                const { Icon } = activityViews[item];
+                const label = labels[item];
+                const count = counts[item];
+                return (
+                  <Button
+                    key={item}
+                    variant="ghost"
+                    size="sm"
+                    aria-label={t("Inspect {{activity}}", {
+                      activity: label.toLowerCase(),
+                    })}
+                    aria-pressed={key === item}
+                    onClick={() => setTab(item)}
+                  >
+                    <Icon />
+                    {label}
+                    {!!count && <span className={styles.count}>{count}</span>}
+                  </Button>
+                );
+              })}
+            </div>
+            <div className={styles.inspectorBody}>
+              {key !== "tools" && (
+                <h3 className={styles.panelTitle}>{labels[key]}</h3>
+              )}
+              {key === "tasks" && (
+                <>
+                  <ErrorNotice
+                    error={saved.error}
+                    retry={() => void saved.refetch()}
+                  />
+                  {!page && saved.isPending && (
+                    <Loading label={t("Loading tasks")} />
+                  )}
+                  {!saved.isPending && !page && (
+                    <p>{t("Task state unavailable.")}</p>
+                  )}
+                  <TaskList page={page} />
+                </>
+              )}
+              {key === "tools" && tab === key && (
+                <ToolExecutions threadId={threadId} />
+              )}
+              {key === "processes" && tab === key && (
+                <Processes
+                  observations={processes}
+                  omitted={display.processes.omitted}
+                  incomplete={incomplete}
+                />
+              )}
+              {key === "notes" && tab === key && (
+                <>
+                  <ErrorNotice
+                    error={work.notes.error}
+                    retry={() => void work.notes.refetch()}
+                  />
+                  {work.notes.isPending && (
+                    <Loading label={t("Loading notes")} />
+                  )}
+                  {!work.notes.isPending && !work.notes.data?.notes.page && (
+                    <p>{t("Notes unavailable.")}</p>
+                  )}
+                  <NoteList page={work.notes.data?.notes.page} />
+                </>
+              )}
+              {key === "children" && tab === key && (
+                <>
+                  {summary &&
+                    ((summary.children.active ?? 0) > 0 ||
+                      (summary.children.unavailable ?? 0) > 0) && (
+                      <p className={styles.caption}>
+                        {t("{{active}} active · {{unavailable}} unavailable", {
+                          active: summary.children.active ?? 0,
+                          unavailable: summary.children.unavailable ?? 0,
+                        })}
+                      </p>
+                    )}
+                  <Children
+                    threadId={threadId}
+                    reconcile={reconcile}
+                    display={display}
+                  />
+                </>
+              )}
+            </div>
+          </div>
+        </DialogPopup>
       </Dialog>
-      {docked &&
-        open &&
-        panel &&
-        createPortal(
-          <aside
-            className={styles.docked}
-            aria-labelledby={titleId}
-            onKeyDown={(event) => {
-              if (event.key === "Escape" && !event.defaultPrevented) {
-                event.stopPropagation();
-                close();
-              }
-            }}
-          >
-            {content}
-          </aside>,
-          panel,
-        )}
     </div>
   );
 }

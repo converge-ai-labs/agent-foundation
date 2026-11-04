@@ -932,10 +932,8 @@ export function NativeWorkspace({
               key={threadId}
               threadId={threadId}
               occupied={
-                sidebarCollapsed ||
-                singleView ||
-                pane !== null ||
-                view !== "page"
+                tabLayout ||
+                (!sidebarCollapsed && (pane !== null || view !== "page"))
               }
               visible={
                 !sidebarCollapsed &&
