@@ -1,117 +1,81 @@
-"""Private, bounded EIP binary streams between a Worker and the connection's Control."""
+"""Authorized EIP binary relays over per-transfer Redis Streams."""
 
 from __future__ import annotations
 
 import asyncio
-import secrets
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
-from urllib.parse import urlsplit, urlunsplit
 
-import anyio
 from a13n_envd_client.eip.v1 import DataFrame, DataFrameKind, DataResetStatus, decode_data_frame, encode_data_frame
 from a13n_envd_client.errors import EIPClientError, EIPTransferTransportError
-from a13n_envd_client.http import normalize_http_endpoint
 from a13n_envd_client.transport import TransferDirection
 from a13n_harness.environment.models import EnvironmentError
-from fastapi import WebSocket, WebSocketDisconnect
-from websockets.asyncio.client import ClientConnection, connect
-from websockets.exceptions import WebSocketException
-from websockets.typing import Subprotocol
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from redis.asyncio import Redis
+from redis.exceptions import RedisError
 
-from a13n_service.infra.errors import ServiceError
-from a13n_service.infra.websocket import AcceptedSocket, connection_token
+from a13n_service.runs.environments.clients.streams import StreamPair
 from a13n_service.runs.runtime import Runtime
 
 if TYPE_CHECKING:
     from a13n_service.runs.environments.clients.sessions import Scope, Transfer
 
-PATH = "/api/v1/client-environments/transfer"
 _READ = {DataFrameKind.ATTACH, DataFrameKind.CREDIT, DataFrameKind.RESET}
 _WRITE = {DataFrameKind.ATTACH, DataFrameKind.CHUNK, DataFrameKind.END, DataFrameKind.RESET}
+_ERRORS = (ValueError, EnvironmentError, EIPClientError, TimeoutError, OSError, RedisError, EOFError)
 
 
-def endpoint(runtime: Runtime) -> str:
-    origin = normalize_http_endpoint(
-        runtime.settings.client_environments.transfer_origin
-        or runtime.settings.server.control_url
-        or runtime.settings.server.public_url
-    )
-    parsed = urlsplit(origin)
-    return urlunsplit(("wss" if parsed.scheme == "https" else "ws", parsed.netloc, PATH, "", ""))
+class Attach(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    session_id: str = Field(min_length=1, max_length=128)
+    handle: str = Field(min_length=1, max_length=128)
+    direction: TransferDirection
 
 
-class _Direct(connect):
-    def process_redirect(self, exc: Exception) -> Exception:
-        return exc  # A redirect must not receive the transfer credential.
+class Attached(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    transfer_id: str = Field(pattern=r"^[a-f0-9]{32}$")
+    seconds: float = Field(gt=0, le=1800)
 
 
-async def relay(socket: WebSocket) -> None:
-    carrier = AcceptedSocket(socket)
-    runtime: Runtime = socket.app.state.runtime
+async def relay(runtime: Runtime, scope: Scope, transfer: Transfer, carrier: StreamPair) -> None:
     try:
-        # The internal origin only permits plaintext on loopback.
-        token = connection_token(socket, allow_loopback_ws=True)
-        scope = runtime.client_sessions.scopes.get(socket.headers.get("x-a13n-scope", ""))
-        if scope is None or not secrets.compare_digest(scope.transfer_token, token):
-            raise ValueError("Invalid stream scope")
-        handle = socket.headers.get("eip-transfer-handle", "")
-        transfer = scope.transfers.get(handle)
-        if (
-            transfer is None
-            or transfer.direction != socket.headers.get("eip-transfer-direction")
-            or scope.session.session_id != socket.headers.get("eip-session")
-        ):
-            raise ValueError("Invalid transfer selector")
-        request = scope.request.model_copy(update={"caller": transfer.caller})
-        await runtime.client_sessions.authorize(request, transfer.actions)
-        if transfer.attached or scope.transfers.get(handle) is not transfer:
-            raise ValueError("Transfer is already attached or ended")
-        transfer.attached = True
+        async with asyncio.timeout_at(carrier.deadline):
+            await _pump(runtime, scope, transfer, carrier)
+    except _ERRORS:
+        pass  # Closing the streams fails the peer; never replay the native operation.
+    finally:
         try:
-            await socket.accept(subprotocol="eip.v1")
-            async with asyncio.timeout(runtime.settings.client_environments.transfer_seconds):
-                await _pump(runtime, scope, transfer, carrier)
-        finally:
-            # An attachment is one-shot. On interruption, retire its native body;
-            # commit/close still require a separate authorized control request.
-            if scope.transfers.get(handle) is transfer and not transfer.channel.peer_reset_received:
+            if scope.transfers.get(transfer.channel.handle) is transfer and not transfer.channel.peer_reset_received:
                 if not transfer.finished:
                     scope.session.requester.retire_transfer(
                         transfer.channel,
                         reset=DataFrame(
                             kind=DataFrameKind.RESET,
                             session_id=scope.session.session_id,
-                            handle=handle,
+                            handle=transfer.channel.handle,
                             reset_status=DataResetStatus.CANCELLED,
                         ),
                     )
-    except (
-        ValueError,
-        ServiceError,
-        EnvironmentError,
-        EIPClientError,
-        TimeoutError,
-        OSError,
-        EOFError,
-        WebSocketDisconnect,
-    ):
-        with anyio.move_on_after(1, shield=True):
-            await carrier.close(1008)
-    finally:
-        with anyio.move_on_after(1, shield=True):
+        finally:
             await carrier.close()
 
 
-async def _pump(runtime: Runtime, scope: Scope, transfer: Transfer, carrier: AcceptedSocket) -> None:
+async def stop(transfer: Transfer) -> None:
+    if transfer.task is not None:
+        transfer.task.cancel()
+        await asyncio.gather(transfer.task, return_exceptions=True)
+
+
+async def _pump(runtime: Runtime, scope: Scope, transfer: Transfer, carrier: StreamPair) -> None:
     channel = transfer.channel
     limits = scope.session.descriptor.limits
 
     async def upstream() -> None:
         first = True
         while True:
-            raw = await carrier.recv()
+            raw = await carrier.receive()
             if not isinstance(raw, bytes):
                 raise ValueError("Expected a binary transfer frame")
             frame = decode_data_frame(raw, max_frame_bytes=limits.max_transfer_frame_bytes)
@@ -134,7 +98,9 @@ async def _pump(runtime: Runtime, scope: Scope, transfer: Transfer, carrier: Acc
             await carrier.send(encode_data_frame(frame, max_frame_bytes=limits.max_transfer_frame_bytes))
             if frame.kind in {terminal, DataFrameKind.RESET}:
                 transfer.finished = True
-                return
+                # EIP readers can still send credit for buffered chunks after END.
+                # Keep the pair until close/commit/abort, cancellation or the deadline.
+                await asyncio.Future()
 
     async def verify() -> None:
         while True:
@@ -157,20 +123,24 @@ async def _pump(runtime: Runtime, scope: Scope, transfer: Transfer, carrier: Acc
 @dataclass(slots=True)
 class _Body:
     direction: TransferDirection
-    socket: ClientConnection | None = None
+    stream: StreamPair | None = None
     reader: asyncio.Task[None] | None = None
+    finished: bool = False
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
 class WorkerStreams:
     def __init__(
         self,
-        url: str,
-        scope_id: str,
-        token: str,
+        redis: Redis,
+        environment_id: str,
+        epoch: str,
+        attach: Callable[[dict[str, object]], Awaitable[dict[str, JsonValue]]],
         limit: int,
         deliver: Callable[[DataFrame | EIPTransferTransportError], Awaitable[None]],
     ) -> None:
-        self.url, self.scope_id, self.token, self.limit, self.deliver = url, scope_id, token, limit, deliver
+        self.redis, self.environment_id, self.epoch = redis, environment_id, epoch
+        self.attach, self.limit, self.deliver = attach, limit, deliver
         self.bodies: dict[tuple[str, str], _Body] = {}
         self.closing: set[asyncio.Task[None]] = set()
 
@@ -184,8 +154,8 @@ class WorkerStreams:
         if body is not None:
             if body.reader is not None:
                 body.reader.cancel()
-            if body.socket is not None:
-                task = asyncio.create_task(body.socket.close())
+            if body.stream is not None:
+                task = asyncio.create_task(body.stream.close())
                 self.closing.add(task)
                 task.add_done_callback(self.closing.discard)
 
@@ -195,57 +165,66 @@ class WorkerStreams:
         if body is None:
             raise ValueError("Unknown client transfer")
         try:
-            if body.socket is None:
-                if frame.kind is not DataFrameKind.ATTACH:
-                    raise ValueError("Transfer must attach first")
-                socket = await _Direct(
-                    self.url,
-                    subprotocols=[Subprotocol("eip.v1")],
-                    compression=None,
-                    proxy=None,
-                    additional_headers={
-                        "Authorization": f"Bearer {self.token}",
-                        "X-A13N-Scope": self.scope_id,
-                        "EIP-Session": key[0],
-                        "EIP-Transfer-Handle": key[1],
-                        "EIP-Transfer-Direction": body.direction,
-                    },
-                    max_size=self.limit,
-                    max_queue=8,
-                    open_timeout=5,
-                    close_timeout=1,
-                )
-                if self.bodies.get(key) is not body or socket.subprotocol != "eip.v1":
-                    await socket.close()
-                    raise ValueError("Transfer attachment changed")
-                body.socket = socket
-                body.reader = asyncio.create_task(self._read(body, key))
-            await body.socket.send(encode_data_frame(frame, max_frame_bytes=self.limit))
-        except (ValueError, OSError, WebSocketException, TimeoutError) as error:
+            async with body.lock:
+                if frame.kind is DataFrameKind.RESET:
+                    # Closing this carrier retires the native body on Control.
+                    # Cleanup must also work after the stream's deadline/expiry;
+                    # trying to publish RESET there would fail the whole Session.
+                    if body.stream is not None:
+                        await body.stream.close()
+                    return
+                if body.stream is None:
+                    if frame.kind is not DataFrameKind.ATTACH:
+                        raise ValueError("Transfer must attach first")
+                    attached = Attached.model_validate(
+                        await self.attach(
+                            {
+                                "session_id": key[0],
+                                "handle": key[1],
+                                "direction": body.direction,
+                            }
+                        )
+                    )
+                    stream = StreamPair(
+                        self.redis,
+                        self.environment_id,
+                        self.epoch,
+                        attached.transfer_id,
+                        side="worker",
+                        limit=self.limit,
+                        seconds=attached.seconds,
+                    )
+                    if self.bodies.get(key) is not body:
+                        await stream.close()
+                        raise ValueError("Transfer attachment changed")
+                    body.stream = stream
+                    body.reader = asyncio.create_task(self._read(body, key))
+                await body.stream.send(encode_data_frame(frame, max_frame_bytes=self.limit))
+        except _ERRORS as error:
             raise EIPTransferTransportError("Client transfer send failed", session_id=key[0], handle=key[1]) from error
 
     async def _read(self, body: _Body, key: tuple[str, str]) -> None:
-        assert body.socket is not None
+        assert body.stream is not None
         terminal = DataFrameKind.END if body.direction == "read" else DataFrameKind.END_ACK
         try:
             while True:
-                raw = await body.socket.recv()
-                if not isinstance(raw, bytes):
-                    raise ValueError("Unexpected non-binary frame")
-                frame = decode_data_frame(raw, max_frame_bytes=self.limit)
+                frame = decode_data_frame(await body.stream.receive(), max_frame_bytes=self.limit)
                 if (frame.session_id, frame.handle) != key:
                     raise ValueError("Mismatched transfer frame")
                 await self.deliver(frame)
                 if frame.kind in {terminal, DataFrameKind.RESET}:
+                    body.finished = True
                     return
-        except (ValueError, OSError, WebSocketException, TimeoutError):
+        except _ERRORS:
             await self.deliver(
                 EIPTransferTransportError("Client transfer interrupted", session_id=key[0], handle=key[1])
             )
+        finally:
+            if not body.finished:
+                await body.stream.close()
 
     async def close(self) -> None:
         readers = [body.reader for body in self.bodies.values() if body.reader is not None]
         for session, handle in tuple(self.bodies):
             self.unregister(session, handle)
         await asyncio.gather(*readers, *self.closing, return_exceptions=True)
-        self.token = ""

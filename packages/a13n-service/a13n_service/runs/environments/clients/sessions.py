@@ -6,6 +6,7 @@ import asyncio
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
+from uuid import uuid4
 
 import anyio
 from a13n_envd_client import EIPSession
@@ -31,12 +32,11 @@ from a13n_harness.providers.environment.eip.binding import EIP_METHOD_ACTIONS
 from a13n_logging import exception_details, get_logger
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError
 
-from a13n_service.runs.environments.clients import authority
+from a13n_service.runs.environments.clients import authority, streaming
 from a13n_service.runs.environments.clients.connections import Connection, owner_key
 from a13n_service.runs.environments.clients.routing import Request
-from a13n_service.runs.environments.clients.streaming import endpoint
+from a13n_service.runs.environments.clients.streams import StreamPair
 from a13n_service.runs.tool_executions.routing import Caller
-from a13n_service.tenancy.credentials import new_secret
 
 if TYPE_CHECKING:
     from a13n_service.runs.runtime import Runtime
@@ -75,6 +75,7 @@ class Transfer:
     caller: Caller
     attached: bool = False
     finished: bool = False
+    task: asyncio.Task[None] | None = field(default=None, repr=False)
 
 
 @dataclass(slots=True)
@@ -82,7 +83,6 @@ class Scope:
     request: Request
     connection: Connection
     session: EIPSession
-    transfer_token: str = field(repr=False)
     # A lost scope.open response must not keep an unclaimed Session alive for an entire run.
     first_use_until: float | None
     transfers: dict[str, Transfer] = field(default_factory=dict)
@@ -162,7 +162,6 @@ class Sessions:
                 code="environment_request_invalid",
                 details={"dispatch_stage": "pre_dispatch"},
             ) from error
-        stream_url = endpoint(self.runtime)
         connection = await self.connection(request)
         mount = await authority.resolve(self.runtime, request, connection.attachment, frozenset())
         if body.working_directory != mount.working_directory:
@@ -227,7 +226,6 @@ class Sessions:
                 request,
                 connection,
                 session,
-                new_secret(),
                 asyncio.get_running_loop().time() + self.runtime.settings.client_environments.request_seconds,
             )
             await self.remember_binding(scope)
@@ -238,8 +236,6 @@ class Sessions:
             return {
                 "descriptor": session.descriptor.model_dump(mode="json"),
                 "device_descriptor": connection.device.descriptor.model_dump(mode="json"),
-                "transfer_token": scope.transfer_token,
-                "transfer_url": stream_url,
             }
         except BaseException:
             if session is not None:
@@ -278,10 +274,15 @@ class Sessions:
     async def dispatch(self, request: Request) -> dict[str, JsonValue]:
         if request.method == "scope.open":
             return await self.open(request)
+        if request.method == "transfer.attach":
+            return await self.attach_transfer(request)
         if request.method == "scope.close":
             scope = await self.authorize(request, frozenset())
             del self.scopes[request.scope_id]
-            await scope.session.close()
+            try:
+                await self.stop_transfers(scope)
+            finally:
+                await scope.session.close()
             return {"closed": True}
         if request.method not in EIP_METHOD_ACTIONS and request.method not in _SCOPE_METHODS:
             raise EnvironmentError(
@@ -347,8 +348,69 @@ class Sessions:
         elif handle is not None:
             completed = scope.transfers.pop(handle, None)
             if completed is not None:
+                await streaming.stop(completed)
                 scope.session.requester.unregister_transfer(completed.channel)
         return result.model_dump(mode="json", exclude_none=True)
+
+    async def attach_transfer(self, request: Request) -> dict[str, JsonValue]:
+        try:
+            body = streaming.Attach.model_validate(request.params)
+        except ValidationError as error:
+            raise EnvironmentError(
+                "Invalid transfer selector",
+                code="environment_request_invalid",
+                details={"dispatch_stage": "pre_dispatch"},
+            ) from error
+        scope = self.scopes.get(request.scope_id)
+        transfer = scope.transfers.get(body.handle) if scope is not None else None
+        if (
+            scope is None
+            or transfer is None
+            or transfer.direction != body.direction
+            or scope.session.session_id != body.session_id
+            or transfer.caller != request.caller
+        ):
+            raise EnvironmentError(
+                "Transfer does not belong to this scope",
+                code="environment_denied",
+                details={"dispatch_stage": "pre_dispatch"},
+            )
+        await self.authorize(request, transfer.actions)
+        if transfer.attached or scope.transfers.get(body.handle) is not transfer:
+            raise EnvironmentError(
+                "Transfer already attached or ended",
+                code="environment_conflict",
+                details={"dispatch_stage": "pre_dispatch"},
+            )
+        transfer.attached = True
+        attached = streaming.Attached(
+            transfer_id=uuid4().hex, seconds=self.runtime.settings.client_environments.transfer_seconds
+        )
+        stream = StreamPair(
+            self.runtime.client_routing.redis,
+            request.environment_id,
+            request.epoch,
+            attached.transfer_id,
+            side="control",
+            limit=scope.session.descriptor.limits.max_transfer_frame_bytes,
+            seconds=attached.seconds,
+        )
+        try:
+            await stream.create()
+            await self.authorize(request, transfer.actions)
+            if scope.transfers.get(body.handle) is not transfer:
+                raise EnvironmentError("Transfer ended during attachment", code="environment_unavailable")
+            transfer.task = asyncio.create_task(
+                streaming.relay(self.runtime, scope, transfer, stream), name="client-binary-transfer"
+            )
+        except BaseException:
+            await stream.close()
+            raise
+        return attached.model_dump(mode="json")
+
+    @staticmethod
+    async def stop_transfers(scope: Scope) -> None:
+        await asyncio.gather(*(streaming.stop(transfer) for transfer in tuple(scope.transfers.values())))
 
     def _transfer(
         self,
@@ -367,7 +429,10 @@ class Sessions:
         del self.scopes[identity]
         try:
             with anyio.move_on_after(5, shield=True):
-                await scope.session.abort()
+                try:
+                    await self.stop_transfers(scope)
+                finally:
+                    await scope.session.abort()
         except Exception as error:
             logger.warning(
                 "Client Session cleanup failed",

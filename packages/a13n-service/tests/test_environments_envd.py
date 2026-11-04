@@ -649,6 +649,7 @@ async def test_client_environment_runs_on_reverse_daemon_and_streams_files(
         check_retained_client_process,
         check_screen_stream,
         check_stale_client_request,
+        check_transfer_cancellation_and_timeout,
         check_wrong_device,
         following_tool_results,
         interrupt_control_subscription,
@@ -683,7 +684,7 @@ async def test_client_environment_runs_on_reverse_daemon_and_streams_files(
         monkeypatch.setitem(
             settings.__dict__,
             "client_environments",
-            settings.client_environments.model_copy(update={"allow_loopback_ws": True, "transfer_origin": origin}),
+            settings.client_environments.model_copy(update={"allow_loopback_ws": True}),
         )
         worker = await open_runtime(stack, OSS, settings, executes=True)
         assert worker.client_connections is not service.runtime.client_connections
@@ -798,8 +799,10 @@ async def test_client_environment_runs_on_reverse_daemon_and_streams_files(
                 result = await files.write_bytes_stream(path, chunks(), mode="create")
                 assert result.bytes_written == len(payload)
                 assert b"".join([chunk async for chunk in files.read_bytes_stream(path)]) == payload
-                await check_screen_stream(service, incarnation.session, workspace, origin, monkeypatch)
+                await check_screen_stream(service, incarnation.session, workspace, monkeypatch)
                 await check_interrupted_upload(files, workspace)
+                if reconnect == "resume":
+                    await check_transfer_cancellation_and_timeout(files, workspace, service, monkeypatch)
                 await check_long_client_command(execution, workspace)
                 await check_lost_start_reply(execution, workspace, worker, monkeypatch)
                 await check_stale_client_request(service, worker, workspace)
@@ -864,7 +867,7 @@ async def test_client_service_failure_allows_same_and_other_devices_to_connect(
             runtime.settings.__dict__,
             "client_environments",
             runtime.settings.client_environments.model_copy(
-                update={"allow_loopback_ws": True, "transfer_origin": origin, "heartbeat_seconds": 0.1}
+                update={"allow_loopback_ws": True, "heartbeat_seconds": 0.1}
             ),
         )
 
@@ -966,7 +969,7 @@ async def test_native_service_first_enrollment_and_saved_reconnect(service, tmp_
             runtime.settings.__dict__,
             "client_environments",
             runtime.settings.client_environments.model_copy(
-                update={"allow_loopback_ws": True, "transfer_origin": origin, "heartbeat_seconds": 0.1}
+                update={"allow_loopback_ws": True, "heartbeat_seconds": 0.1}
             ),
         )
 
@@ -1053,7 +1056,7 @@ async def test_managed_outbound_uses_existing_identity_and_executes_without_http
         monkeypatch.setitem(
             settings.__dict__,
             "client_environments",
-            settings.client_environments.model_copy(update={"allow_loopback_ws": True, "transfer_origin": origin}),
+            settings.client_environments.model_copy(update={"allow_loopback_ws": True}),
         )
         identity, operation = await reserve_outbound(service, runs_kit, monkeypatch, origin)
         bootstrap = operation.target.websocket

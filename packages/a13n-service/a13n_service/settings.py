@@ -13,7 +13,6 @@ from types import MappingProxyType
 from typing import Annotated, Any, Literal, get_args, get_origin
 from urllib.parse import urlsplit
 
-from a13n_envd_client.http import normalize_http_endpoint
 from a13n_harness.http import (
     FORWARD_CONTEXT_HEADERS_ENV,
     OUTBOUND_TLS_VERIFY_ENV,
@@ -356,9 +355,6 @@ RENEWAL_HORIZON_SECONDS = 300
 
 
 class ClientEnvironments(Section):
-    # Per-replica origin reachable by Workers for binary traffic; a load-balanced
-    # address is only suitable when there is a single Control.
-    transfer_origin: str | None = Field(default=None, max_length=2048)
     transfer_seconds: float = Field(default=120, gt=0, le=1800)
     # Each Control owns at most this many outbound client carriers.
     max_connections: int = Field(default=128, ge=1, le=10000)
@@ -371,11 +367,6 @@ class ClientEnvironments(Section):
     message_bytes: int = Field(default=4 * 1024 * 1024, ge=1024, le=32 * 1024 * 1024)
     request_seconds: float = Field(default=60, gt=5, le=3600)
     response_margin_seconds: float = Field(default=2, gt=0, le=30)
-
-    @field_validator("transfer_origin")
-    @classmethod
-    def validate_transfer_origin(cls, value: str | None) -> str | None:
-        return normalize_http_endpoint(value) if value is not None else None
 
     @model_validator(mode="after")
     def ordered_deadlines(self) -> "ClientEnvironments":

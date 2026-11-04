@@ -21,7 +21,7 @@ description: 为文件和命令任务创建工作空间、复用已有机器，�
 
 将 `server.public_url` 配置为沙箱能够访问的 HTTPS 地址，并允许 WebSocket 转发。镜像或模板需包含更新后的兼容 Envd 和 `a13n-sandbox-entrypoint`。E2B、Vercel 仍需兼容模板或快照，Sprites 仍需桌面模式。Console 的模板配置可以选择执行连接方式；Docker 需先选择自定义环境。
 
-Service 自动下发该环境的专用连接凭据，完成 EIP 初始化后才将创建或启动标记为成功。连接失败时保留已分配的沙箱，便于重试或清理。Worker 调用工具无需访问沙箱的 Envd HTTP 端口。Provider 生命周期接口、人工桌面访问和监控仍有各自的网络要求。二进制传输目前仍使用 Control 转发，尚未改为 Redis Stream。
+Service 自动下发该环境的专用连接凭据，完成 EIP 初始化后才将创建或启动标记为成功。连接失败时保留已分配的沙箱，便于重试或清理。Worker 调用工具无需访问沙箱的 Envd HTTP 端口。Provider 生命周期接口、人工桌面访问和监控仍有各自的网络要求。文件和截图在 Worker 与 Control 之间通过 Redis Stream 传输，Control 与 Envd 之间继续使用现有 WebSocket。
 
 已有模板的 native 或 HTTP 默认行为保持不变。此连接方式需要 Service，独立 Harness 的 Provider 连接器会明确拒绝。修改模板只影响新环境，不改变已经创建的实例。
 
@@ -187,7 +187,9 @@ Worker 恢复会尽力复用检查点中的 Envd 会话。会话已关闭或过�
 
 在实例详情中可以查看连接状态及检查时间。电脑离线时仍保留登记。如果 envd 提示 `device_id_mismatch`，请核对目标环境，用 `--device-id` 传入该环境登记的设备 ID。按 Ctrl+C 可停止连接。
 
-部署多个 Control 副本时，在每个副本上设置 `A13N_CLIENT_ENVIRONMENTS__TRANSFER_ORIGIN`，指向 Worker 可直接访问该副本的 HTTPS 地址。单个 Control 也可使用 `server.control_url` 或 `server.public_url`。文件和截图通过这个连接传输；Worker 不接收设备凭据。
+文件和截图通过 Redis Stream 传输，Worker 不再需要访问各 Control 副本的独立地址。升级时移除旧的 `A13N_CLIENT_ENVIRONMENTS__TRANSFER_ORIGIN` 配置，等待活动任务结束后一起更新 Worker 和 Control。设备连接凭据不会下发给 Worker。
+
+每次传输创建 `a13n:client-environment:{environment_id}:transfer:{epoch}:{transfer_id}:w2c` 和对应的 `:c2w` 两个 key，分别传递两个方向的帧。每个 Stream 最多保留 8 个未消费帧，5 分钟无活动后过期；正常关闭、取消或失败时会删除。`A13N_CLIENT_ENVIRONMENTS__TRANSFER_SECONDS` 限制一次传输的总时长，包括等待发送方和接收方的时间，默认 120 秒。传输中断时明确失败，不自动续传，也不重复提交文件。
 
 ### 停止、重命名与删除
 

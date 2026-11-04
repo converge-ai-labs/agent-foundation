@@ -307,7 +307,20 @@ Queueing consumes the request deadline. Native operation deadlines leave time fo
 
 Long commands use explicit process start and bounded wait/inspect calls. On a process-capable mount a single agent `shell_exec` starts the command and waits for the Host-configured foreground interval. A retained execution tracks completion after returning an execution reference. The agent may choose `shell_info` or `shell_wait` for a subsequent observation; routing does not extend one request indefinitely. Command wall time, individual wait duration, transport response deadline and Session lifetime remain independent limits.
 
-Large files and screenshots use a bounded internal Worker-to-owning-Control streaming endpoint and the existing EIP binary transfer. Stream admission binds the authorized execution scope, transfer handle, direction, size and deadline; it does not accept an arbitrary file path or expose device credentials in a URL. Transfer interruption releases uncommitted resources and reports failure or unknown commit outcome. Full file bodies are never serialized into Redis control messages.
+Large files and screenshots use Redis Streams between Worker and Control, and the existing EIP binary WebSocket between Control and envd. Workers need no network route to a Control replica for binary traffic. A `transfer.attach` request over the existing Pub/Sub route authorizes the current run/execution owner and its previously opened Session, handle, direction and permissions. Attachment is one-shot. Control returns a fresh random `transfer_id` and the transfer deadline; device credentials and arbitrary Redis keys are not accepted as selectors. Frame handling and periodic checks retain connection-epoch and live execution authority.
+
+Each admitted transfer owns exactly two streams:
+
+```text
+a13n:client-environment:{environment_id}:transfer:{epoch}:{transfer_id}:w2c
+a13n:client-environment:{environment_id}:transfer:{epoch}:{transfer_id}:c2w
+```
+
+`w2c` carries Worker-to-Control EIP frames; `c2w` carries Control-to-Worker frames. Both include data and the corresponding EIP attachment, credit, end or reset frames. Values are raw encoded binary frames, not JSON/base64 file bodies. Each direction has one reader with an explicit `XREAD` cursor; there are no consumer groups. Admission creates both empty streams atomically under the current connection owner. Each stream holds at most eight unconsumed frames, each bounded by the negotiated EIP frame limit; a full stream makes its producer wait rather than trimming data. EIP credit limits remain in force independently. Consumption deletes that message. Writes and acknowledgments atomically check that both keys still exist and the epoch is current, and refresh a five-minute TTL. Neither a late frame nor cleanup may recreate expired streams or affect another transfer.
+
+The configured `client_environments.transfer_seconds` bounds the whole attachment (120 seconds by default), including waits for capacity or data. Terminal data stays available for the reader, and the empty pair remains open for final reader credit until explicit close/commit/abort or the deadline. Cancellation, Session/connection retirement and transfer failure cancel the relay, retire an incomplete native body and delete both keys; Redis failure leaves TTL cleanup as a fallback. Stream operations use a Redis client without automatic mutation retries. A lost response, expired key or changed connection fails the transfer; streams do not resume a whole file or replay a command after reconnect. Native file commit is still a separate authorized control request and a lost commit response remains an unknown outcome.
+
+The previous binary WebSocket relay route, per-scope transfer token and `client_environments.transfer_origin` setting are removed. Workers and Controls must run the same transport version; drain active work before replacing both roles. Full file bodies never enter Pub/Sub control envelopes.
 
 ## Provider contract
 

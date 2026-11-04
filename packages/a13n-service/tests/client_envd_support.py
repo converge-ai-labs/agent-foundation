@@ -230,13 +230,11 @@ async def check_wrong_device(service, origin, identity):
     assert await service.runtime.client_connections.presence(other) is None
 
 
-async def check_screen_stream(service, logical, workspace, origin, monkeypatch):
+async def check_screen_stream(service, logical, workspace, monkeypatch):
     """Supply a fixed screenshot at the native capture boundary. All transfer frames use the real daemon."""
     from a13n_envd_client.eip import v1 as eip
     from a13n_envd_client.file_transfer import EIPComputerObservationReader
-    from a13n_service.runs.environments.clients.streaming import PATH
-    from websockets.asyncio.client import connect
-    from websockets.exceptions import InvalidStatus
+    from a13n_harness.environment.models import EnvironmentError
 
     (scope,) = service.runtime.client_sessions.scopes.values()
     session = scope.session
@@ -279,27 +277,71 @@ async def check_screen_stream(service, logical, workspace, origin, monkeypatch):
         changes.setattr(session.requester, "request", capture)
         async with EIPComputerObservationReader(logical.requester, eip.EIPClient(logical.requester)) as reader:
             handle = reader.opened.reader.root
-            headers = {
-                "Authorization": f"Bearer {scope.transfer_token}",
-                "X-A13N-Scope": scope.request.scope_id,
-                "EIP-Session": session.session_id,
-                "EIP-Transfer-Handle": handle,
-                "EIP-Transfer-Direction": "read",
-            }
-            for key, value in (
-                ("Authorization", "Bearer incorrect"),
-                ("X-A13N-Scope", "other"),
-                ("EIP-Session", "other"),
-                ("EIP-Transfer-Handle", "other"),
-                ("EIP-Transfer-Direction", "write"),
-            ):
-                with pytest.raises(InvalidStatus):
-                    async with connect(
-                        origin.replace("http://", "ws://") + PATH,
-                        subprotocols=["eip.v1"],
-                        additional_headers=headers | {key: value},
-                    ):
-                        pytest.fail("Invalid selector attached to a screenshot")
+            selector = {"session_id": session.session_id, "handle": handle, "direction": "read"}
+            for key, value in (("session_id", "other"), ("handle", "other"), ("direction", "write")):
+                with pytest.raises(EnvironmentError):
+                    await service.runtime.client_sessions.dispatch(
+                        scope.request.model_copy(
+                            update={
+                                "method": "transfer.attach",
+                                "params": selector | {key: value},
+                            }
+                        )
+                    )
+            with pytest.raises(EnvironmentError) as duplicate:
+                await service.runtime.client_sessions.dispatch(
+                    scope.request.model_copy(
+                        update={
+                            "method": "transfer.attach",
+                            "params": selector,
+                        }
+                    )
+                )
+            assert duplicate.value.code == "environment_conflict"
+            # Let END reach the Worker before the caller consumes the last chunk and sends its credit.
+            await asyncio.sleep(0.05)
             assert b"".join([chunk async for chunk in reader]) == content
             assert reader.opened.observation.observation_id == "obs-test"
         assert handle not in scope.transfers
+
+
+async def check_transfer_cancellation_and_timeout(files, workspace, service, monkeypatch):
+    from a13n_harness.environment.models import EnvironmentError
+
+    started = asyncio.Event()
+
+    async def paused():
+        yield b"partial"
+        started.set()
+        await asyncio.Future()
+
+    path = workspace / "cancelled-stream"
+    task = asyncio.create_task(files.write_bytes_stream(str(path), paused(), mode="create"))
+    await asyncio.wait_for(started.wait(), 5)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert not path.exists()
+
+    settings = service.runtime.settings
+    path = workspace / "expired-stream"
+
+    async def slow():
+        yield b"partial"
+        await asyncio.sleep(0.3)
+        yield b"too late"
+
+    with monkeypatch.context() as changes:
+        changes.setitem(
+            settings.__dict__,
+            "client_environments",
+            settings.client_environments.model_copy(update={"transfer_seconds": 0.1}),
+        )
+        with pytest.raises(EnvironmentError):
+            await files.write_bytes_stream(str(path), slow(), mode="create")
+    assert not path.exists()
+    async with asyncio.timeout(3):
+        while [key async for key in service.runtime.redis.scan_iter(match="a13n:client-environment:*:transfer:*")]:
+            await asyncio.sleep(0.02)
+    # Neither cancellation nor transfer expiry should poison the shared Session.
+    await files.write_text(str(workspace / "after-transfer-failure"), "still usable", mode="create")

@@ -25,7 +25,7 @@ from a13n_harness.environment.models import EnvironmentError, EnvironmentState
 from a13n_harness.environment.session_recovery import EnvdSessionRecovery
 from a13n_harness.providers.environment.remote_envd.websocket import WEBSOCKET_ENVD, WebSocketEnvdProviderRuntime
 from a13n_harness.tool_execution import current_execution, execution_cleanup_active
-from pydantic import BaseModel, Field, JsonValue, SecretStr, TypeAdapter
+from pydantic import BaseModel, JsonValue, TypeAdapter
 from redis.exceptions import RedisError
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -46,8 +46,6 @@ _RECEIPT_SECONDS = 2
 class Opened(BaseModel):
     descriptor: eip.SessionDescriptor
     device_descriptor: eip.DeviceDescriptor
-    transfer_token: SecretStr = Field(repr=False)
-    transfer_url: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -284,10 +282,15 @@ class SessionTransport:
         self.closed = False
         self.request_bytes = calls.runtime.settings.client_environments.message_bytes
         self.response_bytes = self.request_bytes
+
+        async def attach(params: dict[str, object]) -> dict[str, JsonValue]:
+            return await calls.call("transfer.attach", params)
+
         self.streams = WorkerStreams(
-            opened.transfer_url,
-            calls.scope_id,
-            opened.transfer_token.get_secret_value(),
+            calls.runtime.client_routing.redis,
+            calls.target.environment_id,
+            calls.online.epoch,
+            attach,
             opened.descriptor.limits.max_transfer_frame_bytes,
             self.incoming.put,
         )

@@ -418,13 +418,11 @@ def build_app(
         from a13n_service.runs.browsers.viewer import relay as browser_viewer_relay
         from a13n_service.runs.devices.tables import DeviceRow
         from a13n_service.runs.devices.transport import install as install_device_transport
-        from a13n_service.runs.environments.clients import streaming as client_streaming
         from a13n_service.runs.environments.clients.transport import connect as connect_client_environment
 
         if DeviceRow in distribution.tables:
             install_device_transport(app)
         if ClientSettingsRow in distribution.tables:
-            app.add_api_websocket_route(client_streaming.PATH, client_streaming.relay)
             app.add_api_websocket_route("/api/v1/environments/{environment_id}/connect", connect_client_environment)
             app.add_api_websocket_route(
                 "/api/v1/client-environments/{environment_id}/connect", connect_client_environment

@@ -21,7 +21,7 @@ Set `execution: "envd_ws"` in a Docker, E2B, Daytona, Modal, Sprites or Vercel t
 
 Configure `server.public_url` as an HTTPS origin reachable from the sandbox and allow WebSocket forwarding. Use an updated compatible Envd image/template with `a13n-sandbox-entrypoint`. E2B and Vercel need their compatible template/snapshot; Sprites needs its desktop mode. In Console, choose the execution connection in template configuration (Docker: select a custom environment).
 
-Service supplies a private per-environment connection credential and waits for EIP initialization before marking creation/start ready. A failed connection preserves the allocated sandbox for retry or cleanup. Worker tools use the outbound connection without reaching an Envd HTTP port. Provider lifecycle APIs, human desktop access and metrics retain their own network requirements. Binary transfer currently still uses the Control relay; it has not moved to Redis Stream.
+Service supplies a private per-environment connection credential and waits for EIP initialization before marking creation/start ready. A failed connection preserves the allocated sandbox for retry or cleanup. Worker tools use the outbound connection without reaching an Envd HTTP port. Provider lifecycle APIs, human desktop access and metrics retain their own network requirements. Binary files and screenshots use Redis Streams between Worker and Control, and the existing WebSocket between Control and Envd.
 
 Existing templates keep their native or HTTP default. This execution mode requires Service; standalone Harness provider connectors reject it. Changing a template affects new environments, not already-created instances.
 
@@ -185,7 +185,9 @@ An offline tool reports that it did not dispatch. After such a failure, the next
 
 The Instances page shows when the connection state was checked. An offline computer remains registered. If envd reports `device_id_mismatch`, check the environment and pass its registered Device ID with `--device-id`. Press Ctrl+C in the envd terminal to disconnect.
 
-For multiple Control replicas, set `A13N_CLIENT_ENVIRONMENTS__TRANSFER_ORIGIN` on each replica to its own HTTPS origin reachable by Workers. A single Control can use `server.control_url` or `server.public_url`. This stream carries binary files and screenshots; the device credential never goes to Workers.
+Binary files and screenshots pass through Redis Streams, so Workers need no per-replica Control URL. Remove the obsolete `A13N_CLIENT_ENVIRONMENTS__TRANSFER_ORIGIN` setting when upgrading, drain active work and update Workers and Controls together. Device credentials never go to Workers.
+
+Each transfer creates `a13n:client-environment:{environment_id}:transfer:{epoch}:{transfer_id}:w2c` and the corresponding `:c2w` key. They carry frames in opposite directions, retain at most eight unconsumed frames each, and expire after five minutes without activity. Successful close, cancellation or failure deletes them. `A13N_CLIENT_ENVIRONMENTS__TRANSFER_SECONDS` bounds each transfer, including slow-producer/consumer waits (default: 120 seconds). An interrupted transfer fails; it does not automatically resume or repeat a file commit.
 
 ### Stop, rename and delete
 
