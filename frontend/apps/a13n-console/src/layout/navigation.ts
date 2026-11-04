@@ -35,8 +35,8 @@ export const navigationGroups: {
         "Memories",
         BrainIcon,
         [
+          ["memories", "Collections"],
           ["memory-spaces", "Spaces"],
-          ["memories", "Standalone"],
         ],
       ],
       ["connections", "Connections", PlugIcon],

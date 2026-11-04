@@ -41,9 +41,13 @@ export function WorkspaceMenu({
         aria-label={t("Workspace menu")}
         render={
           compact ? (
-            <Button variant="ghost" size="icon-sm" className="mx-auto" />
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className={styles.railButton}
+            />
           ) : (
-            <Button variant="ghost" className="w-full justify-start" />
+            <Button variant="ghost" className={styles.navigationRow} />
           )
         }
       >
