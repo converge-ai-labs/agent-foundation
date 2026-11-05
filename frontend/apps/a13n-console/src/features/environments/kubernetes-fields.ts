@@ -154,7 +154,7 @@ export const claimFields = {
   },
 };
 
-/** Keep the execution binding attached when its container is renamed. */
+/** Follow renames and require a new explicit selection when its container is removed. */
 export function updateContainers(
   recipe: NativeObject,
   next: NativeObject[],
@@ -169,9 +169,14 @@ export function updateContainers(
     next.length === previous.length &&
     index >= 0 &&
     next[index]?.name !== previous[index]?.name;
+  const removed =
+    next.length < previous.length &&
+    index >= 0 &&
+    !next.some((item) => item.name === recipe.execution_container);
   return {
     ...recipe,
     ...(renamed ? { execution_container: next[index]?.name } : {}),
+    ...(removed ? { execution_container: "" } : {}),
     pod_template: { ...template, spec: { ...spec, containers: next } },
   };
 }

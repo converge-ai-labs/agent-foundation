@@ -287,6 +287,15 @@ export function KubernetesConfiguration({
                                   ? { name: textField("ConfigMap name") }
                                   : { claimName: textField("Claim name") }
                           }
+                          required={
+                            kind === "emptyDir"
+                              ? []
+                              : kind === "secret"
+                                ? ["secretName"]
+                                : kind === "configMap"
+                                  ? ["name"]
+                                  : ["claimName"]
+                          }
                           value={object(volume[kind])}
                           onChange={(next) =>
                             update({ ...volume, [kind]: next })

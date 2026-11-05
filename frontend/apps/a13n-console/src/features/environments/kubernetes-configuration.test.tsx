@@ -107,6 +107,36 @@ it("builds a port-forward sandbox with resource and persistent storage forms, wi
   ).toBeNull();
 });
 
+it("requires an explicit execution selection after removing its container", async () => {
+  const initial = {
+    ...direct,
+    pod_template: {
+      spec: {
+        ...direct.pod_template.spec,
+        containers: [
+          direct.pod_template.spec.containers[0],
+          { name: "helper", image: "sandbox:test" },
+        ],
+      },
+    },
+  };
+  render(<Editor initial={JSON.stringify(initial)} />);
+  const user = userEvent.setup();
+  const containers = within(screen.getByRole("region", { name: "Containers" }));
+  await user.click(containers.getByRole("button", { name: "Remove item 1" }));
+  expect(recipe().execution_container).toBe("");
+  expect(recipe().pod_template.spec.containers).toEqual([
+    initial.pod_template.spec.containers[1],
+  ]);
+  const selection = screen.getByRole("combobox", {
+    name: "Execution container",
+  });
+  expect(selection.textContent).not.toContain("envd");
+  await user.click(selection);
+  await user.click(screen.getByRole("option", { name: "helper" }));
+  expect(recipe().execution_container).toBe("helper");
+});
+
 it("reopens native recipes losslessly and keeps advanced drafts synchronized", async () => {
   const initial = {
     ...direct,
@@ -222,6 +252,51 @@ it("edits Secret references and borrowed storage with explicit source controls",
     screen.queryByRole("combobox", { name: "When the instance is deleted" }),
   ).toBeNull();
 });
+
+it.each([
+  ["ConfigMap", "ConfigMap name", "configMap", "name"],
+  ["Secret", "Secret name", "secret", "secretName"],
+  ["Existing claim", "Claim name", "persistentVolumeClaim", "claimName"],
+])(
+  "requires the reference name for a native %s volume",
+  async (source, label, kind, field) => {
+    const { container } = render(
+      <form>
+        <Editor initial={JSON.stringify(direct)} />
+      </form>,
+    );
+    const form = container.querySelector("form")!;
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Native volumes" }));
+    await user.click(screen.getByRole("button", { name: "Add volume" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Volume name" }), {
+      target: { value: "data" },
+    });
+    expect(form.checkValidity()).toBe(true);
+    await user.click(screen.getByRole("combobox", { name: "Volume source" }));
+    await user.click(await screen.findByRole("option", { name: source }));
+    expect(form.checkValidity()).toBe(false);
+    fireEvent.change(screen.getByRole("textbox", { name: label }), {
+      target: { value: "existing-resource" },
+    });
+    expect(form.checkValidity()).toBe(true);
+    expect(recipe().pod_template.spec.volumes).toEqual([
+      { name: "data", [kind]: { [field]: "existing-resource" } },
+    ]);
+    fireEvent.change(screen.getByRole("textbox", { name: label }), {
+      target: { value: "" },
+    });
+    expect(form.checkValidity()).toBe(false);
+    await user.click(screen.getByRole("combobox", { name: "Volume source" }));
+    await user.click(
+      await screen.findByRole("option", { name: "Temporary directory" }),
+    );
+    expect(form.checkValidity()).toBe(true);
+    expect(recipe().pod_template.spec.volumes).toEqual([
+      { name: "data", emptyDir: {} },
+    ]);
+  },
+);
 
 it("keeps nested row drafts attached after removal and makes read-only controls inert", async () => {
   const initial = {

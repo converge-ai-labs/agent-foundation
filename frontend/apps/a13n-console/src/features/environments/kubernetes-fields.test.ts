@@ -37,6 +37,42 @@ it("tracks an execution container rename while retaining native fields", () => {
   expect(recipe.execution_container).toBe("worker");
 });
 
+it.each([
+  { names: ["helper"], selected: "" },
+  { names: [], selected: "" },
+  { names: ["worker"], selected: "worker" },
+])(
+  "updates the execution binding after removing containers: $names",
+  ({ names, selected }) => {
+    const recipe = {
+      execution_container: "worker",
+      pod_template: {
+        metadata: { labels: { team: "ml" } },
+        spec: {
+          affinity: { nodeAffinity: {} },
+          containers: [
+            { name: "helper", image: "helper:1" },
+            { name: "worker", image: "sandbox:1" },
+          ],
+        },
+      },
+    };
+    const containers = recipe.pod_template.spec.containers.filter((item) =>
+      names.includes(item.name),
+    );
+    expect(updateContainers(recipe, containers)).toEqual({
+      ...recipe,
+      execution_container: selected,
+      pod_template: {
+        ...recipe.pod_template,
+        spec: { ...recipe.pod_template.spec, containers },
+      },
+    });
+    expect(recipe.execution_container).toBe("worker");
+    expect(recipe.pod_template.spec.containers).toHaveLength(2);
+  },
+);
+
 it("switches storage sources without leaving conflicting native bindings", () => {
   const fresh = storageSource(
     {
