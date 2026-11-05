@@ -103,15 +103,7 @@ def docker_host() -> str:
     return os.environ.get("DOCKER_HOST") or ContextAPI.get_current_context().Host or DEFAULT_UNIX_SOCKET
 
 
-def write_config(
-    path: Path,
-    stores: Stores,
-    database: str,
-    objects: Path,
-    *,
-    worker_slots: int = 4,
-    lease_seconds: int = LEASE_SECONDS,
-) -> Path:
+def write_config(path: Path, stores: Stores, database: str, objects: Path, *, worker_slots: int = 4) -> Path:
     """One configuration for every process of a stack; each process sets its own port through the environment."""
     path.write_text(
         f"""[server]
@@ -135,7 +127,7 @@ e2e = {json.dumps(stores.encryption_key)}
 require_https = false
 [worker]
 slots = {worker_slots}
-lease_seconds = {lease_seconds}
+lease_seconds = {LEASE_SECONDS}
 scan_seconds = 0.2
 authority_seconds = 0.2
 drain_seconds = {DRAIN_SECONDS}

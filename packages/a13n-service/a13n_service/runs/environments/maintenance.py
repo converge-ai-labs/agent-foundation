@@ -128,6 +128,8 @@ async def _retire_idle(runtime: Runtime, phase: Literal["stopping", "deleting"],
         .limit(batch)
     )
     async with transaction(runtime.storage) as session:
+        # These bounded scans run frequently. Compiling the correlated use checks costs more than an idle pass.
+        await session.execute(text("SET LOCAL jit = off"))
         threads: set[str] = set()
         if phase == "deleting":
             # The threads whose mounts go with an instance precede it in the lock order. Neither lock waits: an
