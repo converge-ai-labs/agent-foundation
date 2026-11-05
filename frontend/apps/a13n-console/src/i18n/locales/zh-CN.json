@@ -1,4 +1,13 @@
 {
+  "Search sessions or enter a session ID": "搜索会话或输入会话 ID",
+  "Analyze": "分析对象",
+  "Select agent": "选择智能体",
+  "Select sessions": "选择会话",
+  "All available session traces": "会话内所有可查询的追踪",
+  "Custom range": "自定义时间段",
+  "Choose a time range of up to 31 days.": "请选择不超过 31 天的有效时间段。",
+  "Set the trace limit to at least {{count}}.": "请将追踪数量上限设为至少 {{count}}。",
+  "Sessions ({{count}})": "会话（{{count}}）",
   "Run environment": "本次运行环境",
   "Primary environment for this run": "本次运行的主环境",
   "Inherit follows the conversation. Create from template reserves a fresh instance for this run; reuse selects an exact existing instance. Retries keep the accepted instance. Conversation mounts are unchanged.": "继承当前会话的环境。从模板创建会为本次运行预留新实例；复用则使用指定的已有实例。重试沿用已接受的实例，不修改会话挂载。",

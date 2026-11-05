@@ -87,6 +87,7 @@ class FindingPage(BaseModel):
 class AnalysisCreate(_Input):
     instructions: str = Field(default="", max_length=8192, exclude_if=lambda value: not value)
     agent_id: ObjectId | None = None
+    session_ids: list[ObjectId] = Field(default_factory=list, max_length=20, exclude_if=lambda value: not value)
     trace_id: TraceId | None = None
     started_after: AwareDatetime | None = None
     started_before: AwareDatetime | None = None
@@ -99,12 +100,20 @@ class AnalysisCreate(_Input):
     def selection(self) -> Self:
         if self.trace_id is not None and (self.started_after is not None or self.started_before is not None):
             raise ValueError("Choose one trace or a time range")
+        if self.session_ids:
+            if self.trace_id or self.agent_id:
+                raise ValueError("Choose sessions, one Agent or one trace")
+            if len(set(self.session_ids)) != len(self.session_ids):
+                raise ValueError("Sessions must be unique")
+            if len(self.session_ids) > self.max_traces:
+                raise ValueError("Trace limit must cover every selected session")
         if len(self.presets) != len(set(self.presets)):
             raise ValueError("Presets must be unique")
         return self
 
 
 class SelectedTrace(_Input):
+    session_id: ObjectId | None = Field(default=None, exclude_if=lambda value: value is None)
     trace_id: TraceId
     run_id: ObjectId
 

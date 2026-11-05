@@ -32,7 +32,7 @@ Use `/traces/search` with explicit `started_after`, `started_before`, `order_by`
 
 Use **Insights → Findings** to turn trace evidence into a reviewed improvement:
 
-1. Choose **Analyze traces**, select rules and a time range/count, and optionally add **Requirements for this analysis**. For one ended trace, use **Analyze trace**.
+1. Choose **Analyze traces**, choose the workspace, one Agent or multiple Sessions, then select checks and a time range, and optionally add **Requirements for this analysis**. For one ended trace, use **Analyze trace**.
 2. Open the analysis run from **Analysis history**. Read its summary, evidence and selection limits.
 3. Open a finding, select **Edit assessment**, choose confirmed, expected, insufficient or false positive, add a **Review note**, and **Save assessment**.
 4. For a finding worth changing, choose **Review with Composer**, send the proposed message, inspect the recommendation and approve a configuration write when appropriate.
