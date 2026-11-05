@@ -109,6 +109,9 @@ class BackendProvider[C: BaseModel, K: BaseModel, E: BaseModel, R](EnvironmentPr
             target.validate_management()
             yield target
         except asyncio.CancelledError as error:
+            if isinstance(error, EnvironmentManagementCancelled):
+                primary = error
+                raise
             primary = EnvironmentManagementCancelled(target.state, operation_id)
             raise primary from error
         except Exception as error:
@@ -153,8 +156,7 @@ class BackendProvider[C: BaseModel, K: BaseModel, E: BaseModel, R](EnvironmentPr
                 target.configure_metrics(metrics)
             self._require_websocket(environment)
             await target.create()
-            if target.websocket is not None:
-                await target.websocket.wait_ready()
+            await self._wait_ready(target, operation_id)
             return target.state
 
     async def start(
@@ -163,9 +165,27 @@ class BackendProvider[C: BaseModel, K: BaseModel, E: BaseModel, R](EnvironmentPr
         async with self._operation(environment, environment_id, state, operation_id) as target:
             self._require_websocket(environment)
             await target.start()
-            if target.websocket is not None:
-                await target.websocket.wait_ready()
+            await self._wait_ready(target, operation_id)
             return target.state
+
+    async def _wait_ready(self, target: ManagementBackend, operation_id: str) -> None:
+        if target.websocket is None:
+            return
+        failure = provider_error(
+            self._factory.key,
+            "envd_ws_not_ready",
+            Category.UNAVAILABLE,
+            certainty=Certainty.KNOWN,
+            description="The target was provisioned, but its outbound connection is not ready.",
+        )
+        try:
+            await target.websocket.wait_ready()
+        except asyncio.CancelledError as error:
+            # Preserve cancellation semantics and the completed native mutation.
+            # The lifecycle deadline can recover this evidence from its cause.
+            raise EnvironmentManagementCancelled(target.state, operation_id, failure=failure) from error
+        except Exception as error:
+            raise failure from error
 
     async def inspect(
         self, environment: object, *, environment_id: str, state: EnvironmentState | None

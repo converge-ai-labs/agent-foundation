@@ -24,6 +24,7 @@ from a13n_envd_client.eip.v1 import (
     FileWriterOpenResult,
 )
 from a13n_envd_client.eip.v1.methods import MethodSpec
+from a13n_envd_client.errors import EIPSessionStateError
 from a13n_envd_client.requester import TransferChannel
 from a13n_envd_client.transport import TransferDirection
 from a13n_harness.environment.models import EnvironmentAction, EnvironmentError
@@ -90,6 +91,16 @@ class Scope:
     first_use_until: float | None
     transfers: dict[str, Transfer] = field(default_factory=dict)
     callers: dict[tuple[str, str, str | None], Caller] = field(default_factory=dict)
+
+    @property
+    def active(self) -> bool:
+        # The public accessor checks local Session state without issuing I/O.
+        # Device connectivity alone does not establish Session continuity.
+        try:
+            _ = self.session.requester
+        except EIPSessionStateError:
+            return False
+        return True
 
     def remember(self, caller: Caller) -> None:
         self.callers[(caller.attempt_id, caller.worker_id, caller.execution_id)] = caller
@@ -277,6 +288,9 @@ class Sessions:
         await self._resolve(request, connection, actions)
         await self.connection(request)
         if scope is None or self.scopes.get(request.scope_id) is not scope:
+            raise self._session_lost()
+        if not scope.active:
+            await self.retire(request.scope_id, scope)
             raise self._session_lost()
         scope.first_use_until = None
         scope.remember(request.caller)
@@ -479,6 +493,8 @@ class Sessions:
         try:
             with anyio.fail_after(self.runtime.settings.client_environments.heartbeat_seconds):
                 for identity, scope in scopes:
+                    if not scope.active:
+                        continue
                     if scope.first_use_until is not None and asyncio.get_running_loop().time() >= scope.first_use_until:
                         continue
                     try:
@@ -520,6 +536,9 @@ class Sessions:
                         live[identity][(caller.attempt_id, caller.worker_id, caller.execution_id)] = caller
                 for identity, scope in scopes:
                     if self.scopes.get(identity) is not scope:
+                        continue
+                    if not scope.active:
+                        live[identity] = {}
                         continue
                     if identity in admitted:
                         # Concurrently admitted callers have already passed their own check.

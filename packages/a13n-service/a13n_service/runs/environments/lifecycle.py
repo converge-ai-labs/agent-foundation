@@ -38,7 +38,7 @@ from a13n_service.infra.db import advisory_lock, lock, now, transaction
 from a13n_service.infra.errors import ServiceError, conflict
 from a13n_service.infra.ids import new_object_id
 from a13n_service.providers.environment.definition import EnvironmentManagementDefinition
-from a13n_service.providers.environment.errors import observed_environment_state
+from a13n_service.providers.environment.errors import cancelled_management_failure, observed_environment_state
 from a13n_service.providers.environment.management import EnvironmentProvider
 from a13n_service.providers.environment.metrics import MetricsLaunch
 from a13n_service.resources.environment_instances.access import require_usable_state as require_usable_state
@@ -544,6 +544,8 @@ def public_message(error: EnvironmentProviderError) -> str:
 
 
 def fault_of(error: Exception, *, dispatched: bool) -> Fault:
+    if isinstance(error, TimeoutError) and (failure := cancelled_management_failure(error)) is not None:
+        error = failure
     if isinstance(error, EnvironmentProviderError):
         certainty = _CERTAINTY[error.certainty]
         permanent = certainty != "unknown" and error.category in PERMANENT
