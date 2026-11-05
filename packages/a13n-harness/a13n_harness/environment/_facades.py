@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncGenerator, Mapping
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any
@@ -38,7 +39,12 @@ from a13n_harness.environment.computer import (
     ComputerScroll,
     ComputerZoom,
 )
-from a13n_harness.environment.models import EnvironmentAction, EnvironmentError, EnvironmentOperationReceipt
+from a13n_harness.environment.models import (
+    DEFAULT_ENVIRONMENT_OPERATION_TIMEOUT_SECONDS,
+    EnvironmentAction,
+    EnvironmentError,
+    EnvironmentOperationReceipt,
+)
 from a13n_harness.environment.process_recovery import EnvdProcessState, RecoverableProcessOperations
 from a13n_harness.environment.retention import (
     BoundOutputCursor,
@@ -452,6 +458,24 @@ class _ProcessFacade:
         result = await self._call(handle, EnvironmentAction.PROCESS_RELEASE, "release")
         self._environment._track_process_handle(handle, added=False)
         return result
+
+    async def cleanup(self, handle: BoundProcessHandle) -> None:
+        if self._retained_handle is not None:
+            self._require_retained_action(handle, EnvironmentAction.PROCESS_RELEASE)
+        entered = self._environment._entered_for_handle(handle)
+        async with self._environment._mount_slot(entered, allow_retired=True):
+            try:
+                async with asyncio.timeout(DEFAULT_ENVIRONMENT_OPERATION_TIMEOUT_SECONDS):
+                    self._environment.require_action(entered.mount_id, EnvironmentAction.PROCESS_RELEASE)
+                    async with entered.provider.admit(EnvironmentAction.PROCESS_RELEASE):
+                        await entered.provider.cleanup_process(handle)
+            except EnvironmentError as error:
+                if error.code == "environment_not_found":
+                    self._environment._track_process_handle(handle, added=False)
+                raise
+            except TimeoutError as error:
+                raise EnvironmentError("Process observation cleanup timed out", code="environment_timeout") from error
+            self._environment._track_process_handle(handle, added=False)
 
     async def _call(
         self,

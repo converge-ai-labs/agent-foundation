@@ -20,6 +20,7 @@ from pydantic import (
     field_validator,
     model_validator,
 )
+from pydantic.experimental.missing_sentinel import MISSING
 
 from a13n_service.execution_policy import ExecutionOverride
 from a13n_service.infra.errors import ServiceError
@@ -250,6 +251,8 @@ class SessionOrigin(_Frozen):
 
 
 class SessionCreate(_Frozen):
+    # Keep historical inline Session creation digests when callers use the default.
+    auto_recreate_lost_environment: bool = Field(default=True, exclude_if=lambda value: value is True)
     title: SessionTitle | None = None
     origin: SessionOrigin | None = None
     labels: Labels = Field(default_factory=dict)
@@ -460,6 +463,7 @@ class SpaceOrganizationStatus(_Frozen):
 
 
 class SessionUpdate(_Frozen):
+    auto_recreate_lost_environment: bool | MISSING = MISSING
     # Omission preserves the value; explicit null clears it.
     title: SessionTitle | None = None
     origin: SessionOrigin | None = None
@@ -506,6 +510,7 @@ class SessionPreview(BaseModel):
 
 
 class SessionView(BaseModel):
+    auto_recreate_lost_environment: bool
     schedule_id: str | None = None
     model_config = ConfigDict(from_attributes=True)
     id: str

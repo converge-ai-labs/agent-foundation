@@ -15,7 +15,7 @@ from a13n_service.infra.http import require_match
 from a13n_service.infra.ids import new_object_id
 from a13n_service.infra.outbox import enqueue_once
 from a13n_service.providers.environment import desktop_access as wire
-from a13n_service.runs.environments import service
+from a13n_service.runs.environments import access as environment_access
 from a13n_service.runs.environments.desktop import access, identity
 from a13n_service.runs.environments.desktop.schemas import Control, Renew, Takeover, Viewer, viewer_url
 from a13n_service.runs.environments.desktop.tables import DesktopBlockedRow, DesktopControlRow
@@ -41,7 +41,7 @@ def lease_seconds(runtime: Runtime, requested: int | None) -> int:
 
 async def find(session: AsyncSession, runtime: Runtime, actor: Principal, workspace_id: str, environment_id: str):
     scope = await workspace_scope(session, actor, workspace_id, "run")
-    environment = await service._find(session, scope, environment_id, lock=True)
+    environment = await environment_access.find(session, scope, environment_id, lock=True)
     selected = await access.target(session, runtime, environment, actor=actor)
     key = identity.environment_key(environment)
     assert key is not None

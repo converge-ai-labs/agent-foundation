@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import math
 import secrets
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager, suppress
 from importlib.metadata import PackageNotFoundError, version
 from types import TracebackType
@@ -207,6 +207,8 @@ class EIPDeviceConnection:
         epoch = descriptor.owner_epoch + 1 if owner_epoch is None else owner_epoch
         if epoch <= descriptor.owner_epoch:
             raise ValueError("attachment requires a newer Session owner epoch")
+        _finite_timeout_ms(readiness_timeout, name="readiness_timeout")
+        await self._requester.wait_session_released(descriptor.session_id, owner_epoch=epoch, timeout=readiness_timeout)
         session = self._bind(descriptor.model_copy(update={"owner_epoch": epoch}))
         try:
             result = await session._client.session_attach(SessionAttachParams())
@@ -217,6 +219,32 @@ class EIPDeviceConnection:
             return session
         except BaseException:
             session._finish(EIPSessionStateError("Session attachment failed"))
+            raise
+
+    async def bind_open_session(
+        self,
+        descriptor: SessionDescriptor,
+        *,
+        readiness_timeout: float = 10,
+        owner_current: Callable[[], Awaitable[bool]] | None = None,
+    ) -> EIPSession:
+        """Adopt a Session already opened by the authenticated Host on this logical carrier.
+
+        A Host that routes execution across processes supplies the confirmed Device
+        and Session descriptors. Check their identity, boundary and live readiness
+        before exposing operations; never open or attach a second native Session.
+        """
+        _finite_timeout_ms(readiness_timeout, name="readiness_timeout")
+        self._validate_session_boundary(descriptor)
+        session = self._bind(descriptor)
+        session._host_binding = True
+        session._owner_current = owner_current
+        try:
+            # The authenticated owner already maintains native Session liveness.
+            await session._become_ready(readiness_timeout)
+            return session
+        except BaseException:
+            await session.abort()
             raise
 
     def _validate_session_boundary(self, descriptor: SessionDescriptor) -> None:
@@ -278,6 +306,9 @@ class EIPSession:
         self._client = EIPClient(requester)
         self._descriptor = descriptor
         self._ready = False
+        self._host_binding = False
+        self._owner_current: Callable[[], Awaitable[bool]] | None = None
+        self._detached = False
         self._closed = False
         self._error: BaseException | None = None
         self._close_task: asyncio.Task[None] | None = None
@@ -295,8 +326,61 @@ class EIPSession:
         return self._client
 
     @property
+    def requester(self) -> SessionRequester:
+        """Session-scoped requests and bounded transfer channels for trusted Host bridges.
+
+        Host bridges authorize each operation before using this interface. The
+        requester retains the normal correlation, admission and Session fencing;
+        it never permits Device-scoped methods or selecting another Session.
+        The EIPSession remains responsible for keepalive and final close.
+        """
+        self._ensure_open()
+        return self._requester
+
+    @property
     def descriptor(self) -> SessionDescriptor:
         return self._descriptor
+
+    @property
+    def detached(self) -> bool:
+        return self._detached
+
+    def detach_host_binding(self) -> None:
+        """Release only this logical binding after the Host confirms loss of its carrier.
+
+        Native processes and transfers remain subject to daemon disconnect/idle
+        policy. This is neither a successful remote close nor permission to replay.
+        """
+        if not self._host_binding:
+            raise EIPSessionStateError("Only a Host-owned logical binding can detach locally")
+        self._detached = True
+        self._finish()
+
+    async def prepare_close(self) -> bool:
+        """Whether native cleanup still belongs to this carrier."""
+        if (
+            self._close_task is None
+            and not self._detached
+            and self._owner_current is not None
+            and not await self._owner_current()
+        ):
+            self.detach_host_binding()
+        return not self._detached
+
+    async def prepare_cleanup(self) -> bool:
+        """Retire local observations when their original carrier is confirmed lost.
+
+        This explicit teardown path does not certify a remote Session close.
+        Ordinary close() still reports an unexpectedly disconnected Device.
+        """
+        if not await self.prepare_close():
+            return False
+        if self._close_task is None and self._device.is_closed:
+            # Preserve failures of an attempted close; a caller must not convert
+            # that failure into successful cleanup by calling this afterwards.
+            self._detached = True
+            self._finish()
+        return not self._detached
 
     @property
     def device_descriptor(self) -> DeviceDescriptor:
@@ -331,7 +415,7 @@ class EIPSession:
             self._users -= 1
             if self._users == 0:
                 self._stop_keepalive()
-                if not self.is_closed:
+                if not self.is_closed and not self._host_binding:
                     # A final touch only extends the idle window; transport failure
                     # must not replace the caller's result or exception.
                     with suppress(EIPClientError, TimeoutError):
@@ -340,7 +424,7 @@ class EIPSession:
 
     def _acquire(self) -> None:
         self._ensure_open()
-        if self._users == 0:
+        if self._users == 0 and not self._host_binding:
             self._keepalive_task = asyncio.create_task(self._keepalive(), name="eip-session-keepalive")
         self._users += 1
 
@@ -460,6 +544,8 @@ class EIPSession:
 
     async def detach(self) -> None:
         """Release this client without destroying native Session resources."""
+        if not await self.prepare_close():
+            return
         if self._close_task is None:
             if self._closed:
                 return
@@ -479,6 +565,8 @@ class EIPSession:
         self._finish()
 
     async def close(self) -> None:
+        if not await self.prepare_close():
+            return
         if self._close_task is None:
             if self._closed:
                 if self._error is not None:

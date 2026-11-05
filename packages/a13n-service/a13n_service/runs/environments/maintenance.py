@@ -2,9 +2,8 @@
 `renew_environments` renews the ready sandboxes that end unless renewed.
 
 Each maintenance pass begins stop and delete operations for managed instances idle past their template's thresholds,
-then dispatches a bounded batch of outstanding operations whose claim is free or expired. An idle delete removes the
-threads' mounts of the instance with it, so a thread that loses its primary sandbox gets a new one at its next
-acceptance. It revisits failed operations at its fixed interval with the same operation ID; it never invents a new
+then dispatches a bounded batch of outstanding operations whose claim is free or expired. Idle deletion detaches
+mounts except shared replacement primaries, which keep their link for the next acceptance. It revisits failed operations at its fixed interval with the same operation ID; it never invents a new
 one. Renewal has its own sweep, so a slow lifecycle call never delays it.
 """
 
@@ -20,8 +19,21 @@ from a13n_service.infra.audit import record
 from a13n_service.infra.db import transaction
 from a13n_service.infra.ids import new_object_id
 from a13n_service.infra.sweeps import Sweep
+from a13n_service.resources.environment_instances.access import superseded
 from a13n_service.resources.environment_templates.service import idle_past
-from a13n_service.runs.environments.lifecycle import PHASES, advance, begin, in_use, settled, settled_clause, supports
+from a13n_service.runs.environments.lifecycle import (
+    LOST,
+    PHASES,
+    advance,
+    begin,
+    confirmed_loss,
+    in_use,
+    mounted,
+    settled,
+    settled_clause,
+    supports,
+)
+from a13n_service.runs.environments.mounts import PRIMARY
 from a13n_service.runs.environments.renewal import renew
 from a13n_service.runs.environments.tables import OPERATIONS, EnvironmentRow, ThreadEnvironmentRow
 from a13n_service.runs.runtime import Runtime
@@ -74,8 +86,14 @@ async def _retire_idle(runtime: Runtime, phase: Literal["stopping", "deleting"],
     else:
         idle_seconds = EnvironmentRow.reclamation["idle_delete_seconds"].astext.cast(Integer)
         retention = EnvironmentRow.reclamation["failed_retention_seconds"].astext.cast(Integer)
+        replaced = superseded(EnvironmentRow.id)
+        lost = EnvironmentRow.failure.contains({"code": LOST.code, "certainty": LOST.certainty, "permanent": True})
         conditions = [
+            EnvironmentRow.status.not_in(("deleting", "deleted")),
+            # Preserve the binding even before the first sharer chooses whether to recover.
+            ~mounted(EnvironmentRow.id) | (lost.is_not(True) & ~replaced),
             or_(
+                and_(replaced, settled_clause()),
                 and_(
                     EnvironmentRow.status.in_(("reserved", "ready", "stopped")),
                     or_(
@@ -92,7 +110,7 @@ async def _retire_idle(runtime: Runtime, phase: Literal["stopping", "deleting"],
                     < func.clock_timestamp() - func.make_interval(0, 0, 0, 0, 0, 0, retention),
                     settled_clause(),
                 ),
-            )
+            ),
         ]
     idle = (
         select(EnvironmentRow)
@@ -110,6 +128,8 @@ async def _retire_idle(runtime: Runtime, phase: Literal["stopping", "deleting"],
         .limit(batch)
     )
     async with transaction(runtime.storage) as session:
+        # These bounded scans run frequently. Compiling the correlated use checks costs more than an idle pass.
+        await session.execute(text("SET LOCAL jit = off"))
         threads: set[str] = set()
         if phase == "deleting":
             # The threads whose mounts go with an instance precede it in the lock order. Neither lock waits: an
@@ -134,8 +154,16 @@ async def _retire_idle(runtime: Runtime, phase: Literal["stopping", "deleting"],
             if phase == "deleting":
                 mounts = ThreadEnvironmentRow.environment_id == environment.id
                 mounting = set(await session.scalars(select(ThreadEnvironmentRow.thread_id).where(mounts)))
-                if not mounting <= threads:
+                if not mounting <= threads or (mounting and confirmed_loss(environment)):
                     continue
+                if await session.scalar(select(superseded(environment.id))):
+                    if mounting:
+                        continue
+                    reason = "replaced"
+                environment.retired_for_idle = reason == "idle"
+                if environment.retired_for_idle and environment.replaces_environment_id is not None:
+                    # Keep the shared primary binding so both early and late sharers can find the next successor.
+                    mounts = mounts & (ThreadEnvironmentRow.name != PRIMARY)
                 await session.execute(delete(ThreadEnvironmentRow).where(mounts))
             if environment.provider_identity is None:
                 environment.status = "deleted"

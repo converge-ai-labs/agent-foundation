@@ -1,6 +1,5 @@
 """Sprites management implementation."""
 
-import base64
 import shlex
 
 from a13n_envd_client.eip.v1.models import ComputerDescribeParams, EIPCallContext
@@ -125,7 +124,15 @@ class SpritesManagement(SpritesReference, NativeManagement[SpritesEnvironmentCon
                 "",
             ]
         )
-        encoded = base64.b64encode(script.encode()).decode()
+        if self.config.execution == "envd_ws":
+            values = self.bootstrap_environment({})
+            lines = [
+                line
+                for line in script.splitlines()
+                if not line.startswith("export A13N_ENVD_HTTP_") and not line.startswith("export A13N_ENVD_TRANSPORT=")
+            ]
+            lines[2:2] = ["export " + key + "=" + shlex.quote(value) for key, value in values.items()]
+            script = "\n".join(lines)
         await command(
             self,
             [
@@ -134,12 +141,11 @@ class SpritesManagement(SpritesReference, NativeManagement[SpritesEnvironmentCon
                 "sh",
                 "-c",
                 "set -eu; if [ ! -e /usr/local/bin/a13n-sprites-start ]; then "
-                + "printf %s "
-                + shlex.quote(encoded)
-                + " | base64 -d > /usr/local/bin/a13n-sprites-start; "
-                + "chmod 0755 /usr/local/bin/a13n-sprites-start; fi",
+                "umask 077; cat > /usr/local/bin/a13n-sprites-start; "
+                "chmod 0700 /usr/local/bin/a13n-sprites-start; fi",
             ],
             15,
+            stdin=script,
         )
         service = await self.transport().request("GET", self.path + "/services/a13n-desktop", missing=True)
         if service is None:
@@ -167,6 +173,11 @@ class SpritesManagement(SpritesReference, NativeManagement[SpritesEnvironmentCon
             or service.get("http_port") != 6081
         ):
             raise failure("sprites", "desktop_service_conflict", Category.CONFLICT)
+        if self.config.execution == "envd_ws":
+            if self.recipe.desktop_assistance:
+                await self.desktop_access(access.Describe())
+                await self.transport().request("PUT", self.path, body={"url_settings": {"auth": "public"}})
+            return
         probe = """import socket,time
 for _ in range(150):
  try:

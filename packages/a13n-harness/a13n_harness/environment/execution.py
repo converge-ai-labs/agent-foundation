@@ -5,9 +5,11 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from types import TracebackType
 
+from a13n_harness.environment.commands import BoundProcessHandle
 from a13n_harness.environment.models import (
     EnvironmentAvailability,
     EnvironmentDescriptor,
+    EnvironmentError,
     EnvironmentOperationFamily,
     EnvironmentState,
 )
@@ -76,6 +78,17 @@ class EnvironmentExecution(ABC):
     async def check_ready(self, operations: frozenset[EnvironmentOperationFamily]) -> None:
         """Observe this open scope without reconnecting or changing target lifecycle."""
         ...
+
+    async def cleanup_process(self, handle: BoundProcessHandle) -> None:
+        """Release this scope's process observation without readiness or reacquisition.
+
+        Implementations retain their own process lifetime policy. This does not
+        certify process completion, and cleanup failures must still propagate.
+        """
+        processes = self.operations.processes
+        if processes is None:
+            raise EnvironmentError("Process observations are unsupported", code="environment_unsupported")
+        await processes.release(handle)
 
     @abstractmethod
     async def close(self) -> None:

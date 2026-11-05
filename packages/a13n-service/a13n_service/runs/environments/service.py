@@ -12,17 +12,16 @@ import anyio
 from a13n_harness.environment.errors import EnvironmentProviderError
 from a13n_harness.environment.models import COMPUTER_ACTIONS, EnvironmentError
 from sqlalchemy import delete, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra import cursors
-from a13n_service.infra.audit import record
-from a13n_service.infra.db import Storage, now, short_session, transaction
-from a13n_service.infra.errors import ServiceError, conflict, invalid, not_found
+from a13n_service.infra.db import now, short_session, transaction
+from a13n_service.infra.errors import ServiceError, conflict, invalid
 from a13n_service.infra.http import require_match
 from a13n_service.infra.ids import new_object_id
 from a13n_service.resources.providers.service import resolve_provider
 from a13n_service.resources.providers.tables import EnvironmentProviderRow
 from a13n_service.runs.environments import external
+from a13n_service.runs.environments.access import audit, find, require_manager, writable
 from a13n_service.runs.environments.adapters import (
     Target,
     close,
@@ -30,6 +29,7 @@ from a13n_service.runs.environments.adapters import (
     managed_target,
     provider_identity,
 )
+from a13n_service.runs.environments.clients.tables import ClientSettingsRow
 from a13n_service.runs.environments.lifecycle import (
     PHASES,
     begin,
@@ -43,6 +43,7 @@ from a13n_service.runs.environments.lifecycle import (
 )
 from a13n_service.runs.environments.monitoring.bindings import Selection, select_source
 from a13n_service.runs.environments.mounts import require_usable
+from a13n_service.runs.environments.read_views import environment_view
 from a13n_service.runs.environments.schemas import (
     ComputerCheck,
     DebugHold,
@@ -57,45 +58,14 @@ from a13n_service.runs.environments.tables import EnvironmentRow, ThreadEnvironm
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.tables import ThreadRow
 from a13n_service.tenancy.access import workspace_scope
-from a13n_service.tenancy.authorize import Principal, WorkspaceScope, allowed_verbs
-
-
-def _audit(session: AsyncSession, actor: Principal, environment: EnvironmentRow, verb: str) -> None:
-    record(
-        session,
-        WorkspaceScope(environment.organization_id, environment.workspace_id),
-        actor_id=actor.id,
-        action=f"environment.{verb}",
-        target_kind="environment",
-        target_id=environment.id,
-    )
-
-
-async def _find(
-    session: AsyncSession, scope: WorkspaceScope, environment_id: str, *, lock: bool = False
-) -> EnvironmentRow:
-    query = select(EnvironmentRow).where(
-        EnvironmentRow.workspace_id == scope.workspace_id, EnvironmentRow.id == environment_id
-    )
-    if lock:
-        query = query.with_for_update().execution_options(populate_existing=True)
-    row = await session.scalar(query)
-    if row is None:
-        raise not_found("environment", environment_id)
-    return row
-
-
-def _require_manager(actor: Principal, scope: WorkspaceScope, environment: EnvironmentRow) -> None:
-    """A private external target is managed by its owner, or by a workspace administrator."""
-    if environment.owner_principal_id not in {None, actor.id} and "admin" not in allowed_verbs(actor, scope):
-        raise ServiceError("forbidden", "Private environments are managed by their owner", {"verb": "write"})
+from a13n_service.tenancy.authorize import Principal
 
 
 async def list_environments(
-    storage: Storage, actor: Principal, workspace_id: str, *, status: str | None, limit: int, cursor: str | None
+    runtime: Runtime, actor: Principal, workspace_id: str, *, status: str | None, limit: int, cursor: str | None
 ) -> EnvironmentPage:
     """Instances of the workspace; deleted tombstones only when asked for with `status=deleted`."""
-    async with short_session(storage) as session:
+    async with short_session(runtime.storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "read")
         rows, next_cursor = await cursors.id_page(
             session,
@@ -109,15 +79,19 @@ async def list_environments(
             cursor=cursor,
             limit=limit,
         )
-    return EnvironmentPage(items=[EnvironmentView.model_validate(row) for row in rows], next_cursor=next_cursor)
+    items = [environment_view(row) for row in rows]
+    await runtime.client_connections.observe(items)
+    return EnvironmentPage(items=items, next_cursor=next_cursor)
 
 
 async def get_environment(
-    storage: Storage, actor: Principal, workspace_id: str, environment_id: str
+    runtime: Runtime, actor: Principal, workspace_id: str, environment_id: str
 ) -> EnvironmentView:
-    async with short_session(storage) as session:
+    async with short_session(runtime.storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "read")
-        return EnvironmentView.model_validate(await _find(session, scope, environment_id))
+        view = environment_view(await find(session, scope, environment_id))
+    await runtime.client_connections.observe([view])
+    return view
 
 
 async def reserve_environment(
@@ -136,8 +110,8 @@ async def reserve_environment(
         await select_source(session, actor, environment, body.metrics_data_source_id, body.metrics_labels)
         await begin(session, environment, "creating")
         await session.flush()
-        _audit(session, actor, environment, "create")
-        return EnvironmentView.model_validate(environment)
+        audit(session, actor, environment, "create")
+        return environment_view(environment)
 
 
 async def register_external(
@@ -153,6 +127,7 @@ async def register_external(
         scope = await workspace_scope(session, actor, workspace_id, "write")
         environment = EnvironmentRow(
             id=environment_id,
+            kind="external_http",
             organization_id=scope.organization_id,
             workspace_id=scope.workspace_id,
             provider_id=None,
@@ -169,25 +144,8 @@ async def register_external(
         environment.token = external.seal(runtime.keys, environment, token)
         session.add(environment)
         await session.flush()
-        _audit(session, actor, environment, "register")
-        return EnvironmentView.model_validate(environment)
-
-
-async def _writable(
-    session: AsyncSession,
-    actor: Principal,
-    workspace_id: str,
-    environment_id: str,
-    if_match: str | None,
-    *,
-    lock: bool = True,
-) -> EnvironmentRow:
-    """The instance a write names, once its precondition holds and the actor may manage it."""
-    scope = await workspace_scope(session, actor, workspace_id, "write")
-    environment = await _find(session, scope, environment_id, lock=lock)
-    require_match(if_match, environment.id, environment.version)
-    _require_manager(actor, scope, environment)
-    return environment
+        audit(session, actor, environment, "register")
+        return environment_view(environment)
 
 
 async def select_metrics_source(
@@ -200,13 +158,13 @@ async def select_metrics_source(
     if_match: str | None,
 ) -> EnvironmentView:
     async with transaction(runtime.storage) as session:
-        environment = await _writable(session, actor, workspace_id, environment_id, if_match)
+        environment = await writable(session, actor, workspace_id, environment_id, if_match)
         if environment.status == "deleted" and body.metrics_data_source_id is not None:
             raise conflict("environment", environment.id, "environment_deleted")
         if await select_source(session, actor, environment, body.metrics_data_source_id, body.metrics_labels):
             await session.flush()
-            _audit(session, actor, environment, "metrics_binding.update")
-        return EnvironmentView.model_validate(environment)
+            audit(session, actor, environment, "metrics_binding.update")
+        return environment_view(environment)
 
 
 async def update_environment(
@@ -225,12 +183,12 @@ async def update_environment(
     if body.endpoint is not None:
         raise invalid("token", "a new endpoint needs its token")
     async with transaction(runtime.storage) as session:
-        environment = await _writable(session, actor, workspace_id, environment_id, if_match)
+        environment = await writable(session, actor, workspace_id, environment_id, if_match)
         if body.name is not None and body.name != environment.name:
             environment.name = body.name
             await session.flush()
-            _audit(session, actor, environment, "update")
-        return EnvironmentView.model_validate(environment)
+            audit(session, actor, environment, "update")
+        return environment_view(environment)
 
 
 async def _reconnect(
@@ -250,7 +208,7 @@ async def _reconnect(
     """
     field = "endpoint" if body.endpoint is not None else "token"
     async with short_session(runtime.storage) as session:
-        environment = await _writable(session, actor, workspace_id, environment_id, if_match, lock=False)
+        environment = await writable(session, actor, workspace_id, environment_id, if_match, lock=False)
         if environment.endpoint is None or environment.device_id is None:
             raise invalid(field, "only an external target has an endpoint and token")
         if environment.status == "deleted":
@@ -258,14 +216,14 @@ async def _reconnect(
         endpoint, device_id = body.endpoint or environment.endpoint, environment.device_id
     await external.verify(runtime, environment_id, endpoint, token, device_id=device_id)
     async with transaction(runtime.storage) as session:
-        environment = await _writable(session, actor, workspace_id, environment_id, if_match)
+        environment = await writable(session, actor, workspace_id, environment_id, if_match)
         environment.endpoint = endpoint
         environment.token = external.seal(runtime.keys, environment, token)
         if body.name is not None:
             environment.name = body.name
         await session.flush()
-        _audit(session, actor, environment, "update")
-        return EnvironmentView.model_validate(environment)
+        audit(session, actor, environment, "update")
+        return environment_view(environment)
 
 
 async def set_debug_hold(
@@ -278,7 +236,7 @@ async def set_debug_hold(
     if_match: str | None,
 ) -> EnvironmentView:
     async with transaction(runtime.storage) as session:
-        environment = await _writable(session, actor, workspace_id, environment_id, if_match)
+        environment = await writable(session, actor, workspace_id, environment_id, if_match)
         if environment.template_id is None:
             raise conflict("environment", environment.id, "connect_only")
         if environment.status in {"deleting", "deleted"}:
@@ -287,7 +245,7 @@ async def set_debug_hold(
             None if body.seconds is None else await now(session) + timedelta(seconds=body.seconds)
         )
         await session.flush()
-        _audit(session, actor, environment, "debug_hold.update")
+        audit(session, actor, environment, "debug_hold.update")
         return EnvironmentView.model_validate(environment)
 
 
@@ -296,7 +254,7 @@ async def stop_environment(
 ) -> EnvironmentView:
     """Begin stopping an idle ready instance; a run accepted afterwards waits for the stop, then starts it."""
     async with transaction(runtime.storage) as session:
-        environment = await _writable(session, actor, workspace_id, environment_id, if_match)
+        environment = await writable(session, actor, workspace_id, environment_id, if_match)
         if environment.template_id is None or environment.provider_identity is None:
             raise conflict("environment", environment.id, "connect_only")
         if environment.status != "ready":
@@ -308,8 +266,8 @@ async def stop_environment(
             raise conflict("environment", environment.id, "in_use")
         await begin(session, environment, "stopping")
         await session.flush()
-        _audit(session, actor, environment, "stop")
-        return EnvironmentView.model_validate(environment)
+        audit(session, actor, environment, "stop")
+        return environment_view(environment)
 
 
 async def delete_environment(
@@ -324,7 +282,7 @@ async def delete_environment(
     async with transaction(runtime.storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "write")
         threads: list[str] = []
-        if unusable(await _find(session, scope, environment_id)):
+        if unusable(await find(session, scope, environment_id)):
             # The threads whose mounts go with it precede the instance in the lock order.
             mounting = select(ThreadEnvironmentRow.thread_id).where(
                 ThreadEnvironmentRow.environment_id == environment_id
@@ -334,11 +292,11 @@ async def delete_environment(
                     select(ThreadRow.id).where(ThreadRow.id.in_(mounting)).order_by(ThreadRow.id).with_for_update()
                 )
             )
-        environment = await _find(session, scope, environment_id, lock=True)
+        environment = await find(session, scope, environment_id, lock=True)
         require_match(if_match, environment.id, environment.version)
-        _require_manager(actor, scope, environment)
+        require_manager(actor, scope, environment)
         if environment.status in {"deleting", "deleted"}:
-            return EnvironmentView.model_validate(environment)
+            return environment_view(environment)
         if threads and unusable(environment):
             await session.execute(
                 delete(ThreadEnvironmentRow).where(
@@ -357,24 +315,32 @@ async def delete_environment(
             environment.status = "deleted"
             environment.operation_id = environment.operation_started_at = environment.operation_deadline = None
             environment.handle = environment.failure = environment.token = None
+            if environment.kind == "external":
+                config = await session.get(ClientSettingsRow, environment.id)
+                if config is not None:
+                    config.token_hash = None
+                    config.credential_version += 1
         elif not supports(runtime.registry.get("environment", environment.provider_identity["type"]), "deleting"):
             raise conflict("environment", environment.id, "destroy_unsupported")
         else:
             await begin(session, environment, "deleting")
         await session.flush()
-        _audit(session, actor, environment, "delete")
-        return EnvironmentView.model_validate(environment)
+        audit(session, actor, environment, "delete")
+        return environment_view(environment)
 
 
 async def check_computer(runtime: Runtime, actor: Principal, workspace_id: str, environment_id: str) -> ComputerCheck:
     """Probe a ready target without starting it, observing pixels or dispatching input."""
     async with short_session(runtime.storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "run")
-        environment = await _find(session, scope, environment_id)
+        environment = await find(session, scope, environment_id)
         require_usable(environment, actor.id)
         if environment.status != "ready":
             return ComputerCheck(status="not_ready")
-        if environment.template_id is None:
+        if environment.kind == "external":
+            # Probing Computer readiness would create an execution Session outside a run.
+            return ComputerCheck(status="unsupported")
+        if environment.kind == "external_http":
             target = Target(environment.id, external.account(environment), {}, None)
         else:
             assert environment.provider_id is not None
@@ -382,6 +348,8 @@ async def check_computer(runtime: Runtime, actor: Principal, workspace_id: str, 
             if environment.provider_identity != provider_identity(runtime.registry, provider):
                 raise conflict("environment", environment.id, "provider_identity_changed")
             handle = Handle.model_validate(environment.handle)
+            if handle.recipe.get("execution") == "envd_ws":
+                return ComputerCheck(status="unsupported")
             target = managed_target(runtime.keys, environment, provider, handle)
     execution = None
     try:

@@ -206,7 +206,7 @@ async def test_bundle_drafts_save_independently_but_reject_same_server_changes(t
 async def test_yaml_comments_survive_and_all_tools_does_not_upgrade_unrestricted_files(tmp_path: Path):
     root, file = _source(tmp_path, {}, suffix="yaml")
     original = '# keep me\nmcpServers:\n  one:\n    command: "python" # inline\n'
-    file.write_text(original)
+    file.write_text(original, newline="")
     source = await load_harness_ui_configuration(root)
     settings = tool_settings(root, source, "mcp-one")
     path, mutation = selection_mutation(

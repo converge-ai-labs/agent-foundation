@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import stat
 from datetime import timedelta
 from pathlib import Path
@@ -58,7 +59,8 @@ async def test_adoption_is_private_once_and_never_changes_cli_files(
     assert not (await native_codex.inspect()).shared_with_cli
     assert not (await native_grok.inspect()).shared_with_cli
     assert "do-not-copy" not in native_grok.policy.path.read_text()
-    assert stat.S_IMODE(native_codex.policy.path.stat().st_mode) == 0o600
+    if os.name != "nt":
+        assert stat.S_IMODE(native_codex.policy.path.stat().st_mode) == 0o600
     assert "refresh-one" not in accounts.path.read_text()
 
     await native_codex.logout()

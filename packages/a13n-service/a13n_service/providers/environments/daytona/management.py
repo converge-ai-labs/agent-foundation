@@ -72,20 +72,22 @@ class DaytonaManagement(DaytonaReference, NativeManagement[DaytonaEnvironmentCon
                     "target": self.backend.target,
                     "labels": self.labels,
                     "public": False,
-                    "env": {
-                        **self.config.environment,
-                        "A13N_ENVD_DEVICE_ID": self.owner,
-                        "A13N_ENVD_TRANSPORT": "http",
-                        "A13N_ENVD_HTTP_BIND": "0.0.0.0:8888",
-                        "A13N_ENVD_HTTP_PLAINTEXT_SCOPE": "provider_private_link",
-                        "A13N_ENVD_EXECUTION_UID": "1000",
-                        "A13N_ENVD_EXECUTION_GID": "1000",
-                        "A13N_ENVD_FULL_CONTROL": "true",
-                        "A13N_ENVD_STATE_DIR": "/var/lib/a13n-envd",
-                        "A13N_ENVD_RUNTIME_DIR": "/run/a13n-envd-state",
-                        "A13N_DESKTOP": "true" if self.config.desktop else "false",
-                        "A13N_DESKTOP_ACCESS": "true" if self.recipe.desktop_assistance else "false",
-                    },
+                    "env": self.bootstrap_environment(
+                        {
+                            **self.config.environment,
+                            "A13N_ENVD_DEVICE_ID": self.owner,
+                            "A13N_ENVD_TRANSPORT": "http",
+                            "A13N_ENVD_HTTP_BIND": "0.0.0.0:8888",
+                            "A13N_ENVD_HTTP_PLAINTEXT_SCOPE": "provider_private_link",
+                            "A13N_ENVD_EXECUTION_UID": "1000",
+                            "A13N_ENVD_EXECUTION_GID": "1000",
+                            "A13N_ENVD_FULL_CONTROL": "true",
+                            "A13N_ENVD_STATE_DIR": "/var/lib/a13n-envd",
+                            "A13N_ENVD_RUNTIME_DIR": "/run/a13n-envd-state",
+                            "A13N_DESKTOP": "true" if self.config.desktop else "false",
+                            "A13N_DESKTOP_ACCESS": "true" if self.recipe.desktop_assistance else "false",
+                        }
+                    ),
                     "autoStopInterval": 0,
                     "autoPauseInterval": 0,
                     "autoDeleteInterval": -1,
@@ -108,6 +110,8 @@ class DaytonaManagement(DaytonaReference, NativeManagement[DaytonaEnvironmentCon
             await self.desktop_access(access.Describe())
 
     async def _check_envd(self, target: Sandbox) -> None:
+        if self.config.execution == "envd_ws":
+            return
         # Snapshot boot owns startup on create and restart. Attachment only reads
         # credentials and checks EIP; it cannot repair a failed daemon.
         toolbox = await self.open_toolbox(target)

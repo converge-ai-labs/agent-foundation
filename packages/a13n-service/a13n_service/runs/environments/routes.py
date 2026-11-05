@@ -45,9 +45,7 @@ async def list_environments(
     limit: PageLimit = 50,
     cursor: str | None = None,
 ) -> EnvironmentPage:
-    return await service.list_environments(
-        runtime.storage, actor, workspace_id, status=status, limit=limit, cursor=cursor
-    )
+    return await service.list_environments(runtime, actor, workspace_id, status=status, limit=limit, cursor=cursor)
 
 
 @router.post("/environments", response_model=EnvironmentView, status_code=201, openapi_extra={"x-a13n-mcp": True})
@@ -71,7 +69,9 @@ async def create_environment(
 async def get_environment(
     runtime: CurrentRuntime, response: Response, workspace_id: WorkspaceId, environment_id: str, actor: Actor
 ) -> EnvironmentView:
-    result = await service.get_environment(runtime.storage, actor, workspace_id, environment_id)
+    result = await service.get_environment(runtime, actor, workspace_id, environment_id)
+    if result.client_connection is not None:
+        response.headers["cache-control"] = "no-store"
     return tagged(response, result)
 
 

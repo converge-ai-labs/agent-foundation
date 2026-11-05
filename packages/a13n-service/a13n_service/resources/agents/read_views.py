@@ -35,6 +35,7 @@ type ConfigSection = Literal[
     "output_spec",
     "retries",
     "default_environment_template_id",
+    "default_environment_id",
     "lazy_environment",
     "memory_mounts",
     "memory",

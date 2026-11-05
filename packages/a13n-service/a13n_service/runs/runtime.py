@@ -31,6 +31,9 @@ from a13n_service.tenancy.workspaces import WorkspaceCreated
 
 if TYPE_CHECKING:
     from a13n_service.runs.compaction_model import BackgroundCompaction
+    from a13n_service.runs.environments.clients.connections import Connections
+    from a13n_service.runs.environments.clients.routing import Routing
+    from a13n_service.runs.environments.clients.sessions import Sessions
     from a13n_service.runs.environments.contexts import Contexts
     from a13n_service.runs.environments.monitoring.proxy import Proxy
     from a13n_service.runs.tool_executions.owner import Executions
@@ -41,6 +44,7 @@ class Runtime:
     storage: Storage
     objects: ObjectStore
     redis: Redis
+    client_routing: Routing
     keys: KeyRing
     settings: Settings
     registry: Registry
@@ -70,6 +74,18 @@ class Runtime:
         from a13n_service.runs.environments.contexts import Contexts
 
         return Contexts(self)
+
+    @cached_property
+    def client_connections(self) -> Connections:
+        from a13n_service.runs.environments.clients.connections import Connections
+
+        return Connections(self)
+
+    @cached_property
+    def client_sessions(self) -> Sessions:
+        from a13n_service.runs.environments.clients.sessions import Sessions
+
+        return Sessions(self)
 
     @cached_property
     def executions(self) -> Executions:

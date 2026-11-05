@@ -15,7 +15,9 @@ from a13n_service.runs.threads import new_thread
 from a13n_service.settings import Database
 from alembic import command
 from sqlalchemy import MetaData, create_engine, text
-from sqlalchemy.exc import DBAPIError
+from sqlalchemy.exc import DBAPIError, IntegrityError
+
+from .conftest import pause_sweeps
 
 RULES = """
 SELECT 'function', p.proname, regexp_replace(pg_get_functiondef(p.oid), '\\s+', ' ', 'g')
@@ -75,6 +77,15 @@ def test_migration_connection_assembles_schema_once(empty_database: Database, mo
     assert calls == {"metadata": 1, "rules": 1}
 
 
+@pytest.mark.parametrize("previous_head", ["cfd41d5330b6", "41e808ec703b", "ac17878758f6", "ba66b54e3c14"])
+def test_client_and_recovery_migrations_converge(empty_database: Database, previous_head: str) -> None:
+    with migration_connection(empty_database, OSS) as config:
+        command.upgrade(config, previous_head)
+    upgrade(empty_database, OSS)
+    assert rows(empty_database, "SELECT version_num FROM alembic_version") == [(head,) for head in heads(OSS)]
+    check(empty_database, OSS)
+
+
 def test_revisions_match_metadata_and_rules(empty_database: Database, database: Database) -> None:
     upgrade(empty_database, OSS)
     # Alembic compares tables, columns, indexes and keys; rules and CHECK expressions are compared directly.
@@ -82,6 +93,47 @@ def test_revisions_match_metadata_and_rules(empty_database: Database, database: 
     migrated = rows(empty_database, RULES)
     assert migrated == rows(database, RULES)
     assert len(migrated) >= len(OSS.rules())
+
+
+@pytest.mark.anyio
+async def test_client_environment_migration_preserves_legacy_target_and_refuses_lossy_downgrade(database, tenant):
+    insert = text(
+        "INSERT INTO environments (id, organization_id, workspace_id, owner_principal_id, created_by_id, name,"
+        " status, device_id, endpoint) VALUES (:id, :org, :ws, :owner, :owner, 'Laptop', 'deleted', 'device',"
+        " 'http://127.0.0.1:9000')"
+    )
+    fields = {"org": tenant.organization_id, "ws": tenant.workspace_id, "owner": tenant.principal_id}
+    engine = create_engine(database.url.get_secret_value())
+    try:
+        with migration_connection(database, OSS) as config:
+            command.downgrade(config, "03610e577d35")
+        with engine.begin() as connection:
+            connection.execute(insert, {**fields, "id": "env_old"})
+        query = "SELECT version, updated_at, device_id, endpoint FROM environments WHERE id='env_old'"
+        original = rows(database, query)
+        upgrade(database, OSS)
+        assert rows(database, query) == original
+        assert rows(database, "SELECT kind FROM environments ORDER BY id") == [("external_http",)]
+        # Only existing rows are backfilled; old writers must stop before migration.
+        with pytest.raises(IntegrityError, match='null value in column "kind"'):
+            with engine.begin() as connection:
+                connection.execute(insert, {**fields, "id": "env_rolling"})
+        assert rows(database, "SELECT to_regprocedure('classify_legacy_environment()')") == [(None,)]
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO environments (id, kind, organization_id, workspace_id, owner_principal_id, created_by_id,"
+                    " name, status, device_id) VALUES ('env_client', 'external', :org, :ws, :owner, :owner,"
+                    " 'My computer', 'deleted', 'device')"
+                ),
+                fields,
+            )
+        with pytest.raises(RuntimeError, match="Client registrations prevent downgrade"):
+            with migration_connection(database, OSS) as config:
+                command.downgrade(config, "03610e577d35")
+        check(database, OSS)
+    finally:
+        engine.dispose()
 
 
 @pytest.mark.parametrize("invalid_index", [False, True])
@@ -144,6 +196,79 @@ def test_run_usage_index_build_allows_run_writers(empty_database: Database) -> N
     finally:
         engine.dispose()
     check(empty_database, OSS)
+
+
+@pytest.mark.anyio
+async def test_session_recreation_migration_preserves_existing_sessions_and_opt_out(service):
+    await pause_sweeps(service)
+    database = service.runtime.settings.database
+    path = f"{service.api}/sessions"
+    created = await service.client.post(path, json={})
+    assert created.status_code == 201
+    session_id = created.json()["id"]
+    with migration_connection(database, OSS) as config:
+        command.downgrade(config, "a3d0f1eb7aa7")
+    upgrade(database, OSS)
+    before = await service.client.get(f"{path}/{session_id}")
+    assert before.json()["auto_recreate_lost_environment"] is True
+    patched = await service.client.patch(
+        f"{path}/{session_id}",
+        headers={"if-match": before.headers["etag"]},
+        json={"auto_recreate_lost_environment": False},
+    )
+    assert patched.status_code == 200
+    with pytest.raises(RuntimeError, match="sessions have opted out"), migration_connection(database, OSS) as config:
+        command.downgrade(config, "a3d0f1eb7aa7")
+    assert (await service.client.get(f"{path}/{session_id}")).json()["auto_recreate_lost_environment"] is False
+
+
+@pytest.mark.anyio
+async def test_replacement_migration_recovers_an_interrupted_index_and_preserves_links(service):
+    from .environments_support import reserve, with_fake_providers
+
+    env = await with_fake_providers(service)
+    database = env.runtime.settings.database
+    original, successor, duplicate = [(await reserve(env, env.template["id"]))["id"] for _ in range(3)]
+    with migration_connection(database, OSS) as config:
+        command.downgrade(config, "63bd482bbce1")
+    with migration_connection(database, OSS) as config:
+        command.upgrade(config, "3fd7115ea45e")
+    with migration_connection(database, OSS) as config:
+        connection = config.attributes["connection"]
+        assert connection.scalar(text("SELECT count(*) FROM environments WHERE replaces_environment_id IS NULL")) == 3
+        # The column and FK were committed, then a concurrent index build was interrupted before stamping.
+        command.stamp(config, "63bd482bbce1")
+        connection.execute(
+            text("UPDATE pg_index SET indisvalid = false WHERE indexrelid = 'uq_environments_replaces'::regclass")
+        )
+        connection.commit()
+    upgrade(database, OSS)
+    check(database, OSS)
+    link = text("UPDATE environments SET replaces_environment_id = :original WHERE id = :successor")
+    async with transaction(env.runtime.storage) as session:
+        await session.execute(link, {"original": original, "successor": successor})
+    with pytest.raises(IntegrityError, match="uq_environments_replaces"):
+        async with transaction(env.runtime.storage) as session:
+            await session.execute(link, {"original": original, "successor": duplicate})
+    async with transaction(env.runtime.storage) as session:
+        await session.execute(text("UPDATE environments SET retired_for_idle = true WHERE id = :id"), {"id": successor})
+    with (
+        pytest.raises(RuntimeError, match="Cannot discard idle retirement"),
+        migration_connection(database, OSS) as config,
+    ):
+        command.downgrade(config, "3fd7115ea45e")
+    async with transaction(env.runtime.storage) as session:
+        await session.execute(
+            text("UPDATE environments SET retired_for_idle = false WHERE id = :id"), {"id": successor}
+        )
+    with (
+        pytest.raises(RuntimeError, match="Cannot drop environment replacement links"),
+        migration_connection(database, OSS) as config,
+    ):
+        command.downgrade(config, "63bd482bbce1")
+    assert rows(
+        database, "SELECT id, replaces_environment_id FROM environments WHERE replaces_environment_id IS NOT NULL"
+    ) == [(successor, original)]
 
 
 def test_compaction_revision_roundtrip(empty_database: Database) -> None:

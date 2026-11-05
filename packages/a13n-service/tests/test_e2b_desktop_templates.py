@@ -436,3 +436,22 @@ async def test_creation_queries_cannot_cross_workspace(setup):
         )
         assert response.status_code in {403, 404}
     assert setup.cloud.reserve_count == 0
+
+
+async def test_outbound_instance_disables_preview_even_if_template_changes(setup, monkeypatch):
+    from a13n_service.runs.environments import desktop_preview
+
+    op = await setup.create()
+    runtime, client = setup.service.runtime, setup.service.client
+    state = EnvironmentState(provider_key="e2b", state_version="1", state={"sandbox_id": "test"})
+    await lifecycle.publish(runtime, op, lifecycle.Outcome(state))
+    async with transaction(runtime.storage) as session:
+        row = await session.get_one(EnvironmentRow, op.environment_id)
+        row.handle = {**row.handle, "recipe": {**row.handle["recipe"], "execution": "envd_ws"}}
+    connector = AsyncMock()
+    monkeypatch.setattr(desktop_preview, "execution_connector", connector)
+    view = await client.get(f"{setup.service.api}/environments/{op.environment_id}")
+    assert view.json()["desktop_preview"] == "connection_unsupported"
+    response = await client.get(f"/api/v1/environments/{op.environment_id}/desktop-preview")
+    assert response.status_code == 409 and "desktop_preview_unsupported" in response.text
+    connector.assert_not_awaited()

@@ -90,7 +90,7 @@ async def resume(
             if found := await _replay(session, scope.workspace_id, actor, request_key, digest):
                 return await run_view(session, found), False
             waiting = await get_run(session, scope.workspace_id, run_id)
-            thread = await get_thread(session, scope.workspace_id, waiting.thread_id, lock=True)
+            thread = await get_thread(session, scope.workspace_id, waiting.thread_id, lock="acceptance")
             require_open(thread)
             if not (waiting.status == "waiting" and thread.last_run_id == waiting.id and thread.current_run_id is None):
                 # A concurrent request may have committed this same intent while we waited for the thread.

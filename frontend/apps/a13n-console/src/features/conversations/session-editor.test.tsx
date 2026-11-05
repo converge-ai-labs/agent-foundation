@@ -22,6 +22,7 @@ afterEach(() => {
 });
 const session = {
   id: "sess_test",
+  auto_recreate_lost_environment: true,
   workspace_id: "ws_test",
   created_by_id: "usr_test",
   labels: { project: "Widgets" },

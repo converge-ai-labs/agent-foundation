@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 from weakref import WeakValueDictionary
 
@@ -120,17 +122,17 @@ def binding_key(mount: EnvironmentMount, configuration: RunConfiguration) -> str
     ).hexdigest()
 
 
-async def retained_bindings(session: AsyncSession, lease: Lease) -> set[str]:
+async def retained_bindings(session: AsyncSession, thread_id: str, run_id: str) -> set[str]:
     """Keep the continuation head, current Run and bindings needed by unfinished work."""
-    last_run = select(ThreadRow.last_run_id).where(ThreadRow.id == lease.thread_id).scalar_subquery()
+    last_run = select(ThreadRow.last_run_id).where(ThreadRow.id == thread_id).scalar_subquery()
     runs = select(RunRow.environment_mounts, RunRow.options).where(
-        RunRow.thread_id == lease.thread_id,
-        or_(RunRow.id == lease.run_id, RunRow.id == last_run, RunRow.status.in_(("accepted", "running", "waiting"))),
+        RunRow.thread_id == thread_id,
+        or_(RunRow.id == run_id, RunRow.id == last_run, RunRow.status.in_(("accepted", "running", "waiting"))),
     )
     tools = (
         select(ToolExecutionRow.environment_mounts, RunRow.options)
         .join(RunRow, RunRow.id == ToolExecutionRow.run_id)
-        .where(ToolExecutionRow.thread_id == lease.thread_id, ToolExecutionRow.completed_at.is_(None))
+        .where(ToolExecutionRow.thread_id == thread_id, ToolExecutionRow.completed_at.is_(None))
     )
     bindings: set[str] = set()
     for mounts, options in await session.execute(runs.union_all(tools)):
@@ -149,36 +151,81 @@ class Contexts:
         self._lock = asyncio.Lock()
 
     async def get(self, lease: Lease, mount: EnvironmentMount, configuration: RunConfiguration) -> EnvdSessionRecovery:
+        return await self._get(lease.thread_id, lease.run_id, lease.worker_id, mount, configuration)
+
+    async def for_control(
+        self, thread_id: str, run_id: str, worker_id: str, environment_id: str
+    ) -> EnvdSessionRecovery:
+        """Use the same frozen binding after Control has authorized its caller."""
+        async with transaction(self.runtime.storage) as session:
+            run = await session.get(RunRow, run_id)
+            if run is None or run.thread_id != thread_id:
+                raise LeaseLost()
+            mount = next(
+                (
+                    EnvironmentMount.model_validate(value)
+                    for value in run.environment_mounts
+                    if value["environment_id"] == environment_id
+                ),
+                None,
+            )
+            if mount is None:
+                raise LeaseLost()
+            configuration = RunOptions.model_validate(run.options).configuration or RunConfiguration()
+        return await self._get(thread_id, run_id, worker_id, mount, configuration)
+
+    async def _get(
+        self, thread_id: str, run_id: str, worker_id: str, mount: EnvironmentMount, configuration: RunConfiguration
+    ) -> EnvdSessionRecovery:
         binding = binding_key(mount, configuration)
         async with self._lock:
             async with transaction(self.runtime.storage) as session:
-                row = await lock(session, ThreadExecutionContextRow, lease.thread_id)
-                if row is None or row.worker_id != lease.worker_id:
+                row = await lock(session, ThreadExecutionContextRow, thread_id)
+                if row is None or row.worker_id != worker_id:
                     raise LeaseLost()
                 generation = row.generation
                 saved = row.sessions.get(binding)
-            key = (lease.thread_id, generation, binding)
+            key = (thread_id, generation, binding)
             recovery = self._sessions.get(key)
             if recovery is None:
+                expected = saved
+
+                @asynccontextmanager
+                async def ownership() -> AsyncIterator[EnvdSessionState | None]:
+                    nonlocal expected
+                    # borrow() holds its acquisition lock. Refresh only when no
+                    # native borrower is active, and close the transaction before I/O.
+                    async with transaction(self.runtime.storage) as session:
+                        row = await lock(session, ThreadExecutionContextRow, thread_id)
+                        if row is None or row.worker_id != worker_id or row.generation != generation:
+                            raise LeaseLost()
+                        expected = row.sessions.get(binding)
+                    yield None if expected is None else EnvdSessionState.model_validate(expected)
 
                 async def checkpoint(state: EnvdSessionState) -> None:
+                    nonlocal expected
+                    value = state.model_dump(mode="json")
                     async with transaction(self.runtime.storage) as session:
-                        row = await lock(session, ThreadExecutionContextRow, lease.thread_id)
+                        row = await lock(session, ThreadExecutionContextRow, thread_id)
                         if (
                             row is None
-                            or row.worker_id != lease.worker_id
+                            or row.worker_id != worker_id
                             or row.generation != generation
-                            or not await session.scalar(select(live_owner(lease.thread_id, lease.worker_id)))
+                            or row.sessions.get(binding) != expected
+                            or not await session.scalar(select(live_owner(thread_id, worker_id)))
                         ):
                             raise LeaseLost()
-                        retained = await retained_bindings(session, lease)
+                        retained = await retained_bindings(session, thread_id, run_id)
                         row.sessions = {
                             **{key: value for key, value in row.sessions.items() if key in retained},
-                            binding: state.model_dump(mode="json"),
+                            binding: value,
                         }
+                    expected = value
 
                 recovery = EnvdSessionRecovery(
-                    None if saved is None else EnvdSessionState.model_validate(saved), checkpoint=checkpoint
+                    None if saved is None else EnvdSessionState.model_validate(saved),
+                    checkpoint=checkpoint,
+                    ownership=ownership,
                 )
                 self._sessions[key] = recovery
             return recovery

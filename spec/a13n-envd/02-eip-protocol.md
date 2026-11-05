@@ -73,7 +73,7 @@ class SessionOpenResult(BaseModel):
     descriptor: SessionDescriptor
 ```
 
-`initialize` verifies the Device and negotiates protocol without creating a Session. A null expected identity is for explicit trusted registration only. `device.describe` returns the current Device descriptor, including basic system information. Optional `device.metrics` reads a cached Device sample as defined by [resource monitoring](11-resource-monitoring.md). `directory.list` provides optional [directory discovery](04-resource-operations.md#directory-discovery) without a Session.
+`initialize` verifies the Device and negotiates protocol without creating a Session. A null expected identity is for explicit trusted registration only. An unexpected Device ID returns `protocol_incompatible` (-32003) with `data.safe_detail` set to `device_id_mismatch` and the message `Check the environment and use its registered Device ID with --device-id.` `device.describe` returns the current Device descriptor, including basic system information. Optional `device.metrics` reads a cached Device sample as defined by [resource monitoring](11-resource-monitoring.md). `directory.list` provides optional [directory discovery](04-resource-operations.md#directory-discovery) without a Session.
 
 `session.open` checks the observed identity/generation/version and required methods, resolves its working directory and reserves one Session. Omitted/null `working_directory` selects the advertised Device default; an explicit path overrides it. Missing or inaccessible directories fail without creation or fallback. The result contains the exact resolved working directory, immutable for that Session. A working directory is not a filesystem access boundary.
 

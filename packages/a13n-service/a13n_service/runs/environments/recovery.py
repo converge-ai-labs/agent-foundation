@@ -17,8 +17,9 @@ from a13n_service.infra.db import transaction
 from a13n_service.resources.providers.service import read_provider
 from a13n_service.resources.providers.tables import EnvironmentProviderRow
 from a13n_service.runs.attempts import AuthorityRevoked, Lease, LeaseLost
-from a13n_service.runs.environments import external
-from a13n_service.runs.environments.adapters import Target, execution_connector, provider_identity
+from a13n_service.runs.environments import connection, external, outbound
+from a13n_service.runs.environments.adapters import Target, execution_connector, managed_target, provider_identity
+from a13n_service.runs.environments.clients.worker import Target as ClientTarget
 from a13n_service.runs.environments.schemas import Handle
 from a13n_service.runs.environments.tables import EnvironmentRow
 from a13n_service.runs.runtime import Runtime
@@ -66,7 +67,18 @@ async def prepare(runtime: Runtime, lease: Lease, execution_id: str, mount_name:
         environment = await session.get(EnvironmentRow, mount.environment_id)
         if environment is None or environment.status != "ready":
             raise ToolExecutionLost("The original Shell environment is no longer ready.")
-        if environment.template_id is None:
+        target: Target | ClientTarget
+        if environment.kind == "external":
+            if environment.device_id is None or mount.working_directory is None:
+                raise ToolExecutionLost("The original client Shell binding is missing.")
+            target = ClientTarget(
+                environment.id,
+                environment.device_id,
+                mount.working_directory,
+                mount.name,
+                recovery_execution_id=execution_id,
+            )
+        elif environment.kind == "external_http":
             target = Target(environment.id, external.account(environment), {}, None)
         else:
             assert environment.provider_id is not None and environment.handle is not None
@@ -74,9 +86,25 @@ async def prepare(runtime: Runtime, lease: Lease, execution_id: str, mount_name:
             if environment.provider_identity != provider_identity(runtime.registry, provider):
                 raise ToolExecutionLost("The original Shell provider identity changed.")
             handle = Handle.model_validate(environment.handle)
-            target = Target(environment.id, provider, handle.recipe, handle.state)
+            plan = connection.resolve(runtime.registry.get("environment", provider.type), handle, mount)
+            if plan.mode == "envd_ws":
+                binding = outbound.binding_for(runtime.registry, environment, provider, executing=True)
+                target = ClientTarget(
+                    environment.id,
+                    binding.device_id,
+                    plan.working_directory,
+                    mount.name,
+                    handle.state,
+                    recovery_execution_id=execution_id,
+                )
+            else:
+                target = managed_target(runtime.keys, environment, provider, handle)
     recovery = await runtime.environment_contexts.get(lease, mount, configuration)
-    connector = await execution_connector(runtime, target, configuration=configuration, session_recovery=recovery)
+    connector = (
+        target.connector(runtime, lease, recovery)
+        if isinstance(target, ClientTarget)
+        else await execution_connector(runtime, target, configuration=configuration, session_recovery=recovery)
+    )
 
     @asynccontextmanager
     async def guard(action: EnvironmentAction) -> AsyncIterator[None]:

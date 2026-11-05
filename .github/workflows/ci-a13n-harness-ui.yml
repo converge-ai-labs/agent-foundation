@@ -192,6 +192,61 @@ jobs:
               - 'scripts/tests/test_check_a13n_harness_ui_distribution.py'
               - 'scripts/tests/test_prepare_a13n_harness_ui_assets.py'
 
+  checks:
+    name: UI Python checks and native lifecycle
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.tests == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Synchronize UI test environment
+        run: uv sync --locked --package a13n-harness-ui --group test --no-default-groups
+
+      - name: Prepare bundled configuration Skill
+        run: uv run --locked --no-sync python packages/a13n-harness-ui/build_skills.py
+
+      - name: Type-check UI
+        run: >-
+          uv run --locked --no-sync pyright
+          packages/a13n-harness-ui/a13n_harness_ui
+          packages/a13n-harness-ui/build_skills.py
+          scripts/check-a13n-harness-ui-distribution.py
+          scripts/check_a13n_harness_ui_distribution.py
+          scripts/prepare-a13n-harness-ui-assets.py
+          scripts/prepare_a13n_harness_ui_assets.py
+          scripts/release_version.py
+
+      - name: Test native command lifecycle
+        timeout-minutes: 2
+        run: >-
+          uv run --locked --no-sync python -m pytest --junitxml=test-results/native-lifecycle.xml
+          packages/a13n-harness/tests/providers_environment/test_direct_local.py
+          packages/a13n-harness/tests/providers_environment/test_direct_local_processes.py
+
+      - name: Retain native lifecycle reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-native-lifecycle-${{ github.run_attempt }}
+          path: test-results/
+          retention-days: 7
+
   tests:
     name: UI Python tests (${{ matrix.shard }}/3)
     strategy:
@@ -226,18 +281,6 @@ jobs:
       - name: Prepare bundled configuration Skill
         run: uv run --locked --no-sync python packages/a13n-harness-ui/build_skills.py
 
-      - name: Type-check UI
-        if: matrix.shard == 1
-        run: >-
-          uv run --locked --no-sync pyright
-          packages/a13n-harness-ui/a13n_harness_ui
-          packages/a13n-harness-ui/build_skills.py
-          scripts/check-a13n-harness-ui-distribution.py
-          scripts/check_a13n_harness_ui_distribution.py
-          scripts/prepare-a13n-harness-ui-assets.py
-          scripts/prepare_a13n_harness_ui_assets.py
-          scripts/release_version.py
-
       # Bound individual tests separately from the full-suite budget on standard runners.
       - name: Test UI
         timeout-minutes: 8
@@ -247,14 +290,6 @@ jobs:
           /usr/bin/time -p uv run --locked --no-sync python -m scripts.run_python_tests --workers 4
           --shard ${{ matrix.shard }} 3 --durations .github/ui-test-durations.json
           packages/a13n-harness-ui/tests
-
-      - name: Test native command lifecycle
-        if: matrix.shard == 1
-        timeout-minutes: 2
-        run: >-
-          uv run --locked --no-sync python -m pytest --junitxml=test-results/native-lifecycle.xml
-          packages/a13n-harness/tests/providers_environment/test_direct_local.py
-          packages/a13n-harness/tests/providers_environment/test_direct_local_processes.py
 
       - name: Retain UI test reports
         if: always()
@@ -476,7 +511,7 @@ jobs:
 
   linux:
     name: UI (Linux)
-    needs: [changes, tests, frontend, webui, distribution]
+    needs: [changes, checks, tests, frontend, webui, distribution]
     if: >-
       always() && github.event_name != 'schedule' &&
       (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
@@ -485,17 +520,19 @@ jobs:
       - name: Require all Linux checks to pass
         env:
           CHANGES_RESULT: ${{ needs.changes.result }}
+          CHECKS_RESULT: ${{ needs.checks.result }}
           TESTS_RESULT: ${{ needs.tests.result }}
           FRONTEND_RESULT: ${{ needs.frontend.result }}
           DISTRIBUTION_RESULT: ${{ needs.distribution.result }}
           WEBUI_RESULT: ${{ needs.webui.result }}
+          CHECKS_SELECTED: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.tests == 'true' }}
           TESTS_SELECTED: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.tests == 'true' }}
           FRONTEND_SELECTED: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.frontend == 'true' }}
           DISTRIBUTION_SELECTED: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.distribution == 'true' }}
           WEBUI_SELECTED: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.distribution == 'true' }}
         run: |
           test "$CHANGES_RESULT" = success
-          for component in TESTS FRONTEND WEBUI DISTRIBUTION; do
+          for component in CHECKS TESTS FRONTEND WEBUI DISTRIBUTION; do
             selected="${component}_SELECTED"
             result="${component}_RESULT"
             expected=skipped
@@ -506,12 +543,16 @@ jobs:
           done
 
   windows:
-    name: UI (Windows)
+    name: UI Windows (${{ matrix.shard }})
     needs: changes
     if: >-
       github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request' && needs.changes.outputs.tests == 'true')
     runs-on: windows-2025
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(github.event_name == 'pull_request' && '[1]' || '[1,2,3,4]') }}
     timeout-minutes: 12
     env:
       PYTEST_ADDOPTS: -v -o faulthandler_timeout=90 --timeout=120 --timeout-method=thread
@@ -564,9 +605,15 @@ jobs:
 
       - name: Test full UI suite on Windows
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-        run: uv run --locked --no-sync python -m pytest --durations=20 --junitxml=test-results/ui-full.xml packages/a13n-harness-ui/tests
+        env:
+          PYTEST_ADDOPTS: -v -o faulthandler_timeout=90 --timeout=120 --timeout-method=thread --durations=20 --junitxml=test-results/ui-full.xml
+        run: >-
+          uv run --locked --no-sync python scripts/run_python_tests.py
+          --workers 4 --shard ${{ matrix.shard }} 4 --durations .github/ui-test-durations.json
+          packages/a13n-harness-ui/tests
 
       - name: Test native command lifecycle
+        if: matrix.shard == 1
         timeout-minutes: 2
         run: >-
           uv run --locked --no-sync python -m pytest --durations=20 --junitxml=test-results/native-lifecycle.xml
@@ -577,6 +624,20 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ui-windows-${{ github.run_attempt }}
+          name: ui-windows-${{ matrix.shard }}-${{ github.run_attempt }}
           path: test-results/
           retention-days: 7
+
+  windows-result:
+    name: UI (Windows)
+    needs: [changes, windows]
+    if: >-
+      always() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) &&
+      (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && needs.changes.outputs.tests == 'true'))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every Windows shard
+        env:
+          WINDOWS_RESULT: ${{ needs.windows.result }}
+        run: test "$WINDOWS_RESULT" = success

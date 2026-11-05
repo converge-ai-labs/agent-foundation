@@ -138,9 +138,11 @@ async def test_models_and_fresh_runs_share_rotation(tmp_path, native_transport):
     document = json.loads(path.read_text())
     assert document[SCOPE]["unknown"] == {"retained": True}
     assert document["another-scope"] == {"unknown": True}
-    assert path.stat().st_mode & 0o777 == 0o600
+    if sys.platform != "win32":
+        assert path.stat().st_mode & 0o777 == 0o600
     journal = Path(f"{path}.refresh.json")
-    assert journal.stat().st_mode & 0o777 == 0o600
+    if sys.platform != "win32":
+        assert journal.stat().st_mode & 0o777 == 0o600
     assert "refresh-old" not in journal.read_text() and "access-old" not in journal.read_text()
 
 

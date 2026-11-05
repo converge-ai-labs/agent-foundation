@@ -94,6 +94,8 @@ from a13n_service.runs.children import child_results
 from a13n_service.runs.compactions import sweep as compaction_sweep
 from a13n_service.runs.devices.routes import router as devices_router
 from a13n_service.runs.devices.tables import DeviceRow
+from a13n_service.runs.environments.clients.routes import router as client_environments_router
+from a13n_service.runs.environments.clients.tables import ClientSettingsRow
 from a13n_service.runs.environments.daytona_snapshots import DaytonaDesktopSnapshotRow
 from a13n_service.runs.environments.desktop.delivery import handbacks as desktop_handbacks
 from a13n_service.runs.environments.desktop.maintenance import sweep as desktop_control_sweep
@@ -411,6 +413,7 @@ OSS = Distribution(
         ThreadCodeActRow,
         ToolExecutionRow,
         EnvironmentRow,
+        ClientSettingsRow,
         E2BDesktopTemplateRow,
         ModalDesktopImageRow,
         DaytonaDesktopSnapshotRow,
@@ -454,6 +457,7 @@ OSS = Distribution(
         findings_router,
         environment_templates_router,
         environments_router,
+        client_environments_router,
         browsers_router,
         desktop_control_router,
         memories_router,

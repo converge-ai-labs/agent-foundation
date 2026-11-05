@@ -2,6 +2,10 @@
 
 [Environment Execution](08a-environment-execution.md) owns connection, state, operations, failure, and resource-lifetime boundaries. This document owns backend-specific execution and local/remote Device guarantees. [Service Environment Management](../a13n-service/06a-environment-management.md) owns native target allocation, stop/resume, destruction, and renewal guarantees. The Host selects and authorizes targets; Harness execution scopes use those targets and release their acquired resources.
 
+## Service-managed outbound connection
+
+The shared Docker, E2B, Daytona, Modal, Sprites and Vercel recipe schemas also represent `execution="envd_ws"`. This mode requires the [Service-managed outbound connection](../a13n-service/06-environments.md#managed-outbound-execution); built-in standalone Harness provider connectors reject it with `envd_ws_requires_host_connection`. Service supplies the fixed WebSocket execution connector while retaining the Provider's native state for lifecycle and managed target admission. This does not change existing native/HTTP defaults or give standalone Harness lifecycle ownership.
+
 ## Execution Backend Boundary
 
 Harness has two execution paths:
@@ -187,6 +191,8 @@ Host-selected working directories use the EIP Device path model. Vendor target n
 | Bounded process-local Device connection registry                                     | Host-owned connection SDK |
 | Session acquisition, folder configuration and provider-neutral operation translation | Remote Provider           |
 | Cross-process routing, durable records and product policy                            | Host                      |
+
+A Host may inject a Session source that reaches the owning process instead of holding the WebSocket locally. It returns an authenticated EIP Session and the matching Device descriptor. Binding a Session that the owner already opened validates its target, generation, boundary and live readiness without issuing another native open. The Session-scoped requester preserves native request correlation, transfer limits and sibling Session isolation. The owning process maintains native keepalive. When it loses the carrier or the caller loses authority, the Host may detach the logical binding locally. Detachment asserts no native termination and never redirects cleanup to a successor. Authorization, routing and cleanup of the owner-side Session remain the Host’s responsibility.
 
 A Session is a resource owner, not a tenant sandbox. Device and working-directory selection are trusted Host inputs; operation arguments do not confer authority to select another Device. The SDK owns no listener, global registry, credential issuer, or distributed relay.
 

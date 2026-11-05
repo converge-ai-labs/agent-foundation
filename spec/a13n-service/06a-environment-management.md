@@ -1,5 +1,9 @@
 # Environment Management Providers
 
+## Outbound execution connection
+
+The [managed outbound contract](06-environments.md#managed-outbound-execution) defines `envd_ws` for Docker, E2B, Daytona, Modal, Sprites and Vercel. Their Envd prerequisites and native lifecycle remain the same as `envd_http`; bootstrap selects reverse WebSocket with a private environment-bound credential instead of an HTTP listener. Docker publishes no Envd port, Modal/Vercel expose no Envd HTTP port, and E2B/Daytona/Sprites skip HTTP/TCP readiness probes in this mode. Service waits for Control admission and EIP initialization instead. Existing native and HTTP defaults and saved fingerprints remain compatible. Sprites retains its existing requirement for desktop-enabled Envd recipes.
+
 ## Design Position
 
 Service owns built-in Environment management definitions and vendor implementations. Each managed infrastructure vendor implements its own `EnvironmentProvider` subclass for resource lifecycle and connection preparation, independently of the selected execution path. They perform explicit operations on one target; [Environments](06-environments.md) owns durable instances, lifecycle operations, coordination, renewal scheduling, and retirement policy. Harness owns [Environment Execution](../a13n-harness/08a-environment-execution.md): shared state, execution definitions, fixed-target connectors, and native/EIP operations. Service composes those execution definitions rather than maintaining a second implementation of execution.
@@ -259,7 +263,7 @@ Allocation uses the existing deterministic name, ownership/configuration labels 
 
 Readiness requires an authenticated EIP Session and an observable, input-ready desktop. The provider-owned service supervises restart after automatic wake. Envd remains loopback-only behind the private vendor TCP proxy. For opted-in human access, the browser-reachable HTTPS route serves only the desktop supervisor on port 6081; its independent short-lived grant token and VNC password enforce access. Cloud credentials never enter the browser, target state or guest files. Desktop access retains the generation, epoch, expiry, revocation and held-input cleanup checks above and cannot repair or provision a desktop.
 
-Console explains the per-new-Sprite installation delay before creation, displays the persisted stage and server-based elapsed time, and allows navigation while background work continues. Confirmed failures expose an ETag-fenced retry. Ready instances expose the existing authorized, uncached read-only desktop preview.
+Console explains the per-new-Sprite installation delay before creation, displays the persisted stage and server-based elapsed time, and allows navigation while background work continues. Confirmed failures expose an ETag-fenced retry. Ready instances expose the existing authorized, uncached read-only desktop preview when their saved execution mode supports standalone preview; `envd_ws` keeps that action disabled.
 
 ## Kubernetes
 

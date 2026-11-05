@@ -190,6 +190,10 @@ class BoundProcessOperations(Protocol):
 
     async def release(self, handle: BoundProcessHandle) -> EnvironmentOperationReceipt: ...
 
+    async def cleanup(self, handle: BoundProcessHandle) -> None:
+        """Release an owned observation on its original execution, without readiness."""
+        ...
+
 
 class BoundPortOperations(Protocol):
     """Alias-aware port observations routed by one BoundEnvironment."""

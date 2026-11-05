@@ -245,7 +245,7 @@ export function AgentEditor({
               size={16}
             />
           ),
-          environmentId: draft.environmentTemplateId,
+          environmentId: draft.environmentId ?? draft.environmentTemplateId,
           skillCount: draft.skills.length + draft.builtinSkills.length,
           connectionCount: draft.connections.length,
           dirty,
@@ -336,7 +336,15 @@ export function AgentEditor({
             />
             <AgentEnvironment
               value={draft.environmentTemplateId}
-              onChange={draft.setEnvironmentTemplateId}
+              environmentId={draft.environmentId}
+              onChange={(value) => {
+                draft.setEnvironmentTemplateId(value);
+                draft.setEnvironmentId(null);
+              }}
+              onEnvironmentChange={(value) => {
+                draft.setEnvironmentId(value);
+                draft.setEnvironmentTemplateId(null);
+              }}
               disabled={pending}
               readOnly={configurationReadonly}
             />

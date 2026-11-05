@@ -68,6 +68,7 @@ TEST_INPUTS: dict[str, tuple[str, ...]] = {
         ".github/workflows/release-a13n-harness-ui.yml",
     ),
     "test_browser_image_workflows.py": (
+        ".github/workflows/browser-image.yml",
         ".github/workflows/images.yml",
         ".github/workflows/ci-containers.yml",
         ".github/workflows/release-a13n-service.yml",

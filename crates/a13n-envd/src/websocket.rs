@@ -666,7 +666,7 @@ pub(crate) fn tls_client_config(
     Ok(Arc::new(tls))
 }
 
-async fn read_credential(path: &std::path::Path) -> io::Result<String> {
+pub(crate) async fn read_credential(path: &std::path::Path) -> io::Result<String> {
     let metadata = tokio::fs::symlink_metadata(path).await.map_err(|_| {
         io::Error::new(
             io::ErrorKind::NotFound,

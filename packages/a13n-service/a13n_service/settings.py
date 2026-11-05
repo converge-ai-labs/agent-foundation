@@ -356,6 +356,27 @@ PUBLISH_SECONDS = 10
 RENEWAL_HORIZON_SECONDS = 300
 
 
+class ClientEnvironments(Section):
+    transfer_seconds: float = Field(default=120, gt=0, le=1800)
+    # Each Control owns at most this many outbound client carriers.
+    max_connections: int = Field(default=128, ge=1, le=10000)
+    max_sessions: int = Field(default=256, ge=1, le=10000)
+    initialization_seconds: float = Field(default=10, gt=0, le=60)
+    # Renew connection ownership and recheck registration authority independently of tool calls.
+    heartbeat_seconds: float = Field(default=5, gt=0, le=60)
+    allow_loopback_ws: bool = False
+    max_requests: int = Field(default=128, ge=1, le=10000)
+    message_bytes: int = Field(default=4 * 1024 * 1024, ge=1024, le=32 * 1024 * 1024)
+    request_seconds: float = Field(default=60, gt=5, le=3600)
+    response_margin_seconds: float = Field(default=2, gt=0, le=30)
+
+    @model_validator(mode="after")
+    def ordered_deadlines(self) -> "ClientEnvironments":
+        if self.response_margin_seconds * 2 >= self.request_seconds:
+            raise ValueError("Client request timeout must exceed two response margins")
+        return self
+
+
 class Environments(Section):
     # Maintenance and renewal interval, and the batch of each; idle thresholds are template policy.
     scan_seconds: float = Field(default=5, gt=0, le=300)
@@ -684,6 +705,7 @@ class Settings(Section):
     tool_executions: ToolExecutions = Field(default_factory=ToolExecutions)
     run_search: RunSearch = Field(default_factory=RunSearch)
     environments: Environments = Field(default_factory=Environments)
+    client_environments: ClientEnvironments = Field(default_factory=ClientEnvironments)
     browsers: Browsers = Field(default_factory=Browsers)
     provisioning: Provisioning = Field(default_factory=Provisioning)
     memory: MemorySettings = Field(default_factory=MemorySettings)

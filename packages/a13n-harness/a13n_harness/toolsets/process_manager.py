@@ -815,7 +815,7 @@ class _ProcessController:
         failures: list[BaseException] = []
         for entry in entries:
             try:
-                await self._release_observation(entry)
+                await self._release_observation(entry, teardown=True)
             except BaseException as exc:
                 failures.append(exc)
             finally:
@@ -824,16 +824,19 @@ class _ProcessController:
         if failures:
             raise BaseExceptionGroup("Run-local process observation cleanup failed", failures)
 
-    async def _release_observation(self, entry: _ProcessEntry) -> None:
+    async def _release_observation(self, entry: _ProcessEntry, *, teardown: bool = False) -> None:
         watcher = entry.watcher
         if watcher is not None and watcher is not asyncio.current_task() and not watcher.done():
             watcher.cancel()
             await asyncio.gather(watcher, return_exceptions=True)
-        await self._release_owned_resources(entry)
+        await self._release_owned_resources(entry, teardown=teardown)
 
-    async def _release_owned_resources(self, entry: _ProcessEntry) -> None:
+    async def _release_owned_resources(self, entry: _ProcessEntry, *, teardown: bool = False) -> None:
         try:
-            await self._environment.processes.release(entry.handle)
+            if teardown:
+                await self._environment.processes.cleanup(entry.handle)
+            else:
+                await self._environment.processes.release(entry.handle)
         except EnvironmentError as exc:
             if exc.code in {"environment_denied", "environment_stale_mount"} and entry.discovered:
                 # Discovery itself creates no output attachment. Provider scope close

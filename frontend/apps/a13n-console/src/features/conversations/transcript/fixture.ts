@@ -84,6 +84,7 @@ export function fixtureSession(
 ): Schema["SessionView"] {
   return {
     id: "ses_1",
+    auto_recreate_lost_environment: true,
     workspace_id: "ws_1",
     labels: { "a13n.console": "debug" },
     title: null,

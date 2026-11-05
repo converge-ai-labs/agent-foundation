@@ -639,6 +639,18 @@ class EIPProcessOperations:
 
     async def release(self, handle: BoundProcessHandle) -> EnvironmentOperationReceipt:
         token, record = self._conversions.resolve(handle)
+        if not await self._conversions._session.prepare_cleanup():
+            # The original carrier is gone. Session expiry/close owns native
+            # resources; releasing this observation must not contact a successor.
+            self._conversions._records.pop(token, None)
+            self._conversions._raw_tokens.pop(record.handle, None)
+            return EnvironmentOperationReceipt(
+                execution_id=handle.execution_id,
+                observed_generation=handle.observed_generation,
+                operation_id="observation-release",
+                stage="completed",
+                outcome="succeeded",
+            )
         info = await self.inspect(handle)
         record.cleanup_owned = True
         if info.status.phase in {"starting", "running"}:

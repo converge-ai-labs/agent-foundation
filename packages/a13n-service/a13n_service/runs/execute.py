@@ -77,7 +77,8 @@ from a13n_service.runs.compaction_model import CompactionRun, Selection
 from a13n_service.runs.contents import Contents
 from a13n_service.runs.display import DisplayFold, Snapshot, Tail, open_tool_calls
 from a13n_service.runs.dynamic_subagents import SpawnCapability
-from a13n_service.runs.environments.execution import EnvironmentUnavailable, open_mounts, prepare
+from a13n_service.runs.environments.clients.recovery import Recovery as ClientRecovery
+from a13n_service.runs.environments.execution import EnvironmentUnavailable, Source, open_mounts, prepare
 from a13n_service.runs.environments.lifecycle import public_message
 from a13n_service.runs.environments.mounts import PRIMARY
 from a13n_service.runs.history import HISTORY, MessageHistory, initial
@@ -474,6 +475,7 @@ class _Attempt:
         # The memory cursors the run's history holds context as of; recovery starts from the committed ones.
         self.cursors = MemoryCursors(plan.memory_cursors)
         self.boundaries = Boundaries(self.cursors.snapshot)
+        self.client_recovery: ClientRecovery | None = None
         models = {model.key: model for model in plan.agent.models()}
         self.check = CallCheck(runtime, control, self._call_context(), models=models, used=plan.used, limit=plan.limit)
         self.compaction = (
@@ -580,6 +582,18 @@ class _Attempt:
                     app_captures=self.app_captures,
                 )
             )
+            recovery = ClientRecovery(
+                runtime,
+                lease,
+                host.environment,
+                environments,
+                {
+                    name: mount.source.session_recovery
+                    for name, mount in environments.items()
+                    if isinstance(mount.source, Source) and mount.source.session_recovery is not None
+                },
+            )
+            self.client_recovery = recovery if recovery.mounts else None
             yield host
 
     async def _stream(self) -> HarnessRunResult | None:
@@ -594,6 +608,7 @@ class _Attempt:
                 capabilities=lambda node: (
                     [
                         self.boundaries,
+                        *([self.client_recovery] if self.client_recovery is not None else []),
                         InputBoundary(self.boundaries, self.offers.pending_notice),
                         *host.capabilities(node, retain_tools=self.plan.retain_tools),
                         *(

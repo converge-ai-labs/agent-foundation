@@ -13,7 +13,19 @@ description: 为文件和命令任务创建工作空间、复用已有机器，�
 | 模板     | 镜像、资源、环境变量和空闲策略 | 用于创建托管实例的配方     |
 | 线程挂载 | 实例、名称、目录和权限         | 后续运行可以使用该实例     |
 
-已有自行维护的计算机时，改为[注册其 Envd 端点](#register-an-external-target)。Service 负责连接，计算机的生命周期由你管理。每次接收运行都会固定其挂载和权限，因此修改对后续运行生效。
+已有自行维护的计算机时，可以让 Envd 主动连接 Control（见下文“连接客户端电脑”）；如果 Service 可以直连电脑，也可以注册其 HTTP 端点。计算机的生命周期由你管理。每次接收运行都会固定其挂载和权限，因此修改对后续运行生效。
+
+## 托管沙箱主动连接 WebSocket
+
+在 Docker、E2B、Daytona、Modal、Sprites 或 Vercel 的模板 recipe 中设置 `execution: "envd_ws"`，即可让沙箱内的 Envd 主动连接 Control。创建、停止、启动和销毁仍由原 Provider 管理。Run 继续通过原 environment ID 选择环境，不需要再注册客户端环境，也不用把普通 API token 放进沙箱。
+
+`envd_ws` 暂不支持 Console 中独立的桌面预览，按钮会显示原因。Agent 的 Computer 工具仍取决于设备能力和执行权限。设备保持在线但执行 Session 失效时，工具会报告失败，Run 可以在下一次使用工具时准备新 Session；不会自动重放之前的命令，也不会恢复旧进程句柄。
+
+将 `server.public_url` 配置为沙箱能够访问的 HTTPS 地址，并允许 WebSocket 转发。镜像或模板需包含更新后的兼容 Envd 和 `a13n-sandbox-entrypoint`。E2B、Vercel 仍需兼容模板或快照，Sprites 仍需桌面模式。Console 的模板配置可以选择执行连接方式；Docker 需先选择自定义环境。
+
+Service 自动下发该环境的专用连接凭据，完成 EIP 初始化后才将创建或启动标记为成功。连接失败时保留已分配的沙箱，便于重试或清理。Worker 调用工具无需访问沙箱的 Envd HTTP 端口。Provider 生命周期接口、人工桌面访问和监控仍有各自的网络要求。文件和截图在 Worker 与 Control 之间通过 Redis Stream 传输，Control 与 Envd 之间继续使用现有 WebSocket。
+
+已有模板的 native 或 HTTP 默认行为保持不变。此连接方式需要 Service，独立 Harness 的 Provider 连接器会明确拒绝。修改模板只影响新环境，不改变已经创建的实例。
 
 ## 工作空间自动配置
 
@@ -124,6 +136,8 @@ Kubernetes 支持创建、复用和删除。回收设置在预留实例时复制
 
 agent 字段为 `default_environment_template_id`。根线程没有 `workspace` 挂载时，Service 在接收运行时预留实例，并以 `workspace` 挂载。`reserved` 实例有 ID，但还没有厂商资源，首次使用才准备环境。预留记录计入托管环境额度。
 
+要复用已有环境，可以改为设置 `agent.config.default_environment_id`，两个字段只能选择一个。线程已有的 `workspace` 挂载优先；修改 Agent 默认值不会替换它，也不会改变已接收的运行。客户端环境离线时也可以选择。执行身份仍须有权使用该环境，此设置不会将私有电脑共享给其他用户。子运行仍使用创建它的子 Agent 配置项中的环境策略。
+
 API 配置使用[直接 HTTP 集成](connect-application.md#direct-http-integration)中的 URL 和工作空间 API Key。将 `eprov_...` 替换为 Docker provider ID。创建或编辑模板需要 `write`：
 
 ```sh
@@ -176,7 +190,11 @@ Sandbox 版本归 Envd 管理，与 Service 版本独立。设置明确的标签
 | `stopping`, `stopped`  | 等待停止完成；后续运行会再次启动 |
 | `deleting`, `deleted`  | 选择其他实例                     |
 
-失败信息包含代码、消息和操作结果是否确定。Service 使用原有操作标识核对未完成操作。出现 `provider_credential_changed` 时，恢复实例原账号的访问。出现 `environment_lost` 等永久失败时，尽可能修复原因，或删除失败实例并新建。
+失败信息包含代码、消息和操作结果是否确定。Service 使用原有操作标识核对未完成操作。出现 `provider_credential_changed` 时，恢复实例原账号的访问。如果供应方确认线程的 `workspace` 挂载对应的模板环境已经丢失（`environment_lost`），下次使用该挂载的运行会从同一模板获得新实例。旧沙箱中的文件和进程无法恢复。新沙箱的启动时机仍由运行的 `lazy_environment` 设置决定。已经使用旧实例的运行可能失败。
+
+原本共享同一实例的线程（包括 fork）会在各自的下一次运行中使用同一个替代实例。如果实例再次丢失，较晚恢复运行的线程会接入最新实例。替换丢失的实例会沿用它的配额，所以配额为 1 时也能连续恢复。如果替代实例因空闲被删除，配额就会释放。下次有线程运行并允许恢复时，需要一个空闲名额来创建新的共享实例。如果配额已满，本次运行会收到 `environment_limit`；名额释放后可重试。
+
+如果应用需要原来的磁盘，请在创建会话时设置 `"auto_recreate_lost_environment": false`，也可以通过 `PATCH /api/v1/sessions/{id}` 修改，请求需携带会话当前的 `If-Match`。默认值为 `true`。指定确切实例的运行、共享父环境的子智能体及其他名称的挂载仍会报告原实例的故障。
 
 ### 预留托管环境
 
@@ -209,6 +227,45 @@ Service 验证设备，加密保存 token，并返回 `ready` 实例。使用注
 轮换 token 或迁移端点时，向 `PATCH /api/v1/environments/{id}` 提交环境 ETag。修改端点时同时提交 token。Service 验证新连接仍指向同一设备；设备不同时以 `provider_device_mismatch` 拒绝。删除注册会忘记 token，计算机继续运行。
 
 Worker 恢复会尽力复用检查点中的 Envd 会话。会话已关闭或过期时需要新建。恢复不会还原运行内的进程引用或输出观测；重试结果不确定的命令前，先检查当前状态。正常清理会关闭会话，后续运行使用独立会话。
+
+### 连接客户端电脑
+
+当 Envd 能主动连接 Control，但 Worker 无法直接访问这台电脑时，使用客户端环境。设备离线时也可以登记环境并挂载到线程。
+
+升级到客户端环境 schema 时，先等待活跃任务结束并停止全部旧 Control 和 Worker，再执行迁移。已有托管环境和 HTTP 环境会保留，但旧版本不能写入新 schema。一旦创建过客户端注册（包括已删除的注册），应向前修复，不能降级 schema。
+
+首次自动登记可使用 `a13n-envd connect-service`，传入普通 API token、工作空间 ID 和本地工作目录。命令与凭据恢复步骤见[连接 Service](../a13n-envd/configuration.md#connect-to-service)。接入接口为 `POST /api/v1/client-environments/connect?workspace_id=…`，接受下方的登记字段和可选的 `environment_id`。不传 ID 时，只有当前所有者、工作空间和设备的绑定不存在才会创建；传 ID 时必须匹配该已有环境。已有配置不会修改，禁用、删除或撤销凭据的环境会被拒绝。重复请求不返回 token；丢失凭据时使用显式轮换接口。
+
+如果要在电脑离线时登记，或在连接前限制操作权限，可按以下步骤：
+
+1. 使用将来执行 run 的工作空间账号调用 `POST /api/v1/client-environments?workspace_id=…`。传入安装时保存在本地的设备 ID、电脑上已有的目录，以及允许的操作。例如：
+
+   ```json
+   {
+     "device_id": "dev-example",
+     "name": "我的电脑",
+     "default_working_directory": "/Users/example/project",
+     "permission_ceiling": {"operations": ["environment.file.list", "environment.file.read_text"]}
+   }
+   ```
+
+2. 保存响应里的 `client.environment.id`，并把 `token` 写入仅当前用户可读的本地凭据文件（Unix 权限 `0600`）。首次登记返回 201；重复登记同一安装返回 200，不返回旧 token。丢失凭据时，使用当前 Environment ETag 调用 `rotate-credential`。设备 ID 标识的是安装实例，不验证物理硬件；如果 ID 和 token 一起被复制，另一台电脑也可以使用该身份。
+
+   按 Service 地址、账号和工作空间分别保存环境 ID 与 token 文件，切换账号时使用对应登记。
+
+3. 使用同一设备 ID 和本地访问策略启动 Envd。设置 `A13N_ENVD_TRANSPORT=reverse_websocket`，将 `A13N_ENVD_REVERSE_WS_URL` 设为 Control 的 `wss://` 地址加上响应的 `connection_path`，将 `A13N_ENVD_REVERSE_WS_CREDENTIAL_FILE` 指向凭据文件。[Envd 配置](../a13n-envd/configuration.md)介绍了运行目录、安装身份和本地权限设置。不要将 token 放进 URL。
+
+4. 将环境挂载到线程。run 接受时固定目录和权限。`ready` 仅表示可选择；首次实际使用时才检查连接、打开 Session 并验证工作目录。设备上线不会自动加入任何 run。
+
+客户端可复用 Envd 安装状态目录中的 `device-id`。如果安装器负责生成并保存 ID，请在登记和启动时使用相同的值（Envd 支持 `A13N_ENVD_DEVICE_ID`）。启用 Computer Use 时，Envd 会在本机检查桌面权限。注册不会运行测试命令，握手成功也不能保证某个程序已安装。
+
+离线时工具会说明本次操作未派发。只有当前 run 已感知过连接失败，后续正常的 agent 循环才会提示该挂载恢复连接。恢复不会重试旧命令。长命令应先启动进程，再使用句柄查询或等待；单次等待到期不会终止进程。命令派发后若丢失回复，结果未知。
+
+在实例详情中可以查看连接状态及检查时间。电脑离线时仍保留登记。如果 envd 提示 `device_id_mismatch`，请核对目标环境，用 `--device-id` 传入该环境登记的设备 ID。按 Ctrl+C 可停止连接。
+
+文件和截图通过 Redis Stream 传输，Worker 不再需要访问各 Control 副本的独立地址。升级时移除旧的 `A13N_CLIENT_ENVIRONMENTS__TRANSFER_ORIGIN` 配置，等待活动任务结束后一起更新 Worker 和 Control。设备连接凭据不会下发给 Worker。
+
+每次传输创建 `a13n:client-environment:{environment_id}:transfer:{epoch}:{transfer_id}:w2c` 和对应的 `:c2w` 两个 key，分别传递两个方向的帧。每个 Stream 最多保留 8 个未消费帧，5 分钟无活动后过期；正常关闭、取消或失败时会删除。`A13N_CLIENT_ENVIRONMENTS__TRANSFER_SECONDS` 限制一次传输的总时长，包括等待发送方和接收方的时间，默认 120 秒。传输中断时明确失败，不自动续传，也不重复提交文件。
 
 ### 停止、重命名与删除
 

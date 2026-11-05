@@ -186,7 +186,12 @@ async def test_terminal_input_keeps_active_job_and_restores_draft(tmp_path: Path
     async with open_harness_ui_app(
         _settings(tmp_path / "state"), configuration_path=root, mcp_input_enabled=True
     ) as app:
-        shell = CliShell(CliRequest(), directory=tmp_path)
+        from prompt_toolkit.application import create_app_session
+        from prompt_toolkit.input import DummyInput
+        from prompt_toolkit.output import DummyOutput
+
+        with create_app_session(input=DummyInput(), output=DummyOutput()):
+            shell = CliShell(CliRequest(), directory=tmp_path)
         shell.backend = SessionBackend(app, CliRequest(), tmp_path, Status())
         thread = await app.create_thread()
         shell.backend.thread_id = thread.thread_id

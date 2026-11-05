@@ -51,6 +51,7 @@ async function lifecycle(
 const environment: Schema["EnvironmentView"] = {
   id: "env_test",
   name: "Research files",
+  kind: "managed",
   organization_id: "org_test",
   workspace_id: "ws_test",
   provider_id: "eprov_test",
@@ -72,6 +73,7 @@ const environment: Schema["EnvironmentView"] = {
 const external: Schema["EnvironmentView"] = {
   ...environment,
   name: "Work laptop",
+  kind: "external_http",
   provider_id: null,
   template_id: null,
   device_id: "work-laptop",
@@ -137,6 +139,24 @@ function open(
   );
   return { cache, user };
 }
+
+it("shows a registered client offline with the observation time", async () => {
+  const laptop: Schema["EnvironmentView"] = {
+    ...external,
+    kind: "external",
+    endpoint: null,
+    client_connection: {
+      state: "offline",
+      observed_at: "2026-09-18T00:00:00Z",
+    },
+  };
+  serve(() => laptop);
+  const { user } = open(laptop);
+  await user.click(screen.getByRole("button", { name: "Details" }));
+  expect(await screen.findByText("Offline")).toBeTruthy();
+  expect(await screen.findByText("Registered")).toBeTruthy();
+  expect(await screen.findByText("Connection checked")).toBeTruthy();
+});
 
 it.each([
   ["stop", "stopping", "stopped"],

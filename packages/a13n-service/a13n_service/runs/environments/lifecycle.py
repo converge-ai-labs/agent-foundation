@@ -38,9 +38,12 @@ from a13n_service.infra.db import advisory_lock, lock, now, transaction
 from a13n_service.infra.errors import ServiceError, conflict
 from a13n_service.infra.ids import new_object_id
 from a13n_service.providers.environment.definition import EnvironmentManagementDefinition
-from a13n_service.providers.environment.errors import observed_environment_state
+from a13n_service.providers.environment.errors import cancelled_management_failure, observed_environment_state
 from a13n_service.providers.environment.management import Completed, EnvironmentProvider, ManagementResult, Pending
 from a13n_service.providers.environment.metrics import MetricsLaunch
+from a13n_service.resources.environment_instances.access import ENVIRONMENT_LOST, superseded
+from a13n_service.resources.environment_instances.access import require_usable_state as require_usable_state
+from a13n_service.resources.environment_instances.access import unusable as unusable
 from a13n_service.resources.environment_templates.service import read_template, resolve_template
 from a13n_service.resources.providers.service import (
     ResolvedProvider,
@@ -163,6 +166,14 @@ def mounted(environment_id: SQLColumnExpression[str] | str) -> ColumnElement[boo
     return exists().where(ThreadEnvironmentRow.environment_id == environment_id)
 
 
+async def latest_replacement(session: AsyncSession, workspace_id: str, environment_id: str) -> str:
+    """Serialize with other reservations before following the unique successor links, including tombstones."""
+    await lock_reservations(session, workspace_id)
+    chain = select(EnvironmentRow.id).where(EnvironmentRow.id == environment_id).cte("chain", recursive=True)
+    chain = chain.union_all(select(EnvironmentRow.id).join(chain, EnvironmentRow.replaces_environment_id == chain.c.id))
+    return (await session.scalars(select(chain.c.id).where(~superseded(chain.c.id)))).one()
+
+
 async def begin(session: AsyncSession, environment: EnvironmentRow, phase: Phase) -> None:
     """Start a new operation. The caller holds the row lock and has proved the previous one can no longer act."""
     environment.status = phase
@@ -182,20 +193,6 @@ async def begin(session: AsyncSession, environment: EnvironmentRow, phase: Phase
 def supports(definition: EnvironmentManagementDefinition, phase: Literal["stopping", "deleting"]) -> bool:
     """Whether the type can take its instances through `phase`; an instance begun in any other would stick in it."""
     return definition.supports_stop if phase == "stopping" else definition.supports_destroy
-
-
-def unusable(environment: EnvironmentRow) -> bool:
-    """Whether a permanent failure refuses every new use of the instance until its cause is fixed or it is
-    deleted."""
-    return environment.failure is not None and environment.failure["permanent"]
-
-
-def require_usable_state(environment: EnvironmentRow) -> None:
-    """Refuse a new use, or a stop that would clear the failure, while a permanent failure makes the instance
-    unusable; the refusal names the failure."""
-    if unusable(environment):
-        assert environment.failure is not None
-        raise conflict("environment", environment.id, environment.failure["code"])
 
 
 def settled(environment: EnvironmentRow) -> bool:
@@ -220,7 +217,7 @@ def settled_clause() -> ColumnElement[bool]:
 
 async def lock_reservations(session: AsyncSession, workspace_id: str) -> None:
     """The workspace's reservation lock. It serializes reservations, so concurrent ones cannot pass the managed
-    count together. Only reservations take it, and no transaction that locks an instance exclusively reserves, so
+    count together or choose different successors. No transaction that locks an instance exclusively reserves, so
     new use, which share-locks instances, may reserve before or after locking them without a cycle."""
     await advisory_lock(session, "environments", workspace_id)
 
@@ -233,26 +230,31 @@ async def reserve(
     *,
     limit: int,
     name: str | None = None,
+    replaces: EnvironmentRow | None = None,
 ) -> EnvironmentRow:
     """A new workspace-managed instance in `reserved`, from an enabled template of an enabled provider the principal
-    may run, while the workspace holds fewer than `limit` managed instances that are not deleted. Nothing external
-    exists until its create operation is dispatched, which reads the template then."""
+    may run. A replacement takes the slot of the locked, confirmed-lost end of its chain. Other reservations
+    need a free slot. Nothing external exists until create is dispatched."""
     template = await resolve_template(session, principal, scope, template_id)
     await resolve_provider(session, principal, EnvironmentProviderRow, scope, template.provider_id)
     await lock_reservations(session, scope.workspace_id)
-    held = await session.scalar(
-        select(func.count())
-        .select_from(EnvironmentRow)
-        .where(
-            EnvironmentRow.workspace_id == scope.workspace_id,
-            EnvironmentRow.template_id.is_not(None),
-            EnvironmentRow.status != "deleted",
+    # A confirmed loss still holds a slot. Idle deletion has already returned its slot to the workspace.
+    if replaces is None or replaces.status == "deleted":
+        held = await session.scalar(
+            select(func.count())
+            .select_from(EnvironmentRow)
+            .where(
+                EnvironmentRow.workspace_id == scope.workspace_id,
+                EnvironmentRow.template_id.is_not(None),
+                EnvironmentRow.status != "deleted",
+                ~superseded(EnvironmentRow.id),
+            )
         )
-    )
-    if (held or 0) >= limit:
-        raise conflict("workspace", scope.workspace_id, "environment_limit", limit=limit)
+        if (held or 0) >= limit:
+            raise conflict("workspace", scope.workspace_id, "environment_limit", limit=limit)
     environment = EnvironmentRow(
         id=new_object_id("env"),
+        replaces_environment_id=replaces.id if replaces is not None else None,
         organization_id=template.organization_id,
         workspace_id=template.workspace_id,
         provider_id=template.provider_id,
@@ -312,10 +314,10 @@ class Outcome:
     settled: bool = True
 
 
-# The provider no longer has the instance: nothing can bring it back, and it is never silently recreated.
+# A confirmed loss is permanent for this instance ID.
 LOST = Fault(
-    "environment_lost",
-    "The sandbox no longer exists at its provider; delete this environment and use a new one",
+    ENVIRONMENT_LOST,
+    "The sandbox no longer exists at its provider",
     "known",
     permanent=True,
 )
@@ -325,6 +327,20 @@ UNSEEN = Fault(
     "The provider's credential changed since it last reached this sandbox, and the new one does not see it",
     "known",
 )
+
+
+def confirmed_loss(environment: EnvironmentRow) -> bool:
+    failure = environment.failure
+    return (
+        settled(environment)
+        and environment.template_id is not None
+        and environment.owner_principal_id is None
+        and environment.status not in {"deleting", "deleted"}
+        and failure is not None
+        and failure["code"] == LOST.code
+        and failure["certainty"] == "known"
+        and failure["permanent"]
+    )
 
 
 def lost(credential_changed: bool) -> Fault:
@@ -445,10 +461,17 @@ async def _refusal(
                 vercel_preparation = await bind(runtime, session, environment, provider)
             except (EnvironmentProviderError, ServiceError) as error:
                 return fault_of(error, dispatched=False)
+        from a13n_service.runs.environments import outbound
+
+        try:
+            binding = outbound.freeze(runtime, environment) if getattr(recipe, "execution", None) == "envd_ws" else None
+        except ServiceError as error:
+            return fault_of(error, dispatched=False)
         if provider.type == "kubernetes":
             bootstrap.freeze(runtime.keys, environment)
         environment.handle = Handle(
             recipe=recipe.model_dump(mode="json"),
+            outbound=binding,
             e2b_desktop_template=preparation,
             modal_desktop_image=modal_preparation,
             daytona_desktop_snapshot=daytona_preparation,
@@ -485,6 +508,11 @@ async def claim_locked(
     if environment.next_operation_at is not None and environment.next_operation_at > current:
         return None
     if environment.lease_expires_at is not None and environment.lease_expires_at > current:
+        return None
+    if phase == "starting" and confirmed_loss(environment):
+        # Older instances can lack failed-retention settings. Retire a settled lost start through the
+        # same preparation-failure path so maintenance never dispatches it against the old handle again.
+        environment.preparation_failed_at = environment.preparation_failed_at or current
         return None
     if preparation_expired(environment, current):
         return None
@@ -543,13 +571,20 @@ async def claim_locked(
     environment.lease_expires_at = deadline + timedelta(seconds=PUBLISH_SECONDS)
     handle = Handle.model_validate(environment.handle)
     version, changed = reached_with(handle, provider)
+    from a13n_service.runs.environments import outbound
+
     return Operation(
         environment_id=environment.id,
         phase=phase,
         generation=environment.generation,
         operation_id=environment.operation_id,
         token=token,
-        target=managed_target(runtime.keys, environment, provider, handle),
+        target=replace(
+            managed_target(runtime.keys, environment, provider, handle),
+            websocket=outbound.restore(runtime, environment, handle.outbound)
+            if handle.outbound and phase in {"creating", "starting"}
+            else None,
+        ),
         unresolved=unresolved,
         seconds=seconds,
         credential_version=version,
@@ -607,6 +642,8 @@ def public_message(error: EnvironmentProviderError) -> str:
 
 
 def fault_of(error: Exception, *, dispatched: bool) -> Fault:
+    if isinstance(error, TimeoutError) and (failure := cancelled_management_failure(error)) is not None:
+        error = failure
     if isinstance(error, EnvironmentProviderError):
         certainty = _CERTAINTY[error.certainty]
         permanent = certainty != "unknown" and error.category in PERMANENT

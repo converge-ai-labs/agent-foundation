@@ -54,7 +54,7 @@ class ModalEnvironmentConfiguration(BaseModel):
     model_config = ConfigDict(
         frozen=True,
         extra="forbid",
-        json_schema_extra={"x-primary-fields": ["image", "desktop", "timeout_seconds", "cpu", "memory"]},
+        json_schema_extra={"x-primary-fields": ["execution", "image", "desktop", "timeout_seconds", "cpu", "memory"]},
     )
     image: str = Field(
         min_length=1,
@@ -62,6 +62,7 @@ class ModalEnvironmentConfiguration(BaseModel):
         description="Operator-built registry image or Modal image ID (im-...) containing compatible a13n-envd and sandbox launchers. Agent operations use EIP.",
     )
     desktop: bool = Field(default=False, description="Require an observable, input-ready X11 desktop from the image.")
+    execution: Literal["envd_http", "envd_ws"] = Field(default="envd_http", title="Execution connection")
     environment: EnvironmentVariables = Field(default_factory=dict)
     request_timeout_seconds: float = Field(default=120, gt=0, le=600, allow_inf_nan=False)
     timeout_seconds: int = Field(default=86400, ge=300, le=86400)
@@ -71,7 +72,10 @@ class ModalEnvironmentConfiguration(BaseModel):
     @property
     def fingerprint(self) -> str:
         return hashlib.sha256(
-            self.model_dump_json(exclude={"environment"} if not self.environment else set()).encode()
+            self.model_dump_json(
+                exclude=({"environment"} if not self.environment else set())
+                | ({"execution"} if self.execution == "envd_http" else set())
+            ).encode()
         ).hexdigest()
 
 

@@ -527,7 +527,7 @@ async def test_device_rename_preserves_stream_but_rotation_changes_revision(serv
     ],
 )
 def test_reverse_transport_requires_wss_unless_explicit_loopback_development(scheme, host, development, expected):
-    from a13n_service.runs.devices.transport import secure
+    from a13n_service.infra.websocket import secure
     from starlette.websockets import WebSocket
 
     socket = WebSocket(

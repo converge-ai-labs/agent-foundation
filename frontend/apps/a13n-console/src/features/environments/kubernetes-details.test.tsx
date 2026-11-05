@@ -26,6 +26,7 @@ vi.mock("react-i18next", () => ({
 
 const environment: Schema["EnvironmentView"] = {
   id: "env_test",
+  kind: "managed",
   name: "Kubernetes sandbox",
   organization_id: "org_test",
   workspace_id: "ws_test",

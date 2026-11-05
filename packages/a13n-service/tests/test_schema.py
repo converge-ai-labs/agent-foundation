@@ -10,6 +10,7 @@ from sqlalchemy import ForeignKeyConstraint, String
 # Browser/target and Browser/Thread pairs; downloads use Browser/generation/GUID. Every other row has a Service object ID.
 NOT_OBJECT_KEYED = {
     "browser_downloads",
+    "client_environment_settings",
     "browser_tabs",
     "browser_selections",
     "thread_browsers",
@@ -41,6 +42,7 @@ def test_rows_have_object_ids_unless_keyed_by_another_owner() -> None:
         and table.c.id.type.length == 72
     }
     assert set(metadata.tables) - keyed == NOT_OBJECT_KEYED
+    assert list(metadata.tables["client_environment_settings"].primary_key.columns.keys()) == ["environment_id"]
     assert [column.name for column in metadata.tables["thread_browsers"].primary_key.columns] == ["thread_id"]
     assert [column.name for column in metadata.tables["browser_downloads"].primary_key.columns] == [
         "browser_id",

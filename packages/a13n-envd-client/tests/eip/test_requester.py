@@ -137,6 +137,30 @@ def readiness(session_id: str = "ses-a") -> dict:
     return {"ready": True, "device_id": "device-test", "generation": 1, "session_id": session_id}
 
 
+def test_host_opened_session_requires_live_readiness_and_cannot_address_other_scopes() -> None:
+    async def scenario():
+        transport = FakeTransport()
+        device = await initialized(transport)
+        try:
+            with pytest.raises(EIPProtocolError):
+                await device.bind_open_session(descriptor().model_copy(update={"generation": 2}))
+            binding = asyncio.create_task(device.bind_open_session(descriptor()))
+            probe = await transport.request()
+            assert probe.method == "environment.readiness" and probe.eip_session == "ses-a"
+            assert not binding.done()
+            transport.reply(probe, readiness())
+            session = await binding
+            with pytest.raises(EIPSessionStateError):
+                await session.requester.request(DEVICE_DESCRIBE, DeviceDescribeParams())
+            await closed(session, transport)
+            assert not device.is_closed
+            assert transport.sent.empty()
+        finally:
+            await device.close()
+
+    asyncio.run(scenario())
+
+
 def params(operation: str = "op-test", timeout_ms: int | None = None) -> EnvironmentReadinessParams:
     return EnvironmentReadinessParams(context=EIPCallContext(operation_id=operation, timeout_ms=timeout_ms))
 
@@ -604,6 +628,47 @@ def test_closed_sessions_keep_bounded_correlation_ownership_until_late_reply():
             await asyncio.sleep(0)
         assert not device._pending
         device.session("ses-b", limits=limits())
+        await device.close()
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("interruption", ["timeout", "cancel", "none"])
+def test_same_selector_attachment_drains_finished_owner_without_releasing_correlation(interruption):
+    async def scenario():
+        transport = FakeTransport()
+        device = RequestCoordinator(transport, max_sessions=1)
+        owner = device.session("ses-a", limits=limits())
+        task = asyncio.create_task(owner.request(ENVIRONMENT_READINESS, params()))
+        request = await transport.request()
+        with pytest.raises(EIPSessionStateError):
+            await device.wait_session_released("ses-a", owner_epoch=2, timeout=1)
+        owner.finish()
+        with pytest.raises(EIPSessionStateError):
+            await task
+        with pytest.raises(EIPSessionStateError):
+            await device.wait_session_released("ses-a", owner_epoch=1, timeout=1)
+        if interruption == "timeout":
+            with pytest.raises(EIPRequestTimeoutError) as expired:
+                await device.wait_session_released("ses-a", owner_epoch=2, timeout=0.01)
+            assert not expired.value.dispatched
+        elif interruption == "cancel":
+            waiting = asyncio.create_task(device.wait_session_released("ses-a", owner_epoch=2, timeout=1))
+            await asyncio.sleep(0)
+            waiting.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await waiting
+        assert request.id in device._pending
+        assert device._sessions["ses-a"] is owner
+        with pytest.raises(EIPSessionStateError, match="capacity"):
+            device.session("ses-b", limits=limits())
+        waiting = asyncio.create_task(device.wait_session_released("ses-a", owner_epoch=2, timeout=1))
+        transport.reply(request, readiness())
+        await waiting
+        successor = device.session("ses-a", limits=limits(), owner_epoch=2)
+        owner.finish()
+        assert device._sessions["ses-a"] is successor
+        assert not device._pending
         await device.close()
 
     asyncio.run(scenario())

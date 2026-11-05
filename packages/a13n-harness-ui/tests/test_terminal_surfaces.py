@@ -176,6 +176,7 @@ async def test_skill_references_refresh_on_submission_and_keep_active_catalog(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, change: str
 ) -> None:
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
     workspace = tmp_path / "workspace"
     skill = workspace / ".agents" / "skills" / "review"
     skill.mkdir(parents=True)

@@ -262,7 +262,7 @@ def operation_error_projection(
         code = "environment_provider_failure"
     message, hint = _OPERATION_MESSAGES.get(code, _OPERATION_MESSAGES["environment_provider_failure"])
     safe: dict[str, JsonValue] = {"hint": hint} if hint else {}
-    for key, limit in (("field", 128), ("reason", 128), ("hint", 1024)):
+    for key, limit in (("field", 128), ("reason", 128), ("hint", 1024), ("mount", 63)):
         value = details.get(key)
         if isinstance(value, str) and value.strip():
             safe[key] = value[:limit]
@@ -286,6 +286,11 @@ def operation_error_projection(
     protocol_retry = details.get("provider_retry_hint")
     if protocol_retry in ("never", "same_request", "after_refresh", "after_capacity", "reconcile_first"):
         safe["provider_retry_hint"] = protocol_retry
+    receipt_stage, receipt_outcome = details.get("receipt_stage"), details.get("receipt_outcome")
+    if receipt_stage in ("accepted", "dispatched", "exec_confirmed", "completed", "unknown"):
+        safe["receipt_stage"] = receipt_stage
+    if receipt_outcome in ("succeeded", "failed", "cancelled", "timed_out", "unknown"):
+        safe["receipt_outcome"] = receipt_outcome
     result: dict[str, JsonValue] = {"code": code, "message": message, "details": safe}
     if retry_hint:
         result["retry_hint"] = retry_hint[:128]

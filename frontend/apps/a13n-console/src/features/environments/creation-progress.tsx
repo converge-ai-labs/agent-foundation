@@ -193,11 +193,16 @@ export function DesktopPreview({
     <section className={styles.factGroup}>
       <Button
         type="button"
-        disabled={preview.isPending}
+        disabled={
+          preview.isPending || environment.desktop_preview !== "supported"
+        }
         onClick={() => preview.mutate()}
       >
         {t(url ? "Refresh desktop preview" : "View desktop")}
       </Button>
+      {environment.desktop_preview === "connection_unsupported" && (
+        <p>{t("Desktop preview is not supported for this connection mode.")}</p>
+      )}
       {preview.isPending && (
         <p role="status">{t("Loading desktop preview…")}</p>
       )}

@@ -10,10 +10,16 @@ from a13n_harness.providers.environment.remote_envd.managed import ManagedCreden
 
 from .desktop_access import Reply, Request
 from .metrics import DeviceObservation, MetricsLaunch, ScrapeTarget
+from .websocket import WebSocketBootstrap
 
 
 class ManagementBackend(BackendReference):
     """Lifecycle and desktop-access authority, without execution operations."""
+
+    websocket: WebSocketBootstrap | None = None
+
+    def bootstrap_environment(self, values: dict[str, str]) -> dict[str, str]:
+        return self.websocket.environment(values) if self.websocket is not None else values
 
     def _cache_state(self, state: EnvironmentState | None) -> None:
         self._known_state = state.model_copy(deep=True) if state is not None else None

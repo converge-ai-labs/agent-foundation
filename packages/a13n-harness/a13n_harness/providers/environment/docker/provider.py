@@ -58,7 +58,7 @@ def _backend_identity(configuration: DockerConnectionConfiguration) -> dict[str,
 def _describe(configuration: DockerEnvironmentConfiguration) -> EnvironmentDescriptor:
     if not isinstance(configuration, DockerEnvironmentConfiguration):
         raise TypeError("Docker requires DockerEnvironmentConfiguration")
-    if configuration.execution == "envd_http":
+    if configuration.execution != "native":
         from a13n_harness.providers.environment.eip.binding import configured_descriptor
 
         return configured_descriptor(working_directory="/workspace")

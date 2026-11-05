@@ -193,6 +193,22 @@ class RequestCoordinator(EIPRequester):
         self._sessions[session_id] = requester
         return requester
 
+    async def wait_session_released(self, session_id: str, *, owner_epoch: int, timeout: float) -> None:
+        """Drain a detached local owner's replies before reusing its selector."""
+        try:
+            async with asyncio.timeout(timeout):
+                while True:
+                    self._ensure_open()
+                    owner = self._sessions.get(session_id)
+                    if owner is None:
+                        return
+                    if not owner._finished or owner_epoch <= owner.owner_epoch:
+                        raise EIPSessionStateError("Session is already attached locally")
+                    self._pending_changed.clear()
+                    await self._pending_changed.wait()
+        except TimeoutError as error:
+            raise EIPRequestTimeoutError("Previous Session replies did not drain", dispatched=False) from error
+
     def configure_limits(self, limits: EIPLimits) -> None:
         self._transport.set_limits(
             max_request_bytes=limits.max_request_bytes,

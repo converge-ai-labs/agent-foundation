@@ -166,6 +166,7 @@ async def test_eip_readiness_recovers_through_real_adapter_and_aggregate(failure
             ),
         ),
         readiness=readiness,
+        prepare_cleanup=AsyncMock(return_value=True),
         client=SimpleNamespace(file_stat=stat),
     )
     closed = []

@@ -348,7 +348,7 @@ it("keeps a retained picture visibly pending and blocks input until the new fram
   await waitFor(() =>
     expect(screen.getByRole("status").textContent).toBe("You have control"),
   );
-  expect(connections[1].viewOnly).toBe(false);
+  await waitFor(() => expect(connections[1].viewOnly).toBe(false));
   expect(
     document
       .querySelector('[data-browser-frame="retained"]')

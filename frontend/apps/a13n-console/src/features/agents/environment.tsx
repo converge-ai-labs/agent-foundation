@@ -3,21 +3,24 @@ import { ChoiceField } from "a13n-ui";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
-import { allPages } from "../../shared/api";
+import { allPages, data } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
 import { OptionsRefresh } from "../../shared/forms/options-refresh";
 import { Section } from "../../shared/page";
 import { environmentApi, environmentTemplates } from "../environments/api";
 import { useEnvironmentTypes } from "../environments/providers";
-import { runtimeGroup } from "../environments/runtime-catalog";
 
 export function AgentEnvironment({
   value,
   onChange,
+  environmentId,
+  onEnvironmentChange,
   disabled,
   readOnly = false,
 }: {
   value: string | null;
+  environmentId: string | null;
+  onEnvironmentChange: (value: string | null) => void;
   onChange: (value: string | null) => void;
   disabled: boolean;
   readOnly?: boolean;
@@ -40,11 +43,24 @@ export function AgentEnvironment({
         environmentTemplates(client, workspace.id, signal, cursor),
       ),
   });
-  const groups = [
-    { key: "cloud", label: t("Cloud hosting") },
-    { key: "own", label: t("Own hosting") },
-    { key: "other", label: t("Other runtimes") },
-  ] as const;
+  const environments = useQuery({
+    queryKey: ["mount-environment-options", workspace.id],
+    queryFn: ({ signal }) =>
+      allPages((cursor) =>
+        client
+          .workspace(workspace.id)
+          .GET("/api/v1/environments", {
+            params: { query: { cursor } },
+            signal,
+          })
+          .then(data),
+      ),
+  });
+  const instances = (environments.data ?? []).filter(
+    (item) =>
+      !["disabled", "deleting", "deleted"].includes(item.status) &&
+      !item.failure?.permanent,
+  );
   const choices = (templates.data ?? []).map((item) => {
     const provider = providers.data?.find(
       (provider) => provider.id === item.provider_id,
@@ -56,7 +72,6 @@ export function AgentEnvironment({
     return {
       value: item.id,
       label: item.name,
-      category: runtimeGroup(type),
       hint: ["local", "direct_local"].includes(type)
         ? t("Local directory")
         : (definition?.display_name ?? provider?.type),
@@ -70,6 +85,7 @@ export function AgentEnvironment({
           onRefresh={() =>
             Promise.all([
               templates.refetch({ throwOnError: true }),
+              environments.refetch({ throwOnError: true }),
               providers.refetch({ throwOnError: true }),
               types.refetch({ throwOnError: true }),
             ])
@@ -78,7 +94,7 @@ export function AgentEnvironment({
       }
       titleLink={{ href: `${basePath}/environments`, label: t("Environments") }}
       description={t(
-        "Optional. When a session has no environment, its next run creates one from this template. Saving the agent does not start one.",
+        "Optional. When a session has no primary environment, use an existing environment or create one from a template. Saving the agent does not connect or start an environment.",
       )}
     >
       <ChoiceField
@@ -86,24 +102,38 @@ export function AgentEnvironment({
         hideLabel
         disabled={disabled}
         readOnly={readOnly}
-        value={value ?? "none"}
-        onValueChange={(selected) =>
-          onChange(selected === "none" ? null : selected)
-        }
+        value={environmentId ? `instance:${environmentId}` : (value ?? "none")}
+        onValueChange={(selected) => {
+          if (selected.startsWith("instance:"))
+            onEnvironmentChange(selected.slice("instance:".length));
+          else onChange(selected === "none" ? null : selected);
+        }}
         options={[
           {
             value: "none",
             label: t("None"),
           },
-          ...groups.flatMap((group) =>
-            choices
-              .filter((item) => item.category === group.key)
-              .map((item) => ({ ...item, group: group.label })),
-          ),
+          ...instances.map((item) => ({
+            value: `instance:${item.id}`,
+            label: item.name,
+            group: t("Existing environment instances"),
+          })),
+          ...(environmentId &&
+          !instances.some((item) => item.id === environmentId)
+            ? [{ value: `instance:${environmentId}`, label: environmentId }]
+            : []),
+          ...choices.map((item) => ({
+            ...item,
+            group: t("Environment templates"),
+          })),
           ...(value && !templates.data?.some((item) => item.id === value)
             ? [{ value, label: value }]
             : []),
         ]}
+      />
+      <ErrorNotice
+        error={environments.error}
+        retry={() => void environments.refetch()}
       />
       <ErrorNotice
         error={templates.error}

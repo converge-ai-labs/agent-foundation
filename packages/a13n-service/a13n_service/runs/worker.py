@@ -195,9 +195,12 @@ class Worker:
         """
         settings = self.runtime.settings.worker
         loop = asyncio.get_running_loop()
+        next_poll = loop.time() + settings.authority_seconds
         while True:
-            await asyncio.sleep(settings.authority_seconds)
+            await asyncio.sleep(max(0, next_poll - loop.time()))
             sent = loop.time()
+            # Poll work consumes the interval; a timed-out renewal must not add another full sleep.
+            next_poll = sent + settings.authority_seconds
             try:
                 async with asyncio.timeout(settings.authority_seconds):
                     cancellations, renewed = await heartbeat(self.runtime, self.id)
