@@ -7,6 +7,7 @@ from a13n_harness.capabilities import SkillsCapability
 from a13n_harness.environment import FILE_ACTIONS, EnvironmentError
 from a13n_harness.environment.commands import CommandRequest, ShellCommand
 from a13n_harness.environment.retention import EnvironmentOutputPolicy
+from a13n_harness.providers.environment.local_envd.configuration import local_envd_path
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.composition import AgentReconstructor, ThreadCompositionSelection
 from a13n_harness_ui.configuration.setup import SetupSelection
@@ -272,7 +273,7 @@ async def test_projectless_sandbox_setup_requires_preflight_and_execution_does_n
         prepared = []
 
         async def unavailable(environment, **scope):
-            prepared.append(Path(environment._configuration.working_directory))
+            prepared.append(environment._configuration.working_directory)
             raise RuntimeError("Sandbox unavailable")
 
         monkeypatch.setattr(executor._environments._reconstructor, "sandbox_runtime", runtime)
@@ -281,7 +282,7 @@ async def test_projectless_sandbox_setup_requires_preflight_and_execution_does_n
         assert prepared == []
         with pytest.raises(RuntimeError, match="Sandbox unavailable"):
             await plan.environments["thread-files"].open()
-        assert prepared == [tmp_path / "state/threads" / thread.thread_id]
+        assert prepared == [local_envd_path(tmp_path / "state/threads" / thread.thread_id)]
 
 
 async def test_explicit_null_project_overrides_default_and_collaboration_inherits_it(tmp_path: Path) -> None:

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import sys
+from pathlib import Path
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -13,7 +15,7 @@ VNC_HELP = "TigerVNC Xvnc rfbunixpath rfbport PasswordFile SecurityTypes display
 
 
 @pytest.fixture
-def host(monkeypatch):
+def host(monkeypatch, tmp_path):
     monkeypatch.setattr(module, "host_platform", lambda: "linux")
     monkeypatch.setattr(module.os, "geteuid", lambda: 1000, raising=False)
     monkeypatch.setattr(module, "linux_distribution", lambda: {})
@@ -25,7 +27,7 @@ def host(monkeypatch):
         AsyncMock(side_effect=lambda path, argument: VNC_HELP if argument == "-help" else "Chromium 156.0"),
     )
 
-    return BrowserConfiguration(executable="/usr/bin/chromium", vnc_executable="/usr/bin/Xvnc")
+    return BrowserConfiguration(executable=str(tmp_path / "chromium"), vnc_executable=str(tmp_path / "Xvnc"))
 
 
 @pytest.mark.parametrize(
@@ -47,7 +49,7 @@ async def test_platform_mapping(monkeypatch, platform, expected):
 async def test_detects_existing_browsers(monkeypatch, platform, path, name):
     monkeypatch.setenv("PROGRAMFILES", r"C:\Program Files")
     monkeypatch.setattr(module.shutil, "which", lambda name: path if name == "chromium" else None)
-    monkeypatch.setattr(module, "executable_path", lambda candidate: path if candidate == path else None)
+    monkeypatch.setattr(module, "executable_path", lambda candidate: path if Path(candidate) == Path(path) else None)
     assert module.system_browsers(platform) == [BrowserExecutable(name=name, path=path, source="system")]
 
 
@@ -64,15 +66,14 @@ async def test_resolves_both_vnc_names_and_binds_actual_executable_paths(host, m
     assert "installation" not in setup.model_dump() and "installable" not in setup.model_dump()
 
 
-async def test_explicit_executable_bindings_override_detection(host, monkeypatch):
+async def test_explicit_executable_bindings_override_detection(host, monkeypatch, tmp_path):
     automatic = Mock(side_effect=AssertionError("Must not fall back"))
     monkeypatch.setattr(module, "system_browsers", automatic)
-    setup = await module.inspect_browser(
-        BrowserConfiguration(executable="/custom/chrome", vnc_executable="/custom/server")
-    )
+    chrome, server = str(tmp_path / "chrome"), str(tmp_path / "server")
+    setup = await module.inspect_browser(BrowserConfiguration(executable=chrome, vnc_executable=server))
     assert setup.ready and setup.browser and setup.vnc
-    assert setup.browser.path == "/custom/chrome" and setup.browser.source == "custom"
-    assert setup.vnc.path == "/custom/server" and setup.vnc.source == "custom"
+    assert setup.browser.path == chrome and setup.browser.source == "custom"
+    assert setup.vnc.path == server and setup.vnc.source == "custom"
     automatic.assert_not_called()
 
 
@@ -132,10 +133,10 @@ async def test_macos_preview_permission_does_not_gate_browser(host, monkeypatch,
 
 
 @pytest.mark.parametrize("explicit", [False, True])
-async def test_macos_selects_browser_without_discovering_linux_components(host, monkeypatch, explicit):
+async def test_macos_selects_browser_without_discovering_linux_components(host, monkeypatch, tmp_path, explicit):
     monkeypatch.setattr(module, "host_platform", lambda: "macos")
     monkeypatch.setattr(module, "preview_available", lambda: False)
-    browser = BrowserExecutable(name="Chrome", path="/Applications/Chrome", source="system")
+    browser = BrowserExecutable(name="Chrome", path=str(tmp_path / "Chrome"), source="system")
     discovered = Mock(return_value=[browser])
     monkeypatch.setattr(module, "system_browsers", discovered)
     monkeypatch.setattr(module, "linux_distribution", Mock(side_effect=AssertionError("Linux only")))
@@ -180,21 +181,29 @@ async def test_version_probe_rejects_non_chromium_browser(host, monkeypatch):
 
 
 async def test_probe_handles_paths_with_spaces_and_bounds_output(tmp_path):
-    executable = tmp_path / "fake executable"
-    executable.write_text("#!/bin/sh\nprintf 'Chromium version test'\n")
-    executable.chmod(0o700)
-    assert await module.probe(str(executable), "--version") == "Chromium version test"
-    executable.write_text("#!/bin/sh\nhead -c 70000 /dev/zero\n")
-    assert await module.probe(str(executable), "-help") == ""
+    script = tmp_path / "fake executable.py"
+    script.write_text("print('Chromium version test', end='')\n")
+    assert await module.probe(sys.executable, str(script)) == "Chromium version test"
+    script.write_text("print('x' * 70000)\n")
+    assert await module.probe(sys.executable, str(script)) == ""
 
 
 async def test_probe_timeout_cleans_up_child(tmp_path, monkeypatch):
-    executable = tmp_path / "slow"
-    executable.write_text("#!/bin/sh\nexec sleep 10\n")
-    executable.chmod(0o700)
+    script = tmp_path / "slow.py"
+    script.write_text("import time; time.sleep(10)\n")
     timeout = module.asyncio.timeout
-    monkeypatch.setattr(module.asyncio, "timeout", lambda seconds: timeout(0.02))
-    assert await module.probe(str(executable), "-help") == ""
+    spawn = module.asyncio.create_subprocess_exec
+    children = []
+
+    async def start(*args, **kwargs):
+        child = await spawn(*args, **kwargs)
+        children.append(child)
+        return child
+
+    monkeypatch.setattr(module.asyncio, "create_subprocess_exec", start)
+    monkeypatch.setattr(module.asyncio, "timeout", lambda seconds: timeout(0.5))
+    assert await module.probe(sys.executable, str(script)) == ""
+    assert len(children) == 1 and children[0].returncode is not None
 
 
 async def test_missing_vnc_does_not_misreport_installed_desktop_helpers(host, monkeypatch):
@@ -357,7 +366,7 @@ async def test_settings_check_uses_draft_paths_without_publishing_or_launching(t
     async with shared_server(tmp_path, share_computer=True) as (_, _, client):
         configuration = tmp_path / "a13n-harness-ui.yaml"
         saved = configuration.read_text()
-        body = {"executable": "/draft/chrome", "vnc_executable": "/draft/x11vnc"}
+        body = {"executable": str(tmp_path / "chrome"), "vnc_executable": str(tmp_path / "x11vnc")}
         denied = await client.post("/api/browser/check", json=body)
         assert denied.status_code == 401
         checked.assert_not_awaited()
@@ -441,9 +450,10 @@ async def test_automatic_vnc_prefers_complete_adapter_and_retains_missing_diagno
 
 
 @pytest.mark.parametrize("field", ["executable", "vnc_executable"])
-async def test_automatic_other_component_does_not_replace_invalid_override(host, monkeypatch, field):
-    monkeypatch.setattr(module, "executable_path", lambda path: None if path == "/missing" else path)
-    configuration = BrowserConfiguration(**{field: "/missing"})
+async def test_automatic_other_component_does_not_replace_invalid_override(host, monkeypatch, tmp_path, field):
+    missing = str(tmp_path / "missing")
+    monkeypatch.setattr(module, "executable_path", lambda path: None if path == missing else path)
+    configuration = BrowserConfiguration(**{field: missing})
     setup = await module.inspect_browser(configuration)
     assert not setup.ready
     if field == "executable":

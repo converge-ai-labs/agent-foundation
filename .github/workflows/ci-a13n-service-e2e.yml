@@ -103,8 +103,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: memory-recovery
-            selection: test_memory or test_recovery
+          - name: memory
+            selection: test_memory
+            sandbox: false
+          - name: recovery
+            selection: test_recovery
             sandbox: false
           - name: other
             selection: not (test_memory or test_recovery)

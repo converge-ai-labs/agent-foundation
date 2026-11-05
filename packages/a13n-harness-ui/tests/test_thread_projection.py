@@ -30,7 +30,7 @@ def test_saved_tool_result_preserves_native_outcome(
     assert TranscriptPart.model_validate_json(part.model_dump_json()).outcome == outcome
 
 
-@pytest.mark.parametrize("content", ["Try again", "x" * (128 * 1024), []])
+@pytest.mark.parametrize("content", ["Try again", "x" * (128 * 1024), []], ids=["text", "large-text", "empty-list"])
 def test_model_retry_feedback_is_bounded_without_tool_identity(content) -> None:
     (part,) = _request_parts(RetryFeedbackPart(content=content, retry=RetryInfo(cause="validation_error")))
     assert part.kind == "retry"

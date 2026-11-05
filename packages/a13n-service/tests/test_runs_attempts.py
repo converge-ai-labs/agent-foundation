@@ -6,6 +6,8 @@ from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import replace
 from datetime import datetime, timedelta
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from a13n_harness.usage import USAGE_CAPABILITY_ID, ModelUsageRecord
@@ -122,6 +124,68 @@ async def test_a_renewal_that_never_answers_stops_the_attempt(runtime, monkeypat
     loop.cancel()
     with pytest.raises(asyncio.CancelledError):
         await loop
+
+
+@pytest.mark.parametrize("has_attempt", [False, True])
+async def test_supervisor_counts_poll_work_toward_the_authority_interval(runtime, monkeypatch, has_attempt) -> None:  # type: ignore[no-untyped-def]
+    from a13n_service.runs import attempts as attempts_module
+
+    runtime = _with_worker(runtime, lease_seconds=3, authority_seconds=0.5)
+    clock = 0.0
+    starts: list[float] = []
+    renewals: list[float] = []
+    control = AttemptControl(deadline=3, renewal_margin=1)
+    task = asyncio.create_task(asyncio.Event().wait())
+    worker = Worker(runtime, AsyncMock())
+    if has_attempt:
+        worker.running[LEASE.attempt_id] = worker_module._Running(LEASE, control, task)
+
+    async def sleep(delay: float) -> None:
+        nonlocal clock
+        assert delay >= 0
+        clock += delay
+
+    async def heartbeat(*args) -> tuple[list, set]:  # type: ignore[no-untyped-def]
+        nonlocal clock
+        if len(starts) == 3:
+            raise asyncio.CancelledError
+        starts.append(clock)
+        clock += 0.12
+        return [], set()
+
+    async def renew(*args, extend, **kwargs) -> tuple[dict, set]:  # type: ignore[no-untyped-def]
+        nonlocal clock
+        if extend and not renewals:
+            # One renewal consumes its entire authority budget before timing out.
+            renewals.append(clock)
+            clock += 0.5
+            raise TimeoutError
+        clock += 0.12
+        if extend:
+            renewals.append(clock)
+        return {}, set(extend)
+
+    fake_loop = SimpleNamespace(time=lambda: clock)
+    monkeypatch.setattr(
+        worker_module,
+        "asyncio",
+        SimpleNamespace(get_running_loop=lambda: fake_loop, sleep=sleep, timeout=asyncio.timeout),
+    )
+    monkeypatch.setattr(attempts_module, "asyncio", SimpleNamespace(get_running_loop=lambda: fake_loop))
+    monkeypatch.setattr(worker_module, "heartbeat", heartbeat)
+    monkeypatch.setattr(worker_module, "renew", renew)
+    try:
+        with pytest.raises(asyncio.CancelledError):
+            await worker._supervise()
+        assert starts == pytest.approx([0.5, 1.0, 1.62] if has_attempt else [0.5, 1.0, 1.5])
+        if has_attempt:
+            # The retry finishes before the original lease's dispatch fence at t=2.
+            assert renewals == pytest.approx([1.12, 1.86])
+            assert control.deadline == pytest.approx(4.74)
+            assert not task.cancelling()
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
 
 
 async def test_one_heartbeat_serves_every_attempt_and_a_missed_renewal_cancels_only_its_own(

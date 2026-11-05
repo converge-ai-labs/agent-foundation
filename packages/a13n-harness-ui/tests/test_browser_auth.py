@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import os
 import stat
 import struct
 
@@ -32,11 +33,16 @@ def test_xauthority_encodes_a_local_display_cookie(monkeypatch):
 def test_authentication_file_replacement_is_private_and_atomic(tmp_path):
     path = tmp_path / "auth"
     path.write_bytes(b"old")
-    with path.open("rb") as previous:
+    if os.name == "nt":
         browser_auth.write_private(path, b"replacement")
-        assert previous.read() == b"old"
+    else:
+        # POSIX keeps an open reader on the old inode after replacement.
+        with path.open("rb") as previous:
+            browser_auth.write_private(path, b"replacement")
+            assert previous.read() == b"old"
     assert path.read_bytes() == b"replacement"
-    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    if os.name != "nt":
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600
     assert not path.with_suffix(".new").exists()
 
 
@@ -46,4 +52,5 @@ def test_password_rotation_advances_integer_mtime_even_with_a_frozen_clock(tmp_p
     for generation in range(5):
         browser_auth.write_private(path, str(generation).encode(), advance_mtime=True)
         assert int(path.stat().st_mtime) == 1000 + generation
-        assert stat.S_IMODE(path.stat().st_mode) == 0o600
+        if os.name != "nt":
+            assert stat.S_IMODE(path.stat().st_mode) == 0o600

@@ -11,6 +11,7 @@ import os
 import secrets
 import shutil
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
@@ -178,6 +179,49 @@ def bootstrap(admin: dict[str, str]) -> bool:
     raise RuntimeError(f"Administrator bootstrap failed (exit {result.returncode}); inspect {CONTROL} logs")
 
 
+def prepare_image(component: str, destination: str) -> str:
+    """Build locally by default; CI can supply its already-built checkout image."""
+    variable = "K8S_SERVICE_IMAGE" if component == "a13n-service" else "K8S_SANDBOX_IMAGE"
+    source = os.environ.get(variable)
+    cached = os.environ.get("K8S_BUILD_CACHE") == "gha"
+    if not source:
+        print(f"Building {destination}...", flush=True)
+        build = ("build",)
+        if cached:
+            scope = "ci-service" if component == "a13n-service" else "service-e2e-sandbox"
+            build = (
+                "buildx",
+                "build",
+                "--load",
+                "--cache-from",
+                f"type=gha,version=2,scope={scope}",
+            )
+        run(
+            "docker",
+            *build,
+            "--progress=plain",
+            "-f",
+            f"deploy/docker/images/{component}/Dockerfile",
+            "-t",
+            destination,
+            ".",
+        )
+    if source or cached:
+        # Reuse the content tag so kind does not import unchanged image layers again.
+        # Inspect requires a local image; it never pulls a mutable registry fallback.
+        source = source or destination
+        image_id = run("docker", "image", "inspect", source, "--format", "{{.Id}}", capture=True).strip()
+        destination = f"{destination.split(':')[0]}:local-{image_id.removeprefix('sha256:')}"
+        run("docker", "tag", source, destination)
+    return destination
+
+
+def prepare_and_load_image(component: str, destination: str) -> str:
+    image = prepare_image(component, destination)
+    run("kind", "load", "docker-image", image, "--name", CLUSTER)
+    return image
+
+
 def start(state: Path, *, environments: bool = False) -> None:
     for tool in ("docker", "kind", "kubectl", "helm"):
         if not shutil.which(tool):
@@ -209,16 +253,19 @@ def start(state: Path, *, environments: bool = False) -> None:
         kubectl("create", "namespace", NAMESPACE)
     admin = prepare(state)
     tag = "local-" + secrets.token_hex(6)
-    image = f"a13n-service:{tag}"
-    print(f"Building {image}...", flush=True)
-    run("docker", "build", "--progress=plain", "-f", "deploy/docker/images/a13n-service/Dockerfile", "-t", image, ".")
-    run("kind", "load", "docker-image", image, "--name", CLUSTER)
-    overlay: tuple[str, ...] = ()
-    if environments:
-        sandbox = f"a13n-sandbox:{tag}"
-        run("docker", "build", "--progress=plain", "-f", "deploy/docker/images/sandbox/Dockerfile", "-t", sandbox, ".")
-        run("kind", "load", "docker-image", sandbox, "--name", CLUSTER)
-        overlay = ("-f", "deploy/kubernetes/helm/values-environments-smoke.yaml")
+    # The sandbox is first consumed by smoke runs, not migration or Service startup.
+    # Join both image operations before returning, including on deployment failure.
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        service = pool.submit(prepare_and_load_image, "a13n-service", f"a13n-service:{tag}")
+        sandbox = pool.submit(prepare_and_load_image, "sandbox", f"a13n-sandbox:{tag}") if environments else None
+        image = service.result()
+        deploy(state, image, tag, admin, environments=environments)
+        sandbox_image = sandbox.result() if sandbox is not None else None
+    (state / "deployment.json").write_text(json.dumps({"service_image": image, "sandbox_image": sandbox_image}))
+
+
+def deploy(state: Path, image: str, tag: str, admin: dict[str, str] | None, *, environments: bool) -> None:
+    overlay = ("-f", "deploy/kubernetes/helm/values-environments-smoke.yaml") if environments else ()
     print("Deploying; Helm waits for migration and readiness (up to 20 minutes)...", flush=True)
     try:
         run(
@@ -237,7 +284,10 @@ def start(state: Path, *, environments: bool = False) -> None:
             "--set-string",
             f"publicUrl={CONSOLE_URL}",
             "--set-string",
-            f"image.tag={tag}",
+            f"image.tag={image.split(':')[1]}",
+            # Even unchanged images must exercise rolling replacement on each invocation.
+            "--set-string",
+            f"podAnnotations.a13n-local-rollout={tag}",
             "--wait",
             "--timeout",
             "20m",
@@ -246,9 +296,6 @@ def start(state: Path, *, environments: bool = False) -> None:
         kubectl("get", "pods,jobs,pvc")
         print("Inspect migration Job and Service logs and namespace events; credentials and PVCs are retained.")
         raise
-    (state / "deployment.json").write_text(
-        json.dumps({"service_image": image, "sandbox_image": f"a13n-sandbox:{tag}" if environments else None})
-    )
     kubectl("get", "pods,pvc")
     print(f"Console: {CONSOLE_URL}", flush=True)
     if admin is None:

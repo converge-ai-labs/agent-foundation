@@ -53,6 +53,9 @@ RUN --mount=type=cache,target=/root/.cache/uv \
         packages/a13n-logging/tests \
         packages/a13n-service/tests
 COPY --from=console /src/frontend/apps/a13n-console/dist packages/a13n-service/a13n_service/static
+# Normalize before the final COPY: changing permissions in the runtime stage
+# copies the entire dependency tree into another image layer.
+RUN find /app -perm /022 -exec chmod go-w {} +
 
 FROM python:3.13-slim-bookworm AS runtime
 
@@ -74,10 +77,9 @@ RUN apt-get update \
 
 WORKDIR /app
 COPY --from=builder --chown=root:root /app /app
-COPY --chown=root:root deploy/docker/images/a13n-service/service.toml /app/service.toml
+COPY --chown=root:root --chmod=644 deploy/docker/images/a13n-service/service.toml /app/service.toml
 COPY --chown=root:root --chmod=755 deploy/docker/images/a13n-service/entrypoint.sh /usr/local/bin/a13n-entrypoint
-RUN chmod -R go-w /app \
-    && mkdir -p /app/var/objects \
+RUN mkdir -p /app/var/objects \
     && chown -R app:app /app/var
 
 ENV PATH="/app/.venv/bin:${PATH}" \

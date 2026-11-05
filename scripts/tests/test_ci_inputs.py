@@ -263,8 +263,8 @@ def _service_matrix(workflow: dict, tests_changed: str, tmp_path: Path, *, root:
 def test_service_ci_partitions_the_current_suite_without_duplicates(tmp_path: Path) -> None:
     workflow = yaml.safe_load((WORKFLOWS / "ci-a13n-service.yml").read_text())
     matrix = _service_matrix(workflow, "true", tmp_path)
-    assert [entry["name"] for entry in matrix] == ["checks", *[f"tests-{index}" for index in range(1, 7)]]
-    assert all(entry["targets"] for entry in matrix[1:])
+    assert [entry["name"] for entry in matrix] == ["checks", "native", *[f"tests-{index}" for index in range(1, 11)]]
+    assert all(entry["targets"] for entry in matrix[2:])
     targets = [path for entry in matrix[1:] for path in entry["targets"].splitlines()]
     assert targets
     assert len(targets) == len(set(targets))
@@ -296,6 +296,10 @@ def test_service_selection_includes_new_nested_files_and_passes_paths_literally(
         "test_space $(false).py",
         "test_fifth.py",
         "test_sixth.py",
+        "test_seventh.py",
+        "test_eighth.py",
+        "test_ninth.py",
+        "test_tenth.py",
     ]
     excluded = [
         "conftest.py",
@@ -551,6 +555,105 @@ def test_component_jobs_retain_scoped_failure_reports(workflow_name: str, job: s
     )
 
 
+@pytest.mark.parametrize("result", ["success", "failure", "cancelled", "skipped"])
+def test_harness_gate_requires_every_matrix_member(result: str) -> None:
+    workflow = yaml.safe_load((WORKFLOWS / "ci-a13n-harness.yml").read_text())
+    gate = workflow["jobs"]["linux"]
+    assert gate["name"] == "a13n Harness (Linux)" and gate["needs"] == "harness"
+    assert "always()" in gate["if"]
+    step = gate["steps"][0]
+    assert step["env"] == {"RESULT": "${{ needs.harness.result }}"}
+    completed = subprocess.run(["bash", "-e", "-c", step["run"]], env={"RESULT": result}, check=False)
+    assert (completed.returncode == 0) == (result == "success")
+
+
+@pytest.mark.parametrize("chart", ["success", "failure", "cancelled", "skipped"])
+@pytest.mark.parametrize("helm", ["success", "failure", "cancelled", "skipped"])
+@pytest.mark.parametrize("journeys", ["success", "failure", "cancelled", "skipped"])
+def test_deployment_gate_requires_chart_helm_and_every_journey_shard(chart: str, helm: str, journeys: str) -> None:
+    workflow = yaml.safe_load((WORKFLOWS / "ci-deploy.yml").read_text())
+    gate = workflow["jobs"]["kind"]
+    assert gate["name"] == "Helm install and upgrade on kind"
+    assert set(gate["needs"]) == {"chart", "helm", "journeys"} and "always()" in gate["if"]
+    step = gate["steps"][0]
+    assert step["env"] == {
+        "CHART_RESULT": "${{ needs.chart.result }}",
+        "HELM_RESULT": "${{ needs.helm.result }}",
+        "JOURNEYS_RESULT": "${{ needs.journeys.result }}",
+    }
+    completed = subprocess.run(
+        ["bash", "-e", "-c", step["run"]],
+        env={"CHART_RESULT": chart, "HELM_RESULT": helm, "JOURNEYS_RESULT": journeys},
+        check=False,
+    )
+    assert (completed.returncode == 0) == (chart == helm == journeys == "success")
+
+
+@pytest.mark.parametrize("failure", [None, "a13n-service", "sandbox"])
+def test_deployment_image_preparation_joins_builds_before_publishing(tmp_path, monkeypatch, failure):
+    from threading import Barrier
+
+    from scripts import k8s_local
+
+    workflow = yaml.safe_load((WORKFLOWS / "ci-deploy.yml").read_text())
+    steps = workflow["jobs"]["helm"]["steps"]
+    build = next(step for step in steps if step.get("name") == "Build both checkout images alongside cluster creation")
+    ready = next(step for step in steps if step.get("name") == "Require successful cluster creation")
+    assert steps.index(build) < steps.index(ready)
+    barrier = Barrier(2)
+    finished = set()
+
+    def prepare(component, tag):
+        barrier.wait(timeout=5)
+        finished.add(component)
+        if component == failure:
+            raise RuntimeError(component)
+        return tag + "-built"
+
+    output = tmp_path / "environment"
+    monkeypatch.setenv("GITHUB_ENV", str(output))
+    monkeypatch.setattr(k8s_local, "prepare_image", prepare)
+    code = build["run"].partition("<<'PY'\n")[2].rsplit("\nPY", 1)[0]
+    if failure:
+        with pytest.raises(RuntimeError, match=failure):
+            exec(compile(code, "ci-deploy.yml", "exec"), {})
+        assert not output.exists()
+    else:
+        exec(compile(code, "ci-deploy.yml", "exec"), {})
+        assert output.read_text().splitlines() == [
+            "K8S_SERVICE_IMAGE=a13n-service:ci-built",
+            "K8S_SANDBOX_IMAGE=a13n-sandbox:ci-built",
+        ]
+    assert finished == {"a13n-service", "sandbox"}
+    for name in ("helm", "journeys"):
+        builder = next(step for step in workflow["jobs"][name]["steps"] if step.get("name") == "Set up Docker Buildx")
+        assert builder["with"]["driver"] == "docker"
+    journey_build = next(
+        step
+        for step in workflow["jobs"]["journeys"]["steps"]
+        if step.get("uses", "").startswith("docker/build-push-action@")
+    )
+    assert "cache-from" in journey_build["with"] and "cache-to" not in journey_build["with"]
+
+
+def test_harness_keeps_full_discovery_and_native_browser_coverage() -> None:
+    workflow = yaml.safe_load((WORKFLOWS / "ci-a13n-harness.yml").read_text())
+    job = workflow["jobs"]["harness"]
+    matrix = job["strategy"]["matrix"]["include"]
+    assert job["strategy"]["fail-fast"] is False
+    assert [entry["shard"] for entry in matrix if "shard" in entry] == [1, 2]
+    steps = job["steps"]
+    unit = next(step for step in steps if step.get("name") == "Test a13n Harness shard")
+    assert unit["if"] == "startsWith(matrix.name, 'tests-')"
+    assert "scripts/run_python_tests.py" in unit["run"]
+    assert "--shard ${{ matrix.shard }} 2 packages/a13n-harness/tests" in unit["run"]
+    browser = next(step for step in steps if step.get("name") == "Test native Chromium browser workflows")
+    assert browser["if"] == "matrix.name == 'browser'"
+    assert "test_browser_cdp_native.py" in browser["run"] and "test_browser_workflows_native.py" in browser["run"]
+    assert "--browser-executable=" in browser["run"]
+    assert any(entry["name"] == "Windows" for entry in matrix)
+
+
 def test_failure_report_contains_fixture_phase_and_captured_output(tmp_path: Path) -> None:
     source = tmp_path / "test_failure.py"
     source.write_text(
@@ -583,3 +686,24 @@ def test_failure_report_contains_fixture_phase_and_captured_output(tmp_path: Pat
     contents = report.read_text()
     for witness in ("setup witness", "call witness", "teardown witness", "primary failure", "cleanup failure"):
         assert witness in contents
+
+
+@pytest.mark.parametrize("result", ["success", "failure", "cancelled", "skipped"])
+def test_windows_ui_gate_requires_all_full_suite_shards(result):
+    workflow = yaml.safe_load((WORKFLOWS / "ci-a13n-harness-ui.yml").read_text())
+    windows = workflow["jobs"]["windows"]
+    assert windows["strategy"]["fail-fast"] is False
+    assert "'[1]' || '[1,2,3,4]'" in windows["strategy"]["matrix"]["shard"]
+    full = next(step for step in windows["steps"] if step["name"] == "Test full UI suite on Windows")
+    assert "--shard ${{ matrix.shard }} 4" in full["run"]
+    assert "packages/a13n-harness-ui/tests" in full["run"]
+    assert "--workers 4" in full["run"]
+    native = next(step for step in windows["steps"] if step["name"] == "Test native command lifecycle")
+    assert native["if"] == "matrix.shard == 1"
+    gate = workflow["jobs"]["windows-result"]
+    assert gate["name"] == "UI (Windows)" and "always()" in gate["if"]
+    assert gate["needs"] == ["changes", "windows"]
+    completed = subprocess.run(
+        ["bash", "-e", "-c", gate["steps"][0]["run"]], env={"WINDOWS_RESULT": result}, check=False
+    )
+    assert (completed.returncode == 0) == (result == "success")

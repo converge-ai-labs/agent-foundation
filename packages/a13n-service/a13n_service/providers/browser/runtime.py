@@ -171,6 +171,29 @@ class Runtime:
                 await self.close_children()
                 self.guest.publish(previous, json.dumps({**info, "ready": False}))
 
+    async def wait_ready(
+        self, endpoint: Path, critical: tuple[asyncio.subprocess.Process, ...]
+    ) -> tuple[str, str, dict]:
+        async with asyncio.timeout(30):
+            while True:
+                if any(child.returncode is not None for child in critical) or self.stop.is_set():
+                    raise RuntimeError("Chromium startup failed")
+                if endpoint.exists() and (self.root / "desktop" / "control.sock").exists():
+                    port, path = endpoint.read_text().splitlines()[:2]
+                    self.cdp_url = f"ws://127.0.0.1:{port}{path}"
+                    try:
+                        description = await self.guest.call(
+                            self.root / "desktop", {"protocol_version": 2, "operation": "describe"}
+                        )
+                    except (ConnectionRefusedError, FileNotFoundError):
+                        # Binding publishes the socket path before the viewer starts listening.
+                        pass
+                    else:
+                        if "error" in description:
+                            raise RuntimeError("Viewer startup failed")
+                        return port, path, description
+                await asyncio.sleep(0.05)
+
     async def run(self, info: dict) -> None:
         authority = self.root / "Xauthority"
         cookie = secrets.token_hex(16)
@@ -240,16 +263,7 @@ class Runtime:
             command.append("--no-sandbox")
         chromium = self.chromium = await self.spawn(*command, env=environment)
         critical = (display, window_manager, viewer, chromium)
-        async with asyncio.timeout(30):
-            while not endpoint.exists() or not (self.root / "desktop" / "control.sock").exists():
-                if any(child.returncode is not None for child in critical) or self.stop.is_set():
-                    raise RuntimeError("Chromium startup failed")
-                await asyncio.sleep(0.05)
-            port, path = endpoint.read_text().splitlines()[:2]
-            self.cdp_url = f"ws://127.0.0.1:{port}{path}"
-            description = await self.guest.call(self.root / "desktop", {"protocol_version": 2, "operation": "describe"})
-            if "error" in description:
-                raise RuntimeError("Viewer startup failed")
+        port, path, description = await self.wait_ready(endpoint, critical)
         async with await asyncio.start_server(
             partial(self.proxy, port=int(port)), self.args.listen, self.args.cdp_port
         ) as server:

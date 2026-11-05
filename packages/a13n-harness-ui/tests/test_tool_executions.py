@@ -797,7 +797,9 @@ async def test_tui_shell_review_handoff_and_completion_wake_admit_each_command_o
             yield {
                 0: DeltaToolCall(
                     name="shell_exec",
-                    json_args=json.dumps({"command": f'"{sys.executable}" -c "print(123)"'}),
+                    json_args=json.dumps(
+                        {"command": ("& " if sys.platform == "win32" else "") + f'"{sys.executable}" -c "print(123)"'}
+                    ),
                     tool_call_id=call_id,
                 )
             }

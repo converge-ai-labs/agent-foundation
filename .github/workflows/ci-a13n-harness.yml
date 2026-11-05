@@ -12,6 +12,7 @@ on:
       - "packages/a13n-logging/a13n_logging/**"
       - "packages/a13n-logging/pyproject.toml"
       - "conftest.py"
+      - "scripts/run_python_tests.py"
       - "dev/observation-demo/**"
       - "scripts/provider-smoke/**"
       - "scripts/tests/provider_smoke/**"
@@ -30,6 +31,7 @@ on:
       - "packages/a13n-logging/a13n_logging/**"
       - "packages/a13n-logging/pyproject.toml"
       - "conftest.py"
+      - "scripts/run_python_tests.py"
       - "dev/observation-demo/**"
       - "scripts/provider-smoke/**"
       - "scripts/tests/provider_smoke/**"
@@ -54,14 +56,19 @@ jobs:
     name: a13n Harness (${{ matrix.name }})
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
         include:
-          - name: Linux
+          - name: tests-1
             runner: ubuntu-24.04
-            # Two file-grouped workers, one per vCPU of the standard runner.
-            test_options: -n 2 --dist loadgroup
-            test_targets: packages/a13n-harness/tests
+            shard: 1
+          - name: tests-2
+            runner: ubuntu-24.04
+            shard: 2
+          - name: checks
+            runner: ubuntu-24.04
+          - name: browser
+            runner: ubuntu-24.04
           - name: Windows
             runner: windows-2025
             test_options: ""
@@ -93,21 +100,30 @@ jobs:
         run: uv sync --locked --all-packages
 
       - name: Type-check a13n Harness
-        if: matrix.name == 'Linux'
+        if: matrix.name == 'checks'
         run: uv run --locked pyright packages/a13n-harness/a13n_harness
 
-      - name: Test a13n Harness
+      - name: Test a13n Harness on Windows
+        if: matrix.name == 'Windows'
         run: uv run --locked python -m pytest -vv ${{ matrix.test_options }} ${{ matrix.test_targets }} --junitxml=test-results/harness.xml --durations=30 -r a
 
+      - name: Test a13n Harness shard
+        if: startsWith(matrix.name, 'tests-')
+        env:
+          PYTEST_ADDOPTS: -vv --junitxml=test-results/harness.xml --durations=30 -r a
+        run: >-
+          uv run --locked python scripts/run_python_tests.py
+          --workers 2 --shard ${{ matrix.shard }} 2 packages/a13n-harness/tests
+
       - name: Set up Chrome for Testing
-        if: matrix.name == 'Linux'
+        if: matrix.name == 'browser'
         id: chrome
         uses: browser-actions/setup-chrome@v2
         with:
           chrome-version: stable
 
       - name: Allow the test browser to create sandbox namespaces
-        if: matrix.name == 'Linux'
+        if: matrix.name == 'browser'
         shell: bash
         env:
           BROWSER_EXECUTABLE: ${{ steps.chrome.outputs.chrome-path }}
@@ -124,7 +140,7 @@ jobs:
           sudo apparmor_parser -r /etc/apparmor.d/harness-chrome-testing
 
       - name: Test native Chromium browser workflows
-        if: matrix.name == 'Linux'
+        if: matrix.name == 'browser'
         shell: bash
         env:
           BROWSER_EXECUTABLE: ${{ steps.chrome.outputs.chrome-path }}
@@ -136,7 +152,7 @@ jobs:
             --browser-executable="$BROWSER_EXECUTABLE" --junitxml=test-results/browser.xml
 
       - name: Test provider diagnostics without external calls
-        if: matrix.name == 'Linux'
+        if: matrix.name == 'checks'
         run: uv run --locked python -m pytest scripts/tests/provider_smoke --junitxml=test-results/providers.xml
 
       - name: Retain Harness test reports
@@ -148,6 +164,17 @@ jobs:
           retention-days: 7
 
       - name: Build a13n Harness distribution
-        if: matrix.name == 'Linux'
+        if: matrix.name == 'checks'
         run: |
           uv build --package a13n-harness --out-dir dist/harness
+
+  linux:
+    name: a13n Harness (Linux)
+    needs: harness
+    if: always() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require all Harness checks
+        env:
+          RESULT: ${{ needs.harness.result }}
+        run: test "$RESULT" = success

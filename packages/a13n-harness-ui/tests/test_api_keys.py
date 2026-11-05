@@ -8,6 +8,7 @@ import pytest
 from a13n_harness_ui.configuration import ApiKeyAuthentication
 from a13n_harness_ui.errors import HarnessUiError
 from a13n_harness_ui.model_accounts.api_keys import ApiKeyInput, ApiKeyStore
+from a13n_harness_ui.model_accounts.auth import HostAuthDocument
 from pydantic import SecretStr, ValidationError
 
 pytestmark = pytest.mark.anyio
@@ -69,6 +70,32 @@ async def test_monitoring_auth_read_is_cancellable_single_flight_and_independent
     finally:
         release.set()
         await anyio.to_thread.run_sync(finished.wait)
+
+
+@pytest.mark.parametrize("windows", [False, True])
+@pytest.mark.parametrize("observation", [False, True])
+async def test_auth_read_coordinates_with_windows_publication(tmp_path, monkeypatch, windows, observation):
+    from a13n_harness_ui.model_accounts import auth
+    from filelock import FileLock
+
+    monkeypatch.setattr(auth, "_WINDOWS", windows)
+    document = HostAuthDocument(tmp_path / "missing" / "auth.json")
+    assert await document.read(observation=observation) == {"version": 1, "keys": {}}
+    assert not document.path.parent.exists()
+    await document.update(lambda value: value.update(extension={"retained": True}))
+
+    def immediate_lock(path, **kwargs):
+        return FileLock(path, **{**kwargs, "timeout": 0})
+
+    monkeypatch.setattr(auth, "FileLock", immediate_lock)
+    with FileLock(str(document.path) + ".lock", timeout=0):
+        if windows:
+            with pytest.raises(HarnessUiError) as caught:
+                await document.read(observation=observation)
+            assert caught.value.code == "api_key_store_unavailable"
+        else:
+            assert (await document.read(observation=observation))["extension"] == {"retained": True}
+    assert (await document.read(observation=observation))["extension"] == {"retained": True}
 
 
 async def test_api_key_invalid_store_is_not_overwritten(tmp_path: Path) -> None:
@@ -144,12 +171,26 @@ async def main():
             await ApiKeyStore(path).put(ApiKeyInput(
                 credential_ref=f"key-{role}-{index}", key=SecretStr("synthetic-key")))
 
-anyio.run(main)
+try:
+    anyio.run(main)
+except Exception as error:
+    # Production errors deliberately hide credential-bearing exception messages.
+    # Retain syscall codes and frame locations for this synthetic concurrency test.
+    import traceback
+    while error is not None:
+        print(type(error).__name__, file=sys.stderr)
+        if isinstance(error, OSError):
+            print("errno", error.errno, "winerror", getattr(error, "winerror", None), file=sys.stderr)
+        for frame in traceback.extract_tb(error.__traceback__):
+            print(frame.filename, frame.lineno, frame.name, file=sys.stderr)
+        error = error.__cause__ or error.__context__
+    raise SystemExit(1)
 """
     finished = set()
 
     async def write(role: str) -> None:
-        await anyio.run_process([sys.executable, "-c", script, str(path), role])
+        result = await anyio.run_process([sys.executable, "-c", script, str(path), role], check=False)
+        assert result.returncode == 0, result.stderr.decode(errors="replace")
         finished.add(role)
 
     roles = ("first", "second", "oauth")
@@ -160,9 +201,11 @@ anyio.run(main)
             while not all((tmp_path / ("ready-" + role)).exists() for role in roles):
                 await anyio.sleep(0.01)
             (tmp_path / "start").touch()
-            # Lock-free readers must always see a complete document during publication.
+            # Production readers must see a complete document during publication.
+            # Windows readers share the writer's lock; POSIX readers remain lock-free.
+            reader = HostAuthDocument(path)
             while len(finished) < len(roles):
-                document = json.loads(path.read_text())
+                document = await reader.read()
                 assert document["extension"] == {"retained": True}
                 await anyio.sleep(0.01)
     store = ApiKeyStore(path)

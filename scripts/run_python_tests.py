@@ -102,7 +102,7 @@ def main(argv: list[str] | None = None) -> int:
         if len(requested) != 1 or not Path(requested[0]).is_dir():
             parser.error("--shard requires exactly one test directory")
         # Keep each file's fixtures together; discover new files on every run instead of keeping an allowlist.
-        files = sorted(str(path) for path in selected_files(requested))
+        files = sorted(path.as_posix() for path in selected_files(requested))
         if args.durations is None:
             requested = files[index - 1 :: count]
         else:

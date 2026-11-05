@@ -439,7 +439,10 @@ async def test_context_recovery_history_and_warning_survive_root_completion_and_
         retained = list((tmp_path / "data" / "threads" / thread.thread_id / "history").glob("recovery-*.txt"))
         assert len(retained) == 1
         assert "Complete the original task" in retained[0].read_text()
-        assert str(retained[0]) in str(observed[-1])
+        assert any(
+            isinstance(item, TextContent) and retained[0].as_posix() in item.content
+            for item in _text_parts(observed[-1])
+        )
     async with open_harness_ui_app(settings, configuration_path=path) as app:
         page = await app.get_thread_transcript(thread_id=thread.thread_id)
         warnings = [part for entry in page.entries for part in entry.parts if part.kind == "other"]

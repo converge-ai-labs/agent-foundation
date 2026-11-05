@@ -361,18 +361,24 @@ async def test_realtime_observes_all_active_roots_with_bounded_idle_capacity(
                     await socket.send('{"api_key":"test-only-key"}')
 
                     async def subscribe(channel, root=None, after=None):
-                        await socket.send(
-                            json.dumps(
-                                {
-                                    "kind": "subscribe",
-                                    "channel": channel,
-                                    "stream": "summary" if root is None else "focus",
-                                    "root_thread_id": root,
-                                    "after": after,
-                                }
-                            )
-                        )
-                        return await frame_until(socket, lambda value: value.get("channel") == channel)
+                        with fail_after(5):
+                            while True:
+                                await socket.send(
+                                    json.dumps(
+                                        {
+                                            "kind": "subscribe",
+                                            "channel": channel,
+                                            "stream": "summary" if root is None else "focus",
+                                            "root_thread_id": root,
+                                            "after": after,
+                                        }
+                                    )
+                                )
+                                envelope = await frame_until(socket, lambda value: value.get("channel") == channel)
+                                # Input checkpoint selection may race focused bootstrap.
+                                # Reopen the same channel; capacity resets remain failures.
+                                if envelope["frame"] != {"kind": "reset", "reason": "live_snapshot_changed"}:
+                                    return envelope
 
                     assert (await subscribe("summary"))["frame"]["kind"] == "open"
                     for index, root in enumerate(roots[:31]):
