@@ -78,6 +78,8 @@ class _OutputCollector:
         self._preview_bytes = b""
         self.reference: BoundOutputReference | None = None
         self.complete = False
+        self._storage_failed = False
+        self._finished_capture: EnvironmentOutputCapture | None = None
 
     async def consume(self, stream: asyncio.StreamReader) -> None:
         try:
@@ -89,23 +91,35 @@ class _OutputCollector:
                 if self.writer is not None:
                     storage_remaining = self.policy.max_output_bytes - self.stored
                     if storage_remaining > 0:
-                        self.stored += await self.writer.write(chunk[:storage_remaining])
+                        try:
+                            self.stored += await self.writer.write(chunk[:storage_remaining])
+                        except (EnvironmentError, OSError):
+                            # Keep draining the pipe so a spool failure cannot block
+                            # the child or replace its eventual native exit status.
+                            self._storage_failed = True
+                            await self._abort_spool()
         finally:
             self.complete = True
 
     async def finish(self) -> EnvironmentOutputCapture:
         preview = bytes(self.preview)
         if self.writer is not None:
-            if self.stored > len(preview):
-                self.reference = await self.writer.commit(
-                    producer_complete=self.complete,
-                    content_complete=self.produced == self.stored,
-                    produced_bytes=self.produced,
-                    dropped_bytes=max(self.produced - self.stored, 0),
-                )
-            else:
-                await self.writer.abort()
-        if self.reference is not None:
+            try:
+                if self.stored > len(preview):
+                    self.reference = await self.writer.commit(
+                        producer_complete=self.complete,
+                        content_complete=self.produced == self.stored,
+                        produced_bytes=self.produced,
+                        dropped_bytes=max(self.produced - self.stored, 0),
+                    )
+                else:
+                    await self._abort_spool()
+            except (EnvironmentError, OSError):
+                self._storage_failed = True
+                await self._abort_spool()
+        if self._storage_failed and self.produced > len(preview):
+            capture = self.failed_capture()
+        elif self.reference is not None:
             capture = EnvironmentOutputCapture(
                 kind="retained",
                 producer_complete=self.complete,
@@ -140,12 +154,41 @@ class _OutputCollector:
                 inline=preview,
                 available_end=len(preview),
             )
+        self._finished_capture = capture
         self.preview.clear()
         self._preview_bytes = b""
         self.writer = None
         return capture
 
+    async def _abort_spool(self) -> None:
+        writer, self.writer = self.writer, None
+        if writer is not None:
+            try:
+                await writer.abort()
+            except (EnvironmentError, OSError):
+                # Retention-store cleanup owns any remaining temporary file.
+                pass
+
+    def failed_capture(self) -> EnvironmentOutputCapture:
+        snapshot = self.snapshot()
+        preview = snapshot.inline or b"".join(segment.data for segment in snapshot.preview)
+        return EnvironmentOutputCapture(
+            kind="truncated",
+            observation_closed=True,
+            coverage="partial",
+            reason="connection_lost",
+            producer_complete=self.complete,
+            content_complete=False,
+            produced_bytes=self.produced,
+            captured_bytes=len(preview),
+            dropped_bytes=max(self.produced - len(preview), 0),
+            inline=preview,
+            available_end=len(preview),
+        )
+
     def snapshot(self) -> EnvironmentOutputCapture:
+        if self._finished_capture is not None:
+            return self._finished_capture
         # The preview is append-only until finish. Silent inspect/read polls reuse
         # immutable bytes instead of copying the entire capture on every call.
         if len(self._preview_bytes) != len(self.preview):
@@ -153,6 +196,7 @@ class _OutputCollector:
         preview = self._preview_bytes
         return EnvironmentOutputCapture(
             kind="empty" if not preview and self.complete else "inline" if self.complete else "truncated",
+            observation_closed=False,
             producer_complete=self.complete,
             content_complete=self.complete and self.produced <= len(preview),
             produced_bytes=self.produced,
@@ -549,6 +593,10 @@ class LocalProcessManager:
                         await collector.writer.abort()
                 except EnvironmentError:
                     pass
+            record.output = ProcessOutputSnapshot(
+                stdout=record.stdout.failed_capture(),
+                stderr=record.stderr.failed_capture(),
+            )
             record.status = ProcessStatus(
                 phase="failed",
                 termination_reason="backend_lost",

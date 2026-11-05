@@ -583,6 +583,7 @@ def _create_inline_child_bindings(
         ),
         environment=_BorrowedEnvironmentRuntime(parent.environment),
         tool_result_directory=parent.tool_result_directory,
+        shell_output_directory=parent.shell_output_directory,
         state_store=parent._storage.store,
         model_resolver=parent.model_resolver,
         model_call_check=parent.model_call_check,

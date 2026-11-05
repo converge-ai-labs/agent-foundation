@@ -640,6 +640,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             working_state_observer=bindings.working_state_observer,
             client_toolsets=bindings.client_toolsets,
             tool_result_directory=bindings.tool_result_directory,
+            shell_output_directory=bindings.shell_output_directory,
             context_recovery_scope_id=bindings.context_recovery_scope_id,
             retained_history_directory=bindings.retained_history_directory,
             _capability_provenance=_CapabilityProvenance(

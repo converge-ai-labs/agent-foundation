@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
-from collections.abc import AsyncIterator, Iterator, Mapping
+from collections.abc import AsyncIterable, AsyncIterator, Iterator, Mapping
 from contextvars import ContextVar
 from copy import deepcopy
 from dataclasses import replace
@@ -537,10 +537,10 @@ def _iter_json_string(value: str, *, chunk_size: int = 4096) -> Iterator[bytes]:
 class _ToolResultSpillStore:
     """Best-effort run-private spill directories pinned to their original selections."""
 
-    def __init__(self, context: AgentContext) -> None:
+    def __init__(self, context: AgentContext, *, directory: str | None = None) -> None:
         run_digest = hashlib.sha256(context.run_id.encode("utf-8")).hexdigest()[:12]
         self._environment = context.environment
-        self._directory = context.tool_result_directory
+        self._directory = directory if directory is not None else context.tool_result_directory
         self._run_directory_prefix = f"run-{run_digest}"
         self._directories: dict[tuple[str, str], tuple[FileScopeSelection, str]] = {}
         self._next_sequence = 1
@@ -548,6 +548,9 @@ class _ToolResultSpillStore:
         self._lock = asyncio.Lock()
 
     async def write(self, data: bytes, *, suffix: str) -> str | None:
+        return await self.write_stream(_byte_chunks(data), suffix=suffix)
+
+    async def write_stream(self, chunks: AsyncIterable[bytes], *, suffix: str) -> str | None:
         if suffix not in {".json", ".txt"}:
             raise ValueError("tool result spill suffix is invalid")
         async with self._lock:
@@ -571,7 +574,7 @@ class _ToolResultSpillStore:
                         self._directories[key] = (selection, directory)
                     path = f"{directory}/tool-result-{self._next_sequence}{suffix}"
                     self._next_sequence += 1
-                    await files.write_bytes_stream(path, _byte_chunks(data), mode="create")
+                    await files.write_bytes_stream(path, chunks, mode="create")
                 current = self._environment.select_files(directory)
                 if (
                     current.resolved_path != selection.resolved_path
