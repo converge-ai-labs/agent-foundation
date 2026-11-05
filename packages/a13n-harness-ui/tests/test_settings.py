@@ -109,12 +109,13 @@ async def test_settings_yaml_reports_duplicate_keys_and_explicit_missing_file(
 
 async def test_browser_executable_configuration_survives_source_loading(tmp_path):
     path = tmp_path / "settings.yaml"
-    path.write_text('schema_version: "1"\nbrowser:\n  executable: /opt/chrome\n  vnc_executable: /opt/Xvnc\n')
+    chrome, vnc = (tmp_path / "chrome").as_posix(), (tmp_path / "Xvnc").as_posix()
+    path.write_text(f'schema_version: "1"\nbrowser:\n  executable: {chrome}\n  vnc_executable: {vnc}\n')
     source = await load_harness_ui_settings(path)
     assert source.configuration is not None and source.candidate_error is None
     browser = source.configuration.document.browser
-    assert browser.executable == "/opt/chrome"
-    assert browser.vnc_executable == "/opt/Xvnc"
+    assert browser.executable == chrome
+    assert browser.vnc_executable == vnc
 
 
 @pytest.mark.parametrize("field", ["executable", "vnc_executable"])

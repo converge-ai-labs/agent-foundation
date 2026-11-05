@@ -80,15 +80,23 @@ jobs:
         with:
           version: v3.19.0
 
-      - name: Create the pinned kind cluster
+      - name: Install pinned kind and kubectl
         uses: helm/kind-action@v1
         with:
           version: v0.30.0
           kubectl_version: v1.34.1
-          node_image: kindest/node:v1.34.0@sha256:7416a61b42b1662ca6ca89f02028ac133a309a2a30ba309614e8ec94d976dc5a
-          cluster_name: a13n-local
-          config: deploy/kubernetes/kind-local.yaml
-          wait: 5m
+          install_only: true
+
+      - name: Start the pinned cluster alongside image builds
+        run: |
+          # Expand the environment in the child shell.
+          # shellcheck disable=SC2016
+          nohup bash -c '
+            kind create cluster --name a13n-local \
+              --image kindest/node:v1.34.0@sha256:7416a61b42b1662ca6ca89f02028ac133a309a2a30ba309614e8ec94d976dc5a \
+              --config deploy/kubernetes/kind-local.yaml --wait 5m
+            echo "$?" > "$RUNNER_TEMP/kind-create.status"
+          ' > "$RUNNER_TEMP/kind-create.log" 2>&1 < /dev/null &
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -112,6 +120,13 @@ jobs:
           load: true
           cache-from: type=gha,scope=ci-service
           cache-to: type=gha,scope=ci-service,mode=max,ignore-error=true
+
+      - name: Require successful cluster creation
+        timeout-minutes: 5
+        run: |
+          until test -f "$RUNNER_TEMP/kind-create.status"; do sleep 1; done
+          cat "$RUNNER_TEMP/kind-create.log"
+          test "$(cat "$RUNNER_TEMP/kind-create.status")" = 0
 
       - name: Install locked test dependencies
         run: make sync
@@ -140,6 +155,15 @@ jobs:
           kubectl --context kind-a13n-local -n a13n-service logs job/a13n-a13n-migrate-2 --all-containers --tail 200 || true
           kubectl --context kind-a13n-local get pv,storageclasses || true
           kind export logs --name a13n-local test-results/kind || true
+
+      - name: Delete the job-owned kind cluster
+        if: always()
+        run: |
+          if test -f "$RUNNER_TEMP/kind-create.log"; then
+            # shellcheck disable=SC2016
+            timeout 5m bash -c 'until test -f "$RUNNER_TEMP/kind-create.status"; do sleep 1; done' || true
+          fi
+          kind delete cluster --name a13n-local
 
       - name: Retain Kubernetes reports and failure logs
         if: always()
@@ -199,15 +223,23 @@ jobs:
         with:
           version: v3.19.0
 
-      - name: Create the pinned kind cluster
+      - name: Install pinned kind and kubectl
         uses: helm/kind-action@v1
         with:
           version: v0.30.0
           kubectl_version: v1.34.1
-          node_image: kindest/node:v1.34.0@sha256:7416a61b42b1662ca6ca89f02028ac133a309a2a30ba309614e8ec94d976dc5a
-          cluster_name: a13n-local
-          config: deploy/kubernetes/kind-local.yaml
-          wait: 5m
+          install_only: true
+
+      - name: Start the pinned cluster alongside image builds
+        run: |
+          # Expand the environment in the child shell.
+          # shellcheck disable=SC2016
+          nohup bash -c '
+            kind create cluster --name a13n-local \
+              --image kindest/node:v1.34.0@sha256:7416a61b42b1662ca6ca89f02028ac133a309a2a30ba309614e8ec94d976dc5a \
+              --config deploy/kubernetes/kind-local.yaml --wait 5m
+            echo "$?" > "$RUNNER_TEMP/kind-create.status"
+          ' > "$RUNNER_TEMP/kind-create.log" 2>&1 < /dev/null &
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -221,6 +253,13 @@ jobs:
           load: true
           cache-from: type=gha,scope=service-e2e-sandbox
           cache-to: type=gha,scope=service-e2e-sandbox,mode=max,ignore-error=true
+
+      - name: Require successful cluster creation
+        timeout-minutes: 5
+        run: |
+          until test -f "$RUNNER_TEMP/kind-create.status"; do sleep 1; done
+          cat "$RUNNER_TEMP/kind-create.log"
+          test "$(cat "$RUNNER_TEMP/kind-create.status")" = 0
 
       - name: Install locked test dependencies and load the sandbox
         run: |
@@ -282,6 +321,15 @@ jobs:
           kubectl --context kind-a13n-local -n a13n-service logs job/a13n-a13n-migrate-2 --all-containers --tail 200 || true
           kubectl --context kind-a13n-local get pv,storageclasses || true
           kind export logs --name a13n-local test-results/kind || true
+
+      - name: Delete the job-owned kind cluster
+        if: always()
+        run: |
+          if test -f "$RUNNER_TEMP/kind-create.log"; then
+            # shellcheck disable=SC2016
+            timeout 5m bash -c 'until test -f "$RUNNER_TEMP/kind-create.status"; do sleep 1; done' || true
+          fi
+          kind delete cluster --name a13n-local
 
       - name: Retain Kubernetes reports and failure logs
         if: always()

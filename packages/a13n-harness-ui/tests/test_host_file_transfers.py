@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
@@ -259,7 +262,10 @@ async def test_stream_rejects_stale_open_and_first_read(tmp_path: Path) -> None:
     files = HostFiles(enabled=True)
     opened = await files.open_stream(FileReadRequest(path=str(path)))
     revision = opened.entry.revision
+    before = path.stat()
     path.write_bytes(b"new")
+    # Filesystems can coalesce timestamps for two writes within one clock tick.
+    os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns + 1_000_000_000))
     with pytest.raises(HarnessUiError, match="File content changed"):
         await stream_response(connection(), opened, files.read_stream, filename=path.name)
     assert opened.stream.closed
@@ -273,7 +279,12 @@ async def test_stream_rejects_stale_open_and_first_read(tmp_path: Path) -> None:
 async def test_download_ranges_have_no_whole_file_limit(tmp_path: Path, name: str) -> None:
     path = tmp_path / name
     size = 5 * 1024**3 + 7
-    with path.open("wb") as stream:
+    path.touch()
+    if sys.platform == "win32":
+        # NTFS needs an explicit sparse flag before extending the file.
+        # Keep the real >5 GiB range check without writing gigabytes of zeros.
+        subprocess.run(["fsutil", "sparse", "setflag", str(path)], check=True, capture_output=True)
+    with path.open("r+b") as stream:
         stream.truncate(size)
         stream.seek(size - 4)
         stream.write(b"TAIL")

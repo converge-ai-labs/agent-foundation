@@ -42,7 +42,7 @@ def _files(root: Path) -> dict[str, bytes]:
 def test_builds_navigation_from_site_metadata_and_real_headings(tmp_path: Path) -> None:
     package, repository = _source(tmp_path)
     output = build_skills(package, repository)
-    skill = (output / "SKILL.md").read_text()
+    skill = (output / "SKILL.md").read_text(encoding="utf-8")
     metadata = yaml.safe_load(skill.split("---", 2)[1])
     assert metadata["name"] == "harness-ui-configuration"
     assert metadata["description"]
@@ -51,7 +51,7 @@ def test_builds_navigation_from_site_metadata_and_real_headings(tmp_path: Path) 
     assert "Topics: Models; Tools." in skill
     assert "Not a heading" not in skill
     assert "Credentials" not in skill
-    index = (output / "references/navigation.md").read_text()
+    index = (output / "references/navigation.md").read_text(encoding="utf-8")
     assert "Models — lines 6-15" in index
     assert "Credentials — lines 8-15" in index
     assert "Tools — lines 16-18" in index
@@ -71,7 +71,7 @@ def test_rebuild_is_deterministic_and_tracks_reorganized_docs(tmp_path: Path) ->
     meta.write_text(meta.read_text().replace('"settings"', '"models"'))
     output = build_skills(package, repository)
     assert not (output / "docs/settings.md").exists()
-    assert "[Settings](docs/models.md)" in (output / "SKILL.md").read_text()
+    assert "[Settings](docs/models.md)" in (output / "SKILL.md").read_text(encoding="utf-8")
 
 
 def test_includes_unlisted_pages_and_nested_assets(tmp_path: Path) -> None:
@@ -81,7 +81,7 @@ def test_includes_unlisted_pages_and_nested_assets(tmp_path: Path) -> None:
     (docs / "extra/guide.md").write_text("---\ntitle: Extra\n---\n\n## Details\n\n![Picture](image.png)\n")
     (docs / "extra/image.png").write_bytes(b"test image")
     output = build_skills(package, repository)
-    assert "[Extra](docs/extra/guide.md)" in (output / "SKILL.md").read_text()
+    assert "[Extra](docs/extra/guide.md)" in (output / "SKILL.md").read_text(encoding="utf-8")
     assert not (output / "docs/meta.json").exists()
     assert (output / "docs/extra/image.png").read_bytes() == b"test image"
 

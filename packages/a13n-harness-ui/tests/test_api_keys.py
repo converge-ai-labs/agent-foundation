@@ -149,7 +149,8 @@ anyio.run(main)
     finished = set()
 
     async def write(role: str) -> None:
-        await anyio.run_process([sys.executable, "-c", script, str(path), role])
+        result = await anyio.run_process([sys.executable, "-c", script, str(path), role], check=False)
+        assert result.returncode == 0, result.stderr.decode(errors="replace")
         finished.add(role)
 
     roles = ("first", "second", "oauth")

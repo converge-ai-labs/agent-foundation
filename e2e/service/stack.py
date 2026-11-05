@@ -129,7 +129,8 @@ require_https = false
 slots = {worker_slots}
 lease_seconds = {LEASE_SECONDS}
 scan_seconds = 0.2
-authority_seconds = 0.2
+# This interval also bounds the complete database heartbeat operation.
+authority_seconds = 0.5
 drain_seconds = {DRAIN_SECONDS}
 [control]
 scan_seconds = 0.2
@@ -142,7 +143,8 @@ docker_host = {json.dumps(docker_host())}
 enabled = true
 root = {json.dumps(str(objects.parent / "environments"))}
 [telemetry]
-log_format = "pretty"
+# One event per line keeps complete exceptions in bounded failure tails.
+log_format = "json"
 """
     )
     from .kubernetes import profile

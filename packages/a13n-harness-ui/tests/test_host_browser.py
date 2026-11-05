@@ -97,7 +97,7 @@ async def test_viewer_admission_is_readonly_and_tickets_are_single_use(browsers,
     reader = AsyncMock()
     writer = Mock(wait_closed=AsyncMock())
     connect = AsyncMock(return_value=(reader, writer))
-    monkeypatch.setattr(asyncio, "open_unix_connection", connect)
+    monkeypatch.setattr(asyncio, "open_unix_connection", connect, raising=False)
     connection = await browsers.connect("thread-a", access.ticket)
     assert (connection.reader, connection.writer) == (reader, writer)
     connect.assert_awaited_once_with("/private/readonly.sock")
@@ -745,7 +745,7 @@ async def test_viewer_connect_rechecks_stop_after_socket_open(browsers, monkeypa
         observing.set()
         await release.wait()
 
-    monkeypatch.setattr(asyncio, "open_unix_connection", open_socket)
+    monkeypatch.setattr(asyncio, "open_unix_connection", open_socket, raising=False)
     browsers.runtime.observe.side_effect = observe
     operation = asyncio.create_task(browsers.backend("thread-a", binding.identity).observe())
     await observing.wait()

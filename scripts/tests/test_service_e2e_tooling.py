@@ -26,6 +26,31 @@ from e2e.service.stack import LEASE_SECONDS, Stores, write_config
 ROOT = Path(__file__).resolve().parents[2]
 
 
+@pytest.mark.parametrize("job", ["helm", "journeys"])
+@pytest.mark.parametrize("status", [0, 23])
+def test_parallel_cluster_setup_preserves_failures(tmp_path, job, status):
+    workflow = yaml.safe_load((ROOT / ".github/workflows/ci-deploy.yml").read_text())
+    steps = workflow["jobs"][job]["steps"]
+    names = [step["name"] for step in steps]
+    start = names.index("Start the pinned cluster alongside image builds")
+    ready = names.index("Require successful cluster creation")
+    assert start < names.index("Build the checkout sandbox with reusable layers") < ready
+    assert next(step for step in steps if step.get("uses") == "helm/kind-action@v1")["with"]["install_only"]
+    (tmp_path / "kind-create.status").write_text(str(status))
+    (tmp_path / "kind-create.log").write_text("cluster diagnostic\n")
+    result = subprocess.run(
+        ["bash", "-e", "-c", steps[ready]["run"]],
+        env={**os.environ, "RUNNER_TEMP": str(tmp_path)},
+        capture_output=True,
+        text=True,
+        timeout=5,
+    )
+    assert (result.returncode == 0) is (status == 0)
+    assert "cluster diagnostic" in result.stdout
+    cleanup = next(step for step in steps if step["name"] == "Delete the job-owned kind cluster")
+    assert cleanup["if"] == "always()" and "kind delete cluster --name a13n-local" in cleanup["run"]
+
+
 @pytest.fixture
 def environment_journeys(pytestconfig):
     pytestconfig.addinivalue_line("markers", "kubernetes: requires an explicit development cluster")
@@ -239,6 +264,8 @@ def test_the_e2e_service_configuration_is_valid(tmp_path, monkeypatch, worker_sl
     if kubernetes:
         assert journey.environments.kubernetes_clusters["e2e"].ownership_id == "e2e"
     assert journey.worker.slots == worker_slots
+    assert journey.worker.authority_seconds == 0.5
+    assert journey.telemetry.log_format == "json"
     assert journey.worker.lease_seconds == LEASE_SECONDS and journey.server.tls_certificate == stores.certificate
 
 

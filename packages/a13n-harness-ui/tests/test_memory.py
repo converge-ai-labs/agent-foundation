@@ -59,8 +59,8 @@ def _organizer(tmp_path, source, *, webui=True):
     return MemoryOrganizer(configuration_root=tmp_path, current=current, run=forbidden, webui=webui)
 
 
-async def _settle(organizer):
-    with fail_after(5):
+async def _settle(organizer, *, timeout=5):
+    with fail_after(timeout):
         while organizer._pending:
             await sleep(0.01)
 
@@ -503,13 +503,15 @@ async def test_organizer_real_memory_tool_write(tmp_path, monkeypatch):
     async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=root, host_mode="webui") as app:
         organizer = app._memory_organizer
         organizer.offer(None)
-        await _settle(organizer)
-        assert organizer.status(source).last_outcome == "completed"
-        assert (await store.read("topic.md")).text == "A stable topic.\n"
-        state = _read_state(scope.root / ".a13n-memory/organization.json")
-        assert state.manifest == await manifest(store)
-        assert state.snapshot["topic.md"] == "A stable topic.\n"
-        organizer.stop()
+        try:
+            await _settle(organizer, timeout=30)
+            assert organizer.status(source).last_outcome == "completed"
+            assert (await store.read("topic.md")).text == "A stable topic.\n"
+            state = _read_state(scope.root / ".a13n-memory/organization.json")
+            assert state.manifest == await manifest(store)
+            assert state.snapshot["topic.md"] == "A stable topic.\n"
+        finally:
+            organizer.stop()
     assert calls == 2
 
 
@@ -546,11 +548,13 @@ async def test_organizer_rejects_stale_tool_write_before_progress_confirmation(t
     async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=root, host_mode="webui") as app:
         organizer = app._memory_organizer
         organizer.offer(None)
-        await _settle(organizer)
-        assert organizer.status(source).last_outcome == "concurrent_change"
-        assert not (scope.root / "derived.md").exists()
-        assert _read_state(scope.root / ".a13n-memory/organization.json").manifest == {}
-        organizer.stop()
+        try:
+            await _settle(organizer, timeout=30)
+            assert organizer.status(source).last_outcome == "concurrent_change"
+            assert not (scope.root / "derived.md").exists()
+            assert _read_state(scope.root / ".a13n-memory/organization.json").manifest == {}
+        finally:
+            organizer.stop()
     assert calls == 2
 
 

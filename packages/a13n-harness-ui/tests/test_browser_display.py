@@ -22,7 +22,7 @@ async def test_wayvnc_handoff_waits_for_native_client_destruction(tmp_path, monk
     busy = connection([b'{"code":0,"data":[{"id":"3"}]}'])
     ready = connection([b'{"code":', b'0,"data":[]}'])
     connect = AsyncMock(side_effect=[busy, ready])
-    monkeypatch.setattr(browser_display.asyncio, "open_unix_connection", connect)
+    monkeypatch.setattr(browser_display.asyncio, "open_unix_connection", connect, raising=False)
     await browser_display.settle_wayvnc(tmp_path / "control.sock")
     assert connect.await_count == 2
     for _, writer in (busy, ready):
@@ -34,7 +34,7 @@ async def test_wayvnc_handoff_waits_for_native_client_destruction(tmp_path, monk
 @pytest.mark.parametrize("chunks", [[b""], [b'{"code":1}'], [b'{"code":0,"data":{}}'], [b"x" * 65537]])
 async def test_wayvnc_cleanup_errors_fail_closed_and_close_the_socket(tmp_path, monkeypatch, chunks):
     _, writer = pair = connection(chunks)
-    monkeypatch.setattr(browser_display.asyncio, "open_unix_connection", AsyncMock(return_value=pair))
+    monkeypatch.setattr(browser_display.asyncio, "open_unix_connection", AsyncMock(return_value=pair), raising=False)
     with pytest.raises(RuntimeError):
         await browser_display.settle_wayvnc(tmp_path / "control.sock")
     writer.close.assert_called_once()
@@ -48,7 +48,9 @@ async def test_wayvnc_unresponsive_control_socket_is_bounded(tmp_path, monkeypat
         await asyncio.Event().wait()
 
     reader.read.side_effect = blocked
-    monkeypatch.setattr(browser_display.asyncio, "open_unix_connection", AsyncMock(return_value=(reader, writer)))
+    monkeypatch.setattr(
+        browser_display.asyncio, "open_unix_connection", AsyncMock(return_value=(reader, writer)), raising=False
+    )
     timeout = asyncio.timeout
     monkeypatch.setattr(browser_display.asyncio, "timeout", lambda _: timeout(0.02))
     with pytest.raises(TimeoutError):
@@ -66,7 +68,9 @@ async def test_sway_ipc_reads_fragmented_native_window_tree_and_closes_transport
     reader = AsyncMock()
     reader.readexactly.side_effect = [b"i3-ipc" + struct.pack("<II", len(payload), 4), payload]
     writer = Mock(drain=AsyncMock(), wait_closed=AsyncMock())
-    monkeypatch.setattr(browser_display.asyncio, "open_unix_connection", AsyncMock(return_value=(reader, writer)))
+    monkeypatch.setattr(
+        browser_display.asyncio, "open_unix_connection", AsyncMock(return_value=(reader, writer)), raising=False
+    )
     assert await browser_display.sway_windows({"SWAYSOCK": "/private/sway.sock"}) == {5: "Browser window"}
     writer.write.assert_called_once_with(b"i3-ipc" + struct.pack("<II", 0, 4))
     writer.close.assert_called_once()

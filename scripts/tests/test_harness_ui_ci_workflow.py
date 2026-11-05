@@ -144,6 +144,6 @@ def test_windows_native_selection_exists_and_full_suite_is_retained() -> None:
     assert full["if"] == "github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'"
     assert shlex.split(full["run"])[-1] == "packages/a13n-harness-ui/tests"
     lifecycle = by_name["Test native command lifecycle"]
-    assert "if" not in lifecycle
+    assert lifecycle["if"] == "matrix.shard == 1"
     for name in ("test_direct_local.py", "test_direct_local_processes.py"):
         assert f"packages/a13n-harness/tests/providers_environment/{name}" in shlex.split(lifecycle["run"])

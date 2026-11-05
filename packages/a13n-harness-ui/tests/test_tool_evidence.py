@@ -119,7 +119,7 @@ async def test_real_file_edit_evidence_survives_completed_run_and_app_restart(
     )
     path = tmp_path / "workspace" / "sample.txt"
     padding = "unchanged content\n" * 5000
-    path.write_text(padding + "original\n")
+    path.write_text(padding + "original\n", encoding="utf-8", newline="")
     steps = 0
 
     async def resolve(self, context, model_id):
