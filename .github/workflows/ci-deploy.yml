@@ -45,6 +45,34 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  chart:
+    name: Helm chart checks
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.19.0
+
+      - name: Lint and test the chart for every values file
+        run: make sync k8s-check
+
   helm:
     name: Helm installation and rolling upgrade
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
@@ -52,8 +80,7 @@ jobs:
     timeout-minutes: 20
     env:
       K8S_ENVIRONMENTS: "1"
-      K8S_SERVICE_IMAGE: a13n-service:ci
-      K8S_SANDBOX_IMAGE: a13n-sandbox:ci
+      K8S_BUILD_CACHE: gha
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -101,25 +128,14 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build the checkout sandbox with reusable layers
-        uses: docker/build-push-action@v6
+      - name: Expose the job-scoped BuildKit cache credentials
+        uses: actions/github-script@v8
         with:
-          context: .
-          file: deploy/docker/images/sandbox/Dockerfile
-          tags: a13n-sandbox:ci
-          load: true
-          cache-from: type=gha,scope=service-e2e-sandbox
-          cache-to: type=gha,scope=service-e2e-sandbox,mode=max,ignore-error=true
-
-      - name: Build the checkout Service with reusable layers
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: deploy/docker/images/a13n-service/Dockerfile
-          tags: a13n-service:ci
-          load: true
-          cache-from: type=gha,scope=ci-service
-          cache-to: type=gha,scope=ci-service,mode=max,ignore-error=true
+          script: |
+            core.setSecret(process.env.ACTIONS_RUNTIME_TOKEN);
+            for (const name of ['ACTIONS_RUNTIME_TOKEN', 'ACTIONS_RESULTS_URL']) {
+              core.exportVariable(name, process.env[name]);
+            }
 
       - name: Require successful cluster creation
         timeout-minutes: 5
@@ -131,15 +147,18 @@ jobs:
       - name: Install locked test dependencies
         run: make sync
 
-      - name: Lint and test the chart for every values file
-        run: make k8s-check
-
-      - name: Install the chart and create the administrator
+      - name: Build both images while installing the Service and bootstrapping
+        # Sandbox build/import overlaps Service build/import, migration, readiness and bootstrap.
+        # k8s-up joins both branches before publishing deployment.json or starting smoke.
         run: make k8s-up k8s-smoke
 
       # A new rollout annotation upgrades the release: a new migration Job, then rolling Deployments.
-      - name: Upgrade the release
-        run: make k8s-up k8s-smoke
+      - name: Upgrade the release with the same checkout images
+        run: |
+          K8S_SERVICE_IMAGE=$(jq -r .service_image "$K8S_STATE_DIR/deployment.json")
+          K8S_SANDBOX_IMAGE=$(jq -r .sandbox_image "$K8S_STATE_DIR/deployment.json")
+          export K8S_SERVICE_IMAGE K8S_SANDBOX_IMAGE
+          make k8s-up k8s-smoke
 
       - name: Require the upgraded revision and its migration
         run: |
@@ -341,12 +360,13 @@ jobs:
 
   kind:
     name: Helm install and upgrade on kind
-    needs: [helm, journeys]
+    needs: [chart, helm, journeys]
     if: always() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
     runs-on: ubuntu-latest
     steps:
       - name: Require Helm and all nine Kubernetes journeys
         env:
+          CHART_RESULT: ${{ needs.chart.result }}
           HELM_RESULT: ${{ needs.helm.result }}
           JOURNEYS_RESULT: ${{ needs.journeys.result }}
-        run: test "$HELM_RESULT" = success && test "$JOURNEYS_RESULT" = success
+        run: test "$CHART_RESULT" = success && test "$HELM_RESULT" = success && test "$JOURNEYS_RESULT" = success

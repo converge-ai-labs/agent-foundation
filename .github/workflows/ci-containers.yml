@@ -140,7 +140,9 @@ jobs:
               images.append({
                   "name": "a13n-service",
                   "runner": "ubuntu-latest",
-                  "build_target": "image-a13n-service",
+                  "dockerfile": "deploy/docker/images/a13n-service/Dockerfile",
+                  "tag": "a13n-service:local",
+                  "cache_scope": "ci-service",
                   "check_target": "image-check-a13n-service",
                   # The single-host stack's first run: Console, first administrator, sign-in and its generated key.
                   "smoke_target": "compose-smoke",
@@ -150,7 +152,9 @@ jobs:
                   images.append({
                       "name": f"a13n-browser-{arch}",
                       "runner": runner,
-                      "build_target": "image-browser",
+                      "dockerfile": "deploy/docker/images/browser/Dockerfile",
+                      "tag": "a13n-browser:local",
+                      "cache_scope": f"ci-browser-{arch}",
                       "check_target": "image-check-browser",
                   })
           if os.environ["GITHUB_EVENT_NAME"] == "workflow_dispatch" or os.environ["SANDBOX_CHANGED"] == "true":
@@ -160,7 +164,10 @@ jobs:
                       images.append({
                           "name": f"a13n-sandbox-{variant}-{arch}",
                           "runner": runner,
-                          "build_target": f"image-sandbox{suffix}",
+                          "dockerfile": "deploy/docker/images/sandbox/Dockerfile",
+                          "tag": f"a13n-sandbox:local{suffix}",
+                          "build_args": f"SANDBOX_VARIANT={variant}",
+                          "cache_scope": f"ci-sandbox-{variant}-{arch}",
                           "check_target": f"image-check-sandbox{suffix}",
                       })
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
@@ -197,23 +204,18 @@ jobs:
           enable-cache: true
 
       - name: Set up Docker Buildx
-        if: matrix.name == 'a13n-service'
         uses: docker/setup-buildx-action@v3
 
-      - name: Build the checkout Service with reusable layers
-        if: matrix.name == 'a13n-service'
+      - name: Build the checkout image with reusable layers
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: deploy/docker/images/a13n-service/Dockerfile
-          tags: a13n-service:local
+          file: ${{ matrix.dockerfile }}
+          tags: ${{ matrix.tag }}
+          build-args: ${{ matrix.build_args }}
           load: true
-          cache-from: type=gha,scope=ci-service
-          cache-to: type=gha,scope=ci-service,mode=max,ignore-error=true
-
-      - name: Build other images
-        if: matrix.name != 'a13n-service'
-        run: make ${{ matrix.build_target }}
+          cache-from: type=gha,scope=${{ matrix.cache_scope }}
+          cache-to: type=gha,scope=${{ matrix.cache_scope }},mode=max,ignore-error=true
 
       - name: Smoke-check image
         run: make ${{ matrix.check_target }}

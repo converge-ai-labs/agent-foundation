@@ -403,12 +403,23 @@ def test_container_ci_checks_all_variants_on_both_native_architectures(tmp_path,
     images = json.loads(output.read_text().removeprefix("images="))
     assert {image["runner"] for image in images} == {"ubuntu-24.04", "ubuntu-24.04-arm"}
     assert len(images) == 6
+    assert len({image["cache_scope"] for image in images}) == 6
+    build_steps = workflow["jobs"]["containers"]["steps"]
+    build = next(step for step in build_steps if step.get("uses", "").startswith("docker/build-push-action@"))
+    assert "if" not in build
+    assert build["with"]["load"] is True
+    assert build["with"]["file"] == "${{ matrix.dockerfile }}"
+    assert build["with"]["tags"] == "${{ matrix.tag }}"
+    assert build["with"]["build-args"] == "${{ matrix.build_args }}"
+    assert "matrix.cache_scope" in build["with"]["cache-from"]
+    assert "matrix.cache_scope" in build["with"]["cache-to"]
     for runner in ("ubuntu-24.04", "ubuntu-24.04-arm"):
         selected = [image for image in images if image["runner"] == runner]
-        assert {image["build_target"] for image in selected} == {
-            "image-sandbox",
-            "image-sandbox-slim",
-            "image-sandbox-desktop",
+        assert {image["dockerfile"] for image in selected} == {"deploy/docker/images/sandbox/Dockerfile"}
+        assert {(image["tag"], image["build_args"]) for image in selected} == {
+            ("a13n-sandbox:local", "SANDBOX_VARIANT=standard"),
+            ("a13n-sandbox:local-slim", "SANDBOX_VARIANT=slim"),
+            ("a13n-sandbox:local-desktop", "SANDBOX_VARIANT=desktop"),
         }
         assert {image["check_target"] for image in selected} == {
             "image-check-sandbox",

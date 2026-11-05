@@ -34,7 +34,10 @@ def test_parallel_cluster_setup_preserves_failures(tmp_path, job, status):
     names = [step["name"] for step in steps]
     start = names.index("Start the pinned cluster alongside image builds")
     ready = names.index("Require successful cluster creation")
-    assert start < names.index("Build the checkout sandbox with reusable layers") < ready
+    if job == "helm":
+        assert start < ready < names.index("Build both images while installing the Service and bootstrapping")
+    else:
+        assert start < names.index("Build the checkout sandbox with reusable layers") < ready
     assert next(step for step in steps if step.get("uses") == "helm/kind-action@v1")["with"]["install_only"]
     (tmp_path / "kind-create.status").write_text(str(status))
     (tmp_path / "kind-create.log").write_text("cluster diagnostic\n")
@@ -185,7 +188,7 @@ def test_the_e2e_suite_collects_every_module_and_requires_opt_in_for_external_jo
         assert not selected_kubernetes.intersection(nodes)
         selected_kubernetes.update(nodes)
     assert selected_kubernetes == kubernetes
-    assert deployment["jobs"]["kind"]["needs"] == ["helm", "journeys"]
+    assert deployment["jobs"]["kind"]["needs"] == ["chart", "helm", "journeys"]
     workflow = yaml.safe_load((ROOT / ".github/workflows/ci-a13n-service-e2e.yml").read_text())
     shards = workflow["jobs"]["scenarios"]["strategy"]["matrix"]["include"]
     selected: set[str] = set()

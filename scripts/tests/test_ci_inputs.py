@@ -567,19 +567,26 @@ def test_harness_gate_requires_every_matrix_member(result: str) -> None:
     assert (completed.returncode == 0) == (result == "success")
 
 
+@pytest.mark.parametrize("chart", ["success", "failure", "cancelled", "skipped"])
 @pytest.mark.parametrize("helm", ["success", "failure", "cancelled", "skipped"])
 @pytest.mark.parametrize("journeys", ["success", "failure", "cancelled", "skipped"])
-def test_deployment_gate_requires_helm_and_every_journey_shard(helm: str, journeys: str) -> None:
+def test_deployment_gate_requires_chart_helm_and_every_journey_shard(chart: str, helm: str, journeys: str) -> None:
     workflow = yaml.safe_load((WORKFLOWS / "ci-deploy.yml").read_text())
     gate = workflow["jobs"]["kind"]
     assert gate["name"] == "Helm install and upgrade on kind"
-    assert set(gate["needs"]) == {"helm", "journeys"} and "always()" in gate["if"]
+    assert set(gate["needs"]) == {"chart", "helm", "journeys"} and "always()" in gate["if"]
     step = gate["steps"][0]
-    assert step["env"] == {"HELM_RESULT": "${{ needs.helm.result }}", "JOURNEYS_RESULT": "${{ needs.journeys.result }}"}
+    assert step["env"] == {
+        "CHART_RESULT": "${{ needs.chart.result }}",
+        "HELM_RESULT": "${{ needs.helm.result }}",
+        "JOURNEYS_RESULT": "${{ needs.journeys.result }}",
+    }
     completed = subprocess.run(
-        ["bash", "-e", "-c", step["run"]], env={"HELM_RESULT": helm, "JOURNEYS_RESULT": journeys}, check=False
+        ["bash", "-e", "-c", step["run"]],
+        env={"CHART_RESULT": chart, "HELM_RESULT": helm, "JOURNEYS_RESULT": journeys},
+        check=False,
     )
-    assert (completed.returncode == 0) == (helm == journeys == "success")
+    assert (completed.returncode == 0) == (chart == helm == journeys == "success")
 
 
 def test_harness_keeps_full_discovery_and_native_browser_coverage() -> None:

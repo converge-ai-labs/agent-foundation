@@ -14,16 +14,16 @@ WORKFLOW = ROOT / ".github/workflows/ci-a13n-harness-ui.yml"
 
 @pytest.mark.parametrize("result", ["success", "failure", "cancelled", "skipped", ""])
 @pytest.mark.parametrize("selected", [True, False])
-@pytest.mark.parametrize("component", ["TESTS", "FRONTEND", "WEBUI", "DISTRIBUTION"])
+@pytest.mark.parametrize("component", ["CHECKS", "TESTS", "FRONTEND", "WEBUI", "DISTRIBUTION"])
 def test_linux_gate_requires_exact_selected_results(component: str, selected: bool, result: str) -> None:
     gate = yaml.safe_load(WORKFLOW.read_text())["jobs"]["linux"]["steps"][0]
     env = {"CHANGES_RESULT": "success"}
-    for name in ("TESTS", "FRONTEND", "WEBUI", "DISTRIBUTION"):
+    for name in ("CHECKS", "TESTS", "FRONTEND", "WEBUI", "DISTRIBUTION"):
         env[f"{name}_RESULT"] = "success"
         env[f"{name}_SELECTED"] = "true"
         assert gate["env"][f"{name}_SELECTED"] == (
             "${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs."
-            + ("distribution" if name == "WEBUI" else name.lower())
+            + ({"CHECKS": "tests", "WEBUI": "distribution"}.get(name, name.lower()))
             + " == 'true' }}"
         )
         assert gate["env"][f"{name}_RESULT"] == "${{ needs." + name.lower() + ".result }}"
@@ -147,3 +147,23 @@ def test_windows_native_selection_exists_and_full_suite_is_retained() -> None:
     assert lifecycle["if"] == "matrix.shard == 1"
     for name in ("test_direct_local.py", "test_direct_local_processes.py"):
         assert f"packages/a13n-harness/tests/providers_environment/{name}" in shlex.split(lifecycle["run"])
+
+
+def test_python_checks_run_beside_the_test_shards_and_remain_required() -> None:
+    jobs = yaml.safe_load(WORKFLOW.read_text())["jobs"]
+    checks = jobs["checks"]
+    assert checks["needs"] == jobs["tests"]["needs"] == "changes"
+    assert checks["if"] == jobs["tests"]["if"]
+    assert "checks" in jobs["linux"]["needs"]
+    steps = {step["name"]: step for step in checks["steps"]}
+    assert "if" not in steps["Type-check UI"]
+    assert "if" not in steps["Test native command lifecycle"]
+    assert "packages/a13n-harness-ui/a13n_harness_ui" in steps["Type-check UI"]["run"]
+    assert "scripts/release_version.py" in steps["Type-check UI"]["run"]
+    for name in ("test_direct_local.py", "test_direct_local_processes.py"):
+        assert (
+            f"packages/a13n-harness/tests/providers_environment/{name}" in steps["Test native command lifecycle"]["run"]
+        )
+    assert all(
+        step["name"] not in {"Type-check UI", "Test native command lifecycle"} for step in jobs["tests"]["steps"]
+    )

@@ -7,6 +7,7 @@ import shutil
 import stat
 import subprocess
 import tomllib
+from threading import Event
 
 import pytest
 import yaml
@@ -446,10 +447,12 @@ def test_failed_captured_command_does_not_disclose_secrets(monkeypatch):
 
 @pytest.mark.parametrize("existing", [False, True])
 @pytest.mark.parametrize("environments", [False, True])
-@pytest.mark.parametrize("prebuilt", [False, True])
+@pytest.mark.parametrize("build_mode", ["local", "prebuilt", "gha"])
 def test_startup_builds_loads_and_waits_before_bootstrapping(
-    tmp_path, monkeypatch, capsys, existing, environments, prebuilt
+    tmp_path, monkeypatch, capsys, existing, environments, build_mode
 ):
+    prebuilt = build_mode == "prebuilt"
+    monkeypatch.setenv("K8S_BUILD_CACHE", "gha" if build_mode == "gha" else "")
     commands = []
 
     def run(*args, **kwargs):
@@ -477,20 +480,30 @@ def test_startup_builds_loads_and_waits_before_bootstrapping(
     monkeypatch.setattr(k8s, "prepare", lambda path: commands.append(("prepare",)) or admin)
     monkeypatch.setattr(k8s, "bootstrap", lambda selected: commands.append(("bootstrap", selected["EMAIL"])) or True)
     k8s.start(tmp_path, environments=environments)
-    builds = [c for c in commands if c[:2] == ("docker", "tag" if prebuilt else "build")]
-    assert not any(c[:2] == ("docker", "build" if prebuilt else "tag") for c in commands)
-    load = next(c for c in commands if c[:3] == ("kind", "load", "docker-image"))
+    content_tagged = build_mode != "local"
+    builds = [c for c in commands if c[:2] == ("docker", "tag" if content_tagged else "build")]
+    builds.sort(key=lambda c: "a13n-service" not in " ".join(c))
+    assert not any(c[:2] == ("docker", "build" if content_tagged else "tag") for c in commands)
+    if build_mode == "gha":
+        cached_builds = [c for c in commands if c[:3] == ("docker", "buildx", "build")]
+        assert len(cached_builds) == (2 if environments else 1)
+        for c in cached_builds:
+            scope = "ci-service" if "a13n-service" in " ".join(c) else "service-e2e-sandbox"
+            assert "--load" in c
+            assert f"type=gha,version=2,scope={scope}" in c
+            assert f"type=gha,version=2,scope={scope},mode=max,ignore-error=true" in c
+    load = next(c for c in commands if c[:3] == ("kind", "load", "docker-image") and c[3].startswith("a13n-service:"))
     helm = next(c for c in commands if c[0] == "helm")
     assert len(builds) == (2 if environments else 1)
     assert ("deploy/kubernetes/helm/values-environments-smoke.yaml" in helm) is environments
     deployment = json.loads((tmp_path / "deployment.json").read_text())
     if environments:
-        sandbox = builds[1][-1] if prebuilt else builds[1][builds[1].index("-t") + 1]
+        sandbox = builds[1][-1] if content_tagged else builds[1][builds[1].index("-t") + 1]
         assert deployment["sandbox_image"] == sandbox
         assert ("kind", "load", "docker-image", sandbox, "--name", k8s.CLUSTER) in commands
     else:
         assert deployment["sandbox_image"] is None
-    image = builds[0][-1] if prebuilt else builds[0][builds[0].index("-t") + 1]
+    image = builds[0][-1] if content_tagged else builds[0][builds[0].index("-t") + 1]
     assert image in load
     assert "--wait" in helm and "--kube-context" in helm and k8s.NAMESPACE in helm
     assert f"image.tag={image.split(':')[1]}" in helm
@@ -508,6 +521,66 @@ def test_startup_builds_loads_and_waits_before_bootstrapping(
         second_helm = next(c for c in commands if c[0] == "helm")
         assert first_rollout not in second_helm
         assert f"image.tag={image.split(':')[1]}" in second_helm
+
+
+@pytest.mark.parametrize("failure", [None, "sandbox-build", "sandbox-load", "deploy"])
+def test_startup_joins_sandbox_before_publishing_state(tmp_path, monkeypatch, failure):
+    sandbox_started = Event()
+    deployed = Event()
+    sandbox_finished = Event()
+    loaded = []
+
+    def run(*args, **kwargs):
+        if args[:3] == ("kind", "get", "clusters"):
+            return k8s.CLUSTER
+        if args[:3] == ("kind", "get", "nodes"):
+            return "test-node"
+        if args[:2] == ("docker", "inspect"):
+            return json.dumps(
+                [{"HostConfig": {"PortBindings": {"30080/tcp": [{"HostIp": "127.0.0.1", "HostPort": str(k8s.PORT)}]}}}]
+            )
+        if args[:3] == ("kind", "load", "docker-image"):
+            if args[3] == "sandbox:built":
+                sandbox_finished.set()
+                if failure == "sandbox-load":
+                    raise RuntimeError(failure)
+            loaded.append(args[3])
+        return ""
+
+    def prepare_image(component, destination):
+        if component == "sandbox":
+            sandbox_started.set()
+            assert deployed.wait(5), "Service deployment waited for its unrelated sandbox image"
+            if failure == "sandbox-build":
+                sandbox_finished.set()
+                raise RuntimeError(failure)
+        else:
+            assert sandbox_started.wait(5), "Image builds were serialized"
+        return f"{component}:built"
+
+    def deploy(*args, **kwargs):
+        assert loaded == ["a13n-service:built"]
+        assert not (tmp_path / "deployment.json").exists()
+        deployed.set()
+        if failure == "deploy":
+            raise RuntimeError(failure)
+
+    monkeypatch.setattr(k8s.shutil, "which", lambda name: "/bin/" + name)
+    monkeypatch.setattr(k8s, "run", run)
+    monkeypatch.setattr(k8s, "prepare", lambda state: None)
+    monkeypatch.setattr(k8s, "prepare_image", prepare_image)
+    monkeypatch.setattr(k8s, "deploy", deploy)
+    if failure:
+        with pytest.raises(RuntimeError, match=failure):
+            k8s.start(tmp_path, environments=True)
+        assert not (tmp_path / "deployment.json").exists()
+    else:
+        k8s.start(tmp_path, environments=True)
+        assert json.loads((tmp_path / "deployment.json").read_text()) == {
+            "service_image": "a13n-service:built",
+            "sandbox_image": "sandbox:built",
+        }
+    assert sandbox_finished.is_set(), "The launcher returned before joining its image worker"
 
 
 def test_wrong_port_mapping_stops_before_mutation(tmp_path, monkeypatch):
