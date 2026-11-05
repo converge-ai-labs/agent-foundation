@@ -344,7 +344,7 @@ it.each(["inherit", "off", "on", "spaces"])(
           items: path.endsWith("/agents")
             ? [{ id: "agt_1", name: "Release Bot", image_url: null }]
             : path.endsWith("/environment-templates")
-              ? [{ id: "envt_research", name: "Research" }]
+              ? [{ id: "envt_research", name: "Research", enabled: true }]
               : path.endsWith("/memory-spaces")
                 ? [{ id: "msp_team", name: "Team knowledge", enabled: true }]
                 : [],
