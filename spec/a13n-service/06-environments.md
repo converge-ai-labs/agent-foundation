@@ -22,7 +22,7 @@ environments   (env_)
   id  organization_id  workspace_id  provider_id NULL  provider_identity NULL  template_id NULL
   device_id NULL  endpoint NULL  token NULL  owner_principal_id NULL  name  status  handle NULL  generation
   metrics_data_source_id NULL  metrics_labels  metrics_launch NULL  metrics_application NULL
-  envd_bootstrap NULL  retirement_state NULL
+  replaces_environment_id NULL  envd_bootstrap NULL  retirement_state NULL
   reclamation NULL  preparation_deadline NULL  preparation_failed_at NULL  debug_hold_until NULL
   operation_id NULL  operation_started_at NULL  operation_deadline NULL
   next_operation_at NULL  operation_unsettled
@@ -45,6 +45,8 @@ environments   (env_)
          AND (template_id IS NOT NULL OR (provider_identity IS NULL AND handle IS NULL)))
   CHECK ((token IS NOT NULL) = (template_id IS NULL AND status <> 'deleted'))
   CHECK ((renew_at IS NULL AND expires_at IS NULL) OR (status = 'ready' AND template_id IS NOT NULL))
+  FOREIGN KEY (workspace_id, replaces_environment_id) REFERENCES environments (workspace_id, id)
+  UNIQUE (replaces_environment_id) WHERE replaces_environment_id IS NOT NULL
   UNIQUE (operation_id) WHERE operation_id IS NOT NULL
   INDEX (renew_at) WHERE renew_at IS NOT NULL
 
@@ -63,7 +65,7 @@ A `reserved` managed instance has a durable identity and selected template/provi
 - `retirement_state` retains the provider's secret-free final deletion receipt independently of the cleared live handle. Kubernetes receipts keep exact retained storage and borrowed resource references; retaining a receipt grants no execution or deletion authority.
 - `failure` is `{code, message, certainty, permanent, operation_id, at}`: the last error of the outstanding operation or, on a ready instance, of its last [renewal](#renewal), whose `operation_id` is NULL. `certainty` is `not_dispatched`, `known` or `unknown` (the call may have taken effect); `permanent` failures refuse new use until the cause is fixed or the instance is deleted. An unknown outcome is never permanent. A provider error's `message` is its category's safe message with the provider and error code, such as `Environment provider operation was denied (e2b, provider_denied).`; when the provider's schema refuses the recipe, it adds up to five fields with the schema's reasons. It never contains input values or upstream text.
 - `renew_at` is when the next [renewal](#renewal) of a ready sandbox whose type ends sandboxes unless renewed is due, and `expires_at` the expiry its provider last reported. Changes confined to them keep the version, so renewing leaves the ETag unchanged.
-- The view shows everything except `handle`, `provider_identity`, `token`, `envd_bootstrap`, `generation`, `operation_deadline`, `next_operation_at`, `operation_unsettled`, `renew_at`, `expires_at` and the lease columns.
+- The view shows everything except `replaces_environment_id`, `handle`, `provider_identity`, `token`, `envd_bootstrap`, `generation`, `operation_deadline`, `next_operation_at`, `operation_unsettled`, `renew_at`, `expires_at` and the lease columns.
 
 Mount names match `^[a-z][a-z0-9-]{0,62}$`; `workspace` is the primary mount. A `working_directory` is a canonical absolute path of at most 1024 characters, without empty, `.` or `..` segments. Inserting, updating or deleting a thread's mounts bumps the thread version.
 
@@ -97,7 +99,7 @@ Mount representations include read-only `desktop_enabled`, derived from the inst
 Every new use checks the instance under its row lock:
 
 - an external target of another principal is `forbidden`;
-- a `deleting` or `deleted` instance is `conflict` (`environment_{status}`);
+- a `deleting` or `deleted` instance is `conflict` (`environment_{status}`). Selecting a superseded instance ID for a mount continues to report `environment_lost` after retirement;
 - an instance with a permanent failure is `conflict` with the failure's code.
 
 Mounts share-lock their instances in ID order: new use excludes a concurrent stop, delete or lifecycle step, never other new use. The same checks apply to every path that adds mounts:
@@ -108,9 +110,9 @@ Mounts share-lock their instances in ID order: new use excludes a concurrent sto
 
 ### Confirmed loss of the primary environment
 
-The session boolean `auto_recreate_lost_environment` defaults to true, including for existing sessions. When accepting a run that uses the thread's desired `workspace` mount, Service checks the instance's recorded failure. A permanent `environment_lost` with certainty `known` allows a fresh reservation from the lost instance's `template_id`. Reservation, replacement of the desired mount's instance ID, and run acceptance commit together. The working directory and permission ceiling carry over. The audit event `thread_environment.recreate` records both instance IDs. The usual template, provider, authorization and capacity checks apply. A refused acceptance rolls back the replacement.
+The session boolean `auto_recreate_lost_environment` defaults to true, including for existing sessions. When accepting a run that uses the thread's desired `workspace` mount, Service checks the instance's recorded failure. A settled, permanent `environment_lost` with certainty `known` allows recovery. Under the workspace reservation lock, acceptance follows the successor links to the latest instance. If that instance is also confirmed lost, acceptance reserves its replacement from the same template with the usual template, provider and authorization checks. A new row records its predecessor in `replaces_environment_id`, unique within the database. Concurrent recoveries therefore share one replacement. A thread returning after several losses follows the links through retired instances. Deletion or another permanent failure on the latest instance refuses recovery.
 
-Only the accepting thread changes its binding. A named child can replace its dedicated environment; shared children, explicit run-only selections and desktop handback retain their exact targets. Other mount names and external targets follow their ordinary usability checks. Disabling the setting preserves the `environment_lost` refusal. Each accepted run keeps its frozen mount set across attempts, including when its own first use discovers the loss.
+Only the accepting thread updates its desired mount. Rebinding, reservation if needed, the audit event `thread_environment.recreate` with both IDs, and acceptance commit together. The mount keeps its working directory and permission ceiling. A named child can replace its dedicated environment. Shared children, explicit run-only selections and desktop handback retain their exact targets. Other mount names and external targets follow their ordinary usability checks. Disabling the setting preserves the original binding and the `environment_lost` refusal even if a different session has recovered. Each accepted run keeps its frozen mount set across attempts, including when its own first use discovers the loss.
 
 The replacement starts with the template's fresh filesystem. The usual [preparation policy](#execution) determines when its native sandbox is created. A later run sees the mount change through the [turn reminder](05-runs.md#turn-reminder).
 
@@ -128,7 +130,7 @@ Acceptance stores the resolved instance in `runs.environment_mounts` in the same
 
 An instance is **in active use** while an accepted or running run's frozen `environment_mounts` names it, while a nonterminal [retained tool execution](05-runs.md#retained-tool-executions) holds that frozen mount set (including cancellation cleanup), or while a desktop control record holds the reservation of its native sandbox or container ([06a](06a-environment-management.md#computer-only-desktop-control)). The frozen mounts are durable evidence across worker loss, handoff and backoff; a GIN index answers "which active runs use this instance". A target reservation covers every instance whose handle names the same native target, across registered aliases. Removing a desired mount never hides active use.
 
-**Reservation** creates a managed instance in `reserved` without an operation, from an enabled template of an enabled provider the principal may `run`. A workspace holds at most `environments.managed_count` managed instances that are not deleted; reservations are serialized by the workspace's reservation lock, and one beyond the limit, whether explicit, at acceptance or for a dedicated child edge, is `conflict` (`environment_limit`, details `limit`). Only reservations take that lock, and no transaction that locks an instance exclusively reserves, so acceptance may reserve before or after share-locking the instances it mounts ([05](05-runs.md#lock-discipline)). Acceptance and dedicated-child reservations remain `reserved` until an authorized use requests readiness. Control maintenance never begins creation for `reserved` instances. A run that never uses its mount can finish without any target allocation.
+**Reservation** creates a managed instance in `reserved` without an operation, from an enabled template of an enabled provider the principal may `run`. Each managed instance occupies a workspace quota slot until deletion or replacement. A replacement takes its predecessor's slot, including when the limit is one. Creating another independent environment beyond `environments.managed_count` is `conflict` (`environment_limit`, details `limit`). The workspace reservation lock serializes new reservations and successor selection, and no transaction that locks an instance exclusively reserves, so acceptance may reserve before or after share-locking the instances it mounts ([05](05-runs.md#lock-discipline)). Acceptance and dedicated-child reservations remain `reserved` until an authorized use requests readiness. Control maintenance never begins creation for `reserved` instances. A run that never uses its mount can finish without any target allocation.
 
 `POST …/environments {template_id, name?}` explicitly requests creation: it reserves the identity and begins `creating` in the same transaction (`run`; 201; audited as `environment.create`); the name defaults to the template's name. This retains the explicit create API's eager behavior. Service may also prepare a run's source ahead of first use by calling the same readiness path; there is no separate lifecycle implementation or Harness mode.
 
@@ -164,7 +166,7 @@ An expired claim lets the next dispatcher continue the **same** operation. Share
 | `deleting` | Continue destruction; new mounts and starts are refused                                         |
 | `deleted`  | Terminal tombstone; the ID is never reused                                                      |
 
-**Maintenance.** The `maintain_environments` sweep ([09](09-runtime.md#sweeps)) runs every `environments.scan_seconds`. Reserved instances are excluded from lifecycle dispatch; after readiness begins `creating`, maintenance can continue that operation even if the requesting attempt ends. Each pass begins idle deletes, then idle stops, then dispatches, concurrently, up to `environments.batch` outstanding operations whose claim is free or expired and whose pending delay has elapsed, oldest change first. A failed operation is revisited at the fixed interval with the same operation ID; there is no per-instance backoff. A dispatch that fails unexpectedly is logged and retried by a later pass. A pass is bounded by twice `environments.operation_seconds` plus 30 seconds. Renewals have their own sweep, so a slow lifecycle call never delays one ([renewal](#renewal)).
+**Maintenance.** The `maintain_environments` sweep ([09](09-runtime.md#sweeps)) runs every `environments.scan_seconds`. Reserved instances are excluded from lifecycle dispatch; after readiness begins `creating`, maintenance can continue that operation even if the requesting attempt ends. Each pass begins idle deletes, then idle stops, then dispatches, concurrently, up to `environments.batch` outstanding operations whose claim is free or expired and whose pending delay has elapsed, oldest change first. A start with confirmed target loss ends preparation for that instance. Other retryable failures are revisited at the fixed interval with the same operation ID. A dispatch that fails unexpectedly is logged and retried by a later pass. A pass is bounded by twice `environments.operation_seconds` plus 30 seconds. Renewals have their own sweep, so a slow lifecycle call never delays one ([renewal](#renewal)).
 
 ### Idle policy
 
@@ -172,8 +174,9 @@ Idle time counts from `last_used_at`, or `created_at` when the instance was neve
 
 - **Idle stop.** A ready managed instance whose type supports stop, idle past its template's `stop_after_seconds`, not in active use and without a permanent failure begins `stopping`. Stopping would clear a failure, such as `environment_lost`, that refuses its use.
 - **Idle delete.** A `reserved` instance not in active use becomes `deleted` without a provider call after `delete_after_seconds`; its idle time starts at reservation. A ready or stopped managed instance whose type supports destroy, idle past `delete_after_seconds` and not in active use begins `deleting`. Either removes every thread's mount of the instance in the same transaction. The threads precede the instance in the lock order, and neither lock waits: an instance that a thread locked elsewhere mounts is left to a later pass. A thread that loses its `workspace` mount gets one from its primary source at its next acceptance ([mounts](#mounts)), and that run's model is told which mounts changed ([05](05-runs.md#turn-reminder)).
+- **Confirmed loss.** Maintenance preserves a lost instance while any thread mounts it, including before the first recovery and past an idle deadline. Once it has a successor and its last mount, active use and debug hold are gone, maintenance can retire it through the usual settled, destroy-capable lifecycle with audit reason `replaced`, regardless of its idle policy. Its row and successor link remain available for exact selections and later recovery.
 
-Both recheck active use with a fresh statement under the row lock, an idle delete also the threads that mount the instance, and audit `environment.stop` or `environment.delete` with no actor and reason `idle`.
+Idle stop and delete recheck active use with a fresh statement under the row lock, an idle delete also the threads that mount the instance, and audit `environment.stop` or `environment.delete` with no actor and reason `idle`.
 
 ### Instance reclamation and debug holds
 

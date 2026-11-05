@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from dataclasses import replace
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 
@@ -10,7 +11,7 @@ from a13n_harness.environment.errors import EnvironmentProviderErrorCategory, pr
 from a13n_service.distribution import OSS
 from a13n_service.infra.audit import AuditEventRow
 from a13n_service.infra.db import now, transaction
-from a13n_service.runs.environments import lifecycle, renewal
+from a13n_service.runs.environments import lifecycle, mounts, renewal
 from a13n_service.runs.environments.lifecycle import advance
 from a13n_service.runs.environments.maintenance import maintain_environments, renew_environments, renewal_sweep
 from a13n_service.runs.environments.tables import EnvironmentRow
@@ -26,6 +27,7 @@ from .environments_support import (
     reason,
     reserve,
     start,
+    unmount,
     with_fake_providers,
 )
 
@@ -296,6 +298,7 @@ async def test_lost_primary_uses_ordinary_reservation_and_preparation(env, scrip
     assert (await runs_kit.get_run(env, discovery["id"]))["status"] == "failed"
     assert (await environment(env, sandbox))["failure"]["code"] == "environment_lost"
 
+    assert await lifecycle.claim(env.runtime, sandbox, owner="sweep") is None
     path = f"{env.api}/threads/{thread}/inbox"
     body = runs_kit.message(agent, "continue", options={"overrides": {"lazy_environment": lazy}})
     headers = runs_kit.fresh_key()
@@ -369,6 +372,169 @@ async def test_lost_instance_is_only_replaced_for_the_desired_primary(env, runs_
     [replacement] = restored.json()["run"]["environment_mounts"]
     assert replacement["environment_id"] != sandbox
     assert {**replacement, "environment_id": sandbox} == mount
+
+
+async def lose_sandbox(env, sandbox):
+    del BACKEND.instances[sandbox]
+    await due_now(env, sandbox)
+    await renew_environments(env.runtime)
+    assert (await environment(env, sandbox))["failure"]["code"] == "environment_lost"
+
+
+async def test_concurrent_recovery_of_a_thread_and_its_fork_reserves_one_successor(env, runs_kit, monkeypatch):
+    sandbox = await ready_sandbox(env)
+    mount = {
+        "name": "workspace",
+        "environment_id": sandbox,
+        "working_directory": "/project",
+        "permission_ceiling": {"operations": []},
+    }
+    origin = await start(env, environments=[mount])
+    await interrupt(env, origin["run"]["id"])
+    fork = await env.client.post(
+        f"{env.api}/runs/{origin['run']['id']}/fork",
+        json=runs_kit.message(env.agent, "fork"),
+        headers=runs_kit.fresh_key(),
+    )
+    assert fork.status_code == 201, fork.text
+    child = fork.json()
+    assert child["run"]["environment_mounts"] == [mount]
+    await interrupt(env, child["run"]["id"])
+    pinned = await start(env, options={"environment": {"mode": "existing", "environment_id": sandbox}})
+    await lose_sandbox(env, sandbox)
+
+    # Both transactions have seen the original loss before either acquires the reservation lock.
+    barrier = asyncio.Barrier(2)
+    latest = mounts.latest_replacement
+
+    async def together(*args):
+        await asyncio.wait_for(barrier.wait(), timeout=10)
+        return await latest(*args)
+
+    monkeypatch.setattr(mounts, "latest_replacement", together)
+    responses = await asyncio.gather(*(follow_up(env, r["thread"]["id"], "continue") for r in (origin, child)))
+    runs = [r.json()["run"] for r in responses]
+    assert all(r.status_code == 201 for r in responses)
+    successor = runs[0]["environment_mounts"][0]["environment_id"]
+    assert successor != sandbox
+    assert [r["environment_mounts"] for r in runs] == [[{**mount, "environment_id": successor}]] * 2
+    async with transaction(env.runtime.storage) as session:
+        links = await session.execute(select(EnvironmentRow.id, EnvironmentRow.replaces_environment_id))
+        assert set(links) == {(sandbox, None), (successor, sandbox)}
+    assert not BACKEND.instances
+    # A frozen Run still holds the lost instance after both desired mounts have moved.
+    await maintain_environments(env.runtime, owner="sweep")
+    assert (await environment(env, sandbox))["failure"]["code"] == "environment_lost"
+    await interrupt(env, pinned["run"]["id"])
+    await maintain_environments(env.runtime, owner="sweep")
+    assert (await environment(env, sandbox))["status"] == "deleted"
+
+
+async def test_successive_recoveries_transfer_one_quota_slot_and_a_late_thread_follows_the_chain(env):
+    settings = env.runtime.settings
+    limits = settings.environments.model_copy(update={"managed_count": 1})
+    env.app.state.runtime = env.runtime = replace(
+        env.runtime, settings=settings.model_copy(update={"environments": limits})
+    )
+    original = await ready_sandbox(env)
+    mount = {"name": "workspace", "environment_id": original}
+    active, late = [await start(env, environments=[mount]) for _ in range(2)]
+    for r in (active, late):
+        await interrupt(env, r["run"]["id"])
+
+    async def at_capacity():
+        refused = await env.client.post(f"{env.api}/environments", json={"template_id": env.template["id"]})
+        assert refused.status_code == 409 and reason(refused.json()) == "environment_limit", refused.text
+
+    chain = [original]
+    for n in range(2):
+        await lose_sandbox(env, chain[-1])
+        await at_capacity()
+        recovered = (await follow_up(env, active["thread"]["id"], f"recover {n}")).json()["run"]
+        successor = recovered["environment_mounts"][0]["environment_id"]
+        assert successor not in chain
+        chain.append(successor)
+        await at_capacity()
+        await interrupt(env, recovered["id"])
+        if n == 0:
+            async with transaction(env.runtime.storage) as session:
+                row = await session.get_one(EnvironmentRow, successor, with_for_update=True)
+                assert row.status == "reserved"
+                await lifecycle.begin(session, row, "creating")
+            await advance(env.runtime, successor, owner="test")
+    # The unmounted intermediate retires. Its link still leads a lagging Thread to the newest instance.
+    await maintain_environments(env.runtime, owner="sweep")
+    assert (await environment(env, chain[1]))["status"] == "deleted"
+    assert (await environment(env, original))["failure"]["code"] == "environment_lost"
+    caught_up = (await follow_up(env, late["thread"]["id"], "catch up")).json()["run"]
+    assert caught_up["environment_mounts"][0]["environment_id"] == chain[2]
+    await maintain_environments(env.runtime, owner="sweep")
+    assert (await environment(env, original))["status"] == "deleted"
+    exact = await start(env, options={"environment": {"mode": "existing", "environment_id": original}})
+    assert exact["run"] is None and exact["entry"]["failure"]["code"] == "environment_lost"
+    await at_capacity()
+
+
+async def test_opted_out_session_keeps_its_lost_mount_after_another_session_recovers(env):
+    sandbox = await ready_sandbox(env)
+    mount = {"name": "workspace", "environment_id": sandbox}
+    off = await start(env, environments=[mount], session={"auto_recreate_lost_environment": False})
+    on = await start(env, environments=[mount])
+    for r in (off, on):
+        await interrupt(env, r["run"]["id"])
+    await lose_sandbox(env, sandbox)
+    # Even an expired idle-delete timer must preserve the opted-out Thread's binding.
+    template_path = f"{env.api}/environment-templates/{(await environment(env, sandbox))['template_id']}"
+    template = await env.client.get(template_path)
+    patch = await env.client.patch(
+        template_path, headers={"if-match": template.headers["etag"]}, json={"config": {"delete_after_seconds": 3600}}
+    )
+    assert patch.status_code == 200, patch.text
+    await backdate(env, sandbox, last_used_at=timedelta(days=1))
+    await maintain_environments(env.runtime, owner="sweep")
+    assert (await environment(env, sandbox))["failure"]["code"] == "environment_lost"
+    restored = (await follow_up(env, on["thread"]["id"], "recover")).json()["run"]
+    successor = restored["environment_mounts"][0]["environment_id"]
+    await maintain_environments(env.runtime, owner="sweep")
+    refused = (await follow_up(env, off["thread"]["id"], "keep original")).json()
+    assert refused["run"] is None and refused["entry"]["failure"]["code"] == "environment_lost"
+    path = f"{env.api}/threads/{off['thread']['id']}/environments"
+    assert (await env.client.get(path)).json()["items"][0]["environment_id"] == sandbox
+    session_path = f"{env.api}/sessions/{off['thread']['session_id']}"
+    etag = (await env.client.get(session_path)).headers["etag"]
+    enabled = await env.client.patch(
+        session_path, headers={"if-match": etag}, json={"auto_recreate_lost_environment": True}
+    )
+    assert enabled.status_code == 200, enabled.text
+    joined = (await follow_up(env, off["thread"]["id"], "join")).json()["run"]
+    assert joined["environment_mounts"][0]["environment_id"] == successor
+
+
+async def test_a_late_thread_refuses_a_conflicting_mount_or_deleted_successor(env):
+    original = await ready_sandbox(env)
+    mounts = [{"name": "workspace", "environment_id": original}]
+    leader, late = [await start(env, environments=mounts) for _ in range(2)]
+    for r in (leader, late):
+        await interrupt(env, r["run"]["id"])
+    await lose_sandbox(env, original)
+    run = (await follow_up(env, leader["thread"]["id"], "recover")).json()["run"]
+    successor = run["environment_mounts"][0]["environment_id"]
+    await interrupt(env, run["id"])
+    path = f"{env.api}/threads/{late['thread']['id']}/environments"
+    etag = (await env.client.get(path)).headers["etag"]
+    added = await env.client.post(path, json={"name": "data", "environment_id": successor}, headers={"if-match": etag})
+    assert added.status_code == 201, added.text
+    conflict = (await follow_up(env, late["thread"]["id"], "keep unique mounts")).json()
+    assert conflict["run"] is None and conflict["entry"]["failure"]["code"] == "already_mounted"
+
+    etag = (await env.client.get(path)).headers["etag"]
+    assert (await env.client.delete(f"{path}/data", headers={"if-match": etag})).status_code == 204
+    await unmount(env, leader["thread"]["id"])
+    assert (await act(env, "DELETE", successor))[0] == 202
+    refused = (await follow_up(env, late["thread"]["id"], "use latest")).json()
+    assert refused["run"] is None and refused["entry"]["failure"]["code"] == "environment_deleted"
+    async with transaction(env.runtime.storage) as session:
+        assert set(await session.scalars(select(EnvironmentRow.id))) == {original, successor}
 
 
 async def test_refused_acceptance_rolls_back_recreation(env):

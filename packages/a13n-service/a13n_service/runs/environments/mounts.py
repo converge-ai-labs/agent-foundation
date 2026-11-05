@@ -9,7 +9,7 @@ new thread or fork takes its initial mounts through the same checks before its f
 from collections.abc import Mapping, Sequence
 
 from a13n_harness.environment.models import EnvironmentPermissionSet
-from sqlalchemy import select
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra.audit import record
@@ -19,7 +19,14 @@ from a13n_service.infra.http import require_match
 from a13n_service.resources.agents import stored
 from a13n_service.resources.agents.schemas import ChildEnvironmentPolicy
 from a13n_service.resources.agents.service import load_revision
-from a13n_service.runs.environments.lifecycle import LOST, require_usable_state, reserve
+from a13n_service.runs.environments.lifecycle import (
+    LOST,
+    confirmed_loss,
+    latest_replacement,
+    require_usable_state,
+    reserve,
+    superseded,
+)
 from a13n_service.runs.environments.schemas import (
     DEFAULT_MOUNT_PERMISSIONS,
     MAX_MOUNTS,
@@ -149,8 +156,12 @@ async def _locked_environments(
     ).all()
     found = {row.id: row for row in rows}
     for environment_id in ids:
-        if environment_id not in found:
+        environment = found.get(environment_id)
+        if environment is None:
             raise not_found("environment", environment_id)
+        # An exact selection of a lost ID keeps its refusal even after maintenance retires the provider handle.
+        if environment.status in {"deleting", "deleted"} and await session.scalar(select(superseded(environment_id))):
+            raise conflict("environment", environment_id, LOST.code)
     return found
 
 
@@ -200,28 +211,11 @@ async def reserve_primary(
     *,
     template_id: str,
     limit: int,
-    replacing: ThreadEnvironmentRow | None = None,
 ) -> EnvironmentRow:
-    """Reserve the primary under the Thread lock. Rebinding retains the mount's directory and permissions."""
+    """Reserve the primary under the Thread lock."""
     scope = WorkspaceScope(thread.organization_id, thread.workspace_id)
     environment = await reserve(session, principal, scope, template_id, limit=limit)
-    if replacing is None:
-        session.add(_mount(thread, environment.id, PRIMARY, None))
-    else:
-        record(
-            session,
-            scope,
-            actor_id=principal.id,
-            action="thread_environment.recreate",
-            target_kind="thread",
-            target_id=thread.id,
-            details={
-                "name": replacing.name,
-                "previous_environment_id": replacing.environment_id,
-                "environment_id": environment.id,
-            },
-        )
-        replacing.environment_id = environment.id
+    session.add(_mount(thread, environment.id, PRIMARY, None))
     await session.flush()
     return environment
 
@@ -237,37 +231,41 @@ async def child_environment_policy(session: AsyncSession, thread: ThreadRow) -> 
     return spawning.subagents.named[thread.subagent].environment
 
 
-async def _recreate_lost_primary(
+async def _recovery_enabled(session: AsyncSession, thread: ThreadRow) -> bool:
+    if thread.agent_snapshot is not None:
+        return False
+    if thread.origin == "child" and (await child_environment_policy(session, thread)).mode != "dedicated":
+        return False
+    return bool(
+        await session.scalar(
+            select(SessionRow.auto_recreate_lost_environment).where(SessionRow.id == thread.session_id)
+        )
+    )
+
+
+async def _recover_primary(
     session: AsyncSession,
     principal: Principal,
     thread: ThreadRow,
     mount: ThreadEnvironmentRow,
-    environment: EnvironmentRow,
+    latest: EnvironmentRow,
     limit: int,
-) -> EnvironmentRow:
-    """Rebind a confirmed loss under the Thread lock. Frozen Runs retain the old instance."""
-    failure = environment.failure
-    if (
-        failure is None
-        or failure["code"] != LOST.code
-        or failure["certainty"] != "known"
-        or not failure["permanent"]
-        or environment.template_id is None
-        or environment.owner_principal_id is not None
-        or environment.status in {"deleting", "deleted"}
-        or thread.agent_snapshot is not None
-    ):
-        return environment
-    if thread.origin == "child" and (await child_environment_policy(session, thread)).mode != "dedicated":
-        return environment
-    if not await session.scalar(
-        select(SessionRow.auto_recreate_lost_environment).where(SessionRow.id == thread.session_id)
-    ):
-        return environment
-
-    return await reserve_primary(
-        session, principal, thread, template_id=environment.template_id, limit=limit, replacing=mount
+) -> None:
+    scope = WorkspaceScope(thread.organization_id, thread.workspace_id)
+    if confirmed_loss(latest):
+        assert latest.template_id is not None
+        latest = await reserve(session, principal, scope, latest.template_id, limit=limit, replaces=latest)
+    require_usable(latest, principal.id)
+    record(
+        session,
+        scope,
+        actor_id=principal.id,
+        action="thread_environment.recreate",
+        target_kind="thread",
+        target_id=thread.id,
+        details={"name": mount.name, "previous_environment_id": mount.environment_id, "environment_id": latest.id},
     )
+    mount.environment_id = latest.id
 
 
 async def freeze_mounts(
@@ -279,20 +277,41 @@ async def freeze_mounts(
     recreation_limit: int | None,
 ) -> list[dict]:
     """Freeze desired mounts with an optional Run-only primary; lock only the selected instances in ID order."""
-    selected: list[ThreadEnvironmentRow | EnvironmentMount] = [
-        mount for mount in await desired_mounts(session, thread.id) if primary is None or mount.name != PRIMARY
-    ]
+    # Read the primary's loss code with its desired mount so a successor can join the same ID-ordered lock set.
+    query = (
+        select(ThreadEnvironmentRow, EnvironmentRow.failure["code"].astext)
+        .outerjoin(
+            EnvironmentRow,
+            and_(ThreadEnvironmentRow.name == PRIMARY, ThreadEnvironmentRow.environment_id == EnvironmentRow.id),
+        )
+        .where(ThreadEnvironmentRow.thread_id == thread.id)
+    )
+    if primary is not None:
+        query = query.where(ThreadEnvironmentRow.name != PRIMARY)
+    recovery_id = None
+    selected: list[ThreadEnvironmentRow | EnvironmentMount] = []
+    for mount, failure_code in await session.execute(query):
+        selected.append(mount)
+        if failure_code == LOST.code and recreation_limit is not None and await _recovery_enabled(session, thread):
+            recovery_id = await latest_replacement(session, thread.workspace_id, mount.environment_id)
     if primary is not None:
         if any(mount.environment_id == primary.environment_id for mount in selected):
             raise conflict("environment", primary.environment_id, "already_mounted")
         selected.append(primary)
-    locked = await _locked_environments(session, thread.workspace_id, [mount.environment_id for mount in selected])
+    ids = [mount.environment_id for mount in selected]
+    if recovery_id is not None:
+        ids.append(recovery_id)
+    locked = await _locked_environments(session, thread.workspace_id, ids)
     frozen = []
     for mount in sorted(selected, key=lambda mount: mount.name):
         environment = locked[mount.environment_id]
-        if isinstance(mount, ThreadEnvironmentRow) and mount.name == PRIMARY and recreation_limit is not None:
-            environment = await _recreate_lost_primary(session, principal, thread, mount, environment, recreation_limit)
-        require_usable(environment, principal.id)
+        if recovery_id is not None and mount.name == PRIMARY and confirmed_loss(environment):
+            assert isinstance(mount, ThreadEnvironmentRow) and recreation_limit is not None
+            if any(other.name != PRIMARY and other.environment_id == recovery_id for other in selected):
+                raise conflict("environment", recovery_id, "already_mounted")
+            await _recover_primary(session, principal, thread, mount, locked[recovery_id], recreation_limit)
+        else:
+            require_usable(environment, principal.id)
         frozen.append(EnvironmentMount.model_validate(mount, from_attributes=True).model_dump(mode="json"))
     return frozen
 

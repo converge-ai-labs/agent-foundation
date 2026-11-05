@@ -15,7 +15,7 @@ from a13n_service.runs.threads import new_thread
 from a13n_service.settings import Database
 from alembic import command
 from sqlalchemy import MetaData, create_engine, text
-from sqlalchemy.exc import DBAPIError
+from sqlalchemy.exc import DBAPIError, IntegrityError
 
 RULES = """
 SELECT 'function', p.proname, regexp_replace(pg_get_functiondef(p.oid), '\\s+', ' ', 'g')
@@ -167,6 +167,43 @@ async def test_session_recreation_migration_preserves_existing_sessions_and_opt_
     with pytest.raises(RuntimeError, match="sessions have opted out"), migration_connection(database, OSS) as config:
         command.downgrade(config, "a3d0f1eb7aa7")
     assert (await service.client.get(f"{path}/{session_id}")).json()["auto_recreate_lost_environment"] is False
+
+
+@pytest.mark.anyio
+async def test_replacement_migration_recovers_an_interrupted_index_and_preserves_links(service):
+    from .environments_support import reserve, with_fake_providers
+
+    env = await with_fake_providers(service)
+    database = env.runtime.settings.database
+    original, successor, duplicate = [(await reserve(env, env.template["id"]))["id"] for _ in range(3)]
+    with migration_connection(database, OSS) as config:
+        command.downgrade(config, "63bd482bbce1")
+    upgrade(database, OSS)
+    with migration_connection(database, OSS) as config:
+        connection = config.attributes["connection"]
+        assert connection.scalar(text("SELECT count(*) FROM environments WHERE replaces_environment_id IS NULL")) == 3
+        # The column and FK were committed, then a concurrent index build was interrupted before stamping.
+        command.stamp(config, "63bd482bbce1")
+        connection.execute(
+            text("UPDATE pg_index SET indisvalid = false WHERE indexrelid = 'uq_environments_replaces'::regclass")
+        )
+        connection.commit()
+    upgrade(database, OSS)
+    check(database, OSS)
+    link = text("UPDATE environments SET replaces_environment_id = :original WHERE id = :successor")
+    async with transaction(env.runtime.storage) as session:
+        await session.execute(link, {"original": original, "successor": successor})
+    with pytest.raises(IntegrityError, match="uq_environments_replaces"):
+        async with transaction(env.runtime.storage) as session:
+            await session.execute(link, {"original": original, "successor": duplicate})
+    with (
+        pytest.raises(RuntimeError, match="Cannot drop environment replacement links"),
+        migration_connection(database, OSS) as config,
+    ):
+        command.downgrade(config, "63bd482bbce1")
+    assert rows(
+        database, "SELECT id, replaces_environment_id FROM environments WHERE replaces_environment_id IS NOT NULL"
+    ) == [(successor, original)]
 
 
 def test_compaction_revision_roundtrip(empty_database: Database) -> None:

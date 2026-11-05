@@ -21,7 +21,19 @@ from a13n_service.infra.db import transaction
 from a13n_service.infra.ids import new_object_id
 from a13n_service.infra.sweeps import Sweep
 from a13n_service.resources.environment_templates.service import idle_past
-from a13n_service.runs.environments.lifecycle import PHASES, advance, begin, in_use, settled, settled_clause, supports
+from a13n_service.runs.environments.lifecycle import (
+    LOST,
+    PHASES,
+    advance,
+    begin,
+    confirmed_loss,
+    in_use,
+    mounted,
+    settled,
+    settled_clause,
+    superseded,
+    supports,
+)
 from a13n_service.runs.environments.renewal import renew
 from a13n_service.runs.environments.tables import OPERATIONS, EnvironmentRow, ThreadEnvironmentRow
 from a13n_service.runs.runtime import Runtime
@@ -74,8 +86,14 @@ async def _retire_idle(runtime: Runtime, phase: Literal["stopping", "deleting"],
     else:
         idle_seconds = EnvironmentRow.reclamation["idle_delete_seconds"].astext.cast(Integer)
         retention = EnvironmentRow.reclamation["failed_retention_seconds"].astext.cast(Integer)
+        replaced = superseded(EnvironmentRow.id)
+        lost = EnvironmentRow.failure.contains({"code": LOST.code, "certainty": LOST.certainty, "permanent": True})
         conditions = [
+            EnvironmentRow.status.not_in(("deleting", "deleted")),
+            # Preserve the binding even before the first sharer chooses whether to recover.
+            ~mounted(EnvironmentRow.id) | (lost.is_not(True) & ~replaced),
             or_(
+                and_(replaced, settled_clause()),
                 and_(
                     EnvironmentRow.status.in_(("reserved", "ready", "stopped")),
                     or_(
@@ -92,7 +110,7 @@ async def _retire_idle(runtime: Runtime, phase: Literal["stopping", "deleting"],
                     < func.clock_timestamp() - func.make_interval(0, 0, 0, 0, 0, 0, retention),
                     settled_clause(),
                 ),
-            )
+            ),
         ]
     idle = (
         select(EnvironmentRow)
@@ -134,8 +152,12 @@ async def _retire_idle(runtime: Runtime, phase: Literal["stopping", "deleting"],
             if phase == "deleting":
                 mounts = ThreadEnvironmentRow.environment_id == environment.id
                 mounting = set(await session.scalars(select(ThreadEnvironmentRow.thread_id).where(mounts)))
-                if not mounting <= threads:
+                if not mounting <= threads or (mounting and confirmed_loss(environment)):
                     continue
+                if await session.scalar(select(superseded(environment.id))):
+                    if mounting:
+                        continue
+                    reason = "replaced"
                 await session.execute(delete(ThreadEnvironmentRow).where(mounts))
             if environment.provider_identity is None:
                 environment.status = "deleted"

@@ -614,7 +614,7 @@ A Service failure raised inside a Harness hook, such as the lease proof, Environ
 
 ## Lock discipline
 
-Multi-row domain locks follow thread → run → attempt → environments, sorting IDs within a set. New use share-locks environments, so it waits only for a stop, delete or lifecycle step, which lock them exclusively. The workspace's environment reservation lock is taken only to reserve, and no transaction that locks an environment exclusively reserves, so new use may reserve before or after locking environments ([06](06-environments.md#mounts)). Resource rows needed for acceptance follow these; resource operations never lock runs or threads. Object I/O happens outside database locks. Claim and renewal take a suffix of the order, never an earlier lock. Child-result delivery and successor acceptance are separate transactions.
+Multi-row domain locks follow thread → run → attempt → environments, sorting IDs within a set. New use share-locks environments, so it waits only for a stop, delete or lifecycle step, which lock them exclusively. The workspace's environment reservation lock serializes reservations and selection of a lost instance's successor, and no transaction that locks an environment exclusively reserves, so new use may reserve before or after locking environments ([06](06-environments.md#mounts)). Resource rows needed for acceptance follow these; resource operations never lock runs or threads. Object I/O happens outside database locks. Claim and renewal take a suffix of the order, never an earlier lock. Child-result delivery and successor acceptance are separate transactions.
 
 ## Trade-offs
 
