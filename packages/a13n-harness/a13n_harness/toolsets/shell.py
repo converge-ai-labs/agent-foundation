@@ -14,7 +14,7 @@ from a13n_harness._tool_execution import TOOL_EXECUTION_METADATA_KEY
 from a13n_harness.context import AgentContext
 from a13n_harness.environment._resources import EnvironmentResources
 from a13n_harness.environment.commands import CommandEnvironment, CommandLimits, CommandRequest, ShellCommand
-from a13n_harness.environment.models import EnvironmentAction, EnvironmentError
+from a13n_harness.environment.models import EnvironmentAction, EnvironmentError, EnvironmentInvocationError
 from a13n_harness.environment.providers import BoundEnvironment
 from a13n_harness.environment.retention import EnvironmentOutputCapture, EnvironmentOutputPolicy
 from a13n_harness.tool_execution import _CURRENT_TOOL_EXECUTION, _OWNED_TOOL_EXECUTION
@@ -471,9 +471,13 @@ class ShellToolset:
             else None
         )
         if resource is None:
-            raise EnvironmentError(
+            raise EnvironmentInvocationError(
                 "No live Shell control surface is available. Use tool_execution_info or tool_execution_result for this execution.",
                 code="environment_reference_invalid",
+                details={
+                    "field": "process_id",
+                    "hint": "Inspect the execution with tool_execution_info or tool_execution_result.",
+                },
             )
         return ShellTarget.model_validate(resource)
 
@@ -496,10 +500,14 @@ class ShellToolset:
                 context.thread_id, process_id, control.model_dump(mode="json")
             )
             if result is None:
-                raise EnvironmentError(
+                raise EnvironmentInvocationError(
                     "Shell execution has settled. Use tool_execution_result for its retained result.",
                     code="environment_reference_stale",
-                    details={"dispatch_stage": "pre_dispatch"},
+                    details={
+                        "dispatch_stage": "pre_dispatch",
+                        "field": "process_id",
+                        "hint": "Read the retained result with tool_execution_result.",
+                    },
                 )
             result["process_id"] = process_id
             return result
@@ -580,7 +588,7 @@ class ShellToolset:
                 ),
             )
         except (TypeError, ValueError) as exc:
-            raise EnvironmentError(
+            raise EnvironmentInvocationError(
                 "Environment command request is invalid.",
                 code="environment_request_invalid",
             ) from exc
@@ -620,6 +628,13 @@ def _project_capture(capture: EnvironmentOutputCapture) -> OutputPageProjection:
 
 def _environment_error_result(error: EnvironmentError) -> ToolFailure:
     result = environment_failure(error)
+    details = result["error"]["details"]
+    if details.get("field") == "limits.wall_time_seconds":
+        details["field"] = "execution_timeout_seconds"
+        if details.get("reason") == "unsupported_command_limit" and details.get("dispatch_stage") == "pre_dispatch":
+            result["error"]["message"] = (
+                "The command did not start. This environment cannot enforce execution_timeout_seconds."
+            )
     result["error"]["outcome_known"] = error.code != "environment_unknown_outcome"
     return result
 
@@ -627,7 +642,7 @@ def _environment_error_result(error: EnvironmentError) -> ToolFailure:
 def _string_argument(arguments: Mapping[str, object], name: str) -> str:
     value = arguments.get(name)
     if not isinstance(value, str) or not value:
-        raise EnvironmentError(
+        raise EnvironmentInvocationError(
             f"Environment tool argument {name!r} is invalid.",
             code="environment_request_invalid",
             details={"field": name, "reason": "invalid_value", "hint": "Supply a non-empty string for this field."},
@@ -640,7 +655,7 @@ def _optional_string_argument(arguments: Mapping[str, object], name: str) -> str
     if value is None:
         return None
     if not isinstance(value, str) or not value:
-        raise EnvironmentError(
+        raise EnvironmentInvocationError(
             f"Environment tool argument {name!r} is invalid.",
             code="environment_request_invalid",
             details={"field": name, "reason": "invalid_value", "hint": "Supply a non-empty string for this field."},

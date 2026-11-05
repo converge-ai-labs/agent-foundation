@@ -10,7 +10,7 @@ from typing import Annotated, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator, model_validator
 
-from a13n_harness.environment.models import EnvironmentOperationReceipt
+from a13n_harness.environment.models import EnvironmentInvocationError, EnvironmentOperationReceipt
 from a13n_harness.environment.retention import (
     BoundOutputCursor,
     EnvironmentOutputCapture,
@@ -83,6 +83,23 @@ class CommandLimits(BaseModel):
             if value is not None and (not math.isfinite(value) or value <= 0):
                 raise ValueError(f"{name} must be positive and finite")
         return self
+
+    def require_supported(self, *fields: str) -> None:
+        """Reject the first explicit resource guarantee the adapter cannot enforce."""
+        for field in self.model_dump(exclude_none=True):
+            if field not in fields:
+                raise EnvironmentInvocationError(
+                    "The provider cannot enforce the requested per-command limit.",
+                    code="environment_unsupported",
+                    retry_hint="request_change",
+                    details={
+                        "field": f"limits.{field}",
+                        "reason": "unsupported_command_limit",
+                        "dispatch_stage": "pre_dispatch",
+                        "hint": "Omit this option only if the command can run without that limit, "
+                        "or choose an environment that can enforce it.",
+                    },
+                )
 
 
 class CommandRequest(BaseModel):

@@ -17,6 +17,35 @@ from pydantic_ai.messages import (
 )
 
 
+@pytest.mark.anyio
+@pytest.mark.parametrize("owned", [True, False])
+async def test_debug_state_uses_invocation_evidence_even_for_identical_json(owned):
+    from a13n_harness.tools._output import _apply_result_policy
+    from a13n_harness.tools.diagnostics import reported_failure, system_error
+    from a13n_harness.tools.metadata import ToolOutputPolicy
+    from pydantic_ai import ToolReturn
+    from pydantic_ai.messages import FunctionToolResultEvent, ToolReturnPart
+
+    failure = reported_failure(system_error("tool_unavailable", "The tool is unavailable."))
+    result = await _apply_result_policy(
+        failure if owned else dict(failure), ToolOutputPolicy(max_inline_bytes=1024, max_output_bytes=4096)
+    )
+    value, metadata = (result.return_value, result.metadata) if isinstance(result, ToolReturn) else (result, None)
+    part = ToolReturnPart("lookup", value, "call", metadata=metadata)
+    event = HarnessEvent(
+        thread_id="thread", run_id="run", sequence=1, occurred_at=datetime.now(UTC), event=FunctionToolResultEvent(part)
+    )
+    raw = HarnessAguiObserver().observe(event)
+    fold = DisplayFold("run")
+    fold.fold([e.model_dump(mode="json", by_alias=True) for e in raw])
+    (item,) = fold.items.values()
+    assert item.state == ("failed" if owned else "completed")
+    assert part.outcome == "success"
+    assert "The tool is unavailable." in item.content["result"]
+    assert "hint" not in item.content["result"]
+    assert DisplayFold.restore(fold.export()).items == fold.items
+
+
 @pytest.mark.parametrize("legacy", [False, True])
 def test_native_retry_result_remains_failed_across_snapshot_restore(legacy: bool) -> None:
     from pydantic_ai.messages import FunctionToolResultEvent, ToolReturnPart

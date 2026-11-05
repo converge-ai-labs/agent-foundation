@@ -10,7 +10,7 @@ from contextlib import AsyncExitStack, contextmanager
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
-from typing import Any, Self
+from typing import Any, Self, cast
 from uuid import uuid4
 
 from a13n_logging import exception_details, get_logger
@@ -37,7 +37,6 @@ from a13n_harness._json import (
 from a13n_harness._retained_scope import RetainedScope
 from a13n_harness._review_context import ReviewEvidence, append_review_evidence, record_approval_denials
 from a13n_harness._tool_execution import TOOL_EXECUTION_METADATA_KEY
-from a13n_harness._tool_observation import record_tool_operation_failure
 from a13n_harness.context import AgentContext
 from a13n_harness.environment.models import EnvironmentError
 from a13n_harness.errors import DefinitionError, EnvironmentActivationError
@@ -57,6 +56,7 @@ from a13n_harness.tools.approval import (
     compact_target,
     tool_approval_scope,
 )
+from a13n_harness.tools.diagnostics import ReportedToolFailure, ToolError, reported_failure, system_failure
 from a13n_harness.tools.identity import identify_tool, tool_identity
 from a13n_harness.tools.metadata import (
     HARNESS_TOOL_METADATA_KEY,
@@ -222,7 +222,7 @@ class ToolExecutionBoundaryCapability(AbstractCapability[AgentContext]):
     ) -> str | dict[str, Any]:
         capture_tool_call(ctx, call, tool_def)
         if permission_mode(ctx, tool_def) == "deny":
-            raise ToolFailed("Tool invocation is denied by its permission configuration.")
+            raise system_failure("tool_denied", "Tool invocation is denied by its permission configuration.")
         return args
 
     async def after_tool_validate(
@@ -493,7 +493,7 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
         tool: ToolsetTool[AgentContext],
     ) -> Any:
         if _TOOL_EXECUTION_DISABLED.get():
-            raise ToolFailed("Tool execution is disabled during context compaction.")
+            raise system_failure("tool_disabled", "Tool execution is disabled during context compaction.")
         tool_def = tool.tool_def
         if tool_def.kind == "external":
             return await self.wrapped.call_tool(name, tool_args, ctx, tool)
@@ -517,13 +517,13 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
         try:
             prepared = await _prepare_invocation(ctx, tool_def.name, tool_def.toolset_id, tool_args, managed)
         except EnvironmentError as exc:
-            record_tool_operation_failure(exc.code, reason=exc.details.get("reason"), stage="preparation")
             await _emit(ctx, managed, "preparation_failed")
             # Known Environment failures are actionable even before dispatch.
             # Project only public details, never raw provider exception text.
-            error = exc.safe_projection()
+            error = cast(ToolError, exc.safe_projection())
+            error["source"] = "system"
             return await _apply_result_policy(
-                {"ok": False, "error": error},
+                reported_failure(error, stage="preparation"),
                 managed.output_policy,
                 context=ctx.deps,
                 reject_non_json=True,
@@ -536,7 +536,7 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
         policy_decision = await _evaluate_policy(ctx, policy, invocation, managed)
         if policy_decision.decision == "deny":
             await _emit(ctx, managed, "denied", invocation_id=invocation.invocation_id)
-            raise ToolFailed("Managed tool invocation was denied.")
+            raise system_failure("tool_denied", "Managed tool invocation was denied.")
         requires_approval = policy_decision.decision == "approval_required" and not ctx.tool_call_approved
         if requires_approval:
             await _emit(ctx, managed, "approval_required", invocation_id=invocation.invocation_id)
@@ -574,7 +574,9 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
                     except (DefinitionError, ToolFailed):
                         raise
                     except Exception as exc:
-                        raise ToolFailed("A required managed tool credential is unavailable.") from exc
+                        raise system_failure(
+                            "credential_unavailable", "A required managed tool credential is unavailable."
+                        ) from exc
                     if not isinstance(lease, CredentialLease):
                         raise DefinitionError(
                             "Credential broker returned an invalid lease.",
@@ -588,7 +590,7 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
                         )
                     leases.append(lease)
             elif managed.credential_audiences:
-                raise ToolFailed("A required managed tool credential is unavailable.")
+                raise system_failure("credential_unavailable", "A required managed tool credential is unavailable.")
 
             if policy.grant_broker is not None:
                 try:
@@ -596,14 +598,16 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
                 except (DefinitionError, ToolFailed):
                     raise
                 except Exception as exc:
-                    raise ToolFailed("A managed tool invocation grant is unavailable.") from exc
+                    raise system_failure(
+                        "grant_unavailable", "A managed tool invocation grant is unavailable."
+                    ) from exc
                 if grant is not None and not isinstance(grant, InvocationGrantRef):
                     raise DefinitionError(
                         "Invocation grant broker returned an invalid value.",
                         code="invocation_grant_invalid",
                     )
                 if grant is not None and grant.expires_at <= datetime.now(UTC):
-                    raise ToolFailed("A managed tool invocation grant is unavailable.")
+                    raise system_failure("grant_unavailable", "A managed tool invocation grant is unavailable.")
 
             scope = InvocationScope(
                 invocation=invocation,
@@ -736,9 +740,7 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
         await append_review_evidence(ctx.deps, evidence)
         result = await self.wrapped.call_tool(name, tool_args, ctx, tool)
         content = result.return_value if isinstance(result, ToolReturn) else result
-        outcome = (
-            "tool_reported_failure" if isinstance(content, dict) and content.get("ok") is False else "tool_returned"
-        )
+        outcome = "tool_reported_failure" if isinstance(content, ReportedToolFailure) else "tool_returned"
         await append_review_evidence(ctx.deps, evidence.model_copy(update={"outcome": outcome}))
         return result
 
@@ -838,9 +840,9 @@ async def _prepare_invocation(
         normalized = _JSON_OBJECT_ADAPTER.validate_python(projected, strict=True)
         encoded = dump_json_bytes(normalized, sort_keys=True)
     except (TypeError, ValueError, ValidationError) as exc:
-        raise ToolFailed("Managed tool arguments cannot be represented safely.") from exc
+        raise system_failure("invalid_arguments", "Managed tool arguments cannot be represented safely.") from exc
     if len(encoded) > MAX_ARGUMENT_BYTES:
-        raise ToolFailed("Managed tool arguments exceed the supported size.")
+        raise system_failure("arguments_too_large", "Managed tool arguments exceed the supported size.")
     digest = hashlib.sha256(encoded).hexdigest()
 
     resources: tuple[CanonicalResource, ...] = ()
@@ -859,7 +861,7 @@ async def _prepare_invocation(
                     "exception_chain": exception_details(exc),
                 },
             )
-            raise ToolFailed("Managed tool resources could not be resolved.") from exc
+            raise system_failure("resource_resolution_failed", "Managed tool resources could not be resolved.") from exc
         if not isinstance(resolved, tuple) or not all(isinstance(item, CanonicalResource) for item in resolved):
             raise DefinitionError(
                 "Managed resource resolver returned an invalid value.",

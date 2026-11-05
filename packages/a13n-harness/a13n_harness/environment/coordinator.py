@@ -25,6 +25,7 @@ from a13n_harness.environment.models import (
     EnvironmentAvailability,
     EnvironmentDescriptor,
     EnvironmentError,
+    EnvironmentInvocationError,
     EnvironmentOperationFamily,
     EnvironmentPermissionSet,
     EnvironmentState,
@@ -84,7 +85,7 @@ _MAX_MODEL_CONTEXT_BYTES = 64 * 1024
 
 
 def _action_denied(entered: _EnteredMount, action: EnvironmentAction) -> EnvironmentError:
-    return EnvironmentError(
+    return EnvironmentInvocationError(
         "Environment operation is denied by the mount permission ceiling.",
         code="environment_denied",
         details={
@@ -113,7 +114,7 @@ def _bounded_snapshot_json(payload: dict[str, JsonValue], max_bytes: int) -> str
         minimal: dict[str, JsonValue] = {"mounts": [], "truncated": True}
         encoded = dump_json_bytes(minimal, sort_keys=True)
         if len(encoded) > max_bytes:
-            raise EnvironmentError(
+            raise EnvironmentInvocationError(
                 "Environment snapshot byte limit cannot encode a minimal value.",
                 code="environment_projection_limit_invalid",
             )
@@ -260,7 +261,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
     @asynccontextmanager
     async def open_files(self, selection: FileScopeSelection) -> AsyncGenerator[FileOperator]:
         if not isinstance(selection, FileScopeSelection) or not isinstance(selection.mount_path, str):
-            raise EnvironmentError("File scope selection is invalid.", code="environment_request_invalid")
+            raise EnvironmentInvocationError("File scope selection is invalid.", code="environment_request_invalid")
         selected = selection.resolved_path
         mount_path = selection.mount_path
         entered = self._entered_by_id.get(selected.mount_id)
@@ -269,15 +270,15 @@ class CompositeBoundEnvironment(BoundEnvironment):
             or self._entered.get(entered.public.name) is not entered
             or selection.observed_generation not in {"unprepared", entered.public.descriptor.generation}
         ):
-            raise EnvironmentError("File scope selection is stale.", code="environment_stale_mount")
+            raise EnvironmentInvocationError("File scope selection is stale.", code="environment_stale_mount")
         async with self._mount_slot(entered):
             await self._ensure_provider_family(entered, "files")
             entered = self._current_publication(entered)
             if selection.observed_generation not in {"unprepared", entered.public.descriptor.generation}:
-                raise EnvironmentError("File scope selection is stale.", code="environment_stale_mount")
+                raise EnvironmentInvocationError("File scope selection is stale.", code="environment_stale_mount")
             self._validate_live_observation(entered, entered.provider.availability, frozenset({"files"}))
             if entered.operations.files is None:
-                raise EnvironmentError("File operation facet is unavailable.", code="environment_unsupported")
+                raise EnvironmentInvocationError("File operation facet is unavailable.", code="environment_unsupported")
             scoped = VirtualFileOperator(
                 lambda path: FileScopeSelection(
                     logical_path=path,
@@ -316,12 +317,12 @@ class CompositeBoundEnvironment(BoundEnvironment):
         if self._activation_state == "active":
             return
         if self._activation_state == "failed":
-            raise EnvironmentError(
+            raise EnvironmentInvocationError(
                 "Environment run extension activation previously failed.",
                 code="environment_extension_bind_failed",
             )
         if self._activation_state != "not_started":
-            raise EnvironmentError("The Environment is closing.", code="environment_closed")
+            raise EnvironmentInvocationError("The Environment is closing.", code="environment_closed")
         self._activation_state = "activating"
         context = EnvironmentRunExtensionContext(
             run_id=self._run_id,
@@ -336,7 +337,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
                         raise TypeError("extension bind did not return an async context manager")
                     await scope.__aenter__()
                 except Exception:
-                    raise EnvironmentError(
+                    raise EnvironmentInvocationError(
                         "Environment run extension setup failed.",
                         code="environment_extension_bind_failed",
                         details={"extension_id": extension_id},
@@ -397,11 +398,11 @@ class CompositeBoundEnvironment(BoundEnvironment):
     ) -> EnvironmentChange:
         _validate_mount_name(name)
         if not isinstance(mount, EnvironmentMount):
-            raise EnvironmentError("Environment mount input is invalid.", code="environment_request_invalid")
+            raise EnvironmentInvocationError("Environment mount input is invalid.", code="environment_request_invalid")
         async with self._mutation_lock:
             self._assert_mutable()
             if name in self._entered:
-                raise EnvironmentError("Environment mount already exists.", code="environment_conflict")
+                raise EnvironmentInvocationError("Environment mount already exists.", code="environment_conflict")
             previous_default = self._snapshot.default_mount
             current_default = name if make_default else previous_default
             _validate_route_paths(
@@ -437,12 +438,12 @@ class CompositeBoundEnvironment(BoundEnvironment):
     async def _replace(self, name: str, mount: EnvironmentMount) -> EnvironmentChange:
         _validate_mount_name(name)
         if not isinstance(mount, EnvironmentMount):
-            raise EnvironmentError("Environment mount input is invalid.", code="environment_request_invalid")
+            raise EnvironmentInvocationError("Environment mount input is invalid.", code="environment_request_invalid")
         async with self._mutation_lock:
             self._assert_mutable()
             current = self._entered.get(name)
             if current is None:
-                raise EnvironmentError("Environment mount does not exist.", code="environment_not_found")
+                raise EnvironmentInvocationError("Environment mount does not exist.", code="environment_not_found")
             _validate_route_paths(
                 (
                     *(
@@ -486,7 +487,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
             self._assert_mutable()
             current = self._entered.get(name)
             if current is None:
-                raise EnvironmentError("Environment mount does not exist.", code="environment_not_found")
+                raise EnvironmentInvocationError("Environment mount does not exist.", code="environment_not_found")
             key = self._mount_key(current)
             previous_default = self._snapshot.default_mount
             current_default = None if previous_default == name else previous_default
@@ -515,7 +516,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
         async with self._mutation_lock:
             self._assert_mutable()
             if name is not None and name not in self._entered:
-                raise EnvironmentError("Environment mount does not exist.", code="environment_not_found")
+                raise EnvironmentInvocationError("Environment mount does not exist.", code="environment_not_found")
             _validate_route_paths(
                 tuple((item.public.name, item.public.mount_path) for item in self._entered.values()),
                 name,
@@ -539,7 +540,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
         mount: EnvironmentMount,
     ) -> _OwnedProviderScope:
         if not isinstance(mount, EnvironmentMount):
-            raise EnvironmentError("Environment mount input is invalid.", code="environment_request_invalid")
+            raise EnvironmentInvocationError("Environment mount input is invalid.", code="environment_request_invalid")
         request = _MountRequest(
             name=name,
             permission_ceiling=mount.permission_ceiling.model_copy(deep=True),
@@ -559,7 +560,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
     def _assert_mutable(self) -> None:
         self._assert_open()
         if self._activation_state != "active" or not self._runtime._accepting_mutations:
-            raise EnvironmentError("The Environment run is not active.", code="run_not_active")
+            raise EnvironmentInvocationError("The Environment run is not active.", code="run_not_active")
 
     def _schedule_retirement(self, key: _MountKey, owned: _OwnedProviderScope) -> None:
         owned.entered.provider.fence_activation(cancel=True)
@@ -616,7 +617,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
                     if suffix is not None:
                         matches.append((parsed_root.depth, entered, root, suffix))
             if not matches:
-                raise EnvironmentError(
+                raise EnvironmentInvocationError(
                     "The absolute path is outside the available Environment mounts.",
                     code="environment_selection_invalid",
                     details={
@@ -633,13 +634,13 @@ class CompositeBoundEnvironment(BoundEnvironment):
             selected_matches = [item for item in matches if item[0] == best_depth]
             selected_ids = {item[1].mount_id for item in selected_matches}
             if len(selected_ids) != 1:
-                raise EnvironmentError(
+                raise EnvironmentInvocationError(
                     "The absolute path matches multiple Environment mounts.",
                     code="environment_selection_invalid",
                 )
             _depth, selected, mount_path, suffix = selected_matches[0]
             if alias is not None and alias != selected.public.name:
-                raise EnvironmentError(
+                raise EnvironmentInvocationError(
                     "The mount name and absolute path select different mounts.",
                     code="environment_selection_invalid",
                     details={
@@ -661,7 +662,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
         selected = self._select_entered(alias)
         base = selected.public.default_working_directory or "/"
         if not base.startswith("/") or any(segment in {".", ".."} for segment in base.split("/")):
-            raise EnvironmentError(
+            raise EnvironmentInvocationError(
                 "The mount working directory is invalid.",
                 code="environment_provider_failure",
             )
@@ -682,7 +683,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
                 None,
             )
         if entered is None:
-            raise EnvironmentError(
+            raise EnvironmentInvocationError(
                 "The selected Environment mount is unavailable.",
                 code="environment_selection_invalid",
                 details={
@@ -792,12 +793,12 @@ class CompositeBoundEnvironment(BoundEnvironment):
             and (alias is None or item.public.name == alias)
         ]
         if len(matches) != 1:
-            raise EnvironmentError(
+            raise EnvironmentInvocationError(
                 "The retained process target is not uniquely attached.", code="environment_selection_invalid"
             )
         entered = matches[0]
         if not actions:
-            raise EnvironmentError("Process control requires an action.", code="environment_request_invalid")
+            raise EnvironmentInvocationError("Process control requires an action.", code="environment_request_invalid")
         for action in actions:
             self.require_action(entered.mount_id, action)
         async with AsyncExitStack() as stack:
@@ -808,7 +809,9 @@ class CompositeBoundEnvironment(BoundEnvironment):
             same_scope = descriptor.generation == identity.generation
             same_backing = backing_identity is not None and descriptor.backing_identity == backing_identity
             if not (same_scope or same_backing):
-                raise EnvironmentError("The retained process target has changed.", code="environment_stale_mount")
+                raise EnvironmentInvocationError(
+                    "The retained process target has changed.", code="environment_stale_mount"
+                )
             for action in actions:
                 self.require_action(current.mount_id, action)
             try:
@@ -822,25 +825,25 @@ class CompositeBoundEnvironment(BoundEnvironment):
 
     def _entered_for_process_identity(self, identity: ProcessIdentity) -> _EnteredMount:
         if not isinstance(identity, ProcessIdentity):
-            raise EnvironmentError("Process identity is invalid.", code="environment_request_invalid")
+            raise EnvironmentInvocationError("Process identity is invalid.", code="environment_request_invalid")
         matches = tuple(
             item
             for item in self._entered.values()
             if item.public.provider_type == identity.provider_type and item.environment_id == identity.environment_id
         )
         if not matches:
-            raise EnvironmentError(
+            raise EnvironmentInvocationError(
                 "The process Environment instance is not attached.",
                 code="environment_selection_invalid",
             )
         if len(matches) != 1:
-            raise EnvironmentError(
+            raise EnvironmentInvocationError(
                 "The process Environment instance is attached more than once.",
                 code="environment_conflict",
             )
         entered = matches[0]
         if entered.public.descriptor.generation not in {"unprepared", identity.generation}:
-            raise EnvironmentError(
+            raise EnvironmentInvocationError(
                 "The process belongs to another Environment generation.",
                 code="environment_process_generation_mismatch",
             )
@@ -849,12 +852,14 @@ class CompositeBoundEnvironment(BoundEnvironment):
     def _entered_for_execution(self, execution_id: str) -> _EnteredMount:
         matches = [mount for mount in self._entered_by_id.values() if mount.provider.execution_id == execution_id]
         if len(matches) != 1:
-            raise EnvironmentError("Execution reference is stale or ambiguous.", code="environment_stale_mount")
+            raise EnvironmentInvocationError(
+                "Execution reference is stale or ambiguous.", code="environment_stale_mount"
+            )
         return matches[0]
 
     def _entered_for_handle(self, handle: BoundProcessHandle) -> _EnteredMount:
         if not isinstance(handle, BoundProcessHandle):
-            raise EnvironmentError("Process handle is invalid.", code="environment_request_invalid")
+            raise EnvironmentInvocationError("Process handle is invalid.", code="environment_request_invalid")
         entered = self._entered_for_execution(handle.execution_id)
         if (
             handle.observed_generation != entered.public.descriptor.generation
@@ -862,20 +867,20 @@ class CompositeBoundEnvironment(BoundEnvironment):
             or handle.identity.environment_id != entered.environment_id
             or handle.identity.generation != entered.public.descriptor.generation
         ):
-            raise EnvironmentError("Process handle is stale.", code="environment_stale_mount")
+            raise EnvironmentInvocationError("Process handle is stale.", code="environment_stale_mount")
         return entered
 
     def require_action(self, mount_id: str, action: EnvironmentAction) -> _EnteredMount:
         """Fail closed unless one exact catalog action is effective for the mount."""
         self._assert_open()
         if not isinstance(action, EnvironmentAction):
-            raise EnvironmentError(
+            raise EnvironmentInvocationError(
                 "Environment authorization requires an exact catalog action.",
                 code="environment_request_invalid",
             )
         entered = self._entered_by_id.get(mount_id)
         if entered is None:
-            raise EnvironmentError("Unknown Environment mount.", code="environment_selection_invalid")
+            raise EnvironmentInvocationError("Unknown Environment mount.", code="environment_selection_invalid")
         if action not in entered.public.permission_ceiling.operations:
             raise _action_denied(entered, action)
         return entered
@@ -895,7 +900,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
                     "Use an absolute POSIX, Windows drive, or UNC path with forward-slash separators."
                 ) from exc
             if suffix is None:
-                raise EnvironmentError(
+                raise EnvironmentInvocationError(
                     "The scoped file path selects another mount.",
                     code="environment_selection_invalid",
                 )
@@ -903,7 +908,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
         else:
             base = entered.public.default_working_directory or "/"
             if not base.startswith("/") or any(segment in {".", ".."} for segment in base.split("/")):
-                raise EnvironmentError(
+                raise EnvironmentInvocationError(
                     "The mount working directory is invalid.",
                     code="environment_provider_failure",
                 )
@@ -921,17 +926,19 @@ class CompositeBoundEnvironment(BoundEnvironment):
         action: EnvironmentAction,
     ) -> AsyncGenerator[_PreparedFile]:
         if selected.mount_id != entered.mount_id:
-            raise EnvironmentError(
+            raise EnvironmentInvocationError(
                 "The scoped file path selects another mount incarnation.",
                 code="environment_selection_invalid",
             )
         current = self._current_publication(entered)
         if current.public.descriptor.generation != entered.public.descriptor.generation:
-            raise EnvironmentError("File scope selection is stale.", code="environment_stale_mount")
+            raise EnvironmentInvocationError("File scope selection is stale.", code="environment_stale_mount")
         try:
             async with self._operation_lease(current, action, "files", allow_retired=True) as entered:
                 if entered.operations.files is None:
-                    raise EnvironmentError("File operation facet is unavailable.", code="environment_unsupported")
+                    raise EnvironmentInvocationError(
+                        "File operation facet is unavailable.", code="environment_unsupported"
+                    )
                 yield _PreparedFile(
                     selected=selected,
                     backend=entered.operations.files,
@@ -944,7 +951,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
                     ),
                 )
         except TimeoutError as exc:
-            raise EnvironmentError(
+            raise EnvironmentInvocationError(
                 "Environment operation timed out.",
                 code="environment_timeout",
                 details={"timeout_seconds": DEFAULT_ENVIRONMENT_OPERATION_TIMEOUT_SECONDS},
@@ -959,14 +966,14 @@ class CompositeBoundEnvironment(BoundEnvironment):
         provider_path: str,
     ) -> str:
         if selected.mount_id != entered.mount_id:
-            raise EnvironmentError(
+            raise EnvironmentInvocationError(
                 "Provider returned a path for another scoped mount incarnation.",
                 code="environment_provider_failure",
             )
         try:
             return mount_path_from_provider_path(mount_path, provider_path, entered.public.provider_root)
         except ValueError as exc:
-            raise EnvironmentError(
+            raise EnvironmentInvocationError(
                 "Provider returned an invalid file path.",
                 code="environment_provider_failure",
             ) from exc
@@ -980,13 +987,13 @@ class CompositeBoundEnvironment(BoundEnvironment):
         selected = selection.resolved_path
         entered = self._entered_by_id.get(selected.mount_id)
         if entered is None or selection.observed_generation not in {"unprepared", entered.public.descriptor.generation}:
-            raise EnvironmentError(
+            raise EnvironmentInvocationError(
                 "Environment mount incarnation is unavailable.",
                 code="environment_stale_mount",
             )
         async with self._operation_lease(entered, action, "files") as entered:
             if entered.operations.files is None:
-                raise EnvironmentError("File operation facet is unavailable.", code="environment_unsupported")
+                raise EnvironmentInvocationError("File operation facet is unavailable.", code="environment_unsupported")
             root = _preferred_mount_path(entered.public, self._snapshot.default_mount)
             yield _PreparedFile(
                 selected=selected,
@@ -999,7 +1006,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
 
     def _assert_open(self) -> None:
         if self._closed:
-            raise EnvironmentError("The Environment is closed.", code="environment_closed")
+            raise EnvironmentInvocationError("The Environment is closed.", code="environment_closed")
 
     def _validate_live_observation(
         self,
@@ -1008,19 +1015,19 @@ class CompositeBoundEnvironment(BoundEnvironment):
         requested: frozenset[EnvironmentOperationFamily] = frozenset(),
     ) -> None:
         if not isinstance(availability, EnvironmentAvailability):
-            raise EnvironmentError(
+            raise EnvironmentInvocationError(
                 "Provider returned an invalid availability observation.",
                 code="environment_provider_failure",
                 details={"mount_id": entered.mount_id},
             )
         if not availability.ready_families <= entered.public.descriptor.operation_families:
-            raise EnvironmentError(
+            raise EnvironmentInvocationError(
                 "Provider readiness drifted beyond its published descriptor.",
                 code="environment_provider_failure",
                 details={"mount_id": entered.mount_id},
             )
         if requested and availability.status == "unavailable":
-            raise EnvironmentError(
+            raise EnvironmentInvocationError(
                 "Provider is unavailable for the requested operation.",
                 code="environment_unavailable",
                 details={"mount_id": entered.mount_id, "reason_code": availability.reason_code},
@@ -1028,7 +1035,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
             )
         _validate_operation_facets(entered.public.descriptor, availability, entered.operations)
         if not requested <= availability.ready_families:
-            raise EnvironmentError(
+            raise EnvironmentInvocationError(
                 "Provider returned before the requested families became ready.",
                 code="environment_unavailable",
                 details={"mount_id": entered.mount_id},
@@ -1039,7 +1046,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
         self._assert_open()
         entered = self._entered.get(name)
         if entered is None:
-            raise EnvironmentError(
+            raise EnvironmentInvocationError(
                 f"Unknown Environment mount: {name!r}.",
                 code="environment_selection_invalid",
                 details={"name": name},
@@ -1065,13 +1072,13 @@ class CompositeBoundEnvironment(BoundEnvironment):
             for name in requirement.mounts:
                 entered = self._entered.get(name)
                 if entered is None:
-                    raise EnvironmentError(
+                    raise EnvironmentInvocationError(
                         f"Unknown Environment mount: {name!r}.",
                         code="environment_selection_invalid",
                         details={"name": name},
                     )
                 if not entered.public.descriptor.operation_families & requested:
-                    raise EnvironmentError(
+                    raise EnvironmentInvocationError(
                         "An explicitly selected mount advertises none of the requested families.",
                         code="environment_readiness_invalid",
                         details={"name": name},
@@ -1080,7 +1087,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
 
         covered = frozenset().union(*(entered.public.descriptor.operation_families & requested for entered in selected))
         if not selected or covered != requested:
-            raise EnvironmentError(
+            raise EnvironmentInvocationError(
                 "The selected mount set does not cover every requested operation family.",
                 code="environment_unavailable",
                 details={"missing": [str(item) for item in sorted(requested - covered)]},
@@ -1099,7 +1106,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
             async with asyncio.timeout(timeout):
                 await asyncio.gather(*(wait_one(entered) for entered in selected))
         except TimeoutError as exc:
-            raise EnvironmentError(
+            raise EnvironmentInvocationError(
                 "Environment readiness timed out.",
                 code="environment_timeout",
                 details={"timeout_seconds": timeout},
@@ -1110,7 +1117,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
         except (EnvironmentError, EnvironmentActivationError):
             raise
         except Exception as exc:
-            raise EnvironmentError(
+            raise EnvironmentInvocationError(
                 "Environment provider readiness failed.",
                 code="environment_provider_failure",
                 retry_hint="dependency_change",
@@ -1123,7 +1130,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
             raise RuntimeError("Environment operations require an asyncio task")
         async with self._operation_lock:
             if self._closed:
-                raise EnvironmentError("The Environment is closed.", code="environment_closed")
+                raise EnvironmentInvocationError("The Environment is closed.", code="environment_closed")
             self._operation_tasks[task] = self._operation_tasks.get(task, 0) + 1
         try:
             yield
@@ -1148,12 +1155,12 @@ class CompositeBoundEnvironment(BoundEnvironment):
         key = self._mount_key(entered)
         async with self._operation_lock:
             if self._closed:
-                raise EnvironmentError("The Environment is closed.", code="environment_closed")
+                raise EnvironmentInvocationError("The Environment is closed.", code="environment_closed")
             current = self._current_publication(entered)
             if current.public.descriptor.generation != entered.public.descriptor.generation or (
                 not allow_retired and self._entered.get(entered.public.name) is not current
             ):
-                raise EnvironmentError("Environment mount is stale.", code="environment_stale_mount")
+                raise EnvironmentInvocationError("Environment mount is stale.", code="environment_stale_mount")
             self._operation_tasks[task] = self._operation_tasks.get(task, 0) + 1
             self._register_mount_task_locked(key, task)
         try:
@@ -1245,7 +1252,9 @@ class CompositeBoundEnvironment(BoundEnvironment):
                     await self._ensure_provider_family(entered, family)
                     entered = self._current_publication(entered)
                     if previous_generation not in {"unprepared", entered.public.descriptor.generation}:
-                        raise EnvironmentError("Environment changed before dispatch", code="environment_stale_mount")
+                        raise EnvironmentInvocationError(
+                            "Environment changed before dispatch", code="environment_stale_mount"
+                        )
                     self._validate_live_observation(
                         entered,
                         entered.provider.availability,
@@ -1253,7 +1262,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
                     )
                     yield entered
             except TimeoutError as exc:
-                raise EnvironmentError(
+                raise EnvironmentInvocationError(
                     "Environment operation timed out.",
                     code=timeout_code,
                     details={"timeout_seconds": timeout},
@@ -1263,7 +1272,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
     def _current_publication(self, entered: _EnteredMount) -> _EnteredMount:
         current = self._entered_by_id.get(entered.mount_id)
         if current is None or current.provider is not entered.provider:
-            raise EnvironmentError("Environment mount is stale.", code="environment_stale_mount")
+            raise EnvironmentInvocationError("Environment mount is stale.", code="environment_stale_mount")
         return current
 
     async def _prepare_provider(self, entered: _EnteredMount, family: EnvironmentOperationFamily) -> None:
@@ -1283,7 +1292,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
                     descriptor.generation != previous_descriptor.generation
                     or descriptor.backing_identity != previous_descriptor.backing_identity
                 ):
-                    raise EnvironmentError(
+                    raise EnvironmentInvocationError(
                         "Environment target changed within an execution.", code="environment_stale_mount"
                     )
                 self._validate_live_observation(refreshed, refreshed.provider.availability)
@@ -1314,12 +1323,12 @@ class CompositeBoundEnvironment(BoundEnvironment):
         mount_key = self._mount_key(entered)
         async with self._readiness_lock:
             if self._closed:
-                raise EnvironmentError("The Environment is closed.", code="environment_closed")
+                raise EnvironmentInvocationError("The Environment is closed.", code="environment_closed")
             task = self._readiness_tasks.get(key)
             if task is None:
                 async with self._operation_lock:
                     if self._closed:
-                        raise EnvironmentError("The Environment is closed.", code="environment_closed")
+                        raise EnvironmentInvocationError("The Environment is closed.", code="environment_closed")
                     self._current_publication(entered)
                     task = asyncio.create_task(self._prepare_provider(entered, family))
                     self._register_mount_task_locked(mount_key, task)
@@ -1424,7 +1433,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
             if state is None:
                 continue
             if entered.public.provider_type != "unprepared" and state.provider_key != entered.public.provider_type:
-                raise EnvironmentError(
+                raise EnvironmentInvocationError(
                     "Provider state has an incompatible provider key.",
                     code="state_invalid",
                     details={"name": entered.public.name},
@@ -1456,12 +1465,12 @@ class ManagedEnvironmentRuntime(EnvironmentRuntime):
     async def wait_until_active(self) -> None:
         await self._activation_changed.wait()
         if self._activation_error is not None:
-            raise EnvironmentError(
+            raise EnvironmentInvocationError(
                 "The Environment failed before activation.",
                 code="environment_activation_failed",
             ) from self._activation_error
         if not self._accepting_mutations:
-            raise EnvironmentError("The Environment run is not active.", code="run_not_active")
+            raise EnvironmentInvocationError("The Environment run is not active.", code="run_not_active")
 
     async def mount(
         self,
@@ -1484,18 +1493,18 @@ class ManagedEnvironmentRuntime(EnvironmentRuntime):
     def _require_active_bound(self) -> CompositeBoundEnvironment:
         bound = self._bound
         if bound is None or not self._accepting_mutations:
-            raise EnvironmentError("The Environment run is not active.", code="run_not_active")
+            raise EnvironmentInvocationError("The Environment run is not active.", code="run_not_active")
         return bound
 
     async def _activate(self) -> None:
         bound = self._bound
         if bound is None:
-            raise EnvironmentError("The Environment is not entered.", code="run_not_active")
+            raise EnvironmentInvocationError("The Environment is not entered.", code="run_not_active")
         await bound._activate()
 
     def _activated(self, bound: CompositeBoundEnvironment) -> None:
         if self._bound is not bound or self._closed:
-            raise EnvironmentError("The Environment is closing.", code="environment_closed")
+            raise EnvironmentInvocationError("The Environment is closing.", code="environment_closed")
         self._accepting_mutations = True
         self._activation_changed.set()
 
@@ -1530,9 +1539,9 @@ class ManagedEnvironmentRuntime(EnvironmentRuntime):
             or not isinstance(instance, AgentInstanceContext)
             or not isinstance(host_refs, Mapping)
         ):
-            raise EnvironmentError("Environment run identity is invalid.", code="environment_request_invalid")
+            raise EnvironmentInvocationError("Environment run identity is invalid.", code="environment_request_invalid")
         if self._used:
-            raise EnvironmentError(
+            raise EnvironmentInvocationError(
                 "EnvironmentRuntime instances are single-use.",
                 code="environment_runtime_reused",
             )
@@ -1625,11 +1634,11 @@ def _validate_initial_mounts(
 ) -> None:
     names = [item.name for item in mounts]
     if len(names) != len(set(names)):
-        raise EnvironmentError("Environment mount names must be unique.", code="environment_request_invalid")
+        raise EnvironmentInvocationError("Environment mount names must be unique.", code="environment_request_invalid")
     for name in names:
         _validate_mount_name(name)
     if default_mount is not None and default_mount not in names:
-        raise EnvironmentError(
+        raise EnvironmentInvocationError(
             "default_mount is not present in mounts.",
             code="environment_request_invalid",
         )
@@ -1646,14 +1655,14 @@ def _validate_route_paths(
             try:
                 key = parse_mount_path(path).comparison_key
             except ValueError as exc:
-                raise EnvironmentError(
+                raise EnvironmentInvocationError(
                     "Environment mount path is invalid.",
                     code="environment_request_invalid",
                     details={"name": name},
                 ) from exc
             previous = owners.setdefault(key, name)
             if previous != name:
-                raise EnvironmentError(
+                raise EnvironmentInvocationError(
                     "Environment mount paths must be unique.",
                     code="environment_request_invalid",
                     details={"name": name, "conflict": previous},
@@ -1682,7 +1691,7 @@ def _preferred_mount_path(info: EnvironmentMountInfo, default_mount: str | None)
 
 
 def _invalid_operation_path(hint: str) -> EnvironmentError:
-    return EnvironmentError(
+    return EnvironmentInvocationError(
         "Environment path is invalid.",
         code="environment_request_invalid",
         details={"field": "path", "reason": "invalid_path", "hint": hint},
@@ -1705,7 +1714,9 @@ def _validate_mount_name(name: str) -> None:
     try:
         EnvironmentSnapshot(mounts=(), default_mount=name)
     except (TypeError, ValueError) as exc:
-        raise EnvironmentError("Environment mount name is invalid.", code="environment_request_invalid") from exc
+        raise EnvironmentInvocationError(
+            "Environment mount name is invalid.", code="environment_request_invalid"
+        ) from exc
 
 
 def _new_mount_id() -> str:
@@ -1739,20 +1750,26 @@ def _validate_entered(
     availability = provider.availability
     operations = provider.operations
     if not isinstance(descriptor, EnvironmentDescriptor):
-        raise EnvironmentError("Provider returned an invalid descriptor.", code="environment_provider_failure")
+        raise EnvironmentInvocationError(
+            "Provider returned an invalid descriptor.", code="environment_provider_failure"
+        )
     if not isinstance(availability, EnvironmentAvailability):
-        raise EnvironmentError("Provider returned invalid availability.", code="environment_provider_failure")
+        raise EnvironmentInvocationError("Provider returned invalid availability.", code="environment_provider_failure")
     if not isinstance(operations, EnvironmentProviderOperations):
-        raise EnvironmentError("Provider returned invalid operations.", code="environment_provider_failure")
+        raise EnvironmentInvocationError("Provider returned invalid operations.", code="environment_provider_failure")
     if not availability.ready_families <= descriptor.operation_families:
-        raise EnvironmentError("Provider readiness advertises an absent family.", code="environment_provider_failure")
+        raise EnvironmentInvocationError(
+            "Provider readiness advertises an absent family.", code="environment_provider_failure"
+        )
     if not callable(getattr(provider, "check_ready", None)):
-        raise EnvironmentError("Provider has no readiness path.", code="environment_provider_failure")
+        raise EnvironmentInvocationError("Provider has no readiness path.", code="environment_provider_failure")
 
     if availability.status not in {"available", "degraded", "preparing"}:
-        raise EnvironmentError("Provider did not return a ready execution.", code="environment_unavailable")
+        raise EnvironmentInvocationError("Provider did not return a ready execution.", code="environment_unavailable")
     if not isinstance(provider.execution_id, str) or not provider.execution_id or len(provider.execution_id) > 128:
-        raise EnvironmentError("Provider returned an invalid execution identity.", code="environment_provider_failure")
+        raise EnvironmentInvocationError(
+            "Provider returned an invalid execution identity.", code="environment_provider_failure"
+        )
     _validate_operation_facets(descriptor, availability, operations)
 
     effective = EnvironmentPermissionSet(
@@ -1871,7 +1888,7 @@ def _normalize_environment_run_extensions(
     try:
         supplied = tuple(extensions)
     except TypeError:
-        raise EnvironmentError(
+        raise EnvironmentInvocationError(
             "Environment run extensions must be a finite sequence.",
             code="environment_extension_id_invalid",
         ) from None
@@ -1879,14 +1896,14 @@ def _normalize_environment_run_extensions(
     captured: list[tuple[str, EnvironmentRunExtension]] = []
     for extension in supplied:
         if not isinstance(extension, EnvironmentRunExtension):
-            raise EnvironmentError(
+            raise EnvironmentInvocationError(
                 "Environment run extensions must implement EnvironmentRunExtension.",
                 code="environment_extension_id_invalid",
             )
         try:
             extension_id = extension.extension_id
         except Exception:
-            raise EnvironmentError(
+            raise EnvironmentInvocationError(
                 "Environment run extension ID could not be read.",
                 code="environment_extension_id_invalid",
             ) from None
@@ -1896,12 +1913,12 @@ def _normalize_environment_run_extensions(
             or extension_id != extension_id.strip()
             or len(extension_id) > _MAX_ENVIRONMENT_EXTENSION_ID_LENGTH
         ):
-            raise EnvironmentError(
+            raise EnvironmentInvocationError(
                 "Environment run extension IDs must be bounded non-blank strings without surrounding whitespace.",
                 code="environment_extension_id_invalid",
             )
         if extension_id in seen:
-            raise EnvironmentError(
+            raise EnvironmentInvocationError(
                 "Environment run extension IDs must be unique.",
                 code="environment_extension_duplicate",
                 details={"extension_id": extension_id},
@@ -1915,7 +1932,7 @@ def _virtualize_path(root: str, provider_path: str, provider_root: str) -> str:
     try:
         return mount_path_from_provider_path(root, provider_path, provider_root)
     except ValueError as exc:
-        raise EnvironmentError(
+        raise EnvironmentInvocationError(
             "Provider returned an invalid file path.",
             code="environment_provider_failure",
         ) from exc
@@ -1943,7 +1960,7 @@ def create_environment_runtime(
             for name, mount in normalized.items()
         )
     except (AttributeError, TypeError, ValueError) as exc:
-        raise EnvironmentError("Environment mounts are invalid.", code="environment_request_invalid") from exc
+        raise EnvironmentInvocationError("Environment mounts are invalid.", code="environment_request_invalid") from exc
     defaults = MappingProxyType(validate_variables(dict(command_environment or {})))
     captured_extensions = _normalize_environment_run_extensions(extensions)
     _validate_initial_mounts(captured, default_mount)

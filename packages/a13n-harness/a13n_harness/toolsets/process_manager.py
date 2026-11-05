@@ -26,7 +26,7 @@ from a13n_harness.environment.commands import (
     ProcessStatus,
     ProcessStreamRead,
 )
-from a13n_harness.environment.models import EnvironmentAction, EnvironmentError
+from a13n_harness.environment.models import EnvironmentAction, EnvironmentError, EnvironmentInvocationError
 from a13n_harness.environment.providers import BoundEnvironment, BoundProcessOperations
 from a13n_harness.environment.retention import EnvironmentOutputCapture, EnvironmentOutputPolicy
 from a13n_harness.tool_execution import _OWNED_TOOL_EXECUTION, ToolExecutionRuntime, execution_cleanup
@@ -109,9 +109,10 @@ class _OwnedProcess:
         control = ShellControl.model_validate(request)
         async with self._condition:
             if self._closed:
-                raise EnvironmentError(
+                raise EnvironmentInvocationError(
                     "Shell execution has settled. Use tool_execution_result for its retained result.",
                     code="environment_reference_stale",
+                    details={"field": "process_id", "hint": "Read the retained result with tool_execution_result."},
                 )
             self._readers += 1
         try:
@@ -428,7 +429,7 @@ class _ProcessController:
             case "signal":
                 result = await self.signal(process_id, control.signal, processes=processes)
             case _:
-                raise EnvironmentError("Invalid process control.", code="environment_request_invalid")
+                raise EnvironmentInvocationError("Invalid process control.", code="environment_request_invalid")
         return cast(dict[str, JsonValue], result)
 
     async def wait(
@@ -482,7 +483,7 @@ class _ProcessController:
             if alias is not None:
                 selected = self._environment.resolve_path(".", alias=alias)
                 if selected.execution_id != entry.handle.execution_id:
-                    raise EnvironmentError(
+                    raise EnvironmentInvocationError(
                         "Process reference conflicts with alias.", code="environment_request_invalid"
                     )
             inspected = await processes.inspect(entry.handle)
@@ -729,7 +730,7 @@ class _ProcessController:
         baseline: ProcessInfo | None = None,
     ) -> None:
         if info.handle != entry.handle:
-            raise EnvironmentError(
+            raise EnvironmentInvocationError(
                 "The process provider returned a mismatched handle.",
                 code="environment_provider_failure",
             )
@@ -747,7 +748,7 @@ class _ProcessController:
         stderr_offset: int,
     ) -> None:
         if output.process.handle != entry.handle:
-            raise EnvironmentError(
+            raise EnvironmentInvocationError(
                 "The process provider returned output for another handle.",
                 code="environment_provider_failure",
             )
@@ -756,16 +757,20 @@ class _ProcessController:
         if sum(len(chunk.data) for chunk in (*output.stdout.chunks, *output.stderr.chunks)) > (
             2 * _MAX_MODEL_OUTPUT_BYTES
         ):
-            raise EnvironmentError(
+            raise EnvironmentInvocationError(
                 "The process provider exceeded Harness output bounds.",
                 code="environment_provider_failure",
             )
 
     def _reserve_reference(self) -> str:
         if len(self._entries) >= _MAX_REFERENCE_ENTRIES:
-            raise EnvironmentError(
+            raise EnvironmentInvocationError(
                 "The Run process reference limit has been reached.",
                 code="environment_limit_exceeded",
+                details={
+                    "reason": "process_reference_limit",
+                    "hint": "Inspect existing processes in this Run before starting another.",
+                },
             )
         process_id = f"process-{self._incarnation}-{self._next_sequence}"
         self._next_sequence += 1
@@ -774,16 +779,16 @@ class _ProcessController:
     def _entry(self, process_id: str) -> _ProcessEntry:
         self._assert_open()
         match = _REFERENCE_PATTERN.fullmatch(process_id)
-        if match is None or match.group(1) != self._incarnation:
-            raise EnvironmentError(
-                "The process reference is unknown in this Run.",
-                code="environment_not_found",
-            )
-        entry = self._entries.get(process_id)
+        entry = self._entries.get(process_id) if match and match.group(1) == self._incarnation else None
         if entry is None:
-            raise EnvironmentError(
+            raise EnvironmentInvocationError(
                 "The process reference is unknown in this Run.",
                 code="environment_not_found",
+                details={
+                    "field": "process_id",
+                    "reason": "unknown_reference",
+                    "hint": "Use a process_id returned by shell_exec in this Run.",
+                },
             )
         return entry
 
@@ -811,12 +816,12 @@ def _validate_capture(capture: EnvironmentOutputCapture) -> None:
     if not (0 <= capture.available_start <= capture.available_end) or (
         capture.produced_bytes is not None and capture.available_end > capture.produced_bytes
     ):
-        raise EnvironmentError(
+        raise EnvironmentInvocationError(
             "The process provider returned an invalid retained-output range.",
             code="environment_provider_failure",
         )
     if capture.produced_bytes is not None and capture.captured_bytes > capture.produced_bytes:
-        raise EnvironmentError(
+        raise EnvironmentInvocationError(
             "The process provider returned invalid captured-output metadata.",
             code="environment_provider_failure",
         )
@@ -833,13 +838,13 @@ def _validate_stream(stream: ProcessStreamRead, *, requested_offset: int) -> Non
     expected = max(requested_offset, capture.available_start)
     for chunk in stream.chunks:
         if chunk.start_offset != expected:
-            raise EnvironmentError(
+            raise EnvironmentInvocationError(
                 "The process provider returned a non-contiguous output page.",
                 code="environment_provider_failure",
             )
         expected += len(chunk.data)
         if expected > capture.available_end:
-            raise EnvironmentError(
+            raise EnvironmentInvocationError(
                 "The process provider returned output outside its retained range.",
                 code="environment_provider_failure",
             )

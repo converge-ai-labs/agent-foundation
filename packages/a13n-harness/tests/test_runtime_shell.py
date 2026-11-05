@@ -784,3 +784,20 @@ async def test_shell_cancel_interrupts_observation_backoff(tmp_path, monkeypatch
     finally:
         fail.set()
         await runtime.close()
+
+
+async def test_supported_deadline_preserves_nonzero_exit_as_shell_result(tmp_path):
+    runtime = ToolExecutionRuntime()
+    results = []
+    try:
+        outcome = await executable(
+            [("shell_exec", {"command": "exit 1", "execution_timeout_seconds": 5})],
+            results,
+            wait_seconds=5,
+        ).run("run", environment=source(tmp_path), bindings=bindings(runtime))
+        assert outcome.output_or_raise() == "done"
+        assert results[0]["ok"] is True
+        assert results[0]["status"]["exit_code"] == 1
+        assert "error" not in results[0]
+    finally:
+        await runtime.close()

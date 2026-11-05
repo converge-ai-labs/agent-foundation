@@ -326,3 +326,7 @@ Harness 在每次调用后关闭凭据 lease。单独持有的客户端由 Host 
 溢出文件需要当前 Environment 的写权限，默认写入默认挂载 `.a13n/tmp/tool-results/` 下的 Run 私有目录。用绝对路径 `RunBindings.tool_result_directory` 选择其他位置。目标不可用时，预览不带文件路径。Harness 清理时尝试移除自己创建的 Run 私有目录；需要长期保留的产物应另存。
 
 输出失败或截断发生时，工具可能已经完成操作，效果不会撤销。文件访问见 [Environment 工具](environments.md)；保留执行和结果的归属见 [Host 嵌入](hosting.md)。
+
+## 工具调用错误
+
+调用系统自身的错误通过 `error.source="system"`、错误码和安全消息标识。调用者有明确的下一步时，`details.hint` 会给出提示。例如，环境可能在命令启动前拒绝 `execution_timeout_seconds`；省略它会放弃本次调用要求的硬截止时间。命令已运行并以退出码 1 结束时，Shell 返回进程状态。如果写入结果交付失败，请先核对原操作，再决定是否重试。

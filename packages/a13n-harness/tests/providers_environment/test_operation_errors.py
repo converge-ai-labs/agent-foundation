@@ -44,12 +44,21 @@ def test_operation_projection_keeps_only_bounded_safe_fields():
 
 
 def test_legacy_operation_errors_still_have_a_safe_message_and_corrective_hint():
-    for code in ("environment_request_invalid", "environment_denied", "environment_timeout", "custom_provider_error"):
+    for code in ("environment_request_invalid", "environment_denied", "environment_timeout"):
         value = EnvironmentError("private cause", code=code).safe_projection()
         assert value["code"] == code
         assert value["message"]
         assert value["details"]["hint"]
         assert "private cause" not in json.dumps(value)
+
+
+def test_unknown_operation_has_safe_message_without_speculative_hint():
+    value = EnvironmentError("private cause", code="custom_provider_error").safe_projection()
+    assert value == {
+        "code": "custom_provider_error",
+        "message": "The Environment provider could not complete the operation.",
+        "details": {},
+    }
 
 
 def test_projection_bounds_diagnostics_and_rejects_invalid_numeric_evidence():

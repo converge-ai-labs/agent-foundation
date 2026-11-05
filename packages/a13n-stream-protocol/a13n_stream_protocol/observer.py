@@ -20,6 +20,7 @@ from a13n_harness import (
 from a13n_harness.events import InlineDelegationPayload, InputMediaEvent, InputTextEvent, ToolExtraEventPayload
 from a13n_harness.tools._output import tool_execution_value
 from a13n_harness.tools.client import client_tool_name
+from a13n_harness.tools.diagnostics import SYSTEM_FAILURE_METADATA_KEY
 from ag_ui.core import Event, Interrupt, RunFinishedCancelledOutcome, RunFinishedInterruptOutcome
 from ag_ui.core.events import (
     BaseEvent,
@@ -720,6 +721,11 @@ def _convert_tool_result(
             message_id=f"{part.tool_call_id}:result",
             tool_call_id=part.tool_call_id,
             content=tool_result_content(tool_execution_value(part.content, part.metadata)),
+            metadata=(
+                {SYSTEM_FAILURE_METADATA_KEY: True}
+                if isinstance(part.metadata, dict) and part.metadata.get(SYSTEM_FAILURE_METADATA_KEY) is True
+                else None
+            ),
             role="tool",
         )
     ]

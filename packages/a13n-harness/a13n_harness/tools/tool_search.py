@@ -14,6 +14,7 @@ from pydantic_ai.toolsets import ToolsetTool
 
 from a13n_harness._handoff import HANDOFF_TOOL_METADATA_KEY
 from a13n_harness.context import AgentContext
+from a13n_harness.tools.diagnostics import system_error, tool_error_text
 
 PROXY_MEMBERSHIP_KEY = "a13n.tool_search.member"
 PROXY_CONTROL_KEY = "a13n.tool_search.control"
@@ -164,9 +165,19 @@ def resolve_proxy_call(
     """Resolve a call envelope, leaving target validation/execution to ToolManager."""
     group, tool, values = arguments.get("group"), arguments.get("tool"), arguments.get("arguments")
     if not isinstance(group, str) or not isinstance(tool, str) or not isinstance(values, dict):
-        raise ModelRetry("Supply group, tool, and an arguments object matching the tool's complete current schema.")
+        raise ModelRetry(
+            tool_error_text(
+                system_error(
+                    "invalid_arguments",
+                    "Tool lookup arguments are invalid.",
+                    hint="Supply group, tool, and an arguments object matching the tool's complete current schema.",
+                )
+            )
+        )
     if set(arguments) != {"group", "tool", "arguments"}:
-        raise ModelRetry("Tool calls accept only group, tool, and arguments.")
+        raise ModelRetry(
+            tool_error_text(system_error("invalid_arguments", "Tool calls accept only group, tool, and arguments."))
+        )
     return resolve_proxy_tool(tools, group, tool), values
 
 
@@ -178,10 +189,24 @@ def resolve_proxy_tool(tools: Mapping[str, ToolsetTool[AgentContext]], group: st
         groups = sorted({key[0] for key in directory})
         if group not in groups:
             raise ModelRetry(
-                f"Group {group!r} is unavailable in this step. Choose a current group. Available groups: {', '.join(groups) or '(none)'}."
+                tool_error_text(
+                    system_error(
+                        "tool_unavailable",
+                        "The requested group is unavailable in this step.",
+                        field="group",
+                        hint=f"Choose a current group. Available groups: {', '.join(groups) or '(none)'}.",
+                    )
+                )
             )
         raise ModelRetry(
-            f"Tool {group}/{tool} is unavailable in this step. Rediscover available tools and use an exact current group and local tool name."
+            tool_error_text(
+                system_error(
+                    "tool_unavailable",
+                    "The requested tool is unavailable in this step.",
+                    field="tool",
+                    hint="Rediscover available tools and use an exact current group and local tool name.",
+                )
+            )
         )
     return name
 

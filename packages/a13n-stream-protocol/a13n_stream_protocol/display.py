@@ -12,6 +12,7 @@ from typing import Any, Literal, cast
 
 from a13n_harness import HarnessEvent, HarnessStreamEvent
 from a13n_harness.tools._output import tool_execution_value
+from a13n_harness.tools.diagnostics import SYSTEM_FAILURE_METADATA_KEY
 from ag_ui.core import Event, TextPart, ToolCallArgsEvent, ToolCallResultEvent
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from pydantic_ai.messages import (
@@ -463,8 +464,17 @@ class DisplayFold:
                     content["truncated"] = True
             else:
                 self._bounded(content, "result", str(result))
-        if event_type in _ENDS:
-            state: ItemState = "completed"
+        metadata = payload.get("metadata")
+        state: ItemState
+        if (
+            event_type == "TOOL_CALL_RESULT"
+            and isinstance(metadata, dict)
+            and metadata.get(SYSTEM_FAILURE_METADATA_KEY) is True
+        ):
+            state = "failed"
+            content["outcome"] = "failed"
+        elif event_type in _ENDS:
+            state = "completed"
         else:
             state = "in_progress" if previous is None else previous.state
         return self._put(key, kind, state, content, at=_occurred(payload))

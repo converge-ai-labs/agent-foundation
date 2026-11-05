@@ -308,6 +308,15 @@ async def test_unsupported_guarantees_fail_before_native_dispatch(change):
     with pytest.raises(EnvironmentError) as error:
         await process.start(request().model_copy(update=change))
     assert error.value.code == "environment_unsupported"
+    if "limits" in change and change["limits"].wall_time_seconds is not None:
+        from a13n_harness.toolsets.shell import _environment_error_result
+
+        diagnostic = _environment_error_result(error.value)["error"]
+        assert diagnostic["source"] == "system"
+        assert diagnostic["details"]["field"] == "execution_timeout_seconds"
+        assert diagnostic["details"]["dispatch_stage"] == "pre_dispatch"
+        assert "without that limit" in diagnostic["details"]["hint"]
+        assert diagnostic["retry_hint"] == "request_change"
     assert native.calls == []
     await process.close()
 

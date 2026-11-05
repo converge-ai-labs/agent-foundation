@@ -297,6 +297,8 @@ export class DisplayNormalizer {
     if (type === "REASONING_ENCRYPTED_VALUE")
       content.encrypted_value = event.encryptedValue;
     if (type === "TOOL_CALL_RESULT") {
+      if (object(event.metadata)["a13n.system-failure"] === true)
+        content.outcome = "failed";
       if (Array.isArray(event.content)) {
         content.result_parts =
           this.full || jsonSize(event.content) <= fieldLimit

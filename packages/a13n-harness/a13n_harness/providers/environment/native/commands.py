@@ -127,14 +127,12 @@ class NativeCommands:
     async def exec(self, request: CommandRequest) -> ShellExecResult:
         request = with_defaults(request, self.configuration.environment)
         config = self.configuration
+        request.limits.require_supported("wall_time_seconds")
         unsupported = (
             request.network != "configured"
             or request.initial_stdin is not None
             or request.keep_stdin_open
             or request.output_policy.overflow == "retain"
-            or any(
-                value is not None for key, value in request.limits.model_dump().items() if key != "wall_time_seconds"
-            )
         )
         if unsupported:
             raise EnvironmentError("Requested command guarantee is unsupported.", code="environment_unsupported")
