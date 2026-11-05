@@ -126,37 +126,46 @@ impl Drop for RuntimeInner {
 
 /// Persistent installation state is separate from generation-private runtime data.
 pub(crate) fn installation_identity(directory: &Path) -> Result<String, String> {
-    use std::io::{Read, Seek, SeekFrom, Write};
+    use std::io::{Read, Write};
+
     if !directory.is_absolute() {
         return Err("installation state directory must be absolute".to_owned());
     }
     fs::create_dir_all(directory)
         .map_err(|error| format!("cannot create installation state: {error}"))?;
     protect_directory(directory)?;
-    let mut file = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .truncate(false)
-        .open(directory.join("device-id"))
-        .map_err(|error| format!("cannot open Device identity: {error}"))?;
-    file.lock_exclusive()
-        .map_err(|error| format!("cannot lock Device identity: {error}"))?;
+    let path = directory.join("device-id");
+    let existing = match fs::File::open(&path) {
+        Ok(file) => file,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            let mut random = [0_u8; 16];
+            getrandom::fill(&mut random)
+                .map_err(|_| "cannot generate Device identity".to_owned())?;
+            let identity = format!("device-{}", hex(&random));
+            let mut temporary = tempfile::NamedTempFile::new_in(directory)
+                .map_err(|error| format!("cannot create Device identity: {error}"))?;
+            temporary
+                .write_all(identity.as_bytes())
+                .and_then(|()| temporary.as_file().sync_all())
+                .map_err(|error| format!("cannot persist Device identity: {error}"))?;
+            // Publish complete bytes once. Concurrent first starts read the winner.
+            match temporary.persist_noclobber(&path) {
+                Ok(_) => return Ok(identity),
+                Err(error) if error.error.kind() == io::ErrorKind::AlreadyExists => {
+                    fs::File::open(&path)
+                        .map_err(|error| format!("cannot open Device identity: {error}"))?
+                }
+                Err(error) => return Err(format!("cannot publish Device identity: {error}")),
+            }
+        }
+        Err(error) => return Err(format!("cannot open Device identity: {error}")),
+    };
     let mut identity = String::new();
-    (&mut file)
+    existing
         .take(257)
         .read_to_string(&mut identity)
         .map_err(|error| format!("cannot read Device identity: {error}"))?;
-    if identity.is_empty() {
-        let mut random = [0_u8; 16];
-        getrandom::fill(&mut random).map_err(|_| "cannot generate Device identity".to_owned())?;
-        identity = format!("device-{}", hex(&random));
-        file.seek(SeekFrom::Start(0))
-            .map_err(|error| format!("cannot seek Device identity: {error}"))?;
-        file.write_all(identity.as_bytes())
-            .and_then(|()| file.sync_all())
-            .map_err(|error| format!("cannot persist Device identity: {error}"))?;
-    }
+    crate::config::validate_identity(&identity, "device_id").map_err(|error| error.to_string())?;
     Ok(identity)
 }
 
@@ -194,6 +203,30 @@ mod tests {
     use std::fs;
 
     use super::RuntimeState;
+
+    #[test]
+    fn installation_identity_survives_restarts_and_refuses_corrupt_state() {
+        let state = tempfile::tempdir().unwrap();
+        let path = state.path().join("device-id");
+        let read = || super::installation_identity(state.path());
+        let first = std::thread::scope(|scope| {
+            let readers: Vec<_> = (0..8).map(|_| scope.spawn(read)).collect();
+            let ids: Vec<_> = readers
+                .into_iter()
+                .map(|task| task.join().unwrap().unwrap())
+                .collect();
+            assert!(ids.iter().all(|id| id == &ids[0]));
+            ids[0].clone()
+        });
+        assert_eq!(read().unwrap(), first);
+        for invalid in [b"".as_slice(), b"truncated\n", &[0xff]] {
+            fs::write(&path, invalid).unwrap();
+            assert!(read().is_err());
+            assert_eq!(fs::read(&path).unwrap(), invalid);
+        }
+        fs::remove_file(path).unwrap();
+        assert_ne!(read().unwrap(), first);
+    }
 
     #[test]
     fn startup_removes_stale_generation_and_creates_private_layout() {

@@ -73,12 +73,20 @@ it("preserves collapsed model settings and saves them with the environment choic
                 provider_id: "provider_cloud",
               },
             ]
-          : path === "/api/v1/environment-providers"
+          : path === "/api/v1/environments"
             ? [
-                { id: "provider_local", type: "local" },
-                { id: "provider_cloud", type: "e2b" },
+                {
+                  id: "env_0123456789abcdef0123",
+                  name: "My laptop",
+                  status: "ready",
+                },
               ]
-            : [{ type: "e2b", display_name: "E2B" }],
+            : path === "/api/v1/environment-providers"
+              ? [
+                  { id: "provider_local", type: "local" },
+                  { id: "provider_cloud", type: "e2b" },
+                ]
+              : [{ type: "e2b", display_name: "E2B" }],
       next_cursor: null,
     },
     response: new Response(null, { status: 200 }),
@@ -141,14 +149,15 @@ it("preserves collapsed model settings and saves them with the environment choic
       name: "Environment",
     }),
   );
-  const cloud = await screen.findByRole("group", { name: "Cloud hosting" });
+  const templates = await screen.findByRole("group", {
+    name: "Environment templates",
+  });
   expect(
-    within(screen.getByRole("group", { name: "Own hosting" })).getByRole(
-      "option",
-      { name: "Sandbox Local directory" },
-    ),
+    within(templates).getByRole("option", { name: "Sandbox Local directory" }),
   ).toBeTruthy();
-  await user.click(within(cloud).getByRole("option", { name: "Sandbox E2B" }));
+  await user.click(
+    within(templates).getByRole("option", { name: "Sandbox E2B" }),
+  );
   expect(
     screen.getByRole("combobox", {
       name: "Environment",
@@ -174,6 +183,32 @@ it("preserves collapsed model settings and saves them with the environment choic
       instructions: "Check the evidence. Keep the draft.",
       model_settings: { max_tokens: 2048, temperature: 0.4 },
       default_environment_template_id: "envtpl_1234567890abcdef1234",
+    }),
+    '"agent-v1"',
+    null,
+  );
+  submit.mockClear();
+  await user.click(screen.getByRole("combobox", { name: "Environment" }));
+  await user.click(await screen.findByRole("option", { name: "My laptop" }));
+  expect(submit).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  expect(submit).toHaveBeenCalledWith(
+    expect.objectContaining({
+      default_environment_template_id: null,
+      default_environment_id: "env_0123456789abcdef0123",
+      model_settings: { max_tokens: 2048, temperature: 0.4 },
+    }),
+    '"agent-v1"',
+    null,
+  );
+  submit.mockClear();
+  await user.click(screen.getByRole("combobox", { name: "Environment" }));
+  await user.click(await screen.findByRole("option", { name: "None" }));
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  expect(submit).toHaveBeenCalledWith(
+    expect.objectContaining({
+      default_environment_template_id: null,
+      default_environment_id: null,
     }),
     '"agent-v1"',
     null,

@@ -96,7 +96,11 @@ export function EnvironmentPanel({
     enabled: open,
     // The outstanding lifecycle operation settles in the background.
     refetchInterval: (query) =>
-      query.state.data?.value.operation_id ? 2000 : false,
+      query.state.data?.value.operation_id
+        ? 2000
+        : environment.kind === "external"
+          ? 15_000
+          : false,
   });
   // An external target has no provider: it is reached at its own endpoint.
   const provider = useQuery({
@@ -260,11 +264,12 @@ export function EnvironmentPanel({
                         etag={detail.data?.etag}
                       />
                     )}
-                    {value.status === "ready" &&
-                      !value.failure?.permanent &&
-                      can("run") && <DesktopPreview environment={value} />}
                   </>
                 )}
+              {value.desktop_preview !== "not_configured" &&
+                value.status === "ready" &&
+                !value.failure?.permanent &&
+                can("run") && <DesktopPreview environment={value} />}
               {value.failure?.code === "environment_lost" && (
                 <section className={styles.factGroup} role="status">
                   <h3>{t("Environment lost")}</h3>
@@ -295,6 +300,25 @@ export function EnvironmentPanel({
                     <Fact label={t("Device ID")}>
                       <CopyableId value={value.device_id} />
                     </Fact>
+                  )}
+                  {value.client_connection && (
+                    <>
+                      <Fact label={t("Registration")}>
+                        <StatePill
+                          state={value.status}
+                          label={
+                            value.status === "ready"
+                              ? t("Registered")
+                              : undefined
+                          }
+                        />
+                      </Fact>
+                      <Fact label={t("Connection checked")}>
+                        <Timestamp
+                          value={value.client_connection.observed_at}
+                        />
+                      </Fact>
+                    </>
                   )}
                   <Fact label={t("Activity")}>
                     {value.last_used_at ? (

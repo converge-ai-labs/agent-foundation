@@ -121,7 +121,7 @@ class E2BManagement(E2BReference, ManagementBackend):
 
         target = await self._inspect()
         if target is not None:
-            if target.state.value != "running" or self._configuration.execution == "envd_http":
+            if target.state.value != "running" or self._configuration.execution != "native":
                 await self.start()
             return
         if self._state is not None:
@@ -143,7 +143,7 @@ class E2BManagement(E2BReference, ManagementBackend):
             )
             self._remember(sandbox.sandbox_id)
             try:
-                if config.execution == "envd_http":
+                if config.execution != "native":
                     try:
                         await self._bootstrap_envd(sandbox)
                     except CommandExitException:
@@ -173,7 +173,13 @@ class E2BManagement(E2BReference, ManagementBackend):
                     self._validate_target(await sandbox.get_info())
                 finally:
                     await close_sandbox(sandbox)
-        if self._configuration.execution == "envd_http":
+        if self._configuration.execution == "envd_ws":
+            sandbox = await open_sandbox(target.sandbox_id, self._options(), self._validate_target)
+            try:
+                await self._bootstrap_envd(sandbox)
+            finally:
+                await close_sandbox(sandbox)
+        elif self._configuration.execution == "envd_http":
             await self._check_envd()
 
     async def _bootstrap_envd(self, sandbox: AsyncSandbox) -> None:
@@ -188,30 +194,34 @@ class E2BManagement(E2BReference, ManagementBackend):
             background=True,
             timeout=0,
             request_timeout=self._configuration.request_timeout_seconds,
-            envs={
-                **self._configuration.environment,
-                **(self._metrics.environment if self._metrics is not None else {}),
-                **(
-                    {
-                        "A13N_ENVD_CONFIG_JSON": json.dumps(
-                            {"monitoring": {"sample_interval_ms": self._metrics.sample_interval_ms}}
-                        )
-                    }
-                    if self._metrics is not None
-                    else {}
-                ),
-                "A13N_ENVD_DEVICE_ID": self._native_id,
-                "A13N_ENVD_TRANSPORT": "http",
-                "A13N_ENVD_HTTP_BIND": "0.0.0.0:8888",
-                "A13N_ENVD_HTTP_PLAINTEXT_SCOPE": "provider_private_link",
-                "A13N_ENVD_EXECUTION_UID": "1001",
-                "A13N_ENVD_EXECUTION_GID": "1001",
-                "A13N_ENVD_FULL_CONTROL": "true",
-                "A13N_ENVD_STATE_DIR": "/var/lib/a13n-envd",
-                "A13N_ENVD_RUNTIME_DIR": "/run/a13n-envd-state",
-                "A13N_DESKTOP_ACCESS": "true" if self._configuration.desktop_assistance else "false",
-            },
+            envs=self.bootstrap_environment(
+                {
+                    **self._configuration.environment,
+                    **(self._metrics.environment if self._metrics is not None else {}),
+                    **(
+                        {
+                            "A13N_ENVD_CONFIG_JSON": json.dumps(
+                                {"monitoring": {"sample_interval_ms": self._metrics.sample_interval_ms}}
+                            )
+                        }
+                        if self._metrics is not None
+                        else {}
+                    ),
+                    "A13N_ENVD_DEVICE_ID": self._native_id,
+                    "A13N_ENVD_TRANSPORT": "http",
+                    "A13N_ENVD_HTTP_BIND": "0.0.0.0:8888",
+                    "A13N_ENVD_HTTP_PLAINTEXT_SCOPE": "provider_private_link",
+                    "A13N_ENVD_EXECUTION_UID": "1001",
+                    "A13N_ENVD_EXECUTION_GID": "1001",
+                    "A13N_ENVD_FULL_CONTROL": "true",
+                    "A13N_ENVD_STATE_DIR": "/var/lib/a13n-envd",
+                    "A13N_ENVD_RUNTIME_DIR": "/run/a13n-envd-state",
+                    "A13N_DESKTOP_ACCESS": "true" if self._configuration.desktop_assistance else "false",
+                }
+            ),
         )
+        if self._configuration.execution == "envd_ws":
+            return
         # This bounded probe waits for startup only; EIP subsequently verifies
         # authentication, identity, protocol and required capabilities.
         probe = """import socket,time

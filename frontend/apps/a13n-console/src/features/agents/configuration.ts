@@ -18,7 +18,7 @@ const sectionFields = {
   memory: ["memory_mounts", "memory"],
   toolsets: ["toolsets"],
   reviewer: ["reviewer"],
-  environment: ["default_environment_template_id"],
+  environment: ["default_environment_template_id", "default_environment_id"],
   execution: ["execution"],
   compaction: ["background_compaction"],
   summarize: ["summarize"],
@@ -70,6 +70,7 @@ export function buildConfig(
     | "toolsets"
     | "reviewer"
     | "default_environment_template_id"
+    | "default_environment_id"
     | "execution"
     | "background_compaction"
     | "summarize"

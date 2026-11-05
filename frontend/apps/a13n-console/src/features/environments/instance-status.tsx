@@ -6,7 +6,10 @@ import { StatePill } from "../../shared/feedback";
 export function EnvironmentStatus({
   environment,
 }: {
-  environment: Pick<Schema["EnvironmentView"], "status" | "failure">;
+  environment: Pick<
+    Schema["EnvironmentView"],
+    "status" | "failure" | "client_connection"
+  >;
 }) {
   const { t } = useTranslation();
   if (environment.failure?.code === "environment_lost")
@@ -15,5 +18,7 @@ export function EnvironmentStatus({
     return <StatePill state="failed" label={t("Creation failed")} />;
   if (environment.status === "ready" && environment.failure?.permanent)
     return <StatePill state="failed" label={t("Environment unavailable")} />;
+  if (environment.status === "ready" && environment.client_connection)
+    return <StatePill state={environment.client_connection.state} />;
   return <StatePill state={environment.status} />;
 }

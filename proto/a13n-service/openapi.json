@@ -190,6 +190,19 @@
             "title": "Connection Tools",
             "type": "array"
           },
+          "default_environment_id": {
+            "anyOf": [
+              {
+                "maxLength": 41,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Environment Id"
+          },
           "default_environment_template_id": {
             "anyOf": [
               {
@@ -392,6 +405,19 @@
             "maxItems": 128,
             "title": "Connection Tools",
             "type": "array"
+          },
+          "default_environment_id": {
+            "anyOf": [
+              {
+                "maxLength": 41,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Environment Id"
           },
           "default_environment_template_id": {
             "anyOf": [
@@ -3907,6 +3933,131 @@
         ],
         "type": "string"
       },
+      "ClientConnectionObservation": {
+        "properties": {
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "offline",
+              "connecting",
+              "online",
+              "unknown"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "observed_at"
+        ],
+        "title": "ClientConnectionObservation",
+        "type": "object"
+      },
+      "ClientEnvironment": {
+        "properties": {
+          "configuration": {
+            "$ref": "#/components/schemas/ClientEnvironmentConfiguration"
+          },
+          "credential_present": {
+            "title": "Credential Present",
+            "type": "boolean"
+          },
+          "credential_version": {
+            "title": "Credential Version",
+            "type": "integer"
+          },
+          "environment": {
+            "$ref": "#/components/schemas/EnvironmentView"
+          }
+        },
+        "required": [
+          "environment",
+          "configuration",
+          "credential_version",
+          "credential_present"
+        ],
+        "title": "ClientEnvironment",
+        "type": "object"
+      },
+      "ClientEnvironmentConfiguration": {
+        "additionalProperties": false,
+        "properties": {
+          "declared_capabilities": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EnvironmentPermissionSet-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "default_working_directory": {
+            "title": "Default Working Directory",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "permission_ceiling": {
+            "$ref": "#/components/schemas/EnvironmentPermissionSet-Output",
+            "default": {
+              "operations": [
+                "environment.file.copy_destination",
+                "environment.file.copy_source",
+                "environment.file.list",
+                "environment.file.mkdir",
+                "environment.file.move",
+                "environment.file.patch_text",
+                "environment.file.query",
+                "environment.file.read_bytes",
+                "environment.file.read_text",
+                "environment.file.remove",
+                "environment.file.search_text",
+                "environment.file.stat",
+                "environment.file.write_bytes",
+                "environment.file.write_text",
+                "environment.output.read",
+                "environment.output.release",
+                "environment.port.inspect",
+                "environment.port.wait",
+                "environment.process.close_stdin",
+                "environment.process.inspect",
+                "environment.process.kill",
+                "environment.process.list",
+                "environment.process.read_output",
+                "environment.process.release",
+                "environment.process.signal",
+                "environment.process.start",
+                "environment.process.wait",
+                "environment.process.write_stdin",
+                "environment.shell.exec",
+                "environment.state.export",
+                "environment.state.restore"
+              ]
+            }
+          }
+        },
+        "required": [
+          "default_working_directory"
+        ],
+        "title": "ClientEnvironmentConfiguration",
+        "type": "object"
+      },
       "ClientToolDefinition": {
         "additionalProperties": false,
         "description": "Portable model guidance for one externally executed client tool.",
@@ -4131,6 +4282,7 @@
           "output_spec",
           "retries",
           "default_environment_template_id",
+          "default_environment_id",
           "lazy_environment",
           "memory_mounts",
           "memory"
@@ -4551,6 +4703,106 @@
           "next_cursor"
         ],
         "title": "ConnectionPage",
+        "type": "object"
+      },
+      "ConnectionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "declared_capabilities": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EnvironmentPermissionSet-Input"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "default_working_directory": {
+            "title": "Default Working Directory",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "device_id": {
+            "minLength": 1,
+            "title": "Device Id",
+            "type": "string"
+          },
+          "environment_id": {
+            "anyOf": [
+              {
+                "maxLength": 72,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment Id"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "permission_ceiling": {
+            "$ref": "#/components/schemas/EnvironmentPermissionSet-Input",
+            "default": {
+              "operations": [
+                "environment.file.copy_destination",
+                "environment.file.copy_source",
+                "environment.file.list",
+                "environment.file.mkdir",
+                "environment.file.move",
+                "environment.file.patch_text",
+                "environment.file.query",
+                "environment.file.read_bytes",
+                "environment.file.read_text",
+                "environment.file.remove",
+                "environment.file.search_text",
+                "environment.file.stat",
+                "environment.file.write_bytes",
+                "environment.file.write_text",
+                "environment.output.read",
+                "environment.output.release",
+                "environment.port.inspect",
+                "environment.port.wait",
+                "environment.process.close_stdin",
+                "environment.process.inspect",
+                "environment.process.kill",
+                "environment.process.list",
+                "environment.process.read_output",
+                "environment.process.release",
+                "environment.process.signal",
+                "environment.process.start",
+                "environment.process.wait",
+                "environment.process.write_stdin",
+                "environment.shell.exec",
+                "environment.state.export",
+                "environment.state.restore"
+              ]
+            }
+          }
+        },
+        "required": [
+          "default_working_directory",
+          "device_id",
+          "name"
+        ],
+        "title": "ConnectionRequest",
         "type": "object"
       },
       "ConnectionSelection": {
@@ -7716,6 +7968,16 @@
       },
       "EnvironmentView": {
         "properties": {
+          "client_connection": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClientConnectionObservation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -7736,6 +7998,16 @@
               }
             ],
             "title": "Debug Hold Until"
+          },
+          "desktop_preview": {
+            "default": "not_configured",
+            "enum": [
+              "supported",
+              "connection_unsupported",
+              "not_configured"
+            ],
+            "title": "Desktop Preview",
+            "type": "string"
           },
           "device_id": {
             "anyOf": [
@@ -7771,6 +8043,15 @@
           },
           "id": {
             "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "managed",
+              "external_http",
+              "external"
+            ],
+            "title": "Kind",
             "type": "string"
           },
           "last_used_at": {
@@ -7948,6 +8229,7 @@
         },
         "required": [
           "id",
+          "kind",
           "organization_id",
           "workspace_id",
           "provider_id",
@@ -17690,6 +17972,121 @@
         "title": "Reclamation",
         "type": "object"
       },
+      "Registered": {
+        "properties": {
+          "client": {
+            "$ref": "#/components/schemas/ClientEnvironment"
+          },
+          "connection_path": {
+            "title": "Connection Path",
+            "type": "string"
+          },
+          "token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token"
+          }
+        },
+        "required": [
+          "client",
+          "connection_path"
+        ],
+        "title": "Registered",
+        "type": "object"
+      },
+      "Registration": {
+        "additionalProperties": false,
+        "properties": {
+          "declared_capabilities": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EnvironmentPermissionSet-Input"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "default_working_directory": {
+            "title": "Default Working Directory",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "device_id": {
+            "minLength": 1,
+            "title": "Device Id",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "permission_ceiling": {
+            "$ref": "#/components/schemas/EnvironmentPermissionSet-Input",
+            "default": {
+              "operations": [
+                "environment.file.copy_destination",
+                "environment.file.copy_source",
+                "environment.file.list",
+                "environment.file.mkdir",
+                "environment.file.move",
+                "environment.file.patch_text",
+                "environment.file.query",
+                "environment.file.read_bytes",
+                "environment.file.read_text",
+                "environment.file.remove",
+                "environment.file.search_text",
+                "environment.file.stat",
+                "environment.file.write_bytes",
+                "environment.file.write_text",
+                "environment.output.read",
+                "environment.output.release",
+                "environment.port.inspect",
+                "environment.port.wait",
+                "environment.process.close_stdin",
+                "environment.process.inspect",
+                "environment.process.kill",
+                "environment.process.list",
+                "environment.process.read_output",
+                "environment.process.release",
+                "environment.process.signal",
+                "environment.process.start",
+                "environment.process.wait",
+                "environment.process.write_stdin",
+                "environment.shell.exec",
+                "environment.state.export",
+                "environment.state.restore"
+              ]
+            }
+          }
+        },
+        "required": [
+          "default_working_directory",
+          "device_id",
+          "name"
+        ],
+        "title": "Registration",
+        "type": "object"
+      },
       "Renew": {
         "additionalProperties": false,
         "properties": {
@@ -22309,6 +22706,24 @@
           "capacity"
         ],
         "type": "string"
+      },
+      "StatusChange": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "enum": [
+              "ready",
+              "disabled"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "StatusChange",
+        "type": "object"
       },
       "Steering": {
         "enum": [
@@ -27503,6 +27918,7 @@
                 "output_spec",
                 "retries",
                 "default_environment_template_id",
+                "default_environment_id",
                 "lazy_environment",
                 "memory_mounts",
                 "memory"
@@ -30010,6 +30426,505 @@
         "tags": [
           "agents"
         ]
+      }
+    },
+    "/api/v1/client-environments": {
+      "post": {
+        "operationId": "register_client_environment",
+        "parameters": [
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Registration"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Registered"
+                }
+              }
+            },
+            "description": "Existing registration; no token is returned"
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Registered"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Register Client Environment",
+        "tags": [
+          "client-environments"
+        ],
+        "x-a13n-mcp": false
+      }
+    },
+    "/api/v1/client-environments/connect": {
+      "post": {
+        "operationId": "connect_client_environment",
+        "parameters": [
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Registered"
+                }
+              }
+            },
+            "description": "Existing registration; no token is returned"
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Registered"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Connect Client Environment",
+        "tags": [
+          "client-environments"
+        ],
+        "x-a13n-mcp": false
+      }
+    },
+    "/api/v1/client-environments/{environment_id}": {
+      "get": {
+        "operationId": "get_client_environment",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "environment_id",
+            "required": true,
+            "schema": {
+              "title": "Environment Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientEnvironment"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Get Client Environment",
+        "tags": [
+          "client-environments"
+        ],
+        "x-a13n-mcp": true
+      }
+    },
+    "/api/v1/client-environments/{environment_id}/revoke-credential": {
+      "post": {
+        "operationId": "revoke_client_environment_credential",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "environment_id",
+            "required": true,
+            "schema": {
+              "title": "Environment Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Registered"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Revoke Client Environment Credential",
+        "tags": [
+          "client-environments"
+        ],
+        "x-a13n-mcp": false
+      }
+    },
+    "/api/v1/client-environments/{environment_id}/rotate-credential": {
+      "post": {
+        "operationId": "rotate_client_environment_credential",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "environment_id",
+            "required": true,
+            "schema": {
+              "title": "Environment Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Registered"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Rotate Client Environment Credential",
+        "tags": [
+          "client-environments"
+        ],
+        "x-a13n-mcp": false
+      }
+    },
+    "/api/v1/client-environments/{environment_id}/status": {
+      "patch": {
+        "operationId": "change_client_environment_status",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "environment_id",
+            "required": true,
+            "schema": {
+              "title": "Environment Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StatusChange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientEnvironment"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Change Client Environment Status",
+        "tags": [
+          "client-environments"
+        ],
+        "x-a13n-mcp": false
       }
     },
     "/api/v1/connections": {
@@ -33718,7 +34633,7 @@
             "schema": {
               "anyOf": [
                 {
-                  "pattern": "^(reserved|creating|starting|ready|stopping|stopped|deleting|deleted)$",
+                  "pattern": "^(reserved|creating|starting|ready|stopping|stopped|deleting|deleted|disabled)$",
                   "type": "string"
                 },
                 {
@@ -43783,6 +44698,7 @@
                 "output_spec",
                 "retries",
                 "default_environment_template_id",
+                "default_environment_id",
                 "lazy_environment",
                 "memory_mounts",
                 "memory"

@@ -12,9 +12,9 @@ from a13n_service.infra.errors import ServiceError, conflict
 from a13n_service.providers.environment.kubernetes import Diagnostics, KubernetesObserver, LogQuery, Logs
 from a13n_service.resources.providers.service import resolve_provider
 from a13n_service.resources.providers.tables import EnvironmentProviderRow
+from a13n_service.runs.environments.access import find
 from a13n_service.runs.environments.adapters import Target, close, managed_target, open_provider, provider_identity
 from a13n_service.runs.environments.schemas import EnvironmentView, Handle
-from a13n_service.runs.environments.service import _find
 from a13n_service.runs.runtime import Runtime
 from a13n_service.tenancy.access import workspace_scope
 from a13n_service.tenancy.authorize import Principal
@@ -35,7 +35,7 @@ async def observation(
     async with short_session(runtime.storage) as session:
         # Native status and logs can contain guest content, not only resource metadata.
         scope = await workspace_scope(session, actor, workspace_id, "run")
-        row = await _find(session, scope, environment_id)
+        row = await find(session, scope, environment_id)
         if row.provider_id is None or not row.provider_identity or row.provider_identity.get("type") != "kubernetes":
             raise conflict("environment", environment_id, "kubernetes_required")
         if row.handle is None:

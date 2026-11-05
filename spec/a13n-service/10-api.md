@@ -385,15 +385,19 @@ Retained-execution list, detail and bounded-result queries are admitted to MCP u
 
 ### Environments
 
-| Path                                    | Methods            | Owner                                                                                                   |
-| --------------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------- |
-| `/environment-templates`                | GET, POST          | [04](04-resources.md#environment-templates)                                                             |
-| `/environment-templates/{template}`     | GET, PATCH         | [04](04-resources.md#environment-templates)                                                             |
-| `/environments`                         | GET, POST          | [06](06-environments.md#mounts), [external targets](06-environments.md#external-targets)                |
-| `/environments/{environment}`           | GET, PATCH, DELETE | [06](06-environments.md#stop-start-and-delete), [external targets](06-environments.md#external-targets) |
-| `/environments/{environment}/stop`      | POST               | [06](06-environments.md#stop-start-and-delete)                                                          |
-| `/threads/{thread}/environments`        | GET, POST          | [06](06-environments.md#mounts)                                                                         |
-| `/threads/{thread}/environments/{name}` | PATCH, DELETE      | [06](06-environments.md#mounts)                                                                         |
+| Path                                                                                                           | Methods            | Owner                                                                                                   |
+| -------------------------------------------------------------------------------------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------- |
+| `/environment-templates`                                                                                       | GET, POST          | [04](04-resources.md#environment-templates)                                                             |
+| `/environment-templates/{template}`                                                                            | GET, PATCH         | [04](04-resources.md#environment-templates)                                                             |
+| `/client-environments`                                                                                         | POST               | [Client registration](06-environments.md#identity-and-credentials)                                      |
+| `/client-environments/{environment}`                                                                           | GET                | [Client registration](06-environments.md#identity-and-credentials)                                      |
+| `/client-environments/{environment}/status`                                                                    | PATCH              | [Client status](06-environments.md#identity-and-credentials)                                            |
+| `/client-environments/{environment}/rotate-credential`, `/client-environments/{environment}/revoke-credential` | POST               | [Dedicated credentials](06-environments.md#identity-and-credentials)                                    |
+| `/environments`                                                                                                | GET, POST          | [06](06-environments.md#mounts), [external targets](06-environments.md#external-targets)                |
+| `/environments/{environment}`                                                                                  | GET, PATCH, DELETE | [06](06-environments.md#stop-start-and-delete), [external targets](06-environments.md#external-targets) |
+| `/environments/{environment}/stop`                                                                             | POST               | [06](06-environments.md#stop-start-and-delete)                                                          |
+| `/threads/{thread}/environments`                                                                               | GET, POST          | [06](06-environments.md#mounts)                                                                         |
+| `/threads/{thread}/environments/{name}`                                                                        | PATCH, DELETE      | [06](06-environments.md#mounts)                                                                         |
 
 ### Memories
 

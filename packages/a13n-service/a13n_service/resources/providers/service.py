@@ -228,7 +228,7 @@ async def test_provider[R: ProviderRow](
     """One non-billable probe of the current configuration, outside any transaction; changes nothing."""
     async with short_session(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "read")
-        provider = _resolved(await find_row(session, actor, row_type, scope, provider_id, "run"))
+        provider = resolved_provider(await find_row(session, actor, row_type, scope, provider_id, "run"))
     result = await probe(
         registry,
         row_type.PROVIDER_KIND,
@@ -256,7 +256,7 @@ async def resolve_provider[R: ProviderRow](
     authority: ExecutionAuthority | None = None,
 ) -> ResolvedProvider:
     """An enabled provider of the workspace, read in the caller's short session."""
-    return _resolved(
+    return resolved_provider(
         await usable_row(
             session,
             actor,
@@ -275,7 +275,7 @@ async def read_provider[R: ProviderRow](session: AsyncSession, row_type: type[R]
     row = await session.get(row_type, provider_id)
     if row is None:
         raise not_found(row_type.KIND, provider_id)
-    return _resolved(row)
+    return resolved_provider(row)
 
 
 def list_provider_types(registry: Registry, kind: ProviderKind) -> ProviderTypePage:
@@ -346,7 +346,7 @@ def rejection_reason(error: ValueError) -> str:
     return str(error)
 
 
-def _resolved(row: ProviderRow) -> ResolvedProvider:
+def resolved_provider(row: ProviderRow) -> ResolvedProvider:
     return ResolvedProvider(
         id=row.id,
         version=row.version,

@@ -136,6 +136,30 @@ def readiness(session_id: str = "ses-a") -> dict:
     return {"ready": True, "device_id": "device-test", "generation": 1, "session_id": session_id}
 
 
+def test_host_opened_session_requires_live_readiness_and_cannot_address_other_scopes() -> None:
+    async def scenario():
+        transport = FakeTransport()
+        device = await initialized(transport)
+        try:
+            with pytest.raises(EIPProtocolError):
+                await device.bind_open_session(descriptor().model_copy(update={"generation": 2}))
+            binding = asyncio.create_task(device.bind_open_session(descriptor()))
+            probe = await transport.request()
+            assert probe.method == "environment.readiness" and probe.eip_session == "ses-a"
+            assert not binding.done()
+            transport.reply(probe, readiness())
+            session = await binding
+            with pytest.raises(EIPSessionStateError):
+                await session.requester.request(DEVICE_DESCRIBE, DeviceDescribeParams())
+            await closed(session, transport)
+            assert not device.is_closed
+            assert transport.sent.empty()
+        finally:
+            await device.close()
+
+    asyncio.run(scenario())
+
+
 def params(operation: str = "op-test", timeout_ms: int | None = None) -> EnvironmentReadinessParams:
     return EnvironmentReadinessParams(context=EIPCallContext(operation_id=operation, timeout_ms=timeout_ms))
 

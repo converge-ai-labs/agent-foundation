@@ -15,6 +15,7 @@ from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as 
 from a13n_harness.environment.errors import EnvironmentProviderOutcomeCertainty as Certainty
 from a13n_harness.environment.models import EnvironmentState
 from a13n_harness.providers.environment._runtime import ClosableRuntime, RuntimeFactory, _release
+from a13n_harness.providers.environment.execution_mode import capabilities
 from a13n_harness.providers.environment.remote_envd.managed import ManagedCredentialCache
 from pydantic import BaseModel
 
@@ -23,6 +24,7 @@ from .desktop_access import Reply, Request
 from .errors import EnvironmentManagementCancelled, EnvironmentManagementError
 from .management import EnvironmentProvider, EnvironmentStatus
 from .metrics import DeviceObservation, MetricsLaunch, ScrapeTarget
+from .websocket import WebSocketBootstrap
 
 
 class ManagementFactory[E: BaseModel, R](Protocol):
@@ -62,7 +64,11 @@ class BackendProvider[C: BaseModel, K: BaseModel, E: BaseModel, R](EnvironmentPr
         self._factory = factory
         self._runtime = runtime
         self._owned = owned
+        self._websocket: WebSocketBootstrap | None = None
         self._close_task: asyncio.Task[None] | None = None
+
+    def configure_websocket(self, bootstrap: WebSocketBootstrap) -> None:
+        self._websocket = bootstrap
 
     def _recipe(self, value: object) -> E:
         if self._close_task is not None:
@@ -75,13 +81,23 @@ class BackendProvider[C: BaseModel, K: BaseModel, E: BaseModel, R](EnvironmentPr
     def _target(
         self, environment: object, environment_id: str, state: EnvironmentState | None, operation_id: str
     ) -> ManagementBackend:
-        return self._factory.management(
-            configuration=self._recipe(environment),
+        recipe = self._recipe(environment)
+        target = self._factory.management(
+            configuration=recipe,
             environment_id=environment_id,
             state=state,
             runtime=self._runtime,
             operation_id=operation_id,
         )
+        if self._websocket is not None:
+            if self._websocket.device_id != environment_id:
+                raise ValueError("Outbound bootstrap belongs to another environment")
+            target.websocket = self._websocket
+        return target
+
+    def _require_websocket(self, environment: object) -> None:
+        if capabilities(self._recipe(environment)).host_connection and self._websocket is None:
+            raise provider_error(self._factory.key, "envd_ws_bootstrap_required", Category.INVALID)
 
     @asynccontextmanager
     async def _operation(
@@ -93,6 +109,9 @@ class BackendProvider[C: BaseModel, K: BaseModel, E: BaseModel, R](EnvironmentPr
             target.validate_management()
             yield target
         except asyncio.CancelledError as error:
+            if isinstance(error, EnvironmentManagementCancelled):
+                primary = error
+                raise
             primary = EnvironmentManagementCancelled(target.state, operation_id)
             raise primary from error
         except Exception as error:
@@ -135,15 +154,38 @@ class BackendProvider[C: BaseModel, K: BaseModel, E: BaseModel, R](EnvironmentPr
         async with self._operation(environment, environment_id, state, operation_id) as target:
             if metrics is not None:
                 target.configure_metrics(metrics)
+            self._require_websocket(environment)
             await target.create()
+            await self._wait_ready(target, operation_id)
             return target.state
 
     async def start(
         self, environment: object, *, environment_id: str, operation_id: str, state: EnvironmentState | None
     ) -> EnvironmentState | None:
         async with self._operation(environment, environment_id, state, operation_id) as target:
+            self._require_websocket(environment)
             await target.start()
+            await self._wait_ready(target, operation_id)
             return target.state
+
+    async def _wait_ready(self, target: ManagementBackend, operation_id: str) -> None:
+        if target.websocket is None:
+            return
+        failure = provider_error(
+            self._factory.key,
+            "envd_ws_not_ready",
+            Category.UNAVAILABLE,
+            certainty=Certainty.KNOWN,
+            description="The target was provisioned, but its outbound connection is not ready.",
+        )
+        try:
+            await target.websocket.wait_ready()
+        except asyncio.CancelledError as error:
+            # Preserve cancellation semantics and the completed native mutation.
+            # The lifecycle deadline can recover this evidence from its cause.
+            raise EnvironmentManagementCancelled(target.state, operation_id, failure=failure) from error
+        except Exception as error:
+            raise failure from error
 
     async def inspect(
         self, environment: object, *, environment_id: str, state: EnvironmentState | None

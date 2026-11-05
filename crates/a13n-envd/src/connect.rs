@@ -24,6 +24,8 @@ use url::Url;
 
 use crate::config::{Config, ConnectionBootstrap, ReverseWebSocketConfig, TransportConfig};
 
+pub(crate) mod service;
+
 const PAIRING_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 const RESPONSE_LIMIT: usize = 64 * 1024;
@@ -382,7 +384,7 @@ async fn exchange<S: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
     let mut authorization = hyper::header::HeaderValue::from_str(&format!("Bearer {credential}"))
         .map_err(|_| invalid("invalid saved credential"))?;
     authorization.set_sensitive(true);
-    let request = Request::post(url.path())
+    let request = Request::post(&url[url::Position::BeforePath..url::Position::AfterQuery])
         .header(
             header::HOST,
             &url[url::Position::BeforeHost..url::Position::AfterPort],
@@ -411,7 +413,7 @@ async fn exchange<S: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
             .unwrap_or_default();
         return Err(io::Error::new(
             kind,
-            format!("Host rejected pairing (HTTP {status}){detail}; no credential was replaced"),
+            format!("Host rejected enrollment (HTTP {status}){detail}; no credential was replaced"),
         ));
     }
     let bytes = Limited::new(response.into_body(), RESPONSE_LIMIT)
@@ -437,7 +439,26 @@ fn pairing_error_detail(body: &[u8], credential: &str) -> Option<String> {
     {
         return None;
     }
-    Some(format!("{code}: {message}").replace(credential, "[redacted]"))
+    let reason = error
+        .get("details")
+        .and_then(|details| details.get("reason"))
+        .and_then(|reason| reason.as_str());
+    let hint = match reason {
+        Some("device_id_mismatch") => {
+            " [device_id_mismatch]: pass --device-id with the environment's registered device ID, or select the correct --environment-id"
+        }
+        Some("client_environment_disabled") => {
+            " [client_environment_disabled]: explicitly enable the environment before connecting"
+        }
+        Some("client_environment_deleted") => {
+            " [client_environment_deleted]: explicitly register a replacement; startup will not recreate a deleted environment"
+        }
+        Some("client_credential_revoked") => {
+            " [client_credential_revoked]: explicitly rotate the device credential, then use --credential-file"
+        }
+        _ => "",
+    };
+    Some(format!("{code}: {message}{hint}").replace(credential, "[redacted]"))
 }
 
 fn host_url(value: &str) -> io::Result<Url> {

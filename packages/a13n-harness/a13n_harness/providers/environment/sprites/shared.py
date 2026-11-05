@@ -29,18 +29,18 @@ class SpritesConnectionConfiguration(BaseModel):
 
 class SpritesEnvironmentConfiguration(CommandConfiguration):
     model_config = ConfigDict(
-        frozen=True, extra="forbid", json_schema_extra={"x-primary-fields": ["desktop", "region"]}
+        frozen=True, extra="forbid", json_schema_extra={"x-primary-fields": ["execution", "desktop", "region"]}
     )
     root: str = "/home/sprite"
     region: str | None = Field(default=None, max_length=64)
 
-    execution: Literal["native", "envd_http"] = "native"
+    execution: Literal["native", "envd_http", "envd_ws"] = "native"
     desktop: bool = False
 
     @model_validator(mode="after")
     def execution_requirements(self) -> Self:
-        if self.desktop != (self.execution == "envd_http"):
-            raise ValueError("Sprites desktop requires execution=envd_http")
+        if self.desktop != (self.execution != "native"):
+            raise ValueError("Sprites desktop requires Envd execution")
         return self
 
     @property

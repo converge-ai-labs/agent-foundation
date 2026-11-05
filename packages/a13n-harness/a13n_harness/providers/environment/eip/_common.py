@@ -127,6 +127,10 @@ def convert_error(error: BaseException) -> EnvironmentError:
             "dispatch_stage": data.dispatch_stage.value,
             "provider_retry_hint": data.retry_hint.value,
         }
+        if error_type == eip.ErrorType.UNKNOWN_OUTCOME and data.receipt is not None:
+            details["receipt_stage"] = data.receipt.stage.value
+            if data.receipt.outcome is not None:
+                details["receipt_outcome"] = data.receipt.outcome.value
         fields = {
             "query": "pattern",
             "include_pattern": "include",

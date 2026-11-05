@@ -30,6 +30,22 @@ a13n-envd
 
 标量设置覆盖身份、执行、发现、元数据和生命周期：`A13N_ENVD_ALLOW_SUDO`、`A13N_ENVD_EXECUTION_UID`、`A13N_ENVD_EXECUTION_GID`、`A13N_ENVD_EGRESS_MODE`、`A13N_ENVD_FULL_CONTROL`、`A13N_ENVD_COMPUTER_USE`、`A13N_ENVD_COMPUTER_USE_PERMISSION_TIMEOUT_MS`、`A13N_ENVD_DIRECTORY_DISCOVERY`、`A13N_ENVD_DEVICE_ID`、`A13N_ENVD_NAME`、`A13N_ENVD_DESCRIPTION`、`A13N_ENVD_DEFAULT_WORKING_DIRECTORY`、`A13N_ENVD_IDLE_TIMEOUT_MS` 和 `A13N_ENVD_DISCONNECT_GRACE_MS`。布尔值接受 `true`、`false`、`1` 和 `0`。
 
+## 连接 Service
+
+使用运行 agent 的主体所持有的普通 Service API token，将它保存为私有文件，然后运行：
+
+```sh
+a13n-envd connect-service https://control.example.com --host work \
+  --workspace-id ws_example --api-token-file /private/path/api-token \
+  --default-working-directory /path/to/project
+```
+
+首次接入时，如果当前所有者和工作空间下没有这个设备的环境，Service 会创建它。Envd 将环境 ID 和专用设备凭据保存在本地。后续运行 `a13n-envd connect-service work`，不再需要 API token 文件。首次启动可加 `--environment-id env_example`，要求使用已有环境。`--device-id` 会忽略本地身份文件；后续启动继续传相同的值。仍可使用 `--computer-use` 等通用 daemon 参数。
+
+Service 配置保存在 `--state-dir` 下的 `instances/<instance>/services/<name>`，默认根目录为 `~/.a13n-envd`（Windows 使用平台状态目录）。不同账号或工作空间请使用不同名称。禁用、删除或撤销凭据的环境不会自动重建。离线环境仍可显式[挂载到线程](../a13n-service/environments.md#mount-environments-on-a-thread)，连接本身不会挂载环境。
+
+如果登记成功但凭据丢失，envd 会提示 `client_credential_required` 和环境 ID。先读取环境的当前 ETag，再使用普通 API token 和 `If-Match` 调用 `POST /api/v1/client-environments/{id}/rotate-credential?workspace_id=…`。将返回的 `token` 保存到私有文件，再运行 `a13n-envd connect-service work --credential-file /private/path/device-token`。启动过程不会自动轮换。凭据文件应保持私有（Unix 权限 `0600`）；API token 不会写入配置，也不会用于 WebSocket 鉴权。
+
 ## 连接 Harness UI
 
 在实际执行工作的计算机上发起出站连接：
@@ -42,7 +58,7 @@ a13n-envd connect https://host.example.com --host work
 2. 批准匹配的验证码。
 3. 保持 Envd 运行。后续启动用 `a13n-envd connect work` 复用注册。
 
-Envd 在设备上生成凭据，因此浏览器配对只需验证码。带已保存状态的重连会复用批准。接入 Service 时，改为[注册 HTTP 守护进程](../environments/remote-envd.md#connect-to-the-service)。
+Envd 在设备上生成凭据，因此浏览器配对只需验证码。带已保存状态的重连会复用批准。Service 请使用[首次接入](#connect-to-service)。
 
 使用本机可访问的 Host URL。除 `http://127.0.0.1:8765` 等回环 HTTP 外，必须使用 HTTPS。私有 CA 通过 `--ca-file /path/to/ca.pem` 添加，证书验证保持开启。用 `--name` 设置批准页面的显示名，`--default-working-directory` 选择已有原生目录，`--config` 提供守护进程 JSON 设置。
 

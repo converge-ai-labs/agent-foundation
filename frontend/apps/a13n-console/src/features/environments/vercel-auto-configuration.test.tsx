@@ -10,6 +10,12 @@ vi.mock("react-i18next", () => ({
 const schema = {
   type: "object",
   properties: {
+    execution: {
+      type: "string",
+      title: "Execution connection",
+      enum: ["native", "envd_http", "envd_ws"],
+      default: "native",
+    },
     snapshot: { type: "string", title: "Snapshot", default: "auto" },
     desktop: { type: "boolean", default: false },
     desktop_assistance: { type: "boolean", default: false },
@@ -85,5 +91,23 @@ it("switching desktop off restores the native configuration", async () => {
     snapshot: null,
     execution: "native",
     desktop_assistance: false,
+  });
+});
+
+it("lets a managed desktop select outbound WebSocket", async () => {
+  render(
+    <Editor
+      initial={{ desktop: true, execution: "envd_http", snapshot: "auto" }}
+    />,
+  );
+  const user = userEvent.setup();
+  await user.click(
+    screen.getByRole("combobox", { name: "Execution connection" }),
+  );
+  await user.click(screen.getByRole("option", { name: "Envd ws" }));
+  expect(configuration()).toMatchObject({
+    execution: "envd_ws",
+    desktop: true,
+    snapshot: "auto",
   });
 });

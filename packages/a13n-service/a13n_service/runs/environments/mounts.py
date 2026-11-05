@@ -16,7 +16,10 @@ from a13n_service.infra.audit import record
 from a13n_service.infra.db import Storage, short_session, transaction
 from a13n_service.infra.errors import ServiceError, conflict, not_found
 from a13n_service.infra.http import require_match
-from a13n_service.runs.environments.lifecycle import require_usable_state, reserve
+from a13n_service.resources.environment_instances.access import lock_environments as lock_environments
+from a13n_service.resources.environment_instances.access import require_usable as require_usable
+from a13n_service.runs.environments.clients.tables import ClientSettingsRow
+from a13n_service.runs.environments.lifecycle import reserve
 from a13n_service.runs.environments.schemas import (
     DEFAULT_MOUNT_PERMISSIONS,
     MAX_MOUNTS,
@@ -119,42 +122,6 @@ async def adopt_mounts(session: AsyncSession, thread: ThreadRow, mounts: Sequenc
     await session.flush()
 
 
-def require_usable(environment: EnvironmentRow, principal_id: str) -> None:
-    """New use refuses retiring instances, unresolved permanent failures and other principals' devices."""
-    if environment.owner_principal_id not in {None, principal_id}:
-        raise ServiceError("forbidden", "Private environments are usable only by their owner", {"id": environment.id})
-    if environment.status in {"deleting", "deleted"}:
-        raise conflict("environment", environment.id, f"environment_{environment.status}")
-    require_usable_state(environment)
-
-
-async def lock_environments(
-    session: AsyncSession, workspace_id: str, environment_ids: Sequence[str], *, principal_id: str
-) -> list[EnvironmentRow]:
-    """Share-lock the workspace's instances in ID order, the order every multi-environment writer uses, and check
-    each is usable. New use waits for a stop, delete or lifecycle step, which lock the row exclusively, but never
-    for other new use."""
-    ids = sorted(set(environment_ids))
-    if not ids:
-        return []
-    rows = (
-        await session.scalars(
-            select(EnvironmentRow)
-            .where(EnvironmentRow.workspace_id == workspace_id, EnvironmentRow.id.in_(ids))
-            .order_by(EnvironmentRow.id)
-            .with_for_update(read=True)
-            .execution_options(populate_existing=True)
-        )
-    ).all()
-    found = {row.id for row in rows}
-    for missing in ids:
-        if missing not in found:
-            raise not_found("environment", missing)
-    for row in rows:
-        require_usable(row, principal_id)
-    return list(rows)
-
-
 async def mount_environments(
     session: AsyncSession, thread: ThreadRow, mounts: Sequence[MountCreate], *, principal_id: str
 ) -> list[ThreadEnvironmentRow]:
@@ -202,13 +169,10 @@ async def reserve_primary(
 
 
 async def freeze_mounts(
-    session: AsyncSession,
-    thread: ThreadRow,
-    *,
-    principal_id: str,
-    primary: EnvironmentMount | None = None,
+    session: AsyncSession, thread: ThreadRow, *, principal_id: str, primary: EnvironmentMount | None = None
 ) -> list[dict]:
-    """Freeze desired mounts with an optional Run-only primary; lock only the selected instances in ID order."""
+    """The mount set a new run uses: the thread's desired mounts, each usable by the run's principal. The caller
+    holds the thread lock; environments lock in ID order."""
     desired = await desired_mounts(session, thread.id)
     mounts = [
         EnvironmentMount(
@@ -216,18 +180,52 @@ async def freeze_mounts(
             environment_id=mount.environment_id,
             working_directory=mount.working_directory,
             permission_ceiling=EnvironmentPermissionSet.model_validate(mount.permission_ceiling),
-        ).model_dump(mode="json")
+        )
         for mount in desired
         if primary is None or mount.name != PRIMARY
     ]
     if primary is not None:
-        if any(mount["environment_id"] == primary.environment_id for mount in mounts):
+        if any(mount.environment_id == primary.environment_id for mount in mounts):
             raise conflict("environment", primary.environment_id, "already_mounted")
-        mounts.append(primary.model_dump(mode="json"))
-    await lock_environments(
-        session, thread.workspace_id, [mount["environment_id"] for mount in mounts], principal_id=principal_id
+        mounts.append(primary)
+    environments = await lock_environments(
+        session, thread.workspace_id, [mount.environment_id for mount in mounts], principal_id=principal_id
     )
-    return sorted(mounts, key=lambda mount: mount["name"])
+    client_ids = [environment.id for environment in environments if environment.kind == "external"]
+    configurations = (
+        {
+            config.environment_id: config
+            for config in await session.scalars(
+                select(ClientSettingsRow).where(ClientSettingsRow.environment_id.in_(client_ids))
+            )
+        }
+        if client_ids
+        else {}
+    )
+    for environment_id in client_ids:
+        if environment_id not in configurations:
+            raise conflict("environment", environment_id, "client_configuration_missing")
+    frozen = []
+    for mount in mounts:
+        directory = mount.working_directory
+        permissions = EnvironmentPermissionSet.model_validate(mount.permission_ceiling)
+        if config := configurations.get(mount.environment_id):
+            directory = directory or config.default_working_directory
+            operations = (
+                permissions.operations & EnvironmentPermissionSet.model_validate(config.permission_ceiling).operations
+            )
+            if config.declared_capabilities is not None:
+                operations &= EnvironmentPermissionSet.model_validate(config.declared_capabilities).operations
+            permissions = EnvironmentPermissionSet(operations=operations)
+        frozen.append(
+            EnvironmentMount(
+                name=mount.name,
+                environment_id=mount.environment_id,
+                working_directory=directory,
+                permission_ceiling=permissions,
+            ).model_dump(mode="json")
+        )
+    return sorted(frozen, key=lambda mount: mount["name"])
 
 
 def _view(mount: ThreadEnvironmentRow, environment: EnvironmentRow) -> MountView:

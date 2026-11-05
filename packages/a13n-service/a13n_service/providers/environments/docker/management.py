@@ -208,11 +208,11 @@ class DockerManagement(DockerReference, ManagementBackend):
         image_id = image.id
         if not isinstance(image_id, str) or not image_id:
             raise EnvironmentError("Docker did not return an image identity", code="environment_provider_failure")
-        entrypoint = None if self.config.execution == "envd_http" else [self.config.python, "-I", "-c"]
-        command = None if self.config.execution == "envd_http" else ["import signal; signal.pause()"]
+        entrypoint = None if self.config.execution != "native" else [self.config.python, "-I", "-c"]
+        command = None if self.config.execution != "native" else ["import signal; signal.pause()"]
         user = (
             "root"
-            if self.config.execution == "envd_http"
+            if self.config.execution != "native"
             else self.config.user or image.labels.get("ai.a13n.environment.user")
         )
         environment = dict(self.config.environment)
@@ -247,6 +247,26 @@ class DockerManagement(DockerReference, ManagementBackend):
                             },
                         }
                     ),
+                }
+            )
+        if self.config.execution == "envd_ws":
+            if self.websocket is None:
+                raise provider_error(_KEY, "envd_ws_bootstrap_required", EnvironmentProviderErrorCategory.INVALID)
+            if any(
+                PurePosixPath("/var/lib/a13n-envd/service-token").is_relative_to(mount.target)
+                for mount in self.config.mounts
+            ):
+                raise provider_error(_KEY, "envd_credential_not_private", EnvironmentProviderErrorCategory.INVALID)
+            environment = self.bootstrap_environment(environment)
+            environment["A13N_ENVD_CONFIG_JSON"] = json.dumps(
+                {
+                    "limits": {
+                        "max_file_bytes": self.config.max_file_bytes,
+                        "max_output_preview_bytes": self.config.max_output_preview_bytes,
+                        "max_output_bytes_per_stream": self.config.max_output_bytes_per_stream,
+                        "max_spool_bytes": self.config.max_spool_bytes,
+                        "max_processes": self.config.max_concurrent_processes,
+                    }
                 }
             )
         return client.containers.create(

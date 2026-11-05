@@ -38,9 +38,11 @@ from a13n_service.infra.db import advisory_lock, lock, now, transaction
 from a13n_service.infra.errors import ServiceError, conflict
 from a13n_service.infra.ids import new_object_id
 from a13n_service.providers.environment.definition import EnvironmentManagementDefinition
-from a13n_service.providers.environment.errors import observed_environment_state
+from a13n_service.providers.environment.errors import cancelled_management_failure, observed_environment_state
 from a13n_service.providers.environment.management import Completed, EnvironmentProvider, ManagementResult, Pending
 from a13n_service.providers.environment.metrics import MetricsLaunch
+from a13n_service.resources.environment_instances.access import require_usable_state as require_usable_state
+from a13n_service.resources.environment_instances.access import unusable as unusable
 from a13n_service.resources.environment_templates.service import read_template, resolve_template
 from a13n_service.resources.providers.service import (
     ResolvedProvider,
@@ -182,20 +184,6 @@ async def begin(session: AsyncSession, environment: EnvironmentRow, phase: Phase
 def supports(definition: EnvironmentManagementDefinition, phase: Literal["stopping", "deleting"]) -> bool:
     """Whether the type can take its instances through `phase`; an instance begun in any other would stick in it."""
     return definition.supports_stop if phase == "stopping" else definition.supports_destroy
-
-
-def unusable(environment: EnvironmentRow) -> bool:
-    """Whether a permanent failure refuses every new use of the instance until its cause is fixed or it is
-    deleted."""
-    return environment.failure is not None and environment.failure["permanent"]
-
-
-def require_usable_state(environment: EnvironmentRow) -> None:
-    """Refuse a new use, or a stop that would clear the failure, while a permanent failure makes the instance
-    unusable; the refusal names the failure."""
-    if unusable(environment):
-        assert environment.failure is not None
-        raise conflict("environment", environment.id, environment.failure["code"])
 
 
 def settled(environment: EnvironmentRow) -> bool:
@@ -445,10 +433,17 @@ async def _refusal(
                 vercel_preparation = await bind(runtime, session, environment, provider)
             except (EnvironmentProviderError, ServiceError) as error:
                 return fault_of(error, dispatched=False)
+        from a13n_service.runs.environments import outbound
+
+        try:
+            binding = outbound.freeze(runtime, environment) if getattr(recipe, "execution", None) == "envd_ws" else None
+        except ServiceError as error:
+            return fault_of(error, dispatched=False)
         if provider.type == "kubernetes":
             bootstrap.freeze(runtime.keys, environment)
         environment.handle = Handle(
             recipe=recipe.model_dump(mode="json"),
+            outbound=binding,
             e2b_desktop_template=preparation,
             modal_desktop_image=modal_preparation,
             daytona_desktop_snapshot=daytona_preparation,
@@ -543,13 +538,20 @@ async def claim_locked(
     environment.lease_expires_at = deadline + timedelta(seconds=PUBLISH_SECONDS)
     handle = Handle.model_validate(environment.handle)
     version, changed = reached_with(handle, provider)
+    from a13n_service.runs.environments import outbound
+
     return Operation(
         environment_id=environment.id,
         phase=phase,
         generation=environment.generation,
         operation_id=environment.operation_id,
         token=token,
-        target=managed_target(runtime.keys, environment, provider, handle),
+        target=replace(
+            managed_target(runtime.keys, environment, provider, handle),
+            websocket=outbound.restore(runtime, environment, handle.outbound)
+            if handle.outbound and phase in {"creating", "starting"}
+            else None,
+        ),
         unresolved=unresolved,
         seconds=seconds,
         credential_version=version,
@@ -607,6 +609,8 @@ def public_message(error: EnvironmentProviderError) -> str:
 
 
 def fault_of(error: Exception, *, dispatched: bool) -> Fault:
+    if isinstance(error, TimeoutError) and (failure := cancelled_management_failure(error)) is not None:
+        error = failure
     if isinstance(error, EnvironmentProviderError):
         certainty = _CERTAINTY[error.certainty]
         permanent = certainty != "unknown" and error.category in PERMANENT

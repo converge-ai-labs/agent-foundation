@@ -27,7 +27,7 @@ async def runtime(*, configuration: VercelConnectionConfiguration, credential: T
 def describe(configuration: VercelEnvironmentConfiguration) -> EnvironmentDescriptor:
     return (
         configured_descriptor(working_directory="/workspace")
-        if configuration.execution == "envd_http"
+        if configuration.execution != "native"
         else descriptor(configuration)
     )
 

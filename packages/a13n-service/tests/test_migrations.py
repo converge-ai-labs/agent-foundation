@@ -15,7 +15,7 @@ from a13n_service.runs.threads import new_thread
 from a13n_service.settings import Database
 from alembic import command
 from sqlalchemy import MetaData, create_engine, text
-from sqlalchemy.exc import DBAPIError
+from sqlalchemy.exc import DBAPIError, IntegrityError
 
 RULES = """
 SELECT 'function', p.proname, regexp_replace(pg_get_functiondef(p.oid), '\\s+', ' ', 'g')
@@ -82,6 +82,47 @@ def test_revisions_match_metadata_and_rules(empty_database: Database, database: 
     migrated = rows(empty_database, RULES)
     assert migrated == rows(database, RULES)
     assert len(migrated) >= len(OSS.rules())
+
+
+@pytest.mark.anyio
+async def test_client_environment_migration_preserves_legacy_target_and_refuses_lossy_downgrade(database, tenant):
+    insert = text(
+        "INSERT INTO environments (id, organization_id, workspace_id, owner_principal_id, created_by_id, name,"
+        " status, device_id, endpoint) VALUES (:id, :org, :ws, :owner, :owner, 'Laptop', 'deleted', 'device',"
+        " 'http://127.0.0.1:9000')"
+    )
+    fields = {"org": tenant.organization_id, "ws": tenant.workspace_id, "owner": tenant.principal_id}
+    engine = create_engine(database.url.get_secret_value())
+    try:
+        with migration_connection(database, OSS) as config:
+            command.downgrade(config, "03610e577d35")
+        with engine.begin() as connection:
+            connection.execute(insert, {**fields, "id": "env_old"})
+        query = "SELECT version, updated_at, device_id, endpoint FROM environments WHERE id='env_old'"
+        original = rows(database, query)
+        upgrade(database, OSS)
+        assert rows(database, query) == original
+        assert rows(database, "SELECT kind FROM environments ORDER BY id") == [("external_http",)]
+        # Only existing rows are backfilled; old writers must stop before migration.
+        with pytest.raises(IntegrityError, match='null value in column "kind"'):
+            with engine.begin() as connection:
+                connection.execute(insert, {**fields, "id": "env_rolling"})
+        assert rows(database, "SELECT to_regprocedure('classify_legacy_environment()')") == [(None,)]
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO environments (id, kind, organization_id, workspace_id, owner_principal_id, created_by_id,"
+                    " name, status, device_id) VALUES ('env_client', 'external', :org, :ws, :owner, :owner,"
+                    " 'My computer', 'deleted', 'device')"
+                ),
+                fields,
+            )
+        with pytest.raises(RuntimeError, match="Client registrations prevent downgrade"):
+            with migration_connection(database, OSS) as config:
+                command.downgrade(config, "03610e577d35")
+        check(database, OSS)
+    finally:
+        engine.dispose()
 
 
 @pytest.mark.parametrize("invalid_index", [False, True])

@@ -35,6 +35,7 @@ async def use_remote[R: HttpEnvdProviderRuntime | WebSocketEnvdProviderRuntime](
     runtime: R,
     *,
     device_id: str,
+    cwd: str,
 ) -> RemoteExampleResult:
     """Two independent Runs share files, not their process-local Environment adapter."""
     state = EnvironmentState(
@@ -42,14 +43,6 @@ async def use_remote[R: HttpEnvdProviderRuntime | WebSocketEnvdProviderRuntime](
         state_version="1",
         state={"device_id": device_id},
     )
-    if isinstance(runtime, HttpEnvdProviderRuntime):
-        device = await runtime.describe(expected_device_id=device_id)
-    else:
-        device = await runtime.connections.describe(
-            expected_device_id=device_id, timeout=runtime.configuration.connection_timeout
-        )
-    # Discovery opens no Session. Capture an explicit Device cwd for both Runs.
-    cwd = device.default_working_directory
     path = f"{cwd.rstrip('/')}/provider-example.txt"
     configuration = RemoteEnvdEnvironmentConfiguration(
         working_directory=cwd, required_methods=("file.read_text", "file.write_text")
@@ -75,7 +68,8 @@ async def run_http(endpoint: str, token: SecretStr, device_id: str) -> RemoteExa
         configuration=HttpEnvdConnectionConfiguration(endpoint=endpoint),
         credential=HttpEnvdCredential(token=token),
     ) as runtime:
-        return await use_remote(HTTP_ENVD, runtime, device_id=device_id)
+        device = await runtime.describe(expected_device_id=device_id)
+        return await use_remote(HTTP_ENVD, runtime, device_id=device_id, cwd=device.default_working_directory)
 
 
 async def run_websocket(*, token: SecretStr, device_id: str, port: int = 8788) -> RemoteExampleResult:
@@ -107,4 +101,7 @@ async def run_websocket(*, token: SecretStr, device_id: str, port: int = 8788) -
             runtime = WebSocketEnvdProviderRuntime(
                 connections, WebSocketEnvdConnectionConfiguration(connection_timeout=60)
             )
-            return await use_remote(WEBSOCKET_ENVD, runtime, device_id=device_id)
+            device = await connections.describe(
+                expected_device_id=device_id, timeout=runtime.configuration.connection_timeout
+            )
+            return await use_remote(WEBSOCKET_ENVD, runtime, device_id=device_id, cwd=device.default_working_directory)

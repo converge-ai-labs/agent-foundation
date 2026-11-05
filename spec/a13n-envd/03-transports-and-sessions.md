@@ -98,6 +98,14 @@ Carrier loss detaches its Sessions, destroys incomplete transfers and starts the
 
 Missing/malformed token, upgrade 401/403, invalid TLS/hostname, endpoint policy, redirect or incompatible subprotocol/framing is generation-fatal under the daemon contract. Transient DNS/connect/unavailability/liveness failures are reconnectable. Backoff resets only after a stable connection interval, not after each brief upgrade.
 
+### Service enrollment command
+
+`a13n-envd connect-service <HTTP(S) URL or saved name>` enrolls through the Service's ordinary API before using reverse WebSocket. First use takes `--workspace-id` and `--api-token-file`; optional `--environment-id` prohibits creating a replacement. `--device-id` overrides the installation identity file, including when that file is damaged. Otherwise the installation's persisted identity is reused. This command is separate from Harness UI's interactive `connect` pairing.
+
+The command persists a Service profile and device credential under the selected instance's `services/<alias>` directory. A profile binds one origin, workspace, device and environment; switching accounts requires a different alias. Profile binding mismatches and corrupt saved state fail explicitly rather than silently resetting identity. Files are written atomically; the environment ID is saved before the new credential. An interrupted credential delivery requires explicit Service rotation. `--credential-file` imports the resulting device credential; startup does not call rotation. Saved reconnects require no API token and do not repeat enrollment. An authentication refusal does not fall back to registration.
+
+Enrollment uses a bounded HTTP request, verified HTTPS except loopback HTTP, no redirects and no credentials in URLs. API credentials are read from a file, never saved in the profile or used for WebSocket authentication. Enrollment/import credential sources join the daemon's protected bootstrap paths. Registration metadata uses the resolved device name and default working directory; existing server configuration is not modified. The returned device and environment binding and connection path must match the requested Service before the credential is used. Local daemon and EIP readiness checks still govern actual connection and execution.
+
 ## Host and Browser Boundary
 
 The listener and HTTP requester belong to trusted Host code. The Host owns product-user authorization, device registration, directory selection and cross-process placement. Browser UI does not receive daemon credentials, raw Session/transfer selectors or native operation authority. Product IDs in an EIP parameter cannot replace this trust boundary. Generic EIP is independent of any Host routing or storage design.

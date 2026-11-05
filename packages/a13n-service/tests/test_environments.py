@@ -464,7 +464,10 @@ async def test_a_draining_worker_yields_while_a_sandbox_is_being_created(env, ru
 async def test_each_async_edge_applies_its_own_environment_policy(env, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
     """Edges pinning one revision still differ in what their children mount."""
     model = await runs_kit.create_model(env, scripted_model)
-    worker = await runs_kit.add_agent(env, "worker", model, instructions="Role: worker")
+    unused_default = await reserve(env, env.template["id"])
+    worker = await runs_kit.add_agent(
+        env, "worker", model, instructions="Role: worker", default_environment_id=unused_default["id"]
+    )
     pinned = {"agent_id": worker["id"], "revision_id": worker["default_revision_id"]}
     coordinator = await runs_kit.add_agent(
         env,
@@ -801,6 +804,7 @@ async def test_authorization_and_private_devices(env) -> None:  # type: ignore[n
     device = f"env_{uuid4().hex}"
     async with transaction(env.runtime.storage) as session:
         target = EnvironmentRow(
+            kind="external_http",
             id=device,
             organization_id=env.tenant.organization_id,
             workspace_id=env.tenant.workspace_id,
@@ -1649,6 +1653,16 @@ async def test_computer_check_reports_unsupported_and_never_starts_stopped_targe
         "display_count": 0,
         "operations": [],
     }
+
+
+async def test_agent_default_reuses_a_managed_instance(env, scripted_model, runs_kit):
+    selected = await reserve(env, env.template["id"])
+    agent = await runs_kit.create_agent(env, scripted_model, default_environment_id=selected["id"])
+    accepted = await runs_kit.start_thread(env, agent, "Reuse this sandbox")
+    [mount] = accepted["run"]["environment_mounts"]
+    assert mount["name"] == "workspace" and mount["environment_id"] == selected["id"]
+    environments = (await env.client.get(f"{env.api}/environments")).json()["items"]
+    assert [item["id"] for item in environments] == [selected["id"]]
 
 
 @pytest.mark.parametrize("settled", [False, True])

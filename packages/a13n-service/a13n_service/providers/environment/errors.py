@@ -29,10 +29,25 @@ class EnvironmentManagementError(EnvironmentProviderError):
 class EnvironmentManagementCancelled(asyncio.CancelledError):
     """Cancellation retaining state already observed by a management operation."""
 
-    def __init__(self, state: EnvironmentState | None, operation_id: str) -> None:
+    def __init__(
+        self, state: EnvironmentState | None, operation_id: str, *, failure: EnvironmentProviderError | None = None
+    ) -> None:
         super().__init__("Environment management operation cancelled")
         self.state = state
         self.operation_id = operation_id
+        self.failure = failure
+
+
+def cancelled_management_failure(error: BaseException) -> EnvironmentProviderError | None:
+    """Recover phase-specific evidence when a deadline wraps management cancellation."""
+    current: BaseException | None = error
+    visited: set[int] = set()
+    while current is not None and id(current) not in visited:
+        visited.add(id(current))
+        if isinstance(current, EnvironmentManagementCancelled):
+            return current.failure
+        current = current.__cause__ or current.__context__
+    return None
 
 
 def observed_environment_state(error: BaseException, fallback: EnvironmentState | None) -> EnvironmentState | None:
