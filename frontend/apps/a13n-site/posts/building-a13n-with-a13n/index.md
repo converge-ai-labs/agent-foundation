@@ -2,7 +2,10 @@
 title: Building a13n with a13n
 description: Open development, shared contracts, and the collaboration tools we improve through daily use.
 date: '2026-11-05'
-authors: [Zhongsheng Ji]
+authors:
+  - name: Zhongsheng Ji
+    url: https://github.com/Wh1isper
+    avatar: https://avatars.githubusercontent.com/u/43375501?u=fc30be3ffc549b9c2ceb82590c9e2782eeaeaeef&v=4&s=80
 ---
 
 ## Development principles

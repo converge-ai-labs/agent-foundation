@@ -174,23 +174,23 @@
   vertical-align: -1px;
   background: var(--rule-2);
 }
-.report-credit {
+.author-credit {
   display: inline-flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 10px;
 }
-.strip > .report-credit::before {
+.strip > .author-credit::before {
   margin-right: 4px;
 }
-.report-author {
+.author-link {
   display: inline-flex;
   align-items: center;
   gap: 9px;
   color: var(--ink);
   font: 500 13px/1.5 var(--text);
 }
-.report-author img {
+.author-link img {
   display: block;
   border-radius: 50%;
 }
@@ -201,7 +201,7 @@
 .report-source {
   font-size: 11px;
 }
-:is(.report-author, .report-source):hover {
+:is(.author-link, .report-source):hover {
   text-decoration: underline;
   text-underline-offset: 3px;
 }
