@@ -931,24 +931,24 @@ async def test_client_service_failure_allows_same_and_other_devices_to_connect(
             await original.call("scope.open", {"working_directory": original.target.directory})
             scope = sessions.scopes[original.scope_id]
             failed = asyncio.Event()
-            renew = sessions._renew_scope
+            renew = sessions._renew_batch
             if failure == "session_cleanup":
                 monkeypatch.setattr(scope.session, "abort", AsyncMock(side_effect=RuntimeError("Cleanup failed")))
 
-            async def inject(identity, candidate):
-                if candidate is scope and not failed.is_set():
+            async def inject(batch):
+                if any(candidate is scope for _, candidate in batch) and not failed.is_set():
                     if failure == "supervisor":
                         failed.set()
                         raise RuntimeError("Unexpected Session service failure")
-                    candidate.first_use_until = 0
+                    scope.first_use_until = 0
                     try:
-                        await renew(identity, candidate)
+                        await renew(batch)
                     finally:
                         failed.set()
                     return
-                await renew(identity, candidate)
+                await renew(batch)
 
-            monkeypatch.setattr(sessions, "_renew_scope", inject)
+            monkeypatch.setattr(sessions, "_renew_batch", inject)
             await asyncio.wait_for(failed.wait(), 15)
             if failure == "session_cleanup":
                 # A cleanup error alone must leave the shared routing subscription alive.
