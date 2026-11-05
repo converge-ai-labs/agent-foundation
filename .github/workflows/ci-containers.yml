@@ -155,12 +155,14 @@ jobs:
                   })
           if os.environ["GITHUB_EVENT_NAME"] == "workflow_dispatch" or os.environ["SANDBOX_CHANGED"] == "true":
               for arch, runner in (("amd64", "ubuntu-24.04"), ("arm64", "ubuntu-24.04-arm")):
-                  images.append({
-                      "name": f"a13n-sandbox-{arch}",
-                      "runner": runner,
-                      "build_target": "image-sandbox image-sandbox-slim image-sandbox-desktop",
-                      "check_target": "image-check-sandbox image-check-sandbox-slim image-check-sandbox-desktop",
-                  })
+                  for variant in ("standard", "slim", "desktop"):
+                      suffix = "" if variant == "standard" else f"-{variant}"
+                      images.append({
+                          "name": f"a13n-sandbox-{variant}-{arch}",
+                          "runner": runner,
+                          "build_target": f"image-sandbox{suffix}",
+                          "check_target": f"image-check-sandbox{suffix}",
+                      })
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
               output.write(f"images={json.dumps(images, separators=(',', ':'))}\n")
           PY
@@ -214,4 +216,19 @@ jobs:
         run: make ${{ matrix.build_target }}
 
       - name: Smoke-check image
-        run: make ${{ matrix.check_target }} ${{ matrix.smoke_target }}
+        run: make ${{ matrix.check_target }}
+
+      - name: Check independent Compose stacks concurrently
+        if: matrix.smoke_target == 'compose-smoke'
+        shell: bash
+        env:
+          A13N_SERVICE_IMAGE: a13n-service:local
+        run: |
+          python3 scripts/deploy_smoke.py compose --port 18080 &
+          compose_pid=$!
+          python3 scripts/deploy_smoke.py quickstart --port 18081 &
+          quickstart_pid=$!
+          result=0
+          wait "$compose_pid" || result=1
+          wait "$quickstart_pid" || result=1
+          exit "$result"

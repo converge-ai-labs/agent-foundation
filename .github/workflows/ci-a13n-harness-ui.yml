@@ -506,12 +506,16 @@ jobs:
           done
 
   windows:
-    name: UI (Windows)
+    name: UI Windows (${{ matrix.shard }})
     needs: changes
     if: >-
       github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request' && needs.changes.outputs.tests == 'true')
     runs-on: windows-2025
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(github.event_name == 'pull_request' && '[1]' || '[1,2,3,4]') }}
     timeout-minutes: 12
     env:
       PYTEST_ADDOPTS: -v -o faulthandler_timeout=90 --timeout=120 --timeout-method=thread
@@ -564,9 +568,15 @@ jobs:
 
       - name: Test full UI suite on Windows
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-        run: uv run --locked --no-sync python -m pytest --durations=20 --junitxml=test-results/ui-full.xml packages/a13n-harness-ui/tests
+        env:
+          PYTEST_ADDOPTS: -v -o faulthandler_timeout=90 --timeout=120 --timeout-method=thread --durations=20 --junitxml=test-results/ui-full.xml
+        run: >-
+          uv run --locked --no-sync python scripts/run_python_tests.py
+          --workers 4 --shard ${{ matrix.shard }} 4 --durations .github/ui-test-durations.json
+          packages/a13n-harness-ui/tests
 
       - name: Test native command lifecycle
+        if: matrix.shard == 1
         timeout-minutes: 2
         run: >-
           uv run --locked --no-sync python -m pytest --durations=20 --junitxml=test-results/native-lifecycle.xml
@@ -577,6 +587,19 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ui-windows-${{ github.run_attempt }}
+          name: ui-windows-${{ matrix.shard }}-${{ github.run_attempt }}
           path: test-results/
           retention-days: 7
+
+  windows-result:
+    name: UI (Windows)
+    needs: [changes, windows]
+    if: >-
+      always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && needs.changes.outputs.tests == 'true'))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every Windows shard
+        env:
+          WINDOWS_RESULT: ${{ needs.windows.result }}
+        run: test "$WINDOWS_RESULT" = success

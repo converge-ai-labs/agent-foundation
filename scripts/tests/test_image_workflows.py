@@ -402,9 +402,19 @@ def test_container_ci_checks_all_variants_on_both_native_architectures(tmp_path,
     subprocess.run(["bash", "-eu", "-c", matrix["run"]], check=True)
     images = json.loads(output.read_text().removeprefix("images="))
     assert {image["runner"] for image in images} == {"ubuntu-24.04", "ubuntu-24.04-arm"}
-    for image in images:
-        assert image["build_target"] == "image-sandbox image-sandbox-slim image-sandbox-desktop"
-        assert image["check_target"] == "image-check-sandbox image-check-sandbox-slim image-check-sandbox-desktop"
+    assert len(images) == 6
+    for runner in ("ubuntu-24.04", "ubuntu-24.04-arm"):
+        selected = [image for image in images if image["runner"] == runner]
+        assert {image["build_target"] for image in selected} == {
+            "image-sandbox",
+            "image-sandbox-slim",
+            "image-sandbox-desktop",
+        }
+        assert {image["check_target"] for image in selected} == {
+            "image-check-sandbox",
+            "image-check-sandbox-slim",
+            "image-check-sandbox-desktop",
+        }
     filters = yaml.safe_load(next(step for step in steps if step.get("id") == "filter")["with"]["filters"])
     for name in (
         "deploy/docker/images/sandbox/init-skills.sh",
@@ -420,3 +430,29 @@ def test_container_ci_checks_all_variants_on_both_native_architectures(tmp_path,
     assert 'scripts/sandbox_smoke.py --image "$(SANDBOX_SLIM_IMAGE)" --variant slim' in makefile
 
     assert 'scripts/sandbox_smoke.py --image "$(SANDBOX_DESKTOP_IMAGE)" --variant desktop' in makefile
+
+
+@pytest.mark.parametrize("failed", ["none", "compose", "quickstart", "both"])
+def test_parallel_compose_checks_wait_for_both_and_propagate_failures(tmp_path, monkeypatch, failed):
+    workflow = yaml.safe_load((ROOT / ".github/workflows/ci-containers.yml").read_text())
+    step = next(
+        step
+        for step in workflow["jobs"]["containers"]["steps"]
+        if step["name"] == "Check independent Compose stacks concurrently"
+    )
+    executable = tmp_path / "python3"
+    executable.write_text(
+        "#!/bin/sh\n"
+        'printf "%s\\n" "$*" > "$2.args"\n'
+        "sleep 0.05\n"
+        'touch "$2.finished"\n'
+        'if [ "$FAILED" = "$2" ] || [ "$FAILED" = both ]; then exit 1; fi\n'
+    )
+    executable.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.setenv("FAILED", failed)
+    result = subprocess.run(["bash", "-e", "-o", "pipefail", "-c", step["run"]], cwd=tmp_path)
+    assert (result.returncode == 0) == (failed == "none")
+    for target, port in (("compose", 18080), ("quickstart", 18081)):
+        assert (tmp_path / f"{target}.finished").exists()
+        assert (tmp_path / f"{target}.args").read_text().strip() == (f"scripts/deploy_smoke.py {target} --port {port}")

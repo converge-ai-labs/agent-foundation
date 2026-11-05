@@ -49,7 +49,7 @@ set -a; . ~/.a13n/.env; set +a; make service-e2e SERVICE_E2E_ARGS="--hosted"   #
 
 A journey whose dependency is missing is skipped with the reason in the report; `--require-all`, which CI passes, turns that skip into a failure, including a selected hosted journey without its account. Process logs of a failed journey are printed with its report.
 
-[Service E2E CI](../../.github/workflows/ci-a13n-service-e2e.yml) runs memory/recovery journeys on one runner and their complement on another; new journeys remain included. Collection checks require the shards to be disjoint and cover the default suite exactly. Only the runner containing the Docker journey builds the current checkout with a dedicated GitHub Actions layer cache and loads the image into the runner, runs the default journeys with `--require-all` and reports the collected, executed and skipped counts. Unchanged toolchain and daemon layers can be reused; a cache miss builds from source, and cache export failures do not bypass the build or test checks. Image inputs, including the Rust sources and lockfile, select this workflow. Package test-only changes stay in their owning package gate. The [manual Console review](../../dev/service/console-review.md) is launched separately with `make console-review`.
+[Service E2E CI](../../.github/workflows/ci-a13n-service-e2e.yml) runs memory journeys, recovery journeys and their complement on three separate runners; new journeys remain included. Collection checks require the shards to be disjoint and cover the default suite exactly. Only the runner containing the Docker journey builds the current checkout with a dedicated GitHub Actions layer cache and loads the image into the runner, runs the default journeys with `--require-all` and reports the collected, executed and skipped counts. Unchanged toolchain and daemon layers can be reused; a cache miss builds from source, and cache export failures do not bypass the build or test checks. Image inputs, including the Rust sources and lockfile, select this workflow. Package test-only changes stay in their owning package gate. The [manual Console review](../../dev/service/console-review.md) is launched separately with `make console-review`.
 
 ## Kubernetes journeys
 
@@ -59,11 +59,11 @@ Kubernetes is explicitly selected with `-m kubernetes`. Set `E2E_KUBERNETES_PROF
 make service-e2e SERVICE_E2E_ARGS="-m kubernetes --require-all --junitxml=test-results/kubernetes-e2e.xml"
 ```
 
-[Deployment CI](../../.github/workflows/ci-deploy.yml) creates a pinned kind cluster and runs both paths:
+[Deployment CI](../../.github/workflows/ci-deploy.yml) runs both paths in parallel, each on its own pinned kind cluster:
 
 - Helm installation and upgrade smoke run Control, Worker and sandbox Pods in-cluster, including Envd execution over the direct Pod IP.
-- All nine Kubernetes pytest journeys use host-owned Service processes and real sandbox Pods over port-forward: the generic execution lifecycle, PVC deletion and retention/reuse, four preparation failures, Worker SIGKILL plus Control restart, and finalizer-blocked deletion. A retained-claim metadata edit also verifies that retirement still cleans up the bootstrap Secret. CI requires nine reported cases with no skips or failures and retains JUnit reports and failure logs.
+- All nine Kubernetes pytest journeys use host-owned Service processes and real sandbox Pods over port-forward: the generic execution lifecycle, PVC deletion and retention/reuse, four preparation failures, Worker SIGKILL plus Control restart, and finalizer-blocked deletion. A retained-claim metadata edit also verifies that retirement still cleans up the bootstrap Secret. Four disjoint shards cover storage, preparation failures, process recovery and the remaining lifecycle journeys. CI requires all nine reported cases with no skips or failures and retains JUnit reports and failure logs.
 
 Package-level fake API tests complement these journeys with deterministic lost responses, conflicts, replacement UIDs and ownership changes. Real kind tests verify container execution and storage behavior that fake API responses cannot establish. The single-node kind gate exercises its default storage class; it does not establish multi-node or production CSI behavior.
 
-These suites run separately from `make test`, which owns in-process package and tooling tests. CI reports `Service E2E support` and both `Service E2E scenarios` shards; the aggregate `Service E2E` check requires all of them to succeed.
+These suites run separately from `make test`, which owns in-process package and tooling tests. CI reports `Service E2E support` and all three `Service E2E scenarios` shards; the aggregate `Service E2E` check requires all of them to succeed.

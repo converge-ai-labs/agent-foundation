@@ -156,7 +156,7 @@ jobs:
               # Weights never select tests: new files receive the current suite's median.
               durations = json.loads(Path(".github/service-test-durations.json").read_text())
               matrix.append({"name": "native", "runner": "ubuntu-24.04", "targets": ""})
-              for shard, targets in enumerate(balanced_shards(files, 8, durations), start=1):
+              for shard, targets in enumerate(balanced_shards(files, 10, durations), start=1):
                   assert targets, "Service test shards must not be empty"
                   print(f"Service shard {shard}: {len(targets)} files")
                   matrix.append({

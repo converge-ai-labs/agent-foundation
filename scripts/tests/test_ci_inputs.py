@@ -263,7 +263,7 @@ def _service_matrix(workflow: dict, tests_changed: str, tmp_path: Path, *, root:
 def test_service_ci_partitions_the_current_suite_without_duplicates(tmp_path: Path) -> None:
     workflow = yaml.safe_load((WORKFLOWS / "ci-a13n-service.yml").read_text())
     matrix = _service_matrix(workflow, "true", tmp_path)
-    assert [entry["name"] for entry in matrix] == ["checks", "native", *[f"tests-{index}" for index in range(1, 9)]]
+    assert [entry["name"] for entry in matrix] == ["checks", "native", *[f"tests-{index}" for index in range(1, 11)]]
     assert all(entry["targets"] for entry in matrix[2:])
     targets = [path for entry in matrix[1:] for path in entry["targets"].splitlines()]
     assert targets
@@ -298,6 +298,8 @@ def test_service_selection_includes_new_nested_files_and_passes_paths_literally(
         "test_sixth.py",
         "test_seventh.py",
         "test_eighth.py",
+        "test_ninth.py",
+        "test_tenth.py",
     ]
     excluded = [
         "conftest.py",
@@ -630,3 +632,24 @@ def test_failure_report_contains_fixture_phase_and_captured_output(tmp_path: Pat
     contents = report.read_text()
     for witness in ("setup witness", "call witness", "teardown witness", "primary failure", "cleanup failure"):
         assert witness in contents
+
+
+@pytest.mark.parametrize("result", ["success", "failure", "cancelled", "skipped"])
+def test_windows_ui_gate_requires_all_full_suite_shards(result):
+    workflow = yaml.safe_load((WORKFLOWS / "ci-a13n-harness-ui.yml").read_text())
+    windows = workflow["jobs"]["windows"]
+    assert windows["strategy"]["fail-fast"] is False
+    assert "'[1]' || '[1,2,3,4]'" in windows["strategy"]["matrix"]["shard"]
+    full = next(step for step in windows["steps"] if step["name"] == "Test full UI suite on Windows")
+    assert "--shard ${{ matrix.shard }} 4" in full["run"]
+    assert "packages/a13n-harness-ui/tests" in full["run"]
+    assert "--workers 4" in full["run"]
+    native = next(step for step in windows["steps"] if step["name"] == "Test native command lifecycle")
+    assert native["if"] == "matrix.shard == 1"
+    gate = workflow["jobs"]["windows-result"]
+    assert gate["name"] == "UI (Windows)" and "always()" in gate["if"]
+    assert gate["needs"] == ["changes", "windows"]
+    completed = subprocess.run(
+        ["bash", "-e", "-c", gate["steps"][0]["run"]], env={"WINDOWS_RESULT": result}, check=False
+    )
+    assert (completed.returncode == 0) == (result == "success")
