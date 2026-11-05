@@ -2,7 +2,7 @@
 title: Building a13n with a13n
 description: Open development, shared contracts, and the collaboration tools we improve through daily use.
 date: '2026-11-05'
-authors: [a13n team]
+authors: [Zhongsheng Ji]
 ---
 
 ## Development principles
