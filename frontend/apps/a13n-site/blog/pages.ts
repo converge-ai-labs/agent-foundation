@@ -1,4 +1,4 @@
-import type { Post } from "./posts.ts";
+import type { AuthorProfile, Post } from "./posts.ts";
 
 const ORIGIN = "https://a13n.dev";
 const GITHUB = "https://github.com/converge-ai-labs/agent-foundation";
@@ -93,10 +93,15 @@ const plate = (post: Post) =>
 const meta = (post: Post) =>
   `<span class="meta"><time datetime="${post.date}">${day(post.date)}</time><i></i>${post.minutes} min</span>`;
 
+function authorLink(author: AuthorProfile, label = "") {
+  return `<a class="author-link" href="${esc(author.url)}"><img src="${esc(author.avatar)}" alt="" width="28" height="28" referrerpolicy="no-referrer" /><span>${label ? `<span class="report-label">${esc(label)}</span> ` : ""}${esc(author.name)}</span></a>`;
+}
+
 function credit(post: Post) {
-  if (!post.report) return `<span>${post.authors.map(esc).join(", ")}</span>`;
+  if (!post.report)
+    return `<span class="author-credit">${post.authors.map((author) => (typeof author === "string" ? `<span>${esc(author)}</span>` : authorLink(author))).join(", ")}</span>`;
   const { author, url } = post.report;
-  return `<span class="report-credit"><a class="report-author" href="${esc(author.url)}"><img src="${esc(author.avatar)}" alt="" width="28" height="28" referrerpolicy="no-referrer" /><span><span class="report-label">Original report by</span> ${esc(author.name)}</span></a><a class="report-source" href="${esc(url)}">Read original report <span aria-hidden="true">↗</span></a></span>`;
+  return `<span class="author-credit">${authorLink(author, "Original report by")}<a class="report-source" href="${esc(url)}">Read original report <span aria-hidden="true">↗</span></a></span>`;
 }
 
 const card = (post: Post, level: 2 | 3) => `<li class="item">
@@ -200,10 +205,19 @@ ${post.html}
         headline: post.title,
         description: post.description,
         datePublished: post.date,
-        author: post.authors.map((name) => ({
-          "@type": name === "a13n team" ? "Organization" : "Person",
-          name,
-        })),
+        author: post.authors.map((author) =>
+          typeof author === "string"
+            ? {
+                "@type": author === "a13n team" ? "Organization" : "Person",
+                name: author,
+              }
+            : {
+                "@type": "Person",
+                name: author.name,
+                url: author.url,
+                image: author.avatar,
+              },
+        ),
         ...(post.report
           ? {
               citation: {
