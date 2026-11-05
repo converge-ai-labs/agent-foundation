@@ -42,7 +42,7 @@ from opentelemetry.sdk.metrics.export import InMemoryMetricReader
 from opentelemetry.trace import StatusCode
 from pydantic_ai import Agent
 from pydantic_ai.capabilities import AbstractCapability, Capability
-from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart, UserPromptPart
+from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart, ToolReturnPart, UserPromptPart
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
 from pydantic_ai.models.instrumented import InstrumentationSettings
 from pydantic_ai.usage import RequestUsage
@@ -447,7 +447,20 @@ async def test_instrumented_review_preserves_failure_policy_and_cancellation(fai
         assert result.status == ("completed" if failure == "timeout" else "suspended")
         if failure == "timeout":
             assert started.is_set()
-            assert "Tool review timed out; the tool was not executed" in str(result.all_messages())
+            (timeout,) = (
+                part
+                for message in result.all_messages()
+                if isinstance(message, ModelRequest)
+                for part in message.parts
+                if isinstance(part, ToolReturnPart)
+            )
+            assert (timeout.tool_name, timeout.outcome) == ("shell_exec", "failed")
+            assert json.loads(timeout.content)["error"] == {
+                "source": "system",
+                "code": "tool_review_timeout",
+                "message": "Tool review timed out before the tool was executed.",
+                "details": {},
+            }
         if failure == "invalid":
             # The review request that answered is the calling agent's model usage, as its own requests are.
             assert any(
