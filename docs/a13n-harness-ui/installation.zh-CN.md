@@ -42,14 +42,7 @@ a13n-harness-ui webui
 
 ### Browser Use 前置条件
 
-WebUI 在你的浏览器中打开。可选的 **Browser** 旁栏会在 Linux 或 macOS WebUI Host 上另外启动一个浏览器，供 Agent 操作。
-
-按平台准备 Host：
-
-- **Linux**：安装 Chrome、Chromium 或 Edge，以及兼容的 VNC 服务。容器部署需要将这些程序安装在容器内。TigerVNC 同时提供显示和 VNC 服务。以非 root 用户运行，并保持 Chromium 沙箱开启。
-- **macOS**：安装兼容浏览器，以已登录桌面的用户运行 Harness UI。可选的只读预览需要 macOS 14 或更高版本，并给运行 Harness UI 的应用授予屏幕录制权限。预览只显示当前对话拥有的浏览器窗口，包括地址栏。在 Mac 本机操作浏览器前选择 **Pause automation**，完成后选择 **Resume automation**。无需 VNC 服务或密码。
-
-默认 Auto 模式在 WebUI 启动时准备共享浏览器。让 Full Control Run 浏览，或选择 **Browser → Open browser**。Harness UI 自动选择已安装的兼容程序；需要修改 Auto/Disabled 模式或覆盖程序选择时，使用 **Settings → General → Host browser**。[浏览器设置流程](webui.md#first-time-setup)介绍各平台步骤和首次导航。Harness UI 已包含浏览器自动化依赖。需要保持电脑共享开启：`--no-share-computer` 也会关闭 Host 浏览器。
+可选的 Host 浏览器运行在 Linux 或 macOS WebUI Host 上，与显示 WebUI 的客户端分开。它需要兼容的浏览器，以及对应平台的显示服务或桌面权限。按照 [Host 浏览器设置](host-browser.md#first-time-setup)检查前置条件、安装组件，并完成首次导航。`--no-share-computer` 同时关闭这个浏览器与原生文件、终端共享。
 
 ## 升级
 
@@ -69,7 +62,7 @@ WebUI 在你的浏览器中打开。可选的 **Browser** 旁栏会在 Linux 或
 
 3. 所有共享安装都升级完成后，重新启动应用，并刷新已打开的 WebUI 页面。
 
-升级后的应用会读取已有对话，并按当前检查点格式写入。旧版应用无法读取新写入的检查点，因此共享安装应使用同一升级后的版本。
+启动新版本前，先升级共享同一数据根目录的所有安装。当前检查点使用 payload codec `2`；只支持 codec `1` 的旧版应用无法读取新写入的检查点。其他兼容升级可以保留共享访问，但数据库迁移编号较高并不能单独证明检查点兼容。在混用版本或降级前查阅发行说明，并保留跨越不兼容格式边界前的备份。
 
 启动更新检查只显示提示。用 `--no-update-check` 可关闭本次检查；要影响后续启动，在根 YAML 中设置 `process.terminal_update_check: false`。详见[更新与日志](automation-and-troubleshooting.md#logs-updates-and-exit)。
 

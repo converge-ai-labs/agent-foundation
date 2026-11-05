@@ -22,14 +22,15 @@ Choose the guide for your first task. You can run an agent inside a Python appli
 
 ```mermaid
 flowchart TB
-    Client["Console or your application"] -->|"HTTP API or SDK"| Service["Service deployment"]
+    Console["Console"] -->|"Configure, test, inspect"| Service["Service deployment"]
+    Client["Your application"] -->|"SDK or HTTP API"| Service
     Process["Your Python process"]
     Workbench["Harness UI: terminal or browser"]
     Service -->|"Managed"| Harness["Harness runs each agent"]
     Process -->|"Embedded"| Harness
     Workbench -->|"Interactive"| Harness
 
-    class Client,Process,Workbench app
+    class Console,Client,Process,Workbench app
     class Service,Harness a13n
 ```
 
@@ -46,4 +47,4 @@ Add a component when the integration needs it:
 | AG-UI events from Harness observations                | [Stream Protocol](../a13n-stream-protocol/index.md) |
 | Distribution names, imports, and runnable examples    | [Package catalog](packages.md)                      |
 
-Follow a Service conversation in [Core concepts](core-concepts.md), or use [Operate the Service](../a13n-service/operations.md) to manage a deployment. When choosing a Service client version, match its [supported contract](../a13n-service/sdks.md#keep-version-ownership-clear) to that deployment.
+Follow a Service conversation in [Core concepts](../a13n-service/core-concepts.md), or use [Operate the Service](../a13n-service/operations.md) to manage a deployment. When choosing a Service client version, match its [supported contract](../a13n-service/sdks.md#keep-version-ownership-clear) to that deployment.

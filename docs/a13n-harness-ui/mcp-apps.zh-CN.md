@@ -3,7 +3,7 @@ title: 交互式 MCP Apps
 description: 开启 MCP App、操作工具结果，并为远程 WebUI 配置独立沙箱 origin。
 ---
 
-MCP Apps 将工具结果变成 WebUI 中的交互卡片。例如，Agent 完成后，计数器仍可通过同一 MCP 服务器连接响应点击。这是结果界面，与 [Host 浏览器控制](webui.md#browse-on-the-host)分开。
+MCP Apps 将工具结果变成 WebUI 中的交互卡片。例如，Agent 完成后，计数器仍可通过同一 MCP 服务器连接响应点击。这是结果界面，与 [Host 浏览器控制](host-browser.md#browse-on-the-host)分开。
 
 ## 为指定服务器开启 Apps
 

@@ -132,6 +132,9 @@ Enable SMTP when users need password resets or email changes. Without SMTP, an i
 4. Restart the API-serving processes and send an invitation to verify delivery.
 
 ```toml
+[encryption]
+key_file = "/var/lib/a13n/encryption.key"
+
 [auth.mail]
 smtp_host = "smtp.example.com"
 smtp_port = 587
@@ -203,7 +206,7 @@ Begin with `worker.slots`, the concurrent attempts per worker process. Increase 
 | Tune target preparation and maintenance | `environments.*`.                                                                                    |
 | Limit retained tools                    | `tool_executions.max_active`, retention and shutdown settings.                                       |
 
-Retained calls default to 64 active executions per worker and a five-second foreground wait. That wait is the deployment fallback for [execution policy](agents-and-runs.md#execution-policy), not a deadline; agent, thread or single-run choices can override it. Results remain for at most 24 hours after completion. First delivery acknowledgement starts a shorter one-hour reread window without extending the maximum age.
+Retained calls default to 64 active executions per worker and a five-second foreground wait. That wait is the deployment fallback for [execution policy](execution-options.md#execution-policy), not a deadline; agent, thread or single-run choices can override it. Results remain for at most 24 hours after completion. First delivery acknowledgement starts a shorter one-hour reread window without extending the maximum age.
 
 Plan shutdown time for all phases: worker attempts drain, retained calls get `shutdown_grace_seconds` (300 by default), then cancellation gets `finalization_seconds` (10) for cleanup and publication. Unfinished records become lost through lease reconciliation after the process exits. Set the platform's termination grace accordingly; see [operations](operations.md).
 
@@ -213,7 +216,7 @@ In split deployments, set `server.control_url` to a control API address reachabl
 
 Start with JSON logs and enable a private metrics listener when needed. `telemetry.log_level` and `log_format` apply to every command. The server can write a rotating JSON file through `log_file`, `log_file_max_mb` and `log_file_backups`; `log_stdout = false` requires a file. `metrics_port` must differ from the HTTP port. Follow [monitoring setup](monitoring.md#metrics) to verify scraping.
 
-Choose one trace backend for export and [trace queries](agents-and-runs.md#traces):
+Choose one trace backend for export and [trace queries](inspect-runs.md#traces):
 
 | `telemetry.trace_backend` | Required settings                                          |
 | ------------------------- | ---------------------------------------------------------- |
@@ -227,7 +230,7 @@ Set `trace_content` to `none`, `standard` or `full` based on which prompt, outpu
 
 `monitoring.enabled` defaults to `true`, but collection starts only after a target selects a data source. For a first chart, bind **Local Cache** using the [environment monitoring guide](environment-monitoring.md#bind-and-verify-an-environment).
 
-For pull collection, configure `monitoring.collectors.vmagent` or `.alloy` before creating a pull source. The map is empty by default. Each entry needs an absolute shared directory and a reload endpoint. Set exactly one `all` or `control` process as `writer = true`; others use the default `false`. Alloy also needs an existing `receiver`. Follow [collector bootstrap](environment-monitoring.md#bootstrap-an-optional-collector) for mounts, credentials, reload policy and verification. Environment overrides use the complete JSON map `A13N_MONITORING__COLLECTORS`.
+For pull collection, configure `monitoring.collectors.vmagent` or `.alloy` before creating a pull source. The map is empty by default. Each entry needs an absolute shared directory and a reload endpoint. Set exactly one `all` or `control` process as `writer = true`; others use the default `false`. Alloy also needs an existing `receiver`. Follow [collector bootstrap](environment-collectors.md#bootstrap-an-optional-collector) for mounts, credentials, reload policy and verification. Environment overrides use the complete JSON map `A13N_MONITORING__COLLECTORS`.
 
 Once the collector exists, offer an optional preset to named workspaces:
 
@@ -239,7 +242,7 @@ query_endpoint = "https://metrics.example.com"
 workspace_ids = ["ws_example"]
 ```
 
-An empty list exposes no preset. `A13N_MONITORING__DEPLOYMENT_PRESET` accepts the whole object as JSON. Supply the optional read token separately through `A13N_MONITORING__DEPLOYMENT_QUERY_BEARER_TOKEN`, then restart control processes. Administrators [confirm the preset](environment-monitoring.md#confirm-a-deployment-preset) to create a source and optionally snapshot its credential. Deployment changes do not update existing sources or bindings.
+An empty list exposes no preset. `A13N_MONITORING__DEPLOYMENT_PRESET` accepts the whole object as JSON. Supply the optional read token separately through `A13N_MONITORING__DEPLOYMENT_QUERY_BEARER_TOKEN`, then restart control processes. Administrators [confirm the preset](environment-collectors.md#confirm-a-deployment-preset) to create a source and optionally snapshot its credential. Deployment changes do not update existing sources or bindings.
 
 ## Nested bounds
 
@@ -255,43 +258,4 @@ Use the [single-host Compose stack](https://github.com/converge-ai-labs/agent-fo
 
 ## Workspace provisioning
 
-Automatic Local/Docker provider and template creation runs only in the `all` role. Both are disabled in generic settings; the supplied socket-enabled Compose stack enables Docker and leaves Local off. Split control/worker deployments configure execution resources explicitly.
-
-For Docker initialization, grant the Service process access to the intended Engine, through `environments.docker_host` or its Docker environment. A CLI installation alone gives no Engine access. Then enable:
-
-```toml
-[provisioning.docker]
-enabled = true
-```
-
-The default template uses Service's reviewed sandbox image and `pull_policy = "if_missing"`. Provisioning creates resources once; initialization neither pulls an image nor creates a container. The image is pulled when an instance needs it. Later setting changes do not overwrite existing templates: edit those in Console or through the API. Existing instances keep their image.
-
-For a locally built image in a repository checkout:
-
-1. Run `make image-sandbox` from the repository root.
-2. Save this override as `compose.local.yaml` in that root:
-
-```yaml
-services:
-  service:
-    environment:
-      A13N_PROVISIONING__DOCKER: '{"enabled":true,"image":"a13n-sandbox:local","pull_policy":"never"}'
-```
-
-3. Start the stack with both files:
-
-```sh
-docker compose -f deploy/docker/compose/a13n-service.yaml -f compose.local.yaml up -d --wait
-```
-
-For direct TOML deployment, put the same `image` and `pull_policy` fields in `[provisioning.docker]`. Use `if_missing` for registry images. Environment overrides replace the complete JSON object; the old `A13N_DOCKER_ENVIRONMENT_IMAGE` shortcut is no longer read.
-
-For Local execution in a development deployment only, enable it with an explicit absolute root:
-
-```toml
-[provisioning.local]
-enabled = true
-root = "/srv/a13n/environments"
-```
-
-Local executes directly on the worker host without isolation. Disabling it preserves directories and resources but makes Local unavailable for subsequent execution. Docker provisioning disablement leaves manually configured Docker providers usable. See [workspace provisioning](environments.md#workspace-provisioning) for retry and ownership behavior.
+- [Configure workspace provisioning](workspace-provisioning.md)

@@ -95,7 +95,7 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-运行 `python memory_demo.py`，输出为 `Preference saved.` 和 `Your preferred language is Chinese.`。断言确认第二次 Run 属于另一个 Thread，因此偏好来自共享存储，而非前一次对话的历史。
+运行 `uv run python memory_demo.py`，输出为 `Preference saved.` 和 `Your preferred language is Chinese.`。断言确认第二次 Run 属于另一个 Thread，因此偏好来自共享存储，而非前一次对话的历史。
 
 示例结束时会删除临时目录。实际应用应使用 `DirectoryFileStore(".memory/user")` 这样的持久目录，以及已配置的 [Model](models.md)，由 Model 根据用户请求选择记忆工具。目录的保留和备份由 Host 负责。
 

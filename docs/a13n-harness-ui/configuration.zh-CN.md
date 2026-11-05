@@ -306,7 +306,7 @@ browser:
 
 浏览器自动化需要 Linux 或 macOS WebUI Host、电脑共享，以及 Auto 模式下的 Full Control Run。macOS 自动化需安装 Chromium。可选的只读预览需要 macOS 14 或更高版本，并给运行 Harness UI 的应用授予屏幕录制权限。预览只显示当前对话拥有的浏览器窗口。**Open Mac Screen Recording settings** 打开 Host 设置，由你在那里授权。缺少预览权限时仍可自动化。macOS 不使用 VNC 密码，也不提供远程输入。
 
-所有 Project 共用一个浏览器实例/Profile，位于 `<data_root>/browsers/profile`，无单独 Profile 路径设置。按[首次浏览器设置](webui.md#first-time-setup)完成 Host 准备和首次导航。保持 Chromium 沙箱开启；明确需要关闭它的部署可使用[显式沙箱选项](command-reference.md#webui)。
+所有 Project 共用一个浏览器实例/Profile，位于 `<data_root>/browsers/profile`，无单独 Profile 路径设置。按[首次浏览器设置](host-browser.md#first-time-setup)完成 Host 准备和首次导航。保持 Chromium 沙箱开启；明确需要关闭它的部署可使用[显式沙箱选项](command-reference.md#webui)。
 
 ### WebUI 允许的 origin
 
@@ -320,7 +320,7 @@ webui:
 
 非默认端口有区别。默认端口和尾部 `/` 会规范化。凭据、路径、查询、片段和部分通配符无效。字面值 `"*"` 允许任意请求地址，移除 Host/DNS 重绑定保护；优先使用确切 origin。
 
-这控制请求地址准入，不是 CORS。认证和同源检查保留；列出的 origin 不能相互调用 API。配置重载不改变活动监听器。见[反向代理](webui.md#reverse-proxies-and-public-addresses)。
+这控制请求地址准入，不是 CORS。认证和同源检查保留；列出的 origin 不能相互调用 API。配置重载不改变活动监听器。见[反向代理](running-webui.md#reverse-proxies-and-public-addresses)。
 
 ### WebUI Sidekick
 

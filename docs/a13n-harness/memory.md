@@ -95,7 +95,7 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-Run `python memory_demo.py`. It prints `Preference saved.` and `Your preferred language is Chinese.`. The assertion checks that the second Run belongs to a different Thread, so the preference came from the shared store rather than conversation history.
+Run `uv run python memory_demo.py`. It prints `Preference saved.` and `Your preferred language is Chinese.`. The assertion checks that the second Run belongs to a different Thread, so the preference came from the shared store rather than conversation history.
 
 The example removes its temporary directory when it finishes. In an application, use a persistent path such as `DirectoryFileStore(".memory/user")` and a configured [Model](models.md). Let the Model choose memory tools from the user's request. The Host owns the directory's lifetime and backups.
 

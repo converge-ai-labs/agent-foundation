@@ -42,7 +42,7 @@ Environment API 让应用在选定的目标上读写文件、执行命令。可�
 | Envd          | `http_envd`      | 通过 HTTP(S) 连接已有守护进程            |
 | Envd          | `websocket_envd` | 反向连接到 Host WebSocket 入口的守护进程 |
 
-云账号和运行时选择见[云 Provider](providers.md#cloud-providers)。Docker、E2B、Daytona、Modal、Vercel 和 Sprites 可通过兼容的 Envd 运行环境提供桌面访问。按[桌面设置](../a13n-service/environments.md#computer-use)准备镜像、模板、快照或 Sprite 安装。使用云账号前，也可以[在本地试用 HTTP 和 WebSocket](remote-envd.md)。
+云账号和运行时选择见[云 Provider](cloud-providers.md#cloud-providers)。Docker、E2B、Daytona、Modal、Vercel 和 Sprites 可通过兼容的 Envd 运行环境提供桌面访问。按[桌面设置](../a13n-service/environments.md#computer-use)准备镜像、模板、快照或 Sprite 安装。使用云账号前，也可以[在本地试用 HTTP 和 WebSocket](remote-envd.md)。
 
 ## 管理、连接与执行
 

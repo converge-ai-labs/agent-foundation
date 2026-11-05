@@ -1,0 +1,99 @@
+---
+title: Advanced execution options
+description: Import history, forward business context, and configure tool handoff and steering.
+---
+
+Use these options when your application needs imported history, business context headers, or control over tool handoff and steering. Start with a working [application integration](connect-application.md); preserve the accepted policy and inspect uncertain tool outcomes before retrying.
+
+## Import conversation context
+
+To continue an external conversation, put completed history beside the new message in `POST /threads`. Replace the agent placeholder:
+
+```json
+{
+  "agent_id": "ap_...",
+  "message_history": [
+    {"kind": "request", "parts": [{"part_kind": "user-prompt", "content": "We are planning a trip to Kyoto."}]},
+    {"kind": "response", "parts": [{"part_kind": "text", "content": "How many days will you stay?"}]}
+  ],
+  "payload": {"content": [{"type": "text", "text": "Three days. Suggest an itinerary."}]}
+}
+```
+
+`message_history` uses Pydantic AI message JSON, capped at 256 messages and 256 KiB of normalized JSON. It accepts user text, model text and closed tool-call/result exchanges. Every historical call needs a matching return by name and ID before the next response, user message or end of the import. Historical tools are context and do not execute.
+
+Put instructions in the agent config and media in the current payload. Imports accept completed conversation content, not system instructions or suspended execution. Foreign application metadata and run/conversation IDs remain readable in the submitted JSON but are cleared before execution; imported usage does not become Service accounting.
+
+The import initializes only this new thread. Follow-ups and forks continue its committed checkpoint. It creates no historical Service runs or display items, and existing thread history cannot be replaced. Python applications already using Pydantic AI can serialize with `ModelMessagesTypeAdapter.dump_json`; other clients can supply the JSON directly.
+
+## Request context headers
+
+Pass business metadata shared by model and MCP requests through the message body:
+
+```json
+{"options": {"context": {"headers": {"x-trace-id": "trace-123", "x-tenant-id": "acme"}}}}
+```
+
+Forwarding is enabled by default. Include only values intended for those providers and MCP servers. Values are readable run options; store secrets in provider or connection credentials. Inbound HTTP headers are not copied automatically. The map allows 32 case-insensitively unique names, printable ASCII values up to 4096 characters, and 8 KiB overall; authentication and transport names are reserved.
+
+Recovery, resume and children retain the accepted context. Ordinary new messages and forks start with their own context, empty when omitted. Snapshot Threads instead retain frozen context and reject explicit changes. An ordinary steer can omit or repeat context; a different value queues for a later run. HTTP reads expose it, while MCP query projections remove it. Prompts, history and command environments receive no automatic copy.
+
+Model request headers and per-connection `mcp_headers` override shared names; credentials and protected protocol headers remain authoritative. Forwarding requires both the deployment category switch and the target's `config.forward_context_headers`. Omitted target settings use `A13N_HARNESS_FORWARD_CONTEXT_HEADERS` (default true); MCP saves store the resolved value. Disable a category with `A13N_PROVIDERS__FORWARD_MODEL_CONTEXT_HEADERS=false` or `A13N_PROVIDERS__FORWARD_MCP_CONTEXT_HEADERS=false`. Fetch, browser and shell operations do not automatically forward these headers.
+
+## Caller headers
+
+Use thread-level `mcp_headers` when only a particular MCP connection needs non-secret context. Set it on thread creation or PATCH the thread with `If-Match`:
+
+```json
+{"mcp_headers": {"conn_...": {"x-tenant-id": "acme"}}}
+```
+
+Replace the placeholder with an enabled workspace MCP connection ID. The map permits 32 connections and 16 KiB total. Authentication and protocol names, including names used by the connection's own credentials, are refused. Each run freezes these headers at acceptance; forks and async children inherit them. Run views omit their values.
+
+## Execution policy
+
+Set tool handoff and steering independently:
+
+- `tools.mode: inline` waits for tool completion; `auto` can return a retained execution receipt after the foreground wait.
+- `steering: boundary` applies guidance at a model boundary; `immediate` can preempt a foreground wait.
+
+Service defaults to `auto`, a five-second foreground wait and `immediate`. This agent-config fragment makes those choices explicit:
+
+```json
+{"execution": {"tools": {"mode": "auto", "foreground_wait_seconds": 5}, "steering": "immediate"}}
+```
+
+Each leaf resolves **run override → thread override → selected agent revision → deployment default**. Use `config.execution` on the agent, `execution` on thread creation or PATCH, and `options.execution` on a message. Thread PATCH requires `If-Match`: omitted fields stay unchanged, null leaves inherit, and `{"execution":null}` clears the entire override.
+
+A run freezes the effective policy at acceptance, including queued acceptance. Recovery, handoff, resume and automatic continuation keep it. Steers may omit or repeat matching leaves; a change returns `execution_policy_immutable`. Submit with `delivery: next_run` for a different policy. Earlier retained calls stay accessible even if the new run uses inline mode.
+
+Console exposes **Execution policy** in agent configuration and **Session actions** for thread defaults. The new-session **Options** and idle composer's policy controls apply to one run; **Details → Execution policy** shows frozen values. Foreground wait accepts 0–300 seconds and controls observation, not an execution deadline.
+
+### Command environment variables
+
+Use `execution.environment` at the same three layers for non-secret command defaults:
+
+```json
+{"execution": {"environment": {"APP_MODE": "staging", "EMPTY": ""}}}
+```
+
+Each key resolves **command → run → thread → agent → frozen environment recipe**. Thread PATCH replaces a supplied map; null or `{}` clears that layer. Empty strings set empty values, and removing a key reveals lower defaults rather than unsetting it. Explicit command unsets follow provider support. Use consistent name spelling on Windows.
+
+The run freezes its agent/thread/run overlay. Shell commands, background processes and their ordinary children receive it without changing global sandbox variables. Inline children share it; async children inherit the frozen policy, and retained-snapshot forks keep it. Ordinary forks resolve their selected agent and choices. Keep credentials in the appropriate secret store.
+
+## Retained tool executions
+
+With automatic handoff, a supported call can continue on its original worker after the model receives an `exec-*` receipt. Read that reference's result rather than starting the call again. A retained CodeAct invocation includes its nested calls. Later runs can use other workers; losing the owner marks unfinished work `lost` with uncertain effects, without automatic replay.
+
+Open **Tool executions** from the Console session menu or run details. Use **Inspect** for metadata and **Read result** for a bounded result fragment. API operations are under `/threads/{thread_id}`:
+
+| Endpoint                                      | Action                                                   |
+| --------------------------------------------- | -------------------------------------------------------- |
+| `GET /tool-executions`                        | List calls, optionally filtered by `run_id` or `active`. |
+| `GET /tool-executions/{execution_id}`         | Inspect status.                                          |
+| `GET /tool-executions/{execution_id}/result`  | Read with `offset`, `limit` and `version`.               |
+| `POST /tool-executions/{execution_id}/cancel` | Request cancellation.                                    |
+
+References belong to one exact thread. Agent result retrieval or first mailbox delivery starts the delivered-result retention window: one hour by default, bounded by 24 hours after completion. Console and HTTP inspection, including result reads, leave delivery and retention unchanged. Repeated reads do not extend retention; expired records return 404.
+
+Cancellation acceptance is separate from completed cleanup. Stopping the originating run requests cancellation of its retained calls and suppresses late-result wakeups. Stopping a later run affects that run's calls, not older calls. Mounts stay in use until retained work and cleanup finish.

@@ -88,7 +88,7 @@ For an existing Agent, merge the `web` entry into its `capabilities` list, or ed
 | Fetch/download | `HttpxWebClient` with `HttpWebPolicy`         | Bounded HTTP(S) reads or saved files |
 | Scrape         | `HtmlScrapeProvider`, backend `default`       | HTML/text converted to Markdown      |
 
-Scraping reads the HTTP response without rendering JavaScript or using a Browser login. Use [Browser Use](webui.md#browse-on-the-host) for interactive sites. Host requests follow the captured allowed-host policy; an unset policy permits private destinations.
+Scraping reads the HTTP response without rendering JavaScript or using a Browser login. Use [Browser Use](host-browser.md#browse-on-the-host) for interactive sites. Host requests follow the captured allowed-host policy; an unset policy permits private destinations.
 
 To adjust limits, merge the following fields into the `web` entry's `configuration`. These are settings, not a standalone file:
 

@@ -5,15 +5,15 @@ description: Start a browser conversation, choose its working environment, revie
 
 WebUI is the browser workbench for Harness UI. It uses the same App and saved conversations as the TUI. Start with one conversation; add Projects, file review, browser control, and collaboration as your work needs them.
 
-| I want to…                                      | Start here                                                                                                                                              |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Get a first answer                              | [Start the server](#start-the-server)                                                                                                                   |
-| Change the Agent, Model, or working directories | [Agent and Model settings](#agent-and-model-settings)                                                                                                   |
-| Give more guidance or answer a question         | [Steering](#tool-executions-and-immediate-steering) and [pending decisions](#pending-questions-approvals-and-external-results)                          |
-| Review a file or diff with the Agent            | [Files and Changes](#read-edit-and-capture-host-files-and-git-changes)                                                                                  |
-| Let the Agent browse, or annotate what I see    | [Host browser](#browse-on-the-host)                                                                                                                     |
-| Invite a person or coordinate other Agents      | [Sharing](#share-a-thread-or-project) and [Coordinator](#work-with-a-coordinator)                                                                       |
-| Keep the workbench available remotely           | [Authentication](#authentication-and-key-retention), [proxy setup](#reverse-proxies-and-public-addresses), and [restart](#restart-or-update-the-server) |
+| I want to…                                      | Start here                                                                                                                                                                                              |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Get a first answer                              | [Start the server](#start-the-server)                                                                                                                                                                   |
+| Change the Agent, Model, or working directories | [Agent and Model settings](#agent-and-model-settings)                                                                                                                                                   |
+| Give more guidance or answer a question         | [Steering](#tool-executions-and-immediate-steering) and [pending decisions](#pending-questions-approvals-and-external-results)                                                                          |
+| Review a file or diff with the Agent            | [Files and Changes](#read-edit-and-capture-host-files-and-git-changes)                                                                                                                                  |
+| Let the Agent browse, or annotate what I see    | [Host browser](host-browser.md#browse-on-the-host)                                                                                                                                                      |
+| Invite a person or coordinate other Agents      | [Sharing](#share-a-thread-or-project) and [Coordinator](#work-with-a-coordinator)                                                                                                                       |
+| Keep the workbench available remotely           | [Authentication](running-webui.md#authentication-and-key-retention), [proxy setup](running-webui.md#reverse-proxies-and-public-addresses), and [restart](running-webui.md#restart-or-update-the-server) |
 
 ## Start the server
 
@@ -276,110 +276,27 @@ Exited sessions remain inspectable until closed. After uncertain creation or clo
 
 ## Browse on the Host
 
-**Browser** lets the Agent browse with Chromium on the server while you watch its native window. Linux shows a shared private desktop; macOS shows only the conversation's owned browser window. Browsing requires a Linux or macOS Host, computer sharing, and a Full Control Run. Windows browsers can view a supported Host; Windows cannot host this desktop.
+Follow [Use the Host browser](host-browser.md#browse-on-the-host) for this procedure.
 
 ### First-time setup
 
-1. [Install Host components](#install-host-components) on the server, not on the device displaying WebUI. Leave computer sharing enabled when starting WebUI.
-2. Start WebUI with the default `browser.mode: auto`. Harness UI detects installed components and prepares the shared browser. If startup fails, open **Browser**, resolve the displayed required components, and choose **Try again**.
-3. Start a **Full Control** conversation and ask the Agent to browse. Tools are available automatically; first navigation or tab creation opens the conversation's window. You can also choose **Browser → Open browser**, including during a Run.
-4. First live browser use reveals the viewer without moving keyboard focus. If Files/Changes is open or the screen is narrow, choose **View browser**. Closing the viewer keeps the browser running and prevents another automatic reveal in that Run.
-5. For login or manual correction on Linux, choose **Take control**, finish the action, then **Hand back to Agent**. On macOS, choose **Pause automation**, operate the browser locally on the Mac, then **Resume automation**.
-
-Browsing needs no per-conversation switch or manual Capability entry. Use **Advanced browser settings** for the global Auto/Disabled mode and executable overrides; save and restart after changing them. Ordinary chat, Files and Shell do not allocate conversation browser pages.
+Follow [Use the Host browser](host-browser.md#first-time-setup) for this procedure.
 
 ### Install Host components
 
-**Linux:** install Chrome, Chromium, or Edge using your distribution or vendor instructions. On Debian/Ubuntu, prepare TigerVNC with:
-
-```bash
-sudo apt-get update
-sudo apt-get install --no-install-recommends tigervnc-standalone-server
-```
-
-Optional window controls and TigerVNC resizing:
-
-```bash
-sudo apt-get install --no-install-recommends openbox x11-xserver-utils
-```
-
-These commands install desktop components, not Chromium. Harness includes cdp-use and generates VNC passwords/X11 authentication; no separate Node.js, `vncpasswd`, `xauth`, or websockify setup is required. In Docker, install components inside the server image/container. **Manual installation commands** are instructions for you to run, not UI-executed installation.
-
-Run as non-root with Chromium's sandbox enabled. Root requires an explicit `--browser-no-sandbox` or `A13N_HARNESS_UI_BROWSER_NO_SANDBOX=1`; this removes Chromium's sandbox protection. `--browser-sandbox` overrides that environment opt-out. WayVNC/Sway independently requires a non-root account.
-
-**macOS:**
-
-1. Install Chrome, Chromium, or Edge and run Harness UI as the logged-in desktop user.
-2. Choose **Browser → Open browser** to open a window; Chromium is the only required browser component.
-3. For optional preview on macOS 14 or later, grant Screen Recording permission to the application running Harness UI. **Open Mac Screen Recording settings** opens the Host settings; you grant permission there.
-4. Keep the Mac unlocked and the browser window visible. After granting permission or unlocking, choose **Reconnect**. Restart the Host application if macOS asks you to.
-
-Preview captures only the exact conversation window created by Harness UI, including the real address bar. Missing permission or capture failure leaves automation available. The viewer stays read-only: it forwards no keyboard, mouse, or clipboard input. Screen Sharing and VNC passwords are unnecessary; old saved VNC credentials and the former password environment variable are unused.
-
-Capture never falls back to the desktop, a personal browser, or another conversation's window. Separate popup windows and native dialogs are outside the preview. A closed or unidentified bound window needs **Reset browser** to establish a new preview. Use local zoom; Viewport presets are disabled and the physical display resolution stays unchanged.
+Follow [Use the Host browser](host-browser.md#install-host-components) for this procedure.
 
 ### Detect and select executables
 
-Automatic selection uses installed browsers, preferring Chrome, Chromium, then Edge. Linux searches the server's `PATH`; macOS checks `/Applications` and `~/Applications`. Install missing programs before **Scan** or **Try again**. Restart the server after changing its `PATH`.
-
-| Linux display choice | Required components                                | Resizing                      |
-| -------------------- | -------------------------------------------------- | ----------------------------- |
-| TigerVNC, preferred  | `Xtigervnc` or `Xvnc`                              | Optional RandR/xrandr support |
-| x11vnc               | x11vnc and Xvfb                                    | Fixed desktop                 |
-| WayVNC               | Compatible WayVNC, headless Sway, non-root account | Fixed desktop                 |
-
-Automatic discovery prefers a complete adapter in that order. WayVNC needs private Unix sockets and input-disabled viewing support. Linux desktops use private display/runtime resources, not the user's existing desktop. An X11 window manager such as Openbox, Fluxbox, IceWM, or twm supplies window dragging and close controls; basic browsing works without it.
-
-To override a path, open **Settings → General → Host browser**, choose a detected executable or **Other** with an absolute path, then save and restart. **Automatic** clears an override. Invalid explicit paths fail instead of falling back. **Scan** checks the current draft and refreshes required/optional component results without saving or launching. Successful detection can still be followed by a startup error, such as missing shared libraries or display permissions.
-
-On macOS, settings show optional **Window preview** instead of a VNC executable selector or password.
-
-The shared profile lives at `<data_root>/browsers/profile`, normally `~/.a13n-harness-ui/data/browsers/profile`. It has no separate location setting. Conversations and Projects share one Chromium instance and profile, with separate windows/Agent tabs. Personal profiles are not imported, and existing profile directories are not moved or merged.
-
-On Linux, the managed browser uses basic password storage to avoid waiting for a locked desktop keyring. Saved passwords and cookies are **not protected by the OS keyring**; protect the profile and its backups as credentials. The system keyring and macOS credential storage are unchanged. Restart Harness UI after upgrading to apply this behavior. The profile is retained, but sites whose login data used keyring encryption may require another sign-in.
+Follow [Use the Host browser](host-browser.md#detect-and-select-executables) for this procedure.
 
 ### Start and control the browser
 
-Viewing starts read-only. On Linux, **Take control** pauses browser tools and page collection across all conversations and focuses this conversation's window. Only one viewer controls input. **Hand back to Agent** revokes human input and requires fresh page observation. You can hand back from another conversation, including one with no open tabs. Taking control from another conversation transfers input and focuses its window while all Agent browser tools stay paused.
-
-Each model request includes compact Browser availability context. During takeover, the Agent can call `browser_notify_on_handback` to request a reminder without accessing the page or waiting. A blocked page-tool call also registers the same reminder. Repeated requests coalesce. If control has already returned, the tool reports availability without creating a future reminder. The Agent can finish independent work or end its turn instead of polling. Handback notifies only these conversations, including those whose turn has ended, so the Agent can observe afresh and continue relevant work. Pending approvals still require your decision. Stop, archive, and clearing context cancel pending notices. Notices are kept only while this server and browser runtime remain running; a previous Goal is not resumed.
-
-To change devices, open the same Thread in another browser and choose **Take control here**. The previous controller loses input while the Agent stays paused; opening the Thread alone remains read-only. After a disconnection, choose **Reconnect control** to reconnect while keeping the Agent paused, or **Hand back to Agent** to resume automation.
-
-The toolbar shows **Taking control…** while current operations finish, then **Connecting control…** and **Waiting for the first frame…**. Wait for **You have control** before typing or clicking. Connection can retain the previous picture with a pending message; a timeout offers retry, and you can hand back while connection is pending or failed.
-
-On macOS, choose **Pause automation** before interacting with the real browser locally on the Mac. This also pauses browser tools and page collection across conversations. Choose **Resume automation** when done; the Agent must observe the updated page before continuing. Closing the viewer leaves automation paused. The WebUI preview remains read-only throughout.
-
-On Linux, click the remote desktop before typing. Local input methods compose on your device and paste committed text into the remote field. The field must accept paste and the Host needs suitable fonts. Linux Unicode transfer requires an extended-clipboard server such as TigerVNC or WayVNC; the tested x11vnc server lacks it.
-
-During Linux human control, focused desktop text clipboards synchronize up to 65,536 characters. HTTPS or localhost and browser clipboard permission are required. Client Command shortcuts map to Linux Ctrl shortcuts. Handback, disconnection, and closing the viewer stop synchronization. The remote bridge transfers text, not images/files; file dialogs use Host files.
-
-On Linux with supported resizing, take control and choose a Viewport preset for responsive layout checks. The dimensions describe the page's CSS viewport; other viewers see the same size. Resizing preserves login and avoids reload. It does not emulate a mobile OS, user agent, or touch device. Close conversation tabs and Reset retain the selection until server restart.
-
-| Action                                           | What remains                                                                 |
-| ------------------------------------------------ | ---------------------------------------------------------------------------- |
-| Close drawer, switch conversation, finish Run    | Browser continues running                                                    |
-| **Browser options → Close conversation tabs**    | Close current windows; keep the Run binding so the same Run can reopen pages |
-| **Reset browser**                                | Recreate this conversation's window at a visible position                    |
-| **Reconnect**                                    | Reconnect the viewer without restarting Chromium                             |
-| Close last conversation tab                      | Binding stays enabled; Agent navigation or Open browser can create another   |
-| Exit Chromium or lose a required display process | Shared runtime and all windows stop                                          |
-
-Reset or recovery after failure creates a new read-only session. Choose **Try again** after the shared runtime stops. Send a new prompt for the affected conversation to use its replacement window; old actions are not replayed, and waiting tools fail rather than remaining paused indefinitely. Other conversations retain their windows on a single-conversation Reset. Unsaved page data can be lost on a crash. After server restart, Auto mode prepares the shared browser again. Closing individual tabs during human control leaves automation paused until handback. **Close conversation tabs** also releases human control when that conversation is the controller.
-
-Linux human controllers can see and operate other windows on the shared private desktop. macOS preview is limited to one window, while website logins, saved passwords, and preferences still share the Chromium profile across conversations. Browser authority and networking belong to the Host, outside Sandbox isolation. Linux uses noVNC; its source/license notice is served at `/assets/LICENSE.noVNC`, with other bundled notices at `/third-party-licenses.txt`.
+Follow [Use the Host browser](host-browser.md#start-and-control-the-browser) for this procedure.
 
 ### Capture and annotate a screenshot
 
-1. In a connected Browser drawer, click the camera, **Capture and annotate screenshot**. It freezes the currently rendered Linux desktop or macOS window preview locally, including browser controls, while the live browser continues.
-2. Crop or add arrows, shapes, freehand marks, text, or mosaic with a mouse, pen, or touch pointer. Use **Opaque redaction** for private details; mosaic is only a visual effect.
-3. Use **Select** or the **Annotations** picker to choose a mark. Move/resize it, Delete it, or nudge with arrows (Shift for larger steps). Ctrl/Cmd+Z undoes; Ctrl/Cmd+Shift+Z redoes. Shift constrains shapes/arrow angles.
-4. Finish text with Ctrl/Cmd+Enter or cancel it with Escape. Outside text input, **Copy PNG** or Ctrl/Cmd+Enter copies the result and returns focus to chat.
-5. Paste explicitly into the composer, inspect the attachment, add your instruction, and send.
-
-Capture needs no takeover and does not pause the Agent. The editor suspends only this viewer's remote input and text synchronization. Copy waits for previously issued text clipboard writes. Capture/copy never upload, attach, or send automatically.
-
-PNG dimensions follow the source-pixel crop, independent of preview zoom or screen density. Keyboard controls support editing existing marks; creating marks/crops requires a pointer. Copy/export failure preserves edits. Retry or use **Download PNG**, which leaves the editor open. Closing asks for confirmation when text or undo/redo history would be discarded. Pasting into chat follows ordinary attachment limits.
+Follow [Use the Host browser](host-browser.md#capture-and-annotate-a-screenshot) for this procedure.
 
 ## Share a Thread or Project
 
@@ -536,79 +453,28 @@ Use HTTPS or loopback and keep scheme, hostname, and port stable. A phone's plai
 
 ## Authentication and key retention
 
-Startup prints the ordinary address. With a generated key, it also prints the key and fragment login link. The browser removes the fragment and retains a successfully used key in same-origin localStorage for authenticated API requests. **Log out** removes it and closes protected views. Static assets contain no key.
-
-Key precedence is `--apikey`, `A13N_HARNESS_UI_API_KEY`, then a fresh process key. Supplied keys are not echoed, though command-line arguments can be visible to the OS. Empty keys and conflicting repeated values are rejected.
-
-`--dangerous-skip-permissions` disables Web authentication only; Agent permissions and sharing gates still apply. It cannot be combined with a supplied key. `--api-key` and `--dangerously-bypass-permission` remain compatibility aliases. Review [CLI options](command-reference.md#webui) before exposing the listener.
+Follow [Run and restart WebUI](running-webui.md#authentication-and-key-retention) for this procedure.
 
 ## Reverse proxies and public addresses
 
-1. Add your external address to the selected root YAML. Replace the example with your actual scheme, host, and port:
-
-   ```yaml
-   webui:
-     allowed_origins:
-       - "https://workbench.example.com:8090"
-   ```
-
-2. Configure TLS termination and WebSocket upgrades. Preserve the external `Host` (including port) and browser `Origin`; forward the HTTPS scheme as `X-Forwarded-Proto: https`.
-
-3. If the proxy peer is not trusted loopback `127.0.0.1`, set `FORWARDED_ALLOW_IPS` in the WebUI process environment to the proxy IPs/networks as seen by that process/container. Have the proxy overwrite client-supplied forwarding headers.
-
-4. Restart WebUI, open the external address, log in, and check a conversation and interactive connection.
-
-Origin admission matches scheme, domain, and port. The example does not also allow HTTP or port 443. Default `[]` keeps listener-address restrictions; `allowed_origins: ["*"]` permits any address. Neither disables authentication or enables cross-origin API access. Trust only actual proxy peers; do not rewrite headers to loopback or use unrestricted forwarded-header trust to evade admission. See [allowed origins](configuration.md#webui-allowed-origins).
-
-Device pairing returns root-relative paths resolved against the paired Host URL, retaining public HTTPS and port. Approval alone does not establish Device connection or desktop permission.
+Follow [Run and restart WebUI](running-webui.md#reverse-proxies-and-public-addresses) for this procedure.
 
 ## Restart or update the server
 
-1. Save private editor changes.
-2. Press Ctrl+C once or send SIGTERM. Wait for **WebUI stopped** and process exit.
-3. For an update, install the new package after exit using the [installation workflow](installation.md).
-4. Start the replacement with the same data directory. Inspect interrupted conversations and any recovery errors.
-
-Graceful shutdown saves root/child checkpoints, finalizes Environments, and records a restart handoff. The next start consumes it once and continues compatible interrupted work in new Runs, without resending prompts or replaying the saved tool batch.
-
-`shutdown_timeout_seconds` (default 60 seconds) bounds waiting for a safe boundary, not total process exit. If a batch cannot finish, or checkpoint/finalization fails, that batch is not armed for automatic recovery. Cancellation and cleanup still take time. Let the old process finish before starting its replacement.
-
-After forced termination or failed reconstruction, inspect saved history/logs before retrying uncertain work. Pending decisions remain unanswered. Native terminals, old Shell handles, shared drafts, and unsaved editors are not restored.
+Follow [Run and restart WebUI](running-webui.md#restart-or-update-the-server) for this procedure.
 
 ## Server logs and shutdown
 
-Use `process.log_level` and `process.log_format` to control logs. INFO reports normal API activity; DEBUG adds assets, health probes, and cleanup stages. API entries record route templates, status, elapsed time, codes, and generated IDs, excluding bodies, keys, query values, and native paths.
-
-| Observation                                                            | Action                                                                                   |
-| ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| **Stopping WebUI**                                                     | Wait for cleanup; **WebUI stopped** confirms completion                                  |
-| Slow shutdown                                                          | Inspect DEBUG stages; connection-drain timeout is not an App cleanup deadline            |
-| **Connection interrupted**                                             | Let reconnect run or choose **Retry now**; restart the server first if stopped           |
-| `thread_history_continuation_changed` / `thread_continuation_conflict` | Refresh the conversation                                                                 |
-| `object_payload_incompatible`                                          | Inspect object/version/validation details in storage warnings; retain the data directory |
-
-Reconnect refreshes observations, not failed saves or submissions. Browser disconnection does not stop Runs or terminals. WARNING log level hides normal progress.
+Follow [Run and restart WebUI](running-webui.md#server-logs-and-shutdown) for this procedure.
 
 ## Listener and application lifetime
 
-The running server owns the App even without browser clients. Non-loopback listening shares instance authority with a trusted network; use TLS and suitable access controls. It does not provide tenant isolation. Unauthenticated `/healthz` and `/readyz` expose bounded liveness/readiness; readiness can mean ready for setup before a Model exists.
-
-Compatible TUI/WebUI processes can use one local database across package upgrades. An older compatible reader preserves unknown migration history and checks its required tables/columns; a newer migration number alone does not reject it or block an active save. Real storage, continuation/version, and payload incompatibilities still fail. Database compatibility does not share live execution ownership, and released binaries retain their own checks.
+Follow [Run and restart WebUI](running-webui.md#listener-and-application-lifetime) for this procedure.
 
 ## Container and installed assets
 
-Install the Python distribution on the workbench Host. Its wheel/sdist includes WebUI assets, so end users need no Node.js or frontend checkout. Harness UI publishes no official container image; a custom deployment must pin the distribution and configure listener, authentication, and persistent mounts. `a13n-sandbox` is an Agent execution image, not the WebUI server.
-
-For repository development, `make webui` builds/installs assets and starts a foreground server with isolated config/data in `var/harness-ui/`. It prints a generated-key login link when no key was supplied. Use `WEBUI_ARGS` for server options and `CLI_ARGS` for global options:
-
-```bash
-make webui WEBUI_ARGS='--port 9000 --no-share-computer'
-```
-
-See the [development guide](https://github.com/converge-ai-labs/agent-foundation/blob/main/dev/harness-ui/README.md) for seeding and environment overrides.
+Follow [Run and restart WebUI](running-webui.md#container-and-installed-assets) for this procedure.
 
 ## Options and ownership
 
-Listener address, port, authentication, and native sharing are process options. Additional admitted origins live in root YAML. Use the [command reference](command-reference.md#webui) for the complete option list.
-
-For your own client, continue with the [HTTP workflow](http-api.md). For in-process integration, use the [Python App](embedding.md). For scripts that need no listener, use [one-shot execution](automation-and-troubleshooting.md#automation-and-diagnostics).
+Follow [Run and restart WebUI](running-webui.md#options-and-ownership) for this procedure.

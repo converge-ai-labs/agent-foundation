@@ -67,7 +67,7 @@ Let the existing retry finish or cancel the Run. Completed tool calls are not re
 
 ## Long-running work
 
-Root Agents and subagents have no fixed Harness request-count limit. Provider and child limits still apply, and longer Runs can consume more tokens. Use `/status` to inspect progress and `/cancel` to stop active work. After a process crash, start a new invocation from the saved continuation; active work does not restart automatically.
+Root Agents and subagents have no fixed Harness request-count limit. Provider and child limits still apply, and longer Runs can consume more tokens. Use `/status` to inspect progress and `/cancel` to stop active work. After a process crash, start a new invocation from the saved continuation; active work does not restart automatically. A normal WebUI shutdown has a separate [graceful restart workflow](running-webui.md#restart-or-update-the-server) that can automatically continue safely checkpointed work.
 
 ## Logs, Updates, and Exit
 

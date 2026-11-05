@@ -75,7 +75,7 @@ printf 'Thread: %s\n' "$thread_id"
 
 receipt=$(api "/api/threads/$thread_id/submit" \
   -H 'Content-Type: application/json' \
-  --data '{"parts":["Explain this project without changing files."]}')
+  --data '{"parts":["Reply with one short greeting. Do not use tools."]}')
 receipt_id=$(jq -er '.receipt_id' <<<"$receipt")
 printf 'Receipt: %s\n' "$receipt_id"
 
@@ -108,6 +108,26 @@ Run `bash conversation.sh`. A receipt acknowledges admission. `preparing` and `r
 To continue, submit another `parts` body to the same Thread and poll the new receipt. There is no root-operation HTTP wait endpoint. Each Thread admits one active root operation; a second submit is rejected rather than queued.
 
 Retain both IDs in your client. After an uncertain submit response, inspect `GET /api/threads/{thread_id}` and its root activity before taking another action. Submission has no durable idempotency guarantee. Receipts belong to the App process and can disappear after restart, while saved conversation state remains available. Stopping the polling script stops observation, not the server's Run.
+
+### Give the conversation a Project
+
+The greeting above tests the Agent connection without requiring repository access. Creating a Thread does not adopt the listener's launch directory. Without an explicit Project or a configured `defaults.project`, it starts without Project working directories.
+
+To inspect repository files:
+
+1. Read `GET /api/selectors` and choose an existing Project ID. If no Project is listed, [create one](environments-and-projects.md#project-file-reference) or [publish its configuration](#edit-reusable-resources) first.
+
+2. Create another Thread with that Project selected. Replace `project-main` with the observed ID:
+
+   ```json
+   {"title":"Repository conversation","defaults":{"project_id":"project-main"}}
+   ```
+
+3. Read `GET /api/threads/{thread_id}/configuration` and check its selected working directories before submitting work.
+
+4. Submit `{"parts":["List the top-level files and explain this repository. Do not modify files."]}` to its `/submit` route. Poll the receipt as above and check the actual file-tool result.
+
+Changing an existing Thread's Project changes its grouping. To replace its saved working directories, use [the Project defaults preview and apply workflow](#change-saved-thread-selections).
 
 ### Change a running operation
 

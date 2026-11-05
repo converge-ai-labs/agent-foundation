@@ -24,6 +24,8 @@ For an Agent, connect through [Harness Environment Providers](../environments/in
 | Implementing an EIP client or Provider                     | [Python EIP client](python-client.md)                                               |
 | Managing Sessions, retained output, and uncertain results  | [Sessions and output](operations.md)                                                |
 
+For Device resource samples, freshness, and Prometheus or OTLP export, use [monitoring and metrics](monitoring.md).
+
 ## What it provides
 
 Use the Device's advertised methods to find the operations available on its platform and configuration:

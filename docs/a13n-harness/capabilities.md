@@ -60,7 +60,7 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-Run `python capability_demo.py`. Expected output:
+Run `uv run python capability_demo.py`. Expected output:
 
 ```text
 Capability instructions received.
@@ -150,7 +150,7 @@ The [integration package example](https://github.com/converge-ai-labs/agent-foun
 
 ## Common Definition Capabilities
 
-Add the selected Capability to the build's `capabilities` tuple. Check the dependency column before running: selecting a feature and supplying its service are separate steps. Follow the dedicated guides for [Environment tools](environments.md), [Skills](skills.md), [memory](context.md), and [delegation](delegation-and-codeact.md).
+Add the selected Capability to the build's `capabilities` tuple. Check the dependency column before running: selecting a feature and supplying its service are separate steps. Follow the dedicated guides for [Environment tools](environments.md), [Skills](skills.md), [memory](memory.md), and [delegation](delegation-and-codeact.md).
 
 | Capability                     | Adds                                                                                        | Needs collaborator                                             |
 | ------------------------------ | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |

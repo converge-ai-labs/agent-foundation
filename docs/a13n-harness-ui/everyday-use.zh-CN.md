@@ -145,7 +145,7 @@ Agent 通过 `thread-files` 挂载处理与本对话相关的文件：
 3. 选中一行查看预览。Ctrl+T 可查看历史而不切换对话。
 4. 按 Enter 恢复，再用 `/status` 检查工作目录和选择。
 
-**恢复使用启动目录的 Project 和根目录**，同时保留已保存历史、Agent 和执行权限。要保留原 Project 和目录，应从该 Project 的第一个根目录启动。活动对话不能在另一 TUI 中恢复。
+在同一 Project 中恢复时，会保留 Thread 已保存的工作目录，即使 Project 文件后来发生变化。从另一个 Project 恢复时，则使用该启动目录的 Project 和本地根目录，同时保留历史、Agent、Device 绑定和本地执行模式。恢复后用 `/status` 核查；详见 [Project 与恢复规则](environments-and-projects.md#files-projects-and-recovery)。活动对话不能在另一 TUI 中恢复。
 
 | 浏览器操作                     | 按键              |
 | ------------------------------ | ----------------- |

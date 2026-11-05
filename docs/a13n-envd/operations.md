@@ -37,7 +37,7 @@ Each command reserves capacity for stdout and stderr before launch. At these def
 
 If launch returns busy, check output reservations and retained spool charges. Release observations you no longer need, increase the quota, or lower the per-stream limit. Keep `spool >= 2 * per_stream` and `preview <= per_stream`. The daemon can reclaim eligible completed history under pressure; live work keeps its reservation.
 
-Set these limits in the configuration that launches the daemon. Python Local Envd supplies its own preview and file-value defaults through the Host's [runtime fields](../environments/configuration.md). Native Docker has separate output limits; Docker with explicitly selected Envd execution uses the daemon's limits.
+Set these limits in the configuration that launches the daemon. Python Local Envd supplies its own preview and file-value defaults through the Host's [runtime fields](../environments/configuration-reference.md#localenvdlaunchconfiguration). Native Docker has separate output limits; Docker with explicitly selected Envd execution uses the daemon's limits.
 
 ## Preview, retained bytes, and completion
 

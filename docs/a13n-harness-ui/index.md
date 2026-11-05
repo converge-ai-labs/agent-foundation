@@ -40,6 +40,7 @@ Add one capability at a time, after your first conversation works:
 - **Change how the Agent thinks:** [connect another Model](models-and-authentication.md), then [configure an Agent](agents-and-subagents.md).
 - **Choose where it works:** [select an Environment and organize Projects](environments-and-projects.md).
 - **Teach a repeatable task:** [add a Skill](skills-and-content-plugins.md).
+- **Remember preferences across conversations:** [configure file memory](configuration.md#file-memory), then [inspect its files and organization](webui.md#observe-memory).
 - **Connect another tool service:** [add an MCP server](mcp.md); use [MCP Apps](mcp-apps.md) for interactive results.
 - **Use provider tools or media:** [configure native and Web tools](native-and-web-tools.md).
 
@@ -47,7 +48,7 @@ The [command reference](command-reference.md) lists terminal commands once you k
 
 ## Share and continue work
 
-Keep Harness UI running while the Agent works. Closing a browser tab leaves active Runs running; stopping the application ends that live execution. After a restart, continue from the last saved checkpoint as described in [recovery](automation-and-troubleshooting.md).
+Keep Harness UI running while the Agent works. Closing a browser tab leaves active Runs running. A [graceful WebUI restart](running-webui.md#restart-or-update-the-server) can automatically continue compatible interrupted work after saving and cleanup succeed. After a TUI exit or process crash, inspect the last saved checkpoint and [resume manually](automation-and-troubleshooting.md#resume-after-exit-or-failure). Check the saved outcome before submitting work again.
 
 Share a WebUI instance only with trusted collaborators. They use the same credentials, configuration, and files. Native Host file access and terminals are enabled by default; `--no-share-computer` disables that sharing separately from Agent execution permissions.
 

@@ -5,6 +5,8 @@ description: Pair a desktop, grant a Thread access, then use screenshots to guid
 
 Envd lets an agent observe and operate a logged-in desktop. Pair the Device with Harness UI, authorize the desktop actions for a Thread, and start with a screenshot.
 
+For a Python integration with an existing `EIPSession`, go directly to the [screenshot and zoom example](#python-client); use the [Python EIP client](python-client.md) for Session setup. The pairing and Thread authorization steps below are for Harness UI. Other Hosts manage their own registration and permissions.
+
 ## Requirements and limits
 
 Choose a supported desktop:

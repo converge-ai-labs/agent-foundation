@@ -306,7 +306,7 @@ Save changed overrides and restart Harness UI. Choose **Automatic** to clear an 
 
 Browser automation requires a Linux or macOS WebUI Host, computer sharing, and a Full Control Run with Auto mode. On macOS, install Chromium for automation. Optional read-only preview needs macOS 14 or later and Screen Recording permission for the application running Harness UI. It shows only the conversation's owned browser window. **Open Mac Screen Recording settings** opens the Host settings; you grant permission there. Missing preview permission leaves automation available. macOS uses no VNC password or remote input.
 
-All Projects share one browser instance/profile at `<data_root>/browsers/profile`; there is no separate profile-path setting. Follow [first-time browser setup](webui.md#first-time-setup) for Host preparation and a first navigation. Keep Chromium's sandbox enabled; the [explicit sandbox option](command-reference.md#webui) is available for deployments that require disabling it.
+All Projects share one browser instance/profile at `<data_root>/browsers/profile`; there is no separate profile-path setting. Follow [first-time browser setup](host-browser.md#first-time-setup) for Host preparation and a first navigation. Keep Chromium's sandbox enabled; the [explicit sandbox option](command-reference.md#webui) is available for deployments that require disabling it.
 
 ### WebUI allowed origins
 
@@ -320,7 +320,7 @@ webui:
 
 Non-default ports are significant. Default ports and a trailing `/` are normalized. Credentials, paths, query strings, fragments, and partial wildcards are invalid. Literal `"*"` admits any request address and removes Host/DNS-rebinding protection; prefer exact origins.
 
-This controls request-address admission, not CORS. Authentication and same-origin checks remain; listed origins cannot call each other's APIs. A configuration reload does not change an active listener. See [reverse proxies](webui.md#reverse-proxies-and-public-addresses).
+This controls request-address admission, not CORS. Authentication and same-origin checks remain; listed origins cannot call each other's APIs. A configuration reload does not change an active listener. See [reverse proxies](running-webui.md#reverse-proxies-and-public-addresses).
 
 ### WebUI Sidekick
 

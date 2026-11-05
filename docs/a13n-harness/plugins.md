@@ -25,7 +25,7 @@ Middleware surrounds the complete Run. The following plugin emits an observation
 
 ### Wrap Execution and Emit Observations
 
-Save this as `plugin_demo.py` and run `python plugin_demo.py`. The assertions check both observations and the final output.
+Save this as `plugin_demo.py` and run `uv run python plugin_demo.py`. The assertions check both observations and the final output.
 
 ```python
 import asyncio
@@ -374,7 +374,7 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-Run `python environment_extension_demo.py`; expect `Extension example completed. Marker removed.` The first file operation prepares the mount. Entering an extension alone does not prepare targets; setup that needs a family ready can explicitly call `context.environment.ensure_ready(EnvironmentReadinessRequirement(operations=frozenset({"files"})))` after importing that requirement from `a13n_harness.environment`.
+Run `uv run python environment_extension_demo.py`; expect `Extension example completed. Marker removed.` The first file operation prepares the mount. Entering an extension alone does not prepare targets; setup that needs a family ready can explicitly call `context.environment.ensure_ready(EnvironmentReadinessRequirement(operations=frozenset({"files"})))` after importing that requirement from `a13n_harness.environment`.
 
 Callbacks enter in registration order and exit in reverse. `on_exit` runs after successful entry, including later failure or cancellation. If `on_enter` itself fails partway through setup, that callback owns cleanup of its partial work.
 

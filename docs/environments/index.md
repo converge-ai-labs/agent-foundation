@@ -42,7 +42,7 @@ Choose **Envd Execution** when you need the general execution interface, includi
 | Envd           | `http_envd`      | An existing daemon over HTTP(S)                              |
 | Envd           | `websocket_envd` | A daemon reverse-connected to a Host-owned WebSocket ingress |
 
-For cloud account and runtime choices, see [Cloud Providers](providers.md#cloud-providers). Docker, E2B, Daytona, Modal, Vercel, and Sprites can provide desktop access with compatible Envd runtimes. Follow [desktop setup](../a13n-service/environments.md#computer-use) to prepare the image, template, snapshot, or Sprite installation. You can also [try HTTP and WebSocket locally](remote-envd.md) before using a cloud account.
+For cloud account and runtime choices, see [Cloud Providers](cloud-providers.md#cloud-providers). Docker, E2B, Daytona, Modal, Vercel, and Sprites can provide desktop access with compatible Envd runtimes. Follow [desktop setup](../a13n-service/environments.md#computer-use) to prepare the image, template, snapshot, or Sprite installation. You can also [try HTTP and WebSocket locally](remote-envd.md) before using a cloud account.
 
 ## Management, connection, and execution
 

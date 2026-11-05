@@ -41,18 +41,18 @@ Build once with `HarnessBuilder`, then call `run()` for a terminal result or `st
 
 Choose the next guide by the task you want the Agent to perform:
 
-| Task                                           | Guide                                                             |
-| ---------------------------------------------- | ----------------------------------------------------------------- |
-| Connect a model account                        | [Models](models.md) and [authentication](model-authentication.md) |
-| Call application functions                     | [Tools and dependencies](tools-and-dependencies.md)               |
-| Ask the user or request approval               | [Human-in-the-loop tools](human-in-the-loop.md)                   |
-| Accept files or return a typed result          | [Inputs and outputs](inputs-and-outputs.md)                       |
-| Understand images, audio, video, or media URLs | [Multimedia understanding](multimedia-understanding.md)           |
-| Hold a real-time voice conversation            | [Live](live.md)                                                   |
-| Read files and run commands                    | [Environments](environments.md)                                   |
-| Connect MCP tools and interactive results      | [MCP](mcp.md)                                                     |
-| Load reusable task instructions                | [Skills](skills.md)                                               |
-| Delegate work or orchestrate tools in Python   | [Delegation and CodeAct](delegation-and-codeact.md)               |
+| Task                                           | Guide                                                                                            |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Connect a model account                        | [Models](models.md) and [authentication](model-authentication.md)                                |
+| Call application functions                     | [Tools and dependencies](tools-and-dependencies.md)                                              |
+| Ask the user or request approval               | [Questions](human-in-the-loop.md) and [tool approvals](managed-tools.md#select-tool-permissions) |
+| Accept files or return a typed result          | [Inputs and outputs](inputs-and-outputs.md)                                                      |
+| Understand images, audio, video, or media URLs | [Multimedia understanding](multimedia-understanding.md)                                          |
+| Hold a real-time voice conversation            | [Live](live.md)                                                                                  |
+| Read files and run commands                    | [Environments](environments.md)                                                                  |
+| Connect MCP tools and interactive results      | [MCP](mcp.md)                                                                                    |
+| Load reusable task instructions                | [Skills](skills.md)                                                                              |
+| Delegate work or orchestrate tools in Python   | [Delegation and CodeAct](delegation-and-codeact.md)                                              |
 
 [Capabilities](capabilities.md) compose reusable features. Start with the ones your task requires; add more as you extend the application.
 
