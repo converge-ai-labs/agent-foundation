@@ -109,6 +109,10 @@ async def test_successor_worker_controls_original_shell(
             original_close = resource.close
 
             async def delayed_close():
+                if large_output:
+                    files = list(tmp_path.rglob("tool-result-*.txt"))
+                    assert len(files) == 1
+                    assert files[0].read_text() == "ready" + "0" * 80000 + "done:accepted"
                 cleanup_started.set()
                 await cleanup_allowed.wait()
                 await original_close()
@@ -235,19 +239,25 @@ async def test_successor_worker_controls_original_shell(
             cleanup_allowed.set()
             async with asyncio.timeout(5):
                 await owner.join()
-            assert (await stop_environment()).status_code == 202
             result = await successor_runtime.executions.result(origin.thread_id, record.execution_id)
             assert result.record.status == "succeeded", result
             if large_output:
-                # Terminal results retain the ordinary model-output disclosure.
-                assert result.result["stdout"]["text"].startswith("ready")
-                assert result.result["stdout"]["text"].endswith("done:accepted")
-                assert result.result["stdout"]["produced_bytes"] == 80018
-                assert result.result["stdout"]["available_end"] == 80018
-                assert result.result["disclosure"]["truncated"]
-                assert result.result["disclosure"]["content_complete"]
+                # Terminal results retain the preview and temporary-file metadata,
+                # not a second full log in the execution result.
+                stdout = result.result["stdout"]
+                assert stdout["text"].startswith("ready")
+                assert not stdout["content_complete"]
+                assert stdout["produced_bytes"] == 80018
+                assert stdout["available_end"] == 80018
+                assert stdout["offload"]["path"] is not None
+                assert stdout["offload"]["content_complete"]
+                assert stdout["offload"]["bytes"] == 80018
+                # Run cleanup closes the existing best-effort sink. The completed
+                # Service attempt may no longer authorize its filesystem removal.
+                assert resource.controller._context._shell_output_spill_store._closed
             else:
                 assert result.result["stdout"]["text"] == "readydone:accepted"
+            assert (await stop_environment()).status_code == 202
             assert resource.identity == native_handle.identity
             assert resource._closed
             assert routed == ["input"] if cached else {"describe", "inspect", "wait", "input"} <= set(routed)

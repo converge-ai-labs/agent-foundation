@@ -16,6 +16,14 @@ class ProcessStatusProjection(TypedDict):
     cleanup: str | None
 
 
+class ShellOutputFile(TypedDict):
+    path: str | None
+    bytes: int
+    content_complete: bool
+    reason: str | None
+    hint: str
+
+
 class OutputPageProjection(TypedDict):
     requested_offset: int
     start_offset: int
@@ -31,6 +39,7 @@ class OutputPageProjection(TypedDict):
     content_complete: bool
     omitted_before_bytes: int
     text: str
+    offload: NotRequired[ShellOutputFile]
 
 
 class ProcessSummaryProjection(TypedDict):
