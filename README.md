@@ -4,23 +4,44 @@
 
 **Build, run, and manage AI agents at scale on your own infrastructure.**
 
-a13n is an open-source managed agent service. Deploy Service on your infrastructure and you get a Console for your team and an API for your application. Configure an agent in Console, try it in a conversation, then call the same agent from your backend.
+a13n is an open-source service for long-running agents on your own infrastructure. Choose the model, give the agent instructions and tools, and send it work through an API. a13n runs the agent, saves its progress, and keeps working after your application disconnects.
 
-You operate the deployment. Service manages execution and keeps a record of each run:
+[Run your first agent](docs/a13n-service/get-started.md) · [Connect your application](docs/a13n-service/connect-application.md) · [Embed Harness in Python](docs/a13n-harness/getting-started.md)
 
-- **Run work in the background.** Once Service accepts a task, your client can disconnect and return later for the result.
-- **Recover interrupted work.** If a worker fails, another worker can resume the run from a saved checkpoint.
-- **Inspect a run.** In Console, see the agent’s reply, the tools it called, and the model usage and cost for the run.
+## Give an agent a task
 
-Choose your [model](docs/a13n-service/models.md), [sandbox](docs/a13n-service/environments.md), [search](docs/a13n-service/tools.md#web-search-and-scrape), and [memory](docs/a13n-service/memory.md) providers. Bring your own keys.
+A support team wants to know which issues account for the most tickets. Give an agent access to the ticket export and a sandbox. Your backend can submit the analysis with the [Python SDK](https://github.com/converge-ai-labs/a13n-sdk-python#quick-start):
 
-[![Console showing six managed agents, their model providers, and status](.github/assets/console-managed-agents.jpg)](.github/assets/console-managed-agents.jpg)
+```python
+from a13n import Client
 
-Console with fictional demo data. See [run details from a scripted demo](.github/assets/console-run-details.jpg) and [workspace usage](.github/assets/console-usage.jpg).
 
-## Run your first agent
+async def analyze_tickets(service_url, api_key, agent_id):
+    async with Client(service_url, api_key) as client:
+        analyst = client.agents(agent_id)
+        task = await analyst.start(
+            "Read support-tickets.csv, count tickets by issue, "
+            "and save the findings and recommended next steps to support-summary.md."
+        )
+        outcome = await task.result()
+        return outcome
+```
 
-With Docker and Docker Compose installed, start Service locally:
+In this scripted demo, the agent reads 120 tickets, counts them with a shell command, and writes the report. The largest category is login and account access, with 48 tickets. Console shows the tool calls behind that finding alongside the final answer.
+
+[![Console run showing the ticket export, shell command, saved report, and issue counts](.github/assets/console-run-details.jpg)](.github/assets/console-run-details.jpg)
+
+## What Service manages
+
+- **Execution and recovery.** Your application can stream a run or return later for the result. If a worker fails, another worker can resume from a committed checkpoint.
+- **Conversations and approvals.** Send follow-ups to the same thread. When a tool needs approval, the run waits for a decision from Console or your application.
+- **Access and usage.** Give team members and applications access to agents in a workspace. Inspect individual runs in Console and track [workspace usage and cost](.github/assets/console-usage.jpg).
+
+You operate Service and choose the [model](docs/a13n-service/models.md), [sandbox](docs/a13n-service/environments.md), [search](docs/a13n-service/tools.md#web-search-and-scrape), and [memory](docs/a13n-service/memory.md) providers.
+
+## Get started
+
+Start Service and its bundled Console locally with Docker Compose:
 
 ```bash
 mkdir a13n-service && cd a13n-service
@@ -28,34 +49,9 @@ curl -fL https://raw.githubusercontent.com/converge-ai-labs/agent-foundation/mai
 docker compose -f a13n-service.yaml up -d --wait --pull always
 ```
 
-Open <http://127.0.0.1:8080>:
+Open <http://127.0.0.1:8080>, connect a model, and [create your first agent](docs/a13n-service/get-started.md#create-and-try-an-agent). Test it in Console, then select **Connect to app** for the connection details. Call it through the [HTTP API](docs/a13n-service/connect-application.md) or a [Python, TypeScript, Go, or Rust SDK](docs/a13n-service/sdks.md).
 
-1. Create your administrator account.
-2. In **Models**, select **Add model** and configure a model using an API key or an eligible [ChatGPT subscription](docs/a13n-service/models.md#chatgpt-subscription-provider).
-3. In **Agents → Create manually**, name your agent `Project notes`, select the model, and give it these instructions: `Turn project notes into two concrete next steps.` Select **Create agent**.
-4. Select **Try agent** and send: `Draft ready; review pending; release planned for Friday.` Read the two next steps, then ask the agent to make the first one more specific.
-
-This example needs only a model and instructions. The [Service quickstart](docs/a13n-service/get-started.md) covers setup and troubleshooting. The [Compose guide](deploy/docker/compose/README.md) explains the included PostgreSQL and Redis services and how Service uses the host Docker Engine for agent environments.
-
-## Call the same agent from your application
-
-Open **Connect to app** on the agent you just tested. Copy its ID and Service URL, and create a workspace API key for your backend. With the [Python SDK](https://github.com/converge-ai-labs/a13n-sdk-python#quick-start) installed, an async function in your backend can send fresh notes to that agent:
-
-```python
-from a13n import Client
-
-
-async def get_next_steps(service_url, api_key, agent_id, notes):
-    async with Client(service_url, api_key) as client:
-        interaction = await client.agents(agent_id).start(notes)
-        return await interaction.result()
-```
-
-The result includes the run status and, for a completed text response, the agent’s reply in `text`. You can also use [TypeScript, Go, or Rust](docs/a13n-service/sdks.md), or [call the HTTP API directly](docs/a13n-service/connect-application.md) to submit work, follow progress, and continue a conversation.
-
-## Deploy to Kubernetes
-
-Deploy to Kubernetes with our [Helm chart](deploy/kubernetes/README.md#other-clusters). Configure API and worker replicas and shared storage for [high availability](docs/a13n-service/operations.md#process-roles).
+For a shared deployment, see the [Compose guide](deploy/docker/compose/README.md) or [Kubernetes Helm chart](deploy/kubernetes/README.md#other-clusters).
 
 ## Use Harness directly
 
