@@ -183,12 +183,19 @@ async def test_kubernetes_failed_preparation_has_native_evidence_and_cleans_up(s
                 if not pods or not pods[0]["status"]:
                     return None
                 status = pods[0]["status"]
+                if fault == "startup":
+                    # IDs and timestamps can contain "23" before the container has exited.
+                    exited = any(
+                        container["name"] == recipe["execution_container"]
+                        and container["state"].get("terminated", {}).get("exitCode") == 23
+                        for container in status.get("containerStatuses", [])
+                    )
+                    return native if exited else None
                 evidence = str(status) + str(native["events"])
                 expected = {
                     "image": "ErrImageNeverPull",
                     "scheduling": "Unschedulable",
                     "storage": "not found",
-                    "startup": "23",
                 }[fault]
                 return native if expected in evidence else None
 
