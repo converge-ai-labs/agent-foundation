@@ -39,8 +39,8 @@ from sqlalchemy.engine import make_url
 ROOT = Path(__file__).resolve().parents[2]
 CLI = Path(sys.executable).with_name("a13n-service")
 EMAIL, PASSWORD = "e2e@example.com", "e2e-fixture-password"
-# The shortest lease the Service accepts; every other interval is set well below it.
-LEASE_SECONDS = 3
+# Leave room for database heartbeats while CI starts competing Service processes.
+LEASE_SECONDS = 10
 DRAIN_SECONDS = 8
 STARTUP_SECONDS = 60
 
@@ -130,7 +130,7 @@ slots = {worker_slots}
 lease_seconds = {LEASE_SECONDS}
 scan_seconds = 0.2
 # This interval also bounds the complete database heartbeat operation.
-authority_seconds = 0.5
+authority_seconds = 1.0
 drain_seconds = {DRAIN_SECONDS}
 [control]
 scan_seconds = 0.2

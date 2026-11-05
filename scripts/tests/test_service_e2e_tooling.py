@@ -35,7 +35,8 @@ def test_parallel_cluster_setup_preserves_failures(tmp_path, job, status):
     start = names.index("Start the pinned cluster alongside image builds")
     ready = names.index("Require successful cluster creation")
     if job == "helm":
-        assert start < ready < names.index("Build both images while installing the Service and bootstrapping")
+        assert start < names.index("Build both checkout images alongside cluster creation") < ready
+        assert ready < names.index("Install the Service, bootstrap and verify a native run")
     else:
         assert start < names.index("Build the checkout sandbox with reusable layers") < ready
     assert next(step for step in steps if step.get("uses") == "helm/kind-action@v1")["with"]["install_only"]
@@ -267,7 +268,7 @@ def test_the_e2e_service_configuration_is_valid(tmp_path, monkeypatch, worker_sl
     if kubernetes:
         assert journey.environments.kubernetes_clusters["e2e"].ownership_id == "e2e"
     assert journey.worker.slots == worker_slots
-    assert journey.worker.authority_seconds == 0.5
+    assert journey.worker.authority_seconds == 1.0
     assert journey.telemetry.log_format == "json"
     assert journey.worker.lease_seconds == LEASE_SECONDS and journey.server.tls_certificate == stores.certificate
 
