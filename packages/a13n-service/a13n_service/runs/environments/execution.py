@@ -8,6 +8,7 @@ from dataclasses import dataclass
 import anyio
 from a13n_harness import EnvironmentMount as HarnessMount
 from a13n_harness import RunConfiguration
+from a13n_harness.environment.commands import BoundProcessHandle
 from a13n_harness.environment.computer import ComputerCall
 from a13n_harness.environment.execution import EnvironmentConnector, EnvironmentExecution
 from a13n_harness.environment.files import FileOperator
@@ -509,6 +510,9 @@ class _CacheExecution(EnvironmentExecution):
 
     async def check_ready(self, operations: frozenset[EnvironmentOperationFamily]) -> None:
         await self._execution.check_ready(operations)
+
+    async def cleanup_process(self, handle: BoundProcessHandle) -> None:
+        await self._execution.cleanup_process(handle)
 
     async def close(self) -> None:
         try:

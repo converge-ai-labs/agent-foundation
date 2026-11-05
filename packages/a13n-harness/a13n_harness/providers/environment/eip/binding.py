@@ -210,7 +210,7 @@ class EIPEnvironmentSession:
         )
 
     async def close(self) -> None:
-        if not await self._session.prepare_close():
+        if not await self._session.prepare_cleanup():
             # The Host fenced this logical carrier. Native cleanup cannot be
             # dispatched on it and must never follow a successor attachment.
             return

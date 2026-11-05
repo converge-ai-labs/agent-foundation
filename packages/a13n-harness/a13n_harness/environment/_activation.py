@@ -9,6 +9,7 @@ from itertools import count
 
 from a13n_logging import get_logger
 
+from a13n_harness.environment.commands import BoundProcessHandle
 from a13n_harness.environment.computer import ComputerCall
 from a13n_harness.environment.execution import EnvironmentConnector, EnvironmentExecution
 from a13n_harness.environment.models import (
@@ -139,6 +140,13 @@ class _MountExecution:
                     "Environment target changed within an execution.", code="environment_stale_mount"
                 )
             self._last_descriptor = descriptor
+
+    async def cleanup_process(self, handle: BoundProcessHandle) -> None:
+        # A handle can only belong to an already acquired execution. Teardown
+        # must not enter the cached activation or readiness path again.
+        if self._execution is None:
+            raise EnvironmentError("Process execution is unavailable", code="environment_stale_mount")
+        await self._execution.cleanup_process(handle)
 
     async def _open(self) -> None:
         self._observe("started")

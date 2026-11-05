@@ -337,8 +337,28 @@ class EIPSession:
 
     async def prepare_close(self) -> bool:
         """Whether native cleanup still belongs to this carrier."""
-        if not self._closed and self._owner_current is not None and not await self._owner_current():
+        if (
+            self._close_task is None
+            and not self._detached
+            and self._owner_current is not None
+            and not await self._owner_current()
+        ):
             self.detach_host_binding()
+        return not self._detached
+
+    async def prepare_cleanup(self) -> bool:
+        """Retire local observations when their original carrier is confirmed lost.
+
+        This explicit teardown path does not certify a remote Session close.
+        Ordinary close() still reports an unexpectedly disconnected Device.
+        """
+        if not await self.prepare_close():
+            return False
+        if self._close_task is None and self._device.is_closed:
+            # Preserve failures of an attempted close; a caller must not convert
+            # that failure into successful cleanup by calling this afterwards.
+            self._detached = True
+            self._finish()
         return not self._detached
 
     @property
