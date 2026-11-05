@@ -1,0 +1,316 @@
+.figure {
+  margin: 0 0 3rem;
+  scroll-margin-top: 4.5rem;
+  container-type: inline-size;
+  --paper: #fbfbfd;
+  --field: #fff;
+  --ink: #1f2530;
+  --quiet: #545e68;
+  --frame: #b1b4bd;
+  --rule: #d4d6dd;
+  --dots: #dfe1e7;
+  --terminal: #242534;
+  --request-wire: #f45632;
+  --exec-wire: #5f48ec;
+  --state-wire: #008b73;
+  --resource-wire: #70629d;
+  --processor: #5036d3;
+  --mint: #69e1ba;
+  --store-stroke: #28675b;
+  --checkpoint: #f3c63c;
+}
+:global(.dark) .figure {
+  --paper: #1c2026;
+  --field: #22262d;
+  --ink: #f0f2ef;
+  --quiet: #b4bfc4;
+  --frame: #606a73;
+  --rule: #495159;
+  --dots: #4b535d;
+  --terminal: #2b303b;
+  --request-wire: #ff8667;
+  --exec-wire: #a08aff;
+  --state-wire: #54cfad;
+  --resource-wire: #a094c5;
+  --processor: #5338c5;
+  --store-stroke: #79c8b3;
+}
+.plate {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1024 / 521;
+  background: var(--paper);
+  color: var(--ink);
+  fill: var(--ink);
+  font-family: var(--a13n-font), system-ui, sans-serif;
+}
+.compact {
+  display: none;
+}
+.boundary,
+.resourceBounds {
+  fill: var(--field);
+  stroke: var(--frame);
+  stroke-width: 0.9;
+}
+.resourceBounds {
+  fill: none;
+  stroke: var(--rule);
+}
+.divider {
+  fill: none;
+  stroke: var(--rule);
+  stroke-width: 1;
+}
+.sectionTitle {
+  font-size: 15px;
+  font-weight: 490;
+  letter-spacing: -0.012em;
+  fill: var(--quiet);
+}
+.serviceTitle {
+  font-family: var(--a13n-font-brand), system-ui, sans-serif;
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: -0.048em;
+}
+.clientTitle,
+.nodeName,
+.hostTitle,
+.chartTitle {
+  font-weight: 495;
+  letter-spacing: -0.033em;
+}
+.clientTitle,
+.nodeName {
+  font-size: 20px;
+}
+.resourceName,
+.hostTitle {
+  font-size: 18px;
+  letter-spacing: -0.025em;
+  font-weight: 480;
+}
+.deployment,
+.role,
+.workerRole,
+.wireLabel,
+.streamLabel,
+.method,
+.endpoint,
+.attempt,
+.code,
+.embedded {
+  font-family: var(--font-mono), monospace;
+}
+.role,
+.deployment,
+.workerRole {
+  font-size: 12px;
+  fill: var(--quiet);
+}
+.note,
+.code {
+  font-size: 13px;
+  fill: var(--quiet);
+}
+.code {
+  font-size: 11.5px;
+}
+.processor {
+  fill: var(--processor);
+}
+.workerRole {
+  fill: #e3daff;
+}
+.harness {
+  fill: #fff;
+  font-size: 31px;
+  font-weight: 530;
+  letter-spacing: -0.038em;
+}
+.method {
+  font-size: 11px;
+  fill: #ff9475;
+}
+.endpoint {
+  font-size: 12px;
+  fill: #f7f6f5;
+}
+.wires {
+  fill: none;
+  stroke-linejoin: round;
+  stroke-linecap: butt;
+}
+.requestWire {
+  stroke: var(--request-wire);
+  stroke-width: 3;
+}
+.execWire {
+  stroke: var(--exec-wire);
+  stroke-width: 3.2;
+}
+.stateWire {
+  stroke: var(--state-wire);
+  stroke-width: 2.7;
+}
+.resourceWire {
+  stroke: var(--resource-wire);
+  stroke-width: 1.5;
+}
+.stream {
+  stroke-width: 1.4;
+  stroke-dasharray: 3 3;
+}
+.wireLabel,
+.streamLabel {
+  font-size: 11px;
+  text-anchor: middle;
+  fill: var(--quiet);
+  paint-order: stroke fill;
+  stroke: var(--field);
+  stroke-width: 5;
+  stroke-linejoin: round;
+}
+.streamLabel {
+  font-size: 9.5px;
+  stroke: var(--paper);
+}
+.resourceIcon {
+  color: var(--ink);
+}
+.chartTitle {
+  font-size: 17px;
+}
+.chartNotes,
+.attempt {
+  font-size: 11px;
+  fill: var(--quiet);
+}
+.axis {
+  stroke: var(--rule);
+}
+.firstAttempt {
+  stroke: var(--ink);
+  stroke-width: 2.75;
+}
+.nextAttempt {
+  stroke: var(--exec-wire);
+  stroke-width: 3.4;
+}
+.restore {
+  stroke: var(--state-wire);
+  stroke-width: 1.6;
+  stroke-dasharray: 3 3;
+}
+.saved {
+  fill: var(--checkpoint);
+  stroke: var(--ink);
+  stroke-width: 1.3;
+}
+.resumed {
+  fill: var(--field);
+  stroke: var(--exec-wire);
+  stroke-width: 2;
+}
+.failure {
+  stroke: var(--ink);
+  stroke-width: 1.6;
+}
+.embedded {
+  fill: var(--exec-wire);
+  font-size: 11.5px;
+}
+.embedMark {
+  color: var(--exec-wire);
+}
+.hit {
+  fill: transparent;
+  stroke: transparent;
+  stroke-width: 2;
+}
+.link:focus-visible {
+  outline: none;
+}
+.link:focus-visible .hit {
+  stroke: var(--exec-wire);
+}
+.link:is(:hover, :focus-visible)
+  :is(
+    .clientTitle,
+    .serviceTitle,
+    .nodeName,
+    .resourceName,
+    .role,
+    .hostTitle,
+    .chartTitle,
+    .harness,
+    .workerRole
+  ) {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+@container (max-width:680px) {
+  .plate {
+    aspect-ratio: 360 / 816;
+    max-width: 465px;
+    margin-inline: auto;
+  }
+  .wide {
+    display: none;
+  }
+  .compact {
+    display: inline;
+  }
+  .serviceTitle {
+    font-size: 23px;
+  }
+  .harness {
+    font-size: 18px;
+  }
+  .clientTitle,
+  .nodeName {
+    font-size: 16px;
+  }
+  .note,
+  .deployment,
+  .role,
+  .workerRole {
+    font-size: 11px;
+  }
+  .wireLabel,
+  .code {
+    font-size: 10px;
+  }
+  .sectionTitle,
+  .hostTitle,
+  .chartTitle {
+    font-size: 15px;
+  }
+  .resourceName {
+    font-size: 14px;
+  }
+  .chartNotes,
+  .attempt {
+    font-size: 10.5px;
+  }
+  .requestWire,
+  .execWire {
+    stroke-width: 2.6;
+  }
+  .stateWire {
+    stroke-width: 2.3;
+  }
+}
+
+.streamTag {
+  display: none;
+  fill: var(--quiet);
+  font:
+    7.5px var(--font-mono),
+    monospace;
+}
+.compact .streamTag {
+  display: inline;
+}

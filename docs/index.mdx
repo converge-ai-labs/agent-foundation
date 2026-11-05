@@ -9,9 +9,7 @@ Build and run agents on your own infrastructure. Configure and test an agent in 
 
 </Intro>
 
-<Section title="Architecture overview">
-<ArchitectureOverview alt="Service and Harness connect SDKs, the HTTP API, Console, and Harness UI with environments, memory, models, web data, and MCP connections." />
-</Section>
+<RuntimeMap alt="Console and SDK or HTTP clients connect to the Service API. The control role persists work in PostgreSQL. A worker leases a run, executes it with Harness, and saves checkpoints to object storage. A later attempt can resume from a saved checkpoint after lease expiry. Harness UI and Python applications can also embed Harness directly." />
 
 <Section title="Start with a task">
 <Rows>
@@ -41,6 +39,10 @@ Connect a model and work with an agent in your repository. The terminal and brow
 
 </Product>
 </Products>
+</Section>
+
+<Section id="providers-and-integrations" title="Providers and integrations">
+<ProviderMap alt="Bring your own stack. Self-host a13n with your choice of models, environments, web data providers, and app connections." />
 </Section>
 
 <Section title="Building blocks">
