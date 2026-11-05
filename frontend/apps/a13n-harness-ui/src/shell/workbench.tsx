@@ -1,3 +1,5 @@
+import { useAppearance } from "../appearance/react";
+import { AppearanceSettings } from "../configuration/appearance";
 import { useTranslation } from "../i18n";
 import { UsagePage } from "../usage/page";
 import { ShareButton } from "../sharing";
@@ -136,7 +138,7 @@ function WorkbenchContent({
   const voiceSettings = useVoiceSettings();
   const statusQuery = useStatus();
   const status = statusQuery.data ?? initialStatus;
-  const [theme, setTheme] = useState(() => readPreference("theme", "light"));
+  const { dark, store: appearance } = useAppearance();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
     () => readPreference("sidebar", "expanded") === "collapsed",
   );
@@ -200,10 +202,6 @@ function WorkbenchContent({
   useEffect(() => {
     setMenu(false);
   }, [location.key]);
-  useEffect(() => {
-    document.documentElement.classList.toggle("dark", theme === "dark");
-    writePreference("theme", theme);
-  }, [theme]);
   useEffect(() => {
     writePreference("display-name", profile.display_name);
     writePreference("color", profile.color);
@@ -301,10 +299,10 @@ function WorkbenchContent({
             </MenuItem>
             <MenuSeparator />
             <MenuItem
-              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+              onClick={() => appearance.setTheme(dark ? "light" : "dark")}
             >
-              {theme === "dark" ? <Sun /> : <Moon />}
-              {theme === "dark" ? t("Light appearance") : t("Dark appearance")}
+              {dark ? <Sun /> : <Moon />}
+              {dark ? t("Light appearance") : t("Dark appearance")}
             </MenuItem>
             <MenuCheckboxItem
               checked={debug.enabled}
@@ -404,22 +402,24 @@ function WorkbenchContent({
                   size="sm"
                   onClick={() => void results.tracker?.refresh()}
                 >
-                  Retry updates
+                  {t("Retry updates")}
                 </Button>
               </div>
             )}
             {status.access === "dangerous_bypass" && (
               <div className={styles.notice}>
-                Server login is disabled. Anyone who can reach this server can
-                use it.
+                {t(
+                  "Server login is disabled. Anyone who can reach this server can use it.",
+                )}
               </div>
             )}
             {status.app?.candidate_error_message && (
               <div role="alert" className={styles.notice}>
                 <details>
                   <summary>
-                    Settings couldn't be updated. Previous settings are still
-                    active.
+                    {t(
+                      "Settings couldn't be updated. Previous settings are still active.",
+                    )}
                   </summary>
                   <p>{status.app.candidate_error_message}</p>
                 </details>
@@ -428,7 +428,7 @@ function WorkbenchContent({
                   size="sm"
                   render={<Link to="/settings" />}
                 >
-                  Settings
+                  {t("Settings")}
                 </Button>
               </div>
             )}
@@ -454,17 +454,17 @@ function WorkbenchContent({
                       ),
                   )}
                   ownId={live.presence?.participant_id}
-                  threadTitle="this page"
+                  threadTitle={t("this page")}
                 />
                 {debug.enabled && (
                   <button
                     type="button"
                     className={styles.debugIndicator}
                     onClick={() => debug.setEnabled(false)}
-                    title="Turn off Debug mode"
+                    title={t("Turn off Debug mode")}
                   >
                     <Bug size={14} />
-                    Debug
+                    {t("Debug")}
                   </button>
                 )}
               </>
@@ -521,7 +521,7 @@ function WorkbenchContent({
                 path="/"
                 element={
                   firstUseEntry && setup.isPending ? (
-                    <p role="status">Checking setup…</p>
+                    <p role="status">{t("Checking setup\u2026")}</p>
                   ) : enterSetup ? (
                     <Navigate to="/setup" replace />
                   ) : (
@@ -557,6 +557,10 @@ function WorkbenchContent({
                 <Route path="/projects" element={<ProjectsPage />} />
                 <Route path="/projects/:projectId" element={<ProjectPage />} />
                 <Route path="/settings" element={<GeneralSettings />} />
+                <Route
+                  path="/settings/appearance"
+                  element={<AppearanceSettings />}
+                />
                 <Route
                   path="/settings/notifications"
                   element={<Navigate to="/settings#notifications" replace />}
@@ -600,10 +604,12 @@ function WorkbenchContent({
                 element={
                   <div className={styles.notFound}>
                     <Compass size={32} aria-hidden="true" />
-                    <h2>Page not found</h2>
-                    <p>This address doesn't match a page in Harness UI.</p>
+                    <h2>{t("Page not found")}</h2>
+                    <p>
+                      {t("This address doesn't match a page in Harness UI.")}
+                    </p>
                     <Button variant="outline" render={<Link to="/" />}>
-                      Go to home
+                      {t("Go to home")}
                     </Button>
                   </div>
                 }
@@ -615,11 +621,11 @@ function WorkbenchContent({
       <ModalFrame
         open={peopleOpen}
         onOpenChange={setPeopleOpen}
-        title="People in this workspace"
-        closeLabel="Close"
+        title={t("People in this workspace")}
+        closeLabel={t("Close")}
       >
         <div className={styles.stack}>
-          <SettingsSection title="Your profile">
+          <SettingsSection title={t("Your profile")}>
             <form
               className={styles.profileForm}
               onSubmit={(event) => {
@@ -633,16 +639,16 @@ function WorkbenchContent({
                 setPeopleOpen(false);
               }}
             >
-              <SettingsRow label="Name" controlId="workspace-display-name">
+              <SettingsRow label={t("Name")} controlId="workspace-display-name">
                 <div className={styles.profileNameControl}>
                   <Input
-                    aria-label="Your display name"
+                    aria-label={t("Your display name")}
                     id="workspace-display-name"
                     value={displayName}
                     onChange={(event) => setDisplayName(event.target.value)}
                   />
                   <Button
-                    aria-label="Save name"
+                    aria-label={t("Save name")}
                     type="submit"
                     variant="outline"
                     disabled={
@@ -650,42 +656,53 @@ function WorkbenchContent({
                       Array.from(displayName.trim()).length > 80
                     }
                   >
-                    Save
+                    {t("Save")}
                   </Button>
                 </div>
               </SettingsRow>
             </form>
             <ChoiceField
-              label="Color"
+              label={t("Color")}
               value={profile.color}
               onValueChange={(color) => updateProfile({ ...profile, color })}
-              options={profileColors}
+              options={profileColors.map((color) => ({
+                ...color,
+                label: t(color.label),
+              }))}
             />
-            <SettingsRow label="Presence">
-              <span>{live.presenceState}</span>
+            <SettingsRow label={t("Presence")}>
+              <span>{t(live.presenceState)}</span>
             </SettingsRow>
           </SettingsSection>
           <details className={styles.details}>
-            <summary>About this instance</summary>
+            <summary>{t("About this instance")}</summary>
             <p>
-              Version {status.version} · {status.app?.state ?? "Connected"}
+              {t("Version")} {status.version} ·{" "}
+              {status.app?.state ?? t("Connected")}
             </p>
             <p>
-              {status.features?.host_files
-                ? "Computer sharing is on for this server."
-                : "Computer sharing is off. Restart the server without --no-share-computer to turn it on."}
+              {t(
+                status.features?.host_files
+                  ? "Computer sharing is on for this server."
+                  : "Computer sharing is off. Restart the server without --no-share-computer to turn it on.",
+              )}
             </p>
             {status.features?.host_files && !status.features?.host_git && (
-              <p>Git is unavailable on this server. Files remains available.</p>
+              <p>
+                {t(
+                  "Git is unavailable on this server. Files remains available.",
+                )}
+              </p>
             )}
             {status.features?.host_files && !status.features?.host_terminal && (
               <p>
-                Terminals aren't supported on this server. POSIX support is
-                required.
+                {t(
+                  "Terminals aren't supported on this server. POSIX support is required.",
+                )}
               </p>
             )}
           </details>
-          <SettingsSection title="People">
+          <SettingsSection title={t("People")}>
             {live.presence?.participants.map((participant) => {
               const own =
                 participant.participant_id === live.presence?.participant_id;
@@ -705,12 +722,14 @@ function WorkbenchContent({
                   <ParticipantAvatar participant={participant} />
                   <div className={styles.personInfo}>
                     <strong>
-                      {participant.display_name || "Anonymous"}
-                      {own && <span className={styles.personYou}> · You</span>}
+                      {participant.display_name || t("Anonymous")}
+                      {own && (
+                        <span className={styles.personYou}> · {t("You")}</span>
+                      )}
                     </strong>
                     <span>
-                      {participant.foreground ? "Active" : "Away"}
-                      {samePage ? " · This page" : ""}
+                      {t(participant.foreground ? "Active" : "Away")}
+                      {samePage ? ` · ${t("This page")}` : ""}
                     </span>
                     {participant.unavailable_reason && (
                       <span>{participant.unavailable_reason}</span>
@@ -720,11 +739,11 @@ function WorkbenchContent({
                     <Button
                       variant="ghost"
                       size="sm"
-                      aria-label="Open page"
+                      aria-label={t("Open page")}
                       render={<Link to={href} />}
                       onClick={() => setPeopleOpen(false)}
                     >
-                      Open
+                      {t("Open")}
                     </Button>
                   )}
                 </div>

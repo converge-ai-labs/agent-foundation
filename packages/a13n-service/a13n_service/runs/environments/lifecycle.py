@@ -41,6 +41,8 @@ from a13n_service.providers.environment.definition import EnvironmentManagementD
 from a13n_service.providers.environment.errors import observed_environment_state
 from a13n_service.providers.environment.management import EnvironmentProvider
 from a13n_service.providers.environment.metrics import MetricsLaunch
+from a13n_service.resources.environment_instances.access import require_usable_state as require_usable_state
+from a13n_service.resources.environment_instances.access import unusable as unusable
 from a13n_service.resources.environment_templates.service import read_template, resolve_template
 from a13n_service.resources.providers.service import (
     ResolvedProvider,
@@ -169,20 +171,6 @@ async def begin(session: AsyncSession, environment: EnvironmentRow, phase: Phase
 def supports(definition: EnvironmentManagementDefinition, phase: Literal["stopping", "deleting"]) -> bool:
     """Whether the type can take its instances through `phase`; an instance begun in any other would stick in it."""
     return definition.supports_stop if phase == "stopping" else definition.supports_destroy
-
-
-def unusable(environment: EnvironmentRow) -> bool:
-    """Whether a permanent failure refuses every new use of the instance until its cause is fixed or it is
-    deleted."""
-    return environment.failure is not None and environment.failure["permanent"]
-
-
-def require_usable_state(environment: EnvironmentRow) -> None:
-    """Refuse a new use, or a stop that would clear the failure, while a permanent failure makes the instance
-    unusable; the refusal names the failure."""
-    if unusable(environment):
-        assert environment.failure is not None
-        raise conflict("environment", environment.id, environment.failure["code"])
 
 
 def settled(environment: EnvironmentRow) -> bool:

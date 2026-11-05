@@ -102,14 +102,7 @@ async def _pump(runtime: Runtime, scope: Scope, transfer: Transfer, carrier: Str
                 # Keep the pair until close/commit/abort, cancellation or the deadline.
                 await asyncio.Future()
 
-    async def verify() -> None:
-        while True:
-            await asyncio.sleep(runtime.settings.client_environments.heartbeat_seconds)
-            await runtime.client_sessions.authorize(
-                scope.request.model_copy(update={"caller": transfer.caller}), transfer.actions
-            )
-
-    tasks = [asyncio.create_task(work()) for work in (upstream, downstream, verify)]
+    tasks = [asyncio.create_task(work()) for work in (upstream, downstream)]
     try:
         completed, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
         for task in completed:

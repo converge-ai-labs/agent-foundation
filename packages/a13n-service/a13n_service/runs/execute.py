@@ -57,8 +57,7 @@ from a13n_service.infra.db import short_session, transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.telemetry import attempt_observation
 from a13n_service.resources.agents import stored
-from a13n_service.resources.agents.service import load_revision
-from a13n_service.runs import agent, checkpoints, claim, compactions, deferred, inbox, inputs, placement
+from a13n_service.runs import agent, checkpoints, claim, compactions, deferred, definitions, inbox, inputs, placement
 from a13n_service.runs.accept import advance, delegation
 from a13n_service.runs.admission import CallContext
 from a13n_service.runs.agent import ResolvedAgent
@@ -78,6 +77,7 @@ from a13n_service.runs.coalesce import Coalescer
 from a13n_service.runs.compaction_model import CompactionRun, Selection
 from a13n_service.runs.contents import Contents
 from a13n_service.runs.display import DisplayFold, Snapshot, Tail, open_tool_calls
+from a13n_service.runs.dynamic_subagents import SpawnCapability
 from a13n_service.runs.environments.clients.recovery import Recovery as ClientRecovery
 from a13n_service.runs.environments.execution import EnvironmentUnavailable, open_mounts, prepare
 from a13n_service.runs.environments.lifecycle import public_message
@@ -120,6 +120,7 @@ class _Plan:
 
     session_id: str
     retain_tools: bool
+    subagent_controls: bool
     background_compaction: bool
     compaction_result: CompactionResult | None
     configuration: RunConfiguration
@@ -255,8 +256,10 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
         principal = await authorize_execution(session, runtime.access, run)
         scope = WorkspaceScope(run.organization_id, run.workspace_id)
         authority = ExecutionAuthority.model_validate(run.authority)
-        revision = await load_revision(session, run.agent_id, run.agent_revision_id)
         options = stored.require(RunOptions, run.options, kind="run", id=run.id)
+        revision = await definitions.resolve(
+            session, thread, run.agent_id, run.agent_revision_id, options.overrides, accepting=False
+        )
         resolved = await agent.resolve(
             session,
             principal,
@@ -270,6 +273,14 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
         assigned = [Offered.of(entry) for entry in await inbox.assigned_entries(session, run.id)]
         used = (await totals(session, run.id))["requests"]
         root = (await delegation(session, thread, run.id)).root_run_id
+        subagent_controls = (
+            await session.scalar(
+                select(ThreadRow.id)
+                .where(ThreadRow.origin_thread_id == thread.id, ThreadRow.origin == "child")
+                .limit(1)
+            )
+            is not None
+        )
         parent = await session.get(RunRow, run.parent_run_id) if run.parent_run_id is not None else None
         checkpoint = checkpoints.require_compatible(run)
         tail_pointer = checkpoints.TailPointer.model_validate(run.tail) if run.tail else None
@@ -317,7 +328,7 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
         memory_cursors = dict(run.memory_cursors)
         # Space organization keeps its memory-only surface and completes calls within the round.
         retain_tools = thread.purpose == "conversation"
-        root_compaction = thread.origin != "child" and retain_tools
+        root_compaction = thread.origin != "child" and thread.agent_snapshot is None and retain_tools
         background_compaction = root_compaction and resolved.config.background_compaction.enabled
     own, base, tail = await asyncio.gather(
         checkpoints.load_state(runtime.objects, checkpoint),
@@ -351,6 +362,7 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
         background_compaction=background_compaction,
         compaction_result=compaction.result if compaction is not None else None,
         retain_tools=retain_tools,
+        subagent_controls=subagent_controls,
         configuration=options.configuration or RunConfiguration(),
         request_context=RequestContext(options.context.headers if options.context else {}),
         source_entry_id=source_entry_id,
@@ -594,6 +606,13 @@ class _Attempt:
                         *([self.client_recovery] if self.client_recovery is not None else []),
                         InputBoundary(self.boundaries, self.offers.pending_notice),
                         *host.capabilities(node, retain_tools=self.plan.retain_tools),
+                        *(
+                            [SpawnCapability(self._operator(node).spawn, node.config)]
+                            if node.revision_id is not None
+                            and node.config.subagents.dynamic.enabled
+                            and self.plan.root_run_id == self.lease.run_id
+                            else []
+                        ),
                     ]
                     if node is root
                     else host.capabilities(node)
@@ -604,6 +623,7 @@ class _Attempt:
                 plugins=runtime.plugins,
                 instrumentation=runtime.instrumentation,
                 compaction=self.compaction,
+                subagent_controls=self.plan.subagent_controls,
             )
             live = await stack.enter_async_context(
                 ThreadStream(

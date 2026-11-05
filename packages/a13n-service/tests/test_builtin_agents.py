@@ -236,8 +236,7 @@ async def test_inline_builtin_instructions_apply_only_to_the_builtin_child(
         "coordinator",
         model,
         instructions="Role: coordinator",
-        subagent_mode="inline",
-        subagents={"helper": {"agent_id": head.json()["id"]}},
+        subagents={"mode": "inline", "named": {"helper": {"agent_id": head.json()["id"]}}},
     )
     scripted_model.call("delegate", {"subagent": "helper", "prompt": "compute"}, call_id="child", to="coordinator")
     scripted_model.say("42", to="worker")

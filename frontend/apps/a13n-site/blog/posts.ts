@@ -6,6 +6,12 @@ import { render } from "./markdown.ts";
 /** The site's posts/ directory: one folder per post, named by its slug. */
 export const POSTS_DIR = join(import.meta.dirname, "../posts");
 
+export interface SourceReport {
+  title: string;
+  url: string;
+  author: { name: string; url: string; avatar: string };
+}
+
 export interface Post {
   slug: string;
   title: string;
@@ -13,6 +19,8 @@ export interface Post {
   /** ISO date, YYYY-MM-DD */
   date: string;
   authors: string[];
+  /** Original report credited separately from the adapted article's authors. */
+  report?: SourceReport;
   minutes: number;
   html: string;
   /** The cover drawing's SVG markup, from cover.svg beside the post. */
@@ -84,5 +92,32 @@ function frontMatter(data: unknown, source: string) {
     description: text("description"),
     date,
     authors: authors.map((name: string) => name.trim()),
+    ...(meta.report === undefined
+      ? {}
+      : { report: sourceReport(meta.report, source) }),
+  };
+}
+
+function sourceReport(value: unknown, source: string): SourceReport {
+  const report = (value ?? {}) as Record<string, unknown>;
+  const author = (report.author ?? {}) as Record<string, unknown>;
+  const required = (value: unknown, key: string, url = false) => {
+    if (typeof value !== "string" || !value.trim())
+      throw new Error(`${source}: "report.${key}" must be a non-empty string`);
+    const text = value.trim();
+    if (url && !URL.canParse(text))
+      throw new Error(`${source}: "report.${key}" must be an absolute URL`);
+    if (url && new URL(text).protocol !== "https:")
+      throw new Error(`${source}: "report.${key}" must use HTTPS`);
+    return text;
+  };
+  return {
+    title: required(report.title, "title"),
+    url: required(report.url, "url", true),
+    author: {
+      name: required(author.name, "author.name"),
+      url: required(author.url, "author.url", true),
+      avatar: required(author.avatar, "author.avatar", true),
+    },
   };
 }

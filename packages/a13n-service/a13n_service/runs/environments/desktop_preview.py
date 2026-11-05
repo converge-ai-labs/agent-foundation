@@ -10,6 +10,7 @@ from a13n_service.infra.errors import ServiceError, conflict
 from a13n_service.runs.environments.access import find
 from a13n_service.runs.environments.adapters import close, execution_connector
 from a13n_service.runs.environments.desktop.access import target as provider_target
+from a13n_service.runs.environments.read_views import environment_view
 from a13n_service.runs.runtime import Runtime
 from a13n_service.tenancy.access import workspace_scope
 from a13n_service.tenancy.authorize import Principal
@@ -19,15 +20,9 @@ async def capture(runtime: Runtime, actor: Principal, workspace_id: str, identit
     async with short_session(runtime.storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "run")
         row = await find(session, scope, identity)
-        target = await provider_target(session, runtime, row, actor=actor)
-        if not row.provider_identity or row.provider_identity.get("type") not in {
-            "e2b",
-            "modal",
-            "daytona",
-            "vercel",
-            "sprites",
-        }:
+        if environment_view(row).desktop_preview != "supported":
             raise conflict("environment", identity, "desktop_preview_unsupported")
+        target = await provider_target(session, runtime, row, actor=actor)
     execution = None
     try:
         with anyio.fail_after(runtime.settings.providers.operation_seconds):

@@ -51,11 +51,15 @@ export function AccountMenu({
           closeDelay={150}
           render={
             compact ? (
-              <Button variant="ghost" size="icon-sm" className="mx-auto" />
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className={styles.railButton}
+              />
             ) : (
               <Button
                 variant="ghost"
-                className="h-auto w-full justify-start py-2"
+                className={`${styles.navigationRow} ${styles.accountTrigger}`}
               />
             )
           }
@@ -63,7 +67,7 @@ export function AccountMenu({
           <UserAvatar
             name={user.name}
             url={user.image_url}
-            className={compact ? "size-6" : undefined}
+            className={compact ? "size-6" : "size-7"}
           />
           {compact ? (
             <span className="sr-only">{user.name}</span>

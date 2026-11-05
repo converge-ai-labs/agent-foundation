@@ -11,19 +11,19 @@
 }
 .heading h2 {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   font-weight: 500;
   line-height: 28px;
 }
 .heading p {
   margin: 0;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .migration p {
   margin: 8px 0 0;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .rows {
   display: grid;
@@ -69,7 +69,7 @@
   border-radius: 4px;
   background: var(--a13n-elevated);
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   text-transform: capitalize;
 }
 .status {
@@ -107,7 +107,7 @@
 }
 .balanceValue {
   color: var(--a13n-text);
-  font-size: 16px;
+  font-size: calc(var(--a13n-text-body) * 16 / 14);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
@@ -133,14 +133,14 @@
   min-width: 0;
 }
 .identity strong {
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   font-weight: 500;
   overflow-wrap: anywhere;
 }
 .identity > span,
 .usage,
 .members {
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   color: var(--a13n-secondary);
 }
 .actions,
@@ -175,7 +175,7 @@
 }
 .quotaDetail {
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .meter {
   display: grid;
@@ -191,7 +191,7 @@
 }
 .meterHeading strong {
   color: var(--a13n-text);
-  font-size: 16px;
+  font-size: calc(var(--a13n-text-body) * 16 / 14);
   font-weight: 500;
 }
 .meterHeading > span:first-child {
@@ -223,7 +223,7 @@
 
 .migration summary {
   cursor: pointer;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   color: var(--a13n-text);
 }
 .members > span {
@@ -258,18 +258,18 @@
   overflow-wrap: anywhere;
 }
 .voucherDetails strong {
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   font-weight: 500;
 }
 .voucherDetails p {
   margin: 0;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 1.5;
 }
 .voucherDetails > span {
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .form {
   display: grid;
@@ -308,12 +308,12 @@
 .providerHeading h3,
 .groupFields h3 {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   font-weight: 500;
 }
 .providerHeading > span {
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .groupDetail {
   display: grid;
@@ -339,7 +339,7 @@
 .memberField > div > div > p {
   padding-block: 16px 0;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .member {
   padding: 12px;
@@ -361,7 +361,7 @@
 }
 .help {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   color: var(--a13n-secondary);
   line-height: 1.6;
 }
@@ -369,7 +369,7 @@
   display: flex;
   gap: 8px 16px;
   flex-wrap: wrap;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .modelLinks a {
   color: var(--a13n-text);
@@ -458,7 +458,7 @@
   border-top: 1px solid var(--a13n-border-soft);
 }
 .allowanceSummary {
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   font-variant-numeric: tabular-nums;
 }
 .expanded {
@@ -475,7 +475,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   font-weight: 500;
 }
 @media (max-width: 600px) {
@@ -496,7 +496,7 @@
 }
 .legacyUsage > summary {
   font-weight: 400;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 
 @media (max-width: 400px) {

@@ -50,7 +50,8 @@ export function ResourceFields({
     readDocument(source)?.get("kind") === "agent",
   );
   const document = readDocument(source);
-  if (!document) return <p>Edit this document in the source editor below.</p>;
+  if (!document)
+    return <p>{t("Edit this document in the source editor below.")}</p>;
   const get = (path: string[]) => document.getIn(path);
   const text = (path: string[]) =>
     typeof get(path) === "string" ? String(get(path)) : "";
@@ -120,7 +121,7 @@ export function ResourceFields({
     label: string,
     path: string[],
     options: { value: string; label: string }[],
-    emptyLabel = "Use default",
+    emptyLabel = t("Use default"),
   ) => (
     <ResourceChoice
       row
@@ -153,8 +154,17 @@ export function ResourceFields({
         inherited={
           kind === "agent"
             ? root.configuration
-              ? `${(root.configuration.defaults?.[path[0]] ?? []).map((id: string) => options.find((option) => option.value === id)?.label ?? id).join(", ") || "None"} · Instance defaults for new chats`
-              : "Loading instance defaults…"
+              ? t("{{items}} · Instance defaults for new chats", {
+                  items:
+                    (root.configuration.defaults?.[path[0]] ?? [])
+                      .map(
+                        (id: string) =>
+                          options.find((option) => option.value === id)
+                            ?.label ?? id,
+                      )
+                      .join(", ") || t("None"),
+                })
+              : t("Loading instance defaults…")
             : undefined
         }
         value={values}
@@ -167,7 +177,7 @@ export function ResourceFields({
   const referenceLists = (prefix: string[]) => (
     <>
       {list(
-        "Plugins",
+        t("Plugins"),
         [...prefix, "harness_plugins"],
         selectors.data?.harness_plugins.map((item) => ({
           value: item.resource_id,
@@ -175,7 +185,7 @@ export function ResourceFields({
         })) ?? [],
       )}
       {list(
-        "MCP servers",
+        t("MCP servers"),
         [...prefix, "mcp_servers"],
         selectors.data?.mcp_servers.map((item) => ({
           value: item.resource_id,
@@ -184,7 +194,7 @@ export function ResourceFields({
       )}
       {kind !== "agent" &&
         list(
-          "Run extensions",
+          t("Run extensions"),
           [...prefix, "environment_run_extensions"],
           selectors.data?.environment_run_extensions.map((item) => ({
             value: item.resource_id,
@@ -195,7 +205,7 @@ export function ResourceFields({
   );
   if (connectionsOnly)
     return (
-      <SettingsSection variant="grouped" description="Used for new chats.">
+      <SettingsSection variant="grouped" description={t("Used for new chats.")}>
         <ErrorNotice error={selectors.error || sources.error} />
         {referenceLists(["defaults"])}
       </SettingsSection>
@@ -206,8 +216,8 @@ export function ResourceFields({
         error={selectors.error || sources.error || catalog.error || root.error}
       />
       {kind && kind !== "agent" && kind !== "model" && (
-        <SettingsSection title="General">
-          {field("Name", ["name"])}
+        <SettingsSection title={t("General")}>
+          {field(t("Name"), ["name"])}
         </SettingsSection>
       )}
       {kind === "model" && (
@@ -215,19 +225,19 @@ export function ResourceFields({
           source={source}
           onChange={onChange}
           onReady={onReady}
-          nameField={field("Name", ["name"])}
+          nameField={field(t("Name"), ["name"])}
         />
       )}
       {kind === "agent" && (
         <>
-          <SettingsSection variant="grouped" title="General">
-            {field("Name", ["name"])}
+          <SettingsSection variant="grouped" title={t("General")}>
+            {field(t("Name"), ["name"])}
             <ResourceChoice
-              label="Model"
+              label={t("Model")}
               value={text(["model"])}
               loading={selectors.isPending || sources.isPending}
               onValueChange={(value) => set(["model"], value || undefined)}
-              options={[{ value: "", label: "Not connected" }, ...models]}
+              options={[{ value: "", label: t("Not connected") }, ...models]}
               actions={
                 <AddModelButton compact onSaved={(id) => set(["model"], id)} />
               }
@@ -235,11 +245,11 @@ export function ResourceFields({
           </SettingsSection>
           <SettingsSection
             variant="plain"
-            title="Instructions"
-            description="Extra instructions for this agent."
+            title={t("Instructions")}
+            description={t("Extra instructions for this agent.")}
           >
             <Textarea
-              aria-label="Additional instructions"
+              aria-label={t("Additional instructions")}
               variant="soft"
               value={text(["instructions"])}
               onChange={(event) => set(["instructions"], event.target.value)}
@@ -261,24 +271,34 @@ export function ResourceFields({
         <>
           <SettingsSection
             variant="grouped"
-            title="Chat defaults"
-            description="Used by new chats. Existing chats keep their settings."
+            title={t("Chat defaults")}
+            description={t(
+              "Used by new chats. Existing chats keep their settings.",
+            )}
           >
-            {scalar("Default agent", ["defaults", "agent"], agentOptions)}
+            {scalar(t("Default agent"), ["defaults", "agent"], agentOptions)}
             {referenceLists(["defaults"])}
           </SettingsSection>
           <SettingsSection
             variant="grouped"
-            title="Environments"
-            description="Used by new chats, or when you apply Project defaults."
+            title={t("Environments")}
+            description={t(
+              "Used by new chats, or when you apply Project defaults.",
+            )}
           >
             <div className={styles.fieldGroup}>
               <p className="mb-3 text-sm text-muted-foreground">
                 {rawBindings == null
-                  ? "New chats add no remote environments. Existing chats keep theirs."
+                  ? t(
+                      "New chats add no remote environments. Existing chats keep theirs.",
+                    )
                   : bindings.length
-                    ? "Applying these defaults replaces the chat's remote environments."
-                    : "Applying these defaults removes the chat's remote environments."}
+                    ? t(
+                        "Applying these defaults replaces the chat's remote environments.",
+                      )
+                    : t(
+                        "Applying these defaults removes the chat's remote environments.",
+                      )}
               </p>
               {roots ? (
                 <EnvironmentsEditor
@@ -330,7 +350,9 @@ export function ResourceFields({
                   }}
                 />
               ) : (
-                <p>Fix the folder list in Advanced configuration first.</p>
+                <p>
+                  {t("Fix the folder list in Advanced configuration first.")}
+                </p>
               )}
               <div className="mt-3 flex flex-wrap gap-2 [&_button]:h-auto [&_button]:whitespace-normal [&_button]:text-left">
                 {rawBindings == null && (
@@ -344,7 +366,7 @@ export function ResourceFields({
                       )
                     }
                   >
-                    Local only
+                    {t("Local only")}
                   </Button>
                 )}
                 {(rawBindings != null ||
@@ -355,7 +377,7 @@ export function ResourceFields({
                     disabled={!roots?.length}
                     onClick={() => setEnvironments(undefined, null)}
                   >
-                    Keep current
+                    {t("Keep current")}
                   </Button>
                 )}
               </div>
@@ -367,13 +389,15 @@ export function ResourceFields({
         document.has("schema_version") &&
         !document.has("mcpServers") && (
           <>
-            <SettingsSection variant="grouped" title="Chats">
-              {scalar("Default agent", ["defaults", "agent"], agentOptions)}
+            <SettingsSection variant="grouped" title={t("Chats")}>
+              {scalar(t("Default agent"), ["defaults", "agent"], agentOptions)}
               <SettingsRow
                 label="Sidekick"
                 controlId="sidekick-enabled"
                 stackOnNarrow={false}
-                description="Let your agent delegate work to separate chats."
+                description={t(
+                  "Let your agent delegate work to separate chats.",
+                )}
               >
                 <Switch
                   id="sidekick-enabled"
@@ -385,30 +409,32 @@ export function ResourceFields({
               </SettingsRow>
               {get(["webui", "sidekick"]) !== null && (
                 <details className={layout.groupDisclosure}>
-                  <summary>Subagent defaults</summary>
+                  <summary>{t("Subagent defaults")}</summary>
                   <div>
                     {scalar(
-                      "Sidekick agent",
+                      t("Sidekick agent"),
                       ["webui", "sidekick", "agent"],
                       agentOptions,
-                      "Use current agent",
+                      t("Use current agent"),
                     )}
                     {scalar(
-                      "Sidekick model",
+                      t("Sidekick model"),
                       ["webui", "sidekick", "model"],
                       models,
-                      "Use agent model",
+                      t("Use agent model"),
                     )}
                   </div>
                 </details>
               )}
             </SettingsSection>
-            <SettingsSection variant="grouped" title="Memory">
+            <SettingsSection variant="grouped" title={t("Memory")}>
               <SettingsRow
-                label="File memory"
+                label={t("File memory")}
                 controlId="memory-enabled"
                 stackOnNarrow={false}
-                description="Remember preferences and keep knowledge for each project."
+                description={t(
+                  "Remember preferences and keep knowledge for each project.",
+                )}
               >
                 <Switch
                   id="memory-enabled"
@@ -421,10 +447,12 @@ export function ResourceFields({
               {get(["memory", "enabled"]) !== false && (
                 <>
                   <SettingsRow
-                    label="Automatic organization"
+                    label={t("Automatic organization")}
                     controlId="memory-organization-enabled"
                     stackOnNarrow={false}
-                    description="Use extra model requests to keep memory files organized."
+                    description={t(
+                      "Use extra model requests to keep memory files organized.",
+                    )}
                   >
                     <Switch
                       id="memory-organization-enabled"
@@ -437,18 +465,20 @@ export function ResourceFields({
                     />
                   </SettingsRow>
                   <details className={layout.groupDisclosure}>
-                    <summary>Memory updates</summary>
+                    <summary>{t("Memory updates")}</summary>
                     <div>
                       {scalar(
-                        "Update model",
+                        t("Update model"),
                         ["memory", "auto_organize", "model"],
                         models,
-                        "Use default agent model",
+                        t("Use default agent model"),
                       )}
                       <div className={styles.fieldGroup}>
                         <FormField
-                          label="Update instructions"
-                          description="How to update and organize memory files."
+                          label={t("Update instructions")}
+                          description={t(
+                            "How to update and organize memory files.",
+                          )}
                         >
                           <Textarea
                             variant="soft"
@@ -486,12 +516,14 @@ export function ResourceFields({
               />
             </details>
             <section id="live">
-              <SettingsSection variant="grouped" title="Live voice">
+              <SettingsSection variant="grouped" title={t("Live voice")}>
                 <SettingsRow
-                  label="Live"
+                  label={t("Live")}
                   controlId="live-enabled"
                   stackOnNarrow={false}
-                  description="Talk to your agent using your Codex subscription."
+                  description={t(
+                    "Talk to your agent using your Codex subscription.",
+                  )}
                 >
                   <Switch
                     id="live-enabled"
@@ -505,10 +537,10 @@ export function ResourceFields({
                   className={layout.groupDisclosure}
                   open={location.hash === "#live" || undefined}
                 >
-                  <summary>Voice settings</summary>
+                  <summary>{t("Voice settings")}</summary>
                   <div>
                     <ResourceChoice
-                      label="Codex model"
+                      label={t("Codex model")}
                       value={text(["live", "model"])}
                       loading={selectors.isPending || sources.isPending}
                       onValueChange={(value) =>
@@ -518,29 +550,29 @@ export function ResourceFields({
                         {
                           value: "",
                           label: codexModels.length
-                            ? "Choose a Codex model"
-                            : "Not configured",
+                            ? t("Choose a Codex model")
+                            : t("Not configured"),
                         },
                         ...codexModels,
                       ]}
                       description={
                         !selectors.isPending && !codexModels.length ? (
                           <>
-                            Add a Codex subscription model in{" "}
+                            {t("Add a Codex subscription model in")}{" "}
                             <Link
                               className="underline underline-offset-2"
                               to="/settings/models"
                             >
-                              Models
+                              {t("Models")}
                             </Link>{" "}
-                            to use live voice.
+                            {t("to use live voice.")}
                           </>
                         ) : undefined
                       }
                     />
-                    <SettingsRow label="Voice">
+                    <SettingsRow label={t("Voice")}>
                       <ChoiceField
-                        label="Voice"
+                        label={t("Voice")}
                         hideLabel
                         value={text(["live", "voice"]) || "cove"}
                         options={[
@@ -577,11 +609,13 @@ export function ResourceFields({
                       />
                     </SettingsRow>
                     <SettingsRow
-                      label="Workspace files"
-                      description="Let Live read and edit files in its workspace."
+                      label={t("Workspace files")}
+                      description={t(
+                        "Let Live read and edit files in its workspace.",
+                      )}
                     >
                       <ChoiceField
-                        label="Live file access"
+                        label={t("Live file access")}
                         hideLabel
                         value={
                           get(["live", "files_enabled"]) === false
@@ -589,8 +623,8 @@ export function ResourceFields({
                             : "enabled"
                         }
                         options={[
-                          { value: "enabled", label: "Enabled" },
-                          { value: "disabled", label: "Disabled" },
+                          { value: "enabled", label: t("Enabled") },
+                          { value: "disabled", label: t("Disabled") },
                         ]}
                         onValueChange={(value) =>
                           set(["live", "files_enabled"], value === "enabled")
@@ -598,7 +632,7 @@ export function ResourceFields({
                       />
                     </SettingsRow>
                     <div className={styles.fieldGroup}>
-                      <FormField label="Live instructions">
+                      <FormField label={t("Live instructions")}>
                         <Textarea
                           variant="soft"
                           value={text(["live", "instructions"])}
@@ -624,14 +658,16 @@ export function ResourceFields({
           variant="grouped"
           title={
             kind === "environment_profile"
-              ? "Environment connection"
-              : "Plugin configuration"
+              ? t("Environment connection")
+              : t("Plugin configuration")
           }
         >
           <ResourceChoice
             loading={catalog.isPending}
             label={
-              kind === "environment_profile" ? "Environment provider" : "Plugin"
+              kind === "environment_profile"
+                ? t("Environment provider")
+                : t("Plugin")
             }
             value={text([
               kind === "harness_plugin"
@@ -663,20 +699,20 @@ export function ResourceFields({
             }
           />
           {kind === "environment_profile" &&
-            field("Adapter key", ["adapter_key"])}
+            field(t("Adapter key"), ["adapter_key"])}
           <p className={styles.sectionNote}>
-            Set this plugin's options in Advanced configuration below.
+            {t("Set this plugin's options in Advanced configuration below.")}
           </p>
         </SettingsSection>
       )}
       {kind === "mcp_server" && (
-        <SettingsSection variant="grouped" title="Server connection">
+        <SettingsSection variant="grouped" title={t("Server connection")}>
           <ChoiceField
-            label="Transport"
+            label={t("Transport")}
             value={document.hasIn(["transport", "url"]) ? "http" : "stdio"}
             options={[
-              { value: "stdio", label: "Local command" },
-              { value: "http", label: "Remote HTTP" },
+              { value: "stdio", label: t("Local command") },
+              { value: "http", label: t("Remote HTTP") },
             ]}
             onValueChange={(value) =>
               set(
@@ -688,11 +724,12 @@ export function ResourceFields({
             }
           />
           {document.hasIn(["transport", "url"])
-            ? field("Server URL", ["transport", "url"])
-            : field("Command", ["transport", "command"])}
+            ? field(t("Server URL"), ["transport", "url"])
+            : field(t("Command"), ["transport", "command"])}
           <p className={styles.sectionNote}>
-            Add arguments, environment variables or headers in Advanced
-            configuration. Keep a copy; saved connection details are hidden.
+            {t(
+              "Add arguments, environment variables or headers in Advanced configuration. Keep a copy; saved connection details are hidden.",
+            )}
           </p>
         </SettingsSection>
       )}

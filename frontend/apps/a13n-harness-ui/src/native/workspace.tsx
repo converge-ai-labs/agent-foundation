@@ -88,6 +88,7 @@ const PAGE_TITLES: Record<string, string> = {
   "/setup": "Set up Harness",
   "/projects": "Projects",
   "/settings": "General settings",
+  "/settings/appearance": "Appearance",
   "/settings/agents": "Agents",
   "/settings/models": "Models",
   "/settings/environments": "Environments",
@@ -687,15 +688,16 @@ export function NativeWorkspace({
   const unavailableThread = isUnavailableChat(thread.error);
   const title = threadId
     ? unavailableThread
-      ? "Chat unavailable"
+      ? t("Chat unavailable")
       : conversationTitle(
           thread.data?.thread,
           composers.get(threadId)?.localInputs,
         )
-    : (PAGE_TITLES[location.pathname] ??
-      (matchPath("/projects/:projectId", location.pathname)
-        ? "Project settings"
-        : "Page not found"));
+    : PAGE_TITLES[location.pathname]
+      ? t(PAGE_TITLES[location.pathname])
+      : matchPath("/projects/:projectId", location.pathname)
+        ? t("Project settings")
+        : t("Page not found");
   const ToolbarTitle = isWorkspace || threadId ? "h1" : "span";
   useEffect(() => {
     document.title = `${title} · Harness UI`;
@@ -805,22 +807,22 @@ export function NativeWorkspace({
   const viewChoices = [
     {
       key: "files" as const,
-      label: "Files",
-      description: "Browse and open a file",
+      label: t("Files"),
+      description: t("Browse and open a file"),
       icon: Folder,
       available: status.data?.features?.host_files,
     },
     {
       key: "changes" as const,
-      label: "Changes",
-      description: "Review working tree changes",
+      label: t("Changes"),
+      description: t("Review working tree changes"),
       icon: GitDiff,
       available: status.data?.features?.host_git,
     },
     {
       key: "terminal" as const,
-      label: "Terminal",
-      description: "Open shared terminal sessions",
+      label: t("Terminal"),
+      description: t("Open shared terminal sessions"),
       icon: TerminalWindow,
       available: status.data?.features?.host_terminal,
     },
@@ -837,7 +839,7 @@ export function NativeWorkspace({
       ? [
           {
             key: "conversation",
-            label: "Chat",
+            label: t("Chat"),
             icon: ChatCircle,
             tab: null,
           },
@@ -847,17 +849,35 @@ export function NativeWorkspace({
       key: tab.id,
       label:
         tab.kind === "new"
-          ? "New tab"
+          ? t("New tab")
           : tab.kind === "file"
-            ? `${tabs.items.some((other) => other.kind === "file" && other.path !== tab.path && basename(other.path) === basename(tab.path)) ? tab.path : basename(tab.path)}${buffers.get(tab.path)?.dirty ? " · Unsaved" : ""}`
+            ? buffers.get(tab.path)?.dirty
+              ? t("{{path}} · Unsaved", {
+                  path: tabs.items.some(
+                    (other) =>
+                      other.kind === "file" &&
+                      other.path !== tab.path &&
+                      basename(other.path) === basename(tab.path),
+                  )
+                    ? tab.path
+                    : basename(tab.path),
+                })
+              : tabs.items.some(
+                    (other) =>
+                      other.kind === "file" &&
+                      other.path !== tab.path &&
+                      basename(other.path) === basename(tab.path),
+                  )
+                ? tab.path
+                : basename(tab.path)
             : tab.kind === "changes" && tab.selection
-              ? `${basename(tab.selection.path)} · Changes`
+              ? t("{{path}} · Changes", { path: basename(tab.selection.path) })
               : tab.kind === "files"
-                ? "Files"
+                ? t("Files")
                 : tab.kind === "changes"
-                  ? "Changes"
+                  ? t("Changes")
                   : tab.kind === "terminal"
-                    ? "Terminal"
+                    ? t("Terminal")
                     : t("Browser"),
       icon:
         tab.kind === "new"
@@ -912,10 +932,8 @@ export function NativeWorkspace({
               key={threadId}
               threadId={threadId}
               occupied={
-                sidebarCollapsed ||
-                singleView ||
-                pane !== null ||
-                view !== "page"
+                tabLayout ||
+                (!sidebarCollapsed && (pane !== null || view !== "page"))
               }
               visible={
                 !sidebarCollapsed &&
@@ -931,8 +949,8 @@ export function NativeWorkspace({
             <Menu>
               <MenuTrigger
                 render={<Button variant="ghost" size="icon-sm" />}
-                aria-label="Chat actions"
-                title="Chat actions"
+                aria-label={t("Chat actions")}
+                title={t("Chat actions")}
               >
                 <DotsThree />
               </MenuTrigger>
@@ -956,7 +974,7 @@ export function NativeWorkspace({
                     }}
                   >
                     <Icon />
-                    {label}
+                    {t(label)}
                   </MenuItem>
                 ))}
               </MenuPopup>
@@ -968,13 +986,13 @@ export function NativeWorkspace({
               size="icon"
               aria-label={
                 supportingExpanded
-                  ? "Close supporting panel"
-                  : "Open supporting panel"
+                  ? t("Close supporting panel")
+                  : t("Open supporting panel")
               }
               title={
                 supportingExpanded
-                  ? "Close supporting panel"
-                  : "Open supporting panel"
+                  ? t("Close supporting panel")
+                  : t("Open supporting panel")
               }
               aria-expanded={supportingExpanded}
               onClick={toggleSupportingPanel}
@@ -1016,14 +1034,14 @@ export function NativeWorkspace({
           {isWorkspace && hasSupportingViews && (
             <nav
               className={styles.workspaceTabs}
-              aria-label="Workbench views"
+              aria-label={t("Workbench views")}
               hidden={sidebarCollapsed}
             >
               <div
                 ref={viewTabsElement}
                 className={styles.panelTools}
                 role="tablist"
-                aria-label="Workspace views"
+                aria-label={t("Workspace views")}
                 aria-busy={projectLoading}
                 data-overflow-left={tabsOverflow.left || undefined}
                 data-overflow-right={tabsOverflow.right || undefined}
@@ -1082,16 +1100,8 @@ export function NativeWorkspace({
                       <Button
                         variant="ghost"
                         size="icon"
-                        aria-label={
-                          tab.kind === "browser"
-                            ? t("Close tab: {{label}}", { label })
-                            : `Close tab: ${label}`
-                        }
-                        title={
-                          tab.kind === "browser"
-                            ? t("Close {{label}}", { label })
-                            : `Close ${label}`
-                        }
+                        aria-label={t("Close tab: {{label}}", { label })}
+                        title={t("Close {{label}}", { label })}
                         disabled={projectLoading}
                         onClick={() => closeTab(tab.id)}
                       >
@@ -1104,8 +1114,8 @@ export function NativeWorkspace({
               <Button
                 variant="ghost"
                 size="icon"
-                aria-label="New tab"
-                title="New tab"
+                aria-label={t("New tab")}
+                title={t("New tab")}
                 disabled={projectLoading}
                 onClick={addTab}
               >
@@ -1160,8 +1170,8 @@ export function NativeWorkspace({
               aria-labelledby={`${workspaceId}-${tabs.active}-tab`}
             >
               <div className={styles.newTabChoices}>
-                <h2>Open a new tab</h2>
-                <p>Choose what you want to work with.</p>
+                <h2>{t("Open a new tab")}</h2>
+                <p>{t("Choose what you want to work with.")}</p>
                 {viewChoices.map(({ key, label, description, icon: Icon }) => (
                   <Button
                     key={key}
@@ -1185,7 +1195,7 @@ export function NativeWorkspace({
             <div
               className={styles.resizeHandle}
               role="separator"
-              aria-label="Resize supporting panel"
+              aria-label={t("Resize supporting panel")}
               aria-orientation="vertical"
               aria-valuemin={0}
               aria-valuemax={100}
@@ -1266,7 +1276,7 @@ export function NativeWorkspace({
                 setFocusedArea(view === "page" ? "explorer" : "native")
               }
               className={`${styles.pane} a13n-scrollbar`}
-              aria-label="File explorer"
+              aria-label={t("File explorer")}
             >
               <header className={styles.paneHeader}>
                 <div className={styles.panelTools}>
@@ -1287,10 +1297,14 @@ export function NativeWorkspace({
                       }}
                     >
                       <ArrowLeft />
-                      {pane === "files" ? "Back to files" : "Back to changes"}
+                      {pane === "files"
+                        ? t("Back to files")
+                        : t("Back to changes")}
                     </Button>
                   ) : (
-                    <strong>{pane === "files" ? "Files" : "Changes"}</strong>
+                    <strong>
+                      {pane === "files" ? t("Files") : t("Changes")}
+                    </strong>
                   )}
                 </div>
                 <div className={styles.actions}>
@@ -1309,7 +1323,7 @@ export function NativeWorkspace({
                     <Button
                       variant="ghost"
                       size="icon"
-                      aria-label="Refresh files and changes"
+                      aria-label={t("Refresh files and changes")}
                       onClick={refresh}
                     >
                       <ArrowClockwise />
@@ -1320,7 +1334,7 @@ export function NativeWorkspace({
               {nativeFeedback}
               {opening && (
                 <span role="status" className={styles.directoryLoading}>
-                  Opening…
+                  {t("Opening…")}
                 </span>
               )}
               {!projectLoading &&
@@ -1333,7 +1347,7 @@ export function NativeWorkspace({
                     {localRoots.length > 1 && (
                       <nav
                         className={styles.projectFolders}
-                        aria-label="Working folders"
+                        aria-label={t("Working folders")}
                       >
                         {localRoots.map((folder) => (
                           <Button
@@ -1370,24 +1384,24 @@ export function NativeWorkspace({
                         <Button
                           size="sm"
                           variant="outline"
-                          aria-label="Up one level"
+                          aria-label={t("Up one level")}
                           title={
                             canGoUp
-                              ? `Up to ${parentDirectory}`
+                              ? t("Up to {{path}}", { path: parentDirectory })
                               : fileRoot
-                                ? "At the project root"
-                                : "At the filesystem root"
+                                ? t("At the project root")
+                                : t("At the filesystem root")
                           }
                           disabled={!canGoUp}
                           onClick={() => void open(parentDirectory)}
                         >
                           <ArrowUp />
-                          Up
+                          {t("Up")}
                         </Button>
                         <nav
                           ref={folderTrail}
                           className={styles.breadcrumbs}
-                          aria-label="Current folder"
+                          aria-label={t("Current folder")}
                           onScroll={(event) => {
                             const trail = event.currentTarget;
                             trail.dataset.clipped = String(
@@ -1461,20 +1475,23 @@ export function NativeWorkspace({
 
               {projectLoading ? (
                 <p className={styles.empty} role="status">
-                  Loading project…
+                  {t("Loading project…")}
                 </p>
               ) : !(pane === "files" ? directory : root) ? (
                 <p className={styles.empty}>
                   {project
-                    ? "This project has no folders configured."
-                    : "Open a chat in a project to see its files and changes."}
+                    ? t("This project has no folders configured.")
+                    : t(
+                        "Open a chat in a project to see its files and changes.",
+                      )}
                 </p>
               ) : !status.data?.features?.host_files ? (
                 <div className={styles.empty}>
-                  <h3>Computer sharing is off</h3>
+                  <h3>{t("Computer sharing is off")}</h3>
                   <p>
-                    Computer sharing is off on the server. Chats still work.
-                    Turn it on in server settings to access files and terminals.
+                    {t(
+                      "Computer sharing is off on the server. Chats still work. Turn it on in server settings to access files and terminals.",
+                    )}
                   </p>
                 </div>
               ) : (
@@ -1529,7 +1546,7 @@ export function NativeWorkspace({
                   ? `${workspaceId}-${tabs.active}-tab`
                   : undefined
               }
-              aria-label="Terminal"
+              aria-label={t("Terminal")}
               hidden={!terminalVisible}
               onFocusCapture={() => setFocusedArea("terminal")}
               onPointerDown={() => setFocusedArea("terminal")}
@@ -1539,7 +1556,7 @@ export function NativeWorkspace({
                   {nativeFeedback}
                   {opening && (
                     <span role="status" className={styles.directoryLoading}>
-                      Opening…
+                      {t("Opening…")}
                     </span>
                   )}
                 </>

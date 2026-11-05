@@ -120,3 +120,70 @@ async def test_cancelled_attachment_does_not_leave_streams_or_start_relay(monkey
         await attached
     stream.close.assert_awaited_once()
     assert transfer.attached and transfer.task is None
+
+
+@pytest.mark.parametrize("authorized", [True, False])
+async def test_missing_session_requires_current_authority_before_recovery(monkeypatch, authorized):
+    sessions = Sessions(SimpleNamespace())
+    call = request()
+    connection = SimpleNamespace(attachment=None)
+    monkeypatch.setattr(sessions, "connection", AsyncMock(return_value=connection))
+    resolve = AsyncMock(side_effect=None if authorized else EnvironmentError("Revoked", code="environment_denied"))
+    monkeypatch.setattr(authority, "resolve", resolve)
+    with pytest.raises(EnvironmentError) as failed:
+        await sessions.authorize(call, frozenset())
+    assert failed.value.code == ("environment_unavailable" if authorized else "environment_denied")
+    assert failed.value.details.get("client_session_failed", False) is authorized
+    resolve.assert_awaited_once()
+
+
+async def test_renewal_batches_transfers_and_keeps_independent_valid_owners(monkeypatch):
+    from a13n_service.runs.environments.clients import streaming
+    from a13n_service.runs.environments.clients.sessions import Transfer
+
+    runtime = SimpleNamespace(settings=SimpleNamespace(client_environments=SimpleNamespace(heartbeat_seconds=5)))
+    sessions = Sessions(runtime)
+    call = request()
+    connection = SimpleNamespace(attachment=None)
+    scope = Scope(call, connection, AsyncMock(), None)
+    scope.remember(call.caller)
+    retained = call.caller.model_copy(update={"execution_id": "retained"})
+    scope.remember(retained)
+    transfer = Transfer(SimpleNamespace(), "read", frozenset({"environment.file.read_bytes"}), retained)
+    transfer.task = SimpleNamespace(done=lambda: False)
+    scope.transfers["handle"] = transfer
+    sessions.scopes[call.scope_id] = scope
+    monkeypatch.setattr(sessions, "connection", AsyncMock(return_value=connection))
+    monkeypatch.setattr(sessions, "remember_binding", AsyncMock())
+    denied = EnvironmentError("Revoked", code="environment_denied")
+    resolve = AsyncMock(return_value=[None, denied, denied])
+    stop = AsyncMock()
+    monkeypatch.setattr(authority, "resolve_many", resolve)
+    monkeypatch.setattr(streaming, "stop", stop)
+    await sessions._renew_scope(call.scope_id, scope)
+    assert sessions.scopes[call.scope_id] is scope
+    assert list(scope.callers.values()) == [call.caller]
+    checks = resolve.call_args.args[1]
+    assert len(checks) == 3 and checks[-1].actions == transfer.actions and not checks[-1].renewing
+    stop.assert_awaited_once_with(transfer)
+    scope.session.abort.assert_not_awaited()
+
+
+async def test_session_authorization_bounds_database_concurrency(monkeypatch):
+    sessions = Sessions(SimpleNamespace())
+    call = request()
+    connection = SimpleNamespace(attachment=None)
+    active = maximum = 0
+
+    async def resolve(*args):
+        nonlocal active, maximum
+        active += 1
+        maximum = max(active, maximum)
+        try:
+            await asyncio.sleep(0.01)
+        finally:
+            active -= 1
+
+    monkeypatch.setattr(authority, "resolve", resolve)
+    await asyncio.gather(*(sessions._resolve(call, connection, frozenset()) for _ in range(12)))
+    assert maximum == 4 and active == 0

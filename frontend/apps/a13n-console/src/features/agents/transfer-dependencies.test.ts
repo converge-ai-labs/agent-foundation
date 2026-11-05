@@ -143,9 +143,11 @@ it("checks dedicated child environments against the same template catalog", asyn
       model: "model-local",
       default_environment_template_id: "et_local",
       subagents: {
-        helper: {
-          agent_id: "ap_child",
-          environment: { mode: "dedicated", template_id: "et_local" },
+        named: {
+          helper: {
+            agent_id: "ap_child",
+            environment: { mode: "dedicated", template_id: "et_local" },
+          },
         },
       },
     },
@@ -154,7 +156,10 @@ it("checks dedicated child environments against the same template catalog", asyn
   expect(checks.every((item) => item.available)).toBe(true);
   expect(
     checks
-      .find((item) => item.path === "subagents.helper.environment.template_id")
+      .find(
+        (item) =>
+          item.path === "subagents.named.helper.environment.template_id",
+      )
       ?.options.map((item) => item.value),
   ).toEqual(["et_local"]);
   expect(

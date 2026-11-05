@@ -318,7 +318,7 @@ Core validation and authorization cannot be replaced. What a distribution adds c
 ```python
 class AcceptedIntent:            # conceptual
     organization_id: str; workspace_id: str; session_id: str; thread_id: str; run_id: str
-    principal_id: str; agent_id: str; agent_revision_id: str; trigger: str; root_run_id: str
+    principal_id: str; agent_id: str; agent_revision_id: str | None; trigger: str; root_run_id: str
 
 class CallContext:               # conceptual; one paid dispatch, identified before it is sent
     organization_id: str; workspace_id: str; session_id: str; thread_id: str

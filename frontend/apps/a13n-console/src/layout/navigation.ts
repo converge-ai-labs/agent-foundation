@@ -31,12 +31,12 @@ export const navigationGroups: {
       ["models", "Models", CubeIcon],
       ["skills", "Skills", PuzzlePieceIcon],
       [
-        "memory-spaces",
+        "memories",
         "Memories",
         BrainIcon,
         [
+          ["memories", "Collections"],
           ["memory-spaces", "Spaces"],
-          ["memories", "Standalone"],
         ],
       ],
       ["connections", "Connections", PlugIcon],

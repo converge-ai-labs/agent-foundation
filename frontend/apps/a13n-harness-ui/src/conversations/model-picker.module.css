@@ -8,7 +8,7 @@
   text-align: left;
   padding: 4px 8px;
   gap: 8px;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   font-weight: 400;
   white-space: normal;
 }
@@ -19,13 +19,13 @@
 .modelOption small {
   display: block;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   margin-top: 4px;
 }
 .hint {
   margin: 8px 0 0;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 1.5;
   overflow-wrap: anywhere;
 }

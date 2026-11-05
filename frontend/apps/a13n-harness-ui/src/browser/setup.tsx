@@ -44,7 +44,7 @@ export function BrowserSetup({
           {unsupported || missing.length
             ? t(setup?.message ?? "")
             : error
-              ? t(error)
+              ? error
               : t("Browser could not start.")}
         </p>
         {loading ? (

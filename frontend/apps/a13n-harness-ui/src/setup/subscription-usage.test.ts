@@ -106,3 +106,33 @@ it("uses Grok's modern percentage before legacy money and preserves unknown peri
   });
   expect(grokAllowance({ credit_usage_percent: 140 }).usedPercent).toBe(100);
 });
+
+it("localizes duration and allowance summaries when the language changes", async () => {
+  const { i18n } = await import("../i18n");
+  const { compactAllowance } = await import("./subscription-usage");
+  const usage: Schema<"CodexUsage"> = {
+    account_id: "raw-id",
+    plan_type: "plus",
+    rate_limit: {
+      allowed: true,
+      limit_reached: false,
+      primary_window: {
+        limit_window_seconds: 18000,
+        used_percent: 35,
+        reset_at: 0,
+      },
+    },
+  };
+  try {
+    await i18n.changeLanguage("zh-CN");
+    expect(
+      [604800, 86400, 2592000, 172800, 7200, 120, 90].map(windowLabel),
+    ).toEqual(["每周", "每天", "30 天", "2 天", "2 小时", "2 分钟", "90 秒"]);
+    expect(compactAllowance(usage)).toBe("5 小时剩余 65%");
+    await i18n.changeLanguage("en");
+    expect(compactAllowance(usage)).toBe("5h 65% left");
+    expect(usage.account_id).toBe("raw-id");
+  } finally {
+    await i18n.changeLanguage("en");
+  }
+});

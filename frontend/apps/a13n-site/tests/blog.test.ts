@@ -14,6 +14,16 @@ const FRONT = {
   authors: "[Ada]",
 };
 
+const REPORT = {
+  title: "Original evaluation",
+  url: "https://example.com/report",
+  author: {
+    name: "Researcher & collaborator",
+    url: "https://example.com/researcher",
+    avatar: "https://example.com/avatar.png?size=80&v=1",
+  },
+};
+
 /** A blog directory holding one post per entry: slug -> front matter overrides and files. */
 async function blogDir(
   posts: Record<
@@ -80,6 +90,26 @@ describe("posts", () => {
       "folder name must be a lowercase slug",
     );
   });
+
+  test.each([
+    [{ ...REPORT, title: "" }, '"report.title" must be a non-empty string'],
+    [{ ...REPORT, url: "/report" }, '"report.url" must be an absolute URL'],
+    [
+      {
+        ...REPORT,
+        author: { ...REPORT.author, avatar: "javascript:alert(1)" },
+      },
+      '"report.author.avatar" must use HTTPS',
+    ],
+  ])(
+    "reject incomplete or unsafe source attribution",
+    async (report, message) => {
+      const dir = await blogDir({
+        post: { front: { report: JSON.stringify(report) } },
+      });
+      await expect(loadPosts(dir)).rejects.toThrow(message);
+    },
+  );
 });
 
 describe("markdown", () => {
@@ -126,9 +156,56 @@ describe("markdown", () => {
     expect(html).toContain('<img src="s.png" alt="shot" vite-ignore="">');
     expect(words).toBe(1);
   });
+
+  test("supporting Markdown stays inside a native disclosure with a scrollable table", async () => {
+    const { html } = await render(
+      "<details>\n<summary>Conditions</summary>\n\n| Task | Outcome |\n| --- | --- |\n| First | **Passed** |\n\n</details>",
+      "",
+    );
+    expect(html).toMatch(
+      /<details>\s*<summary>Conditions<\/summary>\s*<div class="table-scroll"><table>[\s\S]*<strong>Passed<\/strong>[\s\S]*<\/table><\/div>\s*<\/details>/,
+    );
+  });
 });
 
 describe("pages", () => {
+  test("credit the source author without replacing the adapted article's author", async () => {
+    const dir = await blogDir({
+      post: {
+        front: { authors: "[a13n team]", report: JSON.stringify(REPORT) },
+      },
+    });
+    const posts = await loadPosts(dir);
+    const page = postPage(posts[0], posts);
+    expect(page).toContain(
+      'class="report-author" href="https://example.com/researcher"',
+    );
+    expect(page).toContain(
+      'src="https://example.com/avatar.png?size=80&#38;v=1" alt=""',
+    );
+    expect(page).toContain(
+      "Original report by</span> Researcher &#38; collaborator",
+    );
+    expect(page).toContain(
+      'href="https://example.com/report">Read original report',
+    );
+    const [, data] =
+      /<script type="application\/ld\+json">(.+?)<\/script>/.exec(page)!;
+    expect(JSON.parse(data)).toMatchObject({
+      author: [{ "@type": "Organization", name: "a13n team" }],
+      citation: {
+        "@type": "DiscussionForumPosting",
+        headline: REPORT.title,
+        url: REPORT.url,
+        author: {
+          "@type": "Person",
+          name: REPORT.author.name,
+          url: REPORT.author.url,
+        },
+      },
+    });
+  });
+
   test("each page has its canonical URL and escaped structured data", async () => {
     const dir = await blogDir({
       post: { front: { title: '"A </script> <b>title</b>"' } },

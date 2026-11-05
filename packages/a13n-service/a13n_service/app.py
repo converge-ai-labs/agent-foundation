@@ -155,6 +155,7 @@ async def open_objects(stack: AsyncExitStack, config: Objects) -> ObjectStore:
             secret_access_key=config.secret_access_key.get_secret_value() if config.secret_access_key else None,
             max_bytes=config.max_bytes,
             timeout=config.timeout,
+            max_pool_connections=config.max_pool_connections,
         )
     )
 

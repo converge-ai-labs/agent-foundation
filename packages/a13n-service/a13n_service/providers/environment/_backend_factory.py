@@ -15,6 +15,7 @@ from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as 
 from a13n_harness.environment.errors import EnvironmentProviderOutcomeCertainty as Certainty
 from a13n_harness.environment.models import EnvironmentState
 from a13n_harness.providers.environment._runtime import ClosableRuntime, RuntimeFactory, _release
+from a13n_harness.providers.environment.execution_mode import capabilities
 from a13n_harness.providers.environment.remote_envd.managed import ManagedCredentialCache
 from pydantic import BaseModel
 
@@ -95,7 +96,7 @@ class BackendProvider[C: BaseModel, K: BaseModel, E: BaseModel, R](EnvironmentPr
         return target
 
     def _require_websocket(self, environment: object) -> None:
-        if getattr(self._recipe(environment), "execution", None) == "envd_ws" and self._websocket is None:
+        if capabilities(self._recipe(environment)).host_connection and self._websocket is None:
             raise provider_error(self._factory.key, "envd_ws_bootstrap_required", Category.INVALID)
 
     @asynccontextmanager

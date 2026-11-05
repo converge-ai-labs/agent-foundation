@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 import { i18n } from "../i18n";
+import { ApiError } from "../transport/client";
 import { composerMessage, stopMessage } from "./composer-messages";
 
 it("translates known feedback while retaining interpolated identifiers and unknown diagnostics", () => {
@@ -18,6 +19,26 @@ it("translates known feedback while retaining interpolated identifiers and unkno
     }),
   ).toBe(`无法加载技能：${diagnostic}`);
 });
+
+it.each([true, false])(
+  "retains Stop rejection provenance (local: %s)",
+  (local) => {
+    const request = {
+      receipt: "receipt",
+      attempt: 1,
+      phase: "rejected" as const,
+      message: "unused",
+      rejection: new ApiError("Request failed (400).", 400, undefined, local),
+    };
+    expect(stopMessage(request, i18n.getFixedT("en"))).toContain(
+      "Request failed (400).",
+    );
+    const detail = local
+      ? i18n.getFixedT("zh-CN")("Request failed ({{status}}).", { status: 400 })
+      : "Request failed (400).";
+    expect(stopMessage(request, i18n.getFixedT("zh-CN"))).toContain(detail);
+  },
+);
 
 it.each([
   ["completed", "操作已完成。正在刷新聊天…"],

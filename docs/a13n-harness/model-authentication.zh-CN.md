@@ -85,7 +85,7 @@ async def run_codex(prompt, *, model_name, source):
 
 传入当前上下文的原始 Thread ID。`CodexRequestModel` 为流式和普通请求的原生会话请求头派生 [UUID v5 亲和性](models.md#model-request-affinity)；提前派生会导致二次派生。显式原生请求头仍优先。子 Thread 和分叉必须使用自己的当前上下文，不能捕获父 ID。`x-session-id` 等网关请求头不提供 Codex 会话身份。
 
-`CodexRequestModel` 默认使用原生 Responses WebSocket 传输。请求设置中显式指定 `openai_transport="http"` 即可使用 HTTP。让 Model 上下文覆盖整个工具循环以复用连接；Harness 执行会自动管理这一生命周期。原生续接处理 `store=false` 历史和 `openai_previous_response_id="auto"`。`model_request_transport` 生命周期事件记录实际响应路径，包括 HTTP 回退。
+`CodexRequestModel` 在未指定传输方式时使用 HTTP。在 Model 请求设置中指定 `openai_transport="websocket"` 可启用原生 Responses WebSocket 传输。应用可以在创建 Model 时保存该设置；Harness 不注入 Codex 专属默认值。让 Model 上下文覆盖整个工具循环以复用连接；Harness 执行会自动管理这一生命周期。原生续接处理 `store=false` 历史和 `openai_previous_response_id="auto"`。`model_request_transport` 生命周期事件记录实际响应路径，包括 HTTP 回退。
 
 Pydantic AI 管理 Codex 认证、刷新、重试和 Responses 渲染。适配器管理自行创建的客户端，注入客户端仍由调用者负责。注入 OAuth 客户端时，为该集成提供专用生命周期，且不预设认证。请求/响应 hook 应留在这个生命周期内。切换账号时开始新 Run，不在活跃请求背后替换账号。
 

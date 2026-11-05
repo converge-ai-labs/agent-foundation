@@ -21,6 +21,8 @@ import { MacCaptureSettings } from "./macos-setup";
 import styles from "./panel.module.css";
 import { ReturnToChat } from "../native/capture";
 
+class CaptureMessage extends Error {}
+
 const AnnotationEditor = lazy(() =>
   import("./annotation-editor").catch(() => ({
     default: ({ onClose }: { onClose: () => void }) => (
@@ -114,7 +116,15 @@ export function Desktop({
     status: "Connecting…",
     retry: false,
   });
-  const [clipboardError, setClipboardError] = useState("");
+  const [clipboardError, setClipboardErrorState] = useState({
+    message: "",
+    external: false,
+  });
+  const setClipboardError = useCallback(
+    (message: string, external = false) =>
+      setClipboardErrorState({ message, external }),
+    [],
+  );
   const clipboard = useRef<ReturnType<typeof bindClipboard> | null>(null);
   const textInput = useRef<ReturnType<typeof bindTextInput> | null>(null);
   const inputAllowed = useRef(false);
@@ -440,13 +450,15 @@ export function Desktop({
         !pixels.height ||
         pixels.data[3] !== 255
       )
-        throw new Error("Wait for a browser frame before capturing.");
+        throw new CaptureMessage("Wait for a browser frame before capturing.");
       const source = document.createElement("canvas");
       source.width = pixels.width;
       source.height = pixels.height;
       const context = source.getContext("2d");
       if (!context)
-        throw new Error("Screenshot capture is unavailable in this browser.");
+        throw new CaptureMessage(
+          "Screenshot capture is unavailable in this browser.",
+        );
       context.putImageData(pixels, 0, 0);
       editing.current = true;
       inputAllowed.current = false;
@@ -459,6 +471,7 @@ export function Desktop({
         error instanceof Error
           ? error.message
           : "Could not capture the browser.",
+        error instanceof Error && !(error instanceof CaptureMessage),
       );
     }
   };
@@ -607,9 +620,11 @@ export function Desktop({
             </div>
           </div>
         )}
-        {!!clipboardError && (
+        {!!clipboardError.message && (
           <p className={styles.inputNotice} role="status">
-            {t(clipboardError)}
+            {clipboardError.external
+              ? clipboardError.message
+              : t(clipboardError.message)}
           </p>
         )}
       </div>

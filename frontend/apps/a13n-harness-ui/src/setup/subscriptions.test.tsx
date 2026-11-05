@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -10,6 +11,7 @@ import {
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
+import { i18n } from "../i18n";
 import { SubscriptionAccounts, AccountGroups } from "./subscriptions";
 import { createTransport, type Schema } from "../transport/client";
 import { TransportContext } from "../transport/context";
@@ -304,4 +306,32 @@ it("shows an empty state without a redemption action when no vouchers are availa
   await screen.findByText("No available reset vouchers.");
   expect(screen.queryByRole("button", { name: "Use" })).toBeNull();
   expect(writes).toHaveLength(0);
+});
+
+it("switches group editor language without losing the unsaved name", async () => {
+  mount({ groups: true });
+  fireEvent.click(await screen.findByRole("button", { name: "Manage group" }));
+  fireEvent.change(screen.getByLabelText("Group name"), {
+    target: { value: "Private team / 原文" },
+  });
+  try {
+    await act(async () => {
+      await i18n.changeLanguage("zh-CN");
+    });
+    expect(
+      (screen.getByLabelText("账号组名称") as HTMLInputElement).value,
+    ).toBe("Private team / 原文");
+    expect(screen.getByText("Work")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "保存" })).toBeTruthy();
+    await act(async () => {
+      await i18n.changeLanguage("en");
+    });
+    expect(
+      (screen.getByLabelText("Group name") as HTMLInputElement).value,
+    ).toBe("Private team / 原文");
+  } finally {
+    await act(async () => {
+      await i18n.changeLanguage("en");
+    });
+  }
 });

@@ -440,11 +440,13 @@ async def test_each_async_edge_applies_its_own_environment_policy(env, scripted_
         model,
         instructions="Role: coordinator",
         default_environment_template_id=env.template["id"],
-        subagent_mode="async",
         subagents={
-            "researcher": {**pinned, "environment": {"mode": "none"}},
-            "builder": {**pinned, "environment": {"mode": "shared"}},
-            "tester": {**pinned, "environment": {"mode": "dedicated", "template_id": env.template["id"]}},
+            "mode": "async",
+            "named": {
+                "researcher": {**pinned, "environment": {"mode": "none"}},
+                "builder": {**pinned, "environment": {"mode": "shared"}},
+                "tester": {**pinned, "environment": {"mode": "dedicated", "template_id": env.template["id"]}},
+            },
         },
     )
     for name in ("researcher", "builder", "tester"):
@@ -482,10 +484,12 @@ async def test_a_child_without_a_primary_gets_one_from_its_edge(env, scripted_mo
         model,
         instructions="Role: coordinator",
         default_environment_template_id=env.template["id"],
-        subagent_mode="async",
         subagents={
-            "builder": {**pinned, "environment": {"mode": "shared"}},
-            "tester": {**pinned, "environment": {"mode": "dedicated", "template_id": env.template["id"]}},
+            "mode": "async",
+            "named": {
+                "builder": {**pinned, "environment": {"mode": "shared"}},
+                "tester": {**pinned, "environment": {"mode": "dedicated", "template_id": env.template["id"]}},
+            },
         },
     )
     for name in ("builder", "tester"):

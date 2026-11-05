@@ -1,3 +1,10 @@
+/* Field guidance belongs beside its label, not at the far edge of the row. */
+[data-slot="field-label-row"]:has([data-field-help]) {
+  justify-content: flex-start;
+  flex-wrap: nowrap;
+  gap: 4px;
+}
+
 /* Choices size to their value, including filters and pickers outside forms. */
 :is(
   [data-slot="select-trigger"],
@@ -29,8 +36,8 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) fit-content(52%);
   align-items: center;
-  column-gap: 24px;
-  row-gap: 4px;
+  column-gap: var(--setting-column-gap, 24px);
+  row-gap: 1px;
 
   > :is(
     [data-slot="field-label"],
@@ -55,7 +62,11 @@
     justify-self: end;
   }
   &:not(:has(> [data-slot="field-description"]))
-    > :is([data-slot="field-label"], [data-slot="read-only-label"]) {
+    > :is(
+      [data-slot="field-label"],
+      [data-slot="field-label-row"],
+      [data-slot="read-only-label"]
+    ) {
     grid-row: 1 / span 2;
   }
   > [data-slot="input-control"] {

@@ -53,3 +53,19 @@ async def test_service_s3_request_address(options: dict, host: str, path: str) -
         objects.client.meta.events.register("before-send.s3.ListObjectsV2", capture)
         with pytest.raises(RequestCaptured):
             await objects.keys("probe", limit=1)
+
+
+@pytest.mark.parametrize("size", [None, 64])
+async def test_service_configures_actual_s3_pool(size: int | None) -> None:
+    values = {
+        "backend": "s3",
+        "bucket": "agents",
+        "region": "us-east-1",
+        "access_key_id": "test",
+        "secret_access_key": "test",
+    }
+    config = Objects.model_validate(values if size is None else {**values, "max_pool_connections": size})
+    async with AsyncExitStack() as stack:
+        store = await open_objects(stack, config)
+        assert isinstance(store, S3Objects)
+        assert store.client.meta.config.max_pool_connections == (32 if size is None else size)

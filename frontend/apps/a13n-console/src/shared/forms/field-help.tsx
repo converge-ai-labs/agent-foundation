@@ -13,6 +13,7 @@ export function FieldHelp({
   return (
     <Tooltip>
       <TooltipTrigger
+        data-field-help
         render={
           <button
             type="button"

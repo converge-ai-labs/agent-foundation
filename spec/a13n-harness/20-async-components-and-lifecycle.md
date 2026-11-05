@@ -2,7 +2,7 @@
 
 ## Design Position
 
-Asynchronous subagents are complete Host-owned child execution use cases behind `SubagentOperator`. Harness owns child resolution, immutable authorization plans, the standard model-facing Toolset, and bounded result validation. It owns no default async manager, execution registry, scheduler, child store, observer registry, wake mechanism, or shutdown operation.
+Asynchronous subagents are complete Host-owned child execution use cases behind `SubagentOperator`. Harness owns declared-child resolution, immutable authorization plans, the standard model-facing Toolset, and bounded result validation. It owns no default async manager, execution registry, scheduler, child store, observer registry, wake mechanism, or shutdown operation.
 
 This document owns the cross-Run lifecycle consequences of accepted async child work: admission, observation, parent closure, wake, restart, loss, retention, and Host shutdown. [Delegation and Subagents](11-delegation-and-subagents.md) owns child topology, exact operator operations, inline execution, and tool schemas. [Environment Integration](08-environment-integration.md#shell-executions-and-observations) separately owns Shell control and process observations. The two features share no Manager, store, projection, observer registry, wake ledger, or shutdown framework.
 
@@ -13,8 +13,9 @@ Harness does not turn async children into a general Job, Session child, delivery
 | Concern                                                                                 | Owner                                 |
 | --------------------------------------------------------------------------------------- | ------------------------------------- |
 | Authored immediate-child topology                                                       | Executable-owned `SubagentCollection` |
-| Child resolution, identity and context ceilings, usage intersection                     | Harness                               |
+| Declared-child resolution, identity and context ceilings, usage intersection            | Harness                               |
 | Standard async tool names, requests, and bounded results                                | `SubagentCapability`                  |
+| Host-defined definition resolution and authority                                        | Host                                  |
 | Admission, scheduling, and recursive child execution                                    | Host `SubagentOperator`               |
 | Child Thread identity, Environment association, and fresh Run authority                 | Host                                  |
 | Checkpoints, status, bounded closed activity, steering, cancellation, and linked resume | Host operator                         |
@@ -139,7 +140,7 @@ The Host owns acceptance, exact checkpoint selection, retries, wake, final state
 1. Canonical async work belongs to its configured Host operator, never to the parent Run.
 2. Harness provides no default async manager, execution store, observer registry, wake ledger, or shutdown lifecycle.
 3. Async child status, bounded closed activity, and State are queried from Host authority and are not mirrored into parent `HarnessState`.
-4. The operator receives an authorized detached plan and constructs fresh independent child authority and Environment adapters.
+4. Declared children use an authorized detached Harness plan. Host-defined creation and opted-in resume use Host-resolved retained configuration and policy. Both construct fresh independent child authority and Environment adapters.
 5. Parent closure never cancels accepted async work by implication and never closes its operator.
 6. A later Run restores parent Thread identity but receives fresh bindings and operator authority.
 7. Fork, restart, loss, and retention expiry never retarget a public execution reference.

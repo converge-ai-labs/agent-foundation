@@ -1,11 +1,21 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from "@testing-library/react";
+import { i18n } from "../i18n";
 import { ApiError, NetworkError } from "../transport/client";
 import { ConnectionNotice, ConnectionNoticeContext } from "./connection";
 import { ErrorNotice } from "./ui";
 
-afterEach(cleanup);
+afterEach(async () => {
+  cleanup();
+  await i18n.changeLanguage("en");
+});
 
 it("consolidates connection errors without hiding actionable local failures", () => {
   const retry = vi.fn();
@@ -39,4 +49,25 @@ it("keeps isolated network errors visible when there is no global notice", () =>
   );
   fireEvent.click(screen.getByRole("button", { name: "Retry" }));
   expect(retry).toHaveBeenCalledOnce();
+});
+
+it("localizes client-generated API failures while retaining identical server messages", async () => {
+  const message = "Request failed (500).";
+  const retry = vi.fn();
+  render(
+    <>
+      <ErrorNotice
+        error={new ApiError(message, 500, undefined, true)}
+        retry={retry}
+      />
+      <ErrorNotice error={new ApiError(message, 500)} />
+    </>,
+  );
+  expect(screen.getAllByText(message)).toHaveLength(2);
+  await act(async () => {
+    await i18n.changeLanguage("zh-CN");
+  });
+  expect(screen.getByText(message)).toBeTruthy();
+  expect(screen.getByText("请求失败（500）。")).toBeTruthy();
+  expect(retry).not.toHaveBeenCalled();
 });

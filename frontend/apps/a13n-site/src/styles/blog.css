@@ -60,32 +60,44 @@
 }
 
 .grid {
+  --card-gap: 72px;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 72px 32px;
-  margin: clamp(96px, 10vw, 140px) auto 0;
+  gap: 0 32px;
+  margin: clamp(96px, 10vw, 140px) auto calc(-1 * var(--card-gap));
   list-style: none;
 }
+/* Share content rows; keep the gap between cards out of those row heights. */
+.item {
+  margin-bottom: var(--card-gap);
+}
+.item,
 .item a {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: subgrid;
+  grid-row: span 4;
+  row-gap: 0;
 }
 .item .plate {
+  grid-row: 1;
   margin-bottom: 24px;
 }
 .i-title {
+  grid-row: 2;
   margin: 0;
   font: 500 22px/1.2 var(--display);
   letter-spacing: -0.022em;
   text-wrap: balance;
 }
 .i-dek {
+  grid-row: 3;
   margin: 10px 0 0;
   font: 400 15px/1.55 var(--text);
   color: var(--muted);
   text-wrap: pretty;
 }
 .item .meta {
+  grid-row: 4;
   margin-top: 16px;
 }
 :is(.item a, .lead):hover .plate {
@@ -143,6 +155,7 @@
 }
 .strip {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
   gap: 8px 0;
   margin-top: clamp(48px, 5vw, 72px);
@@ -161,6 +174,37 @@
   vertical-align: -1px;
   background: var(--rule-2);
 }
+.report-credit {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.strip > .report-credit::before {
+  margin-right: 4px;
+}
+.report-author {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--ink);
+  font: 500 13px/1.5 var(--text);
+}
+.report-author img {
+  display: block;
+  border-radius: 50%;
+}
+.report-label {
+  color: var(--muted);
+  font-weight: 400;
+}
+.report-source {
+  font-size: 11px;
+}
+:is(.report-author, .report-source):hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
 .cover {
   margin-top: 32px;
 }
@@ -173,6 +217,29 @@
 }
 .cover .plate :is(.pf, .pl, .pa) {
   vector-effect: none;
+}
+.plate:has(.benchmark-cover),
+.cover .plate:has(.benchmark-cover) {
+  container-type: inline-size;
+}
+.lead .plate:has(.benchmark-cover),
+.cover .plate:has(.benchmark-cover) {
+  aspect-ratio: 2 / 1;
+}
+.plate .benchmark-cover,
+.cover .plate .benchmark-cover {
+  padding: 2% 3%;
+}
+.benchmark-cover .cover-compact {
+  display: none;
+}
+@container (max-width: 600px) {
+  .benchmark-cover .cover-detailed {
+    display: none;
+  }
+  .benchmark-cover .cover-compact {
+    display: initial;
+  }
 }
 .col {
   max-width: calc(680px + 2 * var(--pad));
@@ -208,8 +275,8 @@ main + .foot {
 }
 @media (max-width: 620px) {
   .grid {
+    --card-gap: 56px;
     grid-template-columns: 1fr;
-    gap: 56px;
   }
 }
 @media (max-width: 600px) {

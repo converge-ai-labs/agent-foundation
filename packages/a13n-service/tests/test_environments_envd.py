@@ -628,7 +628,7 @@ async def test_checkpointed_sessions_are_recovered_only_within_the_same_run(
     assert (await saved_state()).envd_sessions == {}
 
 
-@pytest.mark.parametrize("reconnect", ["resume", "expired", "restart"])
+@pytest.mark.parametrize("reconnect", ["resume", "expired", "restart", "session"])
 async def test_client_environment_runs_on_reverse_daemon_and_streams_files(
     service, tmp_path, scripted_model, runs_kit, monkeypatch, reconnect
 ):
@@ -741,7 +741,22 @@ async def test_client_environment_runs_on_reverse_daemon_and_streams_files(
             (scope,) = service.runtime.client_sessions.scopes.values()
             before = (scope.session.generation, scope.session.session_id)
             assert owner.carrier is not None
-            if reconnect == "restart":
+            if reconnect == "session":
+                from unittest.mock import AsyncMock
+
+                from a13n_service.runs.environments.clients import authority
+                from sqlalchemy.exc import OperationalError
+
+                with monkeypatch.context() as patch:
+                    patch.setattr(
+                        authority,
+                        "resolve_many",
+                        AsyncMock(side_effect=OperationalError("renew", {}, Exception("temporary database outage"))),
+                    )
+                    await service.runtime.client_sessions._renew_scope(scope.request.scope_id, scope)
+                assert not service.runtime.client_sessions.scopes
+                assert (await worker.client_connections.presence(identity)).epoch == owner.epoch
+            elif reconnect == "restart":
                 process.terminate()
                 await asyncio.wait_for(process.communicate(), 5)
                 process = await launch()
@@ -752,7 +767,7 @@ async def test_client_environment_runs_on_reverse_daemon_and_streams_files(
             async with asyncio.timeout(10):
                 while True:
                     fresh = await worker.client_connections.presence(identity)
-                    if fresh is not None and fresh.epoch != owner.epoch:
+                    if fresh is not None and (reconnect == "session" or fresh.epoch != owner.epoch):
                         break
                     await asyncio.sleep(0.02)
             if reconnect == "expired":
@@ -760,8 +775,12 @@ async def test_client_environment_runs_on_reverse_daemon_and_streams_files(
                 await asyncio.sleep(0.12)
             next_decision.set()
             again = await scripted_model.request()
-            assert notice in following_tool_results(again)
-            await scripted_model.request()
+            expected_notice = (
+                "Client mount workspace can prepare a new execution Session." if reconnect == "session" else notice
+            )
+            assert expected_notice in following_tool_results(again)
+            next_result = await scripted_model.request()
+            assert expected_notice not in following_tool_results(next_result)
             (reopened,) = service.runtime.client_sessions.scopes.values()
             after_session = (reopened.session.generation, reopened.session.session_id)
             assert (after_session == before) == (reconnect == "resume")
@@ -1033,8 +1052,9 @@ async def test_native_service_first_enrollment_and_saved_reconnect(service, tmp_
                 await process.wait()
 
 
+@pytest.mark.parametrize("explicit_directory", [False, True])
 async def test_managed_outbound_uses_existing_identity_and_executes_without_http(
-    service, tmp_path, scripted_model, runs_kit, monkeypatch
+    service, tmp_path, scripted_model, runs_kit, monkeypatch, explicit_directory
 ):
     from contextlib import AsyncExitStack
 
@@ -1051,6 +1071,22 @@ async def test_managed_outbound_uses_existing_identity_and_executes_without_http
 
     workspace = tmp_path / "managed-project"
     workspace.mkdir()
+    # The native daemon runs on the test host, not inside Docker's /workspace.
+    # Give both Service roles the same provider default while keeping the mount omitted.
+    from a13n_service.providers.environment.definition import EnvironmentManagementDefinition
+
+    describe = EnvironmentManagementDefinition.describe_environment
+
+    def local_descriptor(definition, recipe):
+        descriptor = describe(definition, recipe)
+        return (
+            descriptor.model_copy(update={"working_directory": str(workspace)})
+            if definition.type == "docker"
+            else descriptor
+        )
+
+    monkeypatch.setattr(EnvironmentManagementDefinition, "describe_environment", local_descriptor)
+
     async with listening(service.app) as origin, AsyncExitStack() as stack:
         settings = service.runtime.settings
         monkeypatch.setitem(
@@ -1095,7 +1131,7 @@ async def test_managed_outbound_uses_existing_identity_and_executes_without_http
                     {
                         "name": "workspace",
                         "environment_id": identity,
-                        "working_directory": str(workspace),
+                        **({"working_directory": str(workspace)} if explicit_directory else {}),
                     }
                 ],
             )

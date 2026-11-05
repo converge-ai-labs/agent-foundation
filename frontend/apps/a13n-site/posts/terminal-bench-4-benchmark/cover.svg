@@ -1,0 +1,30 @@
+<svg class="benchmark-cover" viewBox="0 0 720 360" role="img" aria-label="Terminal-Bench 4.0: a13n passed 58.06 percent and Codex passed 58.77 percent on 62 shared task identities. Estimated inference cost on 61 tasks was 98.73 dollars for a13n and 97.70 dollars per Codex round. The a13n estimate assumes Codex cache-hit rates; actual a13n cache performance is not measured.">
+  <g class="cover-detailed">
+    <rect x="0" y="0" width="720" height="360" fill="none" />
+    <text class="fi" x="32" y="38" style="font:500 25px var(--display)">Terminal-Bench 4.0</text>
+    <text class="fi" x="32" y="70" style="font:400 18px var(--text)">Pass rate · 62 shared task identities · GPT-6.1 Sol, max</text>
+    <path class="pf" d="M32 94H688M360 120V250M32 272H688" />
+    <text class="fa" x="32" y="138" style="font:500 24px var(--display)">a13n Harness</text>
+    <text class="fi" x="392" y="138" style="font:500 24px var(--display)">Codex 0.159.0</text>
+    <text class="fa" x="28" y="210" style="font:500 68px var(--display);letter-spacing:-3px">58.06%</text>
+    <text class="fi" x="388" y="210" style="font:500 68px var(--display);letter-spacing:-3px">58.77%</text>
+    <text class="fi" x="32" y="244" style="font:400 18px var(--mono)">36 / 62 outcomes</text>
+    <text class="fi" x="392" y="244" style="font:400 18px var(--mono)">181 / 308 scored records</text>
+    <text class="fi" x="32" y="306" style="font:400 18px var(--text)">61 tasks · assumes Codex cache-hit rates</text>
+    <text class="fa" x="32" y="342" style="font:500 25px var(--display)">a13n $98.73 estimated</text>
+    <text class="fi" x="392" y="342" style="font:500 25px var(--display)">Codex $97.70 / round</text>
+  </g>
+  <g class="cover-compact">
+    <text class="fi" x="30" y="45" style="font:500 34px var(--display)">Terminal-Bench 4.0</text>
+    <path class="pf" d="M30 65H690M360 90V250M30 265H690" />
+    <text class="fi" x="30" y="110" style="font:500 30px var(--display)">a13n Harness</text>
+    <text class="fa" x="26" y="200" style="font:500 82px var(--display);letter-spacing:-4px">58.06%</text>
+    <text class="fi" x="30" y="240" style="font:400 28px var(--text)">36 / 62 outcomes</text>
+    <text class="fi" x="390" y="110" style="font:500 30px var(--display)">Codex 0.159.0</text>
+    <text class="fi" x="386" y="200" style="font:500 82px var(--display);letter-spacing:-4px">58.77%</text>
+    <text class="fi" x="390" y="240" style="font:400 28px var(--text)">181 / 308 records</text>
+    <text class="fi" x="30" y="300" style="font:400 25px var(--text)">61-task cost · assumes Codex cache-hit rates</text>
+    <text class="fa" x="30" y="342" style="font:500 30px var(--display)">$98.73 estimated</text>
+    <text class="fi" x="390" y="342" style="font:500 30px var(--display)">$97.70 / round</text>
+  </g>
+</svg>

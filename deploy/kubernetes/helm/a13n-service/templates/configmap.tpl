@@ -24,6 +24,7 @@ data:
     {{- if eq .Values.objects.backend "local" }}
     root = "/app/var/objects"
     {{- else }}
+    max_pool_connections = {{ .Values.objects.maxPoolConnections }}
     bucket = {{ .Values.objects.bucket | toJson }}
     {{- with .Values.objects.prefix }}
     prefix = {{ toJson . }}

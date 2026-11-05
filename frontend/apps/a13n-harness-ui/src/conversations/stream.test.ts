@@ -374,12 +374,13 @@ it("dispatches native custom payloads and folds task/context operations without 
   ).toMatchObject({
     name: "Compact Summary",
     context: "compaction",
+    contextState: "completed",
     result: "Keep this context",
   });
   expect(blocks.filter((block) => block.diagnostic)).toHaveLength(1);
   expect(display.terminalFailure).toBe("Provider disconnected");
   expect(blocks.find((block) => block.id.endsWith(":execution"))).toMatchObject(
-    { name: "Execution failed", text: "Provider disconnected" },
+    { execution: "failed", text: "Provider disconnected" },
   );
 });
 it("reassembles custom fragments before applying hidden metadata and rejects missing fragments", () => {
@@ -1547,7 +1548,9 @@ it("isolates inline standard and custom tools without treating child progress as
     subagentRunId: "child-a",
     outcome: { type: "suspended" },
   });
-  expect(display.blocks.get("run-one:inline:child-a")?.text).toBe("Suspended");
+  expect(display.blocks.get("run-one:inline:child-a")?.childState).toBe(
+    "suspended",
+  );
   expect(display.blocks.get("run-one:child-a:same")?.stopped).toBe(true);
   expect(display.blocks.get("run-one:same")?.stopped).toBeUndefined();
   expect(display.gap).toBe(false);
@@ -2180,5 +2183,62 @@ it("retains context recovery warnings after successful recovery without retry st
   expect(warning[0].text).toContain(
     "Immediate root-cause investigation is required.",
   );
-  expect(warning[0].text).toContain("resumed");
+  expect(warning[0].recoveryOutcome).toBe("resumed");
 });
+
+it.each(["user", "steering", "media"])(
+  "preserves %s input ownership through live frames and compact reopen",
+  (kind) => {
+    const source = kind === "steering" ? "steering" : "user";
+    const display = new FocusDisplay();
+    display.accept(snapshot(0));
+    display.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
+    display.accept(
+      rawFrame(
+        101,
+        1,
+        {
+          type: "CUSTOM",
+          name: `a13n.input.${kind}`,
+          value: {
+            event: {
+              source,
+              input_id: "native-attempt",
+              message_id: "input-message",
+              content:
+                kind === "media"
+                  ? { url: "https://example.test/image.png" }
+                  : "Prompt",
+            },
+          },
+        },
+        "input-item",
+      ),
+    );
+    const live = [...display.blocks.values()].find(
+      (block) => block.inputGroup === "native-attempt",
+    );
+    expect(live).toMatchObject({
+      id: "input-item",
+      inputSource: source,
+      inputGroup: "native-attempt",
+    });
+    const reopened = new FocusDisplay();
+    reopened.accept(snapshot(0));
+    reopened.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
+    reopened.accept(
+      compactFrame(102, [
+        compactItem("input-item", 1, {
+          role: "user",
+          text: "Prompt",
+          input_source: source,
+          input_group: "native-attempt",
+        }),
+      ]),
+    );
+    expect(reopened.blocks.get("input-item")).toMatchObject({
+      inputSource: source,
+      inputGroup: "native-attempt",
+    });
+  },
+);

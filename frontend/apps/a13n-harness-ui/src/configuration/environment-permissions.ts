@@ -1,3 +1,4 @@
+import { i18n } from "../i18n";
 import type { Schema } from "../transport/client";
 
 export const readOnly: Schema<"EnvironmentAction">[] = [
@@ -73,12 +74,14 @@ export function permissionLabel(
 ) {
   switch (permissionPreset(ceiling)) {
     case "read_only":
-      return "Read only";
+      return i18n.t("Read only");
     case "full":
-      return "Full control";
+      return i18n.t("Full control");
     default:
       return ceiling
-        ? `${ceiling.operations?.length ?? 0} allowed actions`
-        : "Files and execution";
+        ? i18n.t("{{count}} allowed action", {
+            count: ceiling.operations?.length ?? 0,
+          })
+        : i18n.t("Files and execution");
   }
 }

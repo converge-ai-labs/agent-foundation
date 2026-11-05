@@ -14,6 +14,7 @@ from a13n_service.resources.providers.tables import EnvironmentProviderRow
 from a13n_service.runs.environments import daytona_snapshots, e2b_templates, lifecycle, modal_images, vercel_snapshots
 from a13n_service.runs.environments.access import audit, find
 from a13n_service.runs.environments.adapters import provider_identity
+from a13n_service.runs.environments.read_views import environment_view
 from a13n_service.runs.environments.schemas import EnvironmentView, Handle
 from a13n_service.runs.environments.tables import EnvironmentRow
 from a13n_service.runs.runtime import Runtime
@@ -169,4 +170,4 @@ async def retry(
         await lifecycle.begin(session, row, "creating")
         await session.flush()
         audit(session, actor, row, "retry_creation")
-        return EnvironmentView.model_validate(row)
+        return environment_view(row)

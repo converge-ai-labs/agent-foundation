@@ -24,19 +24,19 @@
 }
 .heading h3 {
   margin: 0;
-  font-size: 17px;
+  font-size: calc(var(--a13n-text-body) * 17 / 14);
   font-weight: 600;
 }
 .summary,
 .instructions > p {
   margin: 4px 0 0;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: calc(var(--a13n-text-body) * 12 / 14);
   line-height: 1.6;
 }
 .summary {
   margin: 0;
-  font-size: 13px;
+  font-size: calc(var(--a13n-text-body) * 13 / 14);
 }
 .requirements {
   padding: 0;
@@ -63,18 +63,18 @@
 .requirements strong,
 .step strong,
 .instructions h4 {
-  font-size: 13px;
+  font-size: calc(var(--a13n-text-body) * 13 / 14);
   font-weight: 500;
 }
 .instructions > summary {
   cursor: pointer;
-  font-size: 13px;
+  font-size: calc(var(--a13n-text-body) * 13 / 14);
   font-weight: 500;
 }
 .requirements li > div > span,
 .state {
   color: var(--a13n-secondary);
-  font-size: 11px;
+  font-size: calc(var(--a13n-text-body) * 11 / 14);
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
@@ -100,12 +100,12 @@
   background: var(--a13n-surface);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font-size: 11px;
+  font-size: var(--harness-code-size);
   line-height: 1.6;
 }
 .error {
   color: var(--a13n-text);
-  font-size: 12px;
+  font-size: calc(var(--a13n-text-body) * 12 / 14);
   line-height: 1.6;
 }
 
@@ -116,7 +116,7 @@
   gap: 12px;
 }
 .recovery > a {
-  font-size: 12px;
+  font-size: calc(var(--a13n-text-body) * 12 / 14);
   text-decoration: underline;
   text-underline-offset: 3px;
 }
@@ -124,7 +124,7 @@
 .requirementKind {
   margin-inline-start: 8px;
   color: var(--a13n-secondary);
-  font-size: 11px;
+  font-size: calc(var(--a13n-text-body) * 11 / 14);
   font-weight: 400;
 }
 

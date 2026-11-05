@@ -220,7 +220,8 @@ async def _read(
             value = run.options.overrides
         else:
             value = agent_reads.config_section(
-                configuration.revision.config if source.section == "original" else configuration.config, source.part
+                configuration.original_config if source.section == "original" else configuration.config,
+                source.part,
             )
     else:
         await analysis.read_scope(runtime, actor, workspace_id, ctx.origin, source.trace_id)

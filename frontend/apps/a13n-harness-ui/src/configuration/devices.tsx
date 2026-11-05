@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { useState } from "react";
 import { Link } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -15,6 +16,7 @@ import environmentStyles from "./environments-page.module.css";
 import layout from "./settings.module.css";
 
 export function DevicesSection() {
+  const { t } = useTranslation();
   const { client } = useTransport();
   const sources = useSources();
   const devices = useQuery({
@@ -31,19 +33,22 @@ export function DevicesSection() {
   return (
     <section className={styles.stack}>
       <div className={environmentStyles.sectionHeader}>
-        <h2>Devices</h2>
+        <h2>{t("Devices")}</h2>
         <ConnectDevice />
       </div>
       <p>
-        Use folders and tools on another computer, with that computer’s
-        permissions.
+        {t(
+          "Use folders and tools on another computer, with that computer’s permissions.",
+        )}
       </p>
       <ErrorNotice error={devices.error || pairings.error} />
       {!!pairings.data?.length && (
         <div className={styles.stack}>
-          <h3>Waiting for approval</h3>
+          <h3>{t("Waiting for approval")}</h3>
           <p>
-            Approve only when the verification code matches your envd terminal.
+            {t(
+              "Approve only when the verification code matches your envd terminal.",
+            )}
           </p>
           {pairings.data.map((pairing) => (
             <PendingDevice key={pairing.pairing_id} pairing={pairing} />
@@ -52,7 +57,7 @@ export function DevicesSection() {
       )}
       <DraftLinks kinds={["device"]} />
       {devices.data?.length === 0 && (
-        <p className={layout.emptySection}>No devices connected yet.</p>
+        <p className={layout.emptySection}>{t("No devices connected yet.")}</p>
       )}
       <div className={styles.resourceList}>
         {devices.data?.map((device) => {
@@ -67,11 +72,11 @@ export function DevicesSection() {
                 <strong>{device.name}</strong>
                 <small>
                   {device.transport}
-                  <DebugId label="Device" value={device.id} />
+                  <DebugId label={t("Device")} value={device.id} />
                 </small>
                 {device.registration === "revoked" ? (
                   <p className="text-sm text-muted-foreground">
-                    Revoked · connections are blocked
+                    {t("Revoked · connections are blocked")}
                   </p>
                 ) : (
                   <DeviceStatus deviceId={device.id} />
@@ -86,7 +91,7 @@ export function DevicesSection() {
                     <Link
                       to={`/settings/source?path=${encodeURIComponent(source.relative_path)}`}
                     >
-                      Edit connection
+                      {t("Edit connection")}
                     </Link>
                     <ForgetEnvironment
                       path={source.relative_path}
@@ -105,6 +110,7 @@ export function DevicesSection() {
 }
 
 function RevokeDevice({ device }: { device: Schema<"DeviceSummary"> }) {
+  const { t } = useTranslation();
   const { client } = useTransport();
   const cache = useQueryClient();
   const [open, setOpen] = useState(false);
@@ -129,12 +135,14 @@ function RevokeDevice({ device }: { device: Schema<"DeviceSummary"> }) {
           revoke.reset();
         }
       }}
-      title={`Revoke ${device.name}?`}
-      description="Disconnect this device and revoke its credential? Active runs will lose access. Remote files and chat history are kept."
-      closeLabel="Close"
+      title={t("Revoke {{name}}?", { name: device.name })}
+      description={t(
+        "Disconnect this device and revoke its credential? Active runs will lose access. Remote files and chat history are kept.",
+      )}
+      closeLabel={t("Close")}
       trigger={
         <Button size="sm" variant="ghost">
-          Revoke
+          {t("Revoke")}
         </Button>
       }
       footer={
@@ -144,21 +152,22 @@ function RevokeDevice({ device }: { device: Schema<"DeviceSummary"> }) {
             disabled={revoke.isPending}
             onClick={() => setOpen(false)}
           >
-            Cancel
+            {t("Cancel")}
           </Button>
           <Button
             variant="destructive"
             loading={revoke.isPending}
             onClick={() => revoke.mutate()}
           >
-            Revoke connection
+            {t("Revoke connection")}
           </Button>
         </>
       }
     >
       <p>
-        The device's credential will stop working. Reconnect it manually to
-        request a new one.
+        {t(
+          "The device’s credential will stop working. Reconnect it manually to request a new one.",
+        )}
       </p>
       <ErrorNotice error={revoke.error} />
     </ModalFrame>
@@ -166,15 +175,16 @@ function RevokeDevice({ device }: { device: Schema<"DeviceSummary"> }) {
 }
 
 function DeviceStatus({ deviceId }: { deviceId: string }) {
+  const { t } = useTranslation();
   const info = useDeviceInfo(deviceId, false);
   return (
     <div className="flex flex-wrap items-center gap-2 text-sm">
       <span>
         {info.data
           ? info.data.available
-            ? "Online"
-            : "Unavailable"
-          : "Not checked"}
+            ? t("Online")
+            : t("Unavailable")
+          : t("Not checked")}
       </span>
       <Button
         type="button"
@@ -183,7 +193,7 @@ function DeviceStatus({ deviceId }: { deviceId: string }) {
         loading={info.isFetching}
         onClick={() => void info.refetch()}
       >
-        Check connection
+        {t("Check connection")}
       </Button>
       <ErrorNotice error={info.error} />
     </div>

@@ -250,7 +250,7 @@ async def start(
             session.add(thread)
             await session.flush()
             authority = execution_authority(actor, scope)
-            revision, overrides = await validate_message(
+            revision, overrides, options = await validate_message(
                 session, runtime, actor, scope, thread, message, authority=authority
             )
             entry = await append_message(
@@ -262,7 +262,12 @@ async def start(
                 request=Request.of(request_key, "thread", scope.workspace_id, body),
                 control=runtime.settings.control,
             )
-            await accept(session, runtime, thread, explicit=Source.message(entry, "input", actor, revision, overrides))
+            await accept(
+                session,
+                runtime,
+                thread,
+                explicit=Source.message(entry, "input", actor, revision, overrides, options=options),
+            )
             if entry.assigned_run_id is None:
                 raise conflict("workspace", scope.workspace_id, "analysis_not_accepted")
             row = AnalysisRow(

@@ -263,11 +263,12 @@ export function EnvironmentPanel({
                         etag={detail.data?.etag}
                       />
                     )}
-                    {value.status === "ready" &&
-                      !value.failure?.permanent &&
-                      can("run") && <DesktopPreview environment={value} />}
                   </>
                 )}
+              {value.desktop_preview !== "not_configured" &&
+                value.status === "ready" &&
+                !value.failure?.permanent &&
+                can("run") && <DesktopPreview environment={value} />}
               {value.failure?.code === "environment_lost" && (
                 <section className={styles.factGroup} role="status">
                   <h3>{t("Environment lost")}</h3>

@@ -7,6 +7,7 @@ export type TerminalState = {
   frame: Frame | null;
   pendingControl: boolean;
   message: string;
+  serverMessage?: string;
 };
 export type TerminalSink = {
   write: (text: string, done: () => void) => void;
@@ -49,7 +50,11 @@ export class TerminalConnection {
     );
   }
   private publish(patch: Partial<TerminalState>) {
-    this.state = { ...this.state, ...patch };
+    this.state = {
+      ...this.state,
+      ...(patch.message !== undefined ? { serverMessage: undefined } : {}),
+      ...patch,
+    };
     if (!this.disposed) this.changed(this.state);
   }
   connect(origin: string, key: string, claimCreated?: () => boolean) {
@@ -83,7 +88,8 @@ export class TerminalConnection {
           Frame | Schema<"ErrorEnvelope">;
         if ("error" in frame) {
           this.detach(
-            `${frame.error.message} Reconnect to inspect current authority; input is never replayed.`,
+            "Reconnect to inspect current authority; input is never replayed.",
+            frame.error.message,
           );
           return;
         }
@@ -262,12 +268,18 @@ export class TerminalConnection {
   }
   detach(
     message = "Detached from this view. The shared process was not closed.",
+    serverMessage?: string,
   ) {
     const socket = this.socket;
     this.socket = null;
     socket?.close();
     clearTimeout(this.controlTimer);
-    this.publish({ connection: "Detached", pendingControl: false, message });
+    this.publish({
+      connection: "Detached",
+      pendingControl: false,
+      message,
+      serverMessage,
+    });
   }
   dispose() {
     this.disposed = true;

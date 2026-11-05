@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import { Button } from "a13n-ui";
+import { useTranslation } from "../i18n";
 import { Panel } from "./ui";
 import styles from "./workbench.module.css";
 
@@ -91,18 +92,20 @@ export function InstallProvider({ children }: { children: ReactNode }) {
 
 export function InstallSettings() {
   const install = useContext(InstallContext);
+  const { t } = useTranslation();
   return (
-    <Panel title="Install Harness UI">
+    <Panel title={t("Install Harness UI")}>
       <p>
-        Open Harness from your desktop or home screen. The server must stay
-        running and connected.
+        {t(
+          "Open Harness from your desktop or home screen. The server must stay running and connected.",
+        )}
       </p>
       {install?.standalone ? (
-        <p>Running in an app window.</p>
+        <p>{t("Running in an app window.")}</p>
       ) : install?.installed ? (
-        <p role="status">Installed. Open Harness UI from your apps.</p>
+        <p role="status">{t("Installed. Open Harness UI from your apps.")}</p>
       ) : !window.isSecureContext ? (
-        <p>Installation requires HTTPS or a localhost address.</p>
+        <p>{t("Installation requires HTTPS or a localhost address.")}</p>
       ) : (
         <>
           {(install?.available || install?.pending) && (
@@ -112,22 +115,21 @@ export function InstallSettings() {
                 loading={install.pending}
                 onClick={() => void install.request()}
               >
-                Install app
+                {t("Install app")}
               </Button>
             </div>
           )}
           <details className={styles.details}>
-            <summary>Manual installation</summary>
+            <summary>{t("Manual installation")}</summary>
             <p>
-              Use your browser's Install app or Add to Home Screen option, when
-              available. On iPhone or iPad, open this page in Safari and choose
-              Share, then Add to Home Screen. On Mac, Safari offers File → Add
-              to Dock.
+              {t(
+                "Use your browser's Install app or Add to Home Screen option, when available. On iPhone or iPad, open this page in Safari and choose Share, then Add to Home Screen. On Mac, Safari offers File → Add to Dock.",
+              )}
             </p>
           </details>
         </>
       )}
-      {install?.error && <p role="alert">{install.error}</p>}
+      {install?.error && <p role="alert">{t(install.error)}</p>}
     </Panel>
   );
 }

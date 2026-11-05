@@ -218,6 +218,8 @@ The App serializes deletion with current-process root admission and checkpoint p
 
 After the transaction, the App closes local shared drafts and suppresses automatic completion input. It attempts to remove each deleted Thread's file area, respecting other Apps' file-use locks and preserving symlink targets. Cleanup failures remain diagnostic and do not restore the Thread. Project roots, remote Environment files, and independent forks remain intact. Root checkpoints and their exclusively owned payloads become eligible for background reclamation after deletion. Shared display segments and composition objects remain retained so independent forks stay readable. Deletion is not secure byte erasure or general object-store garbage collection. Current-process execution checks do not establish distributed liveness.
 
+Checkpoint reclamation bounds the number of unretained checkpoints inspected per maintenance pass and resumes the scan on later passes. Ownership filtering decodes only the fields needed to identify a possible deleted owner, avoiding full conversation reconstruction for retained Threads. These unverified hints can skip work but never authorize deletion: matching candidates still require complete object and typed-payload verification, checkpoint ownership checks, and protection of selected and restart-retained references. The scan cursor is process-local; restarting the App may revisit candidates.
+
 ## Thread Configuration Head
 
 Each root or child Thread has one mutable configuration head:

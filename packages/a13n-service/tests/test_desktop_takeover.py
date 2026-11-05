@@ -439,9 +439,11 @@ async def test_handback_reaches_live_child_without_resurrecting_settled_child(
         "coordinator",
         "scripted",
         instructions="Role: coordinator",
-        subagent_mode="async",
         subagents={
-            "helper": {"agent_id": worker["id"], "description": "Desktop work", "environment": {"mode": "shared"}}
+            "mode": "async",
+            "named": {
+                "helper": {"agent_id": worker["id"], "description": "Desktop work", "environment": {"mode": "shared"}}
+            },
         },
     )
     scripted_model.call(

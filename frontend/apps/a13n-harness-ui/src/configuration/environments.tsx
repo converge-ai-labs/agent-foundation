@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import {
   SettingsChoice as ChoiceField,
   SettingsSection,
@@ -30,7 +31,7 @@ export function EnvironmentsEditor({
   value,
   profiles = [],
   inheritedProfile,
-  inheritLabel = "Use default",
+  inheritLabel,
   allowUnsetDefault = false,
   requireWorkspace = false,
   onChange,
@@ -43,6 +44,7 @@ export function EnvironmentsEditor({
   requireWorkspace?: boolean;
   onChange: (patch: EnvironmentSelection) => void;
 }) {
+  const { t } = useTranslation();
   const roots = value.local_roots ?? [];
   const profile = profiles.find(
     (item) =>
@@ -53,18 +55,18 @@ export function EnvironmentsEditor({
       <SettingsSection
         title={
           <span className={styles.sectionTitle}>
-            Local
-            <HelpTip label="About local environments">
-              The computer running Harness.
+            {t("Local")}
+            <HelpTip label={t("About local environments")}>
+              {t("The computer running Harness.")}
             </HelpTip>
           </span>
         }
       >
         <ChoiceField
-          label="Local mode"
+          label={t("Local mode")}
           description={
             profile?.mode === "full-control"
-              ? "Runs as the server account without a sandbox."
+              ? t("Runs as the server account without a sandbox.")
               : profile?.description
           }
           value={value.environment_profile_id ?? ""}
@@ -74,7 +76,7 @@ export function EnvironmentsEditor({
             })
           }
           options={[
-            { value: "", label: inheritLabel },
+            { value: "", label: inheritLabel ?? t("Use default") },
             ...profiles.map((item) => ({
               value: item.profile_id,
               label: item.name,
@@ -86,7 +88,9 @@ export function EnvironmentsEditor({
               ? [
                   {
                     value: value.environment_profile_id,
-                    label: `${value.environment_profile_id} · Unavailable`,
+                    label: t("{{name}} · Unavailable", {
+                      name: value.environment_profile_id,
+                    }),
                     disabled: true,
                   },
                 ]
@@ -132,6 +136,7 @@ export function EnvironmentsSummary({
   value: EnvironmentSelection;
   profiles?: Schema<"ThreadSelectorCatalog">["environments"];
 }) {
+  const { t } = useTranslation();
   const profile = profiles.find(
     (item) => item.profile_id === value.environment_profile_id,
   );
@@ -139,22 +144,22 @@ export function EnvironmentsSummary({
   return (
     <div className={styles.summary}>
       <section className={styles.summaryEnvironment}>
-        <p className="font-medium">Local · Harness server</p>
+        <p className="font-medium">{t("Local · Harness server")}</p>
         <p className="text-muted-foreground">
-          {profile?.name ?? value.environment_profile_id ?? "Default mode"}
+          {profile?.name ?? value.environment_profile_id ?? t("Default mode")}
           {value.local_roots?.length
             ? ` · ${directoryCount(value.local_roots.length)}`
-            : " · Chat files only"}
+            : ` · ${t("Chat files only")}`}
         </p>
         {(value.local_roots ?? []).map((path, index) => (
           <p key={path} className={styles.summaryPath}>
             {path}
             {localAlias(index) === selected && (
-              <span className="ml-2 text-muted-foreground">Default</span>
+              <span className="ml-2 text-muted-foreground">{t("Default")}</span>
             )}
           </p>
         ))}
-        {selected === "thread-files" && <p>Chat files · Default</p>}
+        {selected === "thread-files" && <p>{t("Chat files · Default")}</p>}
       </section>
       <BindingSummary
         bindings={value.environment_bindings ?? []}

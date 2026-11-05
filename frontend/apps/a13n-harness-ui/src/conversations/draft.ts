@@ -77,7 +77,7 @@ export type Submission =
       action?: "send" | "steer";
       receipt: string;
     }
-  | { kind: "rejected"; message: string };
+  | { kind: "rejected"; message: string; raw?: boolean };
 
 export class ThreadDraft {
   doc = replica();
@@ -93,6 +93,7 @@ export class ThreadDraft {
   participants: Schema<"DraftFrame">["participants"] = {};
   status = "Disconnected";
   error = "";
+  errorRaw = false;
   submission: Submission = { kind: "idle" };
   // Private cancellation feedback, never serialized into the shared document.
   stop: StopRequest | undefined;
@@ -115,6 +116,7 @@ export class ThreadDraft {
   private documentChanged = (_update: Uint8Array, origin: unknown) => {
     if (origin !== remote) {
       this.error = "";
+      this.errorRaw = false;
       this.send?.();
     }
     this.notify();
@@ -256,6 +258,7 @@ export class ThreadDraft {
     this.accepted = undefined;
     this.replacement = undefined;
     this.error = "";
+    this.errorRaw = false;
     this.receive(frame);
     if (restore)
       this.doc.transact(() => {
@@ -336,6 +339,7 @@ export class ThreadDraft {
         return;
       const update = Y.encodeStateAsUpdate(this.doc);
       if (update.length > 512 * 1024) {
+        this.errorRaw = false;
         this.error =
           "This draft is over the 512 KiB limit. Copy your text before joining a new draft.";
         this.notify();
@@ -372,6 +376,8 @@ export class ThreadDraft {
             // correction may send again, or reconnect may reconcile the room.
             inFlight = undefined;
             const error = frame.error;
+            this.errorRaw =
+              typeof error === "object" && error !== null && "message" in error;
             this.error =
               typeof error === "object" && error !== null && "message" in error
                 ? String(error.message)
@@ -410,6 +416,7 @@ export class ThreadDraft {
             sendPresence();
           }
         } catch (error) {
+          this.errorRaw = false;
           this.error =
             error instanceof Error
               ? error.message

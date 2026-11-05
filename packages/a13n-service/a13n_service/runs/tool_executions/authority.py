@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hmac
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
@@ -15,7 +16,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from a13n_service.infra.crypto import secret_hash
 from a13n_service.infra.db import lock, now, transaction
 from a13n_service.infra.errors import ServiceError
-from a13n_service.runs.attempts import Lease, LeaseLost, authorize_execution, execution_principals, lock_lease
+from a13n_service.runs.attempts import (
+    AuthorityRevoked,
+    Lease,
+    LeaseLost,
+    authorize_execution,
+    execution_principals,
+    lock_lease,
+)
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import EnvironmentMount
 from a13n_service.runs.tables import AttemptRow, RunRow, ToolExecutionRow
@@ -91,45 +99,101 @@ async def authorize_control(
     Tokens stay process-local; this receiver checks durable eligibility and the
     frozen mount ceiling rather than trusting a new Thread selection.
     """
-    run = await session.get(RunRow, caller.run_id)
-    current = await now(session)
-    if run is None or run.thread_id != thread_id:
-        raise LeaseLost()
-    if run.cancel_requested_at is not None and not (cleanup and caller.execution_id):
-        raise LeaseLost()
-    if caller.execution_id is None:
-        attempt = await session.get(AttemptRow, caller.attempt_id)
-        if (
-            attempt is None
-            or attempt.run_id != run.id
-            or run.status != "running"
-            or run.current_attempt_id != attempt.id
-            or attempt.status not in {"leased", "running"}
-            or attempt.worker_id != caller.worker_id
-            or attempt.lease_expires_at <= current
-        ):
+    snapshot = await ControlSnapshot.load(session, runtime, [caller])
+    return snapshot.authorize(
+        caller, thread_id=thread_id, environment_id=environment_id, actions=actions, cleanup=cleanup
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class ControlSnapshot:
+    """One operation's database observations; never retained between checks."""
+
+    runs: dict[str, RunRow]
+    attempts: dict[str, AttemptRow]
+    executions: dict[str, ToolExecutionRow]
+    principals: dict[str, Principal | ServiceError]
+    current: datetime
+
+    @classmethod
+    async def load(cls, session: AsyncSession, runtime: Runtime, callers: Sequence[Caller]) -> ControlSnapshot:
+        runs = {
+            row.id: row
+            for row in await session.scalars(select(RunRow).where(RunRow.id.in_({c.run_id for c in callers})))
+        }
+        attempt_ids = {c.attempt_id for c in callers if c.execution_id is None}
+        execution_ids = {c.execution_id for c in callers if c.execution_id is not None}
+        attempts = (
+            {row.id: row for row in await session.scalars(select(AttemptRow).where(AttemptRow.id.in_(attempt_ids)))}
+            if attempt_ids
+            else {}
+        )
+        executions = (
+            {
+                row.id: row
+                for row in await session.scalars(select(ToolExecutionRow).where(ToolExecutionRow.id.in_(execution_ids)))
+            }
+            if execution_ids
+            else {}
+        )
+        return cls(
+            runs,
+            attempts,
+            executions,
+            await execution_principals(session, runtime.access, runs.values()),
+            await now(session),
+        )
+
+    def authorize(
+        self,
+        caller: Caller,
+        *,
+        thread_id: str,
+        environment_id: str,
+        actions: frozenset[EnvironmentAction],
+        cleanup: bool = False,
+    ) -> ControlGrant:
+        run = self.runs.get(caller.run_id)
+        current = self.current
+        if run is None or run.thread_id != thread_id:
             raise LeaseLost()
-    else:
-        execution = await session.get(ToolExecutionRow, caller.execution_id)
-        if (
-            execution is None
-            or execution.run_id != run.id
-            or execution.attempt_id != caller.attempt_id
-            or execution.worker_id != caller.worker_id
-            or execution.completed_at is not None
-            or (execution.cancel_requested_at is not None and not cleanup)
-            or execution.lease_expires_at <= current
-        ):
+        if run.cancel_requested_at is not None and not (cleanup and caller.execution_id):
             raise LeaseLost()
-    principal = await authorize_execution(session, runtime.access, run)
-    for value in run.environment_mounts:
-        if value["environment_id"] == environment_id:
-            mount = EnvironmentMount.model_validate(value)
-            if actions <= mount.permission_ceiling.operations:
-                return ControlGrant(
-                    principal, run.workspace_id, mount, ExecutionAuthority.model_validate(run.authority)
-                )
-    raise LeaseLost()
+        if caller.execution_id is None:
+            attempt = self.attempts.get(caller.attempt_id)
+            if (
+                attempt is None
+                or attempt.run_id != run.id
+                or run.status != "running"
+                or run.current_attempt_id != attempt.id
+                or attempt.status not in {"leased", "running"}
+                or attempt.worker_id != caller.worker_id
+                or attempt.lease_expires_at <= current
+            ):
+                raise LeaseLost()
+        else:
+            execution = self.executions.get(caller.execution_id)
+            if (
+                execution is None
+                or execution.run_id != run.id
+                or execution.attempt_id != caller.attempt_id
+                or execution.worker_id != caller.worker_id
+                or execution.completed_at is not None
+                or (execution.cancel_requested_at is not None and not cleanup)
+                or execution.lease_expires_at <= current
+            ):
+                raise LeaseLost()
+        principal = self.principals[run.id]
+        if isinstance(principal, ServiceError):
+            raise AuthorityRevoked() from principal
+        for value in run.environment_mounts:
+            if value["environment_id"] == environment_id:
+                mount = EnvironmentMount.model_validate(value)
+                if actions <= mount.permission_ceiling.operations:
+                    return ControlGrant(
+                        principal, run.workspace_id, mount, ExecutionAuthority.model_validate(run.authority)
+                    )
+        raise LeaseLost()
 
 
 async def heartbeat(runtime: Runtime, worker_id: str) -> tuple[tuple[tuple[str, str], ...], set[str]]:

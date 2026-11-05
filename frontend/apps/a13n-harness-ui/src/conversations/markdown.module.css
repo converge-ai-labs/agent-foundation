@@ -79,18 +79,18 @@
   color: var(--a13n-text);
 }
 .markdown h1 {
-  font-size: 20px;
+  font-size: 1.5em;
 }
 .markdown h2 {
-  font-size: 16px;
+  font-size: 1.25em;
 }
 .markdown h3 {
-  font-size: 16px;
+  font-size: 1.125em;
 }
 .markdown h4,
 .markdown h5,
 .markdown h6 {
-  font-size: 14px;
+  font-size: 1em;
 }
 .markdown code {
   font-family: var(--a13n-mono);
@@ -128,7 +128,7 @@
   white-space: pre;
   overflow-wrap: normal;
   font-family: var(--a13n-mono);
-  font-size: 12px;
+  font-size: var(--harness-code-size);
   line-height: 1.6;
   tab-size: 2;
 }
@@ -156,14 +156,14 @@
   padding: 4px 8px 4px 16px;
   border-bottom: 1px solid var(--a13n-border);
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 /* Header controls share the compact 32px height; coarse pointers
    keep the shared 44px hit area. */
 .codeHeader button {
   height: 32px;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   font-weight: 400;
 }
 .codeHeader button:hover {
@@ -208,7 +208,7 @@
   margin: 0;
   padding: 12px 16px;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .tableScroll {
   max-width: 100%;
@@ -227,7 +227,7 @@
   overflow-wrap: normal;
   word-break: normal;
   border-collapse: collapse;
-  font-size: 14px;
+  font-size: inherit;
   line-height: 1.6;
   font-variant-numeric: tabular-nums;
 }

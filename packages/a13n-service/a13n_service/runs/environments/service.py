@@ -35,6 +35,7 @@ from a13n_service.runs.environments.lifecycle import (
 )
 from a13n_service.runs.environments.monitoring.bindings import Selection, select_source
 from a13n_service.runs.environments.mounts import require_usable
+from a13n_service.runs.environments.read_views import environment_view
 from a13n_service.runs.environments.schemas import (
     ComputerCheck,
     EnvironmentPage,
@@ -69,7 +70,7 @@ async def list_environments(
             cursor=cursor,
             limit=limit,
         )
-    items = [EnvironmentView.model_validate(row) for row in rows]
+    items = [environment_view(row) for row in rows]
     await runtime.client_connections.observe(items)
     return EnvironmentPage(items=items, next_cursor=next_cursor)
 
@@ -79,7 +80,7 @@ async def get_environment(
 ) -> EnvironmentView:
     async with short_session(runtime.storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "read")
-        view = EnvironmentView.model_validate(await find(session, scope, environment_id))
+        view = environment_view(await find(session, scope, environment_id))
     await runtime.client_connections.observe([view])
     return view
 
@@ -101,7 +102,7 @@ async def reserve_environment(
         await begin(session, environment, "creating")
         await session.flush()
         audit(session, actor, environment, "create")
-        return EnvironmentView.model_validate(environment)
+        return environment_view(environment)
 
 
 async def register_external(
@@ -135,7 +136,7 @@ async def register_external(
         session.add(environment)
         await session.flush()
         audit(session, actor, environment, "register")
-        return EnvironmentView.model_validate(environment)
+        return environment_view(environment)
 
 
 async def select_metrics_source(
@@ -154,7 +155,7 @@ async def select_metrics_source(
         if await select_source(session, actor, environment, body.metrics_data_source_id, body.metrics_labels):
             await session.flush()
             audit(session, actor, environment, "metrics_binding.update")
-        return EnvironmentView.model_validate(environment)
+        return environment_view(environment)
 
 
 async def update_environment(
@@ -178,7 +179,7 @@ async def update_environment(
             environment.name = body.name
             await session.flush()
             audit(session, actor, environment, "update")
-        return EnvironmentView.model_validate(environment)
+        return environment_view(environment)
 
 
 async def _reconnect(
@@ -213,7 +214,7 @@ async def _reconnect(
             environment.name = body.name
         await session.flush()
         audit(session, actor, environment, "update")
-        return EnvironmentView.model_validate(environment)
+        return environment_view(environment)
 
 
 async def stop_environment(
@@ -234,7 +235,7 @@ async def stop_environment(
         await begin(session, environment, "stopping")
         await session.flush()
         audit(session, actor, environment, "stop")
-        return EnvironmentView.model_validate(environment)
+        return environment_view(environment)
 
 
 async def delete_environment(
@@ -263,7 +264,7 @@ async def delete_environment(
         require_match(if_match, environment.id, environment.version)
         require_manager(actor, scope, environment)
         if environment.status in {"deleting", "deleted"}:
-            return EnvironmentView.model_validate(environment)
+            return environment_view(environment)
         if threads and unusable(environment):
             await session.execute(
                 delete(ThreadEnvironmentRow).where(
@@ -293,7 +294,7 @@ async def delete_environment(
             await begin(session, environment, "deleting")
         await session.flush()
         audit(session, actor, environment, "delete")
-        return EnvironmentView.model_validate(environment)
+        return environment_view(environment)
 
 
 async def check_computer(runtime: Runtime, actor: Principal, workspace_id: str, environment_id: str) -> ComputerCheck:

@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, FormField, Input, ChoiceField } from "a13n-ui";
@@ -82,6 +83,7 @@ function McpInput({
   request: Request;
   reconcile: () => void;
 }) {
+  const { t } = useTranslation();
   const { client } = useTransport();
   const queries = useQueryClient();
   const schema = record(request.schema);
@@ -126,19 +128,25 @@ function McpInput({
   }
   const locked = answer.isPending || submitted !== undefined;
   return (
-    <section className={conversation.decision} aria-label="MCP input request">
+    <section
+      className={conversation.decision}
+      aria-label={t("MCP input request")}
+    >
       <div className={styles.request}>
         <div className={styles.heading}>
-          <h3>Input requested</h3>
+          <h3>{t("Input requested")}</h3>
           <span className={styles.tool}>{request.server_id}</span>
         </div>
         {request.thread_id !== threadId && (
-          <p className={styles.hint}>From child Thread {request.thread_id}</p>
+          <p className={styles.hint}>
+            {t("From child Thread {{id}}", { id: request.thread_id })}
+          </p>
         )}
         <p className={styles.reason}>{request.message}</p>
         <p className={styles.hint}>
-          Your response goes to this MCP server. Don't include passwords, tokens
-          or other secrets.
+          {t(
+            "Your response goes to this MCP server. Don't include passwords, tokens or other secrets.",
+          )}
         </p>
         {request.mode === "url" ? (
           <>
@@ -147,11 +155,12 @@ function McpInput({
               target="_blank"
               rel="noopener noreferrer"
             >
-              Open external page
+              {t("Open external page")}
             </a>
             <p className={styles.hint}>
-              Finish the action in your browser, then choose Done. Server
-              credentials aren't sent to that page.
+              {t(
+                "Finish the action in your browser, then choose Done. Server credentials aren't sent to that page.",
+              )}
             </p>
           </>
         ) : (
@@ -225,8 +234,8 @@ function McpInput({
                         }
                         options={(
                           enums ?? [
-                            { value: true, label: "Yes" },
-                            { value: false, label: "No" },
+                            { value: true, label: t("Yes") },
+                            { value: false, label: t("No") },
                           ]
                         ).map((option) => ({
                           value: String(option.value),
@@ -236,8 +245,8 @@ function McpInput({
                           set(
                             (
                               enums ?? [
-                                { value: true, label: "Yes" },
-                                { value: false, label: "No" },
+                                { value: true, label: t("Yes") },
+                                { value: false, label: t("No") },
                               ]
                             ).find(
                               (option) => String(option.value) === selected,
@@ -284,7 +293,7 @@ function McpInput({
               })}
               <div className={styles.actions}>
                 <Button type="submit" disabled={locked}>
-                  Send response
+                  {t("Send response")}
                 </Button>
               </div>
             </div>
@@ -296,7 +305,7 @@ function McpInput({
               disabled={locked}
               onClick={() => send({ action: "accept" })}
             >
-              Done
+              {t("Done")}
             </Button>
           )}
           <Button
@@ -304,19 +313,19 @@ function McpInput({
             disabled={locked}
             onClick={() => send({ action: "decline" })}
           >
-            Decline
+            {t("Decline")}
           </Button>
           <Button
             variant="ghost"
             disabled={locked}
             onClick={() => send({ action: "cancel" })}
           >
-            Cancel request
+            {t("Cancel request")}
           </Button>
         </div>
         {answer.isPending && (
           <p role="status" className={styles.hint}>
-            Sending response…
+            {t("Sending response…")}
           </p>
         )}
         {answer.error && <ErrorNotice error={answer.error} />}
@@ -325,19 +334,20 @@ function McpInput({
             isConnectionError(answer.error)) && (
             <>
               <p className={styles.hint}>
-                Couldn't confirm delivery. Check the request before retrying.
-                The tool itself won't run again.
+                {t(
+                  "Couldn't confirm delivery. Check the request before retrying. The tool itself won't run again.",
+                )}
               </p>
               <div className={styles.actions}>
                 <Button variant="ghost" onClick={reconcile}>
-                  Check request
+                  {t("Check request")}
                 </Button>
                 <Button
                   variant="ghost"
                   disabled={answer.isPending || !submitted}
                   onClick={() => submitted && answer.mutate(submitted)}
                 >
-                  Retry response
+                  {t("Retry response")}
                 </Button>
               </div>
             </>

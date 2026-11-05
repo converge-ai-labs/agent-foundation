@@ -9,9 +9,11 @@ import {
 } from "a13n-ui";
 import { LinkSimple, Check, Copy } from "@phosphor-icons/react";
 import { copyText } from "../platform";
+import { useTranslation } from "../i18n";
 import styles from "./native.module.css";
 
 export function ViewLink({ getLink }: { getLink: () => string | undefined }) {
+  const { t } = useTranslation();
   const [link, setLink] = useState("");
   const [copied, setCopied] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -27,20 +29,21 @@ export function ViewLink({ getLink }: { getLink: () => string | undefined }) {
     >
       <PopoverTrigger
         render={<Button variant="ghost" size="icon" />}
-        aria-label="Share explorer view"
-        title="Copy view link"
+        aria-label={t("Share explorer view")}
+        title={t("Copy view link")}
       >
         <LinkSimple />
       </PopoverTrigger>
       <PopoverPopup align="end" className={styles.viewLink}>
-        <PopoverTitle>View link</PopoverTitle>
+        <PopoverTitle>{t("View link")}</PopoverTitle>
         <p>
-          Opens this view for people with access to this server. Your access key
-          isn't included.
+          {t(
+            "Opens this view for people with access to this server. Your access key isn't included.",
+          )}
         </p>
         <div className={styles.linkField}>
           <Input
-            aria-label="View link"
+            aria-label={t("View link")}
             value={link}
             readOnly
             onFocus={(event) => {
@@ -50,7 +53,7 @@ export function ViewLink({ getLink }: { getLink: () => string | undefined }) {
           />
           <Button
             variant="outline"
-            aria-label={copied ? "Copied" : "Copy link"}
+            aria-label={copied ? t("Copied") : t("Copy link")}
             disabled={!link}
             onClick={async () => {
               try {
@@ -63,12 +66,12 @@ export function ViewLink({ getLink }: { getLink: () => string | undefined }) {
             }}
           >
             {copied ? <Check /> : <Copy />}
-            {copied ? "Copied" : "Copy"}
+            {copied ? t("Copied") : t("Copy")}
           </Button>
         </div>
         {failed && (
           <p role="alert">
-            Couldn't copy. Select the link and copy it manually.
+            {t("Couldn't copy. Select the link and copy it manually.")}
           </p>
         )}
       </PopoverPopup>

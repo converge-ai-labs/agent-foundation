@@ -114,6 +114,7 @@ class EnvironmentView(BaseModel):
     id: str
     kind: Literal["managed", "external_http", "external"]
     client_connection: ClientConnectionObservation | None = None
+    desktop_preview: Literal["supported", "connection_unsupported", "not_configured"] = "not_configured"
     organization_id: str
     workspace_id: str
     # NULL for an external target.

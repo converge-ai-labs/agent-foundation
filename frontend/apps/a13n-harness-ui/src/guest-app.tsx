@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useTranslation } from "./i18n";
 import {
   BrowserRouter,
   Navigate,
@@ -112,17 +113,21 @@ export function GuestApp({ shareId }: { shareId: string }) {
   );
 }
 function AccessUnavailable() {
+  const { t } = useTranslation();
   return (
     <main className={styles.unavailable}>
       <div>
         <LinkBreak size={32} />
-        <h1>This link is unavailable</h1>
-        <p>This link expired or was revoked. Ask the sender for a new one.</p>
+        <h1>{t("This link is unavailable")}</h1>
+        <p>
+          {t("This link expired or was revoked. Ask the sender for a new one.")}
+        </p>
       </div>
     </main>
   );
 }
 function GuestSession({ shareId }: { shareId: string }) {
+  const { t } = useTranslation();
   const { client } = useTransport();
   const queries = useQueryClient();
   const access = useQuery({
@@ -149,7 +154,7 @@ function GuestSession({ shareId }: { shareId: string }) {
         <div>
           <ChatCircle size={32} />
           <h1>
-            {access.isError ? "Couldn’t connect" : "Opening shared link…"}
+            {access.isError ? t("Couldn’t connect") : t("Opening shared link…")}
           </h1>
           <ErrorNotice
             error={access.error}
@@ -175,6 +180,7 @@ function GuestShell({
   access: Schema<"ShareAccess">;
   refreshAccess: () => void;
 }) {
+  const { t, i18n } = useTranslation();
   const { client } = useTransport();
   const queries = useQueryClient();
   const navigate = useNavigate();
@@ -261,7 +267,7 @@ function GuestShell({
               className={styles.mobileToggle}
               variant="ghost"
               size="icon-sm"
-              aria-label="Show chats"
+              aria-label={t("Show chats")}
               aria-expanded={sidebar}
               onClick={() => setSidebar(!sidebar)}
             >
@@ -274,33 +280,38 @@ function GuestShell({
           <div>
             <h1 title={access.title}>{access.title}</h1>
             <p>
-              Shared {project ? "project" : "chat"} ·{" "}
-              <span>{canPrompt ? "Can send messages" : "View only"}</span>
+              {project ? t("Shared project") : t("Shared chat")} ·{" "}
+              <span>{canPrompt ? t("Can send messages") : t("View only")}</span>
             </p>
           </div>
         </div>
         <div className={styles.access}>
           <span
             className={styles.expiry}
-            title={new Date(access.grant.expires_at).toLocaleString()}
+            title={new Date(access.grant.expires_at).toLocaleString(
+              i18n.resolvedLanguage,
+            )}
           >
-            Until{" "}
-            {new Date(access.grant.expires_at).toLocaleDateString(undefined, {
-              month: "short",
-              day: "numeric",
-            })}
+            {t("Until")}{" "}
+            {new Date(access.grant.expires_at).toLocaleDateString(
+              i18n.resolvedLanguage,
+              {
+                month: "short",
+                day: "numeric",
+              },
+            )}
           </span>
           <ParticipantAvatars
             participants={(live.presence?.participants ?? []).filter(
               (p) => p.participant_id !== live.presence?.participant_id,
             )}
             ownId={live.presence?.participant_id}
-            threadTitle="this chat"
+            threadTitle={t("this chat")}
           />
           <Button
             variant="ghost"
             size="icon-sm"
-            aria-label="Your display name"
+            aria-label={t("Your display name")}
             title={profile.display_name}
             onClick={() => setProfileOpen(true)}
           >
@@ -312,15 +323,15 @@ function GuestShell({
         {project && (
           <aside
             className={`${styles.sidebar} ${sidebar ? styles.sidebarOpen : ""}`}
-            aria-label="Project chats"
+            aria-label={t("Project chats")}
           >
             <div className={styles.sidebarTop}>
-              <h2>Chats</h2>
+              <h2>{t("Chats")}</h2>
               {canPrompt && (
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  aria-label="New chat"
+                  aria-label={t("New chat")}
                   loading={create.isPending}
                   onClick={() => create.mutate()}
                 >
@@ -330,8 +341,8 @@ function GuestShell({
             </div>
             <Input
               type="search"
-              aria-label="Search shared chats"
-              placeholder="Search chats…"
+              aria-label={t("Search shared chats")}
+              placeholder={t("Search chats…")}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -341,7 +352,9 @@ function GuestShell({
             />
             {create.isError && (
               <p className={styles.hint}>
-                The chat may already exist. Check the list before trying again.
+                {t(
+                  "The chat may already exist. Check the list before trying again.",
+                )}
               </p>
             )}
             <nav className={`${styles.threadList} a13n-scrollbar`}>
@@ -355,23 +368,25 @@ function GuestShell({
                       isActive ? styles.activeThread : styles.thread
                     }
                   >
-                    <span>{thread.title || "Untitled chat"}</span>
+                    <span>{thread.title || t("Untitled chat")}</span>
                     <small>
                       {thread.root_activity.state === "inactive"
                         ? new Date(
                             thread.touched_at ?? thread.created_at,
-                          ).toLocaleDateString(undefined, {
+                          ).toLocaleDateString(i18n.resolvedLanguage, {
                             month: "short",
                             day: "numeric",
                           })
-                        : "Working…"}
+                        : t("Working…")}
                     </small>
                   </NavLink>
                 ))}
-              {list.isPending && <p className={styles.hint}>Loading chats…</p>}
+              {list.isPending && (
+                <p className={styles.hint}>{t("Loading chats…")}</p>
+              )}
               {list.data?.pages[0]?.total === 0 && (
                 <p className={styles.hint}>
-                  {search ? "No matching chats." : "No chats yet."}
+                  {search ? t("No matching chats.") : t("No chats yet.")}
                 </p>
               )}
               {list.hasNextPage && (
@@ -380,7 +395,7 @@ function GuestShell({
                   loading={list.isFetchingNextPage}
                   onClick={() => void list.fetchNextPage()}
                 >
-                  Show more
+                  {t("Show more")}
                 </Button>
               )}
             </nav>
@@ -403,12 +418,15 @@ function GuestShell({
                 project ? (
                   <div className={styles.welcome}>
                     <Folder size={32} style={{ margin: "auto" }} />
-                    <h2>Shared project</h2>
+                    <h2>{t("Shared project")}</h2>
                     <p>
-                      Choose a chat to catch up
                       {canPrompt
-                        ? ", or start a new one with the project’s agent."
-                        : " and follow along as the work unfolds."}
+                        ? t(
+                            "Choose a chat to catch up, or start a new one with the project’s agent.",
+                          )
+                        : t(
+                            "Choose a chat to catch up and follow along as the work unfolds.",
+                          )}
                     </p>
                     {canPrompt && (
                       <Button
@@ -416,7 +434,7 @@ function GuestShell({
                         onClick={() => create.mutate()}
                       >
                         <Plus size={16} />
-                        New chat
+                        {t("New chat")}
                       </Button>
                     )}
                   </div>
@@ -431,9 +449,9 @@ function GuestShell({
       <ModalFrame
         open={profileOpen}
         onOpenChange={setProfileOpen}
-        title="Your display name"
-        description="Shown to people in this chat. Names are not verified."
-        closeLabel="Close"
+        title={t("Your display name")}
+        description={t("Shown to people in this chat. Names are not verified.")}
+        closeLabel={t("Close")}
       >
         <form
           className={layout.stack}
@@ -445,16 +463,16 @@ function GuestShell({
             setProfileOpen(false);
           }}
         >
-          <TextField label="Name" value={name} onChange={setName} />
+          <TextField label={t("Name")} value={name} onChange={setName} />
           <div className={layout.dialogActions} data-a13n-form-actions>
             <Button
               type="button"
               variant="outline"
               onClick={() => setProfileOpen(false)}
             >
-              Cancel
+              {t("Cancel")}
             </Button>
-            <Button type="submit">Save name</Button>
+            <Button type="submit">{t("Save name")}</Button>
           </div>
         </form>
       </ModalFrame>

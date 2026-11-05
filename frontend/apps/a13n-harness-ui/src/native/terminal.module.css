@@ -28,7 +28,7 @@
   justify-content: space-between;
 }
 .header strong {
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   font-weight: 500;
 }
 .sessionBar {
@@ -39,7 +39,7 @@
 }
 .identity,
 .screen small {
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   color: var(--a13n-secondary);
   overflow-wrap: anywhere;
 }
@@ -57,7 +57,7 @@
 }
 .controlBar {
   justify-content: space-between;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .connectionStatus {
   display: flex;
@@ -74,7 +74,7 @@
 }
 .message {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   color: var(--a13n-secondary);
 }
 .viewport {
@@ -102,7 +102,7 @@
 .empty {
   padding: 16px 0;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   max-width: 620px;
 }
 @media (max-width: 700px) {

@@ -52,14 +52,14 @@ export function MemoriesPage() {
   ];
   return (
     <Page
-      title={t("Memories")}
+      title={t("Memory collections")}
       description={t("Files and records your agents keep across sessions.")}
       actions={create}
       toolbar={
         <Toolbar
           search={search}
           onSearchChange={setSearch}
-          searchLabel={t("Search memories")}
+          searchLabel={t("Search collections")}
           filters={
             <>
               <ChoiceField
@@ -109,12 +109,12 @@ export function MemoriesPage() {
       ) : query.data?.items.length ? (
         <>
           <ResourceTable
-            caption={t("Memories")}
+            caption={t("Memory collections")}
             items={query.data.items}
             onRowActivate={(memory) => navigate(memory.id)}
             columns={[
               {
-                label: t("Memory"),
+                label: t("Memory collection"),
                 tone: "primary",
                 render: (memory) => (
                   <ResourceIdentity
@@ -161,7 +161,7 @@ export function MemoriesPage() {
             ]}
           />
           <CollectionFooter
-            count={t("{{count}} memories on this page", {
+            count={t("{{count}} collections on this page", {
               count: query.data.items.length,
             })}
           >
@@ -172,11 +172,13 @@ export function MemoriesPage() {
         !query.error && (
           <Empty
             icon={<BrainIcon size={20} />}
-            title={t(filtered ? "No matching memories" : "No memories yet")}
+            title={t(
+              filtered ? "No matching collections" : "No collections yet",
+            )}
             description={t(
               filtered
                 ? "Change or clear the search and filters."
-                : "Create a memory to give agents what they keep across sessions.",
+                : "Create a collection for the files and records agents keep across sessions.",
             )}
             action={!filtered && create}
           />

@@ -2,6 +2,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import userEvent from "@testing-library/user-event";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -11,6 +12,7 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TransportContext } from "../transport/context";
 import { ApiError, type Schema, type Transport } from "../transport/client";
+import { i18n } from "../i18n";
 import { DecisionForm } from "./decisions";
 
 afterEach(cleanup);
@@ -317,3 +319,39 @@ it.each([false, true])(
     );
   },
 );
+
+it("switches language without losing a denial draft or replaying a pending decision", async () => {
+  await i18n.changeLanguage("en");
+  let resolve!: (value: { data: { receipt_id: string } }) => void;
+  const POST = vi.fn().mockImplementation(
+    () =>
+      new Promise((done) => {
+        resolve = done;
+      }),
+  );
+  setup([shell], POST);
+  fireEvent.click(screen.getByText("Add a reason for denying"));
+  fireEvent.change(screen.getByRole("textbox", { name: "Reason (optional)" }), {
+    target: { value: "Keep this draft" },
+  });
+  await act(() => i18n.changeLanguage("zh-CN"));
+  expect(screen.getByText("Shell 命令审批")).toBeTruthy();
+  expect(screen.getByText("风险：高")).toBeTruthy();
+  expect(screen.getByText("Writes to the workspace")).toBeTruthy();
+  expect(
+    (
+      screen.getByRole("textbox", {
+        name: "理由（可选）",
+      }) as HTMLTextAreaElement
+    ).value,
+  ).toBe("Keep this draft");
+  fireEvent.click(screen.getByRole("button", { name: "拒绝" }));
+  await waitFor(() => expect(POST).toHaveBeenCalledOnce());
+  await act(() => i18n.changeLanguage("en"));
+  expect(POST).toHaveBeenCalledOnce();
+  await act(async () => resolve({ data: { receipt_id: "receipt-one" } }));
+  expect(
+    await screen.findByText(/execution has not been confirmed/),
+  ).toBeTruthy();
+  expect(POST).toHaveBeenCalledOnce();
+});

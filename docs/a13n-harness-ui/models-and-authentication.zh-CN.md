@@ -159,7 +159,7 @@ JSON 兼容请求参数放在 `settings`。嵌套对象、显式 `null` 和有�
 | `extra_headers`、`extra_body`                                                         | 原生请求扩展                      |
 | `openai_prompt_cache_key`、`openai_store`                                             | OpenAI 选项，受订阅适配器行为约束 |
 
-Responses API Model 支持 `settings.openai_transport: websocket` 或 `http`。API 密钥 Model 默认使用 HTTP，Codex 订阅 Model 默认使用 WebSocket；显式设置 `openai_transport: http` 即可使用 HTTP。Pydantic AI 管理连接复用、重连和回退；WebSocket 模式在未提供续接设置时使用原生 `openai_previous_response_id: auto`，也支持 `openai_store: false`。`model_request_transport` 自定义生命周期事件记录实际的 `http` 或 `websocket` 响应路径。连接失败可能回退到 HTTP，因此请求设置本身不能证明实际使用的传输方式。
+Responses API Model 支持 `settings.openai_transport: websocket` 或 `http`。未设置该字段的 Model 使用 HTTP。Harness UI 使用推荐默认值准备新 Codex 订阅 Model 时，会显式写入 `openai_transport: websocket`，初始化时生成的 Codex shell reviewer 也包含该设置。已有 Model 和显式提供的 settings 映射保持不变。Model 默认值中的 **使用 WebSocket** 反映已保存的配置：勾选写入 `websocket`，取消勾选写入 `http`。高级 YAML 编辑的是同一个值。Pydantic AI 管理连接复用、重连和回退；WebSocket 模式在未提供续接设置时使用原生 `openai_previous_response_id: auto`，也支持 `openai_store: false`。`model_request_transport` 自定义生命周期事件记录实际的 `http` 或 `websocket` 响应路径。连接失败可能回退到 HTTP，因此请求设置本身不能证明实际使用的传输方式。
 
 设置原样持久化，包括放在其中的秘密。使用专用凭据引用，分享前检查诊断内容。
 
@@ -177,6 +177,29 @@ model_configuration:
 ```
 
 保存 `key-gateway`，填写网关模型 ID 和端点，验证后测试请求。SDK 添加版本/资源路径；追加 `/v1beta` 或 `/v1beta1` 不会切换传输。`google-gla:`、`google-vertex:` 和 `gemini:` 是 Cloud 别名。该路由提供 API 密钥认证，不配置 Cloud IAM/服务账户。
+
+### OpenAI 12 小时提示缓存
+
+对于支持该功能的 Responses API Model，将以下字段合并到 Model 文件：
+
+```yaml
+route: openai-responses:gpt-6-astra
+settings:
+  cache: '12h'
+```
+
+对象形式是 `cache: {retention: '12h'}`。统一缓存遵循已安装的模型 profile：已识别的 Responses 模型可以选择 12h，Chat Completions 会降级为 30m，未识别的网关别名则可能不应用该设置。对于支持该功能、但别名未被识别的 Responses 网关，改用原生选项：
+
+```yaml
+settings:
+  openai_prompt_cache_options:
+    mode: implicit
+    ttl: '12h'
+```
+
+显式 `openai_prompt_cache_options` 或 `openai_cache_instructions` 设置优先于统一转换，包括 `openai_cache_instructions: false`。通过实际请求验证网关支持情况。独立的 `openai_prompt_cache_retention: '24h'` 设置不是 12h TTL 选项。保留由 Thread 派生的缓存键，除非你明确需要其他缓存共享策略。
+
+捕获的 Model recipe 恢复后仍保留这些设置。正确计算 12h 缓存写入费用仍依赖上游用量与定价支持；[issue #1387](https://github.com/converge-ai-labs/agent-foundation/issues/1387) 跟踪这部分集成。
 
 ## 网关会话亲和性
 

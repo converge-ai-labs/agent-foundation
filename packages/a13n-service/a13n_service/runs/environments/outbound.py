@@ -10,7 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from a13n_service.infra.crypto import SecretLocation, secret_hash
 from a13n_service.infra.errors import ServiceError
 from a13n_service.providers.environment.websocket import WebSocketBootstrap
-from a13n_service.resources.providers.service import read_provider, resolve_provider
+from a13n_service.providers.registry import Registry
+from a13n_service.resources.providers.service import ResolvedProvider, read_provider, resolve_provider
 from a13n_service.resources.providers.tables import EnvironmentProviderRow
 from a13n_service.runs.environments.schemas import Handle, OutboundBinding
 from a13n_service.runs.environments.tables import EnvironmentRow
@@ -77,17 +78,26 @@ def restore(runtime: Runtime, environment: EnvironmentRow, binding: OutboundBind
 async def admitted(
     session: AsyncSession, runtime: Runtime, environment: EnvironmentRow, *, executing: bool = False
 ) -> OutboundBinding:
+    await require_active_workspace(session, environment.workspace_id)
+    if environment.provider_id is None:
+        raise ServiceError("unauthenticated", "Managed environment has no provider")
+    provider = await read_provider(session, EnvironmentProviderRow, environment.provider_id)
+    return binding_for(runtime.registry, environment, provider, executing=executing)
+
+
+def binding_for(
+    registry: Registry, environment: EnvironmentRow, provider: ResolvedProvider, *, executing: bool = False
+) -> OutboundBinding:
+    """Validate already-read instance/provider facts without repeating database queries."""
     allowed = {"ready"} if executing else {"creating", "starting", "ready"}
     if environment.kind != "managed" or environment.status == "deleted" or environment.handle is None:
         raise ServiceError("unauthenticated", "Managed environment connection is no longer authorized")
     handle = Handle.model_validate(environment.handle)
-    if handle.recipe.get("execution") != "envd_ws" or handle.outbound is None or environment.provider_id is None:
+    if handle.recipe.get("execution") != "envd_ws" or handle.outbound is None or environment.provider_id != provider.id:
         raise ServiceError("unauthenticated", "Managed environment has no outbound connection binding")
-    await require_active_workspace(session, environment.workspace_id)
-    provider = await read_provider(session, EnvironmentProviderRow, environment.provider_id)
     from a13n_service.runs.environments.adapters import provider_identity
 
-    if not provider.enabled or environment.provider_identity != provider_identity(runtime.registry, provider):
+    if not provider.enabled or environment.provider_identity != provider_identity(registry, provider):
         raise ServiceError("unauthenticated", "Managed environment provider is unavailable or changed")
     if environment.status not in allowed:
         raise ServiceError("unavailable", "Managed environment is not ready for an outbound connection")
@@ -101,9 +111,10 @@ async def authorize_use(
     principal: Principal,
     authority: ExecutionAuthority | None = None,
 ) -> OutboundBinding:
-    binding = await admitted(session, runtime, environment, executing=True)
-    assert environment.provider_id is not None
-    await resolve_provider(
+    await require_active_workspace(session, environment.workspace_id)
+    if environment.provider_id is None:
+        raise ServiceError("unauthenticated", "Managed environment has no provider")
+    provider = await resolve_provider(
         session,
         principal,
         EnvironmentProviderRow,
@@ -112,4 +123,4 @@ async def authorize_use(
         verb="run",
         authority=authority,
     )
-    return binding
+    return binding_for(runtime.registry, environment, provider, executing=True)

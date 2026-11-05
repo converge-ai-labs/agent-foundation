@@ -58,7 +58,7 @@ export function FindingDetail() {
   const finding = query.data;
   const revision = useQuery({
     queryKey: ["agent-revision", workspace.id, finding?.agent_revision_id],
-    enabled: !!finding,
+    enabled: !!finding?.agent_revision_id,
     queryFn: ({ signal }) =>
       client
         .workspace(workspace.id)
@@ -66,7 +66,7 @@ export function FindingDetail() {
           params: {
             path: {
               agent_id: finding!.agent_id,
-              revision_id: finding!.agent_revision_id,
+              revision_id: finding!.agent_revision_id!,
             },
           },
           signal,
@@ -112,7 +112,7 @@ export function FindingDetail() {
     );
   const agent = agents.data?.find((agent) => agent.id === finding.agent_id);
   const fix = () => {
-    if (!revision.data) return;
+    if (!revision.data || !finding.agent_revision_id) return;
     composer.start({
       agent: { id: finding.agent_id, name: agent?.name ?? finding.agent_id },
       revision: { id: finding.agent_revision_id, number: revision.data.number },
@@ -203,7 +203,11 @@ export function FindingDetail() {
                 <CopyableId value={finding.id} />
               </RailRow>
               <RailRow label={t("Agent version")}>
-                <CopyableId value={finding.agent_revision_id} />
+                {finding.agent_revision_id ? (
+                  <CopyableId value={finding.agent_revision_id} />
+                ) : (
+                  t("Task snapshot")
+                )}
               </RailRow>
               {finding.analysis_id && (
                 <RailRow label={t("Analysis ID")}>

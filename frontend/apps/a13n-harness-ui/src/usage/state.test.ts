@@ -20,6 +20,10 @@ it.each([
 ])("formats %s as %s", (value, expected) => {
   expect(compactNumber(value as number)).toBe(expected);
 });
+it("formats compact numbers for the selected locale", () => {
+  expect(compactNumber(123357, "zh-CN")).toBe("12.34万");
+  expect(compactNumber(123357, "en")).toBe("123.36K");
+});
 it("restores UTC presets and custom scopes from URLs", () => {
   const now = new Date("2026-09-08T00:30:00+09:00");
   expect(presetRange(7, now)).toEqual({

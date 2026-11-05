@@ -64,7 +64,7 @@ async def test_revoking_the_grant_stops_the_run(stack) -> None:  # type: ignore[
     await model.arrived("[revoke]", status="abandoned")
 
 
-async def test_an_approval_waits_and_resumes_once(stack, skill_environment_template) -> None:  # type: ignore[no-untyped-def]
+async def test_an_approval_waits_and_resumes_once(stack) -> None:  # type: ignore[no-untyped-def]
     api, model = stack.api, stack.model
     asked = {"files": {"tools": {"view": {"permission": "ask"}}}, "shell": {"enabled": False}}
     agent = await api.create_agent(
@@ -72,12 +72,12 @@ async def test_an_approval_waits_and_resumes_once(stack, skill_environment_templ
         await api.create_model(model.base_url),
         builtin_skills=["platform-operations"],
         toolsets=asked,
-        default_environment_template_id=skill_environment_template,
     )
     await model.call("view", {"file_path": GUIDE}, call_id="call_view", to="[read]")
     receipt = await api.start(agent, "[read] Read the platform guide")
     waiting = await api.sealed(receipt["run"]["id"])
     assert (waiting["status"], waiting["wait_reason"]) == ("waiting", "approval")
+    assert waiting["environment_mounts"] == []
     assert [item["tool_call_id"] for item in waiting["pending"]["approvals"]] == ["call_view"]
 
     await model.say("Read the guide.", to="[read]")
@@ -102,14 +102,9 @@ async def test_an_approval_waits_and_resumes_once(stack, skill_environment_templ
     assert "# Platform operations" in tool_results(requests[1])[0]
 
 
-async def test_a_steer_joins_the_running_run(stack, skill_environment_template) -> None:  # type: ignore[no-untyped-def]
+async def test_a_steer_joins_the_running_run(stack) -> None:  # type: ignore[no-untyped-def]
     api, model = stack.api, stack.model
-    agent = await api.create_agent(
-        "Helper",
-        await api.create_model(model.base_url),
-        **LOOKUP,
-        default_environment_template_id=skill_environment_template,
-    )
+    agent = await api.create_agent("Helper", await api.create_model(model.base_url), **LOOKUP)
     # The steer arrives while the first request is outstanding and joins at the tool boundary that follows it.
     await model.call("view", {"file_path": GUIDE}, call_id="call_view", to="[steer]", hold="steer")
     await model.say("Answered both.", to="[steer]")
@@ -122,10 +117,12 @@ async def test_a_steer_joins_the_running_run(stack, skill_environment_template) 
     await model.open("steer")
     run = await api.sealed(run_id)
     assert (run["status"], run["output"]) == ("completed", "Answered both.")
+    assert run["environment_mounts"] == []
     entries = await api.inbox(thread_id)
     assert [(entry["status"], entry["assigned_run_id"]) for entry in entries] == [("consumed", run_id)] * 2
     assert [item["id"] for item in await api.runs(thread_id)] == [run_id]
     first, second = await model.requests("[steer]")
+    assert "# Platform operations" in tool_results(second)[0]
     assert user_texts(first) == ["[steer] First question"]
     assert user_texts(second) == ["[steer] First question", "[steer] Also consider this"]
 

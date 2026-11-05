@@ -73,11 +73,11 @@ from a13n_service.providers.model_settings import effective_settings
 from a13n_service.providers.registry import Registry
 from a13n_service.resources.agents import definition, stored, toolsets
 from a13n_service.resources.agents.schemas import AgentConfig, AgentOverride, SubagentSelection
-from a13n_service.resources.agents.service import SelectedRevision
-from a13n_service.resources.agents.validation import connection_info, subagent_graph
+from a13n_service.resources.agents.validation import connection_info, require_subagent_tool_names, subagent_graph
 from a13n_service.resources.models.media import workspace_media
 from a13n_service.resources.models.runtime import open_model
 from a13n_service.resources.models.service import ResolvedModel, model_settings, require_understanding, resolve_model
+from a13n_service.runs.definitions import Definition
 from a13n_service.runs.runtime import Runtime
 from a13n_service.tenancy.authorize import ExecutionAuthority, Principal, WorkspaceScope
 
@@ -89,8 +89,9 @@ class ResolvedAgent:
     """One agent of the graph a run executes, with every live resource its definition reads."""
 
     agent_id: str
-    revision_id: str
-    # The revision's configuration; at the root, with the run's override applied.
+    definition_id: str
+    revision_id: str | None
+    # The execution configuration; at the root, with the run's override applied.
     config: AgentConfig
     model: ResolvedModel
     reviewer: ResolvedModel | None
@@ -130,7 +131,7 @@ async def resolve(
     session: AsyncSession,
     principal: Principal,
     scope: WorkspaceScope,
-    revision: SelectedRevision,
+    revision: Definition,
     *,
     authority: ExecutionAuthority,
     override: AgentOverride | None,
@@ -140,7 +141,7 @@ async def resolve(
 
     Models must still be usable by the run's principal under its authority; subagent revisions are pinned.
     """
-    config = stored.require_effective(revision.config, override, revision_id=revision.revision_id)
+    config = stored.require_effective(revision.config, override, revision_id=revision.definition_id)
     graph = await subagent_graph(session, scope.workspace_id, revision.agent_id, config)
     models: dict[str, ResolvedModel] = {}
 
@@ -178,17 +179,17 @@ async def resolve(
                 )
         return resolved
 
-    async def node(agent_id: str, revision_id: str, config: AgentConfig) -> ResolvedAgent:
+    async def node(agent_id: str, definition_id: str, revision_id: str | None, config: AgentConfig) -> ResolvedAgent:
         subagents = {}
-        for name, edge in config.subagents.items():
+        for name, edge in config.subagents.named.items():
             assert edge.revision_id is not None, "stored edges are pinned"
             child = graph[edge.revision_id]
             subagents[name] = ResolvedSubagent(
                 selection=edge,
                 revision_id=child.revision_id,
                 description=edge.description or child.description,
-                agent=await node(child.agent_id, child.revision_id, child.config)
-                if config.subagent_mode == "inline"
+                agent=await node(child.agent_id, child.revision_id, child.revision_id, child.config)
+                if config.subagents.mode == "inline"
                 else None,
             )
         primary = await model(config.model)
@@ -206,6 +207,7 @@ async def resolve(
             )
         return ResolvedAgent(
             agent_id=agent_id,
+            definition_id=definition_id,
             revision_id=revision_id,
             config=config,
             model=primary,
@@ -217,7 +219,7 @@ async def resolve(
             subagents=subagents,
         )
 
-    return await node(revision.agent_id, revision.revision_id, config)
+    return await node(revision.agent_id, revision.definition_id, revision.revision_id, config)
 
 
 async def open_models(
@@ -273,6 +275,7 @@ def build(
     plugins: HarnessPluginFactoryCatalog,
     instrumentation: HarnessInstrumentation | None,
     compaction: CompactionOperator | None = None,
+    subagent_controls: bool = False,
 ) -> ExecutableAgent[Any]:
     """The executable agent over the worker's attempt-bound parts; its run resolves models by `model_resolver`.
 
@@ -281,7 +284,9 @@ def build(
     child binds of its own, such as web backends and media understanding. `operators` returns the operator
     through which one async agent of the graph starts child runs over its own edges.
     """
-    root = _Host(capabilities, child_bindings, operators, plugins, tool_sources).compose(agent, compaction=compaction)
+    root = _Host(capabilities, child_bindings, operators, plugins, tool_sources).compose(
+        agent, compaction=compaction, controls=subagent_controls
+    )
     # Each call is priced by its selected model's own pricing; inline subagents inherit the root's policy.
     prices = TokenPricingCapability({model.key: model.pricing for model in agent.models() if model.pricing is not None})
     return HarnessBuilder(instrumentation=instrumentation, configured_plugins_enabled=False).build(
@@ -337,8 +342,11 @@ class _Host:
     plugins: HarnessPluginFactoryCatalog
     tool_sources: ToolSources | None = None
 
-    def compose(self, agent: ResolvedAgent, *, compaction: CompactionOperator | None = None) -> AgentDefinition[Any]:
+    def compose(
+        self, agent: ResolvedAgent, *, compaction: CompactionOperator | None = None, controls: bool = False
+    ) -> AgentDefinition[Any]:
         config = agent.config
+        require_subagent_tool_names(config, controls=controls and agent.revision_id is not None)
         sources = dict(self.tool_sources(agent) if self.tool_sources else {})
         environment = DynamicEnvironmentCapability(toolsets.environment_configuration(config.toolsets))
         sources["environment"] = environment
@@ -362,10 +370,14 @@ class _Host:
             features.append(UserInteractionCapability())
         if (client := definition.client_toolset(config)) is not None:
             features.append(ClientToolsCapability(spec=ClientToolsSpec(default_toolsets=(client,))))
-        if config.subagents:
+        if agent.revision_id is not None and (
+            config.subagents.named
+            or config.subagents.dynamic.enabled
+            or (controls and config.subagents.mode == "async" and self.operators is not None)
+        ):
             features.append(
                 SubagentCapability()
-                if config.subagent_mode == "inline"
+                if config.subagents.mode == "inline"
                 else SubagentCapability(
                     async_enabled=True, operator=self.operators(agent) if self.operators is not None else None
                 )
@@ -380,7 +392,7 @@ class _Host:
             ),
             output_type=definition.output_type(config.output_spec),
             # The revision identifies the definition, so a child run can be matched to the edge that spawned it.
-            definition_id=agent.revision_id,
+            definition_id=agent.definition_id,
             capabilities=tuple(features),
             tool_search=definition.tool_search(config, sources, agent.connections),
             plugins=tuple(

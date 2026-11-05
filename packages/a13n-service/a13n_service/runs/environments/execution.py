@@ -239,17 +239,17 @@ async def _inspect(
                 raise conflict("environment", environment.id, "provider_identity_changed")
             environment.last_used_at = await now(session)
             handle = Handle.model_validate(environment.handle)
-            if handle.recipe.get("execution") == "envd_ws":
+            from a13n_service.runs.environments.connection import resolve
+
+            plan = resolve(runtime.registry.get("environment", provider.type), handle, mount)
+            if plan.mode == "envd_ws":
                 from a13n_service.runs.environments import outbound
 
-                binding = await outbound.authorize_use(session, runtime, environment, principal, authority)
-                descriptor = runtime.registry.get("environment", provider.type).describe_environment(
-                    runtime.registry.get("environment", provider.type).validate_environment(handle.recipe)
-                )
+                binding = outbound.binding_for(runtime.registry, environment, provider, executing=True)
                 return ClientTarget(
                     environment.id,
                     binding.device_id,
-                    mount.working_directory or descriptor.working_directory,
+                    plan.working_directory,
                     mount.name,
                     handle.state,
                 ), None
@@ -311,17 +311,21 @@ async def open_mounts(
                 else:
                     handle = Handle.model_validate(environment.handle)
                     recipe, state = handle.recipe, handle.state
-            descriptor = definition.describe_environment(definition.validate_environment(recipe))
+            from a13n_harness.providers.environment.execution_mode import capabilities
+
+            validated = definition.validate_environment(recipe)
+            transport = capabilities(validated)
+            descriptor = definition.describe_environment(validated)
             # Service Local uses the shared Direct Local execution provider key.
             provider_key = "direct_local" if definition.type == "local" else definition.type
             device_id = (
                 environment.device_id
                 if environment.kind == "external"
                 else environment.id
-                if recipe.get("execution") == "envd_ws"
+                if transport.host_connection
                 else None
             )
-            if recipe.get("execution") == "envd_ws":
+            if transport.host_connection:
                 provider_key = WEBSOCKET_ENVD.type
                 descriptor = WEBSOCKET_ENVD.describe_environment(
                     WEBSOCKET_ENVD.validate_environment(

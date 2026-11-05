@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import {
   SettingsChoice as ChoiceField,
   SettingsSection,
@@ -24,6 +25,7 @@ import { SelectionField } from "./selection";
 import { DraftLinks, NewResourceButton, SourceDocument } from "./sources";
 
 export function ProjectsPage() {
+  const { t } = useTranslation();
   const projects = useProjects();
   const [search, setSearch] = useState("");
   const filteredProjects = (projects.data ?? []).filter((project) =>
@@ -34,14 +36,14 @@ export function ProjectsPage() {
   return (
     <div className={collectionStyles.collectionPage}>
       <PageHeader
-        title="Projects"
-        description="Keep related chats, folders and defaults together."
-        actions={<NewResourceButton kind="project" label="Add project" />}
+        title={t("Projects")}
+        description={t("Keep related chats, folders and defaults together.")}
+        actions={<NewResourceButton kind="project" label={t("Add project")} />}
       />
       <div className={collectionStyles.collection}>
         <div className={collectionStyles.toolbar}>
           <SearchField
-            label="Search projects"
+            label={t("Search projects")}
             value={search}
             onChange={setSearch}
           />
@@ -51,7 +53,9 @@ export function ProjectsPage() {
           retry={() => void projects.refetch()}
         />
         <DraftLinks kinds={["project"]} search={search} />
-        {projects.isPending && <p role="status">Loading projects…</p>}
+        {projects.isPending && (
+          <p role="status">{t("Loading projects\u2026")}</p>
+        )}
         {!!filteredProjects.length && (
           <div className={projectStyles.list}>
             {filteredProjects.map((project) => (
@@ -64,14 +68,16 @@ export function ProjectsPage() {
                 <div>
                   <strong>{project.name}</strong>
                   <span title={project.roots.join("\n")}>
-                    {project.roots[0] || "No local directory"}
+                    {project.roots[0] || t("No local directory")}
                   </span>
                   {(project.roots.length > 1 ||
                     !!project.defaults?.environment_bindings?.length) && (
                     <small>
-                      {project.roots.length} local directories
+                      {t("{{count}} local directories", {
+                        count: project.roots.length,
+                      })}
                       {!!project.defaults?.environment_bindings?.length &&
-                        ` · ${project.defaults.environment_bindings.length} remote environments`}
+                        ` · ${t("{{count}} remote environments", { count: project.defaults.environment_bindings.length })}`}
                     </small>
                   )}
                 </div>
@@ -83,8 +89,10 @@ export function ProjectsPage() {
         {projects.data && !filteredProjects.length && (
           <p className={styles.emptyList}>
             {search
-              ? "No projects match your search."
-              : "No projects yet. Add one to group chats and share defaults."}
+              ? t("No projects match your search.")
+              : t(
+                  "No projects yet. Add one to group chats and share defaults.",
+                )}
           </p>
         )}
       </div>
@@ -93,6 +101,7 @@ export function ProjectsPage() {
 }
 
 export function ProjectPage() {
+  const { t } = useTranslation();
   const { projectId } = useParams();
   const projects = useProjects();
   const sources = useSources();
@@ -106,29 +115,31 @@ export function ProjectPage() {
         <SourceDocument
           key={source.relative_path}
           path={source.relative_path}
-          title={project?.name ?? "Project settings"}
+          title={project?.name ?? t("Project settings")}
           embedded
         />
       )}
       <ErrorNotice error={projects.error || sources.error} />
       {projects.isPending ? (
-        <p>Loading Project…</p>
+        <p>{t("Loading Project\u2026")}</p>
       ) : !project ? (
-        <Panel title="Project unavailable">
+        <Panel title={t("Project unavailable")}>
           <p>
-            This project is not in your saved configuration. It may have been
-            removed or renamed.
+            {t(
+              "This project is not in your saved configuration. It may have been removed or renamed.",
+            )}
           </p>
-          <Link to="/projects">All Projects</Link>
+          <Link to="/projects">{t("All Projects")}</Link>
         </Panel>
       ) : (
         <>
           <p>
-            New chats use these defaults. Apply them from an existing chat's
-            settings to update that chat.
+            {t(
+              "New chats use these defaults. Apply them from an existing chat's settings to update that chat.",
+            )}
           </p>
           <details className={styles.details}>
-            <summary>Preview defaults and check readiness</summary>
+            <summary>{t("Preview defaults and check readiness")}</summary>
             <ReadinessPreview
               projectId={project.project_id}
               projectPath={project.roots[0]}
@@ -147,6 +158,7 @@ export function ReadinessPreview({
   projectId?: string;
   projectPath?: string;
 }) {
+  const { t } = useTranslation();
   const { client } = useTransport();
   const selectors = useSelectors();
   const [agent, setAgent] = useState("default");
@@ -177,13 +189,13 @@ export function ReadinessPreview({
   return (
     <div className={styles.stack}>
       <ErrorNotice error={selectors.error || preview.error} />
-      <SettingsSection title="New chat settings">
+      <SettingsSection title={t("New chat settings")}>
         <ChoiceField
-          label="Agent"
+          label={t("Agent")}
           value={agent}
           onValueChange={setAgent}
           options={[
-            { value: "default", label: "Use default" },
+            { value: "default", label: t("Use default") },
             ...(selectors.data?.agents.map((item) => ({
               value: item.agent_id,
               label: item.name,
@@ -191,11 +203,11 @@ export function ReadinessPreview({
           ]}
         />
         <ChoiceField
-          label="Local mode"
+          label={t("Local mode")}
           value={environment}
           onValueChange={setEnvironment}
           options={[
-            { value: "default", label: "Use default" },
+            { value: "default", label: t("Use default") },
             ...(selectors.data?.environments.map((item) => ({
               value: item.profile_id,
               label: item.name,
@@ -204,13 +216,17 @@ export function ReadinessPreview({
         />
         {(
           [
-            ["harness_plugin_ids", "Plugins", selectors.data?.harness_plugins],
+            [
+              "harness_plugin_ids",
+              t("Plugins"),
+              selectors.data?.harness_plugins,
+            ],
             [
               "environment_run_extension_ids",
-              "Run extensions",
+              t("Run extensions"),
               selectors.data?.environment_run_extensions,
             ],
-            ["mcp_server_ids", "MCP servers", selectors.data?.mcp_servers],
+            ["mcp_server_ids", t("MCP servers"), selectors.data?.mcp_servers],
           ] as const
         ).map(([axis, label, options]) => (
           <SelectionField
@@ -230,21 +246,23 @@ export function ReadinessPreview({
         ))}
       </SettingsSection>
       <Button loading={preview.isPending} onClick={() => preview.mutate(body)}>
-        Preview settings
+        {t("Preview settings")}
       </Button>
       {config && (
         <>
           <p>
             {current
-              ? "Preview only. No chat or run was created."
-              : "Settings changed. Refresh the preview."}
+              ? t("Preview only. No chat or run was created.")
+              : t("Settings changed. Refresh the preview.")}
           </p>
           <EnvironmentsSummary
             value={config}
             profiles={selectors.data?.environments}
           />
           <p className="text-sm text-muted-foreground">
-            Checks local execution only. Device connections aren't tested.
+            {t(
+              "Checks local execution only. Device connections aren't tested.",
+            )}
           </p>
           <dl className={styles.definitionList}>
             {Object.entries(preview.data!.provenance).map(([axis, origin]) => (
@@ -253,9 +271,9 @@ export function ReadinessPreview({
                 <dd>
                   <code>
                     {JSON.stringify(config[axis as keyof typeof config]) ??
-                      "Default"}
+                      t("Default")}
                   </code>
-                  <small>From {origin}</small>
+                  <small>{t("From {{origin}}", { origin })}</small>
                 </dd>
               </div>
             ))}
@@ -271,8 +289,9 @@ export function ReadinessPreview({
         </>
       )}
       <p>
-        Checks saved settings only. It doesn't call a model or test credentials.
-        Check those in Accounts & API keys.
+        {t(
+          "Checks saved settings only. It doesn't call a model or test credentials. Check those in Accounts & API keys.",
+        )}
       </p>
     </div>
   );

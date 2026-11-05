@@ -48,7 +48,7 @@ function MemoryTabs({ resource }: { resource: Resource }) {
   return (
     <DetailPage
       back="../memories"
-      backLabel={t("Memories")}
+      backLabel={t("Collections")}
       tabs={tabs[memory.kind].map((value) => ({
         value,
         label: labels[value],

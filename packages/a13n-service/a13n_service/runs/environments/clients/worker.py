@@ -92,6 +92,7 @@ class Calls:
     target: Target
     online: Presence
     scope_id: str
+    incarnation: Incarnation | None = None
 
     async def call(self, method: str, params: Mapping[str, object]) -> dict[str, JsonValue]:
         execution = current_execution()
@@ -138,12 +139,24 @@ class Calls:
         match reply.outcome:
             case NativeFailure(error=error):
                 raise EIPMethodError(error)
-            case Failure(message=message, code=code, pre_dispatch=pre_dispatch, connection_failed=lost):
+            case Failure(
+                message=message,
+                code=code,
+                pre_dispatch=pre_dispatch,
+                connection_failed=lost,
+                session_failed=session_lost,
+            ):
                 if observed is not None and lost:
                     observed.disconnected[self.target.mount_name] = self.online.epoch
                 details: dict[str, JsonValue] = {"dispatch_stage": "pre_dispatch"} if pre_dispatch else {}
                 if lost:
                     details["client_connection_failed"] = True
+                if session_lost:
+                    if self.incarnation is not None:
+                        self.incarnation.session_failed = True
+                    details["client_session_failed"] = True
+                    if observed is not None:
+                        observed.sessions_lost[self.target.mount_name] = self.scope_id
                 raise EnvironmentError(message, code=code, details=details)
             case success:
                 if observed is not None and method.split(".", 1)[0] in {
@@ -214,7 +227,7 @@ class Client:
         if egress is not None:
             raise EnvironmentError("Client mounts do not grant an egress policy.", code="environment_denied")
         async with self.runtime.client_routing.replies(self.target.environment_id):
-            calls = Calls(self.runtime, self.lease, self.target, online, uuid4().hex)
+            calls = Calls(self.runtime, self.lease, self.target, online, uuid4().hex, self.incarnation)
             try:
                 result = Opened.model_validate(
                     await calls.call(
@@ -260,6 +273,7 @@ class Client:
                 )
                 async with session:
                     self.incarnation.epoch = online.epoch
+                    self.incarnation.scope_id = calls.scope_id
                     self.incarnation.session = session
                     if session_recovery is not None:
                         session_recovery.observe(self.target.environment_id, working_directory, session)

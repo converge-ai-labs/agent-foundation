@@ -1,5 +1,6 @@
 import { SettingsRow } from "../shell/settings";
 import { useState } from "react";
+import { useTranslation } from "../i18n";
 import {
   useMutation,
   useQueries,
@@ -21,6 +22,7 @@ export function CredentialKeys({
 }: {
   connections: Schema<"ModelConnection">[];
 }) {
+  const { t } = useTranslation();
   const { client } = useTransport();
   const queries = useQueryClient();
   const sources = useSources();
@@ -90,7 +92,7 @@ export function CredentialKeys({
     onSuccess: (_, body) => {
       setSecret("");
       setEditing(null);
-      setSaved(`Saved ${body.credential_ref}.`);
+      setSaved(body.credential_ref);
       void queries.invalidateQueries({ queryKey: ["keys"] });
     },
   });
@@ -121,7 +123,7 @@ export function CredentialKeys({
     ];
     const provider =
       providers.length > 1
-        ? "Shared across providers"
+        ? t("Shared across providers")
         : providers.length === 1
           ? (connections.find(
               (connection) =>
@@ -129,10 +131,10 @@ export function CredentialKeys({
                 connection.authentication === "api_key",
             )?.label ?? providers[0])
           : linked.some((item) => item.kind === "device")
-            ? "Devices"
+            ? t("Devices")
             : unresolved
-              ? "Usage not resolved"
-              : "Not linked to a Model or Device";
+              ? t("Usage not resolved")
+              : t("Not linked to a Model or Device");
     if (
       !`${key.credential_ref} ${provider} ${linked.map((item) => item.name).join(" ")}`
         .toLowerCase()
@@ -148,16 +150,17 @@ export function CredentialKeys({
     editing === "new" &&
     keys.data?.some((key) => key.credential_ref === reference.trim());
   return (
-    <section className={styles.section} aria-label="Saved API keys">
+    <section className={styles.section} aria-label={t("Saved API keys")}>
       <p className={styles.help}>
-        Keys for models and devices on this server. These aren't your browser
-        login key.
+        {t(
+          "Keys for models and devices on this server. These aren't your browser login key.",
+        )}
       </p>
       <div className={styles.listToolbar}>
         {!!keys.data?.length && (
           <SearchField
-            label="Search API keys"
-            placeholder="Search keys, models or devices…"
+            label={t("Search API keys")}
+            placeholder={t("Search keys, models or devices…")}
             value={filter}
             onChange={setFilter}
           />
@@ -170,7 +173,7 @@ export function CredentialKeys({
             setEditing("new");
           }}
         >
-          <PlusIcon /> Add API key
+          <PlusIcon /> {t("Add API key")}
         </Button>
       </div>
       <ErrorNotice
@@ -180,21 +183,21 @@ export function CredentialKeys({
           resources.find((resource) => resource.error)?.error
         }
       />
-      {saved && <p role="status">{saved}</p>}
-      {keys.isPending && <p role="status">Loading keys…</p>}
+      {saved && (
+        <p role="status">{t("Saved {{reference}}.", { reference: saved })}</p>
+      )}
+      {keys.isPending && <p role="status">{t("Loading keys…")}</p>}
       {[...grouped]
         .sort(([a], [b]) => a.localeCompare(b))
         .map(([provider, items]) => (
           <section
             className={styles.providerSection}
             key={provider}
-            aria-label={`${provider} keys`}
+            aria-label={t("{{provider}} keys", { provider })}
           >
             <header className={styles.providerHeading}>
               <h3>{provider}</h3>
-              <span>
-                {items.length} {items.length === 1 ? "key" : "keys"}
-              </span>
+              <span>{t("{{count}} key", { count: items.length })}</span>
             </header>
             <div className={styles.rows}>
               {items.map((key) => (
@@ -203,10 +206,12 @@ export function CredentialKeys({
                     <strong>{key.reference}</strong>
                     <span>
                       {key.resources.length
-                        ? "Used by"
+                        ? t("Used by")
                         : unresolved
-                          ? "Model and Device links are not fully available."
-                          : "Choose this key when setting up a model or device."}
+                          ? t("Model and Device links are not fully available.")
+                          : t(
+                              "Choose this key when setting up a model or device.",
+                            )}
                     </span>
                     <div className={styles.modelLinks}>
                       {key.resources.map((resource) => (
@@ -214,8 +219,9 @@ export function CredentialKeys({
                           key={resource.path}
                           to={`/settings/source?path=${encodeURIComponent(resource.path)}`}
                         >
-                          {resource.kind === "device" ? "Device" : "Model"}:{" "}
-                          {resource.name}
+                          {resource.kind === "device"
+                            ? t("Device: {{name}}", { name: resource.name })
+                            : t("Model: {{name}}", { name: resource.name })}
                         </Link>
                       ))}
                     </div>
@@ -230,7 +236,7 @@ export function CredentialKeys({
                         setEditing({ reference: key.reference });
                       }}
                     >
-                      Replace key
+                      {t("Replace key")}
                     </Button>
                     <Button
                       variant="ghost"
@@ -239,7 +245,7 @@ export function CredentialKeys({
                         setDeleting(key.reference);
                       }}
                     >
-                      Remove
+                      {t("Remove")}
                     </Button>
                   </div>
                 </article>
@@ -250,8 +256,8 @@ export function CredentialKeys({
       {!keys.isPending && !keys.error && !grouped.size && (
         <p className={layout.emptySection}>
           {filter
-            ? "No keys match your search."
-            : "No API keys yet. Add one to use with a model or device."}
+            ? t("No keys match your search.")
+            : t("No API keys yet. Add one to use with a model or device.")}
         </p>
       )}
       <ModalFrame
@@ -262,13 +268,15 @@ export function CredentialKeys({
             setSecret("");
           }
         }}
-        title={editing === "new" ? "Add API key" : "Replace API key"}
+        title={editing === "new" ? t("Add API key") : t("Replace API key")}
         description={
           editing === "new"
-            ? "Save a key to use with models and devices."
-            : "Linked models and devices will use the new key next time they load it."
+            ? t("Save a key to use with models and devices.")
+            : t(
+                "Linked models and devices will use the new key next time they load it.",
+              )
         }
-        closeLabel="Close"
+        closeLabel={t("Close")}
         footer={
           <>
             <Button
@@ -279,7 +287,7 @@ export function CredentialKeys({
                 setSecret("");
               }}
             >
-              Cancel
+              {t("Cancel")}
             </Button>
             <Button
               type="submit"
@@ -287,7 +295,7 @@ export function CredentialKeys({
               loading={save.isPending}
               disabled={!secret.trim() || !reference.trim() || !!duplicate}
             >
-              Save key
+              {t("Save key")}
             </Button>
           </>
         }
@@ -304,24 +312,24 @@ export function CredentialKeys({
           <ErrorNotice error={save.error} />
           {editing === "new" ? (
             <TextField
-              label="Saved key name"
+              label={t("Saved key name")}
               value={reference}
               onChange={setReference}
             />
           ) : (
-            <SettingsRow label="Saved key name">
+            <SettingsRow label={t("Saved key name")}>
               <span>{reference}</span>
             </SettingsRow>
           )}
           <TextField
-            label="API key"
+            label={t("API key")}
             type="password"
             value={secret}
             onChange={setSecret}
           />
           {duplicate && (
             <p role="alert">
-              This name is already saved. Use Replace key to update it.
+              {t("This name is already saved. Use Replace key to update it.")}
             </p>
           )}
         </form>
@@ -331,9 +339,11 @@ export function CredentialKeys({
         onOpenChange={(open) => {
           if (!open && !remove.isPending) setDeleting(null);
         }}
-        title="Remove saved key?"
-        description="Linked models and devices will need another key to connect."
-        closeLabel="Close"
+        title={t("Remove saved key?")}
+        description={t(
+          "Linked models and devices will need another key to connect.",
+        )}
+        closeLabel={t("Close")}
         footer={
           <>
             <Button
@@ -341,14 +351,14 @@ export function CredentialKeys({
               disabled={remove.isPending}
               onClick={() => setDeleting(null)}
             >
-              Cancel
+              {t("Cancel")}
             </Button>
             <Button
               variant="destructive"
               loading={remove.isPending}
               onClick={() => deleting && remove.mutate(deleting)}
             >
-              Remove key
+              {t("Remove key")}
             </Button>
           </>
         }
@@ -359,11 +369,15 @@ export function CredentialKeys({
             .filter((item) => item.reference === deleting)
             .map((item) => (
               <li key={item.path}>
-                {item.kind === "device" ? "Device" : "Model"}: {item.name}
+                {item.kind === "device"
+                  ? t("Device: {{name}}", { name: item.name })
+                  : t("Model: {{name}}", { name: item.name })}
               </li>
             ))}
         </ul>
-        {unresolved && <p>Some Model and Device links are unavailable.</p>}
+        {unresolved && (
+          <p>{t("Some Model and Device links are unavailable.")}</p>
+        )}
         <ErrorNotice error={remove.error} />
       </ModalFrame>
     </section>

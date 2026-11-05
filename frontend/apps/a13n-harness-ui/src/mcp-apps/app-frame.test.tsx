@@ -136,3 +136,30 @@ it("propagates the actual display-language control to an initialized MCP App wit
   expect(bridge.connect).toHaveBeenCalledTimes(1);
   expect(bridge.sendToolResult).toHaveBeenCalledTimes(1);
 });
+
+it("retranslates local sandbox failures without reconnecting or translating external errors", async () => {
+  const view = render(
+    <AppFrame {...props} sandboxUrl={`${window.location.origin}/sandbox`} />,
+  );
+  expect(screen.getByRole("alert").textContent).toContain(
+    "MCP Apps require a separate sandbox origin.",
+  );
+  await act(async () => {
+    await i18n.changeLanguage("zh-CN");
+  });
+  expect(screen.getByRole("alert").textContent).toContain(
+    "MCP 应用需要独立的沙箱源",
+  );
+  expect(bridge.connect).not.toHaveBeenCalled();
+  view.unmount();
+  bridge.connect.mockRejectedValueOnce(
+    new Error("MCP Apps require a separate sandbox origin."),
+  );
+  render(<AppFrame {...props} />);
+  await waitFor(() =>
+    expect(screen.getByRole("alert").textContent).toContain(
+      "MCP Apps require a separate sandbox origin.",
+    ),
+  );
+  expect(bridge.connect).toHaveBeenCalledTimes(1);
+});

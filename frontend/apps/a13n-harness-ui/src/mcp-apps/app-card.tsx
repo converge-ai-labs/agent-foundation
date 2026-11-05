@@ -1,3 +1,5 @@
+import { useTranslation } from "../i18n";
+import { errorMessage } from "../i18n/error-message";
 import {
   useEffect,
   useMemo,
@@ -30,9 +32,10 @@ export function AppCard(props: {
   reference: Schema<"AppReference">;
   live?: boolean;
 }) {
+  const { t } = useTranslation();
   const guest = useGuestAccess();
   return guest ? (
-    <p>Interactive app · available to the instance owner</p>
+    <p>{t("Interactive app · available to the instance owner")}</p>
   ) : (
     <OwnerAppCard {...props} />
   );
@@ -45,6 +48,7 @@ function OwnerAppCard({
   reference: Schema<"AppReference">;
   live?: boolean;
 }) {
+  const { t } = useTranslation();
   const transport = useTransport();
   const queries = useQueryClient();
   const [opened, setOpened] = useState(live && !reference.unavailable);
@@ -57,7 +61,7 @@ function OwnerAppCard({
   const active = useRef<AppSession | undefined>(undefined);
   const generation = useRef(0);
   const [activating, setActivating] = useState(false);
-  const [error, setError] = useState<string>();
+  const [error, setError] = useState<{ cause: unknown } | { closed: true }>();
   useEffect(
     () => () => {
       generation.current++;
@@ -151,8 +155,7 @@ function OwnerAppCard({
       active.current = next;
       setSession(next);
     } catch (cause) {
-      if (generation.current === attempt)
-        setError(cause instanceof Error ? cause.message : String(cause));
+      if (generation.current === attempt) setError({ cause });
     } finally {
       if (generation.current === attempt) setActivating(false);
     }
@@ -165,13 +168,7 @@ function OwnerAppCard({
     setSession(undefined);
     const previous = active.current;
     active.current = undefined;
-    void previous
-      ?.close()
-      .catch(() =>
-        setError(
-          "This view closed, but the server didn't confirm. Actions already sent may still finish.",
-        ),
-      );
+    void previous?.close().catch(() => setError({ closed: true }));
   }
   const data = presentation.data;
   const parsed = useMemo(() => {
@@ -190,7 +187,7 @@ function OwnerAppCard({
   return (
     <section
       className={styles.card}
-      aria-label={`MCP App: ${reference.tool_name}`}
+      aria-label={t("MCP App: {{name}}", { name: reference.tool_name })}
     >
       <header className={styles.header}>
         <div>
@@ -203,38 +200,54 @@ function OwnerAppCard({
           disabled={Boolean(reference.unavailable)}
           onClick={() => (opened ? close() : setOpened(true))}
         >
-          {opened ? "Close view" : "Open App"}
+          {opened ? t("Close view") : t("Open App")}
         </Button>
       </header>
       {reference.unavailable && <p role="status">{reference.unavailable}</p>}
-      {error && <p role="alert">{error}</p>}
-      {!opened && !reference.unavailable && (
-        <p>Reopen the app. The tool won't run again.</p>
+      {error && (
+        <p role="alert">
+          {"closed" in error
+            ? t(
+                "This view closed, but the server didn't confirm. Actions already sent may still finish.",
+              )
+            : errorMessage(error.cause, t)}
+        </p>
       )}
-      {opened && presentation.isPending && <p role="status">Loading App…</p>}
+      {!opened && !reference.unavailable && (
+        <p>{t("Reopen the app. The tool won't run again.")}</p>
+      )}
+      {opened && presentation.isPending && (
+        <p role="status">{t("Loading App…")}</p>
+      )}
       {opened && presentation.error && (
         <div className={styles.status}>
-          <p role="alert">{presentation.error.message}</p>
+          <p role="alert">{errorMessage(presentation.error, t)}</p>
           <Button
             size="sm"
             variant="outline"
             disabled={presentation.isFetching}
             onClick={() => void presentation.refetch()}
           >
-            {presentation.isFetching ? "Retrying…" : "Try again"}
+            {presentation.isFetching ? t("Retrying…") : t("Try again")}
           </Button>
         </div>
       )}
       {opened && data && (!data.resource || !parsed || !data.sandbox_url) && (
-        <p role="alert">The original App presentation cannot be displayed.</p>
+        <p role="alert">
+          {t("The original App presentation cannot be displayed.")}
+        </p>
       )}
       {opened && data?.resource && data.sandbox_url && parsed && (
         <>
           <div className={styles.status}>
             <p>
               {session
-                ? "Server interactions active · follow-up results stay in this View"
-                : "Original presentation · server interactions are not activated"}
+                ? t(
+                    "Server interactions active · follow-up results stay in this View",
+                  )
+                : t(
+                    "Original presentation · server interactions are not activated",
+                  )}
             </p>
             {!session && (
               <Button
@@ -243,7 +256,7 @@ function OwnerAppCard({
                 disabled={activating}
                 onClick={() => void activate()}
               >
-                {activating ? "Activating…" : "Enable controls"}
+                {activating ? t("Activating…") : t("Enable controls")}
               </Button>
             )}
           </div>
@@ -272,45 +285,58 @@ function OwnerAppCard({
 }
 
 function AppMessageConfirmation({ session }: { session: AppSession }) {
+  const { t } = useTranslation();
   const message = session.messages;
   const state = useSyncExternalStore(message.subscribe, message.getSnapshot);
   if (!state) return null;
   return (
-    <section className={styles.request} aria-label="App message confirmation">
+    <section
+      className={styles.request}
+      aria-label={t("App message confirmation")}
+    >
       <strong>
         {session.view.route?.length
-          ? "Send child App handoff to the owning chat?"
-          : "Send this App message to the chat?"}
+          ? t("Send child App handoff to the owning chat?")
+          : t("Send this App message to the chat?")}
       </strong>
       <p>
         {session.view.reference.server_id} / {session.view.reference.tool_name}{" "}
         → {session.view.root_thread_id}
       </p>
       <p>
-        Starts a new message without changing your draft. It can't interrupt
-        active work or wait in a busy chat's queue.
+        {t(
+          "Starts a new message without changing your draft. It can't interrupt active work or wait in a busy chat's queue.",
+        )}
       </p>
       <pre>{state.request.content.map((part) => part.text).join("\n")}</pre>
       {state.context && (
         <details>
-          <summary>App context</summary>
+          <summary>{t("App context")}</summary>
           <pre>{JSON.stringify(state.context.value, null, 2)}</pre>
         </details>
       )}
-      {state.uncertain && <p role="alert">{state.uncertain}</p>}
+      {state.uncertain && (
+        <p role="alert">
+          {t(
+            "Message outcome unknown. It was not resent. Check its receipt or inspect the chat.",
+          )}
+        </p>
+      )}
       {state.receipt?.reason && <p role="alert">{state.receipt.reason}</p>}
       {state.receipt?.receipt && (
         <p role="status">
-          Accepted by the chat · {state.receipt.receipt.receipt_id}
+          {t("Accepted by the chat · {{id}}", {
+            id: state.receipt.receipt.receipt_id,
+          })}
         </p>
       )}
       {!state.sent ? (
         <div className={styles.actions}>
           <Button size="sm" onClick={() => void message.confirm()}>
-            Send once
+            {t("Send once")}
           </Button>
           <Button size="sm" variant="ghost" onClick={() => message.decline()}>
-            Decline message
+            {t("Decline message")}
           </Button>
         </div>
       ) : state.uncertain ? (
@@ -319,11 +345,11 @@ function AppMessageConfirmation({ session }: { session: AppSession }) {
           variant="outline"
           onClick={() => void message.reconcile()}
         >
-          Check delivery
+          {t("Check delivery")}
         </Button>
       ) : state.receipt?.status !== "accepted" &&
         state.receipt?.status !== "failed" ? (
-        <p role="status">Confirming admission…</p>
+        <p role="status">{t("Confirming admission…")}</p>
       ) : null}
     </section>
   );
@@ -336,6 +362,7 @@ function AppModelContext({
   session: AppSession;
   selectable: boolean;
 }) {
+  const { t } = useTranslation();
   const state = useSyncExternalStore(
     session.subscribe,
     session.getContextSnapshot,
@@ -343,19 +370,20 @@ function AppModelContext({
   const [error, setError] = useState<string>();
   if (!state.context && !state.pending && !error) return null;
   return (
-    <section className={styles.request} aria-label="App model context">
+    <section className={styles.request} aria-label={t("App model context")}>
       <div className={styles.requestHeading}>
-        <strong>App context</strong>
-        <span>{state.pending ? "Updating…" : "Latest value"}</span>
+        <strong>{t("App context")}</strong>
+        <span>{state.pending ? t("Updating…") : t("Latest value")}</span>
       </div>
       <p>
-        This selection will go with your next message. Nothing is sent
-        automatically, and other browsers' selections aren't included.
+        {t(
+          "This selection will go with your next message. Nothing is sent automatically, and other browsers' selections aren't included.",
+        )}
       </p>
       {state.context && (
         <>
           <details>
-            <summary>Show app context</summary>
+            <summary>{t("Show app context")}</summary>
             <pre>{JSON.stringify(state.context.value, null, 2)}</pre>
           </details>
           <label>
@@ -365,7 +393,7 @@ function AppModelContext({
               disabled={state.pending || !selectable}
               onChange={(event) => session.selectContext(event.target.checked)}
             />{" "}
-            Include in my next messages
+            {t("Include in my next messages")}
           </label>
         </>
       )}
@@ -383,15 +411,38 @@ function AppModelContext({
             );
         }}
       >
-        Discard context
+        {t("Discard context")}
       </Button>
-      {error && <p role="alert">{error}</p>}
+      {error && (
+        <p role="alert">
+          {error ===
+          "This view closed, but the server didn't confirm. Actions already sent may still finish."
+            ? t(
+                "This view closed, but the server didn't confirm. Actions already sent may still finish.",
+              )
+            : error ===
+                "Context was removed from this browser's selection, but server confirmation was lost."
+              ? t(
+                  "Context was removed from this browser's selection, but server confirmation was lost.",
+                )
+              : error}
+        </p>
+      )}
     </section>
   );
 }
 
 function AppRequests({ session }: { session: AppSession }) {
+  const { t } = useTranslation();
   const requests = useSyncExternalStore(session.subscribe, session.getSnapshot);
+  const statusLabels: Record<Schema<"AppOperation">["status"], string> = {
+    checking: t("Checking"),
+    approval_required: t("Approval required"),
+    running: t("Running"),
+    completed: t("Completed"),
+    denied: t("Denied"),
+    failed: t("Failed"),
+  };
   const pending = requests.filter(
     ({ operation, uncertain }) =>
       uncertain ||
@@ -404,7 +455,7 @@ function AppRequests({ session }: { session: AppSession }) {
       <section
         key={request.request_key}
         className={styles.request}
-        aria-label={`App request: ${request.name}`}
+        aria-label={t("App request: {{name}}", { name: request.name })}
       >
         <div className={styles.requestHeading}>
           <strong>
@@ -413,15 +464,30 @@ function AppRequests({ session }: { session: AppSession }) {
           </strong>
           <span>
             {uncertain
-              ? "Result unknown"
-              : (operation?.status.replaceAll("_", " ") ?? "Submitting")}
+              ? t("Result unknown")
+              : operation
+                ? statusLabels[operation.status]
+                : t("Submitting")}
           </span>
         </div>
-        <pre aria-label="Exact App arguments">
+        <pre aria-label={t("Exact App arguments")}>
           {JSON.stringify(operation?.arguments ?? request.arguments, null, 2)}
         </pre>
         {operation?.reason && <p>{operation.reason}</p>}
-        {uncertain && <p role="alert">{uncertain}</p>}
+        {uncertain && (
+          <p role="alert">
+            {uncertain.kind === "decision" ? (
+              t(
+                "Couldn't confirm your choice. Nothing was retried or changed. Check the result or close this view.",
+              )
+            ) : (
+              <>
+                {t("Result unknown. The request was not repeated.")}{" "}
+                {errorMessage(uncertain.cause, t)}
+              </>
+            )}
+          </p>
+        )}
         <div className={styles.actions}>
           {uncertain ? (
             <Button
@@ -429,7 +495,7 @@ function AppRequests({ session }: { session: AppSession }) {
               variant="outline"
               onClick={() => void session.reconcile(request.request_key)}
             >
-              Check result
+              {t("Check result")}
             </Button>
           ) : (
             operation?.status === "approval_required" && (
@@ -439,7 +505,7 @@ function AppRequests({ session }: { session: AppSession }) {
                   disabled={deciding}
                   onClick={() => void session.decide(request.request_key, true)}
                 >
-                  Approve once
+                  {t("Approve once")}
                 </Button>
                 <Button
                   size="sm"
@@ -449,7 +515,7 @@ function AppRequests({ session }: { session: AppSession }) {
                     void session.decide(request.request_key, false)
                   }
                 >
-                  Deny
+                  {t("Deny")}
                 </Button>
               </>
             )
@@ -462,7 +528,11 @@ function AppRequests({ session }: { session: AppSession }) {
       {render(pending)}
       {completed.length > 0 && (
         <details>
-          <summary>Recent App operations ({completed.length})</summary>
+          <summary>
+            {t("Recent App operations ({{count}})", {
+              count: completed.length,
+            })}
+          </summary>
           {render(completed)}
         </details>
       )}

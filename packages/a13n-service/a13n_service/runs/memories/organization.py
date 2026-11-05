@@ -92,7 +92,9 @@ async def _admit(session: AsyncSession, runtime: Runtime, space: MemorySpaceRow,
         payload=MessagePayload(content=(TextPart(type="text", text="Organize the saved files in this Memory Space."),)),
         options=RunOptions(max_usage=UsageLimit(requests=200)),
     )
-    revision, overrides = await validate_message(session, runtime, actor, scope, thread, message, authority=authority)
+    revision, overrides, options = await validate_message(
+        session, runtime, actor, scope, thread, message, authority=authority
+    )
     session.add(thread)
     await session.flush()
     entry = await append_message(
@@ -104,7 +106,9 @@ async def _admit(session: AsyncSession, runtime: Runtime, space: MemorySpaceRow,
         request=None,
         control=runtime.settings.control,
     )
-    run = await start_run(session, runtime, thread, Source.message(entry, "input", actor, revision, overrides))
+    run = await start_run(
+        session, runtime, thread, Source.message(entry, "input", actor, revision, overrides, options=options)
+    )
     state.active_run_id = run.id
     state.pending = False
     state.failure = None

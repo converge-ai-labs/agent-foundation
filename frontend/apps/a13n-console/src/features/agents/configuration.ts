@@ -13,6 +13,7 @@ const sectionFields = {
   skills: ["skills", "builtin_skills"],
   connections: ["connection_tools"],
   plugins: ["plugins"],
+  subagents: ["subagents"],
   toolSearch: ["tool_search"],
   memory: ["memory_mounts", "memory"],
   toolsets: ["toolsets"],
@@ -25,7 +26,7 @@ const sectionFields = {
 export type EditorSection = keyof typeof sectionFields | "advanced";
 const commonFields = new Set<string>([...Object.values(sectionFields).flat()]);
 export function initialConfig(): AgentConfig {
-  return { model: "", instructions: "" };
+  return { model: "", instructions: "", subagents: { mode: "async" } };
 }
 /** Configuration not represented by a dedicated editor section. */
 export function advancedConfig(config: AgentConfig) {
@@ -62,6 +63,7 @@ export function buildConfig(
     | "builtin_skills"
     | "connection_tools"
     | "plugins"
+    | "subagents"
     | "tool_search"
     | "memory_mounts"
     | "memory"

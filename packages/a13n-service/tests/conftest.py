@@ -84,9 +84,9 @@ def cloud_browser_credentials() -> tuple[str, SecretStr]:
     from dotenv import dotenv_values
 
     provider = os.environ.get("A13N_CLOUD_BROWSER_TEST")
-    keys = {"browserbase": "BROWSERBASE_API_KEY", "kernel": "KERNEL_API_KEY"}
+    keys = {"browserbase": "BROWSERBASE_API_KEY", "kernel": "KERNEL_API_KEY", "browser_use": "BROWSER_USE_API_KEY"}
     if provider not in keys:
-        raise pytest.UsageError("Set A13N_CLOUD_BROWSER_TEST to browserbase or kernel to run cloud tests")
+        raise pytest.UsageError("Set A13N_CLOUD_BROWSER_TEST to browserbase, kernel or browser_use to run cloud tests")
     key = keys[provider]
     value = os.environ.get(key)
     if value is None:
@@ -606,8 +606,8 @@ QUESTION = {
 }
 
 
-# Custom agents read the builtin guide from their primary environment; use skill_service/skill_executing.
-GUIDE = "/workspace/.agents/skills/platform-operations/SKILL.md"
+# All Agents read built-in guides from the host read-only mount.
+GUIDE = "/platform-skills/platform-operations/SKILL.md"
 LOOKUP: dict[str, Any] = {
     "builtin_skills": ["platform-operations"],
     "toolsets": {"files": {"enabled": True}, "shell": {"enabled": False}},
@@ -672,8 +672,10 @@ async def delegating(service: SimpleNamespace, model: ScriptedModel, mode: str, 
         "coordinator",
         key,
         instructions="Role: coordinator",
-        subagent_mode=mode,
-        subagents={"helper": {"agent_id": worker["id"], "description": "Computes answers", **edge}},
+        subagents={
+            "mode": mode,
+            "named": {"helper": {"agent_id": worker["id"], "description": "Computes answers", **edge}},
+        },
         **config,
     )
 

@@ -333,24 +333,8 @@
             "title": "Skills",
             "type": "array"
           },
-          "subagent_mode": {
-            "default": "inline",
-            "enum": [
-              "inline",
-              "async"
-            ],
-            "title": "Subagent Mode",
-            "type": "string"
-          },
           "subagents": {
-            "maxProperties": 128,
-            "patternProperties": {
-              "^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$": {
-                "$ref": "#/components/schemas/SubagentSelection-Input"
-              }
-            },
-            "title": "Subagents",
-            "type": "object"
+            "$ref": "#/components/schemas/Subagents-Input"
           },
           "summarize": {
             "default": false,
@@ -565,24 +549,8 @@
             "title": "Skills",
             "type": "array"
           },
-          "subagent_mode": {
-            "default": "inline",
-            "enum": [
-              "inline",
-              "async"
-            ],
-            "title": "Subagent Mode",
-            "type": "string"
-          },
           "subagents": {
-            "maxProperties": 128,
-            "patternProperties": {
-              "^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$": {
-                "$ref": "#/components/schemas/SubagentSelection-Output"
-              }
-            },
-            "title": "Subagents",
-            "type": "object"
+            "$ref": "#/components/schemas/Subagents-Output"
           },
           "summarize": {
             "default": false,
@@ -752,7 +720,7 @@
       },
       "AgentOverride-Input": {
         "additionalProperties": false,
-        "description": "What one run changes of its revision's configuration; an omitted or null field keeps the revision's.\n\n`toolsets` replaces whole toolsets; `retries` and each subagent edge replace the fields they set, and a null\nedge removes it; every other field replaces the revision's value.",
+        "description": "What one run changes of its revision's configuration; an omitted or null field keeps the revision's.\n\n`toolsets` replaces whole toolsets; `retries` replaces supplied members.\nEvery other field, including `subagents`, replaces the whole value.",
         "properties": {
           "builtin_skills": {
             "anyOf": [
@@ -956,26 +924,12 @@
           "subagents": {
             "anyOf": [
               {
-                "maxProperties": 128,
-                "patternProperties": {
-                  "^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$": {
-                    "anyOf": [
-                      {
-                        "$ref": "#/components/schemas/SubagentOverride-Input"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  }
-                },
-                "type": "object"
+                "$ref": "#/components/schemas/Subagents-Input"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Subagents"
+            ]
           },
           "tool_search": {
             "anyOf": [
@@ -1010,7 +964,7 @@
       },
       "AgentOverride-Output": {
         "additionalProperties": false,
-        "description": "What one run changes of its revision's configuration; an omitted or null field keeps the revision's.\n\n`toolsets` replaces whole toolsets; `retries` and each subagent edge replace the fields they set, and a null\nedge removes it; every other field replaces the revision's value.",
+        "description": "What one run changes of its revision's configuration; an omitted or null field keeps the revision's.\n\n`toolsets` replaces whole toolsets; `retries` replaces supplied members.\nEvery other field, including `subagents`, replaces the whole value.",
         "properties": {
           "builtin_skills": {
             "anyOf": [
@@ -1214,26 +1168,12 @@
           "subagents": {
             "anyOf": [
               {
-                "maxProperties": 128,
-                "patternProperties": {
-                  "^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$": {
-                    "anyOf": [
-                      {
-                        "$ref": "#/components/schemas/SubagentOverride-Output"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  }
-                },
-                "type": "object"
+                "$ref": "#/components/schemas/Subagents-Output"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Subagents"
+            ]
           },
           "tool_search": {
             "anyOf": [
@@ -1983,8 +1923,8 @@
       },
       "AppReference": {
         "properties": {
-          "agent_revision_id": {
-            "title": "Agent Revision Id",
+          "agent_definition_id": {
+            "title": "Agent Definition Id",
             "type": "string"
           },
           "app_id": {
@@ -2020,7 +1960,7 @@
         "required": [
           "app_id",
           "connection_id",
-          "agent_revision_id",
+          "agent_definition_id",
           "source_run_id",
           "tool_call_id",
           "tool_name",
@@ -4325,7 +4265,6 @@
           "builtin_skills",
           "client_tools",
           "user_questions",
-          "subagent_mode",
           "subagents",
           "reviewer",
           "media_understanding",
@@ -6875,6 +6814,102 @@
         "title": "DiskMetrics",
         "type": "object"
       },
+      "DynamicSubagents-Input": {
+        "additionalProperties": false,
+        "description": "Root-only task-specific delegation within the parent's capability boundary.",
+        "properties": {
+          "allowed_models": {
+            "default": [],
+            "items": {
+              "pattern": "^[a-z0-9][a-z0-9.-]{0,127}$",
+              "type": "string"
+            },
+            "maxItems": 128,
+            "title": "Allowed Models",
+            "type": "array",
+            "uniqueItems": true
+          },
+          "default_model": {
+            "anyOf": [
+              {
+                "pattern": "^[a-z0-9][a-z0-9.-]{0,127}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Model"
+          },
+          "default_thinking": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Thinking"
+          },
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "title": "DynamicSubagents",
+        "type": "object"
+      },
+      "DynamicSubagents-Output": {
+        "additionalProperties": false,
+        "description": "Root-only task-specific delegation within the parent's capability boundary.",
+        "properties": {
+          "allowed_models": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Allowed Models",
+            "type": "array"
+          },
+          "default_model": {
+            "anyOf": [
+              {
+                "pattern": "^[a-z0-9][a-z0-9.-]{0,127}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Model"
+          },
+          "default_thinking": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Thinking"
+          },
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "title": "DynamicSubagents",
+        "type": "object"
+      },
       "EmailChangeConfirm": {
         "additionalProperties": false,
         "properties": {
@@ -7777,6 +7812,16 @@
             "title": "Created By Id",
             "type": "string"
           },
+          "desktop_preview": {
+            "default": "not_configured",
+            "enum": [
+              "supported",
+              "connection_unsupported",
+              "not_configured"
+            ],
+            "title": "Desktop Preview",
+            "type": "string"
+          },
           "device_id": {
             "anyOf": [
               {
@@ -8630,10 +8675,17 @@
             "type": "string"
           },
           "agent_revision_id": {
-            "maxLength": 41,
-            "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
-            "title": "Agent Revision Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 41,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Revision Id"
           },
           "analysis_id": {
             "anyOf": [
@@ -8776,10 +8828,17 @@
             "type": "string"
           },
           "agent_revision_id": {
-            "maxLength": 41,
-            "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
-            "title": "Agent Revision Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 41,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Revision Id"
           },
           "category": {
             "$ref": "#/components/schemas/Category",
@@ -17783,12 +17842,33 @@
           "config": {
             "$ref": "#/components/schemas/AgentConfig-Output"
           },
+          "definition_id": {
+            "title": "Definition Id",
+            "type": "string"
+          },
           "revision": {
-            "$ref": "#/components/schemas/AgentRevision"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentRevision"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "enum": [
+              "revision",
+              "thread_snapshot"
+            ],
+            "title": "Source",
+            "type": "string"
           }
         },
         "required": [
           "revision",
+          "definition_id",
+          "source",
           "config"
         ],
         "title": "RunAgent",
@@ -17830,8 +17910,15 @@
             "type": "boolean"
           },
           "revision_id": {
-            "title": "Revision Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revision Id"
           },
           "skill_ids": {
             "items": {
@@ -18036,8 +18123,15 @@
             "type": "string"
           },
           "agent_revision_id": {
-            "title": "Agent Revision Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Revision Id"
           },
           "attempts": {
             "title": "Attempts",
@@ -18412,8 +18506,15 @@
             "title": "Agent Name"
           },
           "agent_revision_id": {
-            "title": "Agent Revision Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Revision Id"
           },
           "attempts": {
             "title": "Attempts",
@@ -18505,7 +18606,8 @@
             "enum": [
               "pinned",
               "default",
-              "inherited"
+              "inherited",
+              "snapshot"
             ],
             "title": "Revision Selection",
             "type": "string"
@@ -18702,8 +18804,15 @@
             "type": "string"
           },
           "agent_revision_id": {
-            "title": "Agent Revision Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Revision Id"
           },
           "attempts": {
             "title": "Attempts",
@@ -18877,7 +18986,8 @@
             "enum": [
               "pinned",
               "default",
-              "inherited"
+              "inherited",
+              "snapshot"
             ],
             "title": "Revision Selection",
             "type": "string"
@@ -21744,158 +21854,6 @@
         ],
         "type": "string"
       },
-      "SubagentOverride-Input": {
-        "additionalProperties": false,
-        "description": "Replaces the fields it sets of an edge; an edge the revision lacks sets at least `agent_id`.",
-        "properties": {
-          "agent_id": {
-            "anyOf": [
-              {
-                "maxLength": 41,
-                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Agent Id"
-          },
-          "context": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/DelegationContextPolicy"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "description": {
-            "anyOf": [
-              {
-                "maxLength": 4096,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Description"
-          },
-          "environment": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ChildEnvironmentPolicy"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "revision_id": {
-            "anyOf": [
-              {
-                "maxLength": 41,
-                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Revision Id"
-          },
-          "usage_limits": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/UsageLimits-Input"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "title": "SubagentOverride",
-        "type": "object"
-      },
-      "SubagentOverride-Output": {
-        "additionalProperties": false,
-        "description": "Replaces the fields it sets of an edge; an edge the revision lacks sets at least `agent_id`.",
-        "properties": {
-          "agent_id": {
-            "anyOf": [
-              {
-                "maxLength": 41,
-                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Agent Id"
-          },
-          "context": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/DelegationContextPolicy"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "description": {
-            "anyOf": [
-              {
-                "maxLength": 4096,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Description"
-          },
-          "environment": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ChildEnvironmentPolicy"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "revision_id": {
-            "anyOf": [
-              {
-                "maxLength": 41,
-                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Revision Id"
-          },
-          "usage_limits": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/UsageLimits-Output"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "title": "SubagentOverride",
-        "type": "object"
-      },
       "SubagentSelection-Input": {
         "additionalProperties": false,
         "properties": {
@@ -22008,6 +21966,64 @@
           "agent_id"
         ],
         "title": "SubagentSelection",
+        "type": "object"
+      },
+      "Subagents-Input": {
+        "additionalProperties": false,
+        "properties": {
+          "dynamic": {
+            "$ref": "#/components/schemas/DynamicSubagents-Input"
+          },
+          "mode": {
+            "default": "async",
+            "enum": [
+              "inline",
+              "async"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "named": {
+            "maxProperties": 128,
+            "patternProperties": {
+              "^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$": {
+                "$ref": "#/components/schemas/SubagentSelection-Input"
+              }
+            },
+            "title": "Named",
+            "type": "object"
+          }
+        },
+        "title": "Subagents",
+        "type": "object"
+      },
+      "Subagents-Output": {
+        "additionalProperties": false,
+        "properties": {
+          "dynamic": {
+            "$ref": "#/components/schemas/DynamicSubagents-Output"
+          },
+          "mode": {
+            "default": "async",
+            "enum": [
+              "inline",
+              "async"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "named": {
+            "maxProperties": 128,
+            "patternProperties": {
+              "^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$": {
+                "$ref": "#/components/schemas/SubagentSelection-Output"
+              }
+            },
+            "title": "Named",
+            "type": "object"
+          }
+        },
+        "title": "Subagents",
         "type": "object"
       },
       "Submitted": {
@@ -23213,8 +23229,15 @@
             "type": "string"
           },
           "agent_revision_id": {
-            "title": "Agent Revision Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Revision Id"
           },
           "attempts": {
             "title": "Attempts",
@@ -27000,7 +27023,6 @@
                 "builtin_skills",
                 "client_tools",
                 "user_questions",
-                "subagent_mode",
                 "subagents",
                 "reviewer",
                 "media_understanding",
@@ -43511,7 +43533,6 @@
                 "builtin_skills",
                 "client_tools",
                 "user_questions",
-                "subagent_mode",
                 "subagents",
                 "reviewer",
                 "media_understanding",

@@ -33,8 +33,72 @@ def update_command() -> UpdateCommand | None:
     return UpdateCommand(executable, prefix.parent)
 
 
+def _windows_update_pids() -> list[int]:
+    """Include uv's executable launcher and any virtualenv Python redirectors."""
+    import psutil
+
+    prefix = Path(sys.prefix).resolve()
+    entrypoint = Path(sys.argv[0])
+    # uv's console-script stub strips .exe from argv[0].
+    if not entrypoint.suffix:
+        entrypoint = entrypoint.with_suffix(".exe")
+    entrypoint = entrypoint.resolve()
+    pids = [os.getpid()]
+    try:
+        for parent in psutil.Process().parents():
+            executable = Path(parent.exe()).resolve()
+            if executable != entrypoint and not executable.is_relative_to(prefix):
+                break
+            pids.append(parent.pid)
+    except psutil.Error as exc:
+        raise OSError(f"Could not identify the launching processes: {exc}") from exc
+    return pids
+
+
+def _start_windows_update(command: UpdateCommand) -> None:
+    assert sys.platform == "win32"
+    from a13n_harness_ui import _windows_update
+
+    # Running from the tool's Python or importing its packages in the worker
+    # would keep the installation locked. Snapshot the stdlib-only worker and
+    # use the base interpreter without site initialization or PYTHONPATH.
+    source = Path(_windows_update.__file__).read_text(encoding="utf-8")
+    with _windows_update.process_handles(_windows_update_pids()) as handles:
+        startup = subprocess.STARTUPINFO(lpAttributeList={"handle_list": handles})
+        subprocess.Popen(
+            (
+                str(Path(sys.base_prefix) / "python.exe"),
+                "-I",
+                "-S",
+                "-c",
+                source,
+                command.executable,
+                str(command.tool_directory),
+                *(str(handle) for handle in handles),
+            ),
+            creationflags=subprocess.CREATE_NEW_CONSOLE,
+            startupinfo=startup,
+            close_fds=True,
+        )
+
+
 def run_update(command: UpdateCommand) -> None:
-    """Run an explicitly requested update in the ordinary terminal, never retrying."""
+    """Run once, or hand off on Windows so this process can release its files."""
+    if sys.platform == "win32":
+        try:
+            _start_windows_update(command)
+        except KeyboardInterrupt:
+            click.echo("Update handoff interrupted. Check the update window before retrying.", err=True)
+            raise click.exceptions.Exit(130) from None
+        except OSError as exc:
+            raise click.ClickException(
+                f"Could not start the update window: {exc}. No automatic retry was attempted."
+            ) from exc
+        click.echo("Update handed off to a separate window; installation is not complete yet.")
+        click.echo(
+            "This command will exit so the updater can replace its files. Check the update window for the result."
+        )
+        return
     click.echo("Running: uv tool upgrade a13n-harness-ui")
     click.echo(f"Tool directory: {command.tool_directory}")
     try:

@@ -13,7 +13,16 @@ from a13n_harness.compaction import BackgroundCompactionPolicy
 from a13n_harness.tools.client import ClientToolDefinition
 from a13n_harness.tools.identity import source_tool_id, source_tool_prefix
 from a13n_harness.tools.tool_search import ToolSearchConfiguration, validate_group
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints, ValidationInfo, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    JsonValue,
+    StringConstraints,
+    ValidationInfo,
+    field_serializer,
+    model_validator,
+)
 from pydantic.experimental.missing_sentinel import MISSING
 from pydantic_ai.usage import UsageLimits
 
@@ -118,6 +127,31 @@ class SubagentSelection(_Frozen):
     context: DelegationContextPolicy = Field(default_factory=DelegationContextPolicy)
     usage_limits: UsageLimits | None = None
     environment: ChildEnvironmentPolicy = Field(default_factory=ChildEnvironmentPolicy)
+
+
+class DynamicSubagents(_Frozen):
+    """Root-only task-specific delegation within the parent's capability boundary."""
+
+    enabled: bool = False
+    allowed_models: frozenset[Key] = Field(default=frozenset(), max_length=128)
+    default_model: Key | None = None
+    default_thinking: str | bool | None = None
+
+    @field_serializer("allowed_models")
+    def ordered_models(self, value: frozenset[str]) -> list[str]:
+        return sorted(value)
+
+
+class Subagents(_Frozen):
+    mode: Literal["inline", "async"] = "async"
+    named: dict[BoundedKey, SubagentSelection] = Field(default_factory=dict, max_length=128)
+    dynamic: DynamicSubagents = Field(default_factory=DynamicSubagents)
+
+    @model_validator(mode="after")
+    def dynamic_is_async(self) -> Self:
+        if self.dynamic.enabled and self.mode != "async":
+            raise ValueError("Dynamic subagents require async mode")
+        return self
 
 
 class OutputVariant(_Schemas):
@@ -229,8 +263,7 @@ class AgentConfig(_Frozen):
     # Offers `ask_user_question`; a question makes the run wait for the next message.
     user_questions: bool = False
     # Inline children run inside the parent's run; async children run as child runs of their own.
-    subagent_mode: Literal["inline", "async"] = "inline"
-    subagents: dict[BoundedKey, SubagentSelection] = Field(default_factory=dict, max_length=128)
+    subagents: Subagents = Field(default_factory=Subagents)
     reviewer: AgentReviewer | None = None
     media_understanding: MediaUnderstandingSelection = Field(default_factory=MediaUnderstandingSelection)
     plugins: tuple[PluginSelection, ...] = Field(default=(), max_length=128)
@@ -305,8 +338,7 @@ class AgentConfigurationChanges(_Frozen):
     builtin_skills: frozenset[BuiltinSkillName] | MISSING = Field(default=MISSING)
     client_tools: tuple[ClientToolDefinition, ...] | MISSING = Field(default=MISSING, max_length=128)
     user_questions: bool | MISSING = Field(default=MISSING)
-    subagent_mode: Literal["inline", "async"] | MISSING = Field(default=MISSING)
-    subagents: dict[BoundedKey, SubagentSelection] | MISSING = Field(default=MISSING, max_length=128)
+    subagents: Subagents | MISSING = Field(default=MISSING)
     reviewer: AgentReviewer | MISSING | None = Field(default=MISSING)
     media_understanding: MediaUnderstandingSelection | MISSING = Field(default=MISSING)
     plugins: tuple[PluginSelection, ...] | MISSING = Field(default=MISSING, max_length=128)
@@ -330,17 +362,6 @@ def apply_configuration_changes(config: AgentConfig, changes: AgentConfiguration
     )
 
 
-class SubagentOverride(_Frozen):
-    """Replaces the fields it sets of an edge; an edge the revision lacks sets at least `agent_id`."""
-
-    agent_id: ObjectId | None = None
-    revision_id: ObjectId | None = None
-    description: Description | None = None
-    context: DelegationContextPolicy | None = None
-    usage_limits: UsageLimits | None = None
-    environment: ChildEnvironmentPolicy | None = None
-
-
 class RetryOverride(_Frozen):
     tools: int | None = Field(default=None, ge=0, le=100)
     output: int | None = Field(default=None, ge=0, le=100)
@@ -349,8 +370,8 @@ class RetryOverride(_Frozen):
 class AgentOverride(_Frozen):
     """What one run changes of its revision's configuration; an omitted or null field keeps the revision's.
 
-    `toolsets` replaces whole toolsets; `retries` and each subagent edge replace the fields they set, and a null
-    edge removes it; every other field replaces the revision's value.
+    `toolsets` replaces whole toolsets; `retries` replaces supplied members.
+    Every other field, including `subagents`, replaces the whole value.
     """
 
     toolsets: ToolsetOverrides | None = None
@@ -367,7 +388,7 @@ class AgentOverride(_Frozen):
     connection_tools: tuple[ConnectionSelection, ...] | None = Field(default=None, max_length=128)
     tool_search: ToolSearch | None = None
     builtin_skills: frozenset[BuiltinSkillName] | None = None
-    subagents: dict[BoundedKey, SubagentOverride | None] | None = Field(default=None, max_length=128)
+    subagents: Subagents | None = None
     client_tools: tuple[ClientToolDefinition, ...] | None = Field(default=None, max_length=128)
     output_spec: OutputSpec | None = None
     retries: RetryOverride | None = None
@@ -389,6 +410,7 @@ _REPLACED = (
     "builtin_skills",
     "client_tools",
     "output_spec",
+    "subagents",
 )
 
 
@@ -402,19 +424,6 @@ def apply_override(
         fields["toolsets"] = {**config.toolsets, **override.toolsets}
     if override.retries is not None:
         fields["retries"] = {**dict(config.retries or RetryConfig()), **_set(override.retries)}
-    if override.subagents is not None:
-        edges: dict[str, object] = dict(config.subagents)
-        for name, edge in override.subagents.items():
-            if edge is None:
-                edges.pop(name, None)
-                continue
-            changes = _set(edge)
-            # Another agent without a revision runs its own default, never the replaced agent's pin.
-            if "agent_id" in changes and "revision_id" not in changes:
-                changes["revision_id"] = None
-            current = config.subagents.get(name)
-            edges[name] = {**(dict(current) if current is not None else {}), **changes}
-        fields["subagents"] = edges
     return AgentConfig.model_validate(fields, context=validation_context)
 
 
@@ -427,12 +436,7 @@ def freeze_override(override: AgentOverride, validated: AgentConfig) -> AgentOve
     if override.skills is not None:
         changes["skills"] = validated.skills
     if override.subagents is not None:
-        changes["subagents"] = {
-            name: None
-            if edge is None
-            else edge.model_copy(update={"revision_id": validated.subagents[name].revision_id})
-            for name, edge in override.subagents.items()
-        }
+        changes["subagents"] = validated.subagents
     return override.model_copy(update=changes)
 
 

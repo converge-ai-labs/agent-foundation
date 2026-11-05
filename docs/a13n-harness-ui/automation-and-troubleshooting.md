@@ -86,7 +86,7 @@ For the asyncio warning `Task was destroyed but it is pending!` without an accom
 
 For a recognized uv-tool installation:
 
-1. Exit Harness UI.
+1. Close all running Harness UI TUI and WebUI sessions.
 
 2. Run:
 
@@ -94,11 +94,13 @@ For a recognized uv-tool installation:
    a13n-harness-ui update
    ```
 
-3. Restart Harness UI after the command succeeds.
+3. On Windows, wait for the separate update window to report success, then press Enter to close it. On macOS and Linux, wait for the command to succeed. Restart Harness UI after installation completes.
 
-The command directly runs `uv tool upgrade a13n-harness-ui` for the running installation's tool directory. It does not ask for another confirmation, open setup, or use the startup metadata cache. uv must be on PATH. Other installation types should use their original package manager. You can also invoke `uv tool upgrade a13n-harness-ui` directly.
+The command runs `uv tool upgrade a13n-harness-ui` for the running installation's tool directory. It does not ask for another confirmation, open setup, or use the startup metadata cache. uv must be on PATH. Other installation types should use their original package manager.
 
-A failed installer returns a nonzero status without automatic retry. An interrupted update exits with status `130`; inspect the installation before retrying. Updating the Python package and preparing its native Envd runtime are separate operations.
+On Windows, the original command exits after handing off to the update window. Its zero exit status means handoff, not installation success. The updater waits up to 60 seconds for the launching processes to release their files before starting uv. The update window shows installer output and the final result. Scripts requiring a synchronous installer exit status should invoke `uv tool upgrade a13n-harness-ui` directly.
+
+A failed installer returns a nonzero status from the responsible updater without automatic retry. An interrupted update exits with status `130`; inspect the installation before retrying. Updating the Python package and preparing its native Envd runtime are separate operations.
 
 ### Control update notices
 

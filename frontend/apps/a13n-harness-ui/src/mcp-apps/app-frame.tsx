@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import {
   AppBridge,
   PostMessageTransport,
@@ -32,10 +33,11 @@ interface Props {
 
 /** One public SDK bridge per View; the iframe never receives an MCP client or credentials. */
 export function AppFrame(props: Props) {
+  const { t } = useTranslation();
   const container = useRef<HTMLDivElement>(null);
   const handlers = useRef(props.handlers);
   handlers.current = props.handlers;
-  const [error, setError] = useState<string>();
+  const [error, setError] = useState<{ text: string; local: boolean }>();
 
   useEffect(() => {
     const node = container.current;
@@ -44,11 +46,17 @@ export function AppFrame(props: Props) {
     setError(undefined);
     const fail = (cause: unknown) => {
       if (!disposed)
-        setError(cause instanceof Error ? cause.message : String(cause));
+        setError({
+          text: cause instanceof Error ? cause.message : String(cause),
+          local: false,
+        });
+    };
+    const failLocal = (text: string) => {
+      if (!disposed) setError({ text, local: true });
     };
     const url = new URL(props.sandboxUrl);
     if (url.origin === window.location.origin) {
-      fail(new Error("MCP Apps require a separate sandbox origin."));
+      failLocal("MCP Apps require a separate sandbox origin.");
       return;
     }
     url.searchParams.set("host", window.location.origin);
@@ -91,15 +99,12 @@ export function AppFrame(props: Props) {
     const observer = new MutationObserver(updateHostContext);
     const startup = setTimeout(
       () =>
-        fail(
-          new Error(
-            "The app didn't load. Check that your browser can reach its sandbox address.",
-          ),
+        failLocal(
+          "The app didn't load. Check that your browser can reach its sandbox address.",
         ),
       15000,
     );
-    frame.onerror = () =>
-      fail(new Error("The App sandbox could not be loaded."));
+    frame.onerror = () => failLocal("The App sandbox could not be loaded.");
     bridge.onsizechange = ({ height }) => {
       if (height !== undefined && Number.isFinite(height))
         frame.style.height = `${Math.max(80, Math.min(720, height))}px`;
@@ -157,8 +162,10 @@ export function AppFrame(props: Props) {
     <div>
       {error && (
         <p role="alert">
-          {error} Close and reopen this view to retry. The saved tool result
-          stays in the chat; the tool won't run again.
+          {error.local ? t(error.text) : error.text}{" "}
+          {t(
+            "Close and reopen this view to retry. The saved tool result stays in the chat; the tool won't run again.",
+          )}
         </p>
       )}
       <div ref={container} />

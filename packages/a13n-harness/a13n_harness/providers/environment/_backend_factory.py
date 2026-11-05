@@ -26,6 +26,8 @@ from a13n_harness.providers.environment._backend import ExecutionBackend
 from a13n_harness.providers.environment._runtime import ClosableRuntime, RuntimeFactory, _release
 from a13n_harness.providers.environment.definition import TargetIdentity, _no_target_identity
 
+from .execution_mode import capabilities
+
 
 class ExecutionFactory[E: BaseModel, R](Protocol):
     def __call__(
@@ -67,7 +69,7 @@ class BackendFactory[C: BaseModel, K: BaseModel, E: BaseModel, R]:
         runtime: R | None,
         session_recovery: EnvdSessionRecovery | None = None,
     ) -> EnvironmentConnector:
-        if getattr(environment, "execution", None) == "envd_ws":
+        if capabilities(environment).host_connection:
             raise provider_error(
                 self.key,
                 "envd_ws_requires_host_connection",

@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import {
   useEffect,
   useLayoutEffect,
@@ -65,6 +66,7 @@ export function SharedPointers({
   presence: Schema<"PresenceFrame"> | null;
   focus?: Schema<"PageFocus"> | null;
 }) {
+  const { t } = useTranslation();
   const threadId =
     focus?.target.kind === "conversation" ? focus.target.thread_id : null;
   const [frame, setFrame] = useState<Schema<"PointerFrame"> | null>(null);
@@ -222,7 +224,7 @@ export function SharedPointers({
             <svg width="22" height="26" viewBox="0 0 22 26">
               <path d="M2 2 18 14 10 15 6 23Z" />
             </svg>
-            <span>{participant.display_name?.trim() || "Anonymous"}</span>
+            <span>{participant.display_name?.trim() || t("Anonymous")}</span>
           </div>
         );
       })}

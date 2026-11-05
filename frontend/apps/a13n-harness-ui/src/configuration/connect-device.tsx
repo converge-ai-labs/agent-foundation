@@ -1,3 +1,5 @@
+import { useTranslation } from "../i18n";
+import { Trans } from "react-i18next";
 import {
   SettingsChoice as ChoiceField,
   SettingsSection,
@@ -21,26 +23,27 @@ import styles from "./connect-device.module.css";
 
 export function ConnectDevice({
   onConnected,
-  label = "Connect device",
+  label,
 }: {
   onConnected?: (device: Schema<"DeviceSummary">) => void;
   label?: string;
 }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   return (
     <ModalFrame
       open={open}
       onOpenChange={setOpen}
-      title="Connect device"
-      closeLabel="Close dialog"
+      title={t("Connect device")}
+      closeLabel={t("Close dialog")}
       trigger={
         <Button type="button" variant={onConnected ? "outline" : "default"}>
-          {label}
+          {label ?? t("Connect device")}
         </Button>
       }
       footer={
         <Button variant="outline" onClick={() => setOpen(false)}>
-          Close
+          {t("Close")}
         </Button>
       }
     >
@@ -64,6 +67,7 @@ function ConnectDeviceSteps({
   onConnected: (device: Schema<"DeviceSummary">) => void;
   inline: boolean;
 }) {
+  const { t } = useTranslation();
   const { client } = useTransport();
   const [shell, setShell] = useState<"posix" | "powershell">("posix");
   const [execution, setExecution] = useState(false);
@@ -94,36 +98,44 @@ function ConnectDeviceSteps({
         <>
           <section className={styles.step}>
             <h3>
-              1. Run on the device{" "}
-              <HelpTip label="Installation help">
-                Install a13n-envd and add it to PATH on the other computer.
+              {t("1. Run on the device")}{" "}
+              <HelpTip label={t("Installation help")}>
+                {t(
+                  "Install a13n-envd and add it to PATH on the other computer.",
+                )}
               </HelpTip>
             </h3>
             <p>
-              Run this command on the other computer and keep its terminal open.
+              {t(
+                "Run this command on the other computer and keep its terminal open.",
+              )}
             </p>
             <SettingsSection>
               <ChoiceField
-                label="Device terminal"
+                label={t("Device terminal")}
                 value={shell}
                 onValueChange={(value) => setShell(value as typeof shell)}
                 options={[
-                  { value: "posix", label: "macOS / Linux · POSIX shell" },
-                  { value: "powershell", label: "Windows · PowerShell" },
+                  { value: "posix", label: t("macOS / Linux · POSIX shell") },
+                  { value: "powershell", label: t("Windows · PowerShell") },
                 ]}
               />
               <SettingsToggle
-                label="Enable shell execution"
-                description="Run commands as the device user, without a sandbox. Server permissions don't apply."
+                label={t("Enable shell execution")}
+                description={t(
+                  "Run commands as the device user, without a sandbox. Server permissions don't apply.",
+                )}
                 checked={execution}
                 onCheckedChange={setExecution}
               />
               <details className={settingsLayout.groupDisclosure}>
-                <summary>Desktop access</summary>
+                <summary>{t("Desktop access")}</summary>
                 <div>
                   <SettingsToggle
-                    label="Enable desktop observation and control"
-                    description="Requires desktop permission on the device, separately from shell access. Screenshots may be sent to the model and saved in chat history."
+                    label={t("Enable desktop observation and control")}
+                    description={t(
+                      "Requires desktop permission on the device, separately from shell access. Screenshots may be sent to the model and saved in chat history.",
+                    )}
                     checked={desktop}
                     onCheckedChange={setDesktop}
                   />
@@ -132,7 +144,7 @@ function ConnectDeviceSteps({
             </SettingsSection>
             <div className={styles.commandBlock}>
               <div className={styles.commandHeader}>
-                <span>Run command</span>
+                <span>{t("Run command")}</span>
                 <Button
                   type="button"
                   variant="ghost"
@@ -140,7 +152,7 @@ function ConnectDeviceSteps({
                   onClick={() => copy.mutate()}
                   loading={copy.isPending}
                 >
-                  {copied === command ? "Copied" : "Copy command"}
+                  {copied === command ? t("Copied") : t("Copy command")}
                 </Button>
               </div>
               <pre className={styles.command}>
@@ -149,36 +161,40 @@ function ConnectDeviceSteps({
             </div>
             <ErrorNotice error={copy.error} />
             <details className={layout.details}>
-              <summary>Connection help</summary>
+              <summary>{t("Connection help")}</summary>
               <p>
-                Use an address the device can reach and HTTPS for remote
-                connections. Localhost means the device itself.
+                {t(
+                  "Use an address the device can reach and HTTPS for remote connections. Localhost means the device itself.",
+                )}
               </p>
               <p>
-                After a restart, run the same command with the same environment
-                variables and access options. Saved credentials are reused
-                unless revoked.
+                {t(
+                  "After a restart, run the same command with the same environment variables and access options. Saved credentials are reused unless revoked.",
+                )}
               </p>
               <p>
-                For another Host, run a separate envd process with a different{" "}
-                <code>--instance</code>. Use <code>--host</code> to name the
-                saved connection.
+                <Trans
+                  i18nKey="For another Host, run a separate envd process with a different <instance>--instance</instance>. Use <host>--host</host> to name the saved connection."
+                  components={{ instance: <code />, host: <code /> }}
+                />
               </p>
             </details>
           </section>
           <section className={styles.step}>
-            <h3>2. Verify and approve</h3>
+            <h3>{t("2. Verify and approve")}</h3>
             <p>
-              Match the code in the device's terminal before approving. Closing
-              this dialog leaves the request pending.
+              {t(
+                "Match the code in the device's terminal before approving. Closing this dialog leaves the request pending.",
+              )}
             </p>
             <ErrorNotice error={pairings.error} />
             {!pairings.data?.length && (
               <div className={styles.waiting}>
-                <p role="status">Waiting for a connection request…</p>
-                <HelpTip label="About connection requests">
-                  Requests disappear if they expire or are handled elsewhere.
-                  Check the device's status to confirm approval.
+                <p role="status">{t("Waiting for a connection request…")}</p>
+                <HelpTip label={t("About connection requests")}>
+                  {t(
+                    "Requests disappear if they expire or are handled elsewhere. Check the device's status to confirm approval.",
+                  )}
                 </HelpTip>
               </div>
             )}
@@ -191,12 +207,13 @@ function ConnectDeviceSteps({
             ))}
           </section>
           <details className={layout.details}>
-            <summary>Connect manually</summary>
+            <summary>{t("Connect manually")}</summary>
             <p>
-              Use an existing envd connection or your own credentials. Return to
-              the device picker after saving.
+              {t(
+                "Use an existing envd connection or your own credentials. Return to the device picker after saving.",
+              )}
             </p>
-            <NewResourceButton kind="device" label="Configure manually" />
+            <NewResourceButton kind="device" label={t("Configure manually")} />
           </details>
         </>
       ) : (
@@ -204,26 +221,32 @@ function ConnectDeviceSteps({
           <h3>3. {approved.name}</h3>
           <p role="status">
             {info.data?.available
-              ? "Device online"
-              : "Approved · waiting for Device connection"}
+              ? t("Device online")
+              : t("Approved · waiting for Device connection")}
           </p>
           <ErrorNotice error={info.error} />
           {info.data && !info.data.available && (
             <p>
-              Keep envd running and check its terminal. Approval saves the
-              device; it still needs to connect.
+              {t(
+                "Keep envd running and check its terminal. Approval saves the device; it still needs to connect.",
+              )}
             </p>
           )}
           <p>
-            This device is saved for this server. Closing this dialog keeps it
-            {inline ? " but does not save an environment binding" : ""}.
+            {inline
+              ? t(
+                  "This device is saved for this server. Closing this dialog keeps it but does not save an environment binding.",
+                )
+              : t(
+                  "This device is saved for this server. Closing this dialog keeps it.",
+                )}
           </p>
           <Button
             type="button"
             disabled={!info.data?.available}
             onClick={() => onConnected(approved)}
           >
-            {inline ? "Choose a directory" : "Done"}
+            {inline ? t("Choose a directory") : t("Done")}
           </Button>
         </section>
       )}
@@ -238,6 +261,7 @@ export function PendingDevice({
   pairing: Schema<"PairingChallenge">;
   onApproved?: (device: Schema<"DeviceSummary">) => void;
 }) {
+  const { t } = useTranslation();
   const { client } = useTransport();
   const cache = useQueryClient();
   const decision = useMutation({
@@ -262,10 +286,12 @@ export function PendingDevice({
           <strong>{pairing.name}</strong>
           <p className="text-sm text-muted-foreground">{pairing.device_id}</p>
           <p>
-            Verification code: <code>{pairing.verification_code}</code>
+            {t("Verification code:")} <code>{pairing.verification_code}</code>
           </p>
           <p className="text-xs text-muted-foreground">
-            Expires {new Date(pairing.expires_at).toLocaleTimeString()}
+            {t("Expires {{time}}", {
+              time: new Date(pairing.expires_at).toLocaleTimeString(),
+            })}
           </p>
         </div>
         <div className="flex gap-2">
@@ -275,7 +301,7 @@ export function PendingDevice({
             disabled={decision.isPending}
             onClick={() => decision.mutate(false)}
           >
-            Reject
+            {t("Reject")}
           </Button>
           <Button
             type="button"
@@ -283,7 +309,7 @@ export function PendingDevice({
             disabled={decision.isPending}
             onClick={() => decision.mutate(true)}
           >
-            Approve Device
+            {t("Approve Device")}
           </Button>
         </div>
       </div>

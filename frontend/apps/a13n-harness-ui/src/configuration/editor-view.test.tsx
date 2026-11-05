@@ -8,7 +8,13 @@ import {
   screen,
 } from "@testing-library/react";
 import { EditorView } from "codemirror";
+import { history, undo, undoDepth } from "@codemirror/commands";
+import { Transaction } from "@codemirror/state";
+
+const historyExtension = history();
 import { SourceEditor } from "./editor-view";
+import { AppearanceProvider } from "../appearance/react";
+import { AppearanceStore } from "../appearance/store";
 
 beforeEach(() => {
   Object.defineProperty(Range.prototype, "getClientRects", {
@@ -141,4 +147,80 @@ it("reports cursor and selection changes without treating selection as an edit",
     selected: 8,
   });
   expect(onChange).not.toHaveBeenCalled();
+});
+
+it("updates the accessible label without replacing editor state or history", () => {
+  const rendered = render(
+    <SourceEditor
+      value="hello"
+      extensions={historyExtension}
+      label="File source"
+    />,
+  );
+  const content = screen.getByRole("textbox", { name: "File source" });
+  const view = EditorView.findFromDOM(content)!;
+  act(() => {
+    view.dispatch({
+      changes: { from: 5, insert: " world" },
+      annotations: Transaction.userEvent.of("input.type"),
+    });
+    view.dispatch({ selection: { anchor: 1, head: 4 } });
+  });
+  expect(undoDepth(view.state)).toBe(1);
+  rendered.rerender(
+    <SourceEditor
+      value="hello"
+      extensions={historyExtension}
+      label="文件源代码"
+    />,
+  );
+  expect(screen.getByRole("textbox", { name: "文件源代码" })).toBe(content);
+  expect(EditorView.findFromDOM(content)).toBe(view);
+  expect(view.state.selection.main.anchor).toBe(1);
+  expect(view.state.selection.main.head).toBe(4);
+  act(() => {
+    expect(undo(view)).toBe(true);
+  });
+  expect(view.state.doc.toString()).toBe("hello");
+});
+
+it("remeasures font changes without replacing source state, saving or losing undo", () => {
+  const store = new AppearanceStore(window);
+  const onChange = vi.fn();
+  const onSave = vi.fn();
+  render(
+    <AppearanceProvider store={store}>
+      <SourceEditor
+        value="hello"
+        label="Source"
+        onChange={onChange}
+        onSave={onSave}
+        extensions={historyExtension}
+      />
+    </AppearanceProvider>,
+  );
+  const content = screen.getByRole("textbox", { name: "Source" });
+  const view = EditorView.findFromDOM(content)!;
+  act(() =>
+    view.dispatch({
+      changes: { from: 5, insert: " world" },
+      selection: { anchor: 1, head: 4 },
+      annotations: Transaction.userEvent.of("input.type"),
+    }),
+  );
+  onChange.mockClear();
+  const measure = vi.spyOn(view, "requestMeasure");
+  act(() => store.setSize("code", 18));
+  expect(EditorView.findFromDOM(content)).toBe(view);
+  expect(view.state.selection.main.anchor).toBe(1);
+  expect(view.state.selection.main.head).toBe(4);
+  expect(measure).toHaveBeenCalled();
+  expect(onSave).not.toHaveBeenCalled();
+  expect(onChange).not.toHaveBeenCalled();
+  expect(undoDepth(view.state)).toBe(1);
+  act(() => {
+    expect(undo(view)).toBe(true);
+  });
+  expect(view.state.doc.toString()).toBe("hello");
+  localStorage.clear();
 });

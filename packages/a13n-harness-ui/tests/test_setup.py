@@ -47,6 +47,7 @@ async def test_setup_previews_without_publication_and_seeds_selected_connection(
         "execution": {"mode": "inline", "foreground_wait_seconds": 5.0},
     }
     assert "gpt-5.6-luna" in preview.files["models/codex-review.yaml"]
+    assert yaml.safe_load(preview.files["models/codex-review.yaml"])["settings"]["openai_transport"] == "websocket"
     result = await publish_setup(path, selection, validate_candidate=_validate())
     assert result.completed
     assert result.published_paths[-1] == path.name
@@ -96,6 +97,7 @@ async def test_setup_writes_native_codex_service_tier(tmp_path: Path, tier: str 
     models = [yaml.safe_load(content) for name, content in preview.files.items() if name.startswith("models/")]
     settings = next(model["settings"] for model in models if model["settings"].get("thinking") == "high")
     assert "service_tier" not in settings
+    assert settings["openai_transport"] == "websocket"
     if tier is None:
         assert "openai_service_tier" not in settings
     else:

@@ -1,3 +1,4 @@
+import { ApiError } from "../../../service-client";
 import { Badge } from "a13n-ui";
 import { useId, useState, type FormEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -37,6 +38,7 @@ import { ConfigurationGroup } from "./configuration-group";
 import { ModelSection, ModelSettings } from "./model";
 import styles from "./editor.module.css";
 import { ToolSearchSection } from "./tool-search";
+import { SubagentsSection } from "./subagents";
 import { PluginsSection } from "./plugins";
 
 export interface AgentDraftSummary {
@@ -119,6 +121,7 @@ export function AgentEditor({
     [attempted, setAttempted] = useState(false),
     [validation, setValidation] = useState<Error>(),
     [modelValidation, setModelValidation] = useState<Error>(),
+    [subagentValidation, setSubagentValidation] = useState<Error>(),
     [toolSearchValidation, setToolSearchValidation] = useState<Error>();
   const [reviewPanel, setReviewPanel] = useState<{
     target?: ReviewTarget;
@@ -190,6 +193,8 @@ export function AgentEditor({
       } else if (built.stage === "toolSearch") {
         setAdvancedExpanded(true);
         setToolSearchValidation(built.error);
+      } else if (built.stage === "subagents") {
+        setSubagentValidation(built.error);
       } else if (built.stage === "compaction") {
         setAdvancedExpanded(true);
       } else if (built.stage === "reviewer") {
@@ -209,6 +214,7 @@ export function AgentEditor({
     }
     setModelValidation(undefined);
     setToolSearchValidation(undefined);
+    setSubagentValidation(undefined);
     setValidation(undefined);
     if (preset) {
       submit(
@@ -314,6 +320,20 @@ export function AgentEditor({
                 readOnly={configurationReadonly}
               />
             </SectionGroup>
+            <SubagentsSection
+              draft={draft}
+              agentId={agentId}
+              readOnly={configurationReadonly}
+              mark={mark("subagents")}
+              validation={
+                subagentValidation ??
+                (error instanceof ApiError &&
+                typeof error.details.field === "string" &&
+                /^subagents(?:\.|$)/.test(error.details.field)
+                  ? error
+                  : undefined)
+              }
+            />
             <AgentEnvironment
               value={draft.environmentTemplateId}
               environmentId={draft.environmentId}
@@ -401,6 +421,7 @@ export function AgentEditor({
                 description={t("Control tool runs and incoming messages.")}
               >
                 <ExecutionFields
+                  scope="agent"
                   compact
                   value={draft.execution}
                   onChange={draft.setExecution}

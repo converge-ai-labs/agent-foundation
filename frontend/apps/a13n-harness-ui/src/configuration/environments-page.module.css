@@ -16,7 +16,7 @@
 
 .sectionHeader > h2 {
   margin: 0;
-  font-size: 16px;
+  font-size: calc(var(--a13n-text-body) * 16 / 14);
   line-height: 20px;
   font-weight: 500;
 }

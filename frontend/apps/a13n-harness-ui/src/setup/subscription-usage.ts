@@ -1,13 +1,16 @@
+import { i18n } from "../i18n";
 import type { Schema } from "../transport/client";
 
 export function windowLabel(seconds: number): string {
-  if (seconds === 604800) return "Weekly";
-  if (seconds === 86400) return "Daily";
-  if (seconds === 2592000) return "30-day";
-  if (seconds % 86400 === 0) return `${seconds / 86400}-day`;
-  if (seconds % 3600 === 0) return `${seconds / 3600}h`;
-  if (seconds % 60 === 0) return `${seconds / 60}m`;
-  return `${seconds}s`;
+  if (seconds === 604800) return i18n.t("Weekly");
+  if (seconds === 86400) return i18n.t("Daily");
+  if (seconds === 2592000) return i18n.t("30-day");
+  if (seconds % 86400 === 0)
+    return i18n.t("{{count}}-day", { count: seconds / 86400 });
+  if (seconds % 3600 === 0)
+    return i18n.t("{{count}}h", { count: seconds / 3600 });
+  if (seconds % 60 === 0) return i18n.t("{{count}}m", { count: seconds / 60 });
+  return i18n.t("{{count}}s", { count: seconds });
 }
 
 export function availableVouchers(
@@ -45,7 +48,7 @@ export function voucherSummary(
 }
 
 export function quotaTime(timestamp: number, compact = false) {
-  return new Date(timestamp).toLocaleString(undefined, {
+  return new Date(timestamp).toLocaleString(i18n.language, {
     month: "short",
     day: "numeric",
     hour: "2-digit",
@@ -86,14 +89,21 @@ export function compactAllowance(usage: Schema<"UsageSnapshot">["usage"]) {
       usage.rate_limit?.secondary_window,
     ]
       .filter((window) => window != null)
-      .map(
-        (window) =>
-          `${windowLabel(window.limit_window_seconds)} ${Math.round(Math.max(0, Math.min(100, 100 - window.used_percent)))}% left`,
+      .map((window) =>
+        i18n.t("{{label}} {{percent}}% left", {
+          label: windowLabel(window.limit_window_seconds),
+          percent: Math.round(
+            Math.max(0, Math.min(100, 100 - window.used_percent)),
+          ),
+        }),
       )
       .join(" · ");
   }
   const value = grokAllowance(usage.config);
   return value.usedPercent == null
     ? ""
-    : `${value.label} ${Math.floor(value.usedPercent)}% used`;
+    : i18n.t("{{label}} {{percent}}% used", {
+        label: i18n.t(value.label),
+        percent: Math.floor(value.usedPercent),
+      });
 }

@@ -1,0 +1,122 @@
+.dynamic,
+.named {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.named {
+  margin-top: 12px;
+}
+.namedHeader {
+  display: grid;
+  gap: 1px;
+}
+.heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.heading h3 {
+  margin: 0;
+  font-size: var(--a13n-text-sm);
+  font-weight: 500;
+  line-height: 20px;
+}
+.settings {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--a13n-border);
+  border-radius: 12px;
+  background: var(--a13n-canvas);
+}
+.settings > * {
+  padding: 16px;
+}
+.settings > * + * {
+  border-top: 1px solid var(--a13n-border);
+}
+.models {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.models li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 4px 6px 4px 10px;
+  border-radius: 6px;
+  background: var(--a13n-surface);
+  font-size: var(--a13n-text-sm);
+}
+.modelLabel,
+.models li > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.models button {
+  flex: none;
+  color: var(--a13n-secondary);
+}
+.hint,
+.error {
+  margin: 0;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+  line-height: 1.5;
+}
+.error {
+  color: var(--a13n-danger);
+}
+@media (width < 480px) {
+  .settings > * {
+    padding: 14px;
+  }
+  .models {
+    justify-content: flex-start;
+  }
+}
+
+.modelLabel > :first-child,
+.models li > span > :first-child {
+  flex: none;
+}
+.modelLabel > span:last-child,
+.models li > span > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings
+  :is(
+    [data-slot="select-trigger"],
+    [data-slot="select-button"],
+    [data-slot="combobox-trigger"]
+  ) {
+  font-size: var(--a13n-text-sm);
+}
+
+.heading > [data-slot="button"] {
+  height: 28px;
+  margin-block: -4px;
+  padding-inline: 10px;
+  font-size: var(--a13n-text-sm);
+}
+.heading > [data-slot="button"] > svg {
+  width: 14px;
+  height: 14px;
+}

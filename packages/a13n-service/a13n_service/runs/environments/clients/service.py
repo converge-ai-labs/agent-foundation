@@ -21,7 +21,7 @@ from a13n_service.runs.environments.clients.schemas import (
     StatusChange,
 )
 from a13n_service.runs.environments.clients.tables import ClientSettingsRow
-from a13n_service.runs.environments.schemas import EnvironmentView
+from a13n_service.runs.environments.read_views import environment_view
 from a13n_service.runs.environments.tables import CLIENT_IDENTITY, EnvironmentRow
 from a13n_service.runs.runtime import Runtime
 from a13n_service.tenancy.access import principal_for, workspace_scope
@@ -40,7 +40,7 @@ async def settings(session: AsyncSession, environment: EnvironmentRow) -> Client
 
 def view(environment: EnvironmentRow, config: ClientSettingsRow) -> ClientEnvironment:
     return ClientEnvironment(
-        environment=EnvironmentView.model_validate(environment),
+        environment=environment_view(environment),
         configuration=ClientEnvironmentConfiguration.model_validate(config),
         credential_version=config.credential_version,
         credential_present=config.token_hash is not None,

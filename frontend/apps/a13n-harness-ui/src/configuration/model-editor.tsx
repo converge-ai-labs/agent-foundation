@@ -12,6 +12,7 @@ import { Link } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Button,
+  Checkbox,
   FormField,
   Input,
   SearchPicker,
@@ -800,6 +801,24 @@ function LoadedModelEditor({
                   <p className={layout.groupHint}>
                     {t("Connect an account before running this model.")}
                   </p>
+                )}
+                {["openai-responses", "openai-codex"].includes(
+                  selected.provider,
+                ) && (
+                  <SettingsRow label={t("Use WebSocket")}>
+                    <Checkbox
+                      aria-label={t("Use WebSocket")}
+                      checked={value.settings?.openai_transport === "websocket"}
+                      onCheckedChange={(checked) =>
+                        update({
+                          settings: {
+                            ...value.settings,
+                            openai_transport: checked ? "websocket" : "http",
+                          },
+                        })
+                      }
+                    />
+                  </SettingsRow>
                 )}
                 <ChoiceField
                   label={t("Settings preset")}

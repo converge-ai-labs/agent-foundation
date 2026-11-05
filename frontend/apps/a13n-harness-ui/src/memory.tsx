@@ -10,6 +10,7 @@ import {
   TabsTab,
 } from "a13n-ui";
 import { ArrowLeft, Brain, Folder, Globe } from "@phosphor-icons/react";
+import { useTranslation } from "./i18n";
 import { result } from "./transport/client";
 import { useProjects, useStatus, useTransport } from "./transport/context";
 import { Conversation } from "./conversations/conversation";
@@ -26,6 +27,7 @@ export function MemoryNavigation({
   projectId?: string | null;
   backTo?: string;
 }) {
+  const { t } = useTranslation();
   const projects = useProjects();
   const [search] = useSearchParams();
   const selected = projectId === undefined ? search.get("project") : projectId;
@@ -33,14 +35,14 @@ export function MemoryNavigation({
     <div className={styles.navigation}>
       <Link className={styles.back} to={backTo}>
         <ArrowLeft size={16} />
-        Back to chats
+        {t("Back to chats")}
       </Link>
-      <h2 className={styles.heading}>Memory</h2>
+      <h2 className={styles.heading}>{t("Memory")}</h2>
       <Link className={!selected ? styles.selected : styles.scope} to="/memory">
         <Globe size={18} />
-        <span>Global</span>
+        <span>{t("Global")}</span>
       </Link>
-      <h2>Projects</h2>
+      <h2>{t("Projects")}</h2>
       <ErrorNotice
         error={projects.error}
         retry={() => void projects.refetch()}
@@ -58,7 +60,7 @@ export function MemoryNavigation({
         </Link>
       ))}
       {projects.data?.length === 0 && (
-        <p className={styles.hint}>No configured projects.</p>
+        <p className={styles.hint}>{t("No configured projects.")}</p>
       )}
     </div>
   );
@@ -68,6 +70,7 @@ export function MemoryPage(props: {
   profile: Profile;
   unauthorized: () => void;
 }) {
+  const { t } = useTranslation();
   const [search, setSearch] = useSearchParams();
   const projectId = search.get("project") ?? undefined;
   const status = useStatus();
@@ -76,25 +79,27 @@ export function MemoryPage(props: {
   const name = projectId
     ? (projects.data?.find((p) => p.project_id === projectId)?.name ??
       projectId)
-    : "Global";
+    : t("Global");
   const history = useMemoryThread(projectId, enabled);
   const thread = history.data?.threads[0];
   if (!status.data)
     return (
       <div className={styles.empty}>
         <ErrorNotice error={status.error} retry={() => void status.refetch()} />
-        {!status.error && <p role="status">Loading memory…</p>}
+        {!status.error && <p role="status">{t("Loading memory\u2026")}</p>}
       </div>
     );
   if (!enabled)
     return (
       <div className={styles.empty}>
-        <h2>Memory is disabled</h2>
+        <h2>{t("Memory is disabled")}</h2>
         <p>
-          Enable memory to keep preferences and project knowledge across chats.
+          {t(
+            "Enable memory to keep preferences and project knowledge across chats.",
+          )}
         </p>
         <Button variant="outline" render={<Link to="/settings" />}>
-          Open settings
+          {t("Open settings")}
         </Button>
       </div>
     );
@@ -113,16 +118,16 @@ export function MemoryPage(props: {
     >
       <div className={styles.pageHeading}>
         <PageHeader
-          title={`${name} memory`}
+          title={t("{{name}} memory", { name })}
           description={
             projectId
-              ? "Knowledge shared by chats in this project."
-              : "Preferences and context shared across your chats."
+              ? t("Knowledge shared by chats in this project.")
+              : t("Preferences and context shared across your chats.")
           }
         />
-        <TabsList variant="underline" aria-label="Memory views">
-          <TabsTab value="files">Files</TabsTab>
-          <TabsTab value="activity">History</TabsTab>
+        <TabsList variant="underline" aria-label={t("Memory views")}>
+          <TabsTab value="files">{t("Files")}</TabsTab>
+          <TabsTab value="activity">{t("History")}</TabsTab>
         </TabsList>
       </div>
       <TabsPanel value="files" keepMounted className={styles.filesPanel}>
@@ -132,11 +137,11 @@ export function MemoryPage(props: {
         value="activity"
         keepMounted
         className={styles.history}
-        aria-label="Memory organization history"
+        aria-label={t("Memory organization history")}
       >
         {thread && (
           <div className={styles.historyToolbar}>
-            <span>Automatic memory updates</span>
+            <span>{t("Automatic memory updates")}</span>
             <Button
               variant="ghost"
               onClick={() =>
@@ -147,7 +152,7 @@ export function MemoryPage(props: {
                 })
               }
             >
-              Usage & details
+              {t("Usage & details")}
             </Button>
           </div>
         )}
@@ -163,8 +168,10 @@ export function MemoryPage(props: {
           />
         ) : (
           <div className={styles.empty}>
-            <h2>{history.isPending ? "Loading history…" : "No updates yet"}</h2>
-            <p>Automatic memory updates appear here.</p>
+            <h2>
+              {t(history.isPending ? "Loading history…" : "No updates yet")}
+            </h2>
+            <p>{t("Automatic memory updates appear here.")}</p>
           </div>
         )}
       </TabsPanel>
@@ -173,6 +180,7 @@ export function MemoryPage(props: {
 }
 
 export function MemoryFiles({ projectId }: { projectId?: string }) {
+  const { t } = useTranslation();
   const { client } = useTransport();
   const [selected, select] = useState<string>();
   const files = useQuery({
@@ -203,7 +211,7 @@ export function MemoryFiles({ projectId }: { projectId?: string }) {
       ),
   });
   return (
-    <section className={styles.files} aria-label="Current memory files">
+    <section className={styles.files} aria-label={t("Current memory files")}>
       <ErrorNotice
         error={files.error || file.error}
         retry={() => {
@@ -213,16 +221,17 @@ export function MemoryFiles({ projectId }: { projectId?: string }) {
       />
       {files.isPending && (
         <p role="status" className={styles.loading}>
-          Loading memory…
+          {t("Loading memory\u2026")}
         </p>
       )}
       {files.data?.length === 0 && (
         <div className={styles.empty}>
           <Brain size={28} aria-hidden="true" />
-          <h2>Nothing saved yet</h2>
+          <h2>{t("Nothing saved yet")}</h2>
           <p>
-            Your agent can remember useful preferences and project knowledge as
-            you work.
+            {t(
+              "Your agent can remember useful preferences and project knowledge as you work.",
+            )}
           </p>
         </div>
       )}
@@ -230,14 +239,14 @@ export function MemoryFiles({ projectId }: { projectId?: string }) {
         <div className={styles.fileToolbar}>
           <div className={styles.picker}>
             <SearchPicker
-              label="Memory file"
-              placeholder="Choose a file"
-              emptyMessage="No matching memory files"
+              label={t("Memory file")}
+              placeholder={t("Choose a file")}
+              emptyMessage={t("No matching memory files")}
               value={path ?? ""}
               onValueChange={select}
               groups={[
                 {
-                  label: "Memory files",
+                  label: t("Memory files"),
                   options: files.data.map((entry) => ({
                     value: entry.path,
                     label: entry.path,
@@ -246,12 +255,12 @@ export function MemoryFiles({ projectId }: { projectId?: string }) {
               ]}
             />
           </div>
-          <span>Current files · read only</span>
+          <span>{t("Current files \u00b7 read only")}</span>
         </div>
       )}
       {file.isFetching && !file.data && path && (
         <p role="status" className={styles.loading}>
-          Loading file…
+          {t("Loading file\u2026")}
         </p>
       )}
       {file.data && (

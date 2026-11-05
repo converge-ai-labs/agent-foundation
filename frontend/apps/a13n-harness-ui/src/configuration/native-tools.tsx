@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { SettingsToggle } from "../shell/settings";
 import { useQuery } from "@tanstack/react-query";
 import { useSources, useTransport } from "../transport/context";
@@ -71,6 +72,7 @@ export function AgentNativeTools({
   source: string;
   onChange: (source: string) => void;
 }) {
+  const { t } = useTranslation();
   const { client } = useTransport();
   const sources = useSources();
   const raw = readDocument(source)?.toJS();
@@ -116,21 +118,67 @@ export function AgentNativeTools({
   const capabilities = Array.isArray(raw?.capabilities) ? raw.capabilities : [];
   const configured = capabilities.map(nativeToolKind).filter(Boolean);
   const tools = options.data?.native_tools ?? [];
+  const knownText: Record<string, string> = {
+    "Web Search \u00b7 native": t("Web Search \u00b7 native"),
+    "Provider search and citations; provider usage charges may apply.": t(
+      "Provider search and citations; provider usage charges may apply.",
+    ),
+    "Web Fetch \u00b7 native": t("Web Fetch \u00b7 native"),
+    "Provider reads URLs in model context; not a crawler or local download.": t(
+      "Provider reads URLs in model context; not a crawler or local download.",
+    ),
+    "X Search \u00b7 native": t("X Search \u00b7 native"),
+    "Search X posts through xAI; separate from general web search.": t(
+      "Search X posts through xAI; separate from general web search.",
+    ),
+    "Image Generation \u00b7 native": t("Image Generation \u00b7 native"),
+    "Save generated images to Thread tmp; return file paths. Uses image quota.":
+      t(
+        "Save generated images to Thread tmp; return file paths. Uses image quota.",
+      ),
+    "Code Execution \u00b7 native": t("Code Execution \u00b7 native"),
+    "Provider sandbox, not your workspace shell; files stay with the provider.":
+      t(
+        "Provider sandbox, not your workspace shell; files stay with the provider.",
+      ),
+    "Remote MCP \u00b7 provider-hosted": t("Remote MCP \u00b7 provider-hosted"),
+    "Requires a public remote server URL and label; provider connects, not the Host.":
+      t(
+        "Requires a public remote server URL and label; provider connects, not the Host.",
+      ),
+    "File Search \u00b7 native": t("File Search \u00b7 native"),
+    "Requires provider stores; no local uploads. Google: deselect other native tools first.":
+      t(
+        "Requires provider stores; no local uploads. Google: deselect other native tools first.",
+      ),
+    "Advisor \u00b7 native": t("Advisor \u00b7 native"),
+    "Requires an advisor model ID; additional model usage is billed by the provider.":
+      t(
+        "Requires an advisor model ID; additional model usage is billed by the provider.",
+      ),
+  };
   return (
     <>
       <ErrorNotice error={saved.error || options.error} />
       {!raw?.model ? (
-        <p>Choose a saved model to see its tools.</p>
+        <p>{t("Choose a saved model to see its tools.")}</p>
       ) : options.isPending && request ? (
-        <p>Loading tool support…</p>
+        <p>{t("Loading tool support\u2026")}</p>
       ) : !tools.length ? (
-        <p>This model has no built-in tool options.</p>
+        <p>{t("This model has no built-in tool options.")}</p>
       ) : (
         tools.map((tool) => (
           <SettingsToggle
             key={tool.value}
-            label={tool.label}
-            description={`${tool.description}${tool.recommended ? " Recommended for this model." : ""}${!tool.capability ? " Configure required provider parameters in advanced YAML." : ""}`}
+            label={knownText[tool.label] ?? tool.label}
+            description={[
+              knownText[tool.description] ?? tool.description,
+              tool.recommended && t("Recommended for this model."),
+              !tool.capability &&
+                t("Configure required provider parameters in advanced YAML."),
+            ]
+              .filter(Boolean)
+              .join(" ")}
             checked={configured.includes(tool.value)}
             disabled={!tool.capability}
             onCheckedChange={(checked) =>
@@ -144,8 +192,9 @@ export function AgentNativeTools({
           (kind: string) => !tools.some((tool) => tool.value === kind),
         ) && (
           <p role="status">
-            Some saved tools aren't available for this model. Review them in
-            Capabilities or Advanced configuration.
+            {t(
+              "Some saved tools aren't available for this model. Review them in Capabilities or Advanced configuration.",
+            )}
           </p>
         )}
     </>

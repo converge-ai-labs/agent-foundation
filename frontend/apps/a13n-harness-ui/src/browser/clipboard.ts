@@ -1,5 +1,7 @@
 import type RFB from "@novnc/novnc";
 
+class ClipboardMessage extends Error {}
+
 const LIMIT = 65536;
 const unavailable =
   "Clipboard sync unavailable. Allow clipboard access in your browser's site settings.";
@@ -26,7 +28,7 @@ export function bindClipboard({
     "clipboardPasteFrom" | "addEventListener" | "removeEventListener"
   >;
   shortcut: (action: "copy" | "cut" | "paste") => void;
-  notice: (message: string) => void;
+  notice: (message: string, external?: boolean) => void;
 }) {
   let stopped = false;
   let suspended = false;
@@ -45,7 +47,7 @@ export function bindClipboard({
     root.contains(document.activeElement);
   const bounded = (text: string) => {
     if (text.length > LIMIT)
-      throw new Error(
+      throw new ClipboardMessage(
         "Clipboard text exceeds 64 Ki characters. Nothing was transferred.",
       );
     return text;
@@ -59,8 +61,11 @@ export function bindClipboard({
         if (current()) await operation(current);
       })
       .catch((error: unknown) => {
-        if (current())
-          notice(error instanceof Error ? error.message : unavailable);
+        if (current()) {
+          if (error instanceof ClipboardMessage) notice(error.message);
+          else if (error instanceof Error) notice(error.message, true);
+          else notice(unavailable);
+        }
       })
       .finally(() => {
         if (epoch === generation) queued--;
@@ -105,7 +110,7 @@ export function bindClipboard({
       void settled.then(() => pendingWrites.delete(settled));
       await write;
     } catch {
-      throw new Error(unavailable);
+      throw new ClipboardMessage(unavailable);
     }
     if (current()) {
       last = text;
@@ -124,7 +129,7 @@ export function bindClipboard({
     enqueue(async (current) => {
       const { text } = await content;
       if (!current()) return;
-      if (text === undefined) throw new Error(unavailable);
+      if (text === undefined) throw new ClipboardMessage(unavailable);
       // Send the clipboard contents before the VNC paste shortcut.
       if (text !== last) await send(text);
       if (current()) shortcut("paste");

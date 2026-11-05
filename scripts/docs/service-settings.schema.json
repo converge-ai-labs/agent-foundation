@@ -1143,6 +1143,13 @@
           "title": "Max Bytes",
           "type": "integer"
         },
+        "max_pool_connections": {
+          "default": 32,
+          "maximum": 1024,
+          "minimum": 1,
+          "title": "Max Pool Connections",
+          "type": "integer"
+        },
         "timeout": {
           "default": 5,
           "exclusiveMinimum": 0,

@@ -104,6 +104,7 @@ class Failure(BaseModel):
     code: str = "environment_unavailable"
     pre_dispatch: bool = False
     connection_failed: bool = False
+    session_failed: bool = False
 
 
 type Outcome = Annotated[Result | NativeFailure | Failure, Field(discriminator="kind")]
@@ -353,6 +354,7 @@ class Routing:
                     code=error.code,
                     pre_dispatch=error.details.get("dispatch_stage") == "pre_dispatch",
                     connection_failed=error.details.get("client_connection_failed") is True,
+                    session_failed=error.details.get("client_session_failed") is True,
                 )
             except Exception as error:
                 logger.warning(

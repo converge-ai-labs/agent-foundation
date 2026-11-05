@@ -28,7 +28,6 @@ type ConfigSection = Literal[
     "builtin_skills",
     "client_tools",
     "user_questions",
-    "subagent_mode",
     "subagents",
     "reviewer",
     "media_understanding",
@@ -58,7 +57,7 @@ def config_summary(value: AgentConfig) -> ConfigSummary:
         toolsets=sorted(key for key, selection in value.toolsets.items() if selection.enabled),
         connection_count=len(value.connection_tools),
         skill_count=len(value.skills) + len(value.builtin_skills),
-        subagent_count=len(value.subagents),
+        subagent_count=len(value.subagents.named),
     )
 
 
@@ -111,7 +110,7 @@ def config_diff(base: AgentConfig, target: AgentConfig, section: ConfigSection) 
 
 class RunAgentSummary(BaseModel):
     view: Literal["compact"] = "compact"
-    revision_id: str
+    revision_id: str | None
     config: ConfigSummary
     connection_ids: list[str]
     skill_ids: list[str]
@@ -121,21 +120,25 @@ class RunAgentSummary(BaseModel):
     omitted_sections: tuple[str, ...] = ("original", "effective", "overrides")
 
 
-def run_agent_summary(revision: AgentRevision, effective: AgentConfig) -> RunAgentSummary:
-    original_data, effective_data = revision.config.model_dump(mode="json"), effective.model_dump(mode="json")
+def run_agent_summary(revision: AgentRevision | None, effective: AgentConfig) -> RunAgentSummary:
+    original_data, effective_data = (
+        (revision.config if revision else effective).model_dump(mode="json"),
+        effective.model_dump(mode="json"),
+    )
     # Paths name whole replaced top-level sections, not a claim that nested values are all different.
     paths = sorted(
         key for key in original_data.keys() | effective_data.keys() if original_data.get(key) != effective_data.get(key)
     )
     return RunAgentSummary(
-        revision_id=revision.id,
+        revision_id=revision.id if revision else None,
         config=config_summary(effective),
         connection_ids=[value.connection_id for value in effective.connection_tools[:10]],
         skill_ids=[value.skill_id for value in effective.skills[:10]],
-        subagent_ids=[value.agent_id for value in list(effective.subagents.values())[:10]],
+        subagent_ids=[value.agent_id for value in list(effective.subagents.named.values())[:10]],
         overridden_paths=paths,
         references_truncated=any(
-            count > 10 for count in (len(effective.connection_tools), len(effective.skills), len(effective.subagents))
+            count > 10
+            for count in (len(effective.connection_tools), len(effective.skills), len(effective.subagents.named))
         ),
     )
 

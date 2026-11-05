@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { Checkbox } from "a13n-ui";
 import {
   SettingsRow,
@@ -66,6 +67,7 @@ export function ToolSearchFields({
   source: string;
   onChange: (source: string) => void;
 }) {
+  const { t } = useTranslation();
   const selectors = useSelectors();
   const root = useRootConfiguration();
   const raw = readDocument(source)?.toJS() ?? {};
@@ -78,11 +80,11 @@ export function ToolSearchFields({
   const set = (next: Search) =>
     onChange(updateDocument(source, ["tool_search"], next));
   return (
-    <SettingsSection title="Tool search">
+    <SettingsSection title={t("Tool search")}>
       <SettingsToggle
-        label="Search tools on demand"
+        label={t("Search tools on demand")}
         checked={enabled}
-        description="Find selected servers’ enabled tools when needed."
+        description={t("Find selected servers’ enabled tools when needed.")}
         onCheckedChange={(checked) => {
           let next: Search = { ...plan, enabled: checked };
           if (checked && !raw.tool_search) {
@@ -112,7 +114,7 @@ export function ToolSearchFields({
                 controlId={`search-${server.resource_id}`}
                 description={
                   !defaults.includes(server.resource_id)
-                    ? "Used when this server is connected."
+                    ? t("Used when this server is connected.")
                     : undefined
                 }
               >
@@ -135,7 +137,7 @@ export function ToolSearchFields({
           })}
           {!servers.length && (
             <p className={styles.note}>
-              Add an MCP server in Connections to choose its tools here.
+              {t("Add an MCP server in Connections to choose its tools here.")}
             </p>
           )}
         </>

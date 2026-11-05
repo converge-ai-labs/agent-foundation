@@ -44,7 +44,7 @@ Narrow pages keep reading width: actions wrap below the title; search and filter
 
 Use `ResourceTable` with page scrolling, never a nested fixed-height list. Keep toolbar and pagination outside its thin rounded frame. Header: light neutral fill, 40px height, 12px medium secondary text. Rows: 52–60px, hairline separation and 3–4% hover fill.
 
-Identity leads with a 32px image, 14px medium name and one supporting line. Other cells use 13px; timestamps and identifiers use 12px secondary. Numeric comparisons align right with tabular figures; timestamps align left. Trailing overflow actions remain available on touch. Picker rows replace images with checkboxes and place selected items first.
+Identity leads with a 32px image, 14px medium name and one supporting line. Avatars inside resource icon tiles fill the tile and inherit its corner radius; glyph icons retain their inset. Other cells use 13px; timestamps and identifiers use 12px secondary. Numeric comparisons align right with tabular figures; timestamps align left. Trailing overflow actions remain available on touch. Picker rows replace images with checkboxes and place selected items first.
 
 Search and filters cover the collection, never just the loaded page: query the server or fetch the complete collection if filtering locally. Long collections paginate with count and Previous/Next.
 
@@ -59,7 +59,11 @@ Groups follow identity, connection/storage, behavior and advanced controls. Use 
 | Long text / JSON                          | Label above, full writing width; borderless soft surface with bounded internal scroll                            |
 | Choice trigger                            | Content width within readable bounds, one trailing chevron; long selected names truncate, menus may be wider     |
 
-Labels are 13px medium; help is 12px secondary. Validation names the correction without discarding input. Optional labels say “(optional)”; required fields have no asterisk. Schema fields use property names, not schema type names. Read-only long content retains its surface; short values have no box; model values retain brand, name and key.
+Labels are 13px medium; help is 12px secondary. Question-mark help controls sit immediately beside their labels, with both centered against the field control; they do not occupy the far edge of the label column. Validation names the correction without discarding input. Optional labels say “(optional)”; required fields have no asterisk. Schema fields use property names, not schema type names. Read-only long content retains its surface; short values have no box; model values retain brand, name and key.
+
+Section titles, subsection titles and field labels use a 20px line height, with 1px between the title or label and its description. Adjacent action buttons do not increase the title line's height.
+
+Disclosure headers and catalog rows keep their geometry on press; use color feedback without scaling. Embedded transcript disclosures retain an outlined boundary and 12px content insets.
 
 Inputs are 32px (36px below `sm`) with 8px corners. Header/toolbars use 32px controls, section/footer actions 28px, extra-small icon buttons 24px; peers share heights. Compact filters omit the visible label column. Narrow layouts stack when controls cannot fit.
 
@@ -116,6 +120,6 @@ The floating composer has a borderless editor, left attachment/options and round
 
 The tinted borderless sidebar has a workspace switcher, 32px rows with 8px corners, 11px medium group labels and bottom account menu. Selected fill and duotone icons identify the active item without changing text weight; expanded groups highlight their selected child. Hover uses 2% foreground in light mode, 3% in dark, weaker than selection and table headers.
 
-Collapsed desktop navigation uses an icon rail with tooltips. Below `lg` (1024px), navigation and contextual settings use a drawer and an always-visible menu control aligned to the page gutter. JavaScript queries match CSS breakpoints with no gap. Content gutters remain fluid; increasing width never forces a table back to stacked rows. Routes, including settings, name themselves in the document title.
+The Memories submenu lists Collections (standalone memory resources) before Spaces, and the parent Memories link opens Collections. Sidebar logos, workspace/account avatars and navigation icons share one vertical centerline; trailing chevrons and header controls share another. Labels keep a common start edge regardless of icon size. Collapsed desktop navigation uses an icon rail with tooltips. Below `lg` (1024px), navigation and contextual settings use a drawer and an always-visible menu control aligned to the page gutter. JavaScript queries match CSS breakpoints with no gap. Content gutters remain fluid; increasing width never forces a table back to stacked rows. Routes, including settings, name themselves in the document title.
 
 Disclosures and carets share 150ms ease-out motion. Buttons use slight press scaling (0.97) with pressed fill; reduced motion keeps only fill. Neither press nor selection moves neighboring content or changes type weight. Dialog motion remains opacity-only.

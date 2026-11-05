@@ -140,6 +140,7 @@ class Objects(Section):
     access_key_id: SecretStr | None = None
     secret_access_key: SecretStr | None = None
     max_bytes: int = Field(default=16777216, ge=65536, le=67108864)
+    max_pool_connections: int = Field(default=32, ge=1, le=1024)
     timeout: float = Field(default=5, gt=0, le=60)
     upload_bytes: int = Field(default=1048576, ge=1, le=33554432)
     upload_limit: int = Field(default=60, ge=1, le=1000)

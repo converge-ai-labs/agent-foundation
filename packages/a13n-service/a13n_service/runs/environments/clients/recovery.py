@@ -35,6 +35,7 @@ from a13n_service.runs.tool_executions.authority import prove
 class Cycle(BaseModel):
     call_id: str
     failed_epoch: str | None = None
+    failed_scope: str | None = None
     notified_epoch: str | None = None
     unknown_outcome: bool = False
 
@@ -95,10 +96,16 @@ class Recovery(AbstractModelContextCapability):
                 error.get("code") in {"environment_unavailable", "environment_unknown_outcome"}
                 or (isinstance(details, dict) and details.get("reason") == "client_offline")
             )
-            if observation.disconnected or observation.successes or connection_failure:
+            if observation.disconnected or observation.sessions_lost or observation.successes or connection_failure:
                 async with self.state_lock:
                     state = await self._state(ctx)
-                    if observation.disconnected or connection_failure or state.mounts or state.observations:
+                    if (
+                        observation.disconnected
+                        or observation.sessions_lost
+                        or connection_failure
+                        or state.mounts
+                        or state.observations
+                    ):
                         state.observations.update(self.successes)
                         self.successes.clear()
                         state.observations[call.tool_call_id] = observation
@@ -155,7 +162,7 @@ class Recovery(AbstractModelContextCapability):
                     continue
                 if client.retry_activation and online.epoch == client.epoch:
                     continue
-                if pending is not None and online.epoch == pending.failed_epoch:
+                if pending is not None and pending.failed_scope is None and online.epoch == pending.failed_epoch:
                     continue
                 await prove(self.runtime, self.lease)
                 await validate_attachment(
@@ -168,11 +175,15 @@ class Recovery(AbstractModelContextCapability):
             if client.retry_activation:
                 await self.environment.replace(name, mount)
                 client.retry_activation = False
-            elif pending is not None and client.epoch is not None and client.epoch != online.epoch:
+            elif (
+                pending is not None
+                and client.epoch is not None
+                and (client.epoch != online.epoch or pending.failed_scope == client.scope_id)
+            ):
                 # The old execution may still be retiring. Its close must not erase
                 # the new mount's hint or replay work against the new connection.
                 previous = self.sessions[name]
-                recovery = EnvdSessionRecovery(previous.state)
+                recovery = EnvdSessionRecovery(None if pending.failed_scope is not None else previous.state)
                 if client.session is not None:
                     client.session.detach_host_binding()
                 incarnation = Incarnation(client.device_id)
@@ -189,7 +200,11 @@ class Recovery(AbstractModelContextCapability):
                 self.mounts[name] = fresh, replacement
             if pending is not None and pending.notified_epoch != online.epoch:
                 pending.notified_epoch = online.epoch
-                notice = f"Client mount {name} has reconnected. Tool readiness has not been verified."
+                notice = (
+                    f"Client mount {name} can prepare a new execution Session. Tool readiness has not been verified."
+                    if pending.failed_scope is not None
+                    else f"Client mount {name} has reconnected. Tool readiness has not been verified."
+                )
                 notices.append(
                     notice
                     + (
@@ -206,10 +221,12 @@ class Recovery(AbstractModelContextCapability):
         seen = state.observations.pop(part.tool_call_id, seen)
         content = part.content
         losses: dict[str, str | None] = {}
+        session_losses: dict[str, str] = {}
         unknown_outcome = False
         if isinstance(content, dict) and content.get("ok") is False:
             if seen is not None:
                 losses.update(seen.disconnected)
+                session_losses.update(seen.sessions_lost)
             error = content.get("error")
             details = error.get("details") if isinstance(error, dict) else None
             if isinstance(details, dict) and isinstance(error, dict):
@@ -236,15 +253,23 @@ class Recovery(AbstractModelContextCapability):
                             return
                         if now is None or now.epoch != client.epoch:
                             losses[name] = client.epoch
+                        elif client.session_failed and client.scope_id is not None:
+                            session_losses[name] = client.scope_id
         elif seen is not None:
             for name in seen.successes:
                 state.mounts.pop(name, None)
+        for name in session_losses:
+            if name in self.mounts:
+                client = self.mounts[name][1].client
+                assert client is not None
+                losses.setdefault(name, client.epoch)
         for name, epoch in losses.items():
             previous = state.mounts.get(name)
             if previous is None or previous.call_id != part.tool_call_id:
                 state.mounts[name] = Cycle(
                     call_id=part.tool_call_id,
                     failed_epoch=epoch,
+                    failed_scope=session_losses.get(name),
                     unknown_outcome=unknown_outcome
                     or (previous is not None and previous.notified_epoch is None and previous.unknown_outcome),
                 )

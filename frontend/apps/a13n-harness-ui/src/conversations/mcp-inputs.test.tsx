@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -9,6 +10,7 @@ import {
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { McpInputs, useMcpInputRequests } from "./mcp-inputs";
+import { i18n } from "../i18n";
 
 function RequestForms() {
   const requests = useMcpInputRequests("root-one");
@@ -84,7 +86,14 @@ it("answers a child-owned form through its input endpoint without submitting ano
   });
   expect(screen.getByText("From child Thread child-one")).toBeTruthy();
   fireEvent.click(screen.getByLabelText("Alpha"));
-  fireEvent.click(screen.getByRole("button", { name: "Send response" }));
+  await act(() => i18n.changeLanguage("zh-CN"));
+  expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("Ada");
+  expect((screen.getByLabelText("Alpha") as HTMLInputElement).checked).toBe(
+    true,
+  );
+  expect(screen.getByText("Confirm this operation")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "发送回复" }));
+  await act(() => i18n.changeLanguage("en"));
   await waitFor(() => expect(client.POST).toHaveBeenCalledTimes(1));
   expect(client.POST).toHaveBeenCalledWith(
     "/api/threads/{thread_id}/mcp/inputs/{request_id}/response",

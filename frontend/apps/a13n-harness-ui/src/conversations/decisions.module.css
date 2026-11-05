@@ -17,15 +17,15 @@
 }
 .heading {
   justify-content: space-between;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .heading h3 {
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   font-weight: 500;
 }
 .tool,
 .hint {
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   color: var(--a13n-secondary);
   overflow-wrap: anywhere;
 }
@@ -36,7 +36,7 @@
 .code,
 .editor {
   font-family: var(--a13n-mono);
-  font-size: 12px;
+  font-size: var(--harness-code-size);
   line-height: 1.6;
 }
 .code {
@@ -53,7 +53,7 @@
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
   gap: 8px 16px;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .context dt {
   color: var(--a13n-secondary);
@@ -63,7 +63,7 @@
 }
 .evidence summary,
 .denialReason summary {
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   cursor: pointer;
   padding-block: 4px;
 }

@@ -168,9 +168,43 @@ export function agentDependencies(config: AgentConfig): AgentDependency[] {
         ),
       }),
     });
-  for (const [name, child] of Object.entries(config.subagents ?? {})) {
+  const dynamic = config.subagents?.dynamic;
+  for (const key of dynamic?.allowed_models ?? [])
     refs.push({
-      path: `subagents.${name}.agent_id`,
+      path: `subagents.dynamic.allowed_models.${key}`,
+      kind: "model",
+      value: key,
+      replace: (value) => ({
+        ...config,
+        subagents: {
+          ...config.subagents,
+          dynamic: {
+            ...dynamic,
+            allowed_models: dynamic?.allowed_models?.map((item) =>
+              item === key ? value : item,
+            ),
+            default_model:
+              dynamic?.default_model === key ? value : dynamic?.default_model,
+          },
+        },
+      }),
+    });
+  if (dynamic?.default_model)
+    refs.push({
+      path: "subagents.dynamic.default_model",
+      kind: "model",
+      value: dynamic.default_model,
+      replace: (value) => ({
+        ...config,
+        subagents: {
+          ...config.subagents,
+          dynamic: { ...dynamic, default_model: value },
+        },
+      }),
+    });
+  for (const [name, child] of Object.entries(config.subagents?.named ?? {})) {
+    refs.push({
+      path: `subagents.named.${name}.agent_id`,
       kind: "agent",
       value: child.agent_id,
       revision: child.revision_id,
@@ -178,10 +212,13 @@ export function agentDependencies(config: AgentConfig): AgentDependency[] {
         ...config,
         subagents: {
           ...config.subagents,
-          [name]: {
-            ...child,
-            agent_id: value,
-            revision_id: pin(child.agent_id, value, child.revision_id),
+          named: {
+            ...config.subagents?.named,
+            [name]: {
+              ...child,
+              agent_id: value,
+              revision_id: pin(child.agent_id, value, child.revision_id),
+            },
           },
         },
       }),
@@ -189,16 +226,19 @@ export function agentDependencies(config: AgentConfig): AgentDependency[] {
     const environment = child.environment;
     if (environment?.template_id)
       refs.push({
-        path: `subagents.${name}.environment.template_id`,
+        path: `subagents.named.${name}.environment.template_id`,
         kind: "environment_template",
         value: environment.template_id,
         replace: (value) => ({
           ...config,
           subagents: {
             ...config.subagents,
-            [name]: {
-              ...child,
-              environment: { ...environment, template_id: value },
+            named: {
+              ...config.subagents?.named,
+              [name]: {
+                ...child,
+                environment: { ...environment, template_id: value },
+              },
             },
           },
         }),

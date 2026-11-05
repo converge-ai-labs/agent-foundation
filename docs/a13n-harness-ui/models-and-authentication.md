@@ -159,7 +159,7 @@ Use `settings` for JSON-compatible request parameters. Nested objects, explicit 
 | `extra_headers`, `extra_body`                                                         | Native request extensions                                 |
 | `openai_prompt_cache_key`, `openai_store`                                             | OpenAI options, subject to subscription adapter behavior  |
 
-Responses API Models accept `settings.openai_transport: websocket` or `http`. API-key Models default to HTTP; Codex subscription Models default to WebSocket. Set `openai_transport: http` to explicitly use HTTP. Pydantic AI owns connection reuse, reconnect and fallback; WebSocket mode supplies native `openai_previous_response_id: auto` when no continuation setting is present, including with `openai_store: false`. The `model_request_transport` custom lifecycle event reports the actual `http` or `websocket` response path. A connection failure can fall back to HTTP, so the requested setting alone is not proof of the transport used.
+Responses API Models accept `settings.openai_transport: websocket` or `http`. Models without this setting use HTTP. Harness UI writes `openai_transport: websocket` explicitly when preparing a new Codex subscription Model with recommended defaults, including its setup-generated shell reviewer. Existing Models and explicit settings mappings remain unchanged. In Model defaults, **Use WebSocket** reflects the saved setting and writes `websocket` when checked or `http` when unchecked. Advanced YAML edits the same value. Pydantic AI owns connection reuse, reconnect and fallback; WebSocket mode supplies native `openai_previous_response_id: auto` when no continuation setting is present, including with `openai_store: false`. The `model_request_transport` custom lifecycle event reports the actual `http` or `websocket` response path. A connection failure can fall back to HTTP, so the requested setting alone is not proof of the transport used.
 
 Settings are persisted verbatim, including any secrets placed there. Use dedicated credential references and inspect diagnostics before sharing them.
 
@@ -177,6 +177,29 @@ model_configuration:
 ```
 
 Save `key-gateway`, use the gateway's model ID and endpoint, validate, then test a request. The SDK appends version/resource paths; appending `/v1beta` or `/v1beta1` does not switch transports. `google-gla:`, `google-vertex:`, and `gemini:` are Cloud aliases. This route supplies API-key authentication, not Cloud IAM/service accounts.
+
+### OpenAI 12-hour prompt caching
+
+For a supported Responses API Model, merge these fields into its Model file:
+
+```yaml
+route: openai-responses:gpt-6-astra
+settings:
+  cache: '12h'
+```
+
+The object form is `cache: {retention: '12h'}`. Unified caching follows the installed model profile: a recognized Responses model can select 12h, Chat Completions downgrades it to 30m, and an unrecognized gateway alias can leave it unapplied. For a compatible Responses gateway whose alias is not recognized, use native options instead:
+
+```yaml
+settings:
+  openai_prompt_cache_options:
+    mode: implicit
+    ttl: '12h'
+```
+
+An explicit `openai_prompt_cache_options` or `openai_cache_instructions` setting takes precedence over unified translation, including `openai_cache_instructions: false`. Verify the gateway's support with a request. The separate `openai_prompt_cache_retention: '24h'` setting is not the 12h TTL option. Keep the Thread-derived cache key unless you deliberately need another cache-sharing policy.
+
+These settings survive captured Model recipe restoration. Correct 12h cache-write pricing still depends on upstream usage and pricing support; [issue #1387](https://github.com/converge-ai-labs/agent-foundation/issues/1387) tracks that integration.
 
 ## Gateway session affinity
 

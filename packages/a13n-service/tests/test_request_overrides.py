@@ -244,7 +244,8 @@ async def test_service_composition_binds_affinity_per_thread_without_mutating_cl
     model.provider.config = configuration
     root = ResolvedAgent(
         new_object_id("ap"),
-        new_object_id("apr"),
+        (definition_id := new_object_id("apr")),
+        definition_id,
         AgentConfig.model_validate({"model": model.key, "toolsets": {}}),
         model,
         None,
@@ -323,7 +324,8 @@ async def test_media_affinity_uses_calling_thread_and_its_own_model_defaults() -
     }
     root = ResolvedAgent(
         new_object_id("ap"),
-        new_object_id("apr"),
+        (definition_id := new_object_id("apr")),
+        definition_id,
         AgentConfig.model_validate({"model": primary.key, "toolsets": {}}),
         primary,
         None,
@@ -531,8 +533,7 @@ async def test_child_and_continuation_requests_keep_thread_affinity(
         "coordinator",
         model["key"],
         instructions="Role: coordinator",
-        subagent_mode=mode,
-        subagents={"helper": {"agent_id": worker["id"], "description": "Computes answers"}},
+        subagents={"mode": mode, "named": {"helper": {"agent_id": worker["id"], "description": "Computes answers"}}},
     )
     scripted_model.call(
         "delegate",
@@ -572,6 +573,62 @@ def test_service_enables_cache_for_all_apis_and_disables_storage_only_for_respon
         )
     assert _settings(model, {}) == expected
     assert model.config.defaults() == {}  # The baseline is not an authored value.
+
+
+@pytest.mark.parametrize(
+    "defaults,overrides,expected",
+    [
+        ({"cache": "12h"}, {}, {"mode": "implicit", "ttl": "12h"}),
+        ({"cache": True}, {"cache": {"retention": "12h"}}, {"mode": "implicit", "ttl": "12h"}),
+        ({"cache": "12h"}, {"cache": "30m"}, {"mode": "implicit", "ttl": "30m"}),
+        (
+            {"cache": "12h"},
+            {"openai_prompt_cache_options": {"mode": "implicit", "ttl": "30m"}},
+            {"mode": "implicit", "ttl": "30m"},
+        ),
+        ({"cache": "12h"}, {"openai_cache_instructions": False}, None),
+    ],
+)
+async def test_cache_defaults_and_overrides_are_validated_and_reach_native_wire(defaults, overrides, expected):
+    captured = []
+
+    def capture(request):
+        captured.append(json.loads(request.content))
+        return httpx2.Response(400, json={"error": {"message": "offline capture", "type": "invalid_request_error"}})
+
+    schema = settings_schema("openai.responses")
+    config = ModelConfig(
+        model_name="gpt-6-astra",
+        model_api="openai.responses",
+        settings=check_settings(schema, defaults, field="settings"),
+    )
+    model = selected(ModelConfig.model_validate_json(config.model_dump_json()))
+    overrides = check_settings(schema, overrides, field="model_settings")
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(capture)) as client:
+        native = await DEFINITION.build(
+            model.config.model_name,
+            configuration={"base_url": "https://offline.invalid/v1", "auth_mode": "none"},
+            model_api=model.config.model_api,
+            http_client=client,
+            endpoint_policy=SimpleNamespace(validate=no_endpoint_check),
+        )
+        async with native:
+            with pytest.raises(ModelHTTPError):
+                await native.request(
+                    [ModelRequest(parts=[UserPromptPart("hello")])],
+                    _settings(model, overrides),
+                    ModelRequestParameters(),
+                )
+    assert len(captured) == 1
+    assert captured[0].get("prompt_cache_options") == expected
+    assert model.config.settings == defaults
+
+
+def test_cache_retention_uses_native_shape_not_raw_body():
+    schema = settings_schema("openai.responses")
+    for settings in ({"cache": {"ttl": "12h"}}, {"extra_body": {"prompt_cache_options": {"ttl": "12h"}}}):
+        with pytest.raises(ServiceError):
+            check_settings(schema, settings, field="settings")
 
 
 @pytest.mark.parametrize("store", [True, False, None])
@@ -660,7 +717,8 @@ async def test_selected_model_image_policy_is_independent_of_agent_context(polic
     )
     agent = ResolvedAgent(
         new_object_id("ap"),
-        new_object_id("apr"),
+        (definition_id := new_object_id("apr")),
+        definition_id,
         AgentConfig.model_validate(
             {
                 "model": model.key,
@@ -731,7 +789,8 @@ async def test_auxiliary_image_policy_comes_from_image_target_not_primary_or_vid
     )
     agent = ResolvedAgent(
         new_object_id("ap"),
-        new_object_id("apr"),
+        (definition_id := new_object_id("apr")),
+        definition_id,
         AgentConfig.model_validate({"model": primary.key, "toolsets": {}}),
         primary,
         None,
@@ -818,7 +877,8 @@ def test_inline_child_image_policy_is_bound_from_its_own_resolved_model():
     )
     root = ResolvedAgent(
         new_object_id("ap"),
-        new_object_id("apr"),
+        (definition_id := new_object_id("apr")),
+        definition_id,
         AgentConfig.model_validate({"model": primary.key, "toolsets": {}}),
         primary,
         None,
@@ -829,7 +889,8 @@ def test_inline_child_image_policy_is_bound_from_its_own_resolved_model():
     child = replace(
         root,
         agent_id=new_object_id("ap"),
-        revision_id=new_object_id("apr"),
+        definition_id=(child_definition_id := new_object_id("apr")),
+        revision_id=child_definition_id,
         model=child_model,
         config=root.config.model_copy(update={"model": child_model.key}),
     )

@@ -1,4 +1,5 @@
 import { LanguageChoice } from "../i18n/language";
+import { useTranslation } from "../i18n";
 import { SettingsRow, SettingsSection } from "../shell/settings";
 import { capabilityLabel } from "./capability-label";
 import { useContext, useState } from "react";
@@ -40,17 +41,19 @@ export function SettingsLayout() {
 }
 
 function DebugModeSetting() {
+  const { t } = useTranslation();
   const debug = useDebug();
   return (
-    <SettingsSection variant="grouped" title="Developer">
+    <SettingsSection variant="grouped" title={t("Developer")}>
       <SettingsRow
-        label="Debug mode"
+        label={t("Debug mode")}
         stackOnNarrow={false}
         controlId="debug-mode"
         description={
           <>
-            Show identifiers, raw payloads, events and token details across the
-            app. Toggle anywhere with{" "}
+            {t(
+              "Show identifiers, raw payloads, events and token details across the app. Toggle anywhere with",
+            )}{" "}
             <kbd className={styles.kbd}>{debugShortcutLabel()}</kbd>.
           </>
         }
@@ -66,6 +69,7 @@ function DebugModeSetting() {
 }
 
 export function GeneralSettings() {
+  const { t } = useTranslation();
   const sources = useSources();
   const status = useStatus(5000);
   const memory = status.data?.app.memory_organization;
@@ -91,14 +95,14 @@ export function GeneralSettings() {
           <SourceDocument
             key={root.relative_path}
             path={root.relative_path}
-            title="General"
+            title={t("General")}
             embedded
           />
         </div>
       ) : (
-        <Panel title="Set up your workspace">
-          <p>Add an agent to get started.</p>
-          <Link to="/setup">Start setup</Link>
+        <Panel title={t("Set up your workspace")}>
+          <p>{t("Add an agent to get started.")}</p>
+          <Link to="/setup">{t("Start setup")}</Link>
         </Panel>
       )}
       <section id="notifications">
@@ -108,28 +112,33 @@ export function GeneralSettings() {
         <DebugModeSetting />
       </div>
       <details className={layout.disclosure}>
-        <summary>Setup and diagnostics</summary>
+        <summary>{t("Setup and diagnostics")}</summary>
         {memory && (
-          <SettingsSection variant="plain" title="Memory organization status">
+          <SettingsSection
+            variant="plain"
+            title={t("Memory organization status")}
+          >
             <p role="status" className={styles.fieldGroup}>
               {(memory.active_scopes?.length ?? 0) > 0
-                ? `Organizing: ${memory.active_scopes?.join(", ")}`
-                : memoryAvailability[memory.availability]}
+                ? t("Organizing: {{scopes}}", {
+                    scopes: memory.active_scopes?.join(", "),
+                  })
+                : t(memoryAvailability[memory.availability])}
               {memory.last_outcome &&
-                ` · Last outcome: ${memory.last_outcome.replaceAll("_", " ")}`}
-              {` · ${memory.attempts ?? 0} attempts · ${memory.requests ?? 0} model requests`}
-              {` · ${memory.input_tokens ?? 0} input / ${memory.output_tokens ?? 0} output tokens`}
+                ` · ${t("Last outcome: {{outcome}}", { outcome: memory.last_outcome.replaceAll("_", " ") })}`}
+              {` · ${t("{{attempts}} attempts · {{requests}} model requests", { attempts: memory.attempts ?? 0, requests: memory.requests ?? 0 })}`}
+              {` · ${t("{{input}} input / {{output}} output tokens", { input: memory.input_tokens ?? 0, output: memory.output_tokens ?? 0 })}`}
             </p>
           </SettingsSection>
         )}
-        <Link to="/setup">Guided setup and environment checks</Link>
+        <Link to="/setup">{t("Guided setup and environment checks")}</Link>
         {[
           ...(status.data?.app.capability_warnings ?? []),
           ...(status.data?.app.content_plugin_diagnostics ?? []),
         ].map((message) => (
           <p key={message}>{message}</p>
         ))}
-        <p>Version {status.data?.version}</p>
+        <p>{t("Version {{version}}", { version: status.data?.version })}</p>
         <InstallSettings />
       </details>
     </>
@@ -137,15 +146,18 @@ export function GeneralSettings() {
 }
 
 export function AgentsPage() {
+  const { t } = useTranslation();
   return (
     <>
       <SourcesPage
         kinds={["agent"]}
-        title="Agents"
-        description="Configure instructions, models and tools for each agent."
+        title={t("Agents")}
+        description={t(
+          "Configure instructions, models and tools for each agent.",
+        )}
       />
       <details className={layout.disclosure}>
-        <summary>Installed capabilities</summary>
+        <summary>{t("Installed capabilities")}</summary>
         <InstalledCatalog kind="capability" />
       </details>
     </>
@@ -153,6 +165,7 @@ export function AgentsPage() {
 }
 
 export function ConnectionsPage() {
+  const { t } = useTranslation();
   const sources = useSources();
   const root = sources.data?.sources.find(
     (item) => item.resource_kind === "root",
@@ -160,25 +173,25 @@ export function ConnectionsPage() {
   return (
     <>
       <PageHeader
-        title="Connections"
-        description="Tools and services your agents can use."
+        title={t("Connections")}
+        description={t("Tools and services your agents can use.")}
       />
       <SourcesPage
         kinds={["mcp_server"]}
         headingLevel={2}
-        title="MCP servers"
+        title={t("MCP servers")}
       />
       <SourcesPage
         kinds={["harness_plugin"]}
         headingLevel={2}
-        title="Plugins"
+        title={t("Plugins")}
       />
       <div className={layout.disclosures}>
         {root && (
           <details className={layout.disclosure}>
             <summary>
-              <span>Chat defaults</span>
-              <small>Connections and extensions for new chats</small>
+              <span>{t("Chat defaults")}</span>
+              <small>{t("Connections and extensions for new chats")}</small>
             </summary>
             <SourceDocument
               path={root.relative_path}
@@ -189,7 +202,7 @@ export function ConnectionsPage() {
           </details>
         )}
         <details className={layout.disclosure}>
-          <summary>Installed plugins</summary>
+          <summary>{t("Installed plugins")}</summary>
           <InstalledCatalog kind="harness_plugin" />
         </details>
       </div>
@@ -198,6 +211,7 @@ export function ConnectionsPage() {
 }
 
 export function EnvironmentsPage() {
+  const { t } = useTranslation();
   const selectors = useSelectors();
   const sources = useSources();
   const [params] = useSearchParams();
@@ -208,18 +222,18 @@ export function EnvironmentsPage() {
   return (
     <div className={environmentStyles.page}>
       <PageHeader
-        title="Environments"
-        description="Choose where and how your agents work."
+        title={t("Environments")}
+        description={t("Choose where and how your agents work.")}
       />
       <nav
         className={`${layout.tabs} a13n-scrollbar`}
-        aria-label="Environment sections"
+        aria-label={t("Environment sections")}
       >
         {[
-          ["local", "Local execution"],
-          ["devices", "Devices"],
-          ["profiles", "Profiles & extensions"],
-          ["runtime", "Local runtime"],
+          ["local", t("Local execution")],
+          ["devices", t("Devices")],
+          ["profiles", t("Profiles & extensions")],
+          ["runtime", t("Local runtime")],
         ].map(([value, label]) => (
           <Link
             key={value}
@@ -239,13 +253,13 @@ export function EnvironmentsPage() {
               <SourceDocument
                 key={root.relative_path}
                 path={root.relative_path}
-                title="Execution defaults"
+                title={t("Execution defaults")}
                 embedded
                 section="execution"
               />
             ))}
           <p className={layout.hint}>
-            Choose folders and defaults in each project's settings.
+            {t("Choose folders and defaults in each project's settings.")}
           </p>
         </>
       )}
@@ -257,15 +271,15 @@ export function EnvironmentsPage() {
             aria-labelledby="local-execution-profiles"
           >
             <div className={environmentStyles.sectionHeader}>
-              <h2 id="local-execution-profiles">Local profiles</h2>
+              <h2 id="local-execution-profiles">{t("Local profiles")}</h2>
               <NewResourceButton
                 kind="environment_profile"
-                label="Add local profile"
+                label={t("Add local profile")}
                 variant="outline"
               />
             </div>
             <p className={layout.hint}>
-              Choose full access or a sandbox for local work.
+              {t("Choose full access or a sandbox for local work.")}
             </p>
             <DraftLinks kinds={["environment_profile"]} />
             {selectors.isPending && <Skeleton className="h-32 w-full" />}
@@ -284,13 +298,13 @@ export function EnvironmentsPage() {
                     </div>
                     <span>
                       {item.mode === "full-control"
-                        ? "Full control"
+                        ? t("Full control")
                         : item.mode === "sandbox"
-                          ? "Sandbox"
+                          ? t("Sandbox")
                           : item.provider_key}
                     </span>
                     <small>
-                      {item.release_owned ? "Built in" : "Configured"}
+                      {item.release_owned ? t("Built in") : t("Configured")}
                     </small>
                   </>
                 );
@@ -321,16 +335,18 @@ export function EnvironmentsPage() {
           </section>
           <details className={layout.disclosure}>
             <summary>
-              <span>Environment providers</span>
-              <small>Create a profile from an installed provider</small>
+              <span>{t("Environment providers")}</span>
+              <small>{t("Create a profile from an installed provider")}</small>
             </summary>
             <InstalledCatalog kind="environment_provider" />
           </details>
           <SourcesPage
             kinds={["environment_run_extension"]}
             headingLevel={2}
-            title="Run extensions"
-            description="Extra features for runs. Choose them in project or global defaults."
+            title={t("Run extensions")}
+            description={t(
+              "Extra features for runs. Choose them in project or global defaults.",
+            )}
           />
         </>
       )}
@@ -344,6 +360,7 @@ export function InstalledCatalog({
 }: {
   kind: Schema<"CatalogReference">["kind"];
 }) {
+  const { t } = useTranslation();
   const { client } = useTransport();
   const [search, setSearch] = useState("");
   const catalog = useQuery({
@@ -351,14 +368,26 @@ export function InstalledCatalog({
     queryFn: ({ signal }) => result(client.GET("/api/catalog", { signal })),
   });
   const available = catalog.data?.filter((item) => item.kind === kind);
-  const catalogLabel =
+  const catalogCopy =
     kind === "capability"
-      ? "capabilities"
+      ? {
+          search: t("Search installed capabilities"),
+          noMatch: t("No matching installed capabilities."),
+          empty: t("No installed capabilities."),
+        }
       : kind === "environment_provider"
-        ? "environment providers"
-        : "plugins";
+        ? {
+            search: t("Search installed environment providers"),
+            noMatch: t("No matching installed environment providers."),
+            empty: t("No installed environment providers."),
+          }
+        : {
+            search: t("Search installed plugins"),
+            noMatch: t("No matching installed plugins."),
+            empty: t("No installed plugins."),
+          };
   const items = available?.filter((item) =>
-    `${item.key} ${item.kind === "capability" ? capabilityLabel(item.key) : ""} ${item.distribution_name ?? ""}`
+    `${item.key} ${item.kind === "capability" ? capabilityLabel(item.key, t) : ""} ${item.distribution_name ?? ""}`
       .toLowerCase()
       .includes(search.toLowerCase()),
   );
@@ -373,7 +402,7 @@ export function InstalledCatalog({
       <ErrorNotice error={catalog.error} retry={() => void catalog.refetch()} />
       {!!available?.length && (
         <SearchField
-          label={`Search installed ${catalogLabel}`}
+          label={catalogCopy.search}
           value={search}
           onChange={setSearch}
         />
@@ -385,23 +414,23 @@ export function InstalledCatalog({
             <div>
               <strong>
                 {item.kind === "capability"
-                  ? capabilityLabel(item.key)
+                  ? capabilityLabel(item.key, t)
                   : item.key}
               </strong>
               <small>
                 {item.distribution_name ??
-                  (item.source === "pydantic" ? "Built-in" : item.source)}
+                  (item.source === "pydantic" ? t("Built-in") : item.source)}
                 {item.distribution_version
                   ? ` · ${item.distribution_version}`
                   : ""}
               </small>
             </div>
             {!item.configurable ? (
-              <span className={layout.hint}>No setup form</span>
+              <span className={layout.hint}>{t("No setup form")}</span>
             ) : resource ? (
               <NewResourceButton
                 kind={resource}
-                label="Configure"
+                label={t("Configure")}
                 variant="outline"
                 initial={{
                   [kind === "environment_provider"
@@ -410,16 +439,14 @@ export function InstalledCatalog({
                 }}
               />
             ) : (
-              <span className={layout.hint}>Available to agents</span>
+              <span className={layout.hint}>{t("Available to agents")}</span>
             )}
           </div>
         ))}
       </div>
       {items?.length === 0 && (
         <p className={layout.hint}>
-          {available?.length
-            ? `No matching installed ${catalogLabel}.`
-            : `No installed ${catalogLabel}.`}
+          {available?.length ? catalogCopy.noMatch : catalogCopy.empty}
         </p>
       )}
     </div>

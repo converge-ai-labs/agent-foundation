@@ -43,6 +43,8 @@ objects:
   endpointUrl: ""
   # Empty preserves Service defaults; otherwise auto, path or virtual.
   addressingStyle: ""
+  # Maximum HTTP connections per S3 client (per Service process).
+  maxPoolConnections: 32
 # Local objects only. The chart's claim is retained on uninstall.
 persistence:
   existingClaim: ""

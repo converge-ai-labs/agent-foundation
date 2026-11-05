@@ -19,6 +19,7 @@ export type ToolView = {
   resultOmitted?: boolean;
   outcome?: Schema<"TranscriptPart">["outcome"];
   failure?: string;
+  generatedFailure?: boolean;
   retry?: boolean;
   stopped?: boolean;
   edit?: AppliedEdit;
@@ -141,7 +142,9 @@ export function describeTool(tool: ToolView) {
                 ? "Awaiting result"
                 : "Receiving input";
   let label = tool.name || "Tool";
+  let generatedLabel = true;
   let summary = path;
+  let generatedSummary = false;
   let kind:
     "file" | "edit" | "shell" | "search" | "web" | "thread" | "code" | "tool" =
     "tool";
@@ -277,11 +280,13 @@ export function describeTool(tool: ToolView) {
       label = "Find chats";
       kind = "thread";
       summary = text(args.query) || text(args.project_id) || "All projects";
+      generatedSummary = !text(args.query) && !text(args.project_id);
       break;
     case "get_thread":
       label = "Inspect chat";
       kind = "thread";
       summary = text(args.thread_id) || "Current chat";
+      generatedSummary = !text(args.thread_id);
       break;
     case "list_projects":
     case "list_agents":
@@ -289,6 +294,7 @@ export function describeTool(tool: ToolView) {
       label = `Find ${tool.name.slice(5)}`;
       kind = "search";
       summary = text(args.query) || "Configured resources";
+      generatedSummary = !text(args.query);
       break;
     case "get_project":
       label = "Inspect project";
@@ -369,6 +375,7 @@ export function describeTool(tool: ToolView) {
       summary = text(args.execution_id);
       break;
     case "call":
+      generatedLabel = false;
       if (
         typeof args.group === "string" &&
         typeof args.tool === "string" &&
@@ -377,7 +384,10 @@ export function describeTool(tool: ToolView) {
         summary = `${args.group} / ${args.tool}`;
       }
       break;
+    default:
+      generatedLabel = !tool.name;
   }
+
   if (shell && command && tool.name !== "shell_exec")
     summary = [summary, command].filter(Boolean).join(" · ");
   // An unfinished or omitted argument object cannot establish default targets.
@@ -385,6 +395,7 @@ export function describeTool(tool: ToolView) {
     summary = "";
   if (tool.edit || tool.editOmitted) {
     label = "Edit";
+    generatedLabel = true;
     kind = "edit";
   }
   if (
@@ -461,6 +472,8 @@ export function describeTool(tool: ToolView) {
     result,
     path,
     label,
+    generatedLabel,
+    generatedSummary,
     summary,
     kind,
     phase,
@@ -488,6 +501,7 @@ export function questionReceipt(tool: ToolView) {
   const items: {
     title: string;
     question: string;
+    generatedTitle?: boolean;
     values: { label: string; description?: string }[];
   }[] = [];
   for (const [question, answer] of Object.entries(answers)) {
@@ -523,6 +537,7 @@ export function questionReceipt(tool: ToolView) {
   if (typeof response === "string" && response.trim())
     items.push({
       title: "Response",
+      generatedTitle: true,
       question: "",
       values: [{ label: response }],
     });
@@ -589,7 +604,10 @@ export function savedTools(entries: Schema<"TranscriptEntry">[]) {
           editPath: part.applied_edit?.file_path,
           retry: part.kind === "retry",
           ...(part.kind === "retry"
-            ? { failure: part.text || "Tool input validation failed." }
+            ? {
+                failure: part.text || "Tool input validation failed.",
+                generatedFailure: !part.text,
+              }
             : {}),
           inputComplete: true,
           stopped: true,

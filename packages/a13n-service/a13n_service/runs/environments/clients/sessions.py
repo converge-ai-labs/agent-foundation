@@ -43,6 +43,9 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
+_AUTHORITY_CONCURRENCY = 4
+_RENEWAL_BATCH_SIZE = 64
+
 # These operate only on resources already owned by the selected Session. Device
 # methods, Session open/attach and transfer setup have explicit admission below.
 _SCOPE_METHODS = frozenset(
@@ -110,6 +113,7 @@ class Sessions:
         self.scopes: dict[str, Scope] = {}
         self.opening: set[str] = set()
         self.closed = False
+        self.authority_slots = asyncio.Semaphore(_AUTHORITY_CONCURRENCY)
 
     async def serve(self) -> None:
         connections = self.runtime.client_connections
@@ -163,7 +167,7 @@ class Sessions:
                 details={"dispatch_stage": "pre_dispatch"},
             ) from error
         connection = await self.connection(request)
-        mount = await authority.resolve(self.runtime, request, connection.attachment, frozenset())
+        mount = await self._resolve(request, connection, frozenset())
         if body.working_directory != mount.working_directory:
             raise EnvironmentError(
                 "Client directory differs from the frozen mount.",
@@ -221,7 +225,7 @@ class Sessions:
                     "Client Session did not open the frozen working directory.", code="environment_stale_mount"
                 )
             await self.connection(request)
-            await authority.resolve(self.runtime, request, connection.attachment, frozenset())
+            await self._resolve(request, connection, frozenset())
             scope = Scope(
                 request,
                 connection,
@@ -245,12 +249,23 @@ class Sessions:
         finally:
             self.opening.discard(request.scope_id)
 
+    async def _resolve(self, request: Request, connection: Connection, actions: frozenset[EnvironmentAction]):
+        async with self.authority_slots:
+            return await authority.resolve(self.runtime, request, connection.attachment, actions)
+
+    @staticmethod
+    def _session_lost() -> EnvironmentError:
+        return EnvironmentError(
+            "Client execution Session expired. Prepare a new Session before the next operation.",
+            code="environment_unavailable",
+            details={"dispatch_stage": "pre_dispatch", "client_session_failed": True},
+        )
+
     async def authorize(self, request: Request, actions: frozenset[EnvironmentAction]) -> Scope:
         scope = self.scopes.get(request.scope_id)
         connection = await self.connection(request)
-        if (
-            scope is None
-            or scope.connection is not connection
+        if scope is not None and (
+            scope.connection is not connection
             or (request.environment_id, request.caller.run_id, request.thread_id)
             != (scope.request.environment_id, scope.request.caller.run_id, scope.request.thread_id)
         ):
@@ -259,14 +274,10 @@ class Sessions:
                 code="environment_denied",
                 details={"dispatch_stage": "pre_dispatch"},
             )
-        await authority.resolve(self.runtime, request, connection.attachment, actions)
+        await self._resolve(request, connection, actions)
         await self.connection(request)
-        if self.scopes.get(request.scope_id) is not scope:
-            raise EnvironmentError(
-                "Client Session retired during authorization.",
-                code="environment_unavailable",
-                details={"dispatch_stage": "pre_dispatch"},
-            )
+        if scope is None or self.scopes.get(request.scope_id) is not scope:
+            raise self._session_lost()
         scope.first_use_until = None
         scope.remember(request.caller)
         return scope
@@ -449,44 +460,85 @@ class Sessions:
         )
 
     async def renew(self) -> None:
-        """A valid attempt or retained call must continue owning each native Session."""
+        """One bounded database sweep serves Sessions and their active transfers."""
         while True:
             await asyncio.sleep(self.runtime.settings.client_environments.heartbeat_seconds)
-            async with asyncio.TaskGroup() as group:
-                for identity, scope in tuple(self.scopes.items()):
-                    group.create_task(self._renew_scope(identity, scope))
+            scopes = list(self.scopes.items())
+            for offset in range(0, len(scopes), _RENEWAL_BATCH_SIZE):
+                await self._renew_batch(scopes[offset : offset + _RENEWAL_BATCH_SIZE])
 
     async def _renew_scope(self, identity: str, scope: Scope) -> None:
-        if scope.first_use_until is not None and asyncio.get_running_loop().time() >= scope.first_use_until:
-            await self.retire(identity, scope)
-            return
-        examined = dict(scope.callers)
-        live = {}
+        await self._renew_batch([(identity, scope)])
+
+    async def _renew_batch(self, scopes: list[tuple[str, Scope]]) -> None:
+        examined = {identity: dict(scope.callers) for identity, scope in scopes}
+        checks: list[authority.Check] = []
+        owners: list[tuple[str, Caller, Transfer | None]] = []
+        live: dict[str, dict[tuple[str, str, str | None], Caller]] = {identity: {} for identity, _ in scopes}
+        admitted: set[str] = set()
         try:
             with anyio.fail_after(self.runtime.settings.client_environments.heartbeat_seconds):
-                await self.connection(scope.request)
-                for key, caller in examined.items():
-                    request = scope.request.model_copy(update={"caller": caller})
+                for identity, scope in scopes:
+                    if scope.first_use_until is not None and asyncio.get_running_loop().time() >= scope.first_use_until:
+                        continue
                     try:
-                        await authority.resolve(
-                            self.runtime, request, scope.connection.attachment, frozenset(), renewing=True
-                        )
+                        await self.connection(scope.request)
                     except EnvironmentError:
                         continue
-                    live[key] = caller
-                if live:
-                    await self.remember_binding(scope)
-            # New callers completed their own authority check while this snapshot
-            # was examined. Do not erase their independent retained ownership.
-            live.update({key: caller for key, caller in scope.callers.items() if key not in examined})
+                    admitted.add(identity)
+                    for caller in examined[identity].values():
+                        checks.append(
+                            authority.Check(
+                                scope.request.model_copy(update={"caller": caller}),
+                                scope.connection.attachment,
+                                frozenset(),
+                                True,
+                            )
+                        )
+                        owners.append((identity, caller, None))
+                    for transfer in tuple(scope.transfers.values()):
+                        if transfer.task is not None and not transfer.task.done():
+                            checks.append(
+                                authority.Check(
+                                    scope.request.model_copy(update={"caller": transfer.caller}),
+                                    scope.connection.attachment,
+                                    transfer.actions,
+                                )
+                            )
+                            owners.append((identity, transfer.caller, transfer))
+                results = []
+                for offset in range(0, len(checks), _RENEWAL_BATCH_SIZE):
+                    async with self.authority_slots:
+                        results.extend(
+                            await authority.resolve_many(self.runtime, checks[offset : offset + _RENEWAL_BATCH_SIZE])
+                        )
+                for (identity, caller, transfer), result in zip(owners, results, strict=True):
+                    if transfer is not None:
+                        if isinstance(result, EnvironmentError):
+                            await streaming.stop(transfer)
+                    elif not isinstance(result, EnvironmentError):
+                        live[identity][(caller.attempt_id, caller.worker_id, caller.execution_id)] = caller
+                for identity, scope in scopes:
+                    if self.scopes.get(identity) is not scope:
+                        continue
+                    if identity in admitted:
+                        # Concurrently admitted callers have already passed their own check.
+                        live[identity].update(
+                            {key: caller for key, caller in scope.callers.items() if key not in examined[identity]}
+                        )
+                    if live[identity]:
+                        await self.remember_binding(scope)
         except Exception as error:
-            live.clear()
+            # Fail closed on unavailable evidence without labeling it a revocation.
+            live = {identity: {} for identity, _ in scopes}
             logger.warning(
                 "Client Session authority unavailable", extra={"exception_details": exception_details(error)}
             )
-        scope.callers = live
-        if not live:
-            await self.retire(identity, scope)
+        for identity, scope in scopes:
+            if self.scopes.get(identity) is scope:
+                scope.callers = live[identity]
+                if not scope.callers:
+                    await self.retire(identity, scope)
 
     async def remember_binding(self, scope: Scope) -> None:
         # Discovery and Session reconnect have separate lifetimes. Losing this

@@ -62,6 +62,8 @@ export function fixtureRun(
 export function fixtureRunAgent(): Schema["RunAgent"] {
   const config = { model: "scripted", instructions: "Check the fold." };
   return {
+    source: "revision",
+    definition_id: "rev_1",
     revision: {
       id: "rev_1",
       agent_id: "agt_1",

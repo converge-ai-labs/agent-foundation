@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
 import {
+  act,
   cleanup,
   render,
   screen,
@@ -12,6 +13,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
 import { parse } from "yaml";
 import { ModelsPage } from "./models";
+import { i18n } from "../i18n";
 import { DraftContext, type SourceDraft } from "./drafts";
 
 vi.mock("./editor", () => ({ SourceEditor: () => null }));
@@ -70,8 +72,9 @@ vi.mock("../transport/context", () => ({
     },
   }),
 }));
-afterEach(() => {
+afterEach(async () => {
   cleanup();
+  await i18n.changeLanguage("en");
   vi.clearAllMocks();
 });
 function setup(dirty = false) {
@@ -144,6 +147,36 @@ it("selects compatible defaults, preserves root fields, saves and clears", async
   expect(parse(state.content).media_understanding.image).toBeNull();
 });
 
+it("updates media labels without losing an unsaved selection", async () => {
+  const { user, drafts } = setup();
+  await user.click(screen.getByText("Media models"));
+  await user.click(
+    await screen.findByRole("combobox", { name: "Image understanding" }),
+  );
+  await user.click(await screen.findByRole("option", { name: "Vision" }));
+  const draft = drafts.get("custom.yaml")?.content;
+  expect(draft).toContain("model-vision");
+  await act(async () => {
+    await i18n.changeLanguage("zh-CN");
+  });
+  expect(
+    screen.getByRole("combobox", { name: "图片理解" }).textContent,
+  ).toContain("Vision");
+  expect(
+    screen.getByRole("combobox", { name: "视频理解" }).textContent,
+  ).toContain("环境");
+  expect(
+    screen.getByRole("combobox", { name: "音频理解" }).textContent,
+  ).toContain("未配置");
+  expect(drafts.get("custom.yaml")?.content).toBe(draft);
+  expect(state.put).not.toHaveBeenCalled();
+  expect(screen.getByRole("heading", { name: "模型" })).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "Vision 的操作" }));
+  expect(
+    await screen.findByRole("menuitem", { name: "设为默认图片理解模型" }),
+  ).toBeTruthy();
+});
+
 it("quick actions refresh the clean editor and disable unsupported purposes", async () => {
   const { user, drafts } = setup();
   await user.click(screen.getByText("Media models"));
@@ -182,6 +215,15 @@ it("does not quick-save an existing root draft and supports confirmed discard", 
   );
   expect(state.put).not.toHaveBeenCalled();
   expect(drafts.get("custom.yaml")?.content).toContain("theme: dark");
+  await act(async () => {
+    await i18n.changeLanguage("zh-CN");
+  });
+  expect(screen.getByText("请先保存或放弃对全局设置的更改。")).toBeTruthy();
+  expect(state.put).not.toHaveBeenCalled();
+  expect(drafts.get("custom.yaml")?.content).toContain("theme: dark");
+  await act(async () => {
+    await i18n.changeLanguage("en");
+  });
   await user.click(screen.getByRole("button", { name: "Discard" }));
   const dialog = await screen.findByRole("dialog");
   expect(state.put).not.toHaveBeenCalled();

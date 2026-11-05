@@ -93,6 +93,12 @@ const plate = (post: Post) =>
 const meta = (post: Post) =>
   `<span class="meta"><time datetime="${post.date}">${day(post.date)}</time><i></i>${post.minutes} min</span>`;
 
+function credit(post: Post) {
+  if (!post.report) return `<span>${post.authors.map(esc).join(", ")}</span>`;
+  const { author, url } = post.report;
+  return `<span class="report-credit"><a class="report-author" href="${esc(author.url)}"><img src="${esc(author.avatar)}" alt="" width="28" height="28" referrerpolicy="no-referrer" /><span><span class="report-label">Original report by</span> ${esc(author.name)}</span></a><a class="report-source" href="${esc(url)}">Read original report <span aria-hidden="true">↗</span></a></span>`;
+}
+
 const card = (post: Post, level: 2 | 3) => `<li class="item">
           <a href="${postPath(post)}">
             ${plate(post)}
@@ -107,7 +113,7 @@ export function indexPage(posts: Post[]) {
   // the nav links every page to /blog/, so the index needs a post to lead
   if (!lead) throw new Error("posts/ has no posts");
   const description =
-    "Notes from the team building a13n, the open-source foundation for AI agents.";
+    "Notes from the team building a13n, the open-source managed agent service.";
   const body = `    <main>
       <header class="wrap head">
         <h1 class="statement">Blog. <span class="dim">Notes from the team building a13n.</span></h1>
@@ -160,7 +166,7 @@ export function postPage(post: Post, posts: Post[]) {
           <div class="strip">
             <time datetime="${post.date}">${day(post.date, "long")}</time>
             <span>${post.minutes} min read</span>
-            <span>${post.authors.map(esc).join(", ")}</span>
+            ${credit(post)}
           </div>
         </header>${
           post.cover
@@ -194,7 +200,24 @@ ${post.html}
         headline: post.title,
         description: post.description,
         datePublished: post.date,
-        author: post.authors.map((name) => ({ "@type": "Person", name })),
+        author: post.authors.map((name) => ({
+          "@type": name === "a13n team" ? "Organization" : "Person",
+          name,
+        })),
+        ...(post.report
+          ? {
+              citation: {
+                "@type": "DiscussionForumPosting",
+                headline: post.report.title,
+                url: post.report.url,
+                author: {
+                  "@type": "Person",
+                  name: post.report.author.name,
+                  url: post.report.author.url,
+                },
+              },
+            }
+          : {}),
         image: SOCIAL_IMAGE,
         url: `${ORIGIN}${postPath(post)}`,
         isPartOf: { "@type": "Blog", name: BLOG, url: `${ORIGIN}/blog/` },

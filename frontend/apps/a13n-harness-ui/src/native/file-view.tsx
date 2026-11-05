@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { useContext, useEffect, useReducer, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "a13n-ui";
@@ -49,6 +50,7 @@ export function FileView({
   line?: number;
   onBufferChange?: () => void;
 }) {
+  const { t } = useTranslation();
   const transport = useTransport();
   const { client } = transport;
   const buffers = useContext(FileBuffers);
@@ -119,7 +121,7 @@ export function FileView({
     return (
       <>
         <ErrorNotice error={read.error} retry={() => void read.refetch()} />
-        {read.isPending && <p role="status">Reading file…</p>}
+        {read.isPending && <p role="status">{t("Reading file…")}</p>}
       </>
     );
   const symlink = buffer.base.resolved_path !== path;
@@ -198,22 +200,24 @@ export function FileView({
       setImageAttempt((value) => value + 1);
   };
   return (
-    <section className={styles.file} aria-label="File content">
+    <section className={styles.file} aria-label={t("File content")}>
       {symlink && (
         <div className={styles.notice}>
-          Resolved target: {buffer.base.resolved_path}. This path is read-only;
-          select the target explicitly to edit it.
+          {t(
+            "Resolved target: {{path}}. This path is read-only; select the target explicitly to edit it.",
+            { path: buffer.base.resolved_path },
+          )}
           <Button
             variant="ghost"
             size="sm"
             onClick={() => open(buffer.base.resolved_path)}
           >
-            Open target
+            {t("Open target")}
           </Button>
         </div>
       )}
       <div className={styles.fileToolbar}>
-        <div className={styles.actions} aria-label="File actions">
+        <div className={styles.actions} aria-label={t("File actions")}>
           {editable && (buffer.dirty || buffer.saving || buffer.uncertain) && (
             <Button
               size="sm"
@@ -229,14 +233,14 @@ export function FileView({
               onClick={() => void save()}
             >
               <FloppyDisk />
-              Save
+              {t("Save")}
             </Button>
           )}
           <Button
             variant="ghost"
             size="icon-sm"
-            aria-label="Refresh"
-            title="Refresh file"
+            aria-label={t("Refresh")}
+            title={t("Refresh file")}
             onClick={() => void refreshContent()}
             disabled={buffer.saving || read.isFetching}
           >
@@ -245,8 +249,8 @@ export function FileView({
           <Button
             variant="ghost"
             size="icon-sm"
-            aria-label="Download"
-            title="Download file"
+            aria-label={t("Download")}
+            title={t("Download file")}
             onClick={() => void download()}
             disabled={read.isFetching || !!read.error}
           >
@@ -266,12 +270,12 @@ export function FileView({
               }
             >
               <DownloadSimple />
-              Download draft
+              {t("Download draft")}
             </Button>
           )}
         </div>
         {editable && (
-          <div className={styles.viewControls} aria-label="File view">
+          <div className={styles.viewControls} aria-label={t("File view")}>
             {markdown && (
               <>
                 <Button
@@ -280,7 +284,7 @@ export function FileView({
                   aria-pressed={mode === "preview"}
                   onClick={() => setMode("preview")}
                 >
-                  Preview
+                  {t("Preview")}
                 </Button>
                 <Button
                   variant={mode === "text" ? "secondary" : "ghost"}
@@ -291,7 +295,7 @@ export function FileView({
                     setTextOpened(true);
                   }}
                 >
-                  Text
+                  {t("Text")}
                 </Button>
               </>
             )}
@@ -301,23 +305,25 @@ export function FileView({
                   size="sm"
                   variant={wrap ? "secondary" : "ghost"}
                   aria-pressed={wrap}
-                  title="Wrap long lines"
+                  title={t("Wrap long lines")}
                   onClick={() => {
                     setWrap(!wrap);
                     editor.current?.focus();
                   }}
                 >
                   <TextAlignLeft />
-                  Wrap
+                  {t("Wrap")}
                 </Button>
                 <Button
                   size="sm"
                   variant="ghost"
-                  title={`Find in file (${modifierLabel()} F)`}
+                  title={t("Find in file ({{shortcut}} F)", {
+                    shortcut: modifierLabel(),
+                  })}
                   onClick={() => editor.current?.find()}
                 >
                   <MagnifyingGlass />
-                  Find
+                  {t("Find")}
                 </Button>
               </>
             )}
@@ -328,23 +334,26 @@ export function FileView({
         error={error || read.error}
         retry={() => void read.refetch()}
       />
-      {message && <p role="status">{message}</p>}
+      {message && <p role="status">{t(message)}</p>}
       {(buffer.conflict || buffer.uncertain) && (
         <div className={styles.notice}>
           <strong>
             {buffer.uncertain
-              ? "Save outcome needs inspection"
-              : "Disk revision changed"}
+              ? t("Save outcome needs inspection")
+              : t("Disk revision changed")}
           </strong>
           <p>
-            Your edits are kept. Refresh and review the saved file before
-            choosing which version to keep.
+            {t(
+              "Your edits are kept. Refresh and review the saved file before choosing which version to keep.",
+            )}
           </p>
           <details>
-            <summary>Show latest saved version</summary>
+            <summary>{t("Show latest saved version")}</summary>
             <p>
-              Revision: {buffer.observed.entry.revision} ·{" "}
-              {buffer.observed.presentation}
+              {t("Revision: {{revision}} · {{presentation}}", {
+                revision: buffer.observed.entry.revision,
+                presentation: buffer.observed.presentation,
+              })}
             </p>
             {buffer.observed.text != null && (
               <SourceEditor
@@ -352,7 +361,7 @@ export function FileView({
                 language="plain"
                 filename={path}
                 readOnly
-                label="Latest disk text"
+                label={t("Latest disk text")}
               />
             )}
           </details>
@@ -365,12 +374,14 @@ export function FileView({
                   size="sm"
                   disabled={read.isFetching || !!read.error}
                 >
-                  Use disk version
+                  {t("Use disk version")}
                 </Button>
               }
-              title="Replace your local text?"
-              description="Replace your edits with this saved version? Download your edits first if you need a copy."
-              confirmLabel="Use disk version"
+              title={t("Replace your local text?")}
+              description={t(
+                "Replace your edits with this saved version? Download your edits first if you need a copy.",
+              )}
+              confirmLabel={t("Use disk version")}
               destructive
               onConfirm={() => {
                 if (read.isFetching || read.error) return;
@@ -394,12 +405,14 @@ export function FileView({
                     buffer.observed.resolved_path !== path
                   }
                 >
-                  Keep local text
+                  {t("Keep local text")}
                 </Button>
               }
-              title="Keep your local text?"
-              description="Keep your edits? Your next save will replace the file version you just reviewed."
-              confirmLabel="Keep local text"
+              title={t("Keep your local text?")}
+              description={t(
+                "Keep your edits? Your next save will replace the file version you just reviewed.",
+              )}
+              confirmLabel={t("Keep local text")}
               onConfirm={() => {
                 if (
                   read.isFetching ||
@@ -421,8 +434,9 @@ export function FileView({
       )}
       {editable && mixedLineEndings(buffer.base.text ?? "") && (
         <p>
-          This file mixes line endings. Editing uses the first style throughout.
-          Viewing or attaching leaves the file unchanged.
+          {t(
+            "This file mixes line endings. Editing uses the first style throughout. Viewing or attaching leaves the file unchanged.",
+          )}
         </p>
       )}
       {editable ? (
@@ -430,7 +444,7 @@ export function FileView({
           {mode === "preview" && markdown && (
             <article
               className={styles.markdownPreview}
-              aria-label="Markdown preview"
+              aria-label={t("Markdown preview")}
             >
               <MessageText text={buffer.value} />
             </article>
@@ -450,7 +464,7 @@ export function FileView({
                   buffer.position = position;
                 }}
                 onSave={() => void save()}
-                label={`File text: ${path}`}
+                label={t("File text: {{path}}", { path })}
                 fill
                 readOnly={symlink}
                 onSelection={setSelection}
@@ -475,10 +489,11 @@ export function FileView({
           />
         ) : (
           <div className={styles.empty}>
-            <h3>Image exceeds the preview limit</h3>
+            <h3>{t("Image exceeds the preview limit")}</h3>
             <p>
-              Image too large to preview. Download it to view. The preview limit
-              is 10 MiB.
+              {t(
+                "Image too large to preview. Download it to view. The preview limit is 10 MiB.",
+              )}
             </p>
           </div>
         )
@@ -486,12 +501,13 @@ export function FileView({
         <div className={styles.empty}>
           <h3>
             {buffer.base.presentation === "binary"
-              ? "Binary file"
-              : "File exceeds the text editor limit"}
+              ? t("Binary file")
+              : t("File exceeds the text editor limit")}
           </h3>
           <p>
-            Edit UTF-8 text files up to 512 KiB, without NUL characters. Upload
-            or attach files up to 10 MiB. Download larger files to view them.
+            {t(
+              "Edit UTF-8 text files up to 512 KiB, without NUL characters. Upload or attach files up to 10 MiB. Download larger files to view them.",
+            )}
           </p>
         </div>
       )}
@@ -517,43 +533,62 @@ export function FileView({
         {editable && mode === "text" && (
           <div className={styles.editorStatus}>
             {symlink ? (
-              <small>Read-only</small>
+              <small>{t("Read-only")}</small>
             ) : (
-              buffer.dirty && <small>Unsaved</small>
+              buffer.dirty && <small>{t("Unsaved")}</small>
             )}
             {cursor && (
               <Button
                 variant="ghost"
                 size="sm"
-                aria-label={`Go to line, current line ${cursor.line}, column ${cursor.column}`}
-                title={`Go to line (${modifierLabel()} G)`}
+                aria-label={t(
+                  "Go to line, current line {{line}}, column {{column}}",
+                  { line: cursor.line, column: cursor.column },
+                )}
+                title={t("Go to line ({{shortcut}} G)", {
+                  shortcut: modifierLabel(),
+                })}
                 onClick={() => editor.current?.goToLine()}
               >
-                Ln {cursor.line}, Col {cursor.column}
+                {t("Ln {{line}}, Col {{column}}", {
+                  line: cursor.line,
+                  column: cursor.column,
+                })}
                 {cursor.selected > 0 &&
-                  ` · ${cursor.selected.toLocaleString()} selected`}
+                  t(" · {{selected}} selected", {
+                    selected: cursor.selected.toLocaleString(),
+                  })}
               </Button>
             )}
             {!symlink && (
               <small className={styles.shortcuts}>
-                <kbd className={shell.kbd}>{modifierLabel()} S</kbd> Save
+                <kbd className={shell.kbd}>{modifierLabel()} S</kbd> {t("Save")}
               </small>
             )}
           </div>
         )}
       </footer>
       <details className={styles.metadata}>
-        <summary>File details</summary>
+        <summary>{t("File details")}</summary>
         <p>
-          {buffer.base.entry.size.toLocaleString()} bytes ·{" "}
-          {media ?? (buffer.base.presentation ?? "binary").replace("_", " ")}
+          {t("{{size}} bytes · {{type}}", {
+            size: buffer.base.entry.size.toLocaleString(),
+            type:
+              media ?? (buffer.base.presentation ?? "binary").replace("_", " "),
+          })}
         </p>
         <p>{path}</p>
         {buffer.base.resolved_path !== path && (
-          <p>Resolved path: {buffer.base.resolved_path}</p>
+          <p>
+            {t("Resolved path: {{path}}", { path: buffer.base.resolved_path })}
+          </p>
         )}
         <DebugOnly>
-          <p>Server file · version {buffer.base.entry.revision}</p>
+          <p>
+            {t("Server file · version {{revision}}", {
+              revision: buffer.base.entry.revision,
+            })}
+          </p>
         </DebugOnly>
       </details>
     </section>

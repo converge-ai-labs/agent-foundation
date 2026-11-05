@@ -12,7 +12,7 @@
   margin: 16px 0 0;
 }
 .title {
-  font-size: 20px;
+  font-size: calc(var(--a13n-text-body) * 20 / 14);
   font-weight: 500;
   line-height: 1.25;
 }
@@ -21,7 +21,7 @@
   align-items: center;
   gap: 8px;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .steps li > span {
   flex-shrink: 0;
@@ -48,20 +48,20 @@
 }
 .content h2 {
   margin: 0;
-  font-size: 16px;
+  font-size: calc(var(--a13n-text-body) * 16 / 14);
   font-weight: 500;
   line-height: 22px;
   outline: none;
 }
 .content h3 {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   font-weight: 500;
 }
 .content p {
   margin: 0;
   color: var(--a13n-text-supporting);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   line-height: 20px;
 }
 .fields {
@@ -137,11 +137,11 @@
 .environments strong,
 .summary strong {
   font-weight: 500;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .connections span,
 .environments span {
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   color: var(--a13n-text-supporting);
   line-height: 1.5;
 }
@@ -156,13 +156,13 @@
 }
 .advanced details {
   padding: 8px 0;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .summary {
   display: grid;
   gap: 8px;
   padding: 16px 0 0;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .summary span,
 .stepCount {
@@ -179,7 +179,7 @@
   padding: 16px 16px;
   border-radius: 10px;
   background: var(--a13n-surface);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .runtimeStatus strong {
   font-weight: 500;
@@ -219,7 +219,7 @@
   flex-basis: 100%;
   margin: 0;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
 }
 .footer {
   flex-wrap: wrap;
@@ -232,7 +232,7 @@
   gap: 12px;
 }
 .stepCount {
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   margin-right: 8px;
 }
 @media (max-width: 600px) {
@@ -259,7 +259,7 @@
     padding: 12px 12px;
   }
   .connections span {
-    font-size: 14px;
+    font-size: var(--a13n-text-body);
   }
   .environments {
     grid-template-columns: 1fr;

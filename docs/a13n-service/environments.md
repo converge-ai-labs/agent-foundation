@@ -19,6 +19,8 @@ For a computer you already operate, [connect Envd outbound](#connect-a-client-co
 
 Set `execution: "envd_ws"` in a Docker, E2B, Daytona, Modal, Sprites or Vercel template recipe to let its Envd connect to Control. The existing Provider still manages creation, stop/start and destruction. Runs continue selecting the same environment ID; no client registration or ordinary API token is needed inside the sandbox.
 
+Standalone Console desktop preview is currently unavailable for `envd_ws`; the button explains this restriction. Agent Computer tools remain available when the daemon and permissions support them. If an execution Session expires while the device stays online, the failed tool reports it and the run can prepare a new Session at its next tool use. Previous commands are not replayed, and old process handles are not restored.
+
 Configure `server.public_url` as an HTTPS origin reachable from the sandbox and allow WebSocket forwarding. Use an updated compatible Envd image/template with `a13n-sandbox-entrypoint`. E2B and Vercel need their compatible template/snapshot; Sprites needs its desktop mode. In Console, choose the execution connection in template configuration (Docker: select a custom environment).
 
 Service supplies a private per-environment connection credential and waits for EIP initialization before marking creation/start ready. A failed connection preserves the allocated sandbox for retry or cleanup. Worker tools use the outbound connection without reaching an Envd HTTP port. Provider lifecycle APIs, human desktop access and metrics retain their own network requirements. Binary files and screenshots use Redis Streams between Worker and Control, and the existing WebSocket between Control and Envd.

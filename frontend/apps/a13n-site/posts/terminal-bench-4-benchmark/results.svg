@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 360">
+  <title>Terminal-Bench 4.0: pass rate and inference cost</title>
+  <desc>On 62 shared task identities, a13n passed 36 of 62 outcomes (58.06 percent), while Codex passed 181 of 308 scored records (58.77 percent). On 61 tasks with complete official usage, estimated cost is $98.73 for a13n and $97.70 per Codex round. Retained run counts differ; a13n cost assumes official per-task cache-hit rates.</desc>
+  <path class="pl" d="M0 1H800" />
+  <path class="pf" d="M390 36V320" />
+  <text class="fi" x="0" y="42" style="font:500 25px var(--display)">Pass rate</text>
+  <text class="fi" x="0" y="70" style="font:400 14px var(--mono)">62 shared task identities</text>
+  <text class="fi" x="0" y="124" style="font:500 15px var(--text)">a13n Harness</text>
+  <text class="fa" x="350" y="124" text-anchor="end" style="font:500 26px var(--display)">58.06%</text>
+  <rect class="ff" x="0" y="142" width="350" height="8" />
+  <rect class="fa" x="0" y="142" width="203.21" height="8" />
+  <text class="fi" x="0" y="178" style="font:400 13px var(--mono)">36 / 62 outcomes</text>
+  <text class="fi" x="0" y="234" style="font:500 15px var(--text)">Codex 0.159.0</text>
+  <text class="fi" x="350" y="234" text-anchor="end" style="font:500 26px var(--display)">58.77%</text>
+  <rect class="ff" x="0" y="252" width="350" height="8" />
+  <rect class="fi" x="0" y="252" width="205.69" height="8" />
+  <text class="fi" x="0" y="288" style="font:400 13px var(--mono)">181 / 308 scored records</text>
+  <text class="fi" x="0" y="334" style="font:400 12px var(--mono)">Bar scale: 0–100%</text>
+  <text class="fi" x="430" y="42" style="font:500 25px var(--display)">Inference cost</text>
+  <text class="fi" x="430" y="70" style="font:400 14px var(--mono)">61 tasks with complete official usage</text>
+  <text class="fi" x="430" y="124" style="font:500 15px var(--text)">a13n Harness</text>
+  <text class="fa" x="780" y="124" text-anchor="end" style="font:500 26px var(--display)">$98.73</text>
+  <rect class="ff" x="430" y="142" width="350" height="8" />
+  <rect class="fa" x="430" y="142" width="314.14" height="8" />
+  <text class="fi" x="430" y="178" style="font:400 13px var(--mono)">Estimated with official cache-hit rates</text>
+  <text class="fi" x="430" y="234" style="font:500 15px var(--text)">Codex 0.159.0</text>
+  <text class="fi" x="780" y="234" text-anchor="end" style="font:500 26px var(--display)">$97.70 / round</text>
+  <rect class="ff" x="430" y="252" width="350" height="8" />
+  <rect class="fi" x="430" y="252" width="310.86" height="8" />
+  <text class="fi" x="430" y="288" style="font:400 13px var(--mono)">Mean of five official rounds</text>
+  <text class="fi" x="430" y="334" style="font:400 12px var(--mono)">Bar scale: 0–$110 USD</text>
+</svg>

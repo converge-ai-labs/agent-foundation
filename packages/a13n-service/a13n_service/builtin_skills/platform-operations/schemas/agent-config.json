@@ -391,6 +391,58 @@
       "title": "DelegationContextPolicy",
       "type": "object"
     },
+    "DynamicSubagents": {
+      "additionalProperties": false,
+      "description": "Root-only task-specific delegation within the parent's capability boundary.",
+      "properties": {
+        "allowed_models": {
+          "default": [],
+          "items": {
+            "pattern": "^[a-z0-9][a-z0-9.-]{0,127}$",
+            "type": "string"
+          },
+          "maxItems": 128,
+          "title": "Allowed Models",
+          "type": "array",
+          "uniqueItems": true
+        },
+        "default_model": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z0-9][a-z0-9.-]{0,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Default Model"
+        },
+        "default_thinking": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Default Thinking"
+        },
+        "enabled": {
+          "default": false,
+          "title": "Enabled",
+          "type": "boolean"
+        }
+      },
+      "title": "DynamicSubagents",
+      "type": "object"
+    },
     "EnvironmentVariables": {
       "additionalProperties": {
         "type": "string"
@@ -905,6 +957,35 @@
         "agent_id"
       ],
       "title": "SubagentSelection",
+      "type": "object"
+    },
+    "Subagents": {
+      "additionalProperties": false,
+      "properties": {
+        "dynamic": {
+          "$ref": "#/$defs/DynamicSubagents"
+        },
+        "mode": {
+          "default": "async",
+          "enum": [
+            "inline",
+            "async"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "named": {
+          "maxProperties": 128,
+          "patternProperties": {
+            "^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$": {
+              "$ref": "#/$defs/SubagentSelection"
+            }
+          },
+          "title": "Named",
+          "type": "object"
+        }
+      },
+      "title": "Subagents",
       "type": "object"
     },
     "ToolExecutionOverride": {
@@ -1482,24 +1563,8 @@
       "title": "Skills",
       "type": "array"
     },
-    "subagent_mode": {
-      "default": "inline",
-      "enum": [
-        "inline",
-        "async"
-      ],
-      "title": "Subagent Mode",
-      "type": "string"
-    },
     "subagents": {
-      "maxProperties": 128,
-      "patternProperties": {
-        "^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$": {
-          "$ref": "#/$defs/SubagentSelection"
-        }
-      },
-      "title": "Subagents",
-      "type": "object"
+      "$ref": "#/$defs/Subagents"
     },
     "summarize": {
       "default": false,

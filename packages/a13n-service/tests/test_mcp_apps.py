@@ -611,7 +611,7 @@ def app_binding(identifier):
         reference=AppReference(
             app_id=identifier,
             connection_id=connection_id,
-            agent_revision_id="agr_test",
+            agent_definition_id="agr_test",
             source_run_id="run_child",
             tool_call_id="call_show",
             tool_name="show",

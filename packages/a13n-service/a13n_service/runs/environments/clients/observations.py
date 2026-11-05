@@ -12,6 +12,7 @@ from a13n_harness.environment.sources import EnvironmentScope
 class Observation:
     successes: set[str] = field(default_factory=set)
     disconnected: dict[str, str] = field(default_factory=dict)
+    sessions_lost: dict[str, str] = field(default_factory=dict)
 
 
 current: ContextVar[Observation | None] = ContextVar("client_tool_observation", default=None)
@@ -21,6 +22,8 @@ current: ContextVar[Observation | None] = ContextVar("client_tool_observation", 
 class Incarnation:
     device_id: str
     epoch: str | None = None
+    scope_id: str | None = None
+    session_failed: bool = False
     retry_activation: bool = False
     session: EIPSession | None = field(default=None, repr=False)
 

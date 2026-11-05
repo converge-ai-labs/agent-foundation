@@ -1,7 +1,7 @@
 """register client environments and connection credentials
 
 Revision ID: e3db87ad7bd9
-Revises: 91abbf7b03c8
+Revises: 03610e577d35
 
 The atomic DDL takes the environment table lock, scans it for the partial
 index and new checks, and backfills only existing HTTP targets. The constant
@@ -17,7 +17,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision = "e3db87ad7bd9"
-down_revision = "91abbf7b03c8"
+down_revision = "03610e577d35"
 branch_labels = None
 depends_on = None
 

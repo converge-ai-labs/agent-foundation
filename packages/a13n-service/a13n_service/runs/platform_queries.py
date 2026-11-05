@@ -270,7 +270,7 @@ async def get_run_configuration(
         "original": content.value_reference(
             ctx,
             content.ConfigurationSource(run_id=run_id, section="original", part=part),
-            agent_reads.config_section(value.revision.config, part),
+            agent_reads.config_section((value.revision.config if value.revision else value.config), part),
         ),
         "effective": content.value_reference(
             ctx,

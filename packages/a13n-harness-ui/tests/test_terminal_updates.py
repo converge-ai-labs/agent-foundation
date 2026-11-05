@@ -42,6 +42,7 @@ def test_update_command_requires_the_running_uv_tool_installation(
 def test_installer_runs_only_after_async_terminal_cleanup(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], exit_code: int
 ) -> None:
+    monkeypatch.setattr(updater.sys, "platform", "linux")
     events = []
     command = updater.UpdateCommand("uv", tmp_path)
 
@@ -73,7 +74,7 @@ def test_installer_runs_only_after_async_terminal_cleanup(
 
 
 @pytest.mark.parametrize("arguments", [["update"], ["--no-update-check", "update"]])
-@pytest.mark.parametrize("platform", ["darwin", "linux", "win32"])
+@pytest.mark.parametrize("platform", ["darwin", "linux"])
 @pytest.mark.parametrize("exit_code", [0, 7, -15])
 def test_explicit_update_runs_without_terminal_setup_or_cached_detection(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, arguments: list[str], platform: str, exit_code: int
