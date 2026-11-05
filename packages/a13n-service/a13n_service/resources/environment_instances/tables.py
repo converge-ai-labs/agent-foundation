@@ -9,6 +9,7 @@ from datetime import datetime
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -59,6 +60,10 @@ class EnvironmentRow(Stamped, Base):
         CheckConstraint(f"(status IN {OPERATIONS}) = (operation_id IS NOT NULL)", name="operation"),
         CheckConstraint("(operation_id IS NULL) = (operation_started_at IS NULL)", name="operation_started"),
         CheckConstraint("operation_deadline IS NULL OR operation_id IS NOT NULL", name="operation_deadline"),
+        CheckConstraint(
+            "operation_id IS NOT NULL OR (next_operation_at IS NULL AND NOT operation_unsettled)",
+            name="operation_progress",
+        ),
         CheckConstraint(
             "(lease_owner IS NULL) = (lease_token_hash IS NULL) AND (lease_owner IS NULL) = (lease_expires_at IS NULL)"
             " AND (lease_owner IS NULL OR operation_id IS NOT NULL)",
@@ -148,11 +153,24 @@ class EnvironmentRow(Stamped, Base):
     # The recipe a managed instance was built from, the provider's portable state for reaching it and the version of
     # the credential that last did; NULL for an external target, which its endpoint and device ID reach.
     handle: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
+    # Instance-private Envd credential, encrypted for this row/column before allocation.
+    # Reused by retries and fixed-target attachment; erased only after confirmed deletion.
+    envd_bootstrap: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
+    # Secret-free final provider receipt, including retained storage identities, after the live handle is cleared.
+    retirement_state: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
+    # Explicit instance policy; NULL preserves the existing live template idle policy.
+    reclamation: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
+    preparation_deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    preparation_failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    debug_hold_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     generation: Mapped[int] = mapped_column(BigInteger, server_default=text("0"))
     operation_id: Mapped[str | None]
     operation_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # The bound of the provider call currently claimed.
     operation_deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Pending operations yield their claim and pace both Worker and Control continuation.
+    next_operation_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    operation_unsettled: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
     lease_owner: Mapped[str | None]
     lease_token_hash: Mapped[str | None]
     lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

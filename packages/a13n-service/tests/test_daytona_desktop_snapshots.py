@@ -101,7 +101,12 @@ async def test_submit_poll_pin_and_reuse_before_allocation(setup, monkeypatch):
     progress = await setup.service.client.get(f"/api/v1/environments/{op.environment_id}/creation")
     assert progress.json()["stage"] == "building"
     cloud.snapshot.state = "active"
+    async with transaction(runtime.storage) as session:
+        row = await session.get(EnvironmentRow, op.environment_id)
+        assert row.next_operation_at is not None
+        row.next_operation_at = await now(session) - timedelta(seconds=1)
     op = await lifecycle.claim(runtime, op.environment_id, owner="test")
+    assert op is not None
     result = await lifecycle.perform(runtime, op)
     assert result.pending and result.fault is None
     opener.assert_not_called()

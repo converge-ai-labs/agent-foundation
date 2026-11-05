@@ -4,7 +4,7 @@ import {
   ChoiceField,
   DisclosureSection,
   FormField,
-  Input,
+  SearchPicker,
   Label,
   ModalFrame,
   Tabs,
@@ -37,7 +37,13 @@ import {
 import { CopyButton, CopyableId, Identifier } from "../../shared/identity";
 import { Page, Section, useTabParam } from "../../shared/page";
 import { RefreshButton } from "../../shared/time-range";
-import { FormSection, TextAreaField } from "../../shared/forms";
+import {
+  formatLocalDateTime,
+  parseLocalDateTime,
+} from "../../shared/local-date-time";
+import { AgentAvatar } from "../agents/avatar";
+import { SessionScopePicker, SessionTraceCount } from "./session-scope";
+import { DateTimeField, FormSection, TextAreaField } from "../../shared/forms";
 import { useTraceBackend } from "../traces/backend";
 import styles from "./findings.module.css";
 import { useMountedModal } from "../../shared/dialogs";
@@ -445,10 +451,15 @@ function AnalysisHistory({
                 render: (item) => (
                   <button
                     type="button"
+                    title={item.agent_id ? agentName(item.agent_id) : undefined}
                     className={styles.rowTitle}
                     onClick={() => selectAnalysis(item.id)}
                   >
-                    {agentName(item.agent_id)}
+                    {item.selection.session_ids?.length
+                      ? t("Sessions ({{count}})", {
+                          count: item.selection.session_ids.length,
+                        })
+                      : agentName(item.agent_id)}
                   </button>
                 ),
               },
@@ -486,6 +497,7 @@ function AnalysisHistory({
       </CollectionFooter>
       {selected && (
         <ModalFrame
+          size="xl"
           open={detailsOpen}
           onOpenChange={setDetailsOpen}
           onOpenChangeComplete={(open) => {
@@ -528,7 +540,11 @@ function AnalysisHistory({
                 <div>
                   <dt>{t("Scope")}</dt>
                   <dd>
-                    {selected.agent_id ? (
+                    {selected.selection.session_ids?.length ? (
+                      t("Sessions ({{count}})", {
+                        count: selected.selection.session_ids.length,
+                      })
+                    ) : selected.agent_id ? (
                       <Link
                         className={styles.link}
                         to={`${basePath}/agents/${selected.agent_id}`}
@@ -553,6 +569,29 @@ function AnalysisHistory({
                   <dd>{selected.cited_trace_count}</dd>
                 </div>
               </dl>
+              {selected.selection.started_after &&
+                selected.selection.started_before && (
+                  <p className={styles.hint}>
+                    {t("Time range")} ·{" "}
+                    <Timestamp value={selected.selection.started_after} /> –{" "}
+                    <Timestamp value={selected.selection.started_before} />
+                  </p>
+                )}
+              {!!selected.selection.session_ids?.length && (
+                <ul className={styles.scopeSessions}>
+                  {selected.selection.session_ids.map((id) => (
+                    <SessionTraceCount
+                      key={id}
+                      id={id}
+                      count={
+                        selected.selected_traces.filter(
+                          (trace) => trace.session_id === id,
+                        ).length
+                      }
+                    />
+                  ))}
+                </ul>
+              )}
               {selected.selection.instructions && (
                 <TextAreaField
                   readOnly
@@ -618,9 +657,12 @@ function AnalyzeDialog({
     cache = useQueryClient(),
     { workspace } = useWorkspace(),
     backend = useTraceBackend();
+  const agents = useFindingAgents();
+  const [scope, setScope] = useState("workspace"),
+    [agent, setAgent] = useState(""),
+    [sessions, setSessions] = useState(new Map<string, string>());
   const [days, setDays] = useState("1"),
     [instructions, setInstructions] = useState(""),
-    [limit, setLimit] = useState("10"),
     [presets, setPresets] = useState<Schema["AnalysisCreate"]["presets"]>([
       "execution",
       "recovery",
@@ -628,6 +670,19 @@ function AnalyzeDialog({
     ]);
   const [requestKey] = useState(() => crypto.randomUUID());
   const [windowEnd] = useState(() => new Date().toISOString());
+  const [start, setStart] = useState(() =>
+      formatLocalDateTime(new Date(Date.parse(windowEnd) - 86400000)),
+    ),
+    [end, setEnd] = useState(() => formatLocalDateTime(new Date(windowEnd)));
+  const custom = days === "custom";
+  const startDate = parseLocalDateTime(start),
+    endDate = parseLocalDateTime(end);
+  const invalidWindow =
+    custom &&
+    (!startDate ||
+      !endDate ||
+      endDate <= startDate ||
+      endDate.getTime() - startDate.getTime() > 31 * 86400000);
   const mutation = useMutation({
     mutationFn: async () => {
       await client
@@ -639,13 +694,27 @@ function AnalyzeDialog({
         .POST("/api/v1/finding-analyses", {
           body: {
             trace_id: traceId,
-            started_after: traceId
+            ...(scope === "agent" ? { agent_id: agent } : {}),
+            session_ids:
+              scope === "sessions" ? Array.from(sessions.keys()) : undefined,
+            started_after:
+              traceId || days === "all"
+                ? undefined
+                : custom
+                  ? startDate?.toISOString()
+                  : new Date(
+                      Date.parse(windowEnd) - Number(days) * 86400000,
+                    ).toISOString(),
+            started_before: traceId
               ? undefined
-              : new Date(
-                  Date.parse(windowEnd) - Number(days) * 86400000,
-                ).toISOString(),
-            started_before: traceId ? undefined : windowEnd,
-            max_traces: traceId ? 1 : Number(limit),
+              : custom
+                ? endDate?.toISOString()
+                : windowEnd,
+            max_traces: traceId
+              ? 1
+              : scope === "sessions"
+                ? Math.max(10, sessions.size)
+                : 10,
             presets,
             instructions,
           },
@@ -664,13 +733,14 @@ function AnalyzeDialog({
   });
   const disabled =
     mutation.isPending ||
+    invalidWindow ||
+    (scope === "sessions" && !sessions.size) ||
+    (scope === "agent" && !agent) ||
     !presets?.length ||
-    !Number.isInteger(Number(limit)) ||
-    Number(limit) < 1 ||
-    Number(limit) > 20 ||
     !backend.data?.type;
   return (
     <ModalFrame
+      size="xl"
       {...modalProps}
       title={t("Analyze traces")}
       closeLabel={t("Close")}
@@ -712,27 +782,107 @@ function AnalyzeDialog({
           </div>
         ) : (
           <FormSection title={t("Scope")}>
-            <ChoiceField
-              label={t("Time range")}
-              value={days}
-              options={[
-                { value: "1", label: t("Last 24 hours") },
-                { value: "7", label: t("Last 7 days") },
-                { value: "30", label: t("Last 30 days") },
-              ]}
-              onValueChange={setDays}
-              disabled={mutation.isPending}
-            />
-            <FormField label={t("Trace limit")} description={t("1–20 traces")}>
-              <Input
-                type="number"
-                min={1}
-                max={20}
-                value={limit}
+            <div className={styles.scopeRows}>
+              <ChoiceField
+                label={t("Analyze")}
+                value={scope}
+                options={[
+                  { value: "workspace", label: t("Workspace") },
+                  { value: "agent", label: t("Agent") },
+                  { value: "sessions", label: t("Sessions") },
+                ]}
+                onValueChange={(value) => {
+                  setScope(value);
+                  setDays(value === "sessions" ? "all" : "1");
+                }}
                 disabled={mutation.isPending}
-                onChange={(event) => setLimit(event.target.value)}
               />
-            </FormField>
+              {scope === "agent" && (
+                <>
+                  <ErrorNotice
+                    error={agents.error}
+                    retry={() => void agents.refetch()}
+                  />
+                  <FormField label={t("Agent")}>
+                    <SearchPicker
+                      label={t("Agent")}
+                      placeholder={t("Select agent")}
+                      emptyMessage={t("No matching agents")}
+                      value={agent || undefined}
+                      onValueChange={setAgent}
+                      disabled={mutation.isPending}
+                      groups={[
+                        {
+                          label: t("Agents"),
+                          options: (agents.data ?? [])
+                            .filter((item) => item.preset_kind !== "finding")
+                            .map((item) => ({
+                              value: item.id,
+                              label: item.name,
+                              icon: (
+                                <AgentAvatar
+                                  name={item.name}
+                                  id={item.id}
+                                  url={item.image_url}
+                                  className="size-6 shrink-0"
+                                />
+                              ),
+                            })),
+                        },
+                      ]}
+                    />
+                  </FormField>
+                </>
+              )}
+              {scope === "sessions" && (
+                <SessionScopePicker
+                  selected={sessions}
+                  onChange={setSessions}
+                  disabled={mutation.isPending}
+                />
+              )}
+              <ChoiceField
+                label={t("Time range")}
+                value={days}
+                options={[
+                  ...(scope === "sessions"
+                    ? [
+                        {
+                          value: "all",
+                          label: t("All available session traces"),
+                        },
+                      ]
+                    : []),
+                  { value: "1", label: t("Last 24 hours") },
+                  { value: "7", label: t("Last 7 days") },
+                  { value: "30", label: t("Last 30 days") },
+                  { value: "custom", label: t("Custom range") },
+                ]}
+                onValueChange={setDays}
+                disabled={mutation.isPending}
+              />
+              {custom && (
+                <>
+                  <DateTimeField
+                    label={t("Start time")}
+                    value={start}
+                    onValueChange={setStart}
+                    disabled={mutation.isPending}
+                  />
+                  <DateTimeField
+                    label={t("End time")}
+                    value={end}
+                    onValueChange={setEnd}
+                    disabled={mutation.isPending}
+                  />
+                  {invalidWindow && (
+                    <p role="alert">
+                      {t("Choose a time range of up to 31 days.")}
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
           </FormSection>
         )}
         <fieldset className={styles.rules} disabled={mutation.isPending}>

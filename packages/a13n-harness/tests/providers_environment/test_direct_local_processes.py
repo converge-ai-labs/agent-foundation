@@ -88,6 +88,28 @@ def _request(script: str, **kwargs: object) -> CommandRequest:
     )
 
 
+@pytest.mark.parametrize(
+    "options, field",
+    [
+        ({"network": "deny"}, "network"),
+        ({"limits": CommandLimits(memory_bytes=1024)}, "limits.memory_bytes"),
+        ({"limits": CommandLimits(cpu_time_seconds=1)}, "limits.cpu_time_seconds"),
+        ({"limits": CommandLimits(process_count=1)}, "limits.process_count"),
+    ],
+)
+async def test_command_guarantee_rejected_before_local_process_starts(tmp_path, options, field):
+    marker = tmp_path / "started"
+    async with _processes(tmp_path) as processes:
+        with pytest.raises(EnvironmentError) as error:
+            await processes.exec(_request("from pathlib import Path; Path('started').touch()", **options))
+    detail = error.value.safe_projection()
+    assert detail["source"] == "system"
+    assert detail["details"]["field"] == field
+    assert detail["details"]["dispatch_stage"] == "pre_dispatch"
+    assert detail["details"]["hint"]
+    assert not marker.exists()
+
+
 async def test_native_argv_unicode_stdin_stderr_and_exit(tmp_path: Path) -> None:
     async with _processes(tmp_path) as processes:
         result = await processes.exec(

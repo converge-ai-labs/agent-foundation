@@ -44,6 +44,13 @@ class EnvironmentError(Exception):
         return operation_error_projection(self.code, details=self.details, retry_hint=self.retry_hint)
 
 
+class EnvironmentInvocationError(EnvironmentError):
+    """The environment could not admit, route or deliver the requested tool call."""
+
+    def safe_projection(self) -> dict[str, JsonValue]:
+        return {**super().safe_projection(), "source": "system"}
+
+
 class EnvironmentAction(StrEnum):
     """Exact authorization values in the locked first-party catalog."""
 

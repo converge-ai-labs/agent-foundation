@@ -39,7 +39,7 @@ from a13n_service.infra.errors import ServiceError, conflict
 from a13n_service.infra.ids import new_object_id
 from a13n_service.providers.environment.definition import EnvironmentManagementDefinition
 from a13n_service.providers.environment.errors import cancelled_management_failure, observed_environment_state
-from a13n_service.providers.environment.management import EnvironmentProvider
+from a13n_service.providers.environment.management import Completed, EnvironmentProvider, ManagementResult, Pending
 from a13n_service.providers.environment.metrics import MetricsLaunch
 from a13n_service.resources.environment_instances.access import require_usable_state as require_usable_state
 from a13n_service.resources.environment_instances.access import unusable as unusable
@@ -51,7 +51,15 @@ from a13n_service.resources.providers.service import (
     resolve_provider,
 )
 from a13n_service.resources.providers.tables import EnvironmentProviderRow
-from a13n_service.runs.environments.adapters import Target, close, credential_version, open_provider, provider_identity
+from a13n_service.runs.environments import bootstrap
+from a13n_service.runs.environments.adapters import (
+    Target,
+    close,
+    credential_version,
+    managed_target,
+    open_provider,
+    provider_identity,
+)
 from a13n_service.runs.environments.monitoring import launch
 from a13n_service.runs.environments.schemas import Certainty, EnvironmentFailure, Handle, MetricsApplication
 from a13n_service.runs.environments.tables import EnvironmentRow, ThreadEnvironmentRow
@@ -162,8 +170,13 @@ async def begin(session: AsyncSession, environment: EnvironmentRow, phase: Phase
     environment.status = phase
     environment.generation += 1
     environment.operation_id = new_object_id("envoper")
-    environment.operation_started_at = await now(session)
-    environment.operation_deadline = None
+    current = await now(session)
+    environment.operation_started_at = current
+    if phase in {"creating", "starting"} and environment.reclamation is not None:
+        environment.preparation_deadline = current + timedelta(seconds=environment.reclamation["preparation_seconds"])
+        environment.preparation_failed_at = None
+    environment.operation_deadline = environment.next_operation_at = None
+    environment.operation_unsettled = False
     environment.lease_owner = environment.lease_token_hash = environment.lease_expires_at = None
     environment.failure = environment.renew_at = environment.expires_at = None
 
@@ -177,7 +190,20 @@ def settled(environment: EnvironmentRow) -> bool:
     """Whether the outstanding operation provably can no longer take effect, so a different one may replace it:
     nobody holds or silently lost its claim, and its last call did not end with an unknown outcome."""
     failure = environment.failure
-    return environment.lease_owner is None and (failure is None or failure["certainty"] != "unknown")
+    return (
+        environment.lease_owner is None
+        and not environment.operation_unsettled
+        and (failure is None or failure["certainty"] != "unknown")
+    )
+
+
+def settled_clause() -> ColumnElement[bool]:
+    """SQL form of `settled` for maintenance candidate selection before its bounded batch."""
+    return (
+        EnvironmentRow.lease_owner.is_(None)
+        & EnvironmentRow.operation_unsettled.is_(False)
+        & or_(EnvironmentRow.failure.is_(None), EnvironmentRow.failure["certainty"].astext != "unknown")
+    )
 
 
 async def lock_reservations(session: AsyncSession, workspace_id: str) -> None:
@@ -222,6 +248,9 @@ async def reserve(
         name=name or template.name,
         generation=0,
         status="reserved",
+        reclamation=None
+        if template.config.reclamation is None
+        else template.config.reclamation.model_dump(mode="json"),
         created_by_id=principal.id,
     )
     session.add(environment)
@@ -267,6 +296,8 @@ class Outcome:
     state: EnvironmentState | None
     fault: Fault | None = None
     pending: bool = False
+    retry_after_seconds: float = 2
+    settled: bool = True
 
 
 # The provider no longer has the instance: nothing can bring it back, and it is never silently recreated.
@@ -297,6 +328,8 @@ def reached_with(handle: Handle, provider: ResolvedProvider) -> tuple[str | None
 
 def record_failure(environment: EnvironmentRow, fault: Fault, at: datetime, *, unresolved: bool) -> None:
     certainty: Certainty = "unknown" if unresolved and fault.certainty == "not_dispatched" else fault.certainty
+    if certainty == "known":
+        environment.operation_unsettled = False
     environment.failure = EnvironmentFailure(
         code=fault.code,
         message=fault.message,
@@ -306,6 +339,34 @@ def record_failure(environment: EnvironmentRow, fault: Fault, at: datetime, *, u
         operation_id=environment.operation_id,
         at=at,
     ).model_dump(mode="json")
+    if environment.reclamation is not None and environment.status in {"creating", "starting"}:
+        if fault.permanent and certainty != "unknown" and environment.preparation_failed_at is None:
+            environment.preparation_failed_at = at
+
+
+def preparation_expired(environment: EnvironmentRow, current: datetime) -> bool:
+    """A preparation deadline refuses publication but never settles an ambiguous native operation."""
+    if (
+        environment.status not in {"creating", "starting"}
+        or environment.preparation_deadline is None
+        or environment.preparation_deadline > current
+    ):
+        return False
+    if settled(environment):
+        if environment.preparation_failed_at is None:
+            record_failure(
+                environment,
+                Fault(
+                    "environment_preparation_timeout",
+                    "The environment did not become ready before its preparation deadline",
+                    "known",
+                    permanent=True,
+                ),
+                current,
+                unresolved=False,
+            )
+        return True
+    return False
 
 
 async def _refusal(
@@ -378,6 +439,8 @@ async def _refusal(
             binding = outbound.freeze(runtime, environment) if getattr(recipe, "execution", None) == "envd_ws" else None
         except ServiceError as error:
             return fault_of(error, dispatched=False)
+        if provider.type == "kubernetes":
+            bootstrap.freeze(runtime.keys, environment)
         environment.handle = Handle(
             recipe=recipe.model_dump(mode="json"),
             outbound=binding,
@@ -414,11 +477,17 @@ async def claim_locked(
     if environment is None or phase is None or environment.operation_id is None:
         return None
     current = await now(session)
+    if environment.next_operation_at is not None and environment.next_operation_at > current:
+        return None
     if environment.lease_expires_at is not None and environment.lease_expires_at > current:
+        return None
+    if preparation_expired(environment, current):
+        return None
+    if environment.preparation_failed_at is not None and phase in {"creating", "starting"} and settled(environment):
         return None
     assert environment.provider_id is not None, "only managed instances have operations"
     failure = environment.failure or {}
-    unresolved = environment.lease_owner is not None or failure.get("certainty") == "unknown"
+    unresolved = not settled(environment)
     if phase == "creating" and failure.get("permanent") and settled(environment) and environment.handle:
         handle = Handle.model_validate(environment.handle)
         if (
@@ -477,12 +546,9 @@ async def claim_locked(
         generation=environment.generation,
         operation_id=environment.operation_id,
         token=token,
-        target=Target(
-            environment.id,
-            provider,
-            handle.recipe,
-            handle.state,
-            outbound.restore(runtime, environment, handle.outbound)
+        target=replace(
+            managed_target(runtime.keys, environment, provider, handle),
+            websocket=outbound.restore(runtime, environment, handle.outbound)
             if handle.outbound and phase in {"creating", "starting"}
             else None,
         ),
@@ -498,7 +564,7 @@ async def claim_locked(
     )
 
 
-async def _call(provider: EnvironmentProvider, operation: Operation) -> EnvironmentState | None:
+async def _call(provider: EnvironmentProvider, operation: Operation) -> ManagementResult:
     target = operation.target
     match operation.phase:
         case "creating":
@@ -524,13 +590,12 @@ async def _call(provider: EnvironmentProvider, operation: Operation) -> Environm
                 state=target.state,
             )
         case "deleting":
-            await provider.destroy(
+            return await provider.destroy(
                 dict(target.recipe),
                 environment_id=target.environment_id,
                 operation_id=operation.operation_id,
                 state=target.state,
             )
-            return None
 
 
 def public_message(error: EnvironmentProviderError) -> str:
@@ -628,7 +693,12 @@ async def perform(runtime: Runtime, operation: Operation) -> Outcome:
                     await runtime.endpoint_policy.validate(endpoint)
             provider = await open_provider(runtime, operation.target)
             dispatched = True
-            return Outcome(await _call(provider, operation))
+            result = await _call(provider, operation)
+            if isinstance(result, Pending):
+                return Outcome(
+                    result.state, pending=True, retry_after_seconds=result.retry_after_seconds, settled=result.settled
+                )
+            return Outcome(result.state if isinstance(result, Completed) else result)
     except Exception as error:
         if (
             operation.phase == "creating"
@@ -682,14 +752,17 @@ async def publish(runtime: Runtime, operation: Operation, outcome: Outcome) -> N
             return
         current = await now(session)
         environment.lease_owner = environment.lease_token_hash = environment.lease_expires_at = None
-        environment.operation_deadline = None
+        environment.operation_deadline = environment.next_operation_at = None
         handle = Handle.model_validate(environment.handle)
         if outcome.pending:
+            environment.next_operation_at = current + timedelta(seconds=outcome.retry_after_seconds)
+            environment.operation_unsettled = not outcome.settled
             if outcome.state is not None:
                 environment.handle = handle.model_copy(
                     update={"state": outcome.state, "credential_version": operation.credential_version}
                 ).model_dump(mode="json")
             environment.failure = None
+            preparation_expired(environment, current)
             return
         if outcome.fault is not None:
             environment.handle = handle.model_copy(update={"state": outcome.state}).model_dump(mode="json")
@@ -701,10 +774,16 @@ async def publish(runtime: Runtime, operation: Operation, outcome: Outcome) -> N
             )
             fault = replace(outcome.fault, certainty="not_dispatched") if preparing else outcome.fault
             record_failure(environment, fault, current, unresolved=operation.unresolved and not preparing)
+            preparation_expired(environment, current)
             if fault is LOST:
                 from a13n_service.runs.environments.desktop.identity import invalidate
 
                 await invalidate(session, handle.state)
+            return
+        environment.operation_unsettled = False
+        environment.failure = None
+        if preparation_expired(environment, current):
+            environment.handle = handle.model_copy(update={"state": outcome.state}).model_dump(mode="json")
             return
         reached = _REACHES[operation.phase]
         environment.status = reached
@@ -715,8 +794,9 @@ async def publish(runtime: Runtime, operation: Operation, outcome: Outcome) -> N
             environment.metrics_application = applied.model_copy(update={"applied_at": current}).model_dump(mode="json")
             environment.metrics_launch = None
         if reached == "deleted":
+            environment.retirement_state = None if outcome.state is None else outcome.state.model_dump(mode="json")
             environment.handle = None
-            environment.metrics_launch = None
+            environment.metrics_launch = environment.envd_bootstrap = None
         else:
             update = {"state": outcome.state, "credential_version": operation.credential_version}
             environment.handle = handle.model_copy(update=update).model_dump(mode="json")

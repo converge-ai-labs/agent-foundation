@@ -19,7 +19,8 @@ from a13n_service.runs.environments import access as environment_access
 from a13n_service.runs.environments.desktop import access, identity
 from a13n_service.runs.environments.desktop.schemas import Control, Renew, Takeover, Viewer, viewer_url
 from a13n_service.runs.environments.desktop.tables import DesktopBlockedRow, DesktopControlRow
-from a13n_service.runs.environments.tables import EnvironmentRow, ThreadEnvironmentRow
+from a13n_service.runs.environments.mounts import interactive_mounts
+from a13n_service.runs.environments.tables import EnvironmentRow
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.tables import ThreadRow
 from a13n_service.runs.threads import get_thread, require_open
@@ -94,12 +95,8 @@ async def takeover(
         await workspace_scope(session, actor, workspace_id, "run")
         thread = await get_thread(session, workspace_id, body.thread_id, lock=True)
         require_open(thread)
-        binding = await session.scalar(
-            select(ThreadEnvironmentRow).where(
-                ThreadEnvironmentRow.thread_id == thread.id, ThreadEnvironmentRow.environment_id == environment_id
-            )
-        )
-        if binding is None:
+        bindings = await interactive_mounts(session, thread)
+        if not any(mount.environment_id == environment_id for mount in bindings):
             raise conflict("thread", thread.id, "environment_binding_missing")
         environment, row, _ = await find(session, runtime, actor, workspace_id, environment_id)
         require_match(if_match, row.id, row.version)
@@ -153,13 +150,9 @@ async def controller_allowed(
     thread = await session.get(ThreadRow, row.controller_thread_id)
     if thread is None or thread.archived_at is not None:
         return False
-    binding = await session.scalar(
-        select(ThreadEnvironmentRow).where(
-            ThreadEnvironmentRow.thread_id == thread.id, ThreadEnvironmentRow.environment_id == environment.id
-        )
-    )
+    bindings = await interactive_mounts(session, thread)
     if (
-        binding is None
+        not any(mount.environment_id == environment.id for mount in bindings)
         or identity.environment_key(environment) != row.target_key
         or environment.provider_identity != row.provider_identity
     ):

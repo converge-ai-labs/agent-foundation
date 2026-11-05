@@ -54,6 +54,41 @@ async def env(service) -> SimpleNamespace:  # type: ignore[no-untyped-def]
     return await with_fake_providers(service)
 
 
+@pytest.mark.parametrize("certainty", [None, "not_dispatched", "known", "unknown"])
+@pytest.mark.parametrize("claimed,unsettled", [(False, False), (False, True), (True, False), (True, True)])
+async def test_settled_candidate_query_matches_locked_rule(env, certainty, claimed, unsettled):
+    from a13n_service.infra.db import now
+
+    instance = await reserve(env, env.template["id"])
+    async with transaction(env.runtime.storage) as session:
+        row = await session.get_one(EnvironmentRow, instance["id"])
+        current = await now(session)
+        row.operation_unsettled = unsettled
+        if claimed:
+            row.lease_owner = "worker"
+            row.lease_token_hash = "test"
+            row.lease_expires_at = current + timedelta(seconds=30)
+        row.failure = (
+            None
+            if certainty is None
+            else {
+                "code": "test_failure",
+                "message": "Test failure",
+                "certainty": certainty,
+                "permanent": False,
+                "operation_id": row.operation_id,
+                "at": current.isoformat(),
+            }
+        )
+        await session.flush()
+        expected = not claimed and not unsettled and certainty != "unknown"
+        assert lifecycle.settled(row) is expected
+        assert await session.scalar(select(lifecycle.settled_clause()).where(EnvironmentRow.id == row.id)) is expected
+        assert (
+            await session.scalar(select(~lifecycle.settled_clause()).where(EnvironmentRow.id == row.id)) is not expected
+        )
+
+
 async def test_templates_validate_their_provider_and_recipe(env) -> None:  # type: ignore[no-untyped-def]
     client, templates = env.client, f"{env.api}/environment-templates"
     invalid = await client.post(
@@ -1628,3 +1663,362 @@ async def test_agent_default_reuses_a_managed_instance(env, scripted_model, runs
     assert mount["name"] == "workspace" and mount["environment_id"] == selected["id"]
     environments = (await env.client.get(f"{env.api}/environments")).json()["items"]
     assert [item["id"] for item in environments] == [selected["id"]]
+
+
+@pytest.mark.parametrize("settled", [False, True])
+async def test_pending_management_paces_continuation_and_controls_replacement(env, monkeypatch, settled):
+    from a13n_service.providers.environment.management import Completed, Pending
+
+    from .environments_support import FakeProvider
+
+    create = FakeProvider.create
+    calls = []
+
+    async def prepare(self, recipe, **kwargs):
+        calls.append(kwargs)
+        state = await create(self, recipe, **kwargs)
+        return Pending(state, retry_after_seconds=60, settled=settled)
+
+    monkeypatch.setattr(FakeProvider, "create", prepare)
+    reserved = await reserve(env, env.template["id"])
+    environment_id = reserved["id"]
+    await dispatch_pending(env.runtime, environment_id, owner="first")
+    current = await environment(env, environment_id)
+    assert current["status"] == "creating" and current["failure"] is None
+    async with transaction(env.runtime.storage) as session:
+        row = await session.get(EnvironmentRow, environment_id)
+        assert row.handle["state"]["state"] == {"instance": environment_id}
+        assert row.lease_owner is None and row.operation_unsettled is not settled
+        assert row.next_operation_at is not None
+    assert await claim(env.runtime, environment_id, owner="worker") is None
+    await maintain_environments(env.runtime, owner="control")
+    assert len(calls) == 1
+
+    code, body = await act(env, "DELETE", environment_id)
+    if settled:
+        assert (code, body["status"]) == (202, "deleting")
+        assert body["operation_id"] != current["operation_id"]
+    else:
+        assert (code, reason(body)) == (409, "operation_unresolved")
+        await backdate(env, environment_id, next_operation_at=timedelta(seconds=1))
+        resumed = await claim(env.runtime, environment_id, owner="next")
+        assert resumed is not None and resumed.operation_id == current["operation_id"]
+        assert resumed.target.state.state == {"instance": environment_id}
+
+        async def finish(self, recipe, **kwargs):
+            return Completed(kwargs["state"])
+
+        monkeypatch.setattr(FakeProvider, "create", finish)
+        await publish(env.runtime, resumed, await perform(env.runtime, resumed))
+        assert (await environment(env, environment_id))["status"] == "ready"
+        code, body = await act(env, "DELETE", environment_id)
+        assert (code, body["status"]) == (202, "deleting")
+
+    await dispatch_pending(env.runtime, environment_id, owner="cleanup")
+    assert (await environment(env, environment_id))["status"] == "deleted"
+    assert BACKEND.instances == {}
+
+
+async def test_pending_delete_preserves_identity_and_late_progress_is_fenced(env, monkeypatch):
+    from a13n_service.providers.environment.management import Completed, Pending
+
+    from .environments_support import FakeProvider
+
+    reserved = await reserve(env, env.template["id"])
+    environment_id = reserved["id"]
+    await dispatch_pending(env.runtime, environment_id, owner="create")
+    code, body = await act(env, "DELETE", environment_id)
+    assert code == 202
+    operation = await claim(env.runtime, environment_id, owner="delete")
+
+    async def deleting(self, recipe, **kwargs):
+        return Pending(kwargs["state"], retry_after_seconds=60, settled=True)
+
+    monkeypatch.setattr(FakeProvider, "destroy", deleting)
+    progress = await perform(env.runtime, operation)
+    await publish(env.runtime, operation, progress)
+    assert (await environment(env, environment_id))["status"] == "deleting"
+    assert await claim(env.runtime, environment_id, owner="early") is None
+    await backdate(env, environment_id, next_operation_at=timedelta(seconds=1))
+    successor = await claim(env.runtime, environment_id, owner="next")
+    assert successor.operation_id == body["operation_id"]
+    assert successor.target.state == operation.target.state
+
+    async def deleted(self, recipe, **kwargs):
+        BACKEND.instances.pop(environment_id)
+        return Completed()
+
+    monkeypatch.setattr(FakeProvider, "destroy", deleted)
+    await publish(env.runtime, successor, await perform(env.runtime, successor))
+    await publish(env.runtime, operation, progress)
+    assert (await environment(env, environment_id))["status"] == "deleted"
+    async with transaction(env.runtime.storage) as session:
+        row = await session.get(EnvironmentRow, environment_id)
+        assert row.next_operation_at is None and not row.operation_unsettled
+
+
+async def test_pending_allocation_uncertainty_survives_a_local_refusal(env, monkeypatch):
+    from a13n_service.providers.environment.management import Pending
+
+    from .environments_support import FakeProvider
+
+    async def pending(self, recipe, **kwargs):
+        return Pending(None, retry_after_seconds=60)
+
+    monkeypatch.setattr(FakeProvider, "create", pending)
+    reserved = await reserve(env, env.template["id"])
+    environment_id = reserved["id"]
+    await dispatch_pending(env.runtime, environment_id, owner="first")
+    await backdate(env, environment_id, next_operation_at=timedelta(seconds=1))
+    operation = await claim(env.runtime, environment_id, owner="next")
+    assert operation.unresolved
+    await publish(env.runtime, operation, Outcome(None, Fault("denied", "Denied", "not_dispatched", True)))
+    result = await environment(env, environment_id)
+    assert result["failure"]["certainty"] == "unknown"
+    assert not result["failure"]["permanent"]
+    code, body = await act(env, "DELETE", environment_id)
+    assert (code, reason(body)) == (409, "operation_unresolved")
+
+
+async def test_known_terminal_failure_settles_an_earlier_pending_allocation(env, monkeypatch):
+    from a13n_service.providers.environment.management import Pending
+
+    from .environments_support import FakeProvider
+
+    create = FakeProvider.create
+
+    async def pending(self, recipe, **kwargs):
+        return Pending(await create(self, recipe, **kwargs), retry_after_seconds=60)
+
+    monkeypatch.setattr(FakeProvider, "create", pending)
+    reserved = await reserve(env, env.template["id"])
+    identity = reserved["id"]
+    await dispatch_pending(env.runtime, identity, owner="first")
+    await backdate(env, identity, next_operation_at=timedelta(seconds=1))
+    operation = await claim(env.runtime, identity, owner="reconcile")
+    await publish(
+        env.runtime, operation, Outcome(operation.target.state, Fault("failed", "Allocation failed", "known", True))
+    )
+    code, result = await act(env, "DELETE", identity)
+    assert (code, result["status"]) == (202, "deleting")
+    await dispatch_pending(env.runtime, identity, owner="cleanup")
+    assert BACKEND.instances == {}
+
+
+async def reclamation_template(env, **policy):
+    path = f"{env.api}/environment-templates/{env.template['id']}"
+    current = await env.client.get(path)
+    response = await env.client.patch(
+        path,
+        json={"config": {"recipe": {}, "reclamation": policy}},
+        headers={"if-match": current.headers["etag"]},
+    )
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+async def debug_hold(env, environment_id, seconds):
+    path = f"{env.api}/environments/{environment_id}"
+    current = await env.client.get(path)
+    return await env.client.put(
+        f"{path}/debug-hold", json={"seconds": seconds}, headers={"if-match": current.headers["etag"]}
+    )
+
+
+async def test_reclamation_opt_in_preserves_live_timers_for_existing_instances(env):
+    path = f"{env.api}/environment-templates/{env.template['id']}"
+    current = await env.client.get(path)
+    configured = await env.client.patch(
+        path,
+        json={"config": {"stop_after_seconds": 60, "delete_after_seconds": 180}},
+        headers={"if-match": current.headers["etag"]},
+    )
+    assert configured.status_code == 200, configured.text
+    legacy = await reserve(env, env.template["id"])
+    await dispatch_pending(env.runtime, legacy["id"], owner="create")
+    # The HTTP API replaces config; opting in must retain its supplied legacy timers.
+    opted_in = await env.client.patch(
+        path,
+        json={"config": {**configured.json()["config"], "reclamation": {"idle_delete_seconds": None}}},
+        headers={"if-match": configured.headers["etag"]},
+    )
+    assert opted_in.status_code == 200, opted_in.text
+    assert opted_in.json()["config"]["stop_after_seconds"] == 60
+    assert opted_in.json()["config"]["delete_after_seconds"] == 180
+    fresh = await reserve(env, env.template["id"])
+    await dispatch_pending(env.runtime, fresh["id"], owner="create")
+    assert legacy["reclamation"] is None
+    assert fresh["reclamation"]["idle_delete_seconds"] is None
+    for target in (legacy, fresh):
+        await backdate(env, target["id"], last_used_at=timedelta(seconds=120))
+    await maintain_environments(env.runtime, owner="stop")
+    assert (await environment(env, legacy["id"]))["status"] == "stopped"
+    assert (await environment(env, fresh["id"]))["status"] == "ready"
+    # Later template changes do not replace the new instance's captured policy.
+    changed = await env.client.patch(
+        path,
+        json={"config": {**opted_in.json()["config"], "reclamation": {"idle_delete_seconds": 60}}},
+        headers={"if-match": opted_in.headers["etag"]},
+    )
+    assert changed.status_code == 200, changed.text
+    for target in (legacy, fresh):
+        await backdate(env, target["id"], last_used_at=timedelta(seconds=240))
+    await maintain_environments(env.runtime, owner="delete")
+    assert (await environment(env, legacy["id"]))["status"] == "deleted"
+    assert (await environment(env, fresh["id"]))["status"] == "ready"
+
+
+async def test_instance_reclamation_is_frozen_and_debug_hold_only_delays_automatic_cleanup(env):
+    await reclamation_template(env, idle_delete_seconds=60)
+    target = await reserve(env, env.template["id"])
+    environment_id = target["id"]
+    assert target["reclamation"]["idle_delete_seconds"] == 60
+    assert target["preparation_deadline"] is not None
+    await dispatch_pending(env.runtime, environment_id, owner="create")
+    await reclamation_template(env, idle_delete_seconds=None)
+    held = await debug_hold(env, environment_id, 3600)
+    assert held.status_code == 200
+    await backdate(env, environment_id, last_used_at=timedelta(hours=2))
+    await maintain_environments(env.runtime, owner="held")
+    current = await environment(env, environment_id)
+    assert current["status"] == "ready"
+    # Read-only inspection does not renew the hold or last-use timestamp.
+    assert (await environment(env, environment_id)) == current
+    await backdate(env, environment_id, debug_hold_until=timedelta(seconds=1))
+    await maintain_environments(env.runtime, owner="expired")
+    assert (await environment(env, environment_id))["status"] == "deleted"
+
+    second = await reserve(env, env.template["id"])
+    await dispatch_pending(env.runtime, second["id"], owner="create")
+    assert (await debug_hold(env, second["id"], 86401)).status_code == 400
+    assert (await debug_hold(env, second["id"], 3600)).status_code == 200
+    code, deleted = await act(env, "DELETE", second["id"])
+    assert code == 202 and deleted["status"] == "deleting"
+    await dispatch_pending(env.runtime, second["id"], owner="delete")
+    assert (await environment(env, second["id"]))["status"] == "deleted"
+
+
+@pytest.mark.parametrize("result", ["pending", "completed", "unknown"])
+async def test_preparation_deadline_preserves_state_and_reconciles_unknown_before_cleanup(env, result):
+    await reclamation_template(env, preparation_seconds=30, failed_retention_seconds=60)
+    target = await reserve(env, env.template["id"])
+    environment_id = target["id"]
+    operation = await claim(env.runtime, environment_id, owner="creator")
+    completed = await perform(env.runtime, operation)
+    await backdate(env, environment_id, preparation_deadline=timedelta(seconds=1))
+    outcome = {
+        "pending": Outcome(completed.state, pending=True, settled=True),
+        "completed": completed,
+        "unknown": Outcome(completed.state, Fault("network_failure", "Timed out", "unknown")),
+    }[result]
+    await publish(env.runtime, operation, outcome)
+    current = await environment(env, environment_id)
+    assert current["status"] == "creating"
+    if result == "unknown":
+        assert current["failure"]["certainty"] == "unknown"
+        code, refused = await act(env, "DELETE", environment_id)
+        assert code == 409 and reason(refused) == "operation_unresolved"
+        recovered = await claim(env.runtime, environment_id, owner="reconcile")
+        assert recovered.operation_id == operation.operation_id
+        await publish(env.runtime, recovered, await perform(env.runtime, recovered))
+        current = await environment(env, environment_id)
+    assert current["failure"]["code"] == "environment_preparation_timeout"
+    assert current["failure"]["permanent"]
+    assert current["preparation_failed_at"] is not None
+    assert await claim(env.runtime, environment_id, owner="no-new-dispatch") is None
+    async with transaction(env.runtime.storage) as session:
+        row = await session.get(EnvironmentRow, environment_id)
+        assert row.handle["state"] == completed.state.model_dump(mode="json")
+    await maintain_environments(env.runtime, owner="retained")
+    assert (await environment(env, environment_id))["status"] == "creating"
+    await backdate(env, environment_id, preparation_failed_at=timedelta(minutes=2))
+    assert (await debug_hold(env, environment_id, 60)).status_code == 200
+    await maintain_environments(env.runtime, owner="held-failure")
+    assert (await environment(env, environment_id))["status"] == "creating"
+    assert (await debug_hold(env, environment_id, None)).status_code == 200
+    await maintain_environments(env.runtime, owner="cleanup")
+    assert (await environment(env, environment_id))["status"] == "deleted"
+    assert environment_id not in BACKEND.instances
+    await publish(env.runtime, operation, completed)
+    assert (await environment(env, environment_id))["status"] == "deleted"
+
+
+async def test_deadline_before_first_dispatch_never_allocates(env):
+    await reclamation_template(env, preparation_seconds=30, failed_retention_seconds=0)
+    target = await reserve(env, env.template["id"])
+    await backdate(env, target["id"], preparation_deadline=timedelta(seconds=1))
+    assert await claim(env.runtime, target["id"], owner="expired") is None
+    await maintain_environments(env.runtime, owner="cleanup")
+    assert (await environment(env, target["id"]))["status"] == "deleted"
+    assert not BACKEND.instances
+
+
+async def test_instance_idle_delete_excludes_active_run_and_retained_tool(env):
+    from a13n_service.infra.db import now
+    from a13n_service.runs.schemas import Outcome as RunOutcome
+    from a13n_service.runs.seal import seal_attempt
+    from a13n_service.runs.tables import ToolExecutionRow
+
+    await reclamation_template(env, idle_delete_seconds=60)
+    submitted = await start(env)
+    run = submitted["run"]
+    environment_id = run["environment_mounts"][0]["environment_id"]
+    # The accepted Run protects even an old reservation.
+    await backdate(env, environment_id, last_used_at=timedelta(hours=2))
+    await maintain_environments(env.runtime, owner="active")
+    assert (await environment(env, environment_id))["status"] == "reserved"
+    [lease] = await claim_run(env.runtime, worker_id="retained-worker", worker_build="test", limit=1)
+    await seal_attempt(env.runtime, lease, RunOutcome.cancelled())
+    # A retained invocation can outlive its terminal Run and still owns these mounts.
+    async with transaction(env.runtime.storage) as session:
+        current = await now(session)
+        session.add(
+            ToolExecutionRow(
+                id="exec-retained",
+                organization_id=lease.organization_id,
+                workspace_id=lease.workspace_id,
+                thread_id=lease.thread_id,
+                run_id=lease.run_id,
+                attempt_id=lease.attempt_id,
+                worker_id=lease.worker_id,
+                lease_token_hash="test",
+                lease_expires_at=current + timedelta(minutes=1),
+                status="running",
+                created_at=current,
+                record={},
+                environment_mounts=run["environment_mounts"],
+            )
+        )
+    await backdate(env, environment_id, last_used_at=timedelta(hours=2))
+    await maintain_environments(env.runtime, owner="retained-tool")
+    assert (await environment(env, environment_id))["status"] == "reserved"
+    async with transaction(env.runtime.storage) as session:
+        tool = await session.get(ToolExecutionRow, "exec-retained")
+        tool.status = "succeeded"
+        tool.completed_at = await now(session)
+        tool.expires_at = tool.completed_at + timedelta(hours=1)
+    await maintain_environments(env.runtime, owner="released")
+    assert (await environment(env, environment_id))["status"] == "deleted"
+
+
+async def test_retained_failure_does_not_starve_the_maintenance_batch(env):
+    await reclamation_template(env, preparation_seconds=30, failed_retention_seconds=3600)
+    failed = await reserve(env, env.template["id"])
+    await backdate(env, failed["id"], preparation_deadline=timedelta(seconds=1))
+    assert await claim(env.runtime, failed["id"], owner="expired") is None
+    assert (await debug_hold(env, failed["id"], 3600)).status_code == 200
+    other = await reserve(env, env.template["id"])
+    limited = replace(
+        env.runtime,
+        settings=env.runtime.settings.model_copy(
+            update={
+                "environments": env.runtime.settings.environments.model_copy(update={"batch": 1}),
+            }
+        ),
+    )
+    await maintain_environments(limited, owner="create-next")
+    assert (await environment(env, other["id"]))["status"] == "ready"
+    assert (await act(env, "DELETE", other["id"]))[0] == 202
+    await maintain_environments(limited, owner="delete-next")
+    assert (await environment(env, other["id"]))["status"] == "deleted"
+    assert (await environment(env, failed["id"]))["status"] == "creating"

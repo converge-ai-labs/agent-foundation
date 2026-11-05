@@ -1,5 +1,5 @@
 .overview {
-  margin: 0 0 3rem;
+  margin: 0;
 }
 
 .scroll {
@@ -86,12 +86,12 @@
 
 @media (max-width: 767px) {
   .canvas {
-    min-width: 800px;
+    min-width: 1040px;
   }
 
   .hint {
     display: block;
-    margin-top: 10px;
+    margin-bottom: 10px;
     font-size: 12px;
     color: var(--color-fd-muted-foreground);
   }

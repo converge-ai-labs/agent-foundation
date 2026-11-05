@@ -11,6 +11,9 @@ if [ "${A13N_ENVD_TRANSPORT:-}" = "http" ]; then
 import os, secrets, tempfile
 from pathlib import Path
 path = Path(os.environ.get("A13N_ENVD_HTTP_CREDENTIAL_FILE", "/var/lib/a13n-envd/http-token"))
+# Kubernetes supplies an immutable, read-only Secret mount; reuse it untouched.
+if path.is_file():
+    raise SystemExit(0)
 path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
 fd, temporary = tempfile.mkstemp(prefix=".http-token-", dir=path.parent)
 try:

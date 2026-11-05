@@ -7,6 +7,7 @@ import {
 } from "a13n-ui";
 import { Fragment, useId, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { KubernetesConfiguration } from "./kubernetes-configuration";
 import { SPRITES_DESKTOP_NOTICE } from "./creation-progress";
 import styles from "./environments.module.css";
 import { EnvironmentVariables } from "../../shared/forms/environment-variables";
@@ -46,7 +47,14 @@ export function ProviderConfiguration({
   /** Provider-specific guidance, read as the group's description. */
   note?: string;
   variant?:
-    "default" | "docker" | "e2b" | "daytona" | "modal" | "vercel" | "sprites";
+    | "default"
+    | "docker"
+    | "e2b"
+    | "daytona"
+    | "modal"
+    | "vercel"
+    | "sprites"
+    | "kubernetes";
   /** Template settings that close the group, such as its lifecycle. */
   children?: ReactNode;
 }) {
@@ -64,6 +72,18 @@ export function ProviderConfiguration({
   const [e2bCustom, setE2bCustom] = useState(false);
   const e2bCustomDraft = useRef<string | undefined>(undefined);
   const customDraft = useRef<Record<string, unknown> | undefined>(undefined);
+  if (variant === "kubernetes")
+    return (
+      <KubernetesConfiguration
+        schema={schema}
+        text={text}
+        onChange={onChange}
+        readOnly={readOnly}
+        error={error}
+      >
+        {children}
+      </KubernetesConfiguration>
+    );
   let value: Record<string, unknown> | undefined;
   try {
     value = jsonObject(text);

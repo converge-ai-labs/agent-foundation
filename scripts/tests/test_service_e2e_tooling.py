@@ -28,6 +28,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 @pytest.fixture
 def environment_journeys(pytestconfig):
+    pytestconfig.addinivalue_line("markers", "kubernetes: requires an explicit development cluster")
     pytestconfig.addinivalue_line("markers", "hosted(type): requires a hosted sandbox vendor account")
     from e2e.service import test_environments
 
@@ -129,14 +130,31 @@ def collect_scenarios(*arguments: str) -> set[str]:
     return {line for line in result.stdout.splitlines() if "::" in line}
 
 
-def test_the_e2e_suite_collects_every_module_and_requires_opt_in_for_hosted_journeys():
+def test_the_e2e_suite_collects_every_module_and_requires_opt_in_for_external_journeys():
     environments = "e2e/service/test_environments.py"
     lifecycle = f"{environments}::test_a_run_uses_its_environment_across_its_lifecycle"
     default = collect_scenarios()
-    assert {node.split("::")[0] for node in default} == {
+    kubernetes = collect_scenarios("-m", "kubernetes")
+    assert kubernetes and not default.intersection(kubernetes)
+    assert kubernetes == collect_scenarios("-k", "kubernetes")
+    assert {node.split("::")[0] for node in default | kubernetes} == {
         path.relative_to(ROOT).as_posix() for path in (ROOT / "e2e/service").glob("test_*.py")
     }
     assert f"{lifecycle}[docker]" in default
+    assert f"{lifecycle}[kubernetes]" not in default
+    assert f"{lifecycle}[kubernetes]" in kubernetes
+    assert len(kubernetes) == 9
+    deployment = yaml.safe_load((ROOT / ".github/workflows/ci-deploy.yml").read_text())
+    [journey_step] = [
+        step for step in deployment["jobs"]["kind"]["steps"] if step.get("run", "").startswith("make service-e2e ")
+    ]
+    [arguments] = [
+        part.removeprefix("SERVICE_E2E_ARGS=")
+        for part in shlex.split(journey_step["run"])
+        if part.startswith("SERVICE_E2E_ARGS=")
+    ]
+    assert "--require-all" in shlex.split(arguments)
+    assert collect_scenarios(*shlex.split(arguments)) == kubernetes
     workflow = yaml.safe_load((ROOT / ".github/workflows/ci-a13n-service-e2e.yml").read_text())
     shards = workflow["jobs"]["scenarios"]["strategy"]["matrix"]["include"]
     selected: set[str] = set()
@@ -157,10 +175,48 @@ def test_the_e2e_suite_collects_every_module_and_requires_opt_in_for_hosted_jour
     assert collect_scenarios("-k", "environment") == {f"{lifecycle}[local]", f"{lifecycle}[docker]"}
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Deployment CI uses Bash")
+@pytest.mark.parametrize("report", ["passed", "short", "skipped", "failed", "error", "missing"])
+def test_kubernetes_report_gate_rejects_incomplete_or_unsuccessful_journeys(tmp_path, report):
+    workflow = yaml.safe_load((ROOT / ".github/workflows/ci-deploy.yml").read_text())
+    [step] = [
+        step
+        for step in workflow["jobs"]["kind"]["steps"]
+        if step.get("name") == "Require all nine Kubernetes journeys without skips"
+    ]
+    if report != "missing":
+        results = tmp_path / "test-results"
+        results.mkdir()
+        count = 8 if report == "short" else 9
+        marker = {"skipped": "<skipped/>", "failed": "<failure/>", "error": "<error/>"}.get(report, "")
+        cases = "<testcase/>" * (count - 1) + f"<testcase>{marker}</testcase>"
+        (results / "kubernetes-e2e.xml").write_text(f"<testsuite>{cases}</testsuite>")
+    # Match Actions' explicit Bash invocation; an unspecified shell omits pipefail.
+    command = (
+        ["bash", "--noprofile", "--norc", "-e", "-o", "pipefail"] if step.get("shell") == "bash" else ["bash", "-e"]
+    )
+    result = subprocess.run(
+        [*command, "-c", step["run"]],
+        cwd=tmp_path,
+        env={**os.environ, "GITHUB_STEP_SUMMARY": str(tmp_path / "summary.md")},
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert (result.returncode == 0) == (report == "passed"), result.stdout + result.stderr
+
+
 @pytest.mark.parametrize("worker_slots", [1, 4])
-def test_the_e2e_service_configuration_is_valid(tmp_path, monkeypatch, worker_slots):
+@pytest.mark.parametrize("kubernetes", [False, True])
+def test_the_e2e_service_configuration_is_valid(tmp_path, monkeypatch, worker_slots, kubernetes):
     for name in [name for name in os.environ if name.startswith("A13N_")]:
         monkeypatch.delenv(name)
+    monkeypatch.delenv("E2E_KUBERNETES_PROFILE", raising=False)
+    profile = {"namespaces": ["sandboxes"], "ownership_id": "e2e", "sandbox_service_account": "sandbox"}
+    if kubernetes:
+        path = tmp_path / "kubernetes.json"
+        path.write_text(json.dumps(profile))
+        monkeypatch.setenv("E2E_KUBERNETES_PROFILE", str(path))
     stores = Stores(
         postgres_url="postgresql+psycopg://e2e:fixture@127.0.0.1:5432/postgres",
         template="e2e_template",
@@ -173,6 +229,9 @@ def test_the_e2e_service_configuration_is_valid(tmp_path, monkeypatch, worker_sl
     journey = load_settings(
         write_config(tmp_path / "journey.toml", stores, "e2e_journey", tmp_path / "objects", worker_slots=worker_slots)
     )
+    assert bool(journey.environments.kubernetes_clusters) == kubernetes
+    if kubernetes:
+        assert journey.environments.kubernetes_clusters["e2e"].ownership_id == "e2e"
     assert journey.worker.slots == worker_slots
     assert journey.worker.lease_seconds == LEASE_SECONDS and journey.server.tls_certificate == stores.certificate
 

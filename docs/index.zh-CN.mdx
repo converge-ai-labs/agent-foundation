@@ -1,13 +1,15 @@
 ---
-title: Agent Foundation
+title: Agent Foundation (a13n)
 description: 用 Python 构建 agent，与 agent 交互式协作，或为团队部署 agent。
 ---
 
-<Intro title="Agent Foundation" action={{ text: "选择使用方式", href: "/overview/choose-your-path/" }}>
+<Intro title="Agent Foundation (a13n)" action={{ text: "选择使用方式", href: "/overview/choose-your-path/" }}>
 
-通过 Service 在自己的基础设施上构建和运行 agent。在 Console 中配置和测试 agent，再从应用通过 SDK 或 HTTP API 调用它。要在自己的 Python 进程中运行 agent，请使用 Harness；需要在终端或浏览器中交互式工作时，请使用 Harness UI。
+在自己的基础设施上构建和运行 agent。在 Console 中配置、测试 agent，再从应用通过 SDK 或 HTTP API 调用同一个 agent。
 
 </Intro>
+
+<RuntimeMap alt="Console 和使用 SDK 或 HTTP API 的应用连接到 Service。control 角色将工作写入 PostgreSQL，worker 领取 run 后通过 Harness 执行，并将检查点保存到对象存储。租约过期后，后续尝试可以从已保存的检查点继续执行。Harness UI 和 Python 应用也可以直接嵌入 Harness。" />
 
 <Section title="从任务开始">
 <Rows>
@@ -39,7 +41,9 @@ description: 用 Python 构建 agent，与 agent 交互式协作，或为团队�
 </Products>
 </Section>
 
-<ArchitectureOverview alt="Service 与 Harness 的架构概览：通过 SDK、HTTP API、Console 和 Harness UI 使用，并连接执行环境、记忆、模型、Web 数据和 MCP 连接。" />
+<Section id="providers-and-integrations" title="提供方与集成">
+<ProviderMap alt="在自己的云上部署 a13n，自选模型、执行环境、网页搜索与抓取服务，以及要连接的应用。" />
+</Section>
 
 <Section title="基础组件">
 <Rows>

@@ -189,6 +189,7 @@ async def test_resource_resolution_failures_are_safe_and_never_dispatch(known: b
         assert returns[0].content == {
             "ok": False,
             "error": {
+                "source": "system",
                 "code": "environment_request_invalid",
                 "message": "Environment operation input is invalid.",
                 "retry_hint": "request_change",
@@ -196,7 +197,13 @@ async def test_resource_resolution_failures_are_safe_and_never_dispatch(known: b
             },
         }
     else:
-        assert "Managed tool resources could not be resolved" in str(returns[0].content)
+        assert returns[0].outcome == "failed"
+        assert json.loads(returns[0].content)["error"] == {
+            "source": "system",
+            "code": "resource_resolution_failed",
+            "message": "Managed tool resources could not be resolved.",
+            "details": {},
+        }
     assert "private" not in str(returns[0].content)
 
 

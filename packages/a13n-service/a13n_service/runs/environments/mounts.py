@@ -30,8 +30,8 @@ from a13n_service.runs.environments.schemas import (
     MountView,
 )
 from a13n_service.runs.environments.tables import EnvironmentRow, ThreadEnvironmentRow
-from a13n_service.runs.schemas import EnvironmentMount
-from a13n_service.runs.tables import ThreadRow
+from a13n_service.runs.schemas import EnvironmentMount, RunOptions
+from a13n_service.runs.tables import RunRow, ThreadRow
 from a13n_service.runs.threads import get_thread, refresh_version, require_open
 from a13n_service.tenancy.access import workspace_scope
 from a13n_service.tenancy.authorize import Principal, WorkspaceScope
@@ -66,6 +66,26 @@ async def desired_mounts(session: AsyncSession, thread_id: str) -> list[ThreadEn
             )
         ).all()
     )
+
+
+async def interactive_mounts(session: AsyncSession, thread: ThreadRow) -> list[EnvironmentMount]:
+    """Current bindings for desktop control and handback, including a Run-only primary.
+
+    A newer Run supersedes the temporary selection. Desired mounts remain live for
+    all other names and for Threads without an explicit Run selection.
+    """
+    mounts = [
+        EnvironmentMount.model_validate(row, from_attributes=True) for row in await desired_mounts(session, thread.id)
+    ]
+    run_id = thread.current_run_id or thread.last_run_id
+    run = await session.scalar(select(RunRow).where(RunRow.id == run_id)) if run_id else None
+    if run is not None and RunOptions.model_validate(run.options).environment is not None:
+        mounts = [mount for mount in mounts if mount.name != PRIMARY]
+        if run.status != "cancelled" and run.cancel_requested_at is None:
+            mounts.extend(
+                EnvironmentMount.model_validate(mount) for mount in run.environment_mounts if mount["name"] == PRIMARY
+            )
+    return mounts
 
 
 def _mount(
@@ -148,10 +168,26 @@ async def reserve_primary(
     await session.flush()
 
 
-async def freeze_mounts(session: AsyncSession, thread: ThreadRow, *, principal_id: str) -> list[dict]:
+async def freeze_mounts(
+    session: AsyncSession, thread: ThreadRow, *, principal_id: str, primary: EnvironmentMount | None = None
+) -> list[dict]:
     """The mount set a new run uses: the thread's desired mounts, each usable by the run's principal. The caller
     holds the thread lock; environments lock in ID order."""
-    mounts = await desired_mounts(session, thread.id)
+    desired = await desired_mounts(session, thread.id)
+    mounts = [
+        EnvironmentMount(
+            name=mount.name,
+            environment_id=mount.environment_id,
+            working_directory=mount.working_directory,
+            permission_ceiling=EnvironmentPermissionSet.model_validate(mount.permission_ceiling),
+        )
+        for mount in desired
+        if primary is None or mount.name != PRIMARY
+    ]
+    if primary is not None:
+        if any(mount.environment_id == primary.environment_id for mount in mounts):
+            raise conflict("environment", primary.environment_id, "already_mounted")
+        mounts.append(primary)
     environments = await lock_environments(
         session, thread.workspace_id, [mount.environment_id for mount in mounts], principal_id=principal_id
     )
@@ -189,7 +225,7 @@ async def freeze_mounts(session: AsyncSession, thread: ThreadRow, *, principal_i
                 permission_ceiling=permissions,
             ).model_dump(mode="json")
         )
-    return frozen
+    return sorted(frozen, key=lambda mount: mount["name"])
 
 
 def _view(mount: ThreadEnvironmentRow, environment: EnvironmentRow) -> MountView:

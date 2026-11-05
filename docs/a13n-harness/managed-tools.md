@@ -326,3 +326,9 @@ Choose overflow behavior deliberately:
 Spill files require current Environment write access. By default they go in a Run-private directory beneath the default mount's `.a13n/tmp/tool-results/`. Set an absolute `RunBindings.tool_result_directory` to choose another sink. If the sink is unavailable, the preview has no file path. Harness attempts to remove its own Run-private directories during cleanup; save durable artifacts elsewhere.
 
 Output failure or truncation occurs after the tool may have acted. It does not undo the effect. See [Environment tools](environments.md) for file access and [Host embedding](hosting.md) for retained execution and result ownership.
+
+## Tool call errors
+
+A failure owned by the invocation system carries `error.source="system"`, a code and a safe message. Use `details.hint` when the caller can take a specific next step. For example, an environment may reject `execution_timeout_seconds` before starting a command. Omitting that option drops the requested per-command deadline. A command that starts and exits with code 1 reports its normal process status. If delivery of a write result fails, check the original operation before sending another write.
+
+A permission denial carried by native `ToolFailed` now contains JSON. Parse the diagnostic and match `error.code` (for example, `tool_denied`) instead of matching the exception text.

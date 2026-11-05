@@ -193,16 +193,17 @@ The tables are generated from `Settings`. Contributors updating those definition
 
 ## `environments`
 
-| Setting                           | Environment variable                    | Type / choices  | Constraints and default                       |
-| --------------------------------- | --------------------------------------- | --------------- | --------------------------------------------- |
-| `environments.scan_seconds`       | `A13N_ENVIRONMENTS__SCAN_SECONDS`       | number          | maximum=300; exclusiveMinimum=0; default=5    |
-| `environments.batch`              | `A13N_ENVIRONMENTS__BATCH`              | integer         | minimum=1; maximum=1000; default=16           |
-| `environments.operation_seconds`  | `A13N_ENVIRONMENTS__OPERATION_SECONDS`  | number          | maximum=3600; exclusiveMinimum=0; default=120 |
-| `environments.renewal_seconds`    | `A13N_ENVIRONMENTS__RENEWAL_SECONDS`    | number          | maximum=60; exclusiveMinimum=0; default=20    |
-| `environments.wait_seconds`       | `A13N_ENVIRONMENTS__WAIT_SECONDS`       | number          | maximum=3600; exclusiveMinimum=0; default=300 |
-| `environments.managed_count`      | `A13N_ENVIRONMENTS__MANAGED_COUNT`      | integer         | minimum=1; maximum=100000; default=100        |
-| `environments.docker_host`        | `A13N_ENVIRONMENTS__DOCKER_HOST`        | string or null  | minLength=1; maxLength=2048; default=null     |
-| `environments.docker_mount_roots` | `A13N_ENVIRONMENTS__DOCKER_MOUNT_ROOTS` | array of string | maxItems=64; default=[]                       |
+| Setting                            | Environment variable                     | Type / choices  | Constraints and default                       |
+| ---------------------------------- | ---------------------------------------- | --------------- | --------------------------------------------- |
+| `environments.scan_seconds`        | `A13N_ENVIRONMENTS__SCAN_SECONDS`        | number          | maximum=300; exclusiveMinimum=0; default=5    |
+| `environments.batch`               | `A13N_ENVIRONMENTS__BATCH`               | integer         | minimum=1; maximum=1000; default=16           |
+| `environments.operation_seconds`   | `A13N_ENVIRONMENTS__OPERATION_SECONDS`   | number          | maximum=3600; exclusiveMinimum=0; default=120 |
+| `environments.renewal_seconds`     | `A13N_ENVIRONMENTS__RENEWAL_SECONDS`     | number          | maximum=60; exclusiveMinimum=0; default=20    |
+| `environments.wait_seconds`        | `A13N_ENVIRONMENTS__WAIT_SECONDS`        | number          | maximum=3600; exclusiveMinimum=0; default=300 |
+| `environments.managed_count`       | `A13N_ENVIRONMENTS__MANAGED_COUNT`       | integer         | minimum=1; maximum=100000; default=100        |
+| `environments.docker_host`         | `A13N_ENVIRONMENTS__DOCKER_HOST`         | string or null  | minLength=1; maxLength=2048; default=null     |
+| `environments.docker_mount_roots`  | `A13N_ENVIRONMENTS__DOCKER_MOUNT_ROOTS`  | array of string | maxItems=64; default=[]                       |
+| `environments.kubernetes_clusters` | `A13N_ENVIRONMENTS__KUBERNETES_CLUSTERS` | object          | —                                             |
 
 ## `browsers`
 

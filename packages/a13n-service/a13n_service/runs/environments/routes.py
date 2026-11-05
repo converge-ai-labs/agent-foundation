@@ -5,8 +5,9 @@ from typing import Annotated
 from fastapi import APIRouter, Query, Response
 
 from a13n_service.infra.http import IfMatch, PageLimit, etag, tagged
+from a13n_service.providers.environment.kubernetes import LogQuery, Logs
 from a13n_service.providers.metrics import QueryResult
-from a13n_service.runs.environments import desktop_preview, e2b_creation, mounts, service
+from a13n_service.runs.environments import desktop_preview, e2b_creation, kubernetes, mounts, service
 from a13n_service.runs.environments.monitoring.bindings import Selection
 from a13n_service.runs.environments.monitoring.proxy import LocalResult
 from a13n_service.runs.environments.monitoring.query import (
@@ -17,6 +18,7 @@ from a13n_service.runs.environments.monitoring.query import (
 )
 from a13n_service.runs.environments.schemas import (
     ComputerCheck,
+    DebugHold,
     EnvironmentPage,
     EnvironmentUpdate,
     EnvironmentView,
@@ -73,6 +75,35 @@ async def get_environment(
     return tagged(response, result)
 
 
+@router.get(
+    "/environments/{environment_id}/kubernetes/diagnostics",
+    response_model=kubernetes.InstanceDiagnostics,
+    openapi_extra={"x-a13n-mcp": True},
+)
+async def get_kubernetes_environment_diagnostics(
+    runtime: CurrentRuntime,
+    workspace_id: WorkspaceId,
+    environment_id: str,
+    actor: Actor,
+) -> kubernetes.InstanceDiagnostics:
+    return await kubernetes.inspect(runtime, actor, workspace_id, environment_id)
+
+
+@router.get(
+    "/environments/{environment_id}/kubernetes/logs",
+    response_model=Logs,
+    openapi_extra={"x-a13n-mcp": True},
+)
+async def get_kubernetes_environment_logs(
+    runtime: CurrentRuntime,
+    workspace_id: WorkspaceId,
+    environment_id: str,
+    actor: Actor,
+    query: Annotated[LogQuery, Query()],
+) -> Logs:
+    return await kubernetes.logs(runtime, actor, workspace_id, environment_id, query)
+
+
 @router.patch("/environments/{environment_id}", response_model=EnvironmentView, openapi_extra={"x-a13n-mcp": True})
 async def update_environment(
     runtime: CurrentRuntime,
@@ -126,6 +157,33 @@ async def select_metrics_source(
     return tagged(
         response,
         await service.select_metrics_source(
+            runtime,
+            actor,
+            workspace_id,
+            environment_id,
+            body,
+            if_match=if_match,
+        ),
+    )
+
+
+@router.put(
+    "/environments/{environment_id}/debug-hold",
+    response_model=EnvironmentView,
+    openapi_extra={"x-a13n-mcp": True},
+)
+async def set_environment_debug_hold(
+    runtime: CurrentRuntime,
+    response: Response,
+    workspace_id: WorkspaceId,
+    environment_id: str,
+    body: DebugHold,
+    actor: Actor,
+    if_match: IfMatch = None,
+) -> EnvironmentView:
+    return tagged(
+        response,
+        await service.set_debug_hold(
             runtime,
             actor,
             workspace_id,

@@ -1,4 +1,4 @@
-"""Start the fixed, machine-local kind deployment without changing existing credentials."""
+"""Start a machine-local kind deployment without changing existing credentials."""
 
 from __future__ import annotations
 
@@ -15,10 +15,11 @@ from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
-CLUSTER = "a13n-local"
+CLUSTER = os.environ.get("K8S_CLUSTER", "a13n-local")
 CONTEXT = f"kind-{CLUSTER}"
 NAMESPACE = "a13n-service"
-CONSOLE_URL = "http://127.0.0.1:8080"
+PORT = int(os.environ.get("K8S_PORT", "8080"))
+CONSOLE_URL = f"http://127.0.0.1:{PORT}"
 CONTROL = "deployment/a13n-a13n-control"
 DATABASE_HOST = "a13n-a13n-postgres"
 SERVICE_SECRET, POSTGRES_SECRET = "a13n-service-secrets", "a13n-postgres-secrets"
@@ -29,7 +30,8 @@ ALREADY_BOOTSTRAPPED = 3  # `a13n-service bootstrap` exit status when an organiz
 
 def state_directory() -> Path:
     """Where the launcher keeps this machine's credentials and administrator record."""
-    return Path(os.environ.get("K8S_STATE_DIR", "~/.config/a13n-service-kind")).expanduser().resolve()
+    default = "~/.config/a13n-service-kind" + (f"-{CLUSTER}" if CLUSTER != "a13n-local" else "")
+    return Path(os.environ.get("K8S_STATE_DIR", default)).expanduser().resolve()
 
 
 def run(*args: str, capture: bool = False, input_text: str | None = None) -> str:
@@ -176,7 +178,7 @@ def bootstrap(admin: dict[str, str]) -> bool:
     raise RuntimeError(f"Administrator bootstrap failed (exit {result.returncode}); inspect {CONTROL} logs")
 
 
-def start(state: Path) -> None:
+def start(state: Path, *, environments: bool = False) -> None:
     for tool in ("docker", "kind", "kubectl", "helm"):
         if not shutil.which(tool):
             raise RuntimeError(f"Install {tool} before running make k8s-up")
@@ -190,16 +192,19 @@ def start(state: Path) -> None:
             "--name",
             CLUSTER,
             "--config",
-            "deploy/kubernetes/kind-local.yaml",
+            "-",
             "--wait",
             "5m",
+            input_text=(ROOT / "deploy/kubernetes/kind-local.yaml")
+            .read_text()
+            .replace("hostPort: 8080", f"hostPort: {PORT}"),
         )
     nodes = run("kind", "get", "nodes", "--name", CLUSTER, capture=True).splitlines()
     mappings = [
         json.loads(run("docker", "inspect", node, capture=True))[0]["HostConfig"]["PortBindings"] for node in nodes
     ]
-    if not any({"HostIp": "127.0.0.1", "HostPort": "8080"} in m.get("30080/tcp", []) for m in mappings):
-        raise ValueError("Existing kind cluster lacks 127.0.0.1:8080 -> 30080 mapping; no cluster was deleted")
+    if not any({"HostIp": "127.0.0.1", "HostPort": str(PORT)} in m.get("30080/tcp", []) for m in mappings):
+        raise ValueError(f"Existing kind cluster lacks 127.0.0.1:{PORT} -> 30080 mapping; no cluster was deleted")
     if not kubectl("get", "namespace", NAMESPACE, "--ignore-not-found", "-o", "name", capture=True).strip():
         kubectl("create", "namespace", NAMESPACE)
     admin = prepare(state)
@@ -208,6 +213,12 @@ def start(state: Path) -> None:
     print(f"Building {image}...", flush=True)
     run("docker", "build", "--progress=plain", "-f", "deploy/docker/images/a13n-service/Dockerfile", "-t", image, ".")
     run("kind", "load", "docker-image", image, "--name", CLUSTER)
+    overlay: tuple[str, ...] = ()
+    if environments:
+        sandbox = f"a13n-sandbox:{tag}"
+        run("docker", "build", "--progress=plain", "-f", "deploy/docker/images/sandbox/Dockerfile", "-t", sandbox, ".")
+        run("kind", "load", "docker-image", sandbox, "--name", CLUSTER)
+        overlay = ("-f", "deploy/kubernetes/helm/values-environments-smoke.yaml")
     print("Deploying; Helm waits for migration and readiness (up to 20 minutes)...", flush=True)
     try:
         run(
@@ -222,6 +233,9 @@ def start(state: Path) -> None:
             NAMESPACE,
             "-f",
             "deploy/kubernetes/helm/values-local.yaml",
+            *overlay,
+            "--set-string",
+            f"publicUrl={CONSOLE_URL}",
             "--set-string",
             f"image.tag={tag}",
             "--wait",
@@ -232,6 +246,9 @@ def start(state: Path) -> None:
         kubectl("get", "pods,jobs,pvc")
         print("Inspect migration Job and Service logs and namespace events; credentials and PVCs are retained.")
         raise
+    (state / "deployment.json").write_text(
+        json.dumps({"service_image": image, "sandbox_image": f"a13n-sandbox:{tag}" if environments else None})
+    )
     kubectl("get", "pods,pvc")
     print(f"Console: {CONSOLE_URL}", flush=True)
     if admin is None:
@@ -259,7 +276,7 @@ def main() -> None:
     with (state / "operation.lock").open("a") as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            start(state)
+            start(state, environments=os.environ.get("K8S_ENVIRONMENTS") == "1")
         except (OSError, ValueError, RuntimeError) as error:
             parser.exit(1, f"{error}\n")
 

@@ -1430,6 +1430,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/environments/{environment_id}/debug-hold": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /** Set Environment Debug Hold */
+    put: operations["set_environment_debug_hold"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/environments/{environment_id}/desktop-control": {
     parameters: {
       query?: never;
@@ -1526,6 +1543,40 @@ export interface paths {
     put?: never;
     /** Open Desktop Viewer */
     post: operations["open_desktop_viewer"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/environments/{environment_id}/kubernetes/diagnostics": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Kubernetes Environment Diagnostics */
+    get: operations["get_kubernetes_environment_diagnostics"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/environments/{environment_id}/kubernetes/logs": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Kubernetes Environment Logs */
+    get: operations["get_kubernetes_environment_logs"];
+    put?: never;
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -5333,6 +5384,8 @@ export interface components {
       max_traces?: number;
       /** Presets */
       presets?: components["schemas"]["Preset"][];
+      /** Session Ids */
+      session_ids?: string[];
       /** Started After */
       started_after?: string | null;
       /** Started Before */
@@ -6935,6 +6988,14 @@ export interface components {
       name?: string | null;
       query_credentials?: components["schemas"]["Credentials"] | null;
     };
+    /**
+     * DebugHold
+     * @description Delay automatic retirement for at most one day; null clears the hold.
+     */
+    DebugHold: {
+      /** Seconds */
+      seconds: number | null;
+    };
     /** Definition */
     Definition: {
       /** Definition */
@@ -7075,6 +7136,47 @@ export interface components {
       metrics_data_source_id?: string | null;
       /** Name */
       name?: string | null;
+    };
+    /** Diagnostics */
+    Diagnostics: {
+      /** Cluster */
+      cluster: string;
+      /** Commands */
+      commands: string[];
+      /** Connection */
+      connection: string;
+      /**
+       * Envd
+       * @enum {string}
+       */
+      envd: "previously_ready" | "not_verified";
+      /** Errors */
+      errors: string[];
+      /** Events */
+      events: components["schemas"]["Event"][];
+      /** Events Truncated */
+      events_truncated: boolean;
+      /** Namespace */
+      namespace: string;
+      /**
+       * Observed At
+       * Format: date-time
+       */
+      observed_at: string;
+      /** Ownership Id */
+      ownership_id: string;
+      /** Pod Name */
+      pod_name: string;
+      /** Pod Uid */
+      pod_uid: string | null;
+      /** Rendered */
+      rendered: {
+        [key: string]: components["schemas"]["JsonValue"];
+      }[];
+      /** Resources */
+      resources: components["schemas"]["ResourceObservation"][];
+      /** Stage */
+      stage: string;
     };
     /** DiscoverySource */
     DiscoverySource: {
@@ -7513,6 +7615,17 @@ export interface components {
       step: number;
     };
     /**
+     * EnvironmentState
+     * @description Provider-owned portable semantic soft reference for one target.
+     */
+    EnvironmentState: {
+      /** Provider Key */
+      provider_key: string;
+      state: components["schemas"]["JsonValue"];
+      /** State Version */
+      state_version: string;
+    };
+    /**
      * EnvironmentUpdate
      * @description Fields left out stay unchanged. Only an external target has an endpoint and token; a new endpoint comes with
      *     its token, so a stored token never reaches an endpoint it was not entered for.
@@ -7540,6 +7653,8 @@ export interface components {
       created_at: string;
       /** Created By Id */
       created_by_id: string;
+      /** Debug Hold Until */
+      debug_hold_until?: string | null;
       /**
        * Desktop Preview
        * @default not_configured
@@ -7578,8 +7693,14 @@ export interface components {
       organization_id: string;
       /** Owner Principal Id */
       owner_principal_id: string | null;
+      /** Preparation Deadline */
+      preparation_deadline?: string | null;
+      /** Preparation Failed At */
+      preparation_failed_at?: string | null;
       /** Provider Id */
       provider_id: string | null;
+      reclamation?: components["schemas"]["Reclamation"] | null;
+      retirement_state?: components["schemas"]["EnvironmentState"] | null;
       /** Status */
       status: string;
       /** Template Id */
@@ -7629,6 +7750,23 @@ export interface components {
      */
     ErrorEnvelope: {
       error: components["schemas"]["ErrorBody"];
+    };
+    /** Event */
+    Event: {
+      /** Count */
+      count?: number | null;
+      /** First Timestamp */
+      first_timestamp?: string | null;
+      /** Last Timestamp */
+      last_timestamp?: string | null;
+      /** Message */
+      message?: string | null;
+      /** Reason */
+      reason?: string | null;
+      /** Resource Uid */
+      resource_uid: string;
+      /** Type */
+      type?: string | null;
     };
     /** Evidence */
     Evidence: {
@@ -7721,6 +7859,112 @@ export interface components {
       tool_name: string;
       /** Worker Id */
       worker_id: string;
+    };
+    /**
+     * ExistingRunEnvironment
+     * @description Use this exact primary instance for the Run; absence never triggers allocation.
+     */
+    "ExistingRunEnvironment-Input": {
+      /** Environment Id */
+      environment_id: string;
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      mode: "existing";
+      /**
+       * @default {
+       *       "operations": [
+       *         "environment.file.copy_destination",
+       *         "environment.file.copy_source",
+       *         "environment.file.list",
+       *         "environment.file.mkdir",
+       *         "environment.file.move",
+       *         "environment.file.patch_text",
+       *         "environment.file.query",
+       *         "environment.file.read_bytes",
+       *         "environment.file.read_text",
+       *         "environment.file.remove",
+       *         "environment.file.search_text",
+       *         "environment.file.stat",
+       *         "environment.file.write_bytes",
+       *         "environment.file.write_text",
+       *         "environment.output.read",
+       *         "environment.output.release",
+       *         "environment.port.inspect",
+       *         "environment.port.wait",
+       *         "environment.process.close_stdin",
+       *         "environment.process.inspect",
+       *         "environment.process.kill",
+       *         "environment.process.list",
+       *         "environment.process.read_output",
+       *         "environment.process.release",
+       *         "environment.process.signal",
+       *         "environment.process.start",
+       *         "environment.process.wait",
+       *         "environment.process.write_stdin",
+       *         "environment.shell.exec",
+       *         "environment.state.export",
+       *         "environment.state.restore"
+       *       ]
+       *     }
+       */
+      permission_ceiling?: components["schemas"]["EnvironmentPermissionSet-Input"];
+      /** Working Directory */
+      working_directory?: string | null;
+    };
+    /**
+     * ExistingRunEnvironment
+     * @description Use this exact primary instance for the Run; absence never triggers allocation.
+     */
+    "ExistingRunEnvironment-Output": {
+      /** Environment Id */
+      environment_id: string;
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      mode: "existing";
+      /**
+       * @default {
+       *       "operations": [
+       *         "environment.file.copy_destination",
+       *         "environment.file.copy_source",
+       *         "environment.file.list",
+       *         "environment.file.mkdir",
+       *         "environment.file.move",
+       *         "environment.file.patch_text",
+       *         "environment.file.query",
+       *         "environment.file.read_bytes",
+       *         "environment.file.read_text",
+       *         "environment.file.remove",
+       *         "environment.file.search_text",
+       *         "environment.file.stat",
+       *         "environment.file.write_bytes",
+       *         "environment.file.write_text",
+       *         "environment.output.read",
+       *         "environment.output.release",
+       *         "environment.port.inspect",
+       *         "environment.port.wait",
+       *         "environment.process.close_stdin",
+       *         "environment.process.inspect",
+       *         "environment.process.kill",
+       *         "environment.process.list",
+       *         "environment.process.read_output",
+       *         "environment.process.release",
+       *         "environment.process.signal",
+       *         "environment.process.start",
+       *         "environment.process.wait",
+       *         "environment.process.write_stdin",
+       *         "environment.shell.exec",
+       *         "environment.state.export",
+       *         "environment.state.restore"
+       *       ]
+       *     }
+       */
+      permission_ceiling?: components["schemas"]["EnvironmentPermissionSet-Output"];
+      /** Working Directory */
+      working_directory?: string | null;
     };
     /** Export */
     Export: {
@@ -7960,6 +8204,112 @@ export interface components {
       memories?: components["schemas"]["MemoryMount"][];
       options?: components["schemas"]["RunOptions-Input"];
       payload: components["schemas"]["MessagePayload"];
+    };
+    /**
+     * FreshRunEnvironment
+     * @description Reserve a primary instance for this accepted Run without changing Thread mounts.
+     */
+    "FreshRunEnvironment-Input": {
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      mode: "fresh";
+      /**
+       * @default {
+       *       "operations": [
+       *         "environment.file.copy_destination",
+       *         "environment.file.copy_source",
+       *         "environment.file.list",
+       *         "environment.file.mkdir",
+       *         "environment.file.move",
+       *         "environment.file.patch_text",
+       *         "environment.file.query",
+       *         "environment.file.read_bytes",
+       *         "environment.file.read_text",
+       *         "environment.file.remove",
+       *         "environment.file.search_text",
+       *         "environment.file.stat",
+       *         "environment.file.write_bytes",
+       *         "environment.file.write_text",
+       *         "environment.output.read",
+       *         "environment.output.release",
+       *         "environment.port.inspect",
+       *         "environment.port.wait",
+       *         "environment.process.close_stdin",
+       *         "environment.process.inspect",
+       *         "environment.process.kill",
+       *         "environment.process.list",
+       *         "environment.process.read_output",
+       *         "environment.process.release",
+       *         "environment.process.signal",
+       *         "environment.process.start",
+       *         "environment.process.wait",
+       *         "environment.process.write_stdin",
+       *         "environment.shell.exec",
+       *         "environment.state.export",
+       *         "environment.state.restore"
+       *       ]
+       *     }
+       */
+      permission_ceiling?: components["schemas"]["EnvironmentPermissionSet-Input"];
+      /** Template Id */
+      template_id: string;
+      /** Working Directory */
+      working_directory?: string | null;
+    };
+    /**
+     * FreshRunEnvironment
+     * @description Reserve a primary instance for this accepted Run without changing Thread mounts.
+     */
+    "FreshRunEnvironment-Output": {
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      mode: "fresh";
+      /**
+       * @default {
+       *       "operations": [
+       *         "environment.file.copy_destination",
+       *         "environment.file.copy_source",
+       *         "environment.file.list",
+       *         "environment.file.mkdir",
+       *         "environment.file.move",
+       *         "environment.file.patch_text",
+       *         "environment.file.query",
+       *         "environment.file.read_bytes",
+       *         "environment.file.read_text",
+       *         "environment.file.remove",
+       *         "environment.file.search_text",
+       *         "environment.file.stat",
+       *         "environment.file.write_bytes",
+       *         "environment.file.write_text",
+       *         "environment.output.read",
+       *         "environment.output.release",
+       *         "environment.port.inspect",
+       *         "environment.port.wait",
+       *         "environment.process.close_stdin",
+       *         "environment.process.inspect",
+       *         "environment.process.kill",
+       *         "environment.process.list",
+       *         "environment.process.read_output",
+       *         "environment.process.release",
+       *         "environment.process.signal",
+       *         "environment.process.start",
+       *         "environment.process.wait",
+       *         "environment.process.write_stdin",
+       *         "environment.shell.exec",
+       *         "environment.state.export",
+       *         "environment.state.restore"
+       *       ]
+       *     }
+       */
+      permission_ceiling?: components["schemas"]["EnvironmentPermissionSet-Output"];
+      /** Template Id */
+      template_id: string;
+      /** Working Directory */
+      working_directory?: string | null;
     };
     /**
      * FrozenMemoryMount
@@ -8214,6 +8564,11 @@ export interface components {
       /** Id */
       id: string;
       status: components["schemas"]["RunStatus"];
+    };
+    /** InstanceDiagnostics */
+    InstanceDiagnostics: {
+      environment: components["schemas"]["EnvironmentView"];
+      native: components["schemas"]["Diagnostics"];
     };
     /** InstantQuery */
     InstantQuery: {
@@ -8543,6 +8898,22 @@ export interface components {
       items: components["schemas"]["LoginSession"][];
       /** Next Cursor */
       next_cursor: string | null;
+    };
+    /** Logs */
+    Logs: {
+      /** Container */
+      container: string;
+      /**
+       * Limit Bytes
+       * @default 65536
+       */
+      limit_bytes?: number;
+      /** Pod Uid */
+      pod_uid: string;
+      /** Previous */
+      previous: boolean;
+      /** Text */
+      text: string;
     };
     /**
      * ManagedEnvironmentCreate
@@ -10698,6 +11069,27 @@ export interface components {
     };
     /** @enum {string} */
     ReadView: "detailed" | "compact";
+    /**
+     * Reclamation
+     * @description Instance-scoped reclamation settings copied at reservation; no stop/resume semantics.
+     */
+    Reclamation: {
+      /**
+       * Failed Retention Seconds
+       * @default 3600
+       */
+      failed_retention_seconds?: number;
+      /**
+       * Idle Delete Seconds
+       * @default 1800
+       */
+      idle_delete_seconds?: number | null;
+      /**
+       * Preparation Seconds
+       * @default 600
+       */
+      preparation_seconds?: number;
+    };
     /** Registered */
     Registered: {
       client: components["schemas"]["ClientEnvironment"];
@@ -10783,6 +11175,55 @@ export interface components {
       /** Headers */
       headers?: {
         [key: string]: string;
+      };
+    };
+    /** Resource */
+    Resource: {
+      /**
+       * Disposition
+       * @default delete
+       * @enum {string}
+       */
+      disposition?: "delete" | "retain" | "borrowed";
+      /**
+       * Kind
+       * @enum {string}
+       */
+      kind:
+        | "Pod"
+        | "Secret"
+        | "ConfigMap"
+        | "PersistentVolumeClaim"
+        | "NetworkPolicy";
+      /** Name */
+      name: string;
+      /**
+       * Sub Paths
+       * @default []
+       */
+      sub_paths?: string[];
+      /** Uid */
+      uid?: string | null;
+    };
+    /** ResourceObservation */
+    ResourceObservation: {
+      /** Created At */
+      created_at?: string | null;
+      /** Deleting At */
+      deleting_at?: string | null;
+      /** Finalizers */
+      finalizers?: string[];
+      /**
+       * Observation
+       * @enum {string}
+       */
+      observation: "present" | "absent" | "unknown" | "conflict";
+      /** Reason */
+      reason?: string | null;
+      reference: components["schemas"]["Resource"];
+      /** Status */
+      status?: {
+        [key: string]: components["schemas"]["JsonValue"];
       };
     };
     /**
@@ -11026,6 +11467,12 @@ export interface components {
       truncated?: boolean;
       value: components["schemas"]["JsonValue"];
     };
+    "RunEnvironment-Input":
+      | components["schemas"]["FreshRunEnvironment-Input"]
+      | components["schemas"]["ExistingRunEnvironment-Input"];
+    "RunEnvironment-Output":
+      | components["schemas"]["FreshRunEnvironment-Output"]
+      | components["schemas"]["ExistingRunEnvironment-Output"];
     /** RunInputPreview */
     RunInputPreview: {
       /**
@@ -11120,6 +11567,7 @@ export interface components {
     "RunOptions-Input": {
       configuration?: components["schemas"]["RunConfiguration-Input"] | null;
       context?: components["schemas"]["RequestContext"] | null;
+      environment?: components["schemas"]["RunEnvironment-Input"] | null;
       execution?: components["schemas"]["ExecutionOverride"] | null;
       /** Labels */
       labels?: {
@@ -11135,6 +11583,7 @@ export interface components {
     "RunOptions-Output": {
       configuration?: components["schemas"]["RunConfiguration-Output"] | null;
       context?: components["schemas"]["RequestContext"] | null;
+      environment?: components["schemas"]["RunEnvironment-Output"] | null;
       execution?: components["schemas"]["ExecutionOverride"] | null;
       /** Labels */
       labels?: {
@@ -11564,6 +12013,8 @@ export interface components {
     SelectedTrace: {
       /** Run Id */
       run_id: string;
+      /** Session Id */
+      session_id?: string | null;
       /** Trace Id */
       trace_id: string;
     };
@@ -12516,6 +12967,7 @@ export interface components {
       recipe?: {
         [key: string]: components["schemas"]["JsonValue"];
       };
+      reclamation?: components["schemas"]["Reclamation"] | null;
       /**
        * Stop After Seconds
        * @default 1800
@@ -16677,6 +17129,39 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
+  set_environment_debug_hold: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        environment_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["DebugHold"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["EnvironmentView"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
   get_desktop_control: {
     parameters: {
       query?: never;
@@ -16850,6 +17335,64 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["a13n_service__runs__environments__desktop__schemas__Viewer"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_kubernetes_environment_diagnostics: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        environment_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["InstanceDiagnostics"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_kubernetes_environment_logs: {
+    parameters: {
+      query?: {
+        container?: string | null;
+        previous?: boolean;
+        tail_lines?: number;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        environment_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Logs"];
         };
       };
       400: components["responses"]["Error"];

@@ -79,13 +79,16 @@ async def run_local_envd(workspace: Path, *, executable: Path | None = None) -> 
 async def run_docker(*, image: str = DEFAULT_EXAMPLE_DOCKER_IMAGE) -> DockerExampleResult:
     recipe = DOCKER.validate_environment({"image": image})
     async with await DOCKER.open_provider() as provider:
-        state = None
+        state: EnvironmentState | None = None
         first_text = reentered_text = state_version = ""
 
         async def use():
             nonlocal state, first_text, reentered_text, state_version
             try:
-                state = await provider.create(recipe, environment_id="docker-example", operation_id="op-create")
+                result = await provider.create(recipe, environment_id="docker-example", operation_id="op-create")
+                # Docker completes creation inline and returns its execution state.
+                assert isinstance(result, EnvironmentState)
+                state = result
             except BaseException as error:
                 state = observed_environment_state(error, state)
                 raise

@@ -482,9 +482,11 @@ async def test_grouped_client_permission_uses_target_identity(declaration, polic
             for part in message.parts
             if isinstance(part, ToolReturnPart)
         ]
-        assert [(part.tool_call_id, part.outcome, part.content) for part in returns] == [
-            ("model-0", "failed", "Tool invocation is denied by its permission configuration.")
-        ]
+        (denial,) = returns
+        assert (denial.tool_call_id, denial.outcome) == ("model-0", "failed")
+        diagnostic = json.loads(denial.content)
+        assert diagnostic["ok"] is False
+        assert (diagnostic["error"]["source"], diagnostic["error"]["code"]) == ("system", "tool_denied")
 
 
 @pytest.mark.parametrize("external_first", [False, True])

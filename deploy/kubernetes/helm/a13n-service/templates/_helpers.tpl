@@ -75,6 +75,11 @@ volumeMounts:
   - name: monitoring
     mountPath: /var/lib/a13n-monitoring
   {{- end }}
+  {{- if and .kubernetesManagement .Values.kubernetesEnvironments.enabled }}
+  - name: kubernetes-api
+    mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+    readOnly: true
+  {{- end }}
   # Temporary files and, for local objects, the shared objects claim.
   - name: tmp
     mountPath: /tmp

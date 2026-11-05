@@ -14,6 +14,7 @@ from pydantic import AfterValidator, BaseModel, ConfigDict, Field, JsonValue, Se
 from a13n_service.infra.crypto import Envelope
 from a13n_service.infra.ids import ObjectId
 from a13n_service.providers import envd
+from a13n_service.resources.environment_templates.schemas import Reclamation
 from a13n_service.resources.metrics_data_sources.schemas import Labels
 
 # Desired mounts one thread holds at most; a run freezes them, plus a primary sandbox its agent reserves.
@@ -128,6 +129,11 @@ class EnvironmentView(BaseModel):
     metrics_data_source_id: str | None = None
     metrics_labels: Labels = Field(default_factory=dict)
     metrics_application: MetricsApplication | None = None
+    retirement_state: EnvironmentState | None = None
+    reclamation: Reclamation | None = None
+    preparation_deadline: datetime | None = None
+    preparation_failed_at: datetime | None = None
+    debug_hold_until: datetime | None = None
     status: str
     operation_id: str | None
     operation_started_at: datetime | None
@@ -153,6 +159,13 @@ class ManagedEnvironmentCreate(BaseModel):
     metrics_labels: Labels = Field(default_factory=dict)
     # Defaults to the template's name.
     name: EnvironmentName | None = None
+
+
+class DebugHold(BaseModel):
+    """Delay automatic retirement for at most one day; null clears the hold."""
+
+    model_config = ConfigDict(extra="forbid")
+    seconds: int | None = Field(ge=60, le=86400)
 
 
 class ExternalTargetCreate(BaseModel):

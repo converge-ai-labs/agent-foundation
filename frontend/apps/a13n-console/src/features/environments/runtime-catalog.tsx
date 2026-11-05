@@ -11,7 +11,12 @@ import type { ProviderDefinition } from "../providers/add-provider-dialog";
 import { ProviderIcon } from "../../shared/identity";
 import styles from "./environments.module.css";
 
-const ownInfrastructure = new Set(["local", "direct_local", "docker"]);
+const ownInfrastructure = new Set([
+  "local",
+  "direct_local",
+  "docker",
+  "kubernetes",
+]);
 const cloudServices = new Set([
   "e2b",
   "daytona",

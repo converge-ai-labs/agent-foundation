@@ -118,3 +118,34 @@ def test_entrypoint_initializes_then_execs_command_without_stdout_noise(tmp_path
         assert process.returncode == 7
         assert stdout == str(process.pid)
         assert ("initialization failed" in stderr) == bool(init_exit)
+
+
+@pytest.mark.parametrize("existing", [False, True])
+def test_http_bootstrap_creates_or_reuses_protected_credential(tmp_path, monkeypatch, existing):
+    init = tmp_path / "a13n-sandbox-init"
+    init.write_text("#!/bin/sh\nexit 0\n")
+    init.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.setenv("A13N_ENVD_TRANSPORT", "http")
+    credential = tmp_path / "credential" / "token"
+    monkeypatch.setenv("A13N_ENVD_HTTP_CREDENTIAL_FILE", str(credential))
+    if existing:
+        credential.parent.mkdir()
+        credential.write_text("injected-test-credential")
+        credential.chmod(0o400)
+        credential.parent.chmod(0o500)
+    original = None
+    try:
+        for _ in range(2):
+            result = subprocess.run([str(ENTRYPOINT), "true"], capture_output=True, text=True, timeout=10)
+            assert result.returncode == 0, result.stderr
+            assert result.stdout == ""
+            value = credential.read_text()
+            assert value == "injected-test-credential" if existing else len(value) >= 32
+            assert credential.stat().st_mode & 0o777 == (0o400 if existing else 0o600)
+            if original is None:
+                original = value
+            assert value == original
+    finally:
+        if credential.parent.exists():
+            credential.parent.chmod(0o700)

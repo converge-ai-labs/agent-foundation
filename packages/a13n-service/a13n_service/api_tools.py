@@ -12,6 +12,7 @@ from copy import deepcopy
 from typing import Any
 
 import httpx2
+from a13n_harness.tools.diagnostics import INVALID_ARGUMENT, system_error, tool_error_text
 from fastapi.routing import APIRoute
 from fastmcp.exceptions import ToolError
 from fastmcp.server.dependencies import get_http_request
@@ -234,16 +235,32 @@ class ApiTool(Tool):
     async def run(self, arguments: dict[str, Any]) -> ToolResult:
         accepted = self.parameters["properties"].keys()
         if unknown := arguments.keys() - accepted:
-            # Names only, never values; a caller on an outdated spelling sees the replacement.
             raise ToolError(
-                f"Unknown operation arguments: {', '.join(sorted(key[:64] for key in unknown))}. "
-                f"Use the names in the tool schema: {', '.join(sorted(accepted)) or '(none)'}"
+                tool_error_text(
+                    system_error(
+                        INVALID_ARGUMENT,
+                        "Unknown operation arguments.",
+                        field=", ".join(
+                            sorted(key for key in unknown if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_-]{0,63}", key))
+                        ),
+                        hint=f"Use the names in the tool schema: {', '.join(sorted(accepted)) or '(none)'}.",
+                    )
+                )
             )
         for name, mapping in self._route.parameter_map.items():
             if mapping["location"] == "path":
                 converter = self._target.param_convertors[mapping["openapi_name"]]
                 if name not in arguments or not re.fullmatch(converter.regex, str(arguments[name])):
-                    raise ToolError("Invalid path parameter for this HTTP operation")
+                    raise ToolError(
+                        tool_error_text(
+                            system_error(
+                                INVALID_ARGUMENT,
+                                "Invalid path parameter for this HTTP operation.",
+                                field=name,
+                                hint="Supply a path parameter matching the tool schema.",
+                            )
+                        )
+                    )
         transport = {
             key: entity_tag(value) if key in self._entity_tags and isinstance(value, str) else value
             for key, value in arguments.items()
@@ -255,7 +272,9 @@ class ApiTool(Tool):
         scope: Scope = {"type": "http", "path": directed.url.path, "root_path": "", "method": directed.method}
         matched = next((route for route in self._routes if route.matches(scope)[0] == Match.FULL), None)
         if matched is not self._target:
-            raise ToolError("Arguments resolve to a different HTTP operation")
+            raise ToolError(
+                tool_error_text(system_error("route_mismatch", "Arguments resolve to a different HTTP operation."))
+            )
         incoming = get_http_request()
         headers = dict(directed.headers)
         headers.pop("content-length", None)
@@ -274,13 +293,31 @@ class ApiTool(Tool):
             token = tool_response.set(True)
             try:
                 response = await client.send(request)
+            except httpx2.TransportError:
+                raise self._delivery_error(
+                    "tool_transport_failed", "The HTTP operation returned no response."
+                ) from None
             finally:
                 tool_response.reset(token)
+        try:
+            body = response.json() if response.content else None
+        except ValueError:
+            raise self._delivery_error(
+                "tool_result_invalid", "The HTTP operation returned an invalid JSON response."
+            ) from None
         return ToolResult(
             structured_content={
                 "status": response.status_code,
                 "headers": {name: response.headers[name] for name in RESULT_HEADERS if name in response.headers},
-                "body": response.json() if response.content else None,
+                "body": body,
             },
             is_error=not 200 <= response.status_code < 300,
         )
+
+    def _delivery_error(self, code: str, message: str) -> ToolError:
+        hint = (
+            None
+            if self.annotations and self.annotations.read_only_hint
+            else "Inspect the original operation before repeating a write."
+        )
+        return ToolError(tool_error_text(system_error(code, message, hint=hint)))

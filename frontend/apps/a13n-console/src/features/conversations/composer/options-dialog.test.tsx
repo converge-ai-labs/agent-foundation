@@ -45,12 +45,12 @@ const vision = {
   },
 };
 
-function mount(submit: (options: unknown) => void) {
+function mount(submit: (options: unknown) => void, newThread = true) {
   function Editor() {
     const options = useRunOptions();
     return (
       <>
-        <RunOptions options={options} />
+        <RunOptions options={options} newThread={newThread} />
         <button onClick={() => submit(options.build())}>Submit</button>
       </>
     );
@@ -69,7 +69,14 @@ it("distinguishes new allocation from reuse and submits the selected identity", 
     response: new Response(null),
     data: {
       items: path.includes("environment-templates")
-        ? [{ id: "envt_test", name: "Research" }]
+        ? [
+            { id: "envt_test", name: "Research", enabled: true },
+            {
+              id: "envt_disabled",
+              name: "Unavailable sandbox",
+              enabled: false,
+            },
+          ]
         : path.endsWith("/environments")
           ? [
               { id: "env_first", name: "Research", status: "ready" },
@@ -86,6 +93,13 @@ it("distinguishes new allocation from reuse and submits the selected identity", 
   await user.click(screen.getByRole("button", { name: "Run options" }));
   await user.click(screen.getByRole("button", { name: "Conversation setup" }));
   await user.click(screen.getByRole("combobox", { name: "Environment" }));
+  expect(
+    (
+      await screen.findByRole("option", {
+        name: /Unavailable sandbox.*Disabled/,
+      })
+    ).getAttribute("aria-disabled"),
+  ).toBe("true");
   // Without a choice the agent's own template is reserved; there is no "none".
   expect(screen.queryByRole("option", { name: "No environment" })).toBeNull();
   await user.click(
@@ -496,4 +510,71 @@ it("keeps thinking and advanced JSON in sync, validates Apply, and cancels or re
   expect(screen.queryByRole("img", { name: "Settings modified" })).toBeNull();
   await user.click(screen.getByRole("button", { name: "Submit" }));
   expect(submit.mock.lastCall?.[0].options).toBeUndefined();
+});
+
+it("keeps run-scoped environment choices separate from persistent setup and restores drafts", () => {
+  const { result } = renderHook(() => useRunOptions());
+  act(() => {
+    result.current.setEnvironment("instance:env_thread");
+    result.current.setRunEnvironment("template:envt_kubernetes");
+  });
+  expect(result.current.build()).toMatchObject({
+    environment: { environment_id: "env_thread" },
+    options: { environment: { mode: "fresh", template_id: "envt_kubernetes" } },
+  });
+  const saved = result.current.values;
+  act(() => result.current.setRunEnvironment("instance:env_exact"));
+  act(() => result.current.setRunWorkingDirectory("/workspace/project"));
+  expect(result.current.build().options?.environment).toEqual({
+    mode: "existing",
+    environment_id: "env_exact",
+    working_directory: "/workspace/project",
+  });
+  act(() => result.current.setRunEnvironment("instance:env_other"));
+  expect(result.current.runWorkingDirectory).toBe("");
+  act(() => result.current.restore(saved));
+  expect(result.current.build().options?.environment).toEqual({
+    mode: "fresh",
+    template_id: "envt_kubernetes",
+  });
+  act(() => result.current.reset());
+  expect(result.current.build().options).toBeUndefined();
+  expect(result.current.modified).toBe(false);
+});
+
+it("offers fresh allocation on an existing conversation without editing its mounts", async () => {
+  http.GET.mockImplementation(async (path: string) => ({
+    response: new Response(),
+    data: {
+      items: path.includes("environment-templates")
+        ? [{ id: "envt_kubernetes", name: "Kubernetes", enabled: true }]
+        : [],
+      next_cursor: null,
+    },
+  }));
+  const submit = vi.fn();
+  mount(submit, false);
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Run options" }));
+  expect(
+    screen.queryByRole("button", { name: "Conversation setup" }),
+  ).toBeNull();
+  await user.click(screen.getByRole("button", { name: "Run environment" }));
+  await user.click(
+    screen.getByRole("combobox", { name: "Primary environment for this run" }),
+  );
+  await user.click(
+    await screen.findByRole("option", {
+      name: /Kubernetes.*Create from template/,
+    }),
+  );
+  await user.click(screen.getByRole("button", { name: "Apply" }));
+  expect(
+    screen.getByRole("button", { name: "Run environment: Kubernetes" }),
+  ).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "Submit" }));
+  expect(submit.mock.lastCall?.[0].environment).toBeUndefined();
+  expect(submit.mock.lastCall?.[0].options).toEqual({
+    environment: { mode: "fresh", template_id: "envt_kubernetes" },
+  });
 });

@@ -11,11 +11,12 @@ from a13n_harness.environment.session_recovery import EnvdSessionRecovery
 from a13n_harness.providers.environment.daytona.shared import DaytonaConnectionConfiguration
 from a13n_harness.providers.environment.docker.shared import DockerConnectionConfiguration
 from a13n_harness.providers.environment.e2b.configuration import E2BConnectionConfiguration
+from a13n_harness.providers.environment.kubernetes.configuration import KubernetesConnectionConfiguration
 from a13n_harness.providers.environment.modal.shared import ModalConnectionConfiguration, ModalCredential, ModalRuntime
 from a13n_harness.providers.environment.sprites.shared import SpritesConnectionConfiguration
 from a13n_harness.providers.environment.vercel.shared import VercelConnectionConfiguration
 from a13n_logging import exception_details, get_logger
-from pydantic import JsonValue
+from pydantic import JsonValue, SecretStr
 
 from a13n_service.infra.crypto import Envelope, KeyRing, SecretLocation
 from a13n_service.providers import envd
@@ -23,6 +24,9 @@ from a13n_service.providers.environment.management import EnvironmentProvider
 from a13n_service.providers.environment.websocket import WebSocketBootstrap
 from a13n_service.providers.registry import Registry
 from a13n_service.resources.providers.service import ResolvedProvider
+from a13n_service.runs.environments import bootstrap
+from a13n_service.runs.environments.schemas import Handle
+from a13n_service.runs.environments.tables import EnvironmentRow
 from a13n_service.runs.runtime import Runtime
 
 logger = get_logger(__name__)
@@ -52,6 +56,7 @@ class Target:
     recipe: Mapping[str, JsonValue]
     state: EnvironmentState | None
     websocket: WebSocketBootstrap | None = field(default=None, repr=False)
+    bootstrap: SecretStr | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         # Old persisted handles omitted the then-fixed image, even for interrupted creates.
@@ -60,6 +65,11 @@ class Target:
             object.__setattr__(
                 self, "recipe", {**self.recipe, "image": "ghcr.io/converge-ai-labs/a13n-docker-environment:dev"}
             )
+
+
+def managed_target(keys: KeyRing, environment: EnvironmentRow, account: ResolvedProvider, handle: Handle) -> Target:
+    """Detach a managed instance's frozen inputs and private bootstrap after the caller authorizes access."""
+    return Target(environment.id, account, handle.recipe, handle.state, bootstrap=bootstrap.restore(keys, environment))
 
 
 async def open_provider(runtime: Runtime, target: Target) -> EnvironmentProvider:
@@ -75,6 +85,7 @@ async def open_provider(runtime: Runtime, target: Target) -> EnvironmentProvider
         (
             DockerConnectionConfiguration,
             E2BConnectionConfiguration,
+            KubernetesConnectionConfiguration,
             DaytonaConnectionConfiguration,
             ModalConnectionConfiguration,
             VercelConnectionConfiguration,
@@ -82,6 +93,8 @@ async def open_provider(runtime: Runtime, target: Target) -> EnvironmentProvider
         ),
     ):
         connection._endpoint_policy = runtime.endpoint_policy
+    if isinstance(connection, KubernetesConnectionConfiguration):
+        connection._bootstrap = target.bootstrap
     borrowed = _modal_runtime(runtime, account, connection)
     provider = await definition.open_provider(
         configuration=connection,
@@ -120,6 +133,7 @@ async def execution_connector(
         (
             DockerConnectionConfiguration,
             E2BConnectionConfiguration,
+            KubernetesConnectionConfiguration,
             DaytonaConnectionConfiguration,
             ModalConnectionConfiguration,
             VercelConnectionConfiguration,
@@ -127,6 +141,8 @@ async def execution_connector(
         ),
     ):
         connection._endpoint_policy = policy
+    if isinstance(connection, KubernetesConnectionConfiguration):
+        connection._bootstrap = target.bootstrap
     borrowed = _modal_runtime(runtime, account, connection)
     return definition.execution.execution_connector(
         definition.execution_environment(dict(target.recipe)),

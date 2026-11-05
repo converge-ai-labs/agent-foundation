@@ -616,7 +616,15 @@ async def test_client_declaration_permission_uses_native_identity_precedence(dec
             if isinstance(part, ToolReturnPart)
         ]
         assert len(parts) == 1 and parts[0].outcome == "failed"
-        assert parts[0].content == "Tool invocation is denied by its permission configuration."
+        assert json.loads(parts[0].content) == {
+            "ok": False,
+            "error": {
+                "source": "system",
+                "code": "tool_denied",
+                "message": "Tool invocation is denied by its permission configuration.",
+                "details": {},
+            },
+        }
 
 
 # Ask and review share one external-tool check; review is covered by test_review_context.

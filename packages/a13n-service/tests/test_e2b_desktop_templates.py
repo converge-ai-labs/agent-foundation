@@ -72,8 +72,9 @@ class Cloud:
 
 @pytest.fixture
 async def setup(service, monkeypatch):
-    # These tests advance lifecycle operations explicitly; the control sweep must not race their claims or ETags.
+    # These tests drive synthetic provider state explicitly; control sweeps must not dispatch it.
     monkeypatch.setattr(maintenance, "advance", AsyncMock())
+    monkeypatch.setattr(maintenance, "renew", AsyncMock())
     cloud = Cloud()
     monkeypatch.setattr(builds, "_builder", lambda *_: cloud)
     client = service.client
@@ -381,6 +382,8 @@ async def test_preview_revalidates_target_and_closes_execution(setup, monkeypatc
     runtime, client = setup.service.runtime, setup.service.client
     state = EnvironmentState(provider_key="e2b", state_version="1", state={"sandbox_id": "test"})
     await lifecycle.publish(runtime, op, lifecycle.Outcome(state))
+    # A control renewal pass must not send this test's synthetic state to the real provider.
+    await maintenance.renew_environments(runtime)
     async with transaction(runtime.storage) as session:
         stamp = await now(session)
     screenshot = ComputerScreenshot(

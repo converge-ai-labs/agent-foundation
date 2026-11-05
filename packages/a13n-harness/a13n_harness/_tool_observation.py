@@ -65,6 +65,7 @@ def record_tool_operation_failure(
     code: str,
     *,
     reason: object = None,
+    source: Literal["system"] | None = None,
     stage: Literal["preparation", "execution"] = "execution",
 ) -> None:
     """Called only by trusted error projectors, never by inspecting business results."""
@@ -74,6 +75,8 @@ def record_tool_operation_failure(
             return
         values: dict[str, str | bool] = {"tool.failure.stage": stage}
         # Classifications only: do not copy exception text, details, paths or hints.
+        if source is not None:
+            values["tool.failure.source"] = source
         if fullmatch(r"[a-z][a-z0-9_]{0,63}", code):
             values["tool.failure.code"] = code
         if isinstance(reason, str) and fullmatch(r"[a-z][a-z0-9_]{0,63}", reason):

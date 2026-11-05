@@ -149,13 +149,39 @@ async def test_path_arguments_cannot_change_operation_or_parameter_boundaries() 
         for value in ("x/content", "special", "", "../../items/special"):
             with pytest.raises(ToolError):
                 await mapped["item"].run({"item_id": value})
-        with pytest.raises(ToolError):
+        with pytest.raises(ToolError) as refused:
             await mapped["file"].run({"memory_id": "m/files/a", "path": "b.md"})
+        error = json.loads(str(refused.value))["error"]
+        assert (error["source"], error["code"], error["details"]["field"]) == (
+            "system",
+            "invalid_argument",
+            "memory_id",
+        )
+        assert "m/files/a" not in str(refused.value)
         assert calls == []
         result = await mapped["file"].run({"memory_id": "m", "path": "a/b.md"})
         assert result.structured_content["body"] == {"memory_id": "m", "path": "a/b.md"}
         encoded = await mapped["item"].run({"item_id": "x%2Fcontent"})
         assert encoded.structured_content["body"] == {"id": "x%2Fcontent"}
+
+
+async def test_write_with_undeliverable_result_is_not_reissued():
+    app = FastAPI()
+    writes = []
+
+    @app.post("/submit", operation_id="submit", openapi_extra=ADMIT)
+    async def submit() -> dict:
+        writes.append(True)
+        return Response("private invalid body", media_type="application/json")
+
+    mapped = tools(app)
+    with caller(), pytest.raises(ToolError) as refused:
+        await mapped["submit"].run({})
+    assert writes == [True]
+    error = json.loads(str(refused.value))["error"]
+    assert (error["source"], error["code"]) == ("system", "tool_result_invalid")
+    assert "before repeating a write" in error["details"]["hint"]
+    assert "private" not in str(refused.value)
 
 
 def test_error_schema_is_generated_once_per_assembly_and_isolated_per_tool() -> None:

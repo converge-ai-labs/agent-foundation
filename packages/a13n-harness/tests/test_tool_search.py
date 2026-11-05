@@ -791,8 +791,9 @@ async def test_unavailable_proxy_target_tells_agent_to_rediscover_without_execut
         for part in message.parts
         if isinstance(part, ToolReturnPart) and part.outcome == "retried"
     )
-    assert "crm/missing" in retry.content
-    assert "Rediscover available tools" in retry.content
+    error = json.loads(retry.content)["error"]
+    assert (error["source"], error["code"], error["details"]["field"]) == ("system", "tool_unavailable", "tool")
+    assert "Rediscover available tools" in error["details"]["hint"]
 
 
 async def test_empty_groups_leave_direct_tools_unchanged() -> None:

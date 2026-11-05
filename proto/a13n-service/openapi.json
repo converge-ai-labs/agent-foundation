@@ -1725,6 +1725,16 @@
             "title": "Presets",
             "type": "array"
           },
+          "session_ids": {
+            "items": {
+              "maxLength": 41,
+              "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Session Ids",
+            "type": "array"
+          },
           "started_after": {
             "anyOf": [
               {
@@ -6227,6 +6237,30 @@
         "title": "DataSourceUpdate",
         "type": "object"
       },
+      "DebugHold": {
+        "additionalProperties": false,
+        "description": "Delay automatic retirement for at most one day; null clears the hold.",
+        "properties": {
+          "seconds": {
+            "anyOf": [
+              {
+                "maximum": 86400.0,
+                "minimum": 60.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seconds"
+          }
+        },
+        "required": [
+          "seconds"
+        ],
+        "title": "DebugHold",
+        "type": "object"
+      },
       "Definition": {
         "properties": {
           "definition": {
@@ -6612,6 +6646,119 @@
           }
         },
         "title": "DeviceUpdate",
+        "type": "object"
+      },
+      "Diagnostics": {
+        "properties": {
+          "cluster": {
+            "title": "Cluster",
+            "type": "string"
+          },
+          "commands": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Commands",
+            "type": "array"
+          },
+          "connection": {
+            "title": "Connection",
+            "type": "string"
+          },
+          "envd": {
+            "enum": [
+              "previously_ready",
+              "not_verified"
+            ],
+            "title": "Envd",
+            "type": "string"
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Errors",
+            "type": "array"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/Event"
+            },
+            "title": "Events",
+            "type": "array"
+          },
+          "events_truncated": {
+            "title": "Events Truncated",
+            "type": "boolean"
+          },
+          "namespace": {
+            "title": "Namespace",
+            "type": "string"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "ownership_id": {
+            "title": "Ownership Id",
+            "type": "string"
+          },
+          "pod_name": {
+            "title": "Pod Name",
+            "type": "string"
+          },
+          "pod_uid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pod Uid"
+          },
+          "rendered": {
+            "items": {
+              "additionalProperties": {
+                "$ref": "#/components/schemas/JsonValue"
+              },
+              "type": "object"
+            },
+            "title": "Rendered",
+            "type": "array"
+          },
+          "resources": {
+            "items": {
+              "$ref": "#/components/schemas/ResourceObservation"
+            },
+            "title": "Resources",
+            "type": "array"
+          },
+          "stage": {
+            "title": "Stage",
+            "type": "string"
+          }
+        },
+        "required": [
+          "observed_at",
+          "cluster",
+          "namespace",
+          "ownership_id",
+          "pod_name",
+          "pod_uid",
+          "stage",
+          "connection",
+          "envd",
+          "resources",
+          "rendered",
+          "events",
+          "events_truncated",
+          "errors",
+          "commands"
+        ],
+        "title": "Diagnostics",
         "type": "object"
       },
       "DiscoverySource": {
@@ -7735,6 +7882,34 @@
         "title": "EnvironmentQuery",
         "type": "object"
       },
+      "EnvironmentState": {
+        "additionalProperties": false,
+        "description": "Provider-owned portable semantic soft reference for one target.",
+        "properties": {
+          "provider_key": {
+            "pattern": "^[a-z][a-z0-9_]{0,63}$",
+            "title": "Provider Key",
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/JsonValue"
+          },
+          "state_version": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+            "title": "State Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider_key",
+          "state_version",
+          "state"
+        ],
+        "title": "EnvironmentState",
+        "type": "object"
+      },
       "EnvironmentUpdate": {
         "additionalProperties": false,
         "description": "Fields left out stay unchanged. Only an external target has an endpoint and token; a new endpoint comes with\nits token, so a stored token never reaches an endpoint it was not entered for.",
@@ -7811,6 +7986,18 @@
           "created_by_id": {
             "title": "Created By Id",
             "type": "string"
+          },
+          "debug_hold_until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Debug Hold Until"
           },
           "desktop_preview": {
             "default": "not_configured",
@@ -7956,6 +8143,30 @@
             ],
             "title": "Owner Principal Id"
           },
+          "preparation_deadline": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preparation Deadline"
+          },
+          "preparation_failed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preparation Failed At"
+          },
           "provider_id": {
             "anyOf": [
               {
@@ -7966,6 +8177,26 @@
               }
             ],
             "title": "Provider Id"
+          },
+          "reclamation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Reclamation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "retirement_state": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EnvironmentState"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "status": {
             "title": "Status",
@@ -8088,6 +8319,85 @@
           "error"
         ],
         "title": "ErrorEnvelope",
+        "type": "object"
+      },
+      "Event": {
+        "properties": {
+          "count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Count"
+          },
+          "first_timestamp": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Timestamp"
+          },
+          "last_timestamp": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Timestamp"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "resource_uid": {
+            "title": "Resource Uid",
+            "type": "string"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type"
+          }
+        },
+        "required": [
+          "resource_uid"
+        ],
+        "title": "Event",
         "type": "object"
       },
       "Evidence": {
@@ -8356,6 +8666,150 @@
           "expires_at"
         ],
         "title": "ExecutionView",
+        "type": "object"
+      },
+      "ExistingRunEnvironment-Input": {
+        "additionalProperties": false,
+        "description": "Use this exact primary instance for the Run; absence never triggers allocation.",
+        "properties": {
+          "environment_id": {
+            "maxLength": 41,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+            "title": "Environment Id",
+            "type": "string"
+          },
+          "mode": {
+            "const": "existing",
+            "title": "Mode",
+            "type": "string"
+          },
+          "permission_ceiling": {
+            "$ref": "#/components/schemas/EnvironmentPermissionSet-Input",
+            "default": {
+              "operations": [
+                "environment.file.copy_destination",
+                "environment.file.copy_source",
+                "environment.file.list",
+                "environment.file.mkdir",
+                "environment.file.move",
+                "environment.file.patch_text",
+                "environment.file.query",
+                "environment.file.read_bytes",
+                "environment.file.read_text",
+                "environment.file.remove",
+                "environment.file.search_text",
+                "environment.file.stat",
+                "environment.file.write_bytes",
+                "environment.file.write_text",
+                "environment.output.read",
+                "environment.output.release",
+                "environment.port.inspect",
+                "environment.port.wait",
+                "environment.process.close_stdin",
+                "environment.process.inspect",
+                "environment.process.kill",
+                "environment.process.list",
+                "environment.process.read_output",
+                "environment.process.release",
+                "environment.process.signal",
+                "environment.process.start",
+                "environment.process.wait",
+                "environment.process.write_stdin",
+                "environment.shell.exec",
+                "environment.state.export",
+                "environment.state.restore"
+              ]
+            }
+          },
+          "working_directory": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Working Directory"
+          }
+        },
+        "required": [
+          "mode",
+          "environment_id"
+        ],
+        "title": "ExistingRunEnvironment",
+        "type": "object"
+      },
+      "ExistingRunEnvironment-Output": {
+        "additionalProperties": false,
+        "description": "Use this exact primary instance for the Run; absence never triggers allocation.",
+        "properties": {
+          "environment_id": {
+            "maxLength": 41,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+            "title": "Environment Id",
+            "type": "string"
+          },
+          "mode": {
+            "const": "existing",
+            "title": "Mode",
+            "type": "string"
+          },
+          "permission_ceiling": {
+            "$ref": "#/components/schemas/EnvironmentPermissionSet-Output",
+            "default": {
+              "operations": [
+                "environment.file.copy_destination",
+                "environment.file.copy_source",
+                "environment.file.list",
+                "environment.file.mkdir",
+                "environment.file.move",
+                "environment.file.patch_text",
+                "environment.file.query",
+                "environment.file.read_bytes",
+                "environment.file.read_text",
+                "environment.file.remove",
+                "environment.file.search_text",
+                "environment.file.stat",
+                "environment.file.write_bytes",
+                "environment.file.write_text",
+                "environment.output.read",
+                "environment.output.release",
+                "environment.port.inspect",
+                "environment.port.wait",
+                "environment.process.close_stdin",
+                "environment.process.inspect",
+                "environment.process.kill",
+                "environment.process.list",
+                "environment.process.read_output",
+                "environment.process.release",
+                "environment.process.signal",
+                "environment.process.start",
+                "environment.process.wait",
+                "environment.process.write_stdin",
+                "environment.shell.exec",
+                "environment.state.export",
+                "environment.state.restore"
+              ]
+            }
+          },
+          "working_directory": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Working Directory"
+          }
+        },
+        "required": [
+          "mode",
+          "environment_id"
+        ],
+        "title": "ExistingRunEnvironment",
         "type": "object"
       },
       "Export": {
@@ -9033,6 +9487,150 @@
         "title": "Fork",
         "type": "object"
       },
+      "FreshRunEnvironment-Input": {
+        "additionalProperties": false,
+        "description": "Reserve a primary instance for this accepted Run without changing Thread mounts.",
+        "properties": {
+          "mode": {
+            "const": "fresh",
+            "title": "Mode",
+            "type": "string"
+          },
+          "permission_ceiling": {
+            "$ref": "#/components/schemas/EnvironmentPermissionSet-Input",
+            "default": {
+              "operations": [
+                "environment.file.copy_destination",
+                "environment.file.copy_source",
+                "environment.file.list",
+                "environment.file.mkdir",
+                "environment.file.move",
+                "environment.file.patch_text",
+                "environment.file.query",
+                "environment.file.read_bytes",
+                "environment.file.read_text",
+                "environment.file.remove",
+                "environment.file.search_text",
+                "environment.file.stat",
+                "environment.file.write_bytes",
+                "environment.file.write_text",
+                "environment.output.read",
+                "environment.output.release",
+                "environment.port.inspect",
+                "environment.port.wait",
+                "environment.process.close_stdin",
+                "environment.process.inspect",
+                "environment.process.kill",
+                "environment.process.list",
+                "environment.process.read_output",
+                "environment.process.release",
+                "environment.process.signal",
+                "environment.process.start",
+                "environment.process.wait",
+                "environment.process.write_stdin",
+                "environment.shell.exec",
+                "environment.state.export",
+                "environment.state.restore"
+              ]
+            }
+          },
+          "template_id": {
+            "maxLength": 41,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+            "title": "Template Id",
+            "type": "string"
+          },
+          "working_directory": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Working Directory"
+          }
+        },
+        "required": [
+          "mode",
+          "template_id"
+        ],
+        "title": "FreshRunEnvironment",
+        "type": "object"
+      },
+      "FreshRunEnvironment-Output": {
+        "additionalProperties": false,
+        "description": "Reserve a primary instance for this accepted Run without changing Thread mounts.",
+        "properties": {
+          "mode": {
+            "const": "fresh",
+            "title": "Mode",
+            "type": "string"
+          },
+          "permission_ceiling": {
+            "$ref": "#/components/schemas/EnvironmentPermissionSet-Output",
+            "default": {
+              "operations": [
+                "environment.file.copy_destination",
+                "environment.file.copy_source",
+                "environment.file.list",
+                "environment.file.mkdir",
+                "environment.file.move",
+                "environment.file.patch_text",
+                "environment.file.query",
+                "environment.file.read_bytes",
+                "environment.file.read_text",
+                "environment.file.remove",
+                "environment.file.search_text",
+                "environment.file.stat",
+                "environment.file.write_bytes",
+                "environment.file.write_text",
+                "environment.output.read",
+                "environment.output.release",
+                "environment.port.inspect",
+                "environment.port.wait",
+                "environment.process.close_stdin",
+                "environment.process.inspect",
+                "environment.process.kill",
+                "environment.process.list",
+                "environment.process.read_output",
+                "environment.process.release",
+                "environment.process.signal",
+                "environment.process.start",
+                "environment.process.wait",
+                "environment.process.write_stdin",
+                "environment.shell.exec",
+                "environment.state.export",
+                "environment.state.restore"
+              ]
+            }
+          },
+          "template_id": {
+            "maxLength": 41,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+            "title": "Template Id",
+            "type": "string"
+          },
+          "working_directory": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Working Directory"
+          }
+        },
+        "required": [
+          "mode",
+          "template_id"
+        ],
+        "title": "FreshRunEnvironment",
+        "type": "object"
+      },
       "FrozenMemoryMount": {
         "additionalProperties": false,
         "description": "Host-resolved Space identity and roots, never accepted from a mount request.",
@@ -9623,6 +10221,22 @@
           "status"
         ],
         "title": "InitialRun",
+        "type": "object"
+      },
+      "InstanceDiagnostics": {
+        "properties": {
+          "environment": {
+            "$ref": "#/components/schemas/EnvironmentView"
+          },
+          "native": {
+            "$ref": "#/components/schemas/Diagnostics"
+          }
+        },
+        "required": [
+          "environment",
+          "native"
+        ],
+        "title": "InstanceDiagnostics",
         "type": "object"
       },
       "InstantQuery": {
@@ -10468,6 +11082,39 @@
           "next_cursor"
         ],
         "title": "LoginSessionPage",
+        "type": "object"
+      },
+      "Logs": {
+        "properties": {
+          "container": {
+            "title": "Container",
+            "type": "string"
+          },
+          "limit_bytes": {
+            "default": 65536,
+            "title": "Limit Bytes",
+            "type": "integer"
+          },
+          "pod_uid": {
+            "title": "Pod Uid",
+            "type": "string"
+          },
+          "previous": {
+            "title": "Previous",
+            "type": "boolean"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "pod_uid",
+          "container",
+          "previous",
+          "text"
+        ],
+        "title": "Logs",
         "type": "object"
       },
       "ManagedEnvironmentCreate": {
@@ -17289,6 +17936,42 @@
         ],
         "type": "string"
       },
+      "Reclamation": {
+        "additionalProperties": false,
+        "description": "Instance-scoped reclamation settings copied at reservation; no stop/resume semantics.",
+        "properties": {
+          "failed_retention_seconds": {
+            "default": 3600,
+            "maximum": 604800.0,
+            "minimum": 0.0,
+            "title": "Failed Retention Seconds",
+            "type": "integer"
+          },
+          "idle_delete_seconds": {
+            "anyOf": [
+              {
+                "maximum": 31536000.0,
+                "minimum": 60.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": 1800,
+            "title": "Idle Delete Seconds"
+          },
+          "preparation_seconds": {
+            "default": 600,
+            "maximum": 86400.0,
+            "minimum": 30.0,
+            "title": "Preparation Seconds",
+            "type": "integer"
+          }
+        },
+        "title": "Reclamation",
+        "type": "object"
+      },
       "Registered": {
         "properties": {
           "client": {
@@ -17483,6 +18166,134 @@
           }
         },
         "title": "RequestContext",
+        "type": "object"
+      },
+      "Resource": {
+        "additionalProperties": false,
+        "properties": {
+          "disposition": {
+            "default": "delete",
+            "enum": [
+              "delete",
+              "retain",
+              "borrowed"
+            ],
+            "title": "Disposition",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "Pod",
+              "Secret",
+              "ConfigMap",
+              "PersistentVolumeClaim",
+              "NetworkPolicy"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 253,
+            "pattern": "^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$",
+            "title": "Name",
+            "type": "string"
+          },
+          "sub_paths": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Sub Paths",
+            "type": "array"
+          },
+          "uid": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Uid"
+          }
+        },
+        "required": [
+          "kind",
+          "name"
+        ],
+        "title": "Resource",
+        "type": "object"
+      },
+      "ResourceObservation": {
+        "properties": {
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "deleting_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deleting At"
+          },
+          "finalizers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Finalizers",
+            "type": "array"
+          },
+          "observation": {
+            "enum": [
+              "present",
+              "absent",
+              "unknown",
+              "conflict"
+            ],
+            "title": "Observation",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "reference": {
+            "$ref": "#/components/schemas/Resource"
+          },
+          "status": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Status",
+            "type": "object"
+          }
+        },
+        "required": [
+          "reference",
+          "observation"
+        ],
+        "title": "ResourceObservation",
         "type": "object"
       },
       "Resume": {
@@ -18046,6 +18857,40 @@
         "title": "RunContent",
         "type": "object"
       },
+      "RunEnvironment-Input": {
+        "discriminator": {
+          "mapping": {
+            "existing": "#/components/schemas/ExistingRunEnvironment-Input",
+            "fresh": "#/components/schemas/FreshRunEnvironment-Input"
+          },
+          "propertyName": "mode"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/FreshRunEnvironment-Input"
+          },
+          {
+            "$ref": "#/components/schemas/ExistingRunEnvironment-Input"
+          }
+        ]
+      },
+      "RunEnvironment-Output": {
+        "discriminator": {
+          "mapping": {
+            "existing": "#/components/schemas/ExistingRunEnvironment-Output",
+            "fresh": "#/components/schemas/FreshRunEnvironment-Output"
+          },
+          "propertyName": "mode"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/FreshRunEnvironment-Output"
+          },
+          {
+            "$ref": "#/components/schemas/ExistingRunEnvironment-Output"
+          }
+        ]
+      },
       "RunInputPreview": {
         "properties": {
           "text": {
@@ -18331,6 +19176,16 @@
               }
             ]
           },
+          "environment": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunEnvironment-Input"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "execution": {
             "anyOf": [
               {
@@ -18396,6 +19251,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/RequestContext"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "environment": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunEnvironment-Output"
               },
               {
                 "type": "null"
@@ -19800,6 +20665,19 @@
             "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
             "title": "Run Id",
             "type": "string"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "maxLength": 41,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
           },
           "trace_id": {
             "pattern": "^[0-9a-f]{32}$",
@@ -22752,6 +23630,16 @@
             },
             "title": "Recipe",
             "type": "object"
+          },
+          "reclamation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Reclamation"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "stop_after_seconds": {
             "anyOf": [
@@ -34306,6 +35194,104 @@
         "x-a13n-mcp": true
       }
     },
+    "/api/v1/environments/{environment_id}/debug-hold": {
+      "put": {
+        "operationId": "set_environment_debug_hold",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "environment_id",
+            "required": true,
+            "schema": {
+              "title": "Environment Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DebugHold"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvironmentView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Set Environment Debug Hold",
+        "tags": [
+          "environments"
+        ],
+        "x-a13n-mcp": true
+      }
+    },
     "/api/v1/environments/{environment_id}/desktop-control": {
       "get": {
         "operationId": "get_desktop_control",
@@ -34777,6 +35763,178 @@
           "environments"
         ],
         "x-a13n-mcp": false
+      }
+    },
+    "/api/v1/environments/{environment_id}/kubernetes/diagnostics": {
+      "get": {
+        "operationId": "get_kubernetes_environment_diagnostics",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "environment_id",
+            "required": true,
+            "schema": {
+              "title": "Environment Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstanceDiagnostics"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Get Kubernetes Environment Diagnostics",
+        "tags": [
+          "environments"
+        ],
+        "x-a13n-mcp": true
+      }
+    },
+    "/api/v1/environments/{environment_id}/kubernetes/logs": {
+      "get": {
+        "operationId": "get_kubernetes_environment_logs",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "environment_id",
+            "required": true,
+            "schema": {
+              "title": "Environment Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "container",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Container"
+            }
+          },
+          {
+            "in": "query",
+            "name": "previous",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Previous",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tail_lines",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 1000,
+              "minimum": 1,
+              "title": "Tail Lines",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Logs"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Get Kubernetes Environment Logs",
+        "tags": [
+          "environments"
+        ],
+        "x-a13n-mcp": true
       }
     },
     "/api/v1/environments/{environment_id}/metrics-binding": {

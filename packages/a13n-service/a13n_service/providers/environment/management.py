@@ -23,6 +23,34 @@ class EnvironmentStatus:
     state: EnvironmentState | None
 
 
+@dataclass(frozen=True, slots=True)
+class Pending:
+    """A bounded step finished; continue the same operation after the requested delay.
+
+    `settled` permits replacing this operation with cleanup only when no outstanding
+    request can allocate additional resources and state identifies everything to clean.
+    Native preparation (for example scheduling an existing Pod) may still be underway.
+    """
+
+    state: EnvironmentState | None
+    retry_after_seconds: float = 2
+    settled: bool = False
+
+    def __post_init__(self) -> None:
+        if not 0 < self.retry_after_seconds <= 300:
+            raise ValueError("retry_after_seconds must be between 0 and 300")
+
+
+@dataclass(frozen=True, slots=True)
+class Completed:
+    """The requested lifecycle transition and its required external effects completed."""
+
+    state: EnvironmentState | None = None
+
+
+type ManagementResult = Pending | Completed | EnvironmentState | None
+
+
 class DesktopAccessSession(Protocol):
     """Fixed-target desktop access borrowed for one management transition."""
 
@@ -57,12 +85,12 @@ class EnvironmentProvider[E: BaseModel](ABC):
         operation_id: str,
         state: EnvironmentState | None = None,
         metrics: MetricsLaunch | None = None,
-    ) -> EnvironmentState | None: ...
+    ) -> ManagementResult: ...
 
     @abstractmethod
     async def start(
         self, environment: object, *, environment_id: str, operation_id: str, state: EnvironmentState | None
-    ) -> EnvironmentState | None: ...
+    ) -> ManagementResult: ...
 
     @abstractmethod
     async def inspect(
@@ -72,12 +100,12 @@ class EnvironmentProvider[E: BaseModel](ABC):
     @abstractmethod
     async def stop(
         self, environment: object, *, environment_id: str, operation_id: str, state: EnvironmentState | None
-    ) -> EnvironmentState | None: ...
+    ) -> ManagementResult: ...
 
     @abstractmethod
     async def destroy(
         self, environment: object, *, environment_id: str, operation_id: str, state: EnvironmentState | None
-    ) -> None: ...
+    ) -> ManagementResult: ...
 
     @abstractmethod
     async def keepalive(

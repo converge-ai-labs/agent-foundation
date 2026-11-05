@@ -22,6 +22,7 @@ from a13n_service.infra.ids import new_object_id
 from a13n_service.infra.labels import label_filter
 from a13n_service.providers.registry import Registry
 from a13n_service.resources.environment_templates.schemas import (
+    Reclamation,
     Template,
     TemplateConfig,
     TemplateConfigurationChanges,
@@ -69,7 +70,15 @@ def validate_config(registry: Registry, provider_type: str, config: TemplateConf
         recipe = definition.environment_model.model_validate(config.recipe)
     except ValidationError as error:
         raise invalid("config.recipe", f"invalid for {provider_type}: {rejection_reason(error)}") from None
-    normalized = config.model_copy(update={"recipe": recipe.model_dump(mode="json", exclude_unset=True)})
+    reclamation = config.reclamation
+    if provider_type == "kubernetes":
+        reclamation = reclamation or Reclamation()
+    if reclamation is not None and not definition.supports_destroy:
+        raise invalid("config.reclamation", "This provider cannot destroy instances")
+    # Instances reserved before opt-in still use the live legacy timers.
+    normalized = config.model_copy(
+        update={"recipe": recipe.model_dump(mode="json", exclude_unset=True), "reclamation": reclamation}
+    )
     return normalized.model_dump(mode="json")
 
 

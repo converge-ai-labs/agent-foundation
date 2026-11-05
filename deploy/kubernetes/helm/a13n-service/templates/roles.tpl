@@ -50,7 +50,7 @@ spec:
             {{- toYaml (default .Values.resources $settings.resources) | nindent 12 }}
       containers:
         - name: service
-          {{- include "a13n.container" . | nindent 10 }}
+          {{- include "a13n.container" (merge (dict "kubernetesManagement" true) .) | nindent 10 }}
           args: ["a13n-service", "--config", "/app/service.toml", "run", "--role", {{ $role | quote }}]
           {{- if or .Values.metrics.enabled .Values.monitoring.vmagent.enabled (and .Values.monitoring.deploymentPreset.enabled (eq $role "control")) }}
           env:
@@ -90,6 +90,7 @@ spec:
             {{- toYaml (default .Values.resources $settings.resources) | nindent 12 }}
       volumes:
         {{- include "a13n.volumes" . | nindent 8 }}
+        {{- include "a13n.kubernetesVolumes" . | nindent 8 }}
 ---
 # Voluntary disruptions such as node drains evict one Pod of a role at a time; a single replica stays evictable.
 apiVersion: policy/v1

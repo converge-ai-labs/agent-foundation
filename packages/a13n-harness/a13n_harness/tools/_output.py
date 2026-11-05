@@ -26,6 +26,7 @@ from a13n_harness._json import (
     require_finite_json,
 )
 from a13n_harness.content import content_items
+from a13n_harness.tools.diagnostics import SYSTEM_FAILURE_METADATA_KEY, ReportedToolFailure, system_failure
 
 if TYPE_CHECKING:
     from a13n_harness.context import AgentContext
@@ -54,6 +55,22 @@ def is_acknowledged_tool_output(value: object) -> bool:
     return isinstance(value, AcknowledgedToolOutput)
 
 
+def _delivery_failure(code: str, message: str) -> ToolFailed:
+    return system_failure(
+        code,
+        message,
+        hint="The tool already returned. Check the original operation before repeating any side effect.",
+    )
+
+
+def _output_limit_failure(policy: ToolOutputPolicy) -> ToolFailed:
+    return _delivery_failure(
+        "tool_result_too_large",
+        f"Tool result exceeded its output limit ({FINAL_TOOL_OUTPUT_HARD_CHARS} characters or "
+        f"{policy.max_inline_bytes} inline bytes).",
+    )
+
+
 async def _apply_result_policy(
     result: Any,
     policy: ToolOutputPolicy,
@@ -62,6 +79,9 @@ async def _apply_result_policy(
     reject_non_json: bool = True,
 ) -> Any:
     """Apply the textual result boundary without rewriting native media."""
+    if isinstance(result, ReportedToolFailure) and result.system:
+        value = await _apply_json_result_policy(result, policy, context=context)
+        return ToolReturn(return_value=value, metadata={SYSTEM_FAILURE_METADATA_KEY: True})
     if is_acknowledged_tool_output(result):
         return await _apply_acknowledged_json_result_policy(result, policy)
     if isinstance(result, ToolReturn):
@@ -89,7 +109,7 @@ async def _apply_acknowledged_json_result_policy(
             keep_bytes=min(policy.max_inline_bytes, FINAL_TOOL_OUTPUT_HARD_CHARS) // 2,
         )
     except (RecursionError, TypeError, ValueError, ValidationError) as exc:
-        raise ToolFailed("Tool returned an invalid result.") from exc
+        raise _delivery_failure("tool_result_invalid", "Tool returned an invalid result.") from exc
     if output_chars <= FINAL_TOOL_OUTPUT_HARD_CHARS and output_bytes <= policy.max_output_bytes:
         return safe_value
     return _bounded_json_preview(
@@ -118,12 +138,12 @@ async def _apply_json_result_policy(
             keep_bytes=min(policy.max_inline_bytes, FINAL_TOOL_OUTPUT_HARD_CHARS) // 2,
         )
     except (RecursionError, TypeError, ValueError, ValidationError) as exc:
-        raise ToolFailed("Tool returned an invalid result.") from exc
+        raise _delivery_failure("tool_result_invalid", "Tool returned an invalid result.") from exc
 
     if output_chars <= FINAL_TOOL_OUTPUT_HARD_CHARS and output_bytes <= policy.max_inline_bytes:
         return safe_value
     if policy.overflow == "fail":
-        raise ToolFailed("Tool result exceeded its output limit.")
+        raise _output_limit_failure(policy)
 
     output_file_path: str | None = None
     if policy.overflow == "spill" and output_bytes <= policy.max_output_bytes and context is not None:
@@ -210,7 +230,7 @@ async def _apply_native_tool_return_policy(
     except ToolFailed:
         raise
     except (RecursionError, TypeError, ValueError, ValidationError) as exc:
-        raise ToolFailed("Tool returned invalid native content.") from exc
+        raise _delivery_failure("tool_result_invalid", "Tool returned invalid native content.") from exc
 
 
 def _render_tool_return(result: ToolReturn) -> ToolReturn:
@@ -281,7 +301,7 @@ async def _apply_text_result_policy(
     if output_chars <= FINAL_TOOL_OUTPUT_HARD_CHARS and output_bytes <= policy.max_inline_bytes:
         return safe_value
     if policy.overflow == "fail":
-        raise ToolFailed("Tool result exceeded its output limit.")
+        raise _output_limit_failure(policy)
 
     output_file_path: str | None = None
     if policy.overflow == "spill" and output_bytes <= policy.max_output_bytes and context is not None:

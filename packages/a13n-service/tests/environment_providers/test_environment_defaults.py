@@ -7,6 +7,10 @@ from a13n_service.providers.environments import BUILT_IN_ENVIRONMENT_PROVIDERS
 INPUTS = {
     "local": {"root": {"path": "/tmp/managed"}, "allowed_environment_keys": ["TOOL_ENDPOINT"]},
     "docker": {},
+    "kubernetes": {
+        "execution_container": "runtime",
+        "pod_template": {"spec": {"containers": [{"name": "runtime", "image": "envd:test"}]}},
+    },
     "e2b": {},
     "daytona": {"snapshot": "custom-envd"},
     "modal": {"image": "im-custom"},

@@ -3,29 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Literal, NotRequired, TypedDict, cast
+from typing import cast
 
 from pydantic import JsonValue, ValidationError
 
-from a13n_harness._tool_observation import record_tool_operation_failure
 from a13n_harness.environment.models import EnvironmentError
-
-
-class ToolError(TypedDict):
-    code: str
-    message: str
-    details: dict[str, JsonValue]
-    retry_hint: NotRequired[str]
-    max_bytes: NotRequired[int]
-    key: NotRequired[str]
-    outcome_known: NotRequired[bool]
-    status_code: NotRequired[int]
-    reason: NotRequired[str | None]
-
-
-class ToolFailure(TypedDict):
-    ok: Literal[False]
-    error: ToolError
+from a13n_harness.tools.diagnostics import ToolError, ToolFailure, reported_failure
 
 
 def tool_failure(
@@ -44,8 +27,7 @@ def tool_failure(
     error = ToolError(code=code, message=message[:512], details=dict(details or {}))
     if retry_hint is not None:
         error["retry_hint"] = retry_hint
-    record_tool_operation_failure(code, reason=error["details"].get("reason"))
-    return {"ok": False, "error": error}
+    return reported_failure(error)
 
 
 def environment_failure(exc: EnvironmentError) -> ToolFailure:
@@ -55,8 +37,7 @@ def environment_failure(exc: EnvironmentError) -> ToolFailure:
             "Verify the file path or resource reference in the selected mount. For files, use ls or glob on an "
             "existing parent. This is not an outside-mount routing error."
         )
-    record_tool_operation_failure(exc.code, reason=error["details"].get("reason"))
-    return {"ok": False, "error": error}
+    return reported_failure(error)
 
 
 def validation_failure(code: str, exc: ValidationError) -> ToolFailure:

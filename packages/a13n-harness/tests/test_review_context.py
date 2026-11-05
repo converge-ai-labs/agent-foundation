@@ -490,3 +490,16 @@ def test_historical_review_sources_decode_as_advisory_observations():
     assert record.approved is True
     assert "approved_sources" not in record.model_dump()
     assert "denied_sources" not in record.model_dump()
+
+
+@pytest.mark.parametrize("reported", [True, False])
+async def test_review_evidence_requires_an_owner_reported_failure(reported):
+    from a13n_harness.tools.diagnostics import reported_failure, system_error
+
+    def execute() -> dict:
+        failure = reported_failure(system_error("tool_unavailable", "The tool is unavailable."))
+        return failure if reported else dict(failure)
+
+    result = await _agent(Reviewer(), execute).run("Inspect this", bindings=RunBindings.embedded())
+    (action,) = [entry for entry in _history(result.state).records if entry.kind == "action"]
+    assert action.outcome == ("tool_reported_failure" if reported else "tool_returned")

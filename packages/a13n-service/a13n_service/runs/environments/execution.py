@@ -36,7 +36,7 @@ from a13n_service.resources.providers.service import resolve_provider
 from a13n_service.resources.providers.tables import EnvironmentProviderRow
 from a13n_service.runs.attempts import AuthorityRevoked, Lease, LeaseLost, lock_lease
 from a13n_service.runs.environments import external
-from a13n_service.runs.environments.adapters import Target, execution_connector, provider_identity
+from a13n_service.runs.environments.adapters import Target, execution_connector, managed_target, provider_identity
 from a13n_service.runs.environments.clients.observations import Incarnation
 from a13n_service.runs.environments.clients.worker import Target as ClientTarget
 from a13n_service.runs.environments.desktop import admission as desktop_admission
@@ -254,7 +254,7 @@ async def _inspect(
                     mount.name,
                     handle.state,
                 ), None
-            return Target(environment.id, provider, handle.recipe, handle.state), None
+            return managed_target(runtime.keys, environment, provider, handle), None
         if environment.status == "reserved":
             await begin(session, environment, "creating")
         elif environment.status == "stopped":
