@@ -41,18 +41,18 @@ flowchart TB
 
 根据希望 Agent 完成的任务选择下一篇指南：
 
-| 任务                           | 指南                                                   |
-| ------------------------------ | ------------------------------------------------------ |
-| 连接模型账号                   | [模型](models.md)与[身份验证](model-authentication.md) |
-| 调用应用函数                   | [工具与依赖](tools-and-dependencies.md)                |
-| 询问用户或请求审批             | [人机协作工具](human-in-the-loop.md)                   |
-| 接收文件或返回指定类型的结果   | [输入与输出](inputs-and-outputs.md)                    |
-| 理解图片、音频、视频或媒体 URL | [多媒体理解](multimedia-understanding.md)              |
-| 进行实时语音对话               | [Live](live.md)                                        |
-| 读取文件和执行命令             | [环境](environments.md)                                |
-| 连接 MCP 工具和交互式结果      | [MCP](mcp.md)                                          |
-| 加载可复用的任务指引           | [Skill](skills.md)                                     |
-| 委派工作或用 Python 编排工具   | [委派与 CodeAct](delegation-and-codeact.md)            |
+| 任务                           | 指南                                                                                     |
+| ------------------------------ | ---------------------------------------------------------------------------------------- |
+| 连接模型账号                   | [模型](models.md)与[身份验证](model-authentication.md)                                   |
+| 调用应用函数                   | [工具与依赖](tools-and-dependencies.md)                                                  |
+| 询问用户或请求审批             | [结构化问题](human-in-the-loop.md)与[工具审批](managed-tools.md#select-tool-permissions) |
+| 接收文件或返回指定类型的结果   | [输入与输出](inputs-and-outputs.md)                                                      |
+| 理解图片、音频、视频或媒体 URL | [多媒体理解](multimedia-understanding.md)                                                |
+| 进行实时语音对话               | [Live](live.md)                                                                          |
+| 读取文件和执行命令             | [环境](environments.md)                                                                  |
+| 连接 MCP 工具和交互式结果      | [MCP](mcp.md)                                                                            |
+| 加载可复用的任务指引           | [Skill](skills.md)                                                                       |
+| 委派工作或用 Python 编排工具   | [委派与 CodeAct](delegation-and-codeact.md)                                              |
 
 [Capabilities](capabilities.md) 用于组合可复用功能。先选择当前任务需要的功能，再随应用扩展逐步添加。
 

@@ -84,6 +84,36 @@ describe("posts", () => {
     );
   });
 
+  test.each([
+    [" ", '"authors[0]" must be a non-empty string'],
+    [null, '"authors[0].name" must be a non-empty string'],
+    [
+      { ...REPORT.author, name: "" },
+      '"authors[0].name" must be a non-empty string',
+    ],
+    [
+      { ...REPORT.author, url: "/profile" },
+      '"authors[0].url" must be an absolute URL',
+    ],
+    [
+      { ...REPORT.author, url: "javascript:alert(1)" },
+      '"authors[0].url" must use HTTPS',
+    ],
+    [
+      { ...REPORT.author, avatar: "http://example.com/a.png" },
+      '"authors[0].avatar" must use HTTPS',
+    ],
+    [
+      { name: "Ada", url: "https://example.com/ada" },
+      '"authors[0].avatar" must be a non-empty string',
+    ],
+  ])("reject incomplete or unsafe author profiles", async (author, message) => {
+    const dir = await blogDir({
+      post: { front: { authors: JSON.stringify([author]) } },
+    });
+    await expect(loadPosts(dir)).rejects.toThrow(message);
+  });
+
   test("reject a folder that is not a slug", async () => {
     const dir = await blogDir({ "Draft Post": {} });
     await expect(loadPosts(dir)).rejects.toThrow(
@@ -169,6 +199,59 @@ describe("markdown", () => {
 });
 
 describe("pages", () => {
+  test("render linked author profiles alongside plain names without a source report", async () => {
+    const dir = await blogDir({
+      post: {
+        front: { authors: JSON.stringify([REPORT.author, "Ada & team"]) },
+      },
+    });
+    const posts = await loadPosts(dir);
+    expect(posts[0].authors).toEqual([REPORT.author, "Ada & team"]);
+    const page = postPage(posts[0], posts);
+    expect(page).toContain(
+      'class="author-link" href="https://example.com/researcher"',
+    );
+    expect(page).toContain(
+      'src="https://example.com/avatar.png?size=80&#38;v=1" alt=""',
+    );
+    expect(page).toContain(
+      "Researcher &#38; collaborator</span></a>, <span>Ada &#38; team</span>",
+    );
+    expect(page).not.toContain("Original report by");
+    expect(page).not.toContain("Read original report");
+    const [, data] =
+      /<script type="application\/ld\+json">(.+?)<\/script>/.exec(page)!;
+    const structured = JSON.parse(data);
+    expect(structured.author).toEqual([
+      {
+        "@type": "Person",
+        name: REPORT.author.name,
+        url: REPORT.author.url,
+        image: REPORT.author.avatar,
+      },
+      { "@type": "Person", name: "Ada & team" },
+    ]);
+    expect(structured).not.toHaveProperty("citation");
+  });
+
+  test("the development article credits Zhongsheng Ji with his GitHub profile", async () => {
+    const posts = await loadPosts();
+    const post = posts.find((post) => post.slug === "building-a13n-with-a13n")!;
+    expect(post.authors).toEqual([
+      expect.objectContaining({
+        name: "Zhongsheng Ji",
+        url: "https://github.com/Wh1isper",
+        avatar: expect.stringContaining(
+          "https://avatars.githubusercontent.com/u/43375501",
+        ),
+      }),
+    ]);
+    expect(postPage(post, posts)).toContain(
+      'class="author-link" href="https://github.com/Wh1isper"',
+    );
+    expect(post.report).toBeUndefined();
+  });
+
   test("credit the source author without replacing the adapted article's author", async () => {
     const dir = await blogDir({
       post: {
@@ -178,7 +261,7 @@ describe("pages", () => {
     const posts = await loadPosts(dir);
     const page = postPage(posts[0], posts);
     expect(page).toContain(
-      'class="report-author" href="https://example.com/researcher"',
+      'class="author-link" href="https://example.com/researcher"',
     );
     expect(page).toContain(
       'src="https://example.com/avatar.png?size=80&#38;v=1" alt=""',

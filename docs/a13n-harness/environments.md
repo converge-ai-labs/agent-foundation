@@ -99,7 +99,7 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-Run `python environment_demo.py`. It prints `Workspace file read successfully.` after checking the actual tool result. The file still exists when the Run has closed; `TemporaryDirectory` removes it only when the enclosing block exits.
+Run `uv run python environment_demo.py`. It prints `Workspace file read successfully.` after checking the actual tool result. The file still exists when the Run has closed; `TemporaryDirectory` removes it only when the enclosing block exits.
 
 Three parts connect the workflow:
 

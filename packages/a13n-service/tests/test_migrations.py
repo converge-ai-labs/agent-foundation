@@ -8,7 +8,7 @@ import pytest
 from a13n_service.distribution import OSS, Distribution
 from a13n_service.infra.db import transaction
 from a13n_service.infra.platform import PLATFORM_GROUPS
-from a13n_service.migrations.runner import check, migration_connection, upgrade
+from a13n_service.migrations.runner import check, heads, migration_connection, upgrade
 from a13n_service.resources.revisions import config_digest
 from a13n_service.runs.tables import SessionRow
 from a13n_service.runs.threads import new_thread
@@ -797,7 +797,6 @@ async def test_browser_retention_migration_preserves_legacy_and_refuses_lossy_ro
 
     _, browser = await setup(service, runs_kit)
     database = service.runtime.settings.database
-    head = rows(database, "SELECT version_num FROM alembic_version")
     engine = create_engine(database.url.get_secret_value())
     try:
         for fact in (
@@ -820,7 +819,7 @@ async def test_browser_retention_migration_preserves_legacy_and_refuses_lossy_ro
             with pytest.raises(DBAPIError, match="rollback_retention"):
                 with migration_connection(database, OSS) as config:
                     command.downgrade(config, "29270d0290da")
-            assert rows(database, "SELECT version_num FROM alembic_version") == head
+            assert rows(database, "SELECT version_num FROM alembic_version") == [(head,) for head in heads(OSS)]
         # Legacy rows retain the original idle_seconds meaning and gain no new idle policy on upgrade.
         with engine.begin() as connection:
             connection.execute(

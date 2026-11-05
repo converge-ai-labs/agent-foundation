@@ -3,6 +3,8 @@ import { readFile, readdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import { staticClient } from "fumadocs-core/search/client/orama-static";
+import { fromMarkdown } from "mdast-util-from-markdown";
+import { visit } from "unist-util-visit";
 
 const output = new URL("../out/", import.meta.url);
 const docs = new URL("../../../../docs/", import.meta.url);
@@ -54,6 +56,40 @@ test("every human document has a Chinese static page with matching section ancho
       /<link rel="canonical" href="https:\/\/a13n\.dev\/docs\/zh-CN\//,
     );
   }
+});
+
+test("explicit empty span anchors remain in exported English and Chinese pages", async () => {
+  let checked = 0;
+  for (const path of canonicalPages) {
+    for (const locale of ["", "zh-CN/"]) {
+      const source = path.replace(/\.mdx?$/, (suffix) =>
+        locale ? `.zh-CN${suffix}` : suffix,
+      );
+      const markdown = await readFile(new URL(source, docs), "utf8");
+      const ids = [];
+      visit(fromMarkdown(markdown), "html", (node, index, parent) => {
+        const match = /^<span id="([A-Za-z][A-Za-z0-9_.:-]*)">$/.exec(
+          node.value,
+        );
+        const close = parent?.children[index + 1];
+        if (match && close?.type === "html" && close.value === "</span>")
+          ids.push(match[1]);
+      });
+      if (ids.length === 0) continue;
+      const html = await readFile(
+        new URL(`${locale}${pageDirectory(path)}index.html`, output),
+        "utf8",
+      );
+      for (const id of ids) {
+        assert.ok(html.includes(`<span id="${id}"></span>`), `${source}#${id}`);
+        checked++;
+      }
+    }
+  }
+  assert.ok(
+    checked > 0,
+    "The regression must exercise actual explicit anchors",
+  );
 });
 
 test("the sitemap lists every page in both languages at its canonical URL", async () => {

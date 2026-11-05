@@ -89,7 +89,7 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-Run `python question_demo.py`. Expected output:
+Run `uv run python question_demo.py`. Expected output:
 
 ```text
 suspended Which scope should be used?

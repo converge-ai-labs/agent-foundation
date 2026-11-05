@@ -206,9 +206,11 @@ async def test_downgrade_preserves_handback_history_after_control_pruning(databa
         engine.dispose()
 
 
-async def test_desktop_cutover_is_one_revision_and_roundtrips(empty_database):
+async def test_desktop_cutover_is_one_revision_from_legacy_and_roundtrips(empty_database):
     with migration_connection(empty_database, OSS) as config:
         scripts = ScriptDirectory.from_config(config)
+        assert len(scripts.get_heads()) == 1
+        assert NEW_HEAD in {revision.revision for revision in scripts.walk_revisions()}
         revision = scripts.get_revision(NEW_HEAD)
         assert revision is not None
         assert revision.down_revision == OLD_HEAD

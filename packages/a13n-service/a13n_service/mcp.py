@@ -5,6 +5,7 @@ from importlib.metadata import version
 from urllib.parse import urlsplit
 
 import mcp.types as mt
+from a13n_harness.tools.diagnostics import system_error, tool_error_text
 from fastapi import FastAPI, Request
 from fastapi.routing import APIRoute
 from fastmcp import FastMCP
@@ -80,7 +81,7 @@ class RunToolScope(Middleware):
         call_next: CallNext[mt.CallToolRequestParams, ToolResult],
     ) -> ToolResult:
         if not self.admitted(context.message.name):
-            raise ToolError("Run credential does not admit this operation")
+            raise ToolError(tool_error_text(system_error("forbidden", "Run credential does not admit this operation.")))
         return await call_next(context)
 
 

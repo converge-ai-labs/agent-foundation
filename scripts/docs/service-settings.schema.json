@@ -101,6 +101,97 @@
       "title": "Browsers",
       "type": "object"
     },
+    "ClusterProfile": {
+      "additionalProperties": false,
+      "description": "Trusted process configuration; never accepted as a tenant Provider credential.\n\nKubeconfig may invoke operator-installed authentication plugins. Both the path\nand context are explicit; in-cluster authentication uses the projected token.",
+      "properties": {
+        "authentication": {
+          "default": "in_cluster",
+          "enum": [
+            "in_cluster",
+            "kubeconfig"
+          ],
+          "title": "Authentication",
+          "type": "string"
+        },
+        "kubeconfig": {
+          "anyOf": [
+            {
+              "format": "path",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Kubeconfig"
+        },
+        "context": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Context"
+        },
+        "namespaces": {
+          "items": {
+            "maxLength": 63,
+            "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Namespaces",
+          "type": "array"
+        },
+        "ownership_id": {
+          "maxLength": 63,
+          "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$",
+          "title": "Ownership Id",
+          "type": "string"
+        },
+        "sandbox_service_account": {
+          "default": "default",
+          "maxLength": 63,
+          "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$",
+          "title": "Sandbox Service Account",
+          "type": "string"
+        },
+        "allow_port_forward": {
+          "default": false,
+          "title": "Allow Port Forward",
+          "type": "boolean"
+        },
+        "allow_plaintext_envd": {
+          "default": false,
+          "title": "Allow Plaintext Envd",
+          "type": "boolean"
+        },
+        "kubectl": {
+          "default": "kubectl",
+          "title": "Kubectl",
+          "type": "string"
+        },
+        "request_timeout_seconds": {
+          "default": 15,
+          "exclusiveMinimum": 0,
+          "maximum": 60,
+          "title": "Request Timeout Seconds",
+          "type": "number"
+        }
+      },
+      "required": [
+        "namespaces",
+        "ownership_id"
+      ],
+      "title": "ClusterProfile",
+      "type": "object"
+    },
     "Composer": {
       "additionalProperties": false,
       "properties": {
@@ -537,6 +628,13 @@
           "maxItems": 64,
           "title": "Docker Mount Roots",
           "type": "array"
+        },
+        "kubernetes_clusters": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ClusterProfile"
+          },
+          "title": "Kubernetes Clusters",
+          "type": "object"
         }
       },
       "title": "Environments",

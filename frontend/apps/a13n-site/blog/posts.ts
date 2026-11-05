@@ -6,10 +6,16 @@ import { render } from "./markdown.ts";
 /** The site's posts/ directory: one folder per post, named by its slug. */
 export const POSTS_DIR = join(import.meta.dirname, "../posts");
 
+export interface AuthorProfile {
+  name: string;
+  url: string;
+  avatar: string;
+}
+
 export interface SourceReport {
   title: string;
   url: string;
-  author: { name: string; url: string; avatar: string };
+  author: AuthorProfile;
 }
 
 export interface Post {
@@ -18,7 +24,7 @@ export interface Post {
   description: string;
   /** ISO date, YYYY-MM-DD */
   date: string;
-  authors: string[];
+  authors: (string | AuthorProfile)[];
   /** Original report credited separately from the adapted article's authors. */
   report?: SourceReport;
   minutes: number;
@@ -81,43 +87,52 @@ function frontMatter(data: unknown, source: string) {
   if (!DATE.test(date) || Number.isNaN(Date.parse(date)))
     throw new Error(`${source}: "date" must be a YYYY-MM-DD date`);
   const authors = meta.authors;
-  if (
-    !Array.isArray(authors) ||
-    !authors.length ||
-    !authors.every((name) => typeof name === "string" && name.trim())
-  )
+  if (!Array.isArray(authors) || !authors.length)
     throw new Error(`${source}: "authors" must list at least one name`);
   return {
     title: text("title"),
     description: text("description"),
     date,
-    authors: authors.map((name: string) => name.trim()),
+    authors: authors.map((author: unknown, index: number) =>
+      typeof author === "string"
+        ? required(author, source, `authors[${index}]`)
+        : authorProfile(author, source, `authors[${index}]`),
+    ),
     ...(meta.report === undefined
       ? {}
       : { report: sourceReport(meta.report, source) }),
   };
 }
 
+function required(value: unknown, source: string, key: string, url = false) {
+  if (typeof value !== "string" || !value.trim())
+    throw new Error(`${source}: "${key}" must be a non-empty string`);
+  const text = value.trim();
+  if (url && !URL.canParse(text))
+    throw new Error(`${source}: "${key}" must be an absolute URL`);
+  if (url && new URL(text).protocol !== "https:")
+    throw new Error(`${source}: "${key}" must use HTTPS`);
+  return text;
+}
+
+function authorProfile(
+  value: unknown,
+  source: string,
+  key: string,
+): AuthorProfile {
+  const author = (value ?? {}) as Record<string, unknown>;
+  return {
+    name: required(author.name, source, `${key}.name`),
+    url: required(author.url, source, `${key}.url`, true),
+    avatar: required(author.avatar, source, `${key}.avatar`, true),
+  };
+}
+
 function sourceReport(value: unknown, source: string): SourceReport {
   const report = (value ?? {}) as Record<string, unknown>;
-  const author = (report.author ?? {}) as Record<string, unknown>;
-  const required = (value: unknown, key: string, url = false) => {
-    if (typeof value !== "string" || !value.trim())
-      throw new Error(`${source}: "report.${key}" must be a non-empty string`);
-    const text = value.trim();
-    if (url && !URL.canParse(text))
-      throw new Error(`${source}: "report.${key}" must be an absolute URL`);
-    if (url && new URL(text).protocol !== "https:")
-      throw new Error(`${source}: "report.${key}" must use HTTPS`);
-    return text;
-  };
   return {
-    title: required(report.title, "title"),
-    url: required(report.url, "url", true),
-    author: {
-      name: required(author.name, "author.name"),
-      url: required(author.url, "author.url", true),
-      avatar: required(author.avatar, "author.avatar", true),
-    },
+    title: required(report.title, source, "report.title"),
+    url: required(report.url, source, "report.url", true),
+    author: authorProfile(report.author, source, "report.author"),
   };
 }

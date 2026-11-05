@@ -1,6 +1,8 @@
 """On-demand analysis starts an ordinary run atomically with its bounded provenance."""
 
+import asyncio
 import hashlib
+from collections import deque
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 
@@ -13,6 +15,7 @@ from a13n_service.infra import cursors
 from a13n_service.infra.db import advisory_lock, short_session, transaction, violated_constraint
 from a13n_service.infra.errors import conflict, invalid
 from a13n_service.infra.ids import new_object_id
+from a13n_service.providers.traces import Span
 from a13n_service.resources.agents import service as agents
 from a13n_service.resources.agents.tables import AgentRow
 from a13n_service.resources.rows import audit_row
@@ -27,7 +30,7 @@ from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import Message, MessagePayload, RunOptions, TextPart, UsageLimit, canonical_json
 from a13n_service.runs.sessions import new_session
 from a13n_service.runs.submit import validate_message
-from a13n_service.runs.tables import RunRow
+from a13n_service.runs.tables import RunRow, SessionRow
 from a13n_service.runs.threads import new_thread
 from a13n_service.tenancy.access import workspace_scope
 from a13n_service.tenancy.authorize import Principal, execution_authority
@@ -86,6 +89,79 @@ async def _view(session: AsyncSession, row: AnalysisRow) -> Analysis:
     return _read_model(row, run, counts.get(row.id, (0, 0)))
 
 
+async def _candidate_roots(
+    runtime: Runtime, actor: Principal, workspace_id: str, body: AnalysisCreate, after: datetime, before: datetime
+) -> tuple[list[Span], bool]:
+    if body.trace_id:
+        return [await traces.get_trace(runtime.storage, runtime.traces, actor, workspace_id, body.trace_id)], False
+
+    # Each stream applies its scope at the provider before consuming the shared scan budget.
+    streams: deque[tuple[str | None, str | None, str | None]] = deque()
+    capped = False
+    if body.agent_id or body.session_ids:
+        async with short_session(runtime.storage) as session:
+            if body.agent_id:
+                run_ids = list(
+                    await session.scalars(
+                        select(RunRow.id)
+                        .where(
+                            RunRow.workspace_id == workspace_id,
+                            RunRow.agent_id == body.agent_id,
+                            RunRow.status.in_(("completed", "failed", "cancelled")),
+                            RunRow.created_at <= before,
+                            RunRow.sealed_at >= after,
+                        )
+                        .order_by(RunRow.created_at.desc(), RunRow.id.desc())
+                        .limit(101)
+                    )
+                )
+                capped = len(run_ids) > 100
+                streams.extend((None, run_id, None) for run_id in run_ids[:100])
+            else:
+                found = await session.scalar(
+                    select(func.count())
+                    .select_from(SessionRow)
+                    .where(SessionRow.workspace_id == workspace_id, SessionRow.id.in_(body.session_ids))
+                )
+                if found != len(body.session_ids):
+                    raise invalid("session_ids", "Unknown session in this workspace")
+                streams.extend((session_id, None, None) for session_id in body.session_ids)
+    else:
+        streams.append((None, None, None))
+
+    roots = []
+    # Bound provider fan-out as well as returned roots, even for empty pages.
+    budget = 100
+    while streams and budget:
+        limit = min(20, max(1, budget // len(streams)))
+        batch = [streams.popleft() for _ in range(min(4, len(streams), budget // limit))]
+        pages = await asyncio.gather(
+            *(
+                traces.list_traces(
+                    runtime.storage,
+                    runtime.traces,
+                    actor,
+                    workspace_id,
+                    session_id=session_id,
+                    run_id=run_id,
+                    thread_id=None,
+                    attributes=(),
+                    started_after=after,
+                    started_before=before,
+                    cursor=cursor,
+                    limit=limit,
+                )
+                for session_id, run_id, cursor in batch
+            )
+        )
+        for (session_id, run_id, _), page in zip(batch, pages, strict=True):
+            roots.extend(page.items)
+            budget -= limit if page.next_cursor else max(1, len(page.items))
+            if page.next_cursor:
+                streams.append((session_id, run_id, page.next_cursor))
+    return roots, capped or bool(streams)
+
+
 async def start(
     runtime: Runtime, actor: Principal, workspace_id: str, body: AnalysisCreate, *, request_key: str
 ) -> tuple[Analysis, bool]:
@@ -116,84 +192,79 @@ async def start(
         finder_id, revision_id = finder.id, finder.default_revision_id
     before = body.started_before or datetime.now(UTC)
     after = body.started_after or before - timedelta(days=1)
+    if body.session_ids and body.started_after is None:
+        after = before - traces.MAX_WINDOW
+    if not body.trace_id and not timedelta(0) < before - after <= traces.MAX_WINDOW:
+        raise invalid("started_after", "the window must end after it starts and span at most 31 days")
     selected: list[SelectedTrace] = []
     targets: dict[str, dict[str, str]] = {}
     target_id = body.agent_id
-    cursor = None
-    truncated = False
     priorities: dict[str, int] = {}
     console = f"{runtime.settings.server.public_url.rstrip('/')}/workspace/{scope.workspace_id}"
-    for _ in range(5):
-        if body.trace_id:
-            roots = [await traces.get_trace(runtime.storage, runtime.traces, actor, workspace_id, body.trace_id)]
-        else:
-            page = await traces.list_traces(
-                runtime.storage,
-                runtime.traces,
-                actor,
-                workspace_id,
-                session_id=None,
-                thread_id=None,
-                run_id=None,
-                attributes=(),
-                started_after=after,
-                started_before=before,
-                limit=20,
-                cursor=cursor,
+    roots, truncated = await _candidate_roots(runtime, actor, scope.workspace_id, body, after, before)
+    run_ids = [root.attributes.get("a13n.observation.metadata.service_run_id") for root in roots]
+    async with short_session(runtime.storage) as session:
+        await workspace_scope(session, actor, workspace_id, "run")
+        query = (
+            select(RunRow, AgentRow.name)
+            .join(AgentRow, RunRow.agent_id == AgentRow.id)
+            .where(
+                RunRow.workspace_id == scope.workspace_id,
+                RunRow.agent_id != finder_id,
+                RunRow.sealed_at.is_not(None),
+                RunRow.status.in_(("completed", "failed", "cancelled")),
+                RunRow.id.in_([value for value in run_ids if isinstance(value, str)]),
             )
-            roots, cursor = page.items, page.next_cursor
-        run_ids = [root.attributes.get("a13n.observation.metadata.service_run_id") for root in roots]
-        async with short_session(runtime.storage) as session:
-            await workspace_scope(session, actor, workspace_id, "run")
-            query = (
-                select(RunRow, AgentRow.name)
-                .join(AgentRow, RunRow.agent_id == AgentRow.id)
-                .where(
-                    RunRow.workspace_id == scope.workspace_id,
-                    RunRow.agent_id != finder_id,
-                    RunRow.sealed_at.is_not(None),
-                    RunRow.status.in_(("completed", "failed", "cancelled")),
-                    RunRow.id.in_([value for value in run_ids if isinstance(value, str)]),
-                )
-            )
-            if body.agent_id is not None:
-                query = query.where(RunRow.agent_id == body.agent_id)
-            allowed = {
-                run.id: {
-                    "agent_id": run.agent_id,
-                    "agent_revision_id": run.agent_revision_id,
-                    "agent_name": name,
-                    "agent_url": f"{console}/agents/{run.agent_id}",
-                    "run_url": f"{console}/sessions/{run.session_id}/threads/{run.thread_id}/runs/{run.id}?view=chat",
-                    "status": run.status,
-                }
-                for run, name in await session.execute(query)
+        )
+        if body.agent_id is not None:
+            query = query.where(RunRow.agent_id == body.agent_id)
+        if body.session_ids:
+            query = query.where(RunRow.session_id.in_(body.session_ids))
+        allowed = {
+            run.id: {
+                "agent_id": run.agent_id,
+                "agent_revision_id": run.agent_revision_id,
+                "agent_name": name,
+                "session_id": run.session_id,
+                "agent_url": f"{console}/agents/{run.agent_id}",
+                "run_url": f"{console}/sessions/{run.session_id}/threads/{run.thread_id}/runs/{run.id}?view=chat",
+                "status": run.status,
             }
-        for root, run_id in zip(roots, run_ids, strict=True):
-            if (
-                isinstance(run_id, str)
-                and run_id in allowed
-                and root.ended_at is not None
-                and all(item.trace_id != root.trace_id for item in selected)
-            ):
-                selected.append(SelectedTrace(trace_id=root.trace_id, run_id=run_id))
-                targets[root.trace_id] = {key: value for key, value in allowed[run_id].items() if key != "status"} | {
-                    "trace_url": f"{console}/traces/{root.trace_id}"
-                }
-                priorities[root.trace_id] = int(
-                    ("execution" in body.presets or "recovery" in body.presets)
-                    and (
-                        allowed[run_id]["status"] == "failed"
-                        or root.status == "error"
-                        or root.level in ("error", "fatal")
-                    )
+            for run, name in await session.execute(query)
+        }
+    for root, run_id in zip(roots, run_ids, strict=True):
+        if (
+            isinstance(run_id, str)
+            and run_id in allowed
+            and root.ended_at is not None
+            and all(item.trace_id != root.trace_id for item in selected)
+        ):
+            selected.append(
+                SelectedTrace(
+                    trace_id=root.trace_id,
+                    run_id=run_id,
+                    session_id=allowed[run_id]["session_id"] if body.session_ids else None,
                 )
-                if body.trace_id:
-                    target_id = allowed[run_id]["agent_id"]
-        if body.trace_id or cursor is None:
-            break
-    truncated = len(selected) > body.max_traces or cursor is not None
+            )
+            targets[root.trace_id] = {
+                key: value for key, value in allowed[run_id].items() if key not in {"status", "session_id"}
+            } | {"trace_url": f"{console}/traces/{root.trace_id}"}
+            priorities[root.trace_id] = int(
+                ("execution" in body.presets or "recovery" in body.presets)
+                and (
+                    allowed[run_id]["status"] == "failed" or root.status == "error" or root.level in ("error", "fatal")
+                )
+            )
+            if body.trace_id:
+                target_id = allowed[run_id]["agent_id"]
     selected.sort(key=lambda item: -priorities[item.trace_id])
+    if body.session_ids:
+        # Reserve the highest-ranked candidate of each represented session.
+        first = {}
+        for item in selected:
+            first.setdefault(item.session_id, item.trace_id)
+        selected.sort(key=lambda item: item.trace_id not in first.values())
+    truncated |= len(selected) > body.max_traces
     selected = selected[: body.max_traces]
     if not selected:
         raise invalid(

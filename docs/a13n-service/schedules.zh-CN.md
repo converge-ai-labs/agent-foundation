@@ -116,10 +116,10 @@ HTTP 202 表示已保存待提交的触发记录。响应不确定时复用原�
 
 ## 订阅状态和加载历史
 
-连接返回的 `stream_url`：`/api/v1/sessions/{session_id}/stream`，无需额外查询参数。普通[会话输出协议](agents-and-runs.md#follow-a-session-stream)为该会话增加 `schedule` 和 `occurrence` 状态帧。
+连接返回的 `stream_url`：`/api/v1/sessions/{session_id}/stream`，无需额外查询参数。普通[会话输出协议](stream-and-read-results.md#follow-a-session-stream)为该会话增加 `schedule` 和 `occurrence` 状态帧。
 
 每次连接先提供当前计划状态、触发记录摘要和会话中的所有线程，再跟随变化与实时输出。已完成、子线程和独立线程无论时间早晚都可见。通过分页历史浏览记录，通过触发详情读取完整调用，通过 run items 读取保存输出。
 
 occurrence 事件按其自身记录的 session 归属发送，修改计划目标不会改变历史事件归属。事件流同步当前状态，短暂的中间状态可能被合并。重连后刷新当前历史页，以及选中的线程、条目、运行和输出。Console 的计划详情页不订阅实时更新，用户点击**刷新**读取最新状态。
 
-需要完成通知时，工作空间管理员可在详情页选择**添加 Webhook**，或配置**设置 → Webhooks**。订阅 `schedule_occurrence.completed` 并检查 `execution_outcome`。`schedule.completed` 表示一次性调度结束，而非执行结束。[Webhook](files-and-webhooks.md#webhooks) 也覆盖跳过、提交失败、取消和自动暂停。
+需要完成通知时，工作空间管理员可在详情页选择**添加 Webhook**，或配置**设置 → Webhooks**。订阅 `schedule_occurrence.completed` 并检查 `execution_outcome`。`schedule.completed` 表示一次性调度结束，而非执行结束。[Webhook](webhooks.md#webhooks) 也覆盖跳过、提交失败、取消和自动暂停。

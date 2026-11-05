@@ -44,7 +44,7 @@ flowchart TB
 | 模型网关                                      | 在 provider 类型支持时设置 `base_url`。最多 32 个额外请求头可用于路由或计费；值会加密保存，且永不返回。      |
 | 客户网络中的模型服务器                        | 将其源地址设为 `base_url`。明文 HTTP 源地址需加入 `providers.http_origins`。                                 |
 
-按[模型 provider](models.md#model-providers)填写所选类型的字段。设置[模型价格](models.md#usage-and-prices)，在测试请求后检查记录的用量和计算出的费用。
+按[模型 provider](model-providers.md)填写所选类型的字段。设置[模型价格](models.md#usage-and-prices)，在测试请求后检查记录的用量和计算出的费用。
 
 ## 接入客户的系统
 
@@ -69,7 +69,7 @@ flowchart TB
 
 ## 管控工具调用
 
-先将客户系统的写入工具设为**询问**，分别测试批准和拒绝。等待中的运行应在提交待处理回复后才继续。根据流程需要选择**允许**、**拒绝**或**自动审查**。自动审查由模型评估风险：低于阈值的调用继续执行；达到或超过阈值的调用被拒绝或等待人工处理。参阅[工具权限](agents-and-runs.md#tool-permissions)。
+先将客户系统的写入工具设为**询问**，分别测试批准和拒绝。等待中的运行应在提交待处理回复后才继续。根据流程需要选择**允许**、**拒绝**或**自动审查**。自动审查由模型评估风险：低于阈值的调用继续执行；达到或超过阈值的调用被拒绝或等待人工处理。参阅[工具权限](agent-configuration.md#tool-permissions)。
 
 用 `allowed_hosts` 限制受支持的[出站请求](configuration.md#outbound-requests)。Shell 和其他不透明流量的限制应在部署或环境边界实施。
 
@@ -79,10 +79,19 @@ flowchart TB
 
 为每份验收样例记录输入、预期结果、实际结果和运行 ID。在 Console 的 Debug 视图中检查配置、执行细节、用量和费用。
 
-- 要解释工具调用或失败原因，配置 [trace 后端](agents-and-runs.md#traces)后打开 **Traces**。每次尝试都会导出 span。
-- 要调查反复出现的执行问题，打开**洞察 → 发现（Insights → Findings）**，查看证据和修改建议。参阅[发现并改进执行问题](agents-and-runs.md#find-and-improve-execution-issues)。
+- 要解释工具调用或失败原因，配置 [trace 后端](inspect-runs.md#traces)后打开 **Traces**。每次尝试都会导出 span。
+- 要调查反复出现的执行问题，打开**洞察 → 发现（Insights → Findings）**，查看证据和修改建议。参阅[发现并改进执行问题](inspect-runs.md#find-and-improve-execution-issues)。
 - 要检查访问权限或账号安全变更，查看[审计事件](identity.md#audit)。
 - 要建立日常运维检查，按[监控与排障](monitoring.md)配置日志、指标和工作空间用量观测。
+
+## 验证对客户系统的写入
+
+如果工作流程需要创建工单，可以选用通过客户 MCP 服务连接的测试仓库。确认连接提供创建 issue 的工具，且凭据有权写入该仓库。只选择本次测试需要的工具，将写入工具设为**询问（Ask）**。
+
+1. 在 Console 中让 agent 在测试仓库创建标题为 `Service acceptance test` 的 issue。回答审批前，核对工具名称、目标仓库和标题。
+2. 拒绝请求。到测试仓库中查找该标题，确认没有创建 issue。
+3. 用应用自己的凭据再次提交请求。收集待响应的请求，批准写入，再[跟踪后继运行](connect-application.md#handle-a-waiting-result)。
+4. 在客户系统中打开新建的 issue，核对标题和所属仓库。记录 issue URL、线程 ID 和后继运行 ID。请客户在 Console 中打开同一线程，在 Debug 中找到工具结果。
 
 ## 移交运维
 

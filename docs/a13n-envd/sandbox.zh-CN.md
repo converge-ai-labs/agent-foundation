@@ -42,14 +42,9 @@ make image-check-sandbox-desktop
 
 ## Service 中的托管 Docker 桌面
 
-先配置 Docker 连接，再创建桌面环境：
+在选定的 Docker Engine 上构建 `a13n-sandbox:local-desktop`，或选择兼容的发布标签。按 [Service 桌面创建步骤](../a13n-service/computer-use.md#create-a-docker-desktop)配置 Console 和 agent 权限。自定义本地镜像使用 `execution="envd_http"`、`desktop=true` 和 `pull_policy="never"`，并保持网络开启。镜像负责启动桌面和 Envd，无需初始化脚本。下文说明镜像与 Provider 之间的连接和生命周期约定。
 
-1. 在所选 Docker Engine 上构建 `a13n-sandbox:local-desktop`，或选择兼容的桌面版发布标签。
-2. 在 Console 添加 Docker 连接。在**容器管理**中配置 Engine 访问。开启**环境操作通道**，将**主机访问地址**设为所有 Service / Worker 都能访问的主机名或 IP。
-3. 本机进程使用 Docker Desktop 时，访问地址和监听地址使用 `127.0.0.1`。远端 Engine 需配置可达私网地址、监听接口，并显式允许可信私网明文连接。
-4. 在模板编辑器中选择**桌面环境**。此预设将桌面镜像和 HTTP EIP 执行方式固定搭配。**标准环境**使用标准镜像和 Docker 原生执行。两者均可配置 CPU、内存和挂载。
-5. 使用本地构建或自己的镜像时，选择**自定义镜像**。设置镜像 `a13n-sandbox:local-desktop`、执行方式 `envd_http`、**桌面能力**（`desktop: true`）；本地构建设 `pull_policy: never`。保持网络开启。镜像会启动桌面和 Envd，无需初始化脚本。
-6. 创建环境。Service 发布 Envd 端口，读取 Docker 分配的主机端口，认证设备并检查桌面就绪状态。开始任务前，开启 agent 的 Computer 工具及挂载环境所需的 Computer 操作权限。
+可信私网明文连接。 4. 在模板编辑器中选择**桌面环境**。此预设将桌面镜像和 HTTP EIP 执行方式固定搭配。**标准环境**使用标准镜像和 Docker 原生执行。两者均可配置 CPU、内存和挂载。 5. 使用本地构建或自己的镜像时，选择**自定义镜像**。设置镜像 `a13n-sandbox:local-desktop`、执行方式 `envd_http`、**桌面能力**（`desktop: true`）；本地构建设 `pull_policy: never`。保持网络开启。镜像会启动桌面和 Envd，无需初始化脚本。 6. 创建环境。Service 发布 Envd 端口，读取 Docker 分配的主机端口，认证设备并检查桌面就绪状态。开始任务前，开启 agent 的 Computer 工具及挂载环境所需的 Computer 操作权限。
 
 可信私网可使用以下 Docker 连接配置：
 
@@ -77,7 +72,7 @@ make image-check-sandbox-desktop
 
 Root 桌面启动器监督以 `sandbox` 身份运行的 Xvfb/Openbox，创建 Xauthority cookie 并关闭 X11 TCP 监听。必需的桌面进程退出会让容器失败。X11 支持按键事件，尚不支持字面 Unicode `type_text`。
 
-人工访问需单独启用。设置 `desktop_assistance: true`，并提供浏览器可访问、路由到容器 6081 端口的 `desktop_viewer_url`。Service 开启镜像的 `A13N_DESKTOP_ACCESS` supervisor；运维者提供 viewer 路由和 TLS。权限和交还控制的流程见[桌面控制](../a13n-service/environments.md#desktop-access-prerequisites)。
+人工访问需单独启用。设置 `desktop_assistance: true`，并提供浏览器可访问、路由到容器 6081 端口的 `desktop_viewer_url`。Service 开启镜像的 `A13N_DESKTOP_ACCESS` supervisor；运维者提供 viewer 路由和 TLS。权限和交还控制的流程见[桌面控制](../a13n-service/computer-use.md#desktop-access-prerequisites)。
 
 ## 配合 Host 运行
 

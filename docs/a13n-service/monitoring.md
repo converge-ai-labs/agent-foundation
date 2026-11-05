@@ -9,11 +9,13 @@ Start with the question you need to answer. For a failed request, follow its req
 | ----------------------------------------- | ----------------------------------------------------------------- |
 | Why did a request or run fail?            | [Request and run troubleshooting](#troubleshoot-a-request-or-run) |
 | Are workers keeping up?                   | [Service metrics](#metrics)                                       |
-| What did the agent do during an attempt?  | The attempt's [trace](agents-and-runs.md#traces)                  |
+| What did the agent do during an attempt?  | The attempt's [trace](inspect-runs.md#traces)                     |
 | Which agents or models used the most?     | [Workspace usage](#usage)                                         |
 | Is an environment short of CPU or memory? | [Environment monitoring](environment-monitoring.md)               |
 
 You need access to process logs for request troubleshooting. Metrics need a configured scrape endpoint; traces need a configured trace backend. Workspace usage comes from PostgreSQL and works independently of those backends.
+
+Workspace members can [inspect runs](inspect-runs.md) and read [usage](#usage) with their existing permissions. The log access and process metrics setup below are operator tasks.
 
 ## Troubleshoot a request or run
 
@@ -112,7 +114,7 @@ curl --get "$A13N_URL/api/v1/usage/overview" \
   --data-urlencode "timezone=UTC"
 ```
 
-Read the overview totals and daily buckets. Use `GET /api/v1/usage/agents` or `/api/v1/usage/models` with the same time range for paginated breakdowns (`limit` and `cursor`). `GET /api/v1/usage` provides run, thread and session summaries; see [usage queries](agents-and-runs.md#usage).
+Read the overview totals and daily buckets. Use `GET /api/v1/usage/agents` or `/api/v1/usage/models` with the same time range for paginated breakdowns (`limit` and `cursor`). `GET /api/v1/usage` provides run, thread and session summaries; see [usage queries](inspect-runs.md#usage).
 
 ### Workspace usage in the Console
 

@@ -99,7 +99,7 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-运行 `python environment_demo.py`，程序检查实际工具结果后输出 `Workspace file read successfully.`。Run 关闭后文件仍然存在，直到外层代码块退出，才由 `TemporaryDirectory` 删除。
+运行 `uv run python environment_demo.py`，程序检查实际工具结果后输出 `Workspace file read successfully.`。Run 关闭后文件仍然存在，直到外层代码块退出，才由 `TemporaryDirectory` 删除。
 
 三个部分串起这条路径：
 

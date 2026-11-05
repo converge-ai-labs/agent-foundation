@@ -21,7 +21,7 @@ description: 为文件和命令任务创建工作空间、复用已有机器，�
 
 不挂载 socket 的快速入门部署不会自动配置 Docker。源码开发的 `make dev` 会启用 **Local**，在检出目录的 `var/dev/environments` 下创建 **Local Workspace** 模板。每个实例使用独立子目录。Local 命令直接以 Service 进程的操作系统用户身份执行，不提供隔离。
 
-通用 Service 设置默认关闭这两种自动配置。启用它们或使用本地构建镜像时，参阅[工作空间自动配置](configuration.md#workspace-provisioning)。`all` 角色在创建工作空间和启动时补建缺失的默认资源。失败时，修复 Engine 访问并重启。成功配置后会保留后续模板修改、禁用和删除结果。自动配置创建的是配置资源；实际实例在收到请求后分配。
+通用 Service 设置默认关闭这两种自动配置。启用它们或使用本地构建镜像时，参阅[工作空间自动配置](workspace-provisioning.md#workspace-provisioning)。`all` 角色在创建工作空间和启动时补建缺失的默认资源。失败时，修复 Engine 访问并重启。成功配置后会保留后续模板修改、禁用和删除结果。自动配置创建的是配置资源；实际实例在收到请求后分配。
 
 ## Provider
 
@@ -41,6 +41,76 @@ Docker 默认使用运维设置的 `environments.docker_host`。provider 单独�
 云实例使用已保存的账号，并向该账号计费。配置空闲停止或删除来限制保留时间。Service 会续期受支持的就绪沙箱，但仍受厂商硬性时限约束。已停止的实例可以带着保留的文件恢复；丢失的实例需要恢复或替换。Sprites 不支持显式停止，需要时使用空闲删除。
 
 编辑 provider 时，省略凭据会保留原值，新值会替换原值，`null` 会移除凭据。保留的模板或实例引用会阻止删除 provider。删除无引用的 provider 只移除已保存的配置和凭据，不删除底层 Engine 或云账号。
+
+## Kubernetes 沙箱
+
+Kubernetes 将实例运行为原生 Pod，由选定容器中的 Envd 提供执行能力。运维配置受信任的集群 profile、允许的命名空间和沙箱 ServiceAccount 后，Kubernetes 才会出现在 provider 目录中。工作空间用户选择 profile 和命名空间；Kubernetes API 凭据由运维持有。
+
+1. 请运维在 Control 和 Worker 上配置 `environments.kubernetes_clusters`，或按 [Kubernetes 运维配置](configuration.md#kubernetes-environments)中的说明启用 Helm 选项。
+2. 在**工作空间设置 → Providers → 环境**中创建 Kubernetes provider。选择运维配置的集群 profile，并填写获准的命名空间。Helm 示例对应 `config: {"cluster":"in-cluster","namespace":"agent-sandboxes"}`。保存 provider 后，重新打开并选择 **Check connection（检查连接）**。
+3. 按下方说明准备沙箱镜像，然后创建模板。选择 **Pod 直连**或**本地端口转发**，通过卡片配置容器、资源请求与限制、变量、持久存储和调度。**生命周期**单独控制回收策略。常规配置无需编写 YAML 或 JSON；**编辑原生 JSON**提供其他原生字段，返回表单后修改配置也会保留这些字段。下方 JSON 是等价的 API 模板 `config`。
+4. 在已配置可用模型的 agent 上启用 **Files** 和 **Shell**，并选择此默认模板。新建会话，让 agent 写入 `hello.txt`，再发一条消息读取文件。只覆盖一次运行时，选择**运行选项 → 本次运行环境 → 从模板创建**。
+
+```json
+{
+  "recipe": {
+    "execution_container": "envd",
+    "connection": "direct",
+    "pod_template": {
+      "spec": {
+        "restartPolicy": "Never",
+        "containers": [{"name": "envd", "image": "a13n-sandbox:local"}]
+      }
+    }
+  },
+  "reclamation": {
+    "idle_delete_seconds": 1800,
+    "preparation_seconds": 600,
+    "failed_retention_seconds": 3600
+  }
+}
+```
+
+**首次运行前先准备镜像。** 示例中的 `a13n-sandbox:local` 是本地构建，不是仓库镜像。在本 checkout 中构建并加载到已有 kind 集群（将 `my-cluster` 替换为实际名称）：
+
+```sh
+make image-sandbox SANDBOX_IMAGE=a13n-sandbox:local
+kind load docker-image a13n-sandbox:local --name my-cluster
+```
+
+其他集群需要按节点架构构建本 checkout 的沙箱镜像并推送到仓库，再把准确的 tag 或 digest 写入 `pod_template.spec.containers[].image`：
+
+```sh
+make image-sandbox SANDBOX_IMAGE=registry.example.com/team/a13n-sandbox:reviewed
+# Authenticate to your registry before pushing.
+docker push registry.example.com/team/a13n-sandbox:reviewed
+```
+
+私有仓库还需配置原生 `imagePullSecrets`。镜像必须启动 Envd，并使用 Service 注入的凭据文件路径；使用与 Service 相同 checkout 构建的沙箱镜像。`make k8s-up K8S_ENVIRONMENTS=1` 会构建并加载自己的镜像 tag；请读取其 `K8S_STATE_DIR` 下 `deployment.json` 中的 `sandbox_image`，不要假定它是 `:local`。默认目录是 `~/.config/a13n-service-kind`；使用非默认 `K8S_CLUSTER` 时追加 `-<cluster>`。
+
+资源请求与限制、init 容器、sidecar、调度、安全上下文及 ConfigMap、Secret 引用保留在 `pod_template.spec` 中，由 Kubernetes admission 校验这些原生字段。Service 管理 Pod 身份、沙箱 ServiceAccount 和私有 Envd 凭据注入。选定的执行容器必须启动 Envd；Pod 处于 Running 并不代表执行能力已经就绪。
+
+`direct` 从 Service 连接 Pod IP，Service 可以部署在集群内或集群外。集群外部署时，运维在 Control 和 Worker 上提供 kubeconfig profile。直连要求两个进程都能访问 Pod IP。没有 Pod IP 路由的本地调试可使用 `port_forward`，前提是 kubeconfig profile 明确允许且已安装 `kubectl`；隧道仅属于使用它的进程。两种方式目前都使用 Bearer 认证的 HTTP，需要 profile 显式设置 `allow_plaintext_envd = true`。此类流量应保留在可信私有网络内。provider 检查成功代表配置、认证和 Pod 列举权限正常；镜像拉取、Pod 创建、调度、存储和 Envd 就绪仍需通过真实实例验证。
+
+需要持久文件时，在 `recipe.storage` 中添加绑定，包含 `name`、`mount_path`，以及原生 `claim_template` 或 `existing_claim` 二选一。新建 PVC 默认使用 `disposition: retain`；选择 `delete` 会在回收时删除拥有的 PVC。已有 PVC 始终视为借用资源，即使绑定指定删除也会保留。`shared_directory: true` 在已有 PVC 中使用实例专属目录，并保留该目录。引用的 ConfigMap 和 Secret 也属于借用资源。`recipe.network_policy` 接受原生 NetworkPolicy 模板，Pod selector 由 Service 填入；实际执行网络策略需要兼容的集群网络实现。
+
+Kubernetes 支持创建、复用和删除。回收设置在预留实例时复制到实例。默认空闲 30 分钟后删除，准备时间上限为 10 分钟，准备失败后保留一小时。Kubernetes 没有停止/恢复操作。删除会等待所拥有的资源消失；finalizer 可能使实例保持 `deleting`。保留和借用的资源仍可在回收记录中查看。
+
+在实例的 Kubernetes 面板查看 Pod UID、调度和容器状态、Events、存储处置与 Envd 就绪状态。`GET /api/v1/environments/{id}/kubernetes/diagnostics` 和 `/kubernetes/logs` 需要工作空间 `run` 权限。日志有大小限制，可选择容器和上一轮容器日志。这些查询不重置空闲计时。调试时，可用当前 `If-Match` 向 `PUT /api/v1/environments/{id}/debug-hold` 提交 `{"seconds":3600}`，暂缓自动回收；`{"seconds":null}` 清除保留。每次保留最长一天。Pod 被替换且 UID 改变时属于目标丢失，应创建新实例，不会静默接管替代 Pod。
+
+## 仅本次运行的环境选择
+
+会话的运行选项可以为一次运行新建工作空间，或选择已有实例。API 客户端提交 `options.environment`：
+
+```json
+{"mode":"fresh","template_id":"envtpl_..."}
+```
+
+```json
+{"mode":"existing","environment_id":"env_..."}
+```
+
+接收后的运行固定实例 ID 和权限。同一次已接收运行的重试保留原选择。覆盖只替换本次运行的 `workspace` 挂载，不修改线程的期望挂载。省略该选项时，继续使用正常的线程挂载和 agent 默认行为。选择不可用的已有实例会失败，不会自动创建替代实例。
 
 ## 模板
 
@@ -67,7 +137,7 @@ curl -sS -X POST "$A13N_URL/api/v1/environment-templates" \
 
 保存返回的模板 ID。此例在空闲 30 分钟后停止实例，七天后删除实例。两个计时器都从最后使用时间起算；`null` 关闭对应策略。空闲删除会移除线程挂载和实例文件。配置了默认模板的线程可以在下次运行时获得新工作空间。
 
-更新模板时，将模板 ETag 放入 `If-Match`。Recipe 在首次认领创建任务时固定，应在此之前修改，或创建新实例。空闲策略立即适用于已有实例。禁用模板会阻止新预留，也会阻止尚处于预留状态的实例首次创建；已经创建的实例继续可用。
+更新模板时，将模板 ETag 放入 `If-Match`。Recipe 在首次认领创建任务时固定，应在此之前修改，或创建新实例。使用 `stop_after_seconds` 和 `delete_after_seconds` 的 provider，其空闲策略修改立即适用于已有实例。Kubernetes 的 `reclamation` 在预留时固定；修改仅影响新的预留。禁用模板会阻止新预留，也会阻止尚处于预留状态的实例首次创建；已经创建的实例继续可用。
 
 ### 默认环境变量
 
@@ -77,7 +147,7 @@ curl -sS -X POST "$A13N_URL/api/v1/environment-templates" \
 {"environment":{"APP_MODE":"agent","TOOL_ENDPOINT":"https://tools.example.com"}}
 ```
 
-这是 recipe 片段。命令及其子进程接收这些值。[执行策略](agents-and-runs.md#execution-policy)和命令显式指定的值可以覆盖默认值，而不修改共享实例。Local 还要求变量名列入 `allowed_environment_keys`，除非该白名单不设限制。
+这是 recipe 片段。命令及其子进程接收这些值。[执行策略](execution-options.md#execution-policy)和命令显式指定的值可以覆盖默认值，而不修改共享实例。Local 还要求变量名列入 `allowed_environment_keys`，除非该白名单不设限制。
 
 使用可移植的变量名和字符串值。秘密值应保留在凭据或 secret binding 控制中：模板变量是可读取的配置。平台启动、桌面和遥测变量名由平台保留。默认变量随实例 recipe 固定，停止后启动仍保留原值。要应用修改后的模板默认值，请创建新实例。
 
@@ -179,7 +249,7 @@ curl -sS -X POST "$A13N_URL/api/v1/threads/$THREAD/environments" \
 {"options":{"overrides":{"lazy_environment":false}}}
 ```
 
-重试和继续执行保留已接受的选择。分叉默认共享挂载，除非选择 `fresh_environments`；归档会移除线程挂载。异步[子 agent](agents-and-runs.md#subagents) 使用调用边的 `shared`、`dedicated` 或无环境策略。内联子 agent 共享父运行环境。
+重试和继续执行保留已接受的选择。分叉默认共享挂载，除非选择 `fresh_environments`；归档会移除线程挂载。异步[子 agent](agent-configuration.md#subagents) 使用调用边的 `shared`、`dedicated` 或无环境策略。内联子 agent 共享父运行环境。
 
 ### 复用实例并选择项目目录
 
@@ -191,90 +261,6 @@ curl -sS -X POST "$A13N_URL/api/v1/threads/$THREAD/environments" \
 
 ## Computer Use
 
-桌面任务需要三个条件：兼容的图形环境、agent 已启用的**电脑**工具集，以及线程挂载的电脑权限。先准备桌面，再允许观察或交互。
+<span id="create-a-docker-desktop"></span> <span id="automatic-vercel-desktops"></span> <span id="enable-observation-and-interaction"></span> <span id="computer-coordinate-mode"></span> <span id="desktop-access-prerequisites"></span> <span id="get-and-return-desktop-control"></span> <span id="upgrade-desktop-control"></span> <span id="automatic-sprites-desktops"></span>
 
-### 创建 Docker 桌面
-
-1. 配置 Docker provider 的**环境操作通道**和**主机访问地址**。Worker 必须能访问该地址及 Docker 分配的端口；Engine 访问是另一条连接。
-2. 创建 Docker 模板，选择**桌面环境**。预设会选择桌面镜像、HTTP 执行方式和桌面就绪要求。
-3. 将模板选为 agent 默认环境，或创建实例后添加到会话。
-4. 实例运行后，在**环境与记忆**中选择**检查桌面**，再按下文授予权限。
-
-使用回环地址或明确可信的私网 HTTP 路由，并配置对应出站策略。其他主机名需要明确的监听 IP。自定义图形镜像须兼容 Envd HTTP，并设置 `execution: "envd_http"` 和 `desktop: true`。人工桌面控制还需要浏览器可达的查看路由，见下文。
-
-### 自动创建 Vercel 桌面
-
-1. 使用 access token 添加 Vercel provider，选择**加载 Vercel 团队**，再选择该 token 可以访问的团队和项目。
-2. 创建模板，选择**桌面环境 → 自动桌面**。
-3. 创建实例。首次构建可能需要数分钟，Console 显示阶段和已等待时间。离开页面后，可以回到**环境实例**检查进度。
-4. 就绪后检查桌面预览，再启用 agent 权限。
-
-Token 需要沙箱和快照的创建、读取、删除权限，并有适合无人值守使用的有效期。后续创建会在同一工作空间、provider、凭据版本、团队、项目和构建版本内复用已验证快照。临时构建实例会被移除，可复用快照保留在 Vercel 项目中。
-
-### 启用观察和操作
-
-1. 启用 agent 的**电脑**工具集并保存。单个工具的审批仍然生效。
-2. 在**环境与记忆**中打开挂载的**电脑操作权限**。允许观察可获取截图，允许交互可使用鼠标和键盘。
-3. 发送新消息，要求 agent 描述屏幕。展开其工作步骤，在观察步骤选择**查看截图**。
-4. 执行交互任务时，检查下一张截图，确认应用发生了预期变化。
-
-电脑权限默认关闭。修改对新接收的运行生效，`workspace` 也遵循此规则。桌面就绪状态与权限独立：**检查桌面**只探测运行中的实例，不截图、不发送输入、不授予权限，也不启动已停止实例。已保存的步骤截图是历史画面；实时查看使用桌面控制。
-
-API 客户端通过 `PATCH /api/v1/threads/{thread_id}/environments/{name}` 更新挂载，并携带线程 ETag。以下请求体只允许电脑观察：
-
-```json
-{"permission_ceiling":{"operations":["environment.computer.describe","environment.computer.observe","environment.computer.zoom"]}}
-```
-
-动作列表会替换整个权限集合。请包含需要保留的文件和执行动作；Console 预设会保留它们。电脑权限控制 Computer 工具，Shell 和其他工具仍使用各自的权限。
-
-### Computer 坐标模式
-
-模型返回相对位置时，添加以下 agent 配置片段：
-
-```json
-{"toolsets":{"computer":{"enabled":true,"config":{"coordinate_space":"normalized_1000"}}}}
-```
-
-直接传入 0 到 1000 的位置。工具将其转换为截图像素，包括拖拽的两个端点。返回像素的模型使用默认 `pixels` 模式。滚动距离和键盘输入保持不变。每次操作后都检查应用结果。
-
-### 桌面访问前提
-
-在 recipe 中启用 `desktop: true` 和 `desktop_assistance: true`。这些设置准备人工查看和 Computer 控制，不会添加 agent 工具。Service 不提供内置桌面协助请求工具；应用可以自行提供请求流程。agent 的 Computer 工具和挂载权限需单独配置。按 [provider 指南](../environments/providers.md)准备兼容的桌面访问 v2 端点。
-
-Docker 需要配置 `desktop_viewer_url`，例如 `wss://desktop.example/{container_id}/websockify`，并路由到各容器的 6081 端口。Engine 和 Envd 访问不能提供这条浏览器路由。只有回环地址接受明文 WS。E2B 需要自动准备或兼容的自定义桌面模板，仅有普通 `desktop` 模板还不够。其他 provider 使用已准备的 supervisor 及各自的路由。打开查看器不会启动环境或延长环境寿命。
-
-### 获取与归还桌面控制权
-
-1. 在可交互会话中选择**浏览器**旁的**桌面**图标。右侧面板自动以只读方式显示所选环境挂载的桌面。
-2. 选择**接管**申请 Computer 输入控制。Service 阻止后续 Computer 调用，授权后自动连接输入。已放行的调用可以继续完成，包括发送输入。
-3. 直接操作桌面，文件、Shell、进程、脚本、其他桌面和 agent 的模型工作继续运行。
-4. 需要更多时间时选择**续期控制权**。默认租约为五分钟；运维者通过 `control.desktop_control_seconds`、`control.desktop_control_min_seconds` 和 `control.desktop_control_max_seconds` 配置默认值和请求范围。
-5. 完成后选择**归还控制权**。Service 撤销输入并确认按键和鼠标按钮清理，再重新开放 Computer 通道。
-
-关闭查看器或页面只会断开该查看器，控制权保持到显式归还或租约过期。短期连接授权与人工租约独立续期。同一原生桌面同时只有一个主体控制，即使多个环境别名或 thread 共享它。只读查看器保持独立。Browser 控制有自己的生命周期。
-
-每次正常模型请求都会包含已知原生桌面挂载的当前 Computer 放行状态，与权限和就绪状态分别说明。agent 看到人工控制状态后，可以调用 `computer_notify(alias="workspace")` 登记交还通知，无需先尝试一个会被阻止的操作。接管期间受阻的 Computer 调用也会自动登记同一通知。登记按 thread 和本次接管去重；交还后才登记会返回 `already_available`，不会订阅未来的接管。agent 可以继续其他工作或结束当前回合，无需轮询。本次接管结束时，包括输入授权前取消，现有收件箱向仍符合条件的调用方投递一次通知。后续接管不会抹掉已产生的事件。通知要求 agent 检查当前 Computer 放行状态，不保证桌面此刻仍可用，也不会自动登记后续接管。agent 必须观察当前桌面并进行新的模型决策，之后才能发送输入；旧手势不会重放。已结束的子 agent 不会重新启动。待处理问题和审批仍需按原有流程提交完整响应批次。
-
-人工查看器的授权撤销或按键、鼠标按钮清理未确认时，Computer 访问保持阻塞，等待核对。agent 的 Computer 调用失败或失去执行方不会延迟接管。该控制边界覆盖受管理的 Computer 调用，包括 CodeAct 内的调用。它不会冻结任意访客进程、Shell 启动的界面自动化或独立客户端。
-
-### 升级桌面控制
-
-此变更用环境级 Computer 控制替代运行级协助和暂停/恢复 API。请协调切换：
-
-1. 在旧版本停止接收新任务和接管请求，等待活跃 worker 和保留工具执行结束。
-2. 使用旧版本撤销并核对所有旧桌面授权和预留。完成并恢复旧桌面等待，或取消其当前 thread 头。保留已完成的历史运行。先解决清理结果不确定的问题，再继续。
-3. 停止全部旧 control 和 worker 副本。备份数据库，通过受支持的迁移流程执行一次 schema 迁移。仍有活跃预留、未解决协助或可恢复的桌面等待时，迁移会拒绝执行。
-4. 同步升级 control、worker 和客户端。启用人工访问前，将桌面访客环境准备为协议 v2。现有 v1 环境需要显式替换为兼容环境或由运维升级；连接操作不会升级环境。
-5. 在已准备的目标上验证查看、接管和归还，再重新开放请求。
-
-此切换不支持新旧副本混合运行。出现旧版本无法表达的新控制或交还历史后，数据库会拒绝降级。此时应向前修复。
-
-### 自动创建 Sprites 桌面
-
-1. 添加 Sprites provider，填写组织和允许归属标签、执行、删除、URL 设置的 token。
-2. 创建模板并启用**桌面环境**。
-3. 创建实例。每个新 Sprite 都安装 Envd、桌面依赖和 Chrome。Console 显示进度，可以稍后返回检查，或在确认失败后重试。
-4. 就绪后，选择**查看桌面**获取截图。交互访问使用会话中的桌面控制。
-
-已有 Sprite 在休眠后保留文件和安装结果，新 Sprite 则重新安装。安装失败会保留所属目标，供显式重试或删除。Sprites 不支持显式停止。浏览器访问使用短期授权和 VNC 认证，云 API Token 保留在 Service。
+- [使用桌面](computer-use.md)

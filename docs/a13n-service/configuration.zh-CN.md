@@ -132,6 +132,9 @@ export A13N_ENCRYPTION__KEYS="{\"primary\": \"$(openssl rand -base64 32)\"}"
 4. 重启提供 API 的进程，发送邀请验证投递。
 
 ```toml
+[encryption]
+key_file = "/var/lib/a13n/encryption.key"
+
 [auth.mail]
 smtp_host = "smtp.example.com"
 smtp_port = 587
@@ -203,7 +206,7 @@ HTTPS Envd 连接使用这些变量；明文本地或 provider 私有 Envd HTTP 
 | 调整目标准备和维护   | `environments.*`。                                                                                    |
 | 限制保留工具调用     | `tool_executions.max_active`、保留和关闭设置。                                                        |
 
-保留调用默认每个 worker 最多 64 个活跃执行，前台等待五秒。该等待是[执行策略](agents-and-runs.md#execution-policy)的部署回退值，不是截止时间；agent、线程或单次运行可以覆盖。结果在完成后最多保留 24 小时。首次交付确认会启动较短的一小时重读窗口，不延长最大保留期限。
+保留调用默认每个 worker 最多 64 个活跃执行，前台等待五秒。该等待是[执行策略](execution-options.md#execution-policy)的部署回退值，不是截止时间；agent、线程或单次运行可以覆盖。结果在完成后最多保留 24 小时。首次交付确认会启动较短的一小时重读窗口，不延长最大保留期限。
 
 为关闭流程的所有阶段预留时间：先等待 worker 尝试交接，保留调用再获得 `shutdown_grace_seconds`（默认 300 秒），随后取消流程获得 `finalization_seconds`（默认 10 秒）用于清理和结果发布。进程退出后，租约协调将未完成记录标记为 lost。按这些阶段设置平台的终止宽限期，参阅[运维指南](operations.md)。
 
@@ -213,7 +216,7 @@ HTTPS Envd 连接使用这些变量；明文本地或 provider 私有 Envd HTTP 
 
 先使用 JSON 日志，需要时启用私有指标监听器。`telemetry.log_level` 和 `log_format` 适用于所有命令。服务器可通过 `log_file`、`log_file_max_mb` 和 `log_file_backups` 写入轮转 JSON 文件；`log_stdout = false` 要求配置文件。`metrics_port` 必须与 HTTP 端口不同。按[监控设置](monitoring.md#metrics)验证抓取。
 
-为导出和 [trace 查询](agents-and-runs.md#traces)选择同一后端：
+为导出和 [trace 查询](inspect-runs.md#traces)选择同一后端：
 
 | `telemetry.trace_backend` | 必需设置                                                    |
 | ------------------------- | ----------------------------------------------------------- |
@@ -227,7 +230,7 @@ HTTPS Envd 连接使用这些变量；明文本地或 provider 私有 Envd HTTP 
 
 `monitoring.enabled` 默认为 `true`，但目标选择数据源后才开始采集。查看第一张图表时，按[环境监控指南](environment-monitoring.md#bind-and-verify-an-environment)绑定 **Local Cache**。
 
-使用 pull 采集时，先配置 `monitoring.collectors.vmagent` 或 `.alloy`，再创建 pull 数据源。映射默认为空。每项需要绝对路径的共享目录和重载端点。每个采集器只将一个 `all` 或 `control` 进程设为 `writer = true`，其他进程使用默认 `false`。Alloy 还需要已有 `receiver`。挂载、凭据、重载策略和验证步骤见[采集器初始化](environment-monitoring.md#bootstrap-an-optional-collector)。环境变量覆盖使用完整 JSON 映射 `A13N_MONITORING__COLLECTORS`。
+使用 pull 采集时，先配置 `monitoring.collectors.vmagent` 或 `.alloy`，再创建 pull 数据源。映射默认为空。每项需要绝对路径的共享目录和重载端点。每个采集器只将一个 `all` 或 `control` 进程设为 `writer = true`，其他进程使用默认 `false`。Alloy 还需要已有 `receiver`。挂载、凭据、重载策略和验证步骤见[采集器初始化](environment-collectors.md#bootstrap-an-optional-collector)。环境变量覆盖使用完整 JSON 映射 `A13N_MONITORING__COLLECTORS`。
 
 采集器就绪后，可向指定工作空间提供可选预设：
 
@@ -239,7 +242,7 @@ query_endpoint = "https://metrics.example.com"
 workspace_ids = ["ws_example"]
 ```
 
-列表为空时不提供预设。`A13N_MONITORING__DEPLOYMENT_PRESET` 接受整个对象的 JSON。通过 `A13N_MONITORING__DEPLOYMENT_QUERY_BEARER_TOKEN` 单独提供可选读取令牌，再重启 control 进程。管理员[确认预设](environment-monitoring.md#confirm-a-deployment-preset)后创建数据源，并可选保存凭据快照。部署变化不会更新已有数据源或绑定。
+列表为空时不提供预设。`A13N_MONITORING__DEPLOYMENT_PRESET` 接受整个对象的 JSON。通过 `A13N_MONITORING__DEPLOYMENT_QUERY_BEARER_TOKEN` 单独提供可选读取令牌，再重启 control 进程。管理员[确认预设](environment-collectors.md#confirm-a-deployment-preset)后创建数据源，并可选保存凭据快照。部署变化不会更新已有数据源或绑定。
 
 ## 关联限制
 
@@ -253,45 +256,75 @@ workspace_ids = ["ws_example"]
 
 [单机 Compose 部署](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose)以 `all` 角色运行，包含 PostgreSQL、Redis 和通过宿主 Engine 提供的 Docker 环境。[Helm chart](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/kubernetes)提供分离的 control/worker Deployment 和迁移 Job。`all` 和 `control` 在 `server.public_url` 提供 Console 与 API。
 
+## Kubernetes 环境
+
+在 Control 和 Worker 上配置相同的可信集群配置。`environments.kubernetes_clusters` 为空时，provider 目录不提供 Kubernetes。集群配置由运维管理；工作空间 provider 只能选择配置名称和允许的命名空间。Service 提供 Kubernetes 所需的 Host 集成；Harness UI 不将它作为独立的内置 provider 提供。
+
+### Helm 部署
+
+chart 的集成是可选功能，默认关闭。在部署 values 中加入：
+
+```yaml title="values.yaml"
+kubernetesEnvironments:
+  enabled: true
+  namespace: agent-sandboxes
+  ownershipId: production-service
+  allowPlaintextEnvd: true
+```
+
+安装或升级前先创建 `agent-sandboxes`。Helm 为 Control 和 Worker 创建 `in-cluster` profile、命名空间级管理 RBAC，以及独立的 `<release>-a13n-sandbox` ServiceAccount。Kubernetes 凭据只投射到 Service 运行时容器。无需再添加 TOML 或工作空间凭据。`namespace` 为空时使用 release 命名空间；`ownershipId` 为空时使用由 release 派生的名称。生产环境应使用独立的沙箱命名空间。
+
+chart 配置基础设施访问权限。工作空间 provider、模板和 agent 按[首次运行流程](environments.md#kubernetes-sandboxes)在 Console 创建。镜像、StorageClass、Pod 资源、调度和实例网络策略属于原生模板；chart 不预置工作空间资源，也不强制全局沙箱镜像。
+
+### 手动配置进程
+
+不使用 Helm 集成时，在 **Control 和 Worker** 加载的 TOML 中加入以下内容，然后重启两个角色：
+
+```toml title="service.toml"
+[environments.kubernetes_clusters.in-cluster]
+authentication = "in_cluster"
+namespaces = ["agent-sandboxes"]
+ownership_id = "production-service"
+sandbox_service_account = "agent-sandbox"
+allow_plaintext_envd = true
+```
+
+使用此配置前，先创建命名空间、沙箱 ServiceAccount 和管理 RBAC。[Helm chart](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/kubernetes#kubernetes-environments) 可通过 `kubernetesEnvironments.enabled` 创建这些绑定。它仅向 Service 运行时容器投射 API 凭据，并禁用沙箱的令牌自动挂载。生产环境使用独立的沙箱命名空间：原生 Pod 作者可以引用命名空间内的 Secret 并请求特权，因此需要实施 Pod Security 和准入策略。仅限制命名空间不能构成工作负载隔离策略。
+
+集群外的开发进程使用运维管理的 kubeconfig 和明确的 context：
+
+```toml
+[environments.kubernetes_clusters.local-kind]
+authentication = "kubeconfig"
+kubeconfig = "/absolute/path/to/kubeconfig"
+context = "kind-my-cluster"
+namespaces = ["agent-sandboxes"]
+ownership_id = "local-development"
+sandbox_service_account = "agent-sandbox"
+allow_plaintext_envd = true
+allow_port_forward = true
+```
+
+在使用 `connection: port_forward` 的每个进程中安装 `kubectl`，并为其管理身份授予 `pods/portforward` 的 `create` 权限。开发隧道属于使用它的进程。Helm 集成使用直接连接，不授予端口转发权限。
+
+### 网络与首次运行检查
+
+两种连接方式目前都使用 Bearer 认证的 HTTP。创建和连接需要将 `allow_plaintext_envd`（Helm：`allowPlaintextEnvd`）设为 true；默认保持 false，由运维显式接受网络信任边界。凭据验证请求，但不加密流量。仅允许 Envd 流量经过可信私有网络。使用 `direct` 时，Control 和 Worker 必须能够访问沙箱 Pod IP 的 `envd_port`（默认 8888）；Console 用户只需访问 Service URL。请按实际拓扑配置集群准入和网络策略。Kubernetes API 请求超时默认 15 秒，最大 60 秒。
+
+先用**检查连接**验证 profile 策略、认证和命名空间的 Pod 列举权限。再创建真实实例并执行 Files/Shell 任务，验证创建权限、镜像拉取、准入、调度、存储和 Envd 就绪。常见配置问题：
+
+| 现象                           | 检查项                                                                       |
+| ------------------------------ | ---------------------------------------------------------------------------- |
+| 目录中没有 Kubernetes          | Control 是否加载了非空 profile map；Worker 也需相同配置。                    |
+| profile 或命名空间被拒绝       | 使用列出的 profile 及其允许的命名空间，不要填 kubeconfig context 名称。      |
+| HTTP 显式授权被拒绝            | 确认网络路径可信后，显式启用明文选项。                                       |
+| `ImagePullBackOff`             | 将本地镜像加载到 kind，或使用可拉取的 tag/digest 并配置 `imagePullSecrets`。 |
+| Pod 已 Running，但实例仍在准备 | 检查选定容器是否启动 Envd、凭据文件配置及 Pod IP 路由。                      |
+| PVC 一直 Pending               | 检查 Events、StorageClass 和调度，包括 WaitForFirstConsumer。                |
+| 实例一直 deleting              | 检查 finalizer 及保留/借用资源记录；Service 不移除第三方 finalizer。         |
+
+实例存在期间，保持 `ownership_id`、集群配置名称、命名空间和沙箱身份稳定。移除集群配置或权限前，通过 Service 删除实例，并保留数据库及加密密钥环以便恢复。移除部署资源不会删除实例 Pod 或保留的存储卷。原生配方、存储处置、诊断和调试保留见 [Kubernetes 沙箱](environments.md#kubernetes-sandboxes)。
+
 ## 工作空间自动配置
 
-Local/Docker provider 和模板的自动创建只在 `all` 角色运行。通用设置中两者默认关闭；提供的挂载 socket 的 Compose 部署启用 Docker，关闭 Local。分离的 control/worker 部署需要明确配置执行资源。
-
-初始化 Docker 时，先让 Service 进程通过 `environments.docker_host` 或其 Docker 环境访问目标 Engine。只安装 CLI 不会获得 Engine 访问权限。然后启用：
-
-```toml
-[provisioning.docker]
-enabled = true
-```
-
-默认模板使用 Service 审定的 sandbox 镜像和 `pull_policy = "if_missing"`。自动配置只创建一次资源，初始化时不拉取镜像或创建容器；实例需要镜像时才拉取。后续设置变化不覆盖已有模板，需要在 Console 或通过 API 编辑。已有实例保留原镜像。
-
-在仓库检出中使用本地构建镜像：
-
-1. 在仓库根目录运行 `make image-sandbox`。
-2. 将以下覆盖配置保存为该根目录下的 `compose.local.yaml`：
-
-```yaml
-services:
-  service:
-    environment:
-      A13N_PROVISIONING__DOCKER: '{"enabled":true,"image":"a13n-sandbox:local","pull_policy":"never"}'
-```
-
-3. 同时加载两个文件启动：
-
-```sh
-docker compose -f deploy/docker/compose/a13n-service.yaml -f compose.local.yaml up -d --wait
-```
-
-直接使用 TOML 部署时，将同样的 `image` 和 `pull_policy` 字段放入 `[provisioning.docker]`。镜像仓库中的镜像使用 `if_missing`。环境变量覆盖完整 JSON 对象；旧的 `A13N_DOCKER_ENVIRONMENT_IMAGE` 快捷变量不再读取。
-
-仅在开发部署中使用 Local 执行，并指定绝对根目录：
-
-```toml
-[provisioning.local]
-enabled = true
-root = "/srv/a13n/environments"
-```
-
-Local 直接在 worker 宿主机执行，没有隔离。禁用后保留目录和资源，但后续执行无法再使用 Local。禁用 Docker 自动配置后，手动配置的 Docker provider 仍可使用。重试和职责规则见[工作空间自动配置](environments.md#workspace-provisioning)。
+- [配置工作空间自动资源](workspace-provisioning.md)

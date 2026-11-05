@@ -80,9 +80,16 @@ async def test_run_mcp_discovery_http_scope_versions_and_audit(service, scripted
             assert tool_name(paths["/api/v1/connector-providers/{provider_id}" + suffix]["get"]["operationId"]) in names
         assert tool_name(paths["/api/v1/models"]["get"]["operationId"]) not in names
         assert "search_documents" not in {tool["name"] for tool in tools}
-        assert (await rpc(http, "tools/call", name="search_documents", arguments={"query": "agents"})).json()["result"][
-            "isError"
-        ]
+        for name in ("search_documents", "nonexistent_tool"):
+            refusal = (await rpc(http, "tools/call", name=name, arguments={"query": "agents"})).json()["result"]
+            assert refusal["isError"]
+            error = json.loads(refusal["content"][0]["text"])["error"]
+            assert error == {
+                "source": "system",
+                "code": "forbidden",
+                "message": "Run credential does not admit this operation.",
+                "details": {},
+            }
         for path in ("/api/v1/memories", "/api/v1/users/me", "/api/v1/openapi.json", "/healthz"):
             assert (await http.get(path)).status_code == 403
         assert (await http.post(f"/api/v1/runs/{lease.run_id}/interrupt")).status_code == 403
@@ -99,6 +106,7 @@ async def test_run_mcp_discovery_http_scope_versions_and_audit(service, scripted
             http, "update_agent_metadata", agent_id=agent["id"], expected_version=etag, description="stale"
         )
         assert stale["error"]["code"] == "precondition_failed"
+        assert "source" not in stale["error"]
         listed = await call(http, "list_runs", agent_id=agent["id"], status="running", limit=1)
         assert [item["id"] for item in listed["items"]] == [lease.run_id]
         detail = await call(http, "get_run_attempt", run_id=lease.run_id, attempt_id=lease.attempt_id)

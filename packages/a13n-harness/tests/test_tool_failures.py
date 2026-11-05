@@ -33,6 +33,15 @@ def test_file_and_shell_failures_share_environment_projection():
     )
 
 
+@pytest.mark.parametrize("stage", [None, "pre_dispatch", "dispatched", "unknown"])
+def test_shell_effect_uncertainty_uses_dispatch_evidence(stage):
+    error = EnvironmentError("private", code="custom_provider_code", details={"dispatch_stage": stage})
+    write = shell_failure(error, may_have_effects=True)["error"]
+    assert write["outcome_known"] is (stage == "pre_dispatch")
+    assert ("hint" in write["details"]) is (stage != "pre_dispatch")
+    assert "hint" not in shell_failure(error)["error"]["details"]
+
+
 def test_working_state_preserves_safe_explanation_and_validation_field():
     result = _task_error(TaskStateError("A task cannot depend on itself.", code="task_dependency_invalid"))
     assert result["error"]["message"] == "A task cannot depend on itself."

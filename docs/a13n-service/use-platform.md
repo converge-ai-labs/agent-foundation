@@ -1,6 +1,6 @@
 ---
-title: Use an existing platform
-description: Run a team agent in Console, continue the conversation, and create your own agent.
+title: Run and debug an agent in Console
+description: Test an agent, continue a conversation, and debug a run in Console using its configuration, attempts, and usage.
 ---
 
 Use this guide when your team already runs Service. You need its Console URL, an account, and permission to run an agent. You will send a request, follow up in the same thread, and learn where to inspect or branch the work. To deploy Service yourself, start with the [quickstart](get-started.md). Console is the Service application; Harness UI is a separate workbench.
@@ -12,6 +12,8 @@ Use this guide when your team already runs Service. You need its Console URL, an
 3. Select your team's workspace.
 
 A **runner** can execute agents; a **builder** can also create resources. Organization and workspace grants apply to the selected workspace. Ask an administrator for the access you need; see [Roles](identity.md#roles).
+
+If your workspace or agent is missing, give the administrator your sign-in email, workspace name, and the agent you want to run. Ask them to check your workspace grant.
 
 To change the display language, open your user menu and select **Language → Display language**. **System** follows a supported browser language and falls back to English. The choice is saved in this browser.
 
@@ -49,7 +51,9 @@ With builder or admin access, use [Agent Composer](agent-composer.md) to describ
 
 After editing, select **Save changes**. Each configuration change creates a revision under **Versions**. New work uses the saved version by default; active work and approval continuations retain their original version, and explicitly pinned messages keep their selection. See [revision selection](agents-and-runs.md#agents) before changing an agent used by an application.
 
-Add [tools](tools.md), [skills](skills.md), or [subagents](agents-and-runs.md#subagents) as the task grows.
+To use this agent from an application, open its **Connect to app** menu. Use the displayed agent ID and Service URL with the [application guide](connect-application.md).
+
+Add [tools](tools.md), [skills](skills.md), or [subagents](agent-configuration.md#subagents) as the task grows.
 
 ## Guide the work
 
@@ -58,7 +62,7 @@ Add [tools](tools.md), [skills](skills.md), or [subagents](agents-and-runs.md#su
 | The agent asks questions or requests approval | Answer each question and choose **Approve once** or **Deny** for each approval. Complete every pending item, then select **Submit responses**. The accepted batch continues the work; an ordinary message does not resolve the wait. |
 | You need to redirect ongoing work             | Send another message while the run is active, or stop the active run.                                                                                                                                                                |
 | The task needs files or commands              | Select an environment under **Run options**, or set an [environment template](environments.md#templates) as the agent's default.                                                                                                     |
-| Several conversations need the same knowledge | Select [Memory Spaces](memory.md#memory-spaces) in the agent defaults or session **Memory** control. Use [standalone mounts](memory.md#mount-a-memory-on-a-thread) for existing file stores or record memories.                      |
+| Several conversations need the same knowledge | Select [Memory Spaces](memory.md#memory-spaces) in the agent defaults or session **Memory** control. Use [standalone mounts](standalone-memory.md#mount-a-memory-on-a-thread) for existing file stores or record memories.           |
 
 ## Inspect a reply
 
@@ -73,4 +77,4 @@ Select **Inspect execution** in Sessions, or switch the conversation to Debug. S
 
 Usage includes input, cached input, cache hit rate, output, time to first token (TTFT), output speed, and cost. Cached input is part of input. Expand a model call for its own timing figures. Each reply also identifies its model and override count. Queued messages, guidance, and inherited branch history keep their own senders.
 
-Next, use [Agent Composer](agent-composer.md) to refine the agent, [connect your application](connect-application.md) to it, or read [Core concepts](../overview/core-concepts.md) for the conversation model.
+Next, use [Agent Composer](agent-composer.md) to refine the agent, [connect your application](connect-application.md) to it, or read [Core concepts](core-concepts.md) for the conversation model.

@@ -24,6 +24,34 @@ const move = (point) =>
     String(Math.round((point.top + point.bottom) / 2)),
   );
 try {
+  // Offscreen lazy media has an absolutely positioned status label. It must
+  // stay inside the production file reader rather than extend the document.
+  for (const [width, height] of [
+    [1280, 800],
+    [390, 844],
+  ]) {
+    browser("set", "viewport", String(width), String(height));
+    browser("open", `${origin}/tests/file-editor.html`);
+    browser("wait", 'article [role="status"]');
+    const contained = () => {
+      assert.equal(
+        evaluate("document.documentElement.scrollHeight <= innerHeight"),
+        true,
+        "The file preview must not create document-level vertical overflow",
+      );
+      evaluate("window.scrollTo(0, 10000)");
+      assert.equal(evaluate("window.scrollY"), 0);
+    };
+    contained();
+    browser("focus", '[aria-label="File reader"]');
+    browser("press", "Control+End");
+    wait(
+      'document.querySelector("[aria-label=\\"File reader\\"]").scrollTop > 0',
+    );
+    wait('!document.querySelector("article [role=\\"status\\"]")');
+    contained();
+  }
+  browser("set", "viewport", "1280", "800");
   browser("open", `${origin}/tests/file-editor.html`);
   browser("wait", '[aria-label="Markdown preview"]');
   assert.equal(evaluate('document.querySelector(".cm-editor")'), null);

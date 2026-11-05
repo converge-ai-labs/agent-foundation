@@ -67,7 +67,7 @@ TUI 显示 `[System] Retrying model request…` 时，同一个 Run 正在从可
 
 ## 长时间运行的工作
 
-根 Agent 和 subagent 没有固定的 Harness 请求次数上限。提供方和子级限制仍适用，较长 Run 可能消耗更多 token。用 `/status` 检查进度，用 `/cancel` 停止活动工作。进程崩溃后，需从已保存续接状态启动新的调用；活动工作不会自动重启。
+根 Agent 和 subagent 没有固定的 Harness 请求次数上限。提供方和子级限制仍适用，较长 Run 可能消耗更多 token。用 `/status` 检查进度，用 `/cancel` 停止活动工作。进程崩溃后，需从已保存续接状态启动新的调用；活动工作不会自动重启。 正常关闭 WebUI 使用另一套[安全重启流程](running-webui.md#restart-or-update-the-server)，可以自动继续已安全保存检查点的任务。
 
 ## 日志、更新与退出
 

@@ -16,6 +16,7 @@ from a13n_harness import AgentContext
 from a13n_harness.environment.models import EnvironmentError
 from a13n_harness.environment.providers import BoundEnvironment
 from a13n_harness.tools import current_invocation_scope
+from a13n_harness.tools.diagnostics import tool_error_text
 from a13n_harness.tools.metadata import HarnessTool, HarnessToolMetadata, ToolOutputPolicy
 from pydantic import Field, JsonValue
 from pydantic_ai import RunContext
@@ -119,5 +120,5 @@ async def _read(environment: BoundEnvironment, path: str, max_bytes: int) -> byt
                 if len(content) > max_bytes:
                     raise too_large
     except EnvironmentError as error:
-        raise ToolFailed(str(error.safe_projection()["message"])) from None
+        raise ToolFailed(tool_error_text(error.safe_projection())) from None
     return bytes(content)

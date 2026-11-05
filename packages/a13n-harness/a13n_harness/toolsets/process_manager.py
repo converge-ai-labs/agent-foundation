@@ -26,7 +26,7 @@ from a13n_harness.environment.commands import (
     ProcessStatus,
     ProcessStreamRead,
 )
-from a13n_harness.environment.models import EnvironmentAction, EnvironmentError
+from a13n_harness.environment.models import EnvironmentAction, EnvironmentError, EnvironmentInvocationError
 from a13n_harness.environment.process_recovery import EnvdProcessState, ShellExecutionState, process_checkpoint
 from a13n_harness.environment.providers import BoundEnvironment, BoundProcessOperations
 from a13n_harness.environment.retention import EnvironmentOutputCapture, EnvironmentOutputPolicy
@@ -112,6 +112,20 @@ class _ProcessEntry:
     notification_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
+def _observation_failed_after_start(error: EnvironmentError) -> EnvironmentInvocationError:
+    # The nested read can fail before its own dispatch after the command already started.
+    return EnvironmentInvocationError(
+        "The started process could not be observed.",
+        code=error.code,
+        retry_hint="reconcile_first",
+        details={
+            "dispatch_stage": "dispatched",
+            "reason": "process_observation_failed",
+            "hint": "Check the original process and its effects before repeating the command.",
+        },
+    )
+
+
 class _OwnedProcess:
     """One runtime-owned process control surface, closed before its lease releases."""
 
@@ -135,9 +149,10 @@ class _OwnedProcess:
         control = ShellControl.model_validate(request)
         async with self._condition:
             if self._closed:
-                raise EnvironmentError(
+                raise EnvironmentInvocationError(
                     "Shell execution has settled. Use tool_execution_result for its retained result.",
                     code="environment_reference_stale",
+                    details={"field": "process_id", "hint": "Read the retained result with tool_execution_result."},
                 )
             self._readers += 1
         try:
@@ -241,25 +256,21 @@ class _ProcessController:
         if cancellation is not None and _OWNED_TOOL_EXECUTION.get():
             raise cancellation
         try:
-            if cancellation is None:
-                await self._emit_status(entry)
-                if yield_time_seconds > 0:
-                    try:
-                        baseline = entry.latest
-                        waited = await self._environment.processes.wait(
-                            entry.handle,
-                            condition="initial_terminal",
-                            timeout_seconds=yield_time_seconds,
-                        )
-                        self._adopt_info(entry, waited, baseline=baseline)
-                    except EnvironmentError as exc:
-                        if exc.code != "environment_timeout":
-                            raise
-            observation = await self._observe(entry, stdout_offset=0, stderr_offset=0, wait_seconds=0)
-        except asyncio.CancelledError:
-            if _OWNED_TOOL_EXECUTION.get():
-                raise
-            observation = await self._observe(entry, stdout_offset=0, stderr_offset=0, wait_seconds=0)
+            try:
+                if cancellation is None:
+                    await self._emit_status(entry)
+                observation = await self._observe(
+                    entry,
+                    stdout_offset=0,
+                    stderr_offset=0,
+                    wait_seconds=yield_time_seconds if cancellation is None else 0,
+                )
+            except asyncio.CancelledError:
+                if _OWNED_TOOL_EXECUTION.get():
+                    raise
+                observation = await self._observe(entry, stdout_offset=0, stderr_offset=0, wait_seconds=0)
+        except EnvironmentError as exc:
+            raise _observation_failed_after_start(exc) from exc
         if _is_final(observation[0]):
             result = _shell_exec_result(None, observation, bound_output=False)
             try:
@@ -415,7 +426,7 @@ class _ProcessController:
         except EnvironmentError as exc:
             if exc.code in {"environment_unavailable", "environment_timeout"}:
                 runtime.suspend_shell(execution_id)
-            raise
+            raise _observation_failed_after_start(exc) from exc
         except asyncio.CancelledError:
             if runtime.yielding(execution_id):
                 raise
@@ -523,7 +534,7 @@ class _ProcessController:
             case "signal":
                 result = await self.signal(process_id, control.signal, processes=processes)
             case _:
-                raise EnvironmentError("Invalid process control.", code="environment_request_invalid")
+                raise EnvironmentInvocationError("Invalid process control.", code="environment_request_invalid")
         return cast(dict[str, JsonValue], result)
 
     async def wait(
@@ -577,7 +588,7 @@ class _ProcessController:
             if alias is not None:
                 selected = self._environment.resolve_path(".", alias=alias)
                 if selected.execution_id != entry.handle.execution_id:
-                    raise EnvironmentError(
+                    raise EnvironmentInvocationError(
                         "Process reference conflicts with alias.", code="environment_request_invalid"
                     )
             inspected = await processes.inspect(entry.handle)
@@ -824,7 +835,7 @@ class _ProcessController:
         baseline: ProcessInfo | None = None,
     ) -> None:
         if info.handle != entry.handle:
-            raise EnvironmentError(
+            raise EnvironmentInvocationError(
                 "The process provider returned a mismatched handle.",
                 code="environment_provider_failure",
             )
@@ -842,7 +853,7 @@ class _ProcessController:
         stderr_offset: int,
     ) -> None:
         if output.process.handle != entry.handle:
-            raise EnvironmentError(
+            raise EnvironmentInvocationError(
                 "The process provider returned output for another handle.",
                 code="environment_provider_failure",
             )
@@ -851,16 +862,20 @@ class _ProcessController:
         if sum(len(chunk.data) for chunk in (*output.stdout.chunks, *output.stderr.chunks)) > (
             2 * _MAX_MODEL_OUTPUT_BYTES
         ):
-            raise EnvironmentError(
+            raise EnvironmentInvocationError(
                 "The process provider exceeded Harness output bounds.",
                 code="environment_provider_failure",
             )
 
     def _reserve_reference(self) -> str:
         if len(self._entries) >= _MAX_REFERENCE_ENTRIES:
-            raise EnvironmentError(
+            raise EnvironmentInvocationError(
                 "The Run process reference limit has been reached.",
                 code="environment_limit_exceeded",
+                details={
+                    "reason": "process_reference_limit",
+                    "hint": "Inspect existing processes in this Run before starting another.",
+                },
             )
         process_id = f"process-{self._incarnation}-{self._next_sequence}"
         self._next_sequence += 1
@@ -869,16 +884,16 @@ class _ProcessController:
     def _entry(self, process_id: str) -> _ProcessEntry:
         self._assert_open()
         match = _REFERENCE_PATTERN.fullmatch(process_id)
-        if match is None or match.group(1) != self._incarnation:
-            raise EnvironmentError(
-                "The process reference is unknown in this Run.",
-                code="environment_not_found",
-            )
-        entry = self._entries.get(process_id)
+        entry = self._entries.get(process_id) if match and match.group(1) == self._incarnation else None
         if entry is None:
-            raise EnvironmentError(
+            raise EnvironmentInvocationError(
                 "The process reference is unknown in this Run.",
                 code="environment_not_found",
+                details={
+                    "field": "process_id",
+                    "reason": "unknown_reference",
+                    "hint": "Use a process_id returned by shell_exec in this Run.",
+                },
             )
         return entry
 
@@ -906,12 +921,12 @@ def _validate_capture(capture: EnvironmentOutputCapture) -> None:
     if not (0 <= capture.available_start <= capture.available_end) or (
         capture.produced_bytes is not None and capture.available_end > capture.produced_bytes
     ):
-        raise EnvironmentError(
+        raise EnvironmentInvocationError(
             "The process provider returned an invalid retained-output range.",
             code="environment_provider_failure",
         )
     if capture.produced_bytes is not None and capture.captured_bytes > capture.produced_bytes:
-        raise EnvironmentError(
+        raise EnvironmentInvocationError(
             "The process provider returned invalid captured-output metadata.",
             code="environment_provider_failure",
         )
@@ -928,13 +943,13 @@ def _validate_stream(stream: ProcessStreamRead, *, requested_offset: int) -> Non
     expected = max(requested_offset, capture.available_start)
     for chunk in stream.chunks:
         if chunk.start_offset != expected:
-            raise EnvironmentError(
+            raise EnvironmentInvocationError(
                 "The process provider returned a non-contiguous output page.",
                 code="environment_provider_failure",
             )
         expected += len(chunk.data)
         if expected > capture.available_end:
-            raise EnvironmentError(
+            raise EnvironmentInvocationError(
                 "The process provider returned output outside its retained range.",
                 code="environment_provider_failure",
             )

@@ -104,7 +104,9 @@ async def test_an_approval_waits_and_resumes_once(stack) -> None:  # type: ignor
 
 async def test_a_steer_joins_the_running_run(stack) -> None:  # type: ignore[no-untyped-def]
     api, model = stack.api, stack.model
-    agent = await api.create_agent("Helper", await api.create_model(model.base_url), **LOOKUP)
+    agent = await api.create_agent(
+        "Helper", await api.create_model(model.base_url), execution={"steering": "boundary"}, **LOOKUP
+    )
     # The steer arrives while the first request is outstanding and joins at the tool boundary that follows it.
     await model.call("view", {"file_path": GUIDE}, call_id="call_view", to="[steer]", hold="steer")
     await model.say("Answered both.", to="[steer]")

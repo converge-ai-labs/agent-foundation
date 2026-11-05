@@ -106,4 +106,4 @@ Inspect the error before deciding what to do next. Management and Provider bound
 
 Control-plane failure is unavailable evidence, not proof that the target is absent. To reconnect, explicitly open a new execution or replace the Harness mount. Use new process, output, and computer references in the new execution.
 
-Envd can reattach a retained Session using a [Host recovery hint](remote-envd.md#state-concurrency-and-recovery). That hint is separate from portable target state. Reattachment neither replays operations nor restores old execution references. Consult the [Provider comparison](providers.md#reconnection-and-lifecycle) for stop, filesystem retention, and expiry behavior.
+Envd can reattach a retained Session using a [Host recovery hint](remote-envd.md#state-concurrency-and-recovery). That hint is separate from portable target state. Reattachment neither replays operations nor restores old execution references. Consult the [Provider comparison](cloud-providers.md#reconnection-and-lifecycle) for stop, filesystem retention, and expiry behavior.

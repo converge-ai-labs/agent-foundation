@@ -5,6 +5,7 @@ import os
 import secrets
 
 from a13n_harness.environment.commands import CommandRequest, ShellCommand
+from a13n_harness.environment.models import EnvironmentState
 from a13n_harness.environment.retention import EnvironmentOutputPolicy
 from a13n_service.providers.environment.recipes.e2b import E2BRecipe
 from a13n_service.providers.environments.e2b.definition import E2B
@@ -15,6 +16,8 @@ async def main() -> None:
     identity = "env-example-" + secrets.token_hex(8)
     async with await E2B.open_provider(credential={"api_key": os.environ["E2B_API_KEY"]}) as provider:
         state = await provider.create(configuration, environment_id=identity, operation_id="op-create")
+        # E2B completes creation inline and returns its execution state.
+        assert isinstance(state, EnvironmentState)
         connector = E2B.execution.execution_connector(
             E2B.execution_environment(configuration),
             credential={"api_key": os.environ["E2B_API_KEY"]},

@@ -1,12 +1,63 @@
 """Safe diagnostics survive provider adaptation without exposing native causes."""
 
 import json
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from a13n_envd_client.eip import v1 as eip
 from a13n_envd_client.errors import EIPMethodError
+from a13n_harness.environment.commands import CommandRequest, ShellCommand
 from a13n_harness.environment.models import EnvironmentError
+from a13n_harness.environment.retention import EnvironmentOutputPolicy
 from a13n_harness.providers.environment.eip._common import convert_error
+from a13n_harness.providers.environment.eip.processes import convert_command_request
+from a13n_harness.providers.environment.native.commands import NativeCommands
+from a13n_harness.providers.environment.native.configuration import CommandConfiguration
+
+
+def command(**options):
+    return CommandRequest(
+        command=ShellCommand(profile_id="default", script="exit 0"),
+        output_policy=EnvironmentOutputPolicy(max_inline_bytes=256, max_output_bytes=512, overflow="truncate"),
+    ).model_copy(update=options)
+
+
+def test_eip_network_policy_is_rejected_before_command_conversion():
+    files = Mock()
+    with pytest.raises(EnvironmentError) as exc:
+        convert_command_request(command(network="deny"), files=files)
+    error = exc.value.safe_projection()
+    assert error["source"] == "system"
+    assert error["details"]["field"] == "network"
+    assert error["details"]["dispatch_stage"] == "pre_dispatch"
+    assert "isolation" in error["details"]["hint"]
+    assert files.mock_calls == []
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "field, options",
+    [
+        ("network", {"network": "deny"}),
+        ("initial_stdin", {"initial_stdin": b""}),
+        ("keep_stdin_open", {"keep_stdin_open": True}),
+        (
+            "output_policy.overflow",
+            {"output_policy": EnvironmentOutputPolicy(max_inline_bytes=256, max_output_bytes=512, overflow="retain")},
+        ),
+    ],
+)
+async def test_native_command_option_failure_names_field_before_dispatch(field, options):
+    execute = AsyncMock()
+    adapter = NativeCommands(execute, CommandConfiguration(), "generation", "mount")
+    with pytest.raises(EnvironmentError) as exc:
+        await adapter.exec(command(**options))
+    error = exc.value.safe_projection()
+    assert error["source"] == "system"
+    assert error["details"]["field"] == field
+    assert error["details"]["dispatch_stage"] == "pre_dispatch"
+    assert error["details"]["hint"]
+    execute.assert_not_awaited()
 
 
 def test_operation_projection_keeps_only_bounded_safe_fields():
@@ -44,12 +95,21 @@ def test_operation_projection_keeps_only_bounded_safe_fields():
 
 
 def test_legacy_operation_errors_still_have_a_safe_message_and_corrective_hint():
-    for code in ("environment_request_invalid", "environment_denied", "environment_timeout", "custom_provider_error"):
+    for code in ("environment_request_invalid", "environment_denied", "environment_timeout"):
         value = EnvironmentError("private cause", code=code).safe_projection()
         assert value["code"] == code
         assert value["message"]
         assert value["details"]["hint"]
         assert "private cause" not in json.dumps(value)
+
+
+def test_unknown_operation_has_safe_message_without_speculative_hint():
+    value = EnvironmentError("private cause", code="custom_provider_error").safe_projection()
+    assert value == {
+        "code": "custom_provider_error",
+        "message": "The Environment provider could not complete the operation.",
+        "details": {},
+    }
 
 
 def test_projection_bounds_diagnostics_and_rejects_invalid_numeric_evidence():

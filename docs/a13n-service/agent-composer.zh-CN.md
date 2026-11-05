@@ -17,8 +17,6 @@ description: 描述 agent 任务，审阅配置变更，再到 Console 测试保
 
 写入使用 Composer 最初读取的资源版本。如果其他人先修改了资源，让 Composer 重新读取，再审阅新方案。
 
-在 Console 中与已有 Composer 或 Finding Agent 开始新对话时，如果你有 `write` 权限，Console 会在第一条消息前准备当前定义，包括从**试用 Agent**进入的会话。显式固定修订版本时跳过准备。没有 `write` 权限时使用已有默认版本；准备操作返回权限错误且已有默认版本时，也会回退到该版本。其他准备错误会显示出来并阻止发送。运行仍需要 `run` 权限。API 客户端需显式准备；仅部署新版本不会刷新已保存的预设。
-
 ## 配置服务商
 
 在私密服务商卡片中填写凭据：
@@ -90,7 +88,7 @@ jq '{id, source, preset_kind, default_revision_id}' composer.json
 
 ## 在自己的 agent 中使用工具集
 
-自定义 agent 使用 `platform-operations` skill 时，需要模型和主环境，Composer 的副本也一样。运行前设置默认环境模板，或选择会话环境；skill 会按普通[同步策略](skills.md#runtime-synchronization)复制到该环境。
+自定义 agent（包括 Composer 的副本）需要可用模型、选中的 `platform-operations` 内置 skill 和获准的文件工具。skill 通过宿主只读挂载提供，不需要主环境或工作空间 skill 同步。[导入的工作空间 skill](skills.md#add-a-skill)仍需要主环境。
 
 1. 打开 agent 的工具，在**高级 / 平台功能**下选择[平台工具](tools.md#platform-tools)。
 2. 启用 `view`、`ls`、`glob` 和 `grep`，让 agent 能读取 skill。
@@ -121,4 +119,8 @@ jq '{id, source, preset_kind, default_revision_id}' composer.json
 
 ### Computer 坐标模式
 
-如果自定义 agent 还使用 Computer 工具，请在[环境的 Computer 配置](environments.md#computer-coordinate-mode)中选择像素或相对坐标模式。
+如果自定义 agent 还使用 Computer 工具，请在[环境的 Computer 配置](computer-use.md#computer-coordinate-mode)中选择像素或相对坐标模式。
+
+## 内置 agent 准备行为
+
+在 Console 中与已有 Composer 或 Finding Agent 开始新对话时，如果你有 `write` 权限，Console 会在第一条消息前准备当前定义，包括从**试用 Agent**进入的会话。显式固定修订版本时跳过准备。没有 `write` 权限时使用已有默认版本；准备操作返回权限错误且已有默认版本时，也会回退到该版本。其他准备错误会显示出来并阻止发送。运行仍需要 `run` 权限。API 客户端需显式准备；仅部署新版本不会刷新已保存的预设。

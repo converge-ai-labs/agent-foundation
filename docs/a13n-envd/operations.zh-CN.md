@@ -37,7 +37,7 @@ description: 管理守护进程就绪状态、会话生命周期、保留输出�
 
 如果启动返回 busy，检查输出预留容量和保留 spool 用量。释放不再需要的观测记录、提高配额，或降低每条流的上限。保持 `spool >= 2 * per_stream` 和 `preview <= per_stream`。容量紧张时，守护进程可以回收符合条件的已完成历史；活跃工作保留其预留容量。
 
-在启动守护进程的配置中设置这些限制。Python Local Envd 通过 Host 的[运行时字段](../environments/configuration.md)提供自己的预览和文件值默认设置。Native Docker 有独立的输出限制；显式选择 Envd 执行的 Docker 使用守护进程的限制。
+在启动守护进程的配置中设置这些限制。Python Local Envd 通过 Host 的[运行时字段](../environments/configuration-reference.md#localenvdlaunchconfiguration)提供自己的预览和文件值默认设置。Native Docker 有独立的输出限制；显式选择 Envd 执行的 Docker 使用守护进程的限制。
 
 ## 预览、保留字节与完成状态
 

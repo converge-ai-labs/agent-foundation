@@ -75,7 +75,7 @@ printf 'Thread: %s\n' "$thread_id"
 
 receipt=$(api "/api/threads/$thread_id/submit" \
   -H 'Content-Type: application/json' \
-  --data '{"parts":["Explain this project without changing files."]}')
+  --data '{"parts":["Reply with one short greeting. Do not use tools."]}')
 receipt_id=$(jq -er '.receipt_id' <<<"$receipt")
 printf 'Receipt: %s\n' "$receipt_id"
 
@@ -108,6 +108,26 @@ fi
 要继续对话，向同一个 Thread 提交另一份 `parts` 请求体，并轮询新回执。根操作没有 HTTP wait 端点。每个 Thread 同时只允许一个活跃根操作；第二次提交会被拒绝，不会排队。
 
 客户端应保留两个 ID。提交响应不确定时，先检查 `GET /api/threads/{thread_id}` 及其根活动，再决定下一步。提交没有持久幂等保证。回执属于 App 进程，重启后可能消失；已保存的对话状态仍可读取。停止轮询脚本只会停止观察，不会停止服务器上的 Run。
+
+### 为对话选择 Project
+
+上面的问候用于测试 Agent 连接，不要求访问仓库。创建 Thread 不会自动采用监听器的启动目录。没有显式选择 Project，也没有配置 `defaults.project` 时，新 Thread 不包含 Project 工作目录。
+
+要检查仓库文件：
+
+1. 读取 `GET /api/selectors`，选择已有的 Project ID。如果没有 Project，先[创建一个](environments-and-projects.md#project-file-reference)，或[发布其配置](#edit-reusable-resources)。
+
+2. 创建另一个 Thread，并选中该 Project。将 `project-main` 替换为查询到的 ID：
+
+   ```json
+   {"title":"Repository conversation","defaults":{"project_id":"project-main"}}
+   ```
+
+3. 读取 `GET /api/threads/{thread_id}/configuration`，提交任务前核对其选中的工作目录。
+
+4. 向它的 `/submit` 路由提交 `{"parts":["List the top-level files and explain this repository. Do not modify files."]}`。按上文轮询回执，并检查实际文件工具结果。
+
+修改已有 Thread 的 Project 只改变分组。要替换其已保存工作目录，使用 [Project 默认值的预览与应用流程](#change-saved-thread-selections)。
 
 ### 调整运行中的操作
 

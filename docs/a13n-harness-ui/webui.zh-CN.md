@@ -5,15 +5,15 @@ description: 开始浏览器对话、选择工作环境、审阅文件，并与�
 
 WebUI 是 Harness UI 的浏览器工作台，与 TUI 使用相同的 App 和已保存对话。先完成一次对话，再按工作需要加入 Project、文件审阅、浏览器控制和协作。
 
-| 我想……                              | 从这里开始                                                                                                                          |
-| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| 得到第一个回答                      | [启动服务器](#start-the-server)                                                                                                     |
-| 更换 Agent、Model 或工作目录        | [Agent 与 Model 设置](#agent-and-model-settings)                                                                                    |
-| 补充指引或回答问题                  | [Steering](#tool-executions-and-immediate-steering) 与[待处理决策](#pending-questions-approvals-and-external-results)               |
-| 与 Agent 一起审阅文件或 diff        | [Files 与 Changes](#read-edit-and-capture-host-files-and-git-changes)                                                               |
-| 让 Agent 浏览网页，或标注看到的画面 | [Host 浏览器](#browse-on-the-host)                                                                                                  |
-| 邀请他人或协调其他 Agent            | [分享](#share-a-thread-or-project)与 [Coordinator](#work-with-a-coordinator)                                                        |
-| 从远程持续使用工作台                | [认证](#authentication-and-key-retention)、[代理设置](#reverse-proxies-and-public-addresses)与[重启](#restart-or-update-the-server) |
+| 我想……                              | 从这里开始                                                                                                                                                                          |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 得到第一个回答                      | [启动服务器](#start-the-server)                                                                                                                                                     |
+| 更换 Agent、Model 或工作目录        | [Agent 与 Model 设置](#agent-and-model-settings)                                                                                                                                    |
+| 补充指引或回答问题                  | [Steering](#tool-executions-and-immediate-steering) 与[待处理决策](#pending-questions-approvals-and-external-results)                                                               |
+| 与 Agent 一起审阅文件或 diff        | [Files 与 Changes](#read-edit-and-capture-host-files-and-git-changes)                                                                                                               |
+| 让 Agent 浏览网页，或标注看到的画面 | [Host 浏览器](host-browser.md#browse-on-the-host)                                                                                                                                   |
+| 邀请他人或协调其他 Agent            | [分享](#share-a-thread-or-project)与 [Coordinator](#work-with-a-coordinator)                                                                                                        |
+| 从远程持续使用工作台                | [认证](running-webui.md#authentication-and-key-retention)、[代理设置](running-webui.md#reverse-proxies-and-public-addresses)与[重启](running-webui.md#restart-or-update-the-server) |
 
 ## 启动服务器
 
@@ -276,110 +276,27 @@ Terminal 与 Files、Changes 和 Browser 共用资源标签栏。在 Side by sid
 
 ## 使用 Host 浏览器
 
-**Browser** 让 Agent 在服务器上使用 Chromium，你可以观看原生窗口。Linux 显示共享的专用桌面，macOS 只显示当前对话拥有的浏览器窗口。浏览器需要 Linux 或 macOS Host、计算机共享和 Full Control Run。Windows 浏览器可以查看支持的 Host，但 Windows 不能承载此桌面。
+此流程见[使用 Host 浏览器](host-browser.md#browse-on-the-host)。
 
 ### 首次设置
 
-1. 在服务器[安装 Host 组件](#install-host-components)，不是在显示 WebUI 的设备上安装。启动 WebUI 时保持计算机共享开启。
-2. 使用默认的 `browser.mode: auto` 启动 WebUI。Harness UI 自动探测已安装组件并准备共享浏览器。启动失败时，打开 **Browser**，解决显示的必需组件，再点击 **Try again**。
-3. 开始 **Full Control** 对话，让 Agent 浏览。工具自动可用，首次导航或创建标签页时打开对话窗口。也可在 Run 运行期间选择 **Browser → Open browser** 手动打开。
-4. 首次实时浏览会展示查看器，不移动键盘焦点。已打开 Files/Changes 或使用窄屏时，选择 **View browser**。关闭查看器保留浏览器运行，同一 Run 不再自动展示。
-5. Linux 上登录或手动修正时，选择 **Take control**，完成后 **Hand back to Agent**。macOS 上选择 **Pause automation**，在 Mac 本机操作浏览器，再选择 **Resume automation**。
-
-浏览器无需对话级开关或手动添加 Capability。**Advanced browser settings** 提供全局 Auto/Disabled 模式和程序路径覆盖；修改后保存并重启。普通聊天、Files 和 Shell 不创建对话浏览器页面。
+此流程见[使用 Host 浏览器](host-browser.md#first-time-setup)。
 
 ### 安装 Host 组件
 
-**Linux**：按发行版或供应商说明安装 Chrome、Chromium 或 Edge。Debian/Ubuntu 可这样准备 TigerVNC：
-
-```bash
-sudo apt-get update
-sudo apt-get install --no-install-recommends tigervnc-standalone-server
-```
-
-可选的窗口控制和 TigerVNC 尺寸调整组件：
-
-```bash
-sudo apt-get install --no-install-recommends openbox x11-xserver-utils
-```
-
-这些命令安装桌面组件，不安装 Chromium。Harness 包含 cdp-use，并生成 VNC 密码和 X11 认证，无需另行设置 Node.js、`vncpasswd`、`xauth` 或 websockify。Docker 部署应在服务器镜像/容器中安装。**Manual installation commands** 是供你执行的说明，不由 UI 自动安装。
-
-以非 root 账户运行并保持 Chromium 沙箱开启。root 需要显式 `--browser-no-sandbox` 或 `A13N_HARNESS_UI_BROWSER_NO_SANDBOX=1`，这会移除 Chromium 沙箱保护。`--browser-sandbox` 覆盖该环境变量选择。WayVNC/Sway 本身仍要求非 root 账户。
-
-**macOS：**
-
-1. 安装 Chrome、Chromium 或 Edge，以已登录桌面的用户运行 Harness UI。
-2. 选择 **Browser → Open browser** 打开窗口；Chromium 是唯一必需的浏览器组件。
-3. 要在 macOS 14 或更高版本使用可选预览，给运行 Harness UI 的应用授予屏幕录制权限。**Open Mac Screen Recording settings** 打开 Host 设置，由你在那里授权。
-4. 保持 Mac 解锁且浏览器窗口可见。授权或解锁后选择 **Reconnect**；如 macOS 要求重启 Host 应用，按提示操作。
-
-预览只捕获 Harness UI 为当前对话创建的那个窗口，包括真实地址栏。缺少权限或捕获失败时，自动化仍可使用。查看器始终只读，不转发键盘、鼠标或剪贴板输入。无需屏幕共享或 VNC 密码；以前保存的 VNC 凭据和旧密码环境变量已不再使用。
-
-捕获不会回退到桌面、个人浏览器或其他对话窗口。独立弹出窗口和原生对话框不在预览中。如果绑定窗口已关闭或无法识别，使用 **Reset browser** 建立新预览。可用本地缩放；Viewport 预设禁用，物理显示分辨率保持不变。
+此流程见[使用 Host 浏览器](host-browser.md#install-host-components)。
 
 ### 探测并选择可执行文件
 
-自动选择已安装浏览器，优先 Chrome，再 Chromium，最后 Edge。Linux 搜索服务器 `PATH`，macOS 检查 `/Applications` 和 `~/Applications`。安装缺失程序后点击 **Scan** 或 **Try again**。更改服务器 `PATH` 后重启服务器。
-
-| Linux 显示方案 | 必需组件                             | 尺寸调整               |
-| -------------- | ------------------------------------ | ---------------------- |
-| TigerVNC，优先 | `Xtigervnc` 或 `Xvnc`                | 可选 RandR/xrandr 支持 |
-| x11vnc         | x11vnc 和 Xvfb                       | 固定桌面               |
-| WayVNC         | 兼容 WayVNC、无头 Sway、非 root 账户 | 固定桌面               |
-
-自动探测按此顺序优先选择完整适配器。WayVNC 需要私有 Unix socket 和禁用输入的只读支持。Linux 桌面使用专用显示/运行目录，不连接用户当前桌面。Openbox、Fluxbox、IceWM 或 twm 等 X11 窗口管理器提供拖动和关闭控件；没有也能基本浏览。
-
-覆盖路径时，打开 **Settings → General → Host browser**，选择探测到的程序，或在 **Other** 输入绝对路径，再保存并重启。**Automatic** 清除覆盖。无效显式路径直接失败，不回退。**Scan** 检查当前草稿并刷新必需/可选组件结果，不保存也不启动。探测成功后仍可能因缺少共享库或显示权限而启动失败。
-
-macOS 设置显示可选的 **Window preview**，不提供 VNC 程序选择器或密码。
-
-共享 profile 位于 `<data_root>/browsers/profile`，默认是 `~/.a13n-harness-ui/data/browsers/profile`，没有独立位置设置。各对话和 Project 共用一个 Chromium 实例及 profile，并有各自窗口/Agent 标签页。不导入个人 profile，也不移动或合并已有 profile 目录。
-
-Linux 受管浏览器使用基础密码存储，避免等待锁定的桌面钥匙环。保存的密码和 Cookie **不受操作系统钥匙环保护**；请像保护凭据一样保护 profile 及备份。系统钥匙环和 macOS 凭据存储不变。升级后重启 Harness UI 应用此行为；profile 会保留，但原先依赖钥匙环加密登录数据的网站可能需要重新登录。
+此流程见[使用 Host 浏览器](host-browser.md#detect-and-select-executables)。
 
 ### 启动与控制浏览器
 
-初始只读观看。Linux 上的 **Take control** 暂停所有对话的浏览器工具和页面采集，并聚焦当前对话窗口。一次只有一个查看者控制输入。**Hand back to Agent** 撤销人类输入，并要求重新观察页面。你可以从其他对话交还，包括没有打开标签页的对话。从其他对话接管会转移输入权限并聚焦其窗口，同时保持所有 Agent 浏览器工具暂停。
-
-每次模型请求都会收到简短的 Browser 可用性上下文。接管期间，Agent 可以调用 `browser_notify_on_handback` 登记提醒，无需访问页面或等待。受阻的页面工具调用也会登记同一提醒，重复请求会合并。如果控制权已经交还，工具直接报告可用，不再登记未来提醒。Agent 可以先完成独立工作，或结束当前轮次，无需轮询。交还只通知这些对话，包括已经结束轮次的对话，让 Agent 重新观察并继续仍相关的工作。待审批操作仍需你的决定。停止、归档或清空上下文会取消待发通知。通知只保留在当前服务器和浏览器运行时中；不会恢复已经结束的 Goal。
-
-要更换设备，在另一个浏览器打开同一 Thread，选择 **Take control here**。原控制端失去输入权限，Agent 全程保持暂停；仅打开 Thread 仍为只读。控制端断线后，选择 **Reconnect control** 可在保持 Agent 暂停的同时重连，或选择 **Hand back to Agent** 恢复自动化。
-
-工具栏先显示 **Taking control…**，等待当前操作结束，再显示 **Connecting control…** 和 **Waiting for the first frame…**。出现 **You have control** 后再输入或点击。连接期间可能保留旧画面并显示等待提示；连接超时可重试，等待或失败期间也可交还控制。
-
-macOS 上，在 Mac 本机操作真实浏览器前，先选择 **Pause automation**。这同样会暂停各对话的浏览器工具和页面采集。完成后选择 **Resume automation**；Agent 必须先观察更新后的页面，再继续操作。关闭查看器不会解除暂停。WebUI 预览始终只读。
-
-Linux 上输入前点击远端桌面。本地输入法在你的设备上组合文字，再把确定文字粘贴到远端字段。字段需支持粘贴，Host 也需有相应字体。Linux Unicode 传输需要 TigerVNC 或 WayVNC 等扩展剪贴板服务；已测试的 x11vnc 不支持。
-
-Linux 人工控制期间，聚焦桌面的文本剪贴板同步最多 65,536 字符，需要 HTTPS 或 localhost 及浏览器剪贴板权限。客户端 Command 快捷键映射为 Linux Ctrl 快捷键。交还、断线或关闭查看器停止同步。远端桥接只传文字，不传图片/文件；文件对话框使用 Host 文件。
-
-Linux 支持尺寸调整时，接管后选择 Viewport 预设检查响应式布局。尺寸表示页面 CSS 视口，其他查看者也看到相同大小。调整保持登录且不重载，不模拟手机操作系统、user agent 或触摸设备。Close conversation tabs 和 Reset 保留选择直到服务器重启。
-
-| 操作                                          | 保留状态                                         |
-| --------------------------------------------- | ------------------------------------------------ |
-| 关闭抽屉、切换对话、结束 Run                  | 浏览器继续运行                                   |
-| **Browser options → Close conversation tabs** | 关闭当前窗口，保留 Run 绑定；同一 Run 可再次打开 |
-| **Reset browser**                             | 在可见位置重建当前对话窗口                       |
-| **Reconnect**                                 | 重连查看器，不重启 Chromium                      |
-| 关闭对话最后一个标签页                        | 绑定仍启用；Agent 导航或 Open browser 可新建     |
-| 退出 Chromium 或必需显示进程退出              | 停止共享运行时和全部窗口                         |
-
-Reset 或故障恢复创建新的只读会话。共享运行时停止后，选择 **Try again** 重试。发送新提示让受影响对话使用替代窗口；不重放旧动作，等待中的工具会失败而非无限暂停。单对话 Reset 保留其他对话窗口。崩溃可能丢失未保存页面数据。服务器重启后，Auto 模式重新准备共享浏览器。人工控制期间关闭单个标签页后，自动化仍暂停，直到交还。如果当前对话持有控制权，**Close conversation tabs** 也会释放人工控制。
-
-Linux 人工控制者可以查看和操作共享专用桌面的其他窗口。macOS 预览只显示一个窗口，但各对话仍通过 Chromium profile 共享网站登录状态、保存的密码及偏好。浏览器权限和网络属于 Host，不受 Sandbox 隔离。Linux 查看器使用 noVNC，源码/许可证说明位于 `/assets/LICENSE.noVNC`，其他打包依赖说明位于 `/third-party-licenses.txt`。
+此流程见[使用 Host 浏览器](host-browser.md#start-and-control-the-browser)。
 
 ### 截图与标注
 
-1. 在已连接 Browser 抽屉中点击相机 **Capture and annotate screenshot**。它在本机冻结当前渲染的 Linux 桌面或 macOS 窗口预览，包括浏览器控件；实时浏览器继续运行。
-2. 用鼠标、触控笔或触摸裁剪，添加箭头、形状、自由笔迹、文字或马赛克。隐私内容用 **Opaque redaction**；马赛克只是视觉效果。
-3. 用 **Select** 或 **Annotations** 选择标注。移动/调整尺寸、Delete 删除，或方向键微调（Shift 增大步长）。Ctrl/Cmd+Z 撤销，Ctrl/Cmd+Shift+Z 重做。Shift 约束形状/箭头角度。
-4. Ctrl/Cmd+Enter 完成文字，Escape 取消。文字输入之外，点击 **Copy PNG** 或 Ctrl/Cmd+Enter 复制结果，焦点返回聊天。
-5. 明确粘贴到输入框，检查附件，补充指令后发送。
-
-截图无需接管，也不暂停 Agent。编辑器只暂停当前查看器的远端输入和文字同步。复制会等待已发出的文字剪贴板写入完成。截图/复制不会自动上传、附加或发送。
-
-PNG 尺寸取决于原图像素裁剪，不受预览缩放或屏幕密度影响。键盘可编辑已有标注，创建标注/裁剪需要指针。复制/导出失败保留编辑，可重试或使用 **Download PNG**；下载保留编辑器打开。关闭时如会丢弃文字或撤销/重做历史，会先确认。粘贴到聊天沿用普通附件限制。
+此流程见[使用 Host 浏览器](host-browser.md#capture-and-annotate-a-screenshot)。
 
 ## 分享 Thread 或 Project
 
@@ -536,79 +453,28 @@ Android Chrome 需检查站点和系统权限、省电/勿扰限制以及推送�
 
 ## 认证与密钥保存
 
-启动输出普通地址。使用生成密钥时还输出密钥和 fragment 登录链接。浏览器移除 fragment，把成功使用的密钥保存在同 origin localStorage，用于认证 API 请求。**Log out** 移除密钥并关闭受保护视图。静态资源不含密钥。
-
-密钥优先级为 `--apikey`、`A13N_HARNESS_UI_API_KEY`、新生成的进程密钥。提供的密钥不回显，但命令行参数可能对操作系统可见。空密钥和重复的冲突值会被拒绝。
-
-`--dangerous-skip-permissions` 只关闭 Web 认证；Agent 权限和共享检查仍生效，且不能与提供的密钥并用。`--api-key` 和 `--dangerously-bypass-permission` 保留为兼容别名。开放监听器前检查 [CLI 选项](command-reference.md#webui)。
+此流程见[运行与重启 WebUI](running-webui.md#authentication-and-key-retention)。
 
 ## 反向代理与公开地址
 
-1. 在选定根 YAML 添加外部地址。将示例替换为实际协议、主机和端口：
-
-   ```yaml
-   webui:
-     allowed_origins:
-       - "https://workbench.example.com:8090"
-   ```
-
-2. 配置 TLS 终止和 WebSocket 升级。保留外部 `Host`（含端口）及浏览器 `Origin`，通过 `X-Forwarded-Proto: https` 转发 HTTPS 协议。
-
-3. 如果代理对端不是可信回环 `127.0.0.1`，在 WebUI 进程环境用 `FORWARDED_ALLOW_IPS` 设置该进程/容器实际看到的代理 IP/网段。让代理覆盖客户端传入的转发头。
-
-4. 重启 WebUI，打开外部地址登录，并检查对话和交互式连接。
-
-Origin 准入匹配协议、域名、端口，示例不同时允许 HTTP 或 443。默认 `[]` 保留监听地址限制，`allowed_origins: ["*"]` 允许任意地址。两者都不关闭认证或开启跨 origin API 访问。只信任实际代理对端，不要改头为回环或无限制信任转发头来绕过准入。见[允许的 origin](configuration.md#webui-allowed-origins)。
-
-Device 配对返回相对根路径，按配对的 Host URL 解析并保留公开 HTTPS 和端口。批准本身不代表 Device 已连接或有桌面权限。
+此流程见[运行与重启 WebUI](running-webui.md#reverse-proxies-and-public-addresses)。
 
 ## 重启或更新服务器
 
-1. 保存私人编辑器修改。
-2. 按一次 Ctrl+C 或发送 SIGTERM，等待 **WebUI stopped** 和进程退出。
-3. 更新时，在退出后按[安装流程](installation.md)安装新包。
-4. 使用相同数据目录启动替代进程。检查中断对话及恢复错误。
-
-优雅关闭保存根/子检查点、完成 Environment 收尾，再记录重启交接。下次启动只消费一次，并在新 Run 中继续兼容的中断工作，不重发提示词或重放保存的工具批次。
-
-`shutdown_timeout_seconds` 默认 60 秒，限制等待安全边界，不限制整个进程退出时间。批次无法完成或检查点/收尾失败时，不登记该批次自动恢复。取消和清理仍需要时间；旧进程结束后再启动替代进程。
-
-强制终止或重建失败后，先检查保存历史/日志，再重试不确定工作。待决策仍未回答。原生终端、旧 Shell handle、共享草稿和未保存编辑器不恢复。
+此流程见[运行与重启 WebUI](running-webui.md#restart-or-update-the-server)。
 
 ## 服务器日志与关闭
 
-用 `process.log_level` 和 `process.log_format` 控制日志。INFO 报告普通 API 活动，DEBUG 增加资源、健康探测和清理阶段。API 记录路由模板、状态、耗时、错误码及生成 ID，不含请求体、密钥、查询值或原生路径。
-
-| 观测                                                                   | 操作                                               |
-| ---------------------------------------------------------------------- | -------------------------------------------------- |
-| **Stopping WebUI**                                                     | 等待清理；**WebUI stopped** 确认完成               |
-| 关闭缓慢                                                               | 检查 DEBUG 阶段；连接排空超时不是 App 清理截止时间 |
-| **Connection interrupted**                                             | 等待重连或 **Retry now**；服务器已停则先重启       |
-| `thread_history_continuation_changed` / `thread_continuation_conflict` | 刷新对话                                           |
-| `object_payload_incompatible`                                          | 检查存储警告的对象/版本/校验详情，保留数据目录     |
-
-重连刷新观测，不重放失败保存或提交。浏览器断线不停止 Run 或终端。WARNING 隐藏普通进度。
+此流程见[运行与重启 WebUI](running-webui.md#server-logs-and-shutdown)。
 
 ## 监听器与应用生命周期
 
-即使没有浏览器，运行的服务器也拥有 App。非回环监听向可信网络共享实例权限，应配合 TLS 和合适访问控制；不提供租户隔离。无需认证的 `/healthz`、`/readyz` 暴露有界存活/就绪状态；没有 Model 时也可表示已就绪、可开始设置。
-
-兼容的 TUI/WebUI 进程可跨包升级使用同一本地数据库。较旧兼容读取方保留未知迁移历史并检查所需表/列；更高迁移号本身不会拒绝读取或阻止活动保存。真实存储、续接/版本和 payload 不兼容仍失败。数据库兼容不共享实时执行所有权，已发布二进制仍有各自检查。
+此流程见[运行与重启 WebUI](running-webui.md#listener-and-application-lifetime)。
 
 ## 容器与安装资源
 
-在工作台 Host 安装 Python 分发包。wheel/sdist 包含 WebUI 资源，用户不需 Node.js 或前端 checkout。Harness UI 不发布官方容器镜像；自建部署应固定分发版本并配置监听器、认证和持久挂载。`a13n-sandbox` 是 Agent 执行镜像，不是 WebUI 服务器。
-
-仓库开发用 `make webui` 构建/安装资源，在 `var/harness-ui/` 下以隔离配置/数据启动前台服务器。未提供密钥时输出生成密钥登录链接。`WEBUI_ARGS` 传服务器选项，`CLI_ARGS` 传全局选项：
-
-```bash
-make webui WEBUI_ARGS='--port 9000 --no-share-computer'
-```
-
-初始化与环境覆盖见[开发指南](https://github.com/converge-ai-labs/agent-foundation/blob/main/dev/harness-ui/README.md)。
+此流程见[运行与重启 WebUI](running-webui.md#container-and-installed-assets)。
 
 ## 选项与职责
 
-监听地址、端口、认证和原生共享是进程选项，额外准入 origin 位于根 YAML。完整选项见[命令参考](command-reference.md#webui)。
-
-自己的客户端接入见 [HTTP 流程](http-api.md)，进程内集成使用 [Python App](embedding.md)，不需监听器的脚本使用[单次执行](automation-and-troubleshooting.md#automation-and-diagnostics)。
+此流程见[运行与重启 WebUI](running-webui.md#options-and-ownership)。

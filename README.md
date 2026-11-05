@@ -1,18 +1,25 @@
-[![a13n architecture showing Service, Harness, clients, and providers](.github/assets/a13n-architecture.webp)](.github/assets/a13n-architecture.webp)
-
 <h1 align="center">Agent Foundation (a13n)</h1>
 
 [![CI](https://github.com/converge-ai-labs/agent-foundation/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/converge-ai-labs/agent-foundation/actions/workflows/ci.yml) [![Documentation](https://img.shields.io/badge/docs-agent--foundation-blue)](https://a13n.dev/docs/) [![Python](https://img.shields.io/badge/python-3.13%2B-blue)](https://www.python.org/) [![License](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE) [![Slack](https://img.shields.io/badge/Slack-Join%20the%20community-4A154B)](https://join.slack.com/t/a13n/shared_invite/zt-4embv13zr-JfXjmJQop4Y9y6K3NH0kDQ)
 
 **Build, run, and manage AI agents at scale on your own infrastructure.**
 
-a13n is an open-source managed agent service. It brings the harness, API, and Console together so you can build agent applications without building the serving infrastructure yourself.
+a13n Service is an open-source runtime for managing and running agents. Use Console, its web interface, to configure an agent, try it in a conversation, and debug its tool calls. Your application can then call that same agent through the [HTTP API](docs/a13n-service/connect-application.md) or a [Python, TypeScript, Go, or Rust SDK](docs/a13n-service/sdks.md). Service handles execution and recovery for those requests.
 
 - **Long-running tasks:** Agents keep working when clients disconnect.
 - **Durable execution:** Interrupted runs can resume from saved checkpoints after worker failures.
-- **Management and monitoring:** Configure agents, inspect runs, and track usage and cost in Console.
+- **Run visibility:** Inspect runs from your application in Console and track workspace usage and cost.
 
-Choose your [model](docs/a13n-service/models.md), [sandbox](docs/a13n-service/environments.md), [search](docs/a13n-service/tools.md#web-search-and-scrape), and [memory](docs/a13n-service/memory.md) providers. Bring your own keys.
+Choose your [providers](#providers-and-integrations) for models, sandboxes, web search, and memory. Bring your own keys.
+
+<a href="https://a13n.dev/docs/#architecture">
+  <picture>
+    <source media="(max-width: 600px) and (prefers-color-scheme: dark)" srcset=".github/assets/a13n-runtime-mobile-dark.webp">
+    <source media="(max-width: 600px)" srcset=".github/assets/a13n-runtime-mobile.webp">
+    <source media="(prefers-color-scheme: dark)" srcset=".github/assets/a13n-runtime-dark.webp">
+    <img src=".github/assets/a13n-runtime.webp" alt="Console and application clients connect to the Service API. Workers lease runs from PostgreSQL, execute them with Harness, and save checkpoints to object storage. After lease expiry, another attempt can resume from a saved checkpoint. Harness UI and Python apps can embed Harness directly.">
+  </picture>
+</a>
 
 ## Run Service
 
@@ -34,7 +41,8 @@ Open <http://127.0.0.1:8080>:
 
 1. Create your administrator account.
 2. In **Models**, select **Add model** and configure a model using an API key or an eligible [ChatGPT subscription](docs/a13n-service/models.md#chatgpt-subscription-provider).
-3. Create an agent with that model. Open **Connect to app** for its ID, Service URL, and an API key.
+3. Create an agent with that model and select **Try agent** to send it a message.
+4. Open **Connect to app** on the same agent to get its ID, Service URL, and an API key.
 
 Call the agent from your application through the [HTTP API](docs/a13n-service/connect-application.md) or a [Python, TypeScript, Go, or Rust SDK](docs/a13n-service/sdks.md).
 
@@ -43,6 +51,12 @@ The stack runs Service, Console, PostgreSQL, and Redis. Agent environments use y
 ### Production on Kubernetes
 
 Deploy to Kubernetes with our [Helm chart](deploy/kubernetes/README.md#other-clusters). Configure API and worker replicas and shared storage for [high availability](docs/a13n-service/operations.md#process-roles).
+
+## Providers and integrations
+
+[![Bring your own stack. Self-host a13n with your choice of models, environments, web data providers, and app connections.](.github/assets/a13n-architecture.webp)](https://a13n.dev/docs/#providers-and-integrations)
+
+[Models](docs/a13n-service/models.md) · [Sandboxes](docs/a13n-service/environments.md) · [Web search](docs/a13n-service/tools.md#web-search-and-scrape) · [Memory](docs/a13n-service/memory.md) · [App connections](docs/a13n-service/tools.md#connections)
 
 ## Use Harness directly
 

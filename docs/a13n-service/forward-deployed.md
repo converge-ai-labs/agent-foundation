@@ -44,7 +44,7 @@ Connect an approved model account in the customer's workspace, save an enabled m
 | Model gateway                                 | Set `base_url` where the provider type supports it. Up to 32 extra headers can carry routing or billing values; values are encrypted and never returned. |
 | Model server on the customer's network        | Set its origin as `base_url`. Add a plain-HTTP origin to `providers.http_origins`.                                                                       |
 
-Follow [Model providers](models.md#model-providers) for the selected type's fields. Set [model prices](models.md#usage-and-prices) and inspect the recorded usage and calculated cost after the test request.
+Follow [Model providers](model-providers.md) for the selected type's fields. Set [model prices](models.md#usage-and-prices) and inspect the recorded usage and calculated cost after the test request.
 
 ## Connect the customer's systems
 
@@ -69,7 +69,7 @@ When an application will call the agent, repeat the accepted workflow through it
 
 ## Control tool calls
 
-Start the customer-system write tools with **Ask**, then exercise both approval and denial. A waiting run should continue only after the pending responses are submitted. Choose **Allow**, **Deny** or **Automatic review** where the workflow requires them. Automatic review uses a model to assess risk: calls below the threshold proceed; calls at or above it are denied or wait for a person. See [Tool permissions](agents-and-runs.md#tool-permissions).
+Start the customer-system write tools with **Ask**, then exercise both approval and denial. A waiting run should continue only after the pending responses are submitted. Choose **Allow**, **Deny** or **Automatic review** where the workflow requires them. Automatic review uses a model to assess risk: calls below the threshold proceed; calls at or above it are denied or wait for a person. See [Tool permissions](agent-configuration.md#tool-permissions).
 
 Set `allowed_hosts` for supported [outbound requests](configuration.md#outbound-requests). Enforce shell and other opaque traffic limits at the deployment or environment boundary.
 
@@ -79,10 +79,19 @@ Include connection disablement in the operating procedure. Service checks the co
 
 For each acceptance sample, record the input, expected result, actual result and run ID. Use Console's Debug view to check the configuration, execution details, usage and cost.
 
-- To explain a tool call or failure, open **Traces** after configuring a [trace backend](agents-and-runs.md#traces). Each attempt exports its spans.
-- To investigate a recurring execution problem, open **Insights → Findings** for evidence and suggested changes. See [Find and improve execution issues](agents-and-runs.md#find-and-improve-execution-issues).
+- To explain a tool call or failure, open **Traces** after configuring a [trace backend](inspect-runs.md#traces). Each attempt exports its spans.
+- To investigate a recurring execution problem, open **Insights → Findings** for evidence and suggested changes. See [Find and improve execution issues](inspect-runs.md#find-and-improve-execution-issues).
 - To review access or account-security changes, use [audit events](identity.md#audit).
 - To establish operational checks, follow [Monitor and troubleshoot](monitoring.md) for logs, metrics and workspace usage.
+
+## Verify a customer-system write
+
+For a workflow that creates issues, use a test repository connected through the customer's MCP server. Confirm the connection exposes a create-issue tool and that its credential can write to the test repository. Select only the tools needed for this test and set the write tool to **Ask**.
+
+1. From Console, ask the agent to create an issue titled `Service acceptance test` in the test repository. Inspect the tool name, target repository, and title before answering the approval.
+2. Deny the request. Check the repository for the title and verify that no issue was created.
+3. Repeat the request through the application's credentials. Collect the pending requests, approve the write, and [follow the successor run](connect-application.md#handle-a-waiting-result).
+4. Open the issue in the customer system and verify the title and repository. Record its URL, the thread ID, and the successor run ID. Have the customer open the same thread in Console and find the tool result in Debug.
 
 ## Hand over operations
 

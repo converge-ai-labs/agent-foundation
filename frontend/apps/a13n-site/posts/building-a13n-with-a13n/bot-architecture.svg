@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 620" role="img" aria-labelledby="bot-title bot-desc">
+  <title id="bot-title">Many conversations. One project context.</title>
+  <desc id="bot-desc">Lark, Slack and GitHub host discussions. Each discussion has a Main that coordinates its own Work threads. Mains query and report to one project Core, which maintains shared project memory and informs relevant Mains. Core coordinates knowledge, not task execution. The a13n runtime supplies asynchronous tools, context management, environments and thread lifecycles.</desc>
+  <text class="pt acc" x="24" y="22">A13N BOT / COLLABORATION ARCHITECTURE</text>
+  <text class="pt ink" x="24" y="53" style="font-size:22px">Many conversations. One project context.</text>
+  <rect class="pf" x="24" y="78" width="912" height="58" rx="3"/>
+  <path class="pf" d="M328 90V124M632 90V124"/>
+  <text class="pt ink" x="176" y="113" text-anchor="middle" style="font-size:16px">Lark</text>
+  <text class="pt ink" x="480" y="113" text-anchor="middle" style="font-size:16px">Slack</text>
+  <text class="pt ink" x="784" y="113" text-anchor="middle" style="font-size:16px">GitHub</text>
+  <path class="pl" d="M179 144V190M174 150L179 144L184 150M174 184L179 190L184 184M781 144V190M776 150L781 144L786 150M776 184L781 190L786 184"/>
+  <text class="pt" x="195" y="169">discuss / respond</text>
+  <text class="pt" x="615" y="169">discuss / respond</text>
+  <rect class="band" x="64" y="198" width="230" height="84" rx="3"/>
+  <rect class="pa thin" x="64" y="198" width="230" height="84" rx="3"/>
+  <text class="pt" x="82" y="220">DISCUSSION A</text>
+  <text class="pt acc" x="82" y="247" style="font-size:20px">Main</text>
+  <text class="pt ink" x="82" y="268">plan / coordinate / reply</text>
+  <rect class="band" x="666" y="198" width="230" height="84" rx="3"/>
+  <rect class="pa thin" x="666" y="198" width="230" height="84" rx="3"/>
+  <text class="pt" x="684" y="220">DISCUSSION B</text>
+  <text class="pt acc" x="684" y="247" style="font-size:20px">Main</text>
+  <text class="pt ink" x="684" y="268">plan / coordinate / reply</text>
+  <rect class="pl" x="386" y="198" width="188" height="84" rx="3"/>
+  <text class="pt" x="480" y="220" text-anchor="middle">ONE PER PROJECT</text>
+  <text class="pt ink" x="480" y="247" text-anchor="middle" style="font-size:20px">Core</text>
+  <text class="pt" x="480" y="268" text-anchor="middle">connect project knowledge</text>
+  <path class="pl" d="M302 229H378M372 225L378 229L372 233M658 229H582M588 225L582 229L588 233"/>
+  <path class="pa thin" d="M378 255H302M308 251L302 255L308 259M582 255H658M652 251L658 255L652 259"/>
+  <text class="pt" x="340" y="209" text-anchor="middle" style="font-size:10px">query / report</text>
+  <text class="pt" x="620" y="209" text-anchor="middle" style="font-size:10px">query / report</text>
+  <text class="pt acc" x="340" y="277" text-anchor="middle">inform</text>
+  <text class="pt acc" x="620" y="277" text-anchor="middle">inform</text>
+  <path class="pl" d="M179 290V332H113V364M108 358L113 364L118 358M179 332H245V364M240 358L245 364L250 358M174 296L179 290L184 296M781 290V332H715V364M710 358L715 364L720 358M781 332H847V364M842 358L847 364L852 358M776 296L781 290L786 296"/>
+  <text class="pt" x="195" y="317">delegate / report</text>
+  <text class="pt" x="797" y="317">delegate / report</text>
+  <rect class="pl" x="64" y="372" width="98" height="62" rx="3"/>
+  <rect class="pl" x="196" y="372" width="98" height="62" rx="3"/>
+  <rect class="pl" x="666" y="372" width="98" height="62" rx="3"/>
+  <rect class="pl" x="798" y="372" width="98" height="62" rx="3"/>
+  <text class="pt ink" x="113" y="398" text-anchor="middle" style="font-size:16px">Work</text>
+  <text class="pt ink" x="245" y="398" text-anchor="middle" style="font-size:16px">Work</text>
+  <text class="pt ink" x="715" y="398" text-anchor="middle" style="font-size:16px">Work</text>
+  <text class="pt ink" x="847" y="398" text-anchor="middle" style="font-size:16px">Work</text>
+  <text class="pt" x="113" y="418" text-anchor="middle">execute</text>
+  <text class="pt" x="245" y="418" text-anchor="middle">execute</text>
+  <text class="pt" x="715" y="418" text-anchor="middle">execute</text>
+  <text class="pt" x="847" y="418" text-anchor="middle">execute</text>
+  <path class="pa thin" d="M480 290V364M475 358L480 364L485 358"/>
+  <text class="pt acc" x="495" y="332">maintain</text>
+  <rect class="pf" x="386" y="372" width="188" height="62" rx="3"/>
+  <path class="pf" d="M392 440H580V378"/>
+  <text class="pt ink" x="480" y="398" text-anchor="middle" style="font-size:14px">Project memory</text>
+  <text class="pt" x="480" y="418" text-anchor="middle">shared across discussions</text>
+  <path class="pf dash" d="M64 459H896"/>
+  <text class="pt" x="480" y="483" text-anchor="middle">Every Main and Work can read shared project memory.</text>
+  <path class="pl" d="M24 516H936"/>
+  <text class="pt acc" x="24" y="542">BUILT ON A13N</text>
+  <text class="pt ink" x="24" y="572" style="font-size:13px">Async execution</text>
+  <text class="pt ink" x="272" y="572" style="font-size:13px">Context + memory</text>
+  <text class="pt ink" x="530" y="572" style="font-size:13px">Environments</text>
+  <text class="pt ink" x="766" y="572" style="font-size:13px">Thread lifecycle</text>
+  <text class="pt" x="24" y="601">Responsive entry</text>
+  <text class="pt" x="272" y="601">Continuous context</text>
+  <text class="pt" x="530" y="601">Explicit resources</text>
+  <text class="pt" x="766" y="601">Long-running work</text>
+</svg>

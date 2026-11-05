@@ -1,6 +1,8 @@
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { EditorView } from "@codemirror/view";
+import shell from "../src/shell/workbench.module.css";
+import native from "../src/native/native.module.css";
 import "a13n-ui/styles.css";
 import "../src/shell/theme.css";
 import { FileView } from "../src/native/file-view";
@@ -30,6 +32,8 @@ let disk: Schema<"FileText"> = {
       (_, i) =>
         `Paragraph ${i + 1}: ${"Long text should wrap without losing the reading position. ".repeat(3)}`,
     ),
+    "",
+    "[Diagram](/threads/review?native=files&native_path=%2Freview%2Fdiagram.png)",
   ].join("\n"),
   entry: {
     path,
@@ -70,21 +74,20 @@ createRoot(document.getElementById("root")!).render(
   >
     <TransportContext value={transport}>
       <FileBuffers value={buffers}>
-        <main
-          style={{
-            height: "100dvh",
-            display: "flex",
-            flexDirection: "column",
-            padding: 16,
-            boxSizing: "border-box",
-          }}
-        >
-          <FileView
-            path={path}
-            refresh={() => {}}
-            open={() => {}}
-            line={params.has("line") ? Number(params.get("line")) : undefined}
-          />
+        <main className={shell.shell}>
+          <div
+            className={native.editorPage}
+            role="region"
+            aria-label="File reader"
+            tabIndex={0}
+          >
+            <FileView
+              path={path}
+              refresh={() => {}}
+              open={() => {}}
+              line={params.has("line") ? Number(params.get("line")) : undefined}
+            />
+          </div>
         </main>
       </FileBuffers>
     </TransportContext>

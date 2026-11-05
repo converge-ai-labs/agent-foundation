@@ -81,7 +81,7 @@ a13n-service --config service.toml migrate
 a13n-service --config service.toml migrate --check
 ```
 
-A successful check confirms the schema expected by this build and the absence of legacy unpaged run pointers. If the command reports legacy objects, follow [object conversion](#convert-legacy-run-objects) before starting replicas.
+A successful check confirms the schema expected by this build and the absence of legacy unpaged run pointers. If the command reports legacy objects, follow [object conversion](upgrade-notes.md#convert-legacy-run-objects) before starting replicas.
 
 Every process requires its build's exact schema at startup. During a rolling upgrade, an already-running old process can continue working against the changed schema, but its readiness becomes unavailable when the schema head differs. Review migration compatibility and load-balancer behavior before choosing a rolling rollout. Replace old processes, check each new replica, then verify historical reads and execution.
 
@@ -102,7 +102,7 @@ Control replicas coordinate maintenance through database claims. A failed sweep 
 | Memory organization or background compaction remains unsettled | The operation's saved status and control reconciliation logs.               |
 | Webhooks or email stop arriving                                | Outbox errors, destination availability and dead-delivery alerts.           |
 
-Outbox delivery is at least once. Failed deliveries retry with exponential backoff, up to one hour between attempts, and become dead after the kind's `max_attempts`. Workspace administrators can inspect and redeliver [webhooks](files-and-webhooks.md#webhooks) after fixing the destination.
+Outbox delivery is at least once. Failed deliveries retry with exponential backoff, up to one hour between attempts, and become dead after the kind's `max_attempts`. Workspace administrators can inspect and redeliver [webhooks](webhooks.md#webhooks) after fixing the destination.
 
 ## Outbox retention and capacity
 
@@ -125,7 +125,7 @@ Alert on `a13n_outbox_backlog_alert == 1` and `a13n_outbox_dead == 1`, taking th
 
 ## Environment monitoring collectors
 
-For optional vmagent or Grafana Alloy integration, follow [collector bootstrap](environment-monitoring.md#bootstrap-an-optional-collector). Run exactly one `writer = true` process per collector in an `all` or `control` role; other API replicas use `writer = false`. Workers do not reconcile collector configuration.
+For optional vmagent or Grafana Alloy integration, follow [collector bootstrap](environment-collectors.md#bootstrap-an-optional-collector). Run exactly one `writer = true` process per collector in an `all` or `control` role; other API replicas use `writer = false`. Workers do not reconcile collector configuration.
 
 Use this sequence when changing or retiring a collector:
 
@@ -153,33 +153,6 @@ Pass `--config service.toml` before the command name. Use the deployment's envir
 
 ## Run search rollout
 
-For upgrades that introduce run search, the migration adds an empty-default search column and builds its GIN index concurrently. It does not backfill historical content. Column and trigger changes still need brief table locks; configured migration timeouts bound the work. A failed index build can be rerun: invalid indexes are removed and completed valid indexes are retained.
+<span id="convert-legacy-run-objects"></span>
 
-Upgrade all control processes and readers before enabling new workers. Current workers write checkpoint format 4 and read formats 1–4; older workers skip formats they cannot continue. After new-format writes, keep compatible readers, Console and workers during rollback. Database downgrade drops derived search data but does not convert saved objects.
-
-## Convert legacy run objects
-
-Use this procedure only when upgrading from the original unpaged run display and the migration command reports legacy pointers. The schema migration renames the database field; the separate conversion supplies message ordinals and compressed objects.
-
-1. Drain accepted and running work, then stop **all** control and worker replicas.
-2. Complete the schema migration. A subsequent legacy-object error identifies the remaining conversion step.
-3. Use database-owner privileges and a durable private backup directory outside the repository. The backups contain conversation data.
-4. Inspect a batch, then apply the conversion:
-
-```sh
-a13n-service --config service.toml migrate-run-objects
-a13n-service --config service.toml migrate-run-objects --apply --backup-dir /private/backups/a13n-run-objects
-```
-
-The command defaults to 100 runs; `--limit` accepts 1–1000. It verifies and backs up original objects and database pointers before replacing each run's pointers, preserving message IDs, order, content, stream coverage and checkpoint payload. Already-converted runs are skipped, so an interrupted batch can resume.
-
-5. Repeat the apply command until it reports `"converted": 0`. Investigate any refusal: unfinished checkpoint cleanup, existing display pages, missing or damaged objects, and already-truncated history require resolution before proceeding.
-6. Check the completed deployment migration:
-
-```sh
-a13n-service --config service.toml migrate --check
-```
-
-7. Resume replicas, open a historical run and its message list, then continue the conversation.
-
-To roll back to the old unpaged reader, stop replicas and restore the backed-up database pointers and objects together. Later cleanup can remove original objects, so retain the private backup independently.
+- [Service upgrade notes](upgrade-notes.md)

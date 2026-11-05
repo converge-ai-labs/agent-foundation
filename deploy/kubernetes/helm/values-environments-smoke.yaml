@@ -1,0 +1,7 @@
+# Opt-in local/CI overlay; combine with values-local.yaml. Never use this fixture policy in production.
+kubernetesEnvironments:
+  enabled: true
+  allowPlaintextEnvd: true
+extraConfig: |
+  [providers]
+  http_origins = ["http://a13n-scripted-model:8000"]

@@ -22,6 +22,7 @@ from pydantic_ai.exceptions import ModelRetry, ToolFailed
 
 from a13n_harness._retained_scope import RetainedScope as RetainedScope
 from a13n_harness.environment.process_recovery import ShellExecutionState
+from a13n_harness.tools.diagnostics import system_error, system_failure, tool_error_text
 
 _OWNED_TOOL_EXECUTION: contextvars.ContextVar[bool] = contextvars.ContextVar("a13n_owned_tool_execution", default=False)
 
@@ -349,9 +350,13 @@ class ToolExecutionRuntime:
         sequential: bool = False,
     ) -> ToolExecutionRecord:
         if self._closing:
-            raise ToolFailed("Tool execution runtime is shutting down.")
+            raise system_failure("tool_runtime_closed", "Tool execution runtime is shutting down.")
         if len(self._live) >= self._max_active:
-            raise ToolFailed("Tool execution capacity is full. Wait for an existing execution to finish.")
+            raise system_failure(
+                "tool_capacity_exceeded",
+                "Tool execution capacity is full.",
+                hint="Wait for an existing execution to finish.",
+            )
         record = ToolExecutionRecord(
             execution_id=f"exec-{uuid4().hex[:16]}",
             thread_id=thread_id,
@@ -451,7 +456,16 @@ class ToolExecutionRuntime:
                 except asyncio.CancelledError:
                     status, retry_prompt = "cancelled", None
                 except Exception:
-                    status, error = "failed", "Tool execution resource cleanup failed."
+                    status, error = (
+                        "failed",
+                        tool_error_text(
+                            system_error(
+                                "tool_cleanup_failed",
+                                "Tool execution resource cleanup failed.",
+                                hint="Check the original operation before repeating a write.",
+                            )
+                        ),
+                    )
                     retry_prompt = None
             self._release_slot(live.record.thread_id, slot)
         if yielded:

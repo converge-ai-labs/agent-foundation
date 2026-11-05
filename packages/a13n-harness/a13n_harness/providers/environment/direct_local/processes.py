@@ -425,16 +425,8 @@ class LocalProcessManager:
         return await self._retention.reserve(max_bytes=policy.max_output_bytes)
 
     def _validate_request(self, request: CommandRequest) -> None:
-        if request.network == "deny":
-            raise EnvironmentError("Direct Local cannot enforce network denial.", code="environment_unsupported")
-        if request.limits.memory_bytes is not None or request.limits.cpu_time_seconds is not None:
-            raise EnvironmentError(
-                "Requested Direct Local resource limit is unsupported.", code="environment_unsupported"
-            )
-        if request.limits.process_count is not None:
-            raise EnvironmentError(
-                "Direct Local cannot enforce a process count ceiling.", code="environment_unsupported"
-            )
+        request.require_configured_network()
+        request.limits.require_supported("wall_time_seconds", "stdin_bytes")
         allowed_keys = self._policy.allowed_environment_keys
         if allowed_keys is not None:
             requested_keys = set(request.environment.set) | set(request.environment.unset)

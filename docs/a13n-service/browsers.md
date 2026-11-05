@@ -22,9 +22,11 @@ All six options support the same core agent browser tools. The table shows the a
 
 Docker and Native keep cookies and login state when stopped. The cloud integrations use temporary profiles that end with the supplier session. External CDP leaves browser lifetime and profile management to you.
 
+Docker browsers require a Linux host and the [host-network deployment setup](#deployment-and-network). Access to a Docker Engine alone does not make browser loopback ports reachable from a bridge-network Service container.
+
 ## Use Console
 
-1. **Enable browser tools.** In the agent revision, enable the `browser` toolset and choose the [tool permissions](agents-and-runs.md#tool-permissions) the agent needs.
+1. **Enable browser tools.** In the agent revision, enable the `browser` toolset and choose the [tool permissions](agent-configuration.md#tool-permissions) the agent needs.
 2. **Add a browser.** For a managed browser, configure an account under **Providers → Browser providers**, then create a browser under **Browsers**. For external CDP, attach the endpoint directly under **Browsers**; no provider account is needed.
 3. **Bind the thread.** Open the thread's **Browser** action, select the browser and save. Keep `thread` tab access for tabs created by that thread; use `global` when the agent needs existing tabs.
 4. **Submit work.** The default `first_use` setting prepares the browser on the first browser-tool call. Ask the agent to open or select a tab, observe the page, then perform the task.

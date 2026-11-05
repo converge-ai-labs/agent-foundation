@@ -1,26 +1,29 @@
 ---
 title: Provider configuration reference
-description: Every built-in Environment Provider configuration field, generated from the Provider models.
+description: Generated Harness execution inputs, Service management recipes, account settings, and credentials.
 ---
 
-Find your Provider's configuration model, then use its table to check field names, accepted values, and defaults. A type such as `DirectLocalRootConfiguration` has its own table below. Start with [Configure Providers](configuration.md) to assemble a recipe, backend settings, and private credentials into a working configuration.
+Choose the model for the boundary you are configuring. Harness execution inputs describe an already selected target. Service management recipes add target creation and desktop preparation. Account settings and credentials are separate from both. Use [Configure Providers](configuration.md) to assemble these inputs.
 
-A field marked **Required** must be supplied. **Default from model factory** means the model computes the value when constructed; this reference does not resolve values from your Host environment or credential store. The tables describe Provider configuration objects. For standalone daemon JSON settings, use [Envd configuration](../a13n-envd/configuration.md).
+A field marked **Required** must be supplied. **Default from model factory** means the model computes the value when constructed. The tables show field schemas, not cross-field validation or the values selected by a Host; follow the setup guide for automatic desktop defaults and valid combinations. Standalone daemon JSON uses [Envd configuration](../a13n-envd/configuration.md), not these models.
 
-The tables are generated from the built-in Provider models. Contributors changing those models regenerate the English page with `uv run --locked python scripts/docs/references.py` and synchronize the translated rows.
+These tables are generated from the selected built-in models in `scripts/docs/references.py`. Contributors regenerate them with `uv run --locked python scripts/docs/references.py` and synchronize the Chinese page. Keep each execution model distinct from its Service recipe.
 
 ## Cloud Providers
 
-Use the links to find each cloud Provider's three configuration objects. The recipe describes the target to create, backend settings select the account or endpoint, and credentials supply private authentication. For supported operations and setup examples, see [Cloud Providers](providers.md#cloud-providers).
+Choose the execution column for a fixed-target Harness connector, or the management column for a Service template. A Service recipe's automatic image or snapshot is resolved before execution. See [cloud setup and limits](cloud-providers.md) for preparation and valid desktop combinations.
 
-| Provider       | Recipe                                                              | Backend                                                           | Credential                          |
-| -------------- | ------------------------------------------------------------------- | ----------------------------------------------------------------- | ----------------------------------- |
-| E2B            | [E2BRecipe](#e2brecipe)                                             | [E2BConnectionConfiguration](#e2bconnectionconfiguration)         | [E2BCredential](#e2bcredential)     |
-| Daytona        | [DaytonaEnvironmentConfiguration](#daytonaenvironmentconfiguration) | [DaytonaConnectionConfiguration](#daytonaconnectionconfiguration) | [TokenCredential](#tokencredential) |
-| Modal          | [ModalEnvironmentConfiguration](#modalenvironmentconfiguration)     | [ModalConnectionConfiguration](#modalconnectionconfiguration)     | [ModalCredential](#modalcredential) |
-| Vercel Sandbox | [VercelEnvironmentConfiguration](#vercelenvironmentconfiguration)   | [VercelConnectionConfiguration](#vercelconnectionconfiguration)   | [TokenCredential](#tokencredential) |
-| Fly.io Sprites | [SpritesEnvironmentConfiguration](#spritesenvironmentconfiguration) | [SpritesConnectionConfiguration](#spritesconnectionconfiguration) | [TokenCredential](#tokencredential) |
-| Runloop        | [RunloopEnvironmentConfiguration](#runloopenvironmentconfiguration) | [RunloopConnectionConfiguration](#runloopconnectionconfiguration) | [TokenCredential](#tokencredential) |
+| Provider       | Harness execution                                                   | Service management                                                  | Account                                                           | Credential                          |
+| -------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------- | ----------------------------------------------------------------- | ----------------------------------- |
+| Docker         | [DockerEnvironmentConfiguration](#dockerenvironmentconfiguration)   | [DockerRecipe](#dockerrecipe)                                       | [DockerConnectionConfiguration](#dockerconnectionconfiguration)   | Engine authentication               |
+| E2B            | [E2BEnvironmentConfiguration](#e2benvironmentconfiguration)         | [E2BRecipe](#e2brecipe)                                             | [E2BConnectionConfiguration](#e2bconnectionconfiguration)         | [E2BCredential](#e2bcredential)     |
+| Daytona        | [DaytonaEnvironmentConfiguration](#daytonaenvironmentconfiguration) | [DaytonaRecipe](#daytonarecipe)                                     | [DaytonaConnectionConfiguration](#daytonaconnectionconfiguration) | [TokenCredential](#tokencredential) |
+| Modal          | [ModalEnvironmentConfiguration](#modalenvironmentconfiguration)     | [ModalRecipe](#modalrecipe)                                         | [ModalConnectionConfiguration](#modalconnectionconfiguration)     | [ModalCredential](#modalcredential) |
+| Vercel Sandbox | [VercelEnvironmentConfiguration](#vercelenvironmentconfiguration)   | [VercelRecipe](#vercelrecipe)                                       | [VercelConnectionConfiguration](#vercelconnectionconfiguration)   | [TokenCredential](#tokencredential) |
+| Fly.io Sprites | [SpritesEnvironmentConfiguration](#spritesenvironmentconfiguration) | [SpritesRecipe](#spritesrecipe)                                     | [SpritesConnectionConfiguration](#spritesconnectionconfiguration) | [TokenCredential](#tokencredential) |
+| Runloop        | [RunloopEnvironmentConfiguration](#runloopenvironmentconfiguration) | [RunloopEnvironmentConfiguration](#runloopenvironmentconfiguration) | [RunloopConnectionConfiguration](#runloopconnectionconfiguration) | [TokenCredential](#tokencredential) |
+
+Runloop uses the same configuration model for execution and management; it has no separate Service desktop recipe.
 
 ## `DirectLocalEnvironmentConfiguration`
 
@@ -220,6 +223,40 @@ Optional outer-daemon sampling; independent of Session execution policy.
 | `allow_login`      | false    | boolean         | default=false                       |
 | `max_script_bytes` | false    | integer         | exclusiveMinimum=0; default=1048576 |
 
+## `DockerEnvironmentConfiguration`
+
+| Field                         | Required | Type / choices                    | Constraints and default                                                          |
+| ----------------------------- | -------- | --------------------------------- | -------------------------------------------------------------------------------- |
+| `image`                       | false    | string                            | minLength=1; maxLength=1024; default="ghcr.io/converge-ai-labs/a13n-sandbox:dev" |
+| `execution`                   | false    | "native" or "envd_http"           | default="native"                                                                 |
+| `desktop`                     | false    | boolean                           | default=false                                                                    |
+| `mounts`                      | false    | array of DockerMountConfiguration | default=[]                                                                       |
+| `environment`                 | false    | EnvironmentVariables              | —; default from model factory                                                    |
+| `init_script`                 | false    | string or null                    | maxLength=1048576; format="multiline"; default=null                              |
+| `disable_network`             | false    | boolean                           | default=false                                                                    |
+| `user`                        | false    | string or null                    | minLength=1; maxLength=128; default=null                                         |
+| `shell`                       | false    | string                            | default="/bin/sh"                                                                |
+| `python`                      | false    | string                            | default="python3"                                                                |
+| `cpus`                        | false    | number or null                    | minimum=0.001; default=null                                                      |
+| `memory_gb`                   | false    | number or null                    | minimum=0.006291456; default=null                                                |
+| `pids_limit`                  | false    | integer or null                   | exclusiveMinimum=0; default=null                                                 |
+| `stop_grace_seconds`          | false    | integer                           | minimum=0; maximum=300; default=10                                               |
+| `request_timeout_seconds`     | false    | integer                           | maximum=3600; exclusiveMinimum=0; default=60                                     |
+| `max_file_bytes`              | false    | integer                           | exclusiveMinimum=0; default=16777216                                             |
+| `max_query_entries`           | false    | integer                           | exclusiveMinimum=0; default=100000                                               |
+| `max_output_preview_bytes`    | false    | integer                           | exclusiveMinimum=0; default=65536                                                |
+| `max_output_bytes_per_stream` | false    | integer                           | exclusiveMinimum=0; default=16777216                                             |
+| `max_spool_bytes`             | false    | integer                           | exclusiveMinimum=0; default=67108864                                             |
+| `max_concurrent_processes`    | false    | integer                           | exclusiveMinimum=0; default=128                                                  |
+
+## `DockerMountConfiguration`
+
+| Field       | Required | Type / choices | Constraints and default |
+| ----------- | -------- | -------------- | ----------------------- |
+| `source`    | true     | string         | —                       |
+| `target`    | true     | string         | format="path"           |
+| `read_only` | false    | boolean        | default=true            |
+
 ## `DockerRecipe`
 
 | Field                         | Required | Type / choices                    | Constraints and default                                                          |
@@ -249,13 +286,24 @@ Optional outer-daemon sampling; independent of Session execution policy.
 | `desktop_viewer_url`          | false    | string or null                    | maxLength=2048; default=null                                                     |
 | `pull_policy`                 | false    | "never", "if_missing"             | default="if_missing"                                                             |
 
-## `DockerMountConfiguration`
+## `E2BEnvironmentConfiguration`
 
-| Field       | Required | Type / choices | Constraints and default |
-| ----------- | -------- | -------------- | ----------------------- |
-| `source`    | true     | string         | —                       |
-| `target`    | true     | string         | format="path"           |
-| `read_only` | false    | boolean        | default=true            |
+| Field                       | Required | Type / choices        | Constraints and default                                   |
+| --------------------------- | -------- | --------------------- | --------------------------------------------------------- |
+| `template`                  | false    | string                | minLength=1; maxLength=256; default="base"                |
+| `execution`                 | false    | "native", "envd_http" | default="native"                                          |
+| `desktop`                   | false    | boolean               | default=false                                             |
+| `environment`               | false    | EnvironmentVariables  | —; default from model factory                             |
+| `root`                      | false    | string                | default="/home/user"                                      |
+| `user`                      | false    | string                | `pattern="^[a-z_][a-z0-9_-]{0,63}$"`; default="user"      |
+| `python`                    | false    | string                | default="/usr/bin/python3"                                |
+| `request_timeout_seconds`   | false    | number                | maximum=300; exclusiveMinimum=0; default=30               |
+| `allow_internet_access`     | false    | boolean               | default=true                                              |
+| `max_file_bytes`            | false    | integer               | maximum=1073741824; exclusiveMinimum=0; default=104857600 |
+| `max_observation_bytes`     | false    | integer               | maximum=16777216; exclusiveMinimum=0; default=1048576     |
+| `max_active_observations`   | false    | integer               | maximum=1024; exclusiveMinimum=0; default=128             |
+| `max_retained_output_bytes` | false    | integer               | maximum=1073741824; exclusiveMinimum=0; default=134217728 |
+| `max_query_entries`         | false    | integer               | maximum=100000; exclusiveMinimum=0; default=10000         |
 
 ## `E2BRecipe`
 
@@ -277,6 +325,66 @@ Optional outer-daemon sampling; independent of Session execution policy.
 | `max_query_entries`         | false    | integer               | maximum=100000; exclusiveMinimum=0; default=10000         |
 | `desktop_assistance`        | false    | boolean               | default=false                                             |
 | `timeout_seconds`           | false    | integer               | minimum=30; maximum=86400; default=3600                   |
+
+## `DaytonaRecipe`
+
+| Field                     | Required | Type / choices       | Constraints and default                      |
+| ------------------------- | -------- | -------------------- | -------------------------------------------- |
+| `snapshot`                | false    | string               | minLength=1; maxLength=256; default="auto"   |
+| `desktop`                 | false    | boolean              | default=false                                |
+| `environment`             | false    | EnvironmentVariables | —; default from model factory                |
+| `request_timeout_seconds` | false    | number               | maximum=600; exclusiveMinimum=0; default=120 |
+| `desktop_assistance`      | false    | boolean              | default=false                                |
+
+## `ModalRecipe`
+
+| Field                     | Required | Type / choices       | Constraints and default                      |
+| ------------------------- | -------- | -------------------- | -------------------------------------------- |
+| `image`                   | false    | string               | minLength=1; maxLength=256; default="auto"   |
+| `desktop`                 | false    | boolean              | default=false                                |
+| `environment`             | false    | EnvironmentVariables | —; default from model factory                |
+| `request_timeout_seconds` | false    | number               | maximum=600; exclusiveMinimum=0; default=120 |
+| `timeout_seconds`         | false    | integer              | minimum=300; maximum=86400; default=86400    |
+| `cpu`                     | false    | number               | maximum=64; exclusiveMinimum=0; default=1    |
+| `memory`                  | false    | integer              | minimum=128; maximum=262144; default=1024    |
+| `desktop_assistance`      | false    | boolean              | default=false                                |
+
+## `VercelRecipe`
+
+| Field                     | Required | Type / choices        | Constraints and default                                                             |
+| ------------------------- | -------- | --------------------- | ----------------------------------------------------------------------------------- |
+| `environment`             | false    | EnvironmentVariables  | —; default from model factory                                                       |
+| `root`                    | false    | string                | default="/vercel/sandbox"                                                           |
+| `python`                  | false    | string                | default="/vercel/runtimes/python/bin/python3"                                       |
+| `shell`                   | false    | string                | default="/bin/bash"                                                                 |
+| `request_timeout_seconds` | false    | number                | maximum=600; exclusiveMinimum=0; default=120                                        |
+| `max_file_bytes`          | false    | integer               | maximum=67108864; exclusiveMinimum=0; default=16777216                              |
+| `max_query_entries`       | false    | integer               | maximum=100000; exclusiveMinimum=0; default=10000                                   |
+| `max_output_bytes`        | false    | integer               | maximum=16777216; exclusiveMinimum=0; default=1048576                               |
+| `execution`               | false    | "native", "envd_http" | default="native"                                                                    |
+| `snapshot`                | false    | string or null        | minLength=1; maxLength=256; `pattern="^(auto\|snap_[A-Za-z0-9_-]+)$"`; default=null |
+| `desktop`                 | false    | boolean               | default=false                                                                       |
+| `runtime`                 | false    | string                | minLength=1; maxLength=128; default="python3.13"                                    |
+| `timeout_seconds`         | false    | integer               | minimum=300; maximum=18000; default=3600                                            |
+| `vcpus`                   | false    | integer               | minimum=2; maximum=8; default=2                                                     |
+| `desktop_assistance`      | false    | boolean               | default=false                                                                       |
+
+## `SpritesRecipe`
+
+| Field                     | Required | Type / choices        | Constraints and default                                |
+| ------------------------- | -------- | --------------------- | ------------------------------------------------------ |
+| `environment`             | false    | EnvironmentVariables  | —; default from model factory                          |
+| `root`                    | false    | string                | default="/home/sprite"                                 |
+| `python`                  | false    | string                | default="python3"                                      |
+| `shell`                   | false    | string                | default="/bin/bash"                                    |
+| `request_timeout_seconds` | false    | number                | maximum=600; exclusiveMinimum=0; default=120           |
+| `max_file_bytes`          | false    | integer               | maximum=67108864; exclusiveMinimum=0; default=16777216 |
+| `max_query_entries`       | false    | integer               | maximum=100000; exclusiveMinimum=0; default=10000      |
+| `max_output_bytes`        | false    | integer               | maximum=16777216; exclusiveMinimum=0; default=1048576  |
+| `region`                  | false    | string or null        | maxLength=64; default=null                             |
+| `execution`               | false    | "native", "envd_http" | default="native"                                       |
+| `desktop`                 | false    | boolean               | default=false                                          |
+| `desktop_assistance`      | false    | boolean               | default=false                                          |
 
 ## `DaytonaEnvironmentConfiguration`
 

@@ -4,7 +4,8 @@ import type { ReactNode } from "react";
 import { type Locale, localeUrl, messages } from "@/lib/i18n";
 import { icon } from "@/lib/icons";
 
-export { ArchitectureOverview } from "./architecture-overview";
+export { ProviderMap } from "./provider-map";
+export { RuntimeMap } from "./runtime-map";
 
 export function Intro({
   locale = "en",
@@ -37,14 +38,16 @@ export function Intro({
 }
 
 export function Section({
+  id,
   title,
   children,
 }: {
+  id?: string;
   title: string;
   children: ReactNode;
 }) {
   return (
-    <section className="mt-12 first-of-type:mt-0">
+    <section id={id} className="mt-12 scroll-mt-18 first-of-type:mt-0">
       <h2 className="mb-3 text-[15px] font-medium">{title}</h2>
       {children}
     </section>

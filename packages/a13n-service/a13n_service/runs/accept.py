@@ -31,7 +31,9 @@ from a13n_service.resources.agents.validation import require_subagent_tool_names
 from a13n_service.runs import definitions, inbox
 from a13n_service.runs.admission import AcceptedIntent
 from a13n_service.runs.attachments import require_readable
+from a13n_service.runs.environments.lifecycle import reserve
 from a13n_service.runs.environments.mounts import (
+    PRIMARY,
     adopt_mounts,
     freeze_mounts,
     has_primary,
@@ -164,6 +166,8 @@ class Source:
     resumed_by_id: str | None = None
     request_key: str | None = None
     request_digest: str | None = None
+    # A continuation keeps its Run-only primary rather than repeating fresh allocation.
+    environment_mount: EnvironmentMount | None = None
 
     @classmethod
     def message(
@@ -251,7 +255,14 @@ class Source:
             authority=authority,
             revision=revision,
             revision_selection="snapshot" if thread.agent_snapshot is not None else "inherited",
-            options=stored.require(RunOptions, run.options, kind="run", id=run.id),
+            options=options,
+            environment_mount=(
+                EnvironmentMount.model_validate(
+                    next(mount for mount in run.environment_mounts if mount["name"] == PRIMARY)
+                )
+                if options.environment is not None
+                else None
+            ),
             options_digest=run.options_digest,
             occurrence_trigger_entry_id=run.occurrence_trigger_entry_id if trigger == "resume" else None,
             entry=entry,
@@ -346,7 +357,23 @@ async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, 
         options = options.model_copy(update={"execution": policy.override()})
     parent, lineage = await parent_of(session, thread)
     # An instance reserved here is a new row that a refusal discards with it; freezing checks the mounts are usable.
-    if not await thread_has_primary(session, thread):
+    primary_override = source.environment_mount
+    if options.environment is not None and primary_override is None:
+        selection = options.environment
+        if selection.mode == "fresh":
+            instance = await reserve(
+                session, principal, scope, selection.template_id, limit=runtime.settings.environments.managed_count
+            )
+            environment_id = instance.id
+        else:
+            environment_id = selection.environment_id
+        primary_override = EnvironmentMount(
+            name=PRIMARY,
+            environment_id=environment_id,
+            working_directory=selection.working_directory,
+            permission_ceiling=selection.permission_ceiling,
+        )
+    if primary_override is None and not await thread_has_primary(session, thread):
         primary = await primary_source(session, thread, revision.config)
         if isinstance(primary, EnvironmentMount):
             await adopt_mounts(session, thread, [primary])
@@ -373,6 +400,7 @@ async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, 
         session,
         thread,
         principal_id=principal.id,
+        primary=primary_override,
     )
     if source.trigger == "desktop_handback" and source.entry is not None:
         # Eligibility proved the desired mount still equals its originating frozen binding.

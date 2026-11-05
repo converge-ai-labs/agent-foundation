@@ -302,9 +302,6 @@
   z-index: 1;
 }
 @media (max-width: 640px) {
-  .runtimeGrid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
   .connectionRow {
     align-items: stretch;
     flex-direction: column;
