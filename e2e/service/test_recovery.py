@@ -111,7 +111,7 @@ async def test_heartbeats_keep_one_attempt_through_a_slow_model(stack) -> None: 
     assert [request["status"] for request in await model.requests("[slow]")] == ["answered"]
 
 
-@pytest.mark.isolated_service(start_workers=1)
+@pytest.mark.isolated_service(start_workers=1, lease_seconds=30)
 async def test_a_draining_worker_hands_its_run_to_another(stack) -> None:  # type: ignore[no-untyped-def]
     api, model = stack.api, stack.model
     agent = await api.create_agent("Helper", await api.create_model(model.base_url), **LOOKUP)
@@ -122,7 +122,6 @@ async def test_a_draining_worker_hands_its_run_to_another(stack) -> None:  # typ
     )
     run_id = receipt["run"]["id"]
     await model.arrived("[drain]", status="held")
-    await stack.start_worker(successor)
 
     async def checkpointed() -> bool:
         return [entry["status"] for entry in await api.inbox(receipt["thread"]["id"])] == ["consumed"]
@@ -155,6 +154,7 @@ async def test_a_draining_worker_hands_its_run_to_another(stack) -> None:  # typ
     # Uvicorn re-raises the signal it handled once its graceful shutdown completed.
     assert draining.wait(DRAIN_SECONDS) == -signal.SIGTERM
     await model.say("Finished on the other worker.", to="[drain]")
+    await stack.start_worker(successor)
     run = await api.sealed(run_id)
     assert (run["status"], run["output"]) == ("completed", "Finished on the other worker.")
     assert run["environment_mounts"] == []

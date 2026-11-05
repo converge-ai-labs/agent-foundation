@@ -2,6 +2,7 @@
 and the thread resource's reads and settings."""
 
 from collections.abc import Sequence
+from typing import Literal
 
 from sqlalchemy import func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,14 +34,19 @@ from a13n_service.tenancy.authorize import Principal
 
 
 async def get_thread(
-    session: AsyncSession, workspace_id: str, thread_id: str, *, lock: bool = False, history: bool = True
+    session: AsyncSession,
+    workspace_id: str,
+    thread_id: str,
+    *,
+    lock: bool | Literal["acceptance"] = False,
+    history: bool = True,
 ) -> ThreadRow:
     query = select(ThreadRow).where(ThreadRow.workspace_id == workspace_id, ThreadRow.id == thread_id)
     if not history:
         query = query.options(defer(ThreadRow.message_history, raiseload=True))
     if lock:
-        # Serialize writers while allowing PostgreSQL to validate a fork's foreign key to its origin.
-        query = query.with_for_update(key_share=True).execution_options(populate_existing=True)
+        # Acceptance serializes writers but lets a concurrent fork validate its foreign key to its origin.
+        query = query.with_for_update(key_share=lock == "acceptance").execution_options(populate_existing=True)
     thread = await session.scalar(query)
     if thread is None:
         raise not_found("thread", thread_id)
