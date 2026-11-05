@@ -933,3 +933,57 @@ async def test_findings_mcp_reads_preserve_review_filters_history_and_workspace_
         assert hidden["status"] == 404
         empty = await call(http, service, "GET", "/finding-analyses")
         assert empty["body"]["items"] == []
+
+
+async def test_manual_scope_filters_before_sampling_and_represents_each_session(service, scripted_model, runs_kit):
+    agent, first = await target(service, scripted_model, runs_kit)
+    other = await runs_kit.add_agent(service, "Other", "scripted")
+    scripted_model.say("Done")
+    second = (await runs_kit.start_thread(service, other, "second session"))["run"]
+    await (await runs_kit.attempt(service))
+    await service.client.post("/api/v1/finding-agent")
+
+    class ScopedBackend(Backend):
+        async def query(self, query):
+            self.requests.append(query)
+            return SpanPage(
+                items=[
+                    root
+                    for root in roots
+                    if all(root.attributes.get(key) == value for key, value in query.attributes.items())
+                ][: query.limit],
+                next_cursor=None,
+            )
+
+    backend = ScopedBackend(service, first["id"])
+    roots = [
+        backend.root.model_copy(
+            update={
+                "trace_id": char * 32,
+                "attributes": correlation_attributes(
+                    service.tenant.organization_id,
+                    service.tenant.workspace_id,
+                    run_id=run["id"],
+                    session_id=run["session_id"],
+                ),
+            }
+        )
+        for char, run in [("a", first), ("b", first), ("c", second)]
+    ]
+    service.app.state.runtime = replace(service.runtime, traces=backend)
+
+    async def analyze(body, key):
+        return await service.client.post("/api/v1/finding-analyses", json=body, headers={"Idempotency-Key": key})
+
+    scoped = await analyze({"agent_id": other["id"]}, "one-agent")
+    assert scoped.status_code == 201, scoped.text
+    assert [item["run_id"] for item in scoped.json()["selected_traces"]] == [second["id"]]
+    assert all(q.attributes["a13n.observation.metadata.service_run_id"] == second["id"] for q in backend.requests)
+    sessions = [first["session_id"], second["session_id"]]
+    body = {"session_ids": sessions, "max_traces": 2}
+    result = await analyze(body, "sessions")
+    assert result.status_code == 201, result.text
+    assert [item["session_id"] for item in result.json()["selected_traces"]] == sessions
+    assert result.json()["selection_truncated"]
+    assert (await analyze({**body, "max_traces": 1}, "too-many-sessions")).is_error
+    assert (await analyze({**body, "agent_id": agent["id"]}, "mixed-scope")).is_error

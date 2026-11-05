@@ -5278,6 +5278,8 @@ export interface components {
       max_traces?: number;
       /** Presets */
       presets?: components["schemas"]["Preset"][];
+      /** Session Ids */
+      session_ids?: string[];
       /** Started After */
       started_after?: string | null;
       /** Started Before */
@@ -11709,6 +11711,8 @@ export interface components {
     SelectedTrace: {
       /** Run Id */
       run_id: string;
+      /** Session Id */
+      session_id?: string | null;
       /** Trace Id */
       trace_id: string;
     };

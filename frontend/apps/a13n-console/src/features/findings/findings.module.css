@@ -170,6 +170,10 @@
   display: none;
 }
 .rowTitle {
+  display: block;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
   padding: 0;
   border: 0;
   background: none;
@@ -184,6 +188,8 @@
 }
 
 .analysisDetail {
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
   display: grid;
   gap: 24px;
 }
@@ -305,4 +311,77 @@
   .rule {
     padding: 12px 14px;
   }
+}
+.sessionPicker {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr);
+  width: min(420px, 85vw);
+}
+.sessionOptions {
+  min-width: 0;
+  max-height: 230px;
+  overflow-y: auto;
+}
+.sessionOption {
+  min-width: 0;
+  display: flex;
+  gap: 10px;
+  padding: 8px;
+  cursor: pointer;
+}
+.sessionOption span:last-child,
+.sessionTags li > a {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sessionTags {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+.sessionTags li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--a13n-text-sm);
+}
+.sessionTags li > a {
+  user-select: text;
+}
+.scopeRows {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+.scopeRows > * + * {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--a13n-border-soft);
+}
+.scopeSessions {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+.scopeSessions li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
+  font-size: var(--a13n-text-sm);
+}
+.scopeSessions a {
+  min-width: 0;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.scopeSessions span {
+  flex-shrink: 0;
+  color: var(--a13n-secondary);
 }

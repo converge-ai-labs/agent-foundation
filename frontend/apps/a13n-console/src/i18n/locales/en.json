@@ -1,4 +1,13 @@
 {
+  "Search sessions or enter a session ID": "Search sessions or enter a session ID",
+  "Analyze": "Analyze",
+  "Select agent": "Select agent",
+  "Select sessions": "Select sessions",
+  "All available session traces": "All available session traces",
+  "Custom range": "Custom range",
+  "Choose a time range of up to 31 days.": "Choose a time range of up to 31 days.",
+  "Set the trace limit to at least {{count}}.": "Set the trace limit to at least {{count}}.",
+  "Sessions ({{count}})": "Sessions ({{count}})",
   "Run environment": "Run environment",
   "Primary environment for this run": "Primary environment for this run",
   "Inherit follows the conversation. Create from template reserves a fresh instance for this run; reuse selects an exact existing instance. Retries keep the accepted instance. Conversation mounts are unchanged.": "Inherit follows the conversation. Create from template reserves a fresh instance for this run; reuse selects an exact existing instance. Retries keep the accepted instance. Conversation mounts are unchanged.",
