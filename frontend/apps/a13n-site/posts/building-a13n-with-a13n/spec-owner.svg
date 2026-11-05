@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" role="img" aria-label="Spec defines the contract; owners review changes by responsibility and architectural boundary. Implementation, tests, and documentation stay aligned with the spec.">
+  <title>Spec and owner</title>
+  <desc>Accepted design in spec/ constrains implementation and provides a review basis. Maintainers review changes according to affected responsibilities and boundaries. A PR keeps the affected spec, code, tests and documentation consistent. The same quality criteria apply to human-written and agent-generated code.</desc>
+  <path class="pl" d="M24 36H776"/>
+  <text class="pt" x="24" y="22">SHARED CONTRACT</text>
+  <text class="pt acc" x="776" y="22" text-anchor="end">CLEAR RESPONSIBILITY</text>
+  <rect class="band" x="48" y="70" width="240" height="80" rx="2"/>
+  <rect class="pa thin" x="48" y="70" width="240" height="80" rx="2"/>
+  <text class="pt acc" x="68" y="97">Spec</text>
+  <text class="pt ink" x="68" y="120">behavior / boundaries</text>
+  <text class="pt" x="68" y="138">spec/</text>
+  <rect class="pl" x="512" y="70" width="240" height="80" rx="2"/>
+  <text class="pt ink" x="532" y="97">Owner</text>
+  <text class="pt ink" x="532" y="120">design judgment / review</text>
+  <text class="pt" x="532" y="138">MAINTAINERS.md</text>
+  <path class="pf" d="M296 110H504M498 106L504 110L498 114"/>
+  <text class="pt" x="400" y="96" text-anchor="middle">review basis</text>
+  <path class="pa thin" d="M168 158V222M164 216L168 222L172 216"/>
+  <text class="pt" x="184" y="187">guide implementation</text>
+  <path class="pl" d="M632 158V222M628 216L632 222L636 216"/>
+  <text class="pt" x="616" y="187" text-anchor="end">review affected areas</text>
+  <rect class="pf" x="48" y="230" width="704" height="96" rx="2"/>
+  <text class="pt acc" x="68" y="254">PR</text>
+  <text class="pt" x="732" y="254" text-anchor="end">UPDATE TOGETHER WHEN THE CONTRACT CHANGES</text>
+  <path class="pf" d="M68 267H732M234 280V309M400 280V309M566 280V309"/>
+  <text class="pt ink" x="151" y="298" text-anchor="middle">Spec</text>
+  <text class="pt ink" x="317" y="298" text-anchor="middle">Code</text>
+  <text class="pt ink" x="483" y="298" text-anchor="middle">Tests</text>
+  <text class="pt ink" x="649" y="298" text-anchor="middle">Docs</text>
+  <text class="pt ink" x="400" y="367" text-anchor="middle">Correct behavior / clear responsibilities / maintenance cost</text>
+  <text class="pt" x="400" y="394" text-anchor="middle">Human-written or agent-generated: the same quality standard.</text>
+</svg>

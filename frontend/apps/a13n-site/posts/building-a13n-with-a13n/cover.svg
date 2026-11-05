@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 360" role="img" aria-label="Building a13n with a13n: everyday use feeds changes back into the tool.">
+  <title>Building a13n with a13n</title>
+  <desc>Two workbenches form a loop. The running tool coordinates work; the source workbench turns that experience into changes, which return to the running tool.</desc>
+  <path class="pf" d="M40 66H680M40 300H680"/>
+  <text class="pt" x="58" y="49">01 / IN USE</text>
+  <text class="pt" x="438" y="49">02 / IN DEVELOPMENT</text>
+  <rect class="pl" x="58" y="100" width="224" height="164" rx="3"/>
+  <path class="pf" d="M58 126H282"/>
+  <circle class="fi" cx="72" cy="113" r="2"/><circle class="ff" cx="81" cy="113" r="2"/><circle class="ff" cx="90" cy="113" r="2"/>
+  <path class="pa" d="M81 146L89 152L81 158M98 158H115"/>
+  <rect class="band" x="139" y="143" width="64" height="31" rx="2"/>
+  <rect class="pa thin" x="139" y="143" width="64" height="31" rx="2"/>
+  <circle class="fa" cx="171" cy="158" r="5"/>
+  <path class="pl" d="M171 174V197M107 211V197H235V211"/>
+  <rect class="pl" x="88" y="211" width="38" height="29" rx="2"/>
+  <rect class="pl" x="152" y="211" width="38" height="29" rx="2"/>
+  <rect class="pl" x="216" y="211" width="38" height="29" rx="2"/>
+  <path class="pa thin" d="M98 225L103 230L115 218M162 225L167 230L179 218M226 225H244"/>
+  <path class="pf dash" d="M254 223H267V158H203"/>
+  <path class="pa" d="M282 151H430M423 145L430 151L423 157"/>
+  <text class="pt acc" x="356" y="137" text-anchor="middle">friction</text>
+  <circle class="fa" cx="333" cy="151" r="3"/>
+  <rect class="pl" x="438" y="100" width="224" height="164" rx="3"/>
+  <path class="pf" d="M438 126H662"/>
+  <circle class="fi" cx="452" cy="113" r="2"/><circle class="ff" cx="461" cy="113" r="2"/><circle class="ff" cx="470" cy="113" r="2"/>
+  <path class="pf" d="M479 143V246M493 151H618M493 166H573M511 181H632M511 196H603M493 226H592M493 241H563"/>
+  <rect class="band" x="450" y="202" width="199" height="16"/>
+  <path class="pa thin" d="M459 210H469M464 205V215M493 210H625"/>
+  <path class="pa" d="M438 223H290M297 217L290 223L297 229"/>
+  <text class="pt acc" x="360" y="249" text-anchor="middle">improvements</text>
+  <circle class="fa" cx="386" cy="223" r="3"/>
+  <path class="pf" d="M170 264V300M550 264V300"/>
+  <circle class="fa" cx="170" cy="300" r="3"/><circle class="fa" cx="550" cy="300" r="3"/>
+  <text class="pt ink" x="170" y="325" text-anchor="middle">a13n as the tool</text>
+  <text class="pt ink" x="550" y="325" text-anchor="middle">a13n as the work</text>
+</svg>
