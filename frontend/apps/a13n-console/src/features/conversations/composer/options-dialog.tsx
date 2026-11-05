@@ -325,7 +325,8 @@ export function RunOptionsDialog({
     ...(choices.data?.templates ?? []).map((template) => ({
       value: `template:${template.id}`,
       label: template.name,
-      description: t("Create from template"),
+      description: template.enabled ? t("Create from template") : t("Disabled"),
+      disabled: !template.enabled,
       icon: <StackIcon size={20} className={styles.optionGlyph} />,
     })),
     // A deleted environment is never mounted again.

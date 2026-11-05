@@ -273,7 +273,7 @@ Creation publishes paced pending progress for native scheduling and Envd prepara
 
 ### Inspection and preflight
 
-The saved Provider's nonallocating test verifies trusted profile selection, cluster authentication and namespace Pod-list access. Its result explicitly identifies creation permission, admission, scheduling, storage and Envd readiness as requiring an explicit smoke Environment. It creates no native resources or EIP Session.
+The saved Provider's nonallocating test verifies trusted profile selection, the required HTTP transport opt-in, cluster authentication and namespace Pod-list access. A denied HTTP policy returns an operator-actionable configuration failure before native requests. Its result explicitly identifies creation permission, admission, scheduling, storage and Envd readiness as requiring an explicit smoke Environment. It creates no native resources or EIP Session.
 
 `GET /environments/{id}/kubernetes/diagnostics` returns the instance lifecycle snapshot and a timestamped native observation: exact identities, resource disposition, presence versus unavailable inspection, Pod/PVC status, readiness and restart details, finalizers, bounded UID-selected events, a redacted rendered configuration and native kubectl guidance. Envd readiness is labeled as the previous published observation, not a new execution grant. Missing and denied observations remain distinct. The rendered configuration omits literal environment values, command arguments, annotations and secret data.
 

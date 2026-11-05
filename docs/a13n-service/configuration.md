@@ -257,7 +257,27 @@ Use the [single-host Compose stack](https://github.com/converge-ai-labs/agent-fo
 
 Configure the same trusted cluster profiles on Control and Worker. An empty `environments.kubernetes_clusters` map disables Kubernetes in the provider catalog. Profiles belong to operator settings; workspace providers select only a profile name and an allowed namespace. Service supplies the Host integration for Kubernetes; Harness UI does not offer it as a standalone built-in provider.
 
-```toml
+### Helm deployment
+
+The chart's integration is optional and off by default. Add this block to your deployment values:
+
+```yaml title="values.yaml"
+kubernetesEnvironments:
+  enabled: true
+  namespace: agent-sandboxes
+  ownershipId: production-service
+  allowPlaintextEnvd: true
+```
+
+Create `agent-sandboxes` before installing or upgrading. Helm creates the `in-cluster` profile for Control and Worker, namespace-scoped management RBAC and the separate `<release>-a13n-sandbox` ServiceAccount. It projects Kubernetes credentials only into runtime Service containers. No extra TOML block or workspace credential is needed. Empty `namespace` uses the release namespace; empty `ownershipId` uses the release-derived name. Use a separate sandbox namespace in production.
+
+The chart configures infrastructure access. Create the workspace provider, template and agent in Console using the [first-run procedure](environments.md#kubernetes-sandboxes). Images, storage classes, Pod resources, scheduling and instance network policies belong to the native template; the chart does not seed workspace resources or impose a global sandbox image.
+
+### Manual process configuration
+
+Without Helm's integration, add the following to the TOML loaded by **both** Control and Worker, then restart both roles:
+
+```toml title="service.toml"
 [environments.kubernetes_clusters.in-cluster]
 authentication = "in_cluster"
 namespaces = ["agent-sandboxes"]
@@ -268,7 +288,37 @@ allow_plaintext_envd = true
 
 Provision the namespace, sandbox ServiceAccount and management RBAC before using this profile. The [Helm chart](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/kubernetes#kubernetes-environments) can create these bindings with `kubernetesEnvironments.enabled`. It projects API credentials into runtime Service containers and keeps sandbox token mounting disabled. Use a separate sandbox namespace in production: native Pod authors can reference namespace Secrets and request privileges, so enforce Pod Security and admission policy there. Namespace selection alone is not a workload isolation policy.
 
-For a development process outside the cluster, use `authentication = "kubeconfig"`, an absolute `kubeconfig` path and an explicit `context`. Only operator-owned kubeconfig files and authentication plugins are accepted. Set `allow_port_forward = true` and install `kubectl` when recipes use `connection: port_forward`; this also requires Kubernetes `pods/portforward` permission. `direct` requires Pod IP routing from Service. `allow_plaintext_envd` defaults to false; opt in only on a trusted private network, since the Envd credential authenticates traffic without encrypting it. The API request timeout defaults to 15 seconds and accepts values up to 60 seconds.
+For a development process outside the cluster, use an operator-owned kubeconfig and explicit context:
+
+```toml
+[environments.kubernetes_clusters.local-kind]
+authentication = "kubeconfig"
+kubeconfig = "/absolute/path/to/kubeconfig"
+context = "kind-my-cluster"
+namespaces = ["agent-sandboxes"]
+ownership_id = "local-development"
+sandbox_service_account = "agent-sandbox"
+allow_plaintext_envd = true
+allow_port_forward = true
+```
+
+Install `kubectl` in every process that uses `connection: port_forward`, and grant its management identity `create` on `pods/portforward`. This development tunnel belongs to the process using it. The Helm integration uses direct connections and grants no port-forward permission.
+
+### Network and first-run checks
+
+Both connection modes currently use bearer-authenticated HTTP. `allow_plaintext_envd` (Helm: `allowPlaintextEnvd`) must be true to create and connect; the default stays false so an operator explicitly accepts the network trust boundary. The credential authenticates requests without encrypting traffic. Permit Envd traffic only on a trusted private network. For `direct`, Control and Worker must reach sandbox Pod IPs on the recipe's `envd_port` (8888 by default); Console users need only the Service URL. Configure cluster admission and network policy for your topology. The Kubernetes API request timeout defaults to 15 seconds and accepts values up to 60 seconds.
+
+Use **Check connection** to verify the profile policy, authentication and namespace Pod-list access. Then create a real instance and run a Files/Shell task to verify creation permissions, image pulls, admission, scheduling, storage and Envd readiness. Common setup failures:
+
+| Symptom                                      | Check                                                                                                 |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Kubernetes is missing from the catalog       | A nonempty profile map is loaded by Control; configure Worker identically.                            |
+| Profile or namespace rejected                | Use a listed profile and one of its allowed namespaces, not a kubeconfig context name.                |
+| HTTP opt-in denied                           | Enable the explicit plaintext setting only after securing the network path.                           |
+| `ImagePullBackOff`                           | Load the local image into kind or use a pullable tag/digest and `imagePullSecrets`.                   |
+| Pod is Running but the instance is preparing | Verify the selected container starts Envd, its credential-file configuration and Pod IP routing.      |
+| PVC remains Pending                          | Inspect Events, StorageClass and scheduling, including WaitForFirstConsumer.                          |
+| Instance remains deleting                    | Inspect finalizers and retained/borrowed resource receipts; Service preserves third-party finalizers. |
 
 Keep `ownership_id`, profile names, namespace and sandbox identity stable while instances exist. Retire instances through Service before removing a profile or its permissions, and preserve the database and encryption key ring for recovery. Removing deployment resources does not retire instance Pods or retained claims. See [Kubernetes sandboxes](environments.md#kubernetes-sandboxes) for native recipes, storage disposition, diagnostics and debug holds.
 

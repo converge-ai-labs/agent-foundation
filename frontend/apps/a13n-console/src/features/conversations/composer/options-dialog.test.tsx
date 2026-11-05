@@ -69,7 +69,14 @@ it("distinguishes new allocation from reuse and submits the selected identity", 
     response: new Response(null),
     data: {
       items: path.includes("environment-templates")
-        ? [{ id: "envt_test", name: "Research" }]
+        ? [
+            { id: "envt_test", name: "Research", enabled: true },
+            {
+              id: "envt_disabled",
+              name: "Unavailable sandbox",
+              enabled: false,
+            },
+          ]
         : path.endsWith("/environments")
           ? [
               { id: "env_first", name: "Research", status: "ready" },
@@ -86,6 +93,13 @@ it("distinguishes new allocation from reuse and submits the selected identity", 
   await user.click(screen.getByRole("button", { name: "Run options" }));
   await user.click(screen.getByRole("button", { name: "Conversation setup" }));
   await user.click(screen.getByRole("combobox", { name: "Environment" }));
+  expect(
+    (
+      await screen.findByRole("option", {
+        name: /Unavailable sandbox.*Disabled/,
+      })
+    ).getAttribute("aria-disabled"),
+  ).toBe("true");
   // Without a choice the agent's own template is reserved; there is no "none".
   expect(screen.queryByRole("option", { name: "No environment" })).toBeNull();
   await user.click(
@@ -533,7 +547,7 @@ it("offers fresh allocation on an existing conversation without editing its moun
     response: new Response(),
     data: {
       items: path.includes("environment-templates")
-        ? [{ id: "envt_kubernetes", name: "Kubernetes" }]
+        ? [{ id: "envt_kubernetes", name: "Kubernetes", enabled: true }]
         : [],
       next_cursor: null,
     },

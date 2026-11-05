@@ -222,7 +222,10 @@ def test_operator_profile_is_not_tenant_authentication(native):
     assert definition.supports_destroy and not definition.supports_stop and not definition.requires_keepalive
     account = definition.configuration_model.model_validate({"cluster": "test", "namespace": "sandboxes"})
     assert account._cluster == native.runtime.profile
-    assert "kubeconfig" not in str(account.model_json_schema())
+    schema = account.model_json_schema()
+    assert "kubeconfig" not in str(schema)
+    assert schema["properties"]["cluster"]["enum"] == ["test"]
+    assert "test: sandboxes" in schema["properties"]["namespace"]["description"]
     with pytest.raises(ValidationError):
         definition.configuration_model.model_validate({"cluster": "test", "namespace": "other"})
 
@@ -845,11 +848,13 @@ async def test_logs_are_bounded_redacted_and_reject_replacement(native):
     assert replaced.value.code == "kubernetes_uid_changed"
 
 
-async def test_provider_preflight_allocates_nothing_and_closes_client(native, monkeypatch):
+@pytest.mark.parametrize("allow_plaintext", [True, False])
+async def test_provider_preflight_allocates_nothing_and_closes_client(native, monkeypatch, allow_plaintext):
     from a13n_harness.providers.endpoint_policy import EndpointPolicy
     from a13n_service.providers.registry import Registry
     from a13n_service.resources.providers.probe import probe
 
+    native.runtime.profile = native.runtime.profile.model_copy(update={"allow_plaintext_envd": allow_plaintext})
     api = AsyncMock(return_value={"items": [], "metadata": {}})
     native.runtime.api.call_api = api
     monkeypatch.setattr(
@@ -867,6 +872,12 @@ async def test_provider_preflight_allocates_nothing_and_closes_client(native, mo
         max_bytes=65536,
     )
     result = await probe(registry, "environment", "kubernetes", **kwargs)
+    if not allow_plaintext:
+        assert result.status == "failed" and "allow_plaintext_envd" in result.message
+        assert "kubernetesEnvironments.allowPlaintextEnvd" in result.message
+        api.assert_not_awaited()
+        native.runtime.api.close.assert_awaited_once()
+        return
     assert result.status == "succeeded" and "smoke environment" in result.message
     assert api.call_args.args == (native.runtime.path("Pod"), "GET")
     assert api.call_args.kwargs["query_params"] == [("limit", 1)]

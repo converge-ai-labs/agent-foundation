@@ -22,8 +22,14 @@ from a13n_service.infra.http import require_match
 from a13n_service.infra.ids import new_object_id
 from a13n_service.resources.providers.service import resolve_provider
 from a13n_service.resources.providers.tables import EnvironmentProviderRow
-from a13n_service.runs.environments import bootstrap, external
-from a13n_service.runs.environments.adapters import Target, close, execution_connector, provider_identity
+from a13n_service.runs.environments import external
+from a13n_service.runs.environments.adapters import (
+    Target,
+    close,
+    execution_connector,
+    managed_target,
+    provider_identity,
+)
 from a13n_service.runs.environments.lifecycle import (
     PHASES,
     begin,
@@ -376,9 +382,7 @@ async def check_computer(runtime: Runtime, actor: Principal, workspace_id: str, 
             if environment.provider_identity != provider_identity(runtime.registry, provider):
                 raise conflict("environment", environment.id, "provider_identity_changed")
             handle = Handle.model_validate(environment.handle)
-            target = Target(
-                environment.id, provider, handle.recipe, handle.state, bootstrap.restore(runtime.keys, environment)
-            )
+            target = managed_target(runtime.keys, environment, provider, handle)
     execution = None
     try:
         with anyio.fail_after(runtime.settings.providers.operation_seconds):

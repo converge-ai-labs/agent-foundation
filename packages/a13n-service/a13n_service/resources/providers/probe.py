@@ -127,6 +127,13 @@ async def probe(
                         credential=None,
                     )
                     try:
+                        if not runtime.profile.allow_plaintext_envd:
+                            return ProbeResult(
+                                "failed",
+                                "Kubernetes Envd currently requires authenticated HTTP. Ask the operator to enable "
+                                "allow_plaintext_envd (Helm: kubernetesEnvironments.allowPlaintextEnvd) "
+                                "on a trusted private network, then check again.",
+                            )
                         await runtime.call("GET", runtime.path("Pod"), query=[("limit", 1)])
                     except ApiException:
                         return ProbeResult("failed", "kubernetes_namespace_unavailable")

@@ -21,7 +21,7 @@ from a13n_service.infra.db import transaction
 from a13n_service.infra.ids import new_object_id
 from a13n_service.infra.sweeps import Sweep
 from a13n_service.resources.environment_templates.service import idle_past
-from a13n_service.runs.environments.lifecycle import PHASES, advance, begin, in_use, settled, supports
+from a13n_service.runs.environments.lifecycle import PHASES, advance, begin, in_use, settled, settled_clause, supports
 from a13n_service.runs.environments.renewal import renew
 from a13n_service.runs.environments.tables import OPERATIONS, EnvironmentRow, ThreadEnvironmentRow
 from a13n_service.runs.runtime import Runtime
@@ -45,9 +45,7 @@ async def maintain_environments(runtime: Runtime, *, owner: str) -> None:
         or_(
             EnvironmentRow.status.not_in(("creating", "starting")),
             EnvironmentRow.preparation_failed_at.is_(None),
-            EnvironmentRow.lease_owner.is_not(None),
-            EnvironmentRow.operation_unsettled,
-            EnvironmentRow.failure["certainty"].astext == "unknown",
+            ~settled_clause(),
         ),
         or_(EnvironmentRow.lease_expires_at.is_(None), EnvironmentRow.lease_expires_at < func.now()),
         or_(EnvironmentRow.next_operation_at.is_(None), EnvironmentRow.next_operation_at <= func.now()),
@@ -92,9 +90,7 @@ async def _retire_idle(runtime: Runtime, phase: Literal["stopping", "deleting"],
                     EnvironmentRow.status.in_(("creating", "starting")),
                     EnvironmentRow.preparation_failed_at
                     < func.clock_timestamp() - func.make_interval(0, 0, 0, 0, 0, 0, retention),
-                    EnvironmentRow.lease_owner.is_(None),
-                    EnvironmentRow.operation_unsettled.is_(False),
-                    EnvironmentRow.failure["certainty"].astext != "unknown",
+                    settled_clause(),
                 ),
             )
         ]

@@ -47,9 +47,9 @@ When editing a provider, an omitted credential stays unchanged; a new value repl
 Kubernetes runs an instance as a native Pod with Envd in one selected container. The operator configures trusted cluster profiles, allowed namespaces and a sandbox ServiceAccount. Kubernetes then appears in the provider catalog. Workspace users select a profile and namespace; Kubernetes API credentials remain with the operator.
 
 1. Ask the operator to configure `environments.kubernetes_clusters` on Control and Worker, or use the Helm opt-in described in [Kubernetes operator configuration](configuration.md#kubernetes-environments).
-2. Create a Kubernetes provider with `config: {"cluster":"in-cluster","namespace":"a13n-service"}`, using the actual approved names.
-3. Create a template with the native Pod recipe below. Replace the image with an Envd-compatible image available to the cluster.
-4. Select the template for a run and ask the agent to write and read a file.
+2. In **Workspace settings → Providers → Environment**, create a Kubernetes provider. Select the operator's cluster profile and enter an allowed namespace. For the Helm example, use `config: {"cluster":"in-cluster","namespace":"agent-sandboxes"}`. Save the provider, then open it and select **Check connection**.
+3. Prepare the sandbox image as described below, then create a template with the native Pod recipe. In Console, **In-cluster starter** fills the recipe only; reclamation has separate controls. The JSON below is the complete API template `config`.
+4. On an agent with a working model, enable **Files** and **Shell** and select this default template. Start a conversation and ask it to write `hello.txt`, then read the file in a follow-up. For a one-run override, choose **Run options → Run environment → Create from template**.
 
 ```json
 {
@@ -71,9 +71,26 @@ Kubernetes runs an instance as a native Pod with Envd in one selected container.
 }
 ```
 
+**Prepare the image before the first run.** The starter's `a13n-sandbox:local` is a local build, not a registry image. From this checkout, build and load it into your existing kind cluster (replace `my-cluster`):
+
+```sh
+make image-sandbox SANDBOX_IMAGE=a13n-sandbox:local
+kind load docker-image a13n-sandbox:local --name my-cluster
+```
+
+For other clusters, build this checkout's sandbox for the node architecture, push it to your registry, and put that exact tag or digest in `pod_template.spec.containers[].image`:
+
+```sh
+make image-sandbox SANDBOX_IMAGE=registry.example.com/team/a13n-sandbox:reviewed
+# Authenticate to your registry before pushing.
+docker push registry.example.com/team/a13n-sandbox:reviewed
+```
+
+Configure native `imagePullSecrets` when the registry is private. The image must run Envd and honor Service's injected credential-file path; use the sandbox image built with the matching Service checkout. `make k8s-up K8S_ENVIRONMENTS=1` builds and loads its own image tag; read `sandbox_image` from `deployment.json` in its `K8S_STATE_DIR` rather than assuming it is `:local`. The default directory is `~/.config/a13n-service-kind`, with `-<cluster>` appended for a nondefault `K8S_CLUSTER`.
+
 Keep resource requests and limits, init containers, sidecars, scheduling, security context and references to ConfigMaps or Secrets in `pod_template.spec`. Kubernetes admission validates these native fields. Service owns the Pod identity, sandbox ServiceAccount and private Envd credential injection. The selected execution container must start Envd; a Running Pod alone does not establish execution readiness.
 
-`direct` connects to the Pod IP from Service. For local debugging, `port_forward` uses an explicitly permitted operator profile and an installed `kubectl`; the tunnel is local to the process using it. Plain HTTP Envd requires the profile's explicit `allow_plaintext_envd` opt-in. Keep that traffic on a trusted private network.
+`direct` connects to the Pod IP from Service. For local debugging, `port_forward` uses an explicitly permitted operator profile and an installed `kubectl`; the tunnel is local to the process using it. Both modes currently use bearer-authenticated HTTP and require the profile's explicit `allow_plaintext_envd = true` opt-in. Keep that traffic on a trusted private network. A successful provider check verifies configuration, authentication and Pod-list access; it does not prove image pulls, Pod creation, scheduling, storage or Envd readiness.
 
 For persistent files, add `recipe.storage` bindings with `name`, `mount_path`, and either a native `claim_template` or `existing_claim`. New claims default to `disposition: retain`; select `delete` to remove an owned claim during retirement. Existing claims remain borrowed, even if a binding asks for deletion. `shared_directory: true` uses an instance-specific directory on an existing claim and retains that directory. Referenced ConfigMaps and Secrets also remain borrowed. `recipe.network_policy` accepts a native NetworkPolicy template whose Pod selector Service supplies; enforcement requires a compatible cluster network implementation.
 
@@ -120,7 +137,7 @@ curl -sS -X POST "$A13N_URL/api/v1/environment-templates" \
 
 Save the returned template ID. This example stops idle instances after 30 minutes and deletes them after seven days. Both timers count from last use; `null` disables the corresponding policy. Idle deletion removes thread mounts and the instance's files. A thread with a default template can receive a new workspace on its next run.
 
-Template updates use the template's ETag in `If-Match`. The recipe freezes when creation is first claimed, so edit it before that point or create a new instance. Idle policies apply immediately to existing instances. Disabling a template blocks new reservations and first creation of still-reserved instances; already-created instances keep working.
+Template updates use the template's ETag in `If-Match`. The recipe freezes when creation is first claimed, so edit it before that point or create a new instance. For providers with `stop_after_seconds` and `delete_after_seconds`, idle-policy edits apply immediately to existing instances. Kubernetes `reclamation` is captured at reservation; editing it affects new reservations. Disabling a template blocks new reservations and first creation of still-reserved instances; already-created instances keep working.
 
 ### Default environment variables
 

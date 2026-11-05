@@ -54,6 +54,41 @@ async def env(service) -> SimpleNamespace:  # type: ignore[no-untyped-def]
     return await with_fake_providers(service)
 
 
+@pytest.mark.parametrize("certainty", [None, "not_dispatched", "known", "unknown"])
+@pytest.mark.parametrize("claimed,unsettled", [(False, False), (False, True), (True, False), (True, True)])
+async def test_settled_candidate_query_matches_locked_rule(env, certainty, claimed, unsettled):
+    from a13n_service.infra.db import now
+
+    instance = await reserve(env, env.template["id"])
+    async with transaction(env.runtime.storage) as session:
+        row = await session.get_one(EnvironmentRow, instance["id"])
+        current = await now(session)
+        row.operation_unsettled = unsettled
+        if claimed:
+            row.lease_owner = "worker"
+            row.lease_token_hash = "test"
+            row.lease_expires_at = current + timedelta(seconds=30)
+        row.failure = (
+            None
+            if certainty is None
+            else {
+                "code": "test_failure",
+                "message": "Test failure",
+                "certainty": certainty,
+                "permanent": False,
+                "operation_id": row.operation_id,
+                "at": current.isoformat(),
+            }
+        )
+        await session.flush()
+        expected = not claimed and not unsettled and certainty != "unknown"
+        assert lifecycle.settled(row) is expected
+        assert await session.scalar(select(lifecycle.settled_clause()).where(EnvironmentRow.id == row.id)) is expected
+        assert (
+            await session.scalar(select(~lifecycle.settled_clause()).where(EnvironmentRow.id == row.id)) is not expected
+        )
+
+
 async def test_templates_validate_their_provider_and_recipe(env) -> None:  # type: ignore[no-untyped-def]
     client, templates = env.client, f"{env.api}/environment-templates"
     invalid = await client.post(

@@ -26,8 +26,15 @@ from a13n_service.resources.metrics_data_sources.tables import DataSourceRow
 from a13n_service.resources.providers.service import read_provider
 from a13n_service.resources.providers.tables import EnvironmentProviderRow
 from a13n_service.runs.devices.tables import DeviceRow
-from a13n_service.runs.environments import bootstrap, external
-from a13n_service.runs.environments.adapters import ExternalAccount, Target, close, open_provider, provider_identity
+from a13n_service.runs.environments import external
+from a13n_service.runs.environments.adapters import (
+    ExternalAccount,
+    Target,
+    close,
+    managed_target,
+    open_provider,
+    provider_identity,
+)
 from a13n_service.runs.environments.monitoring.history import Status
 from a13n_service.runs.environments.schemas import Handle
 from a13n_service.runs.environments.tables import EnvironmentRow
@@ -97,13 +104,7 @@ async def selected(
                     and handle.recipe.get("execution") == "envd_http"
                     and environment.provider_identity == provider_identity(runtime.registry, provider)
                 ):
-                    target = Target(
-                        environment.id,
-                        provider,
-                        handle.recipe,
-                        handle.state,
-                        bootstrap.restore(runtime.keys, environment),
-                    )
+                    target = managed_target(runtime.keys, environment, provider, handle)
             else:
                 status = "disabled"
         if target is not None:

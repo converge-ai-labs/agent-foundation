@@ -1,4 +1,5 @@
 import { Button } from "a13n-ui";
+import { ArrowSquareOutIcon } from "@phosphor-icons/react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { FormSection, jsonObject, TextAreaField } from "../../shared/forms";
@@ -36,6 +37,24 @@ export function KubernetesConfiguration({
         "Author a native PodTemplateSpec with an explicit Envd container. Names, credentials and sandbox identity are supplied by the Service.",
       )}
     >
+      {!readOnly && (
+        <div className={styles.stack}>
+          <p className={styles.muted}>
+            {t(
+              "Before the first run, load the sandbox image into your cluster or use a registry image the nodes can pull. Both connection modes require the operator's allow_plaintext_envd opt-in.",
+            )}
+          </p>
+          <a
+            href="https://a13n.dev/docs/a13n-service/environments#kubernetes-sandboxes"
+            target="_blank"
+            rel="noreferrer"
+            className={styles.actions}
+          >
+            {t("Kubernetes setup guide")}
+            <ArrowSquareOutIcon size={14} />
+          </a>
+        </div>
+      )}
       {empty && presets && !readOnly && (
         <div className={styles.actions}>
           <Button
@@ -67,7 +86,7 @@ export function KubernetesConfiguration({
         code
         rows={18}
         hint={t(
-          "Set an Envd image available to your cluster. Starters use a13n-sandbox:local from make image-sandbox. Use native env/valueFrom for container variables, environment for execution variables, and storage for PVC bindings.",
+          "Starters use a13n-sandbox:local. Build with make image-sandbox, then load it with kind load docker-image a13n-sandbox:local --name <cluster>. Use env/valueFrom for container variables, environment for execution variables, and storage for PVC bindings.",
         )}
       />
       {children}

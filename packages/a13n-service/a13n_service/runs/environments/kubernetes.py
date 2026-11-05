@@ -12,8 +12,7 @@ from a13n_service.infra.errors import ServiceError, conflict
 from a13n_service.providers.environment.kubernetes import Diagnostics, KubernetesObserver, LogQuery, Logs
 from a13n_service.resources.providers.service import resolve_provider
 from a13n_service.resources.providers.tables import EnvironmentProviderRow
-from a13n_service.runs.environments import bootstrap
-from a13n_service.runs.environments.adapters import Target, close, open_provider, provider_identity
+from a13n_service.runs.environments.adapters import Target, close, managed_target, open_provider, provider_identity
 from a13n_service.runs.environments.schemas import EnvironmentView, Handle
 from a13n_service.runs.environments.service import _find
 from a13n_service.runs.runtime import Runtime
@@ -45,7 +44,7 @@ async def observation(
         if row.provider_identity != provider_identity(runtime.registry, account):
             raise conflict("environment", environment_id, "provider_identity_changed")
         handle = Handle.model_validate(row.handle)
-        target = Target(row.id, account, handle.recipe, handle.state, bootstrap.restore(runtime.keys, row))
+        target = managed_target(runtime.keys, row, account, handle)
         view = EnvironmentView.model_validate(row)
     manager = None
     try:

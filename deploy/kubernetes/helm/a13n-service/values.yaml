@@ -69,7 +69,9 @@ kubernetesEnvironments:
   namespace: ""
   # Empty uses the release-derived name. Keep stable across upgrades.
   ownershipId: ""
-  # Explicit opt-in for authenticated HTTP on the cluster network.
+  # Required for the current Envd HTTP transport when enabled. Set true only on a
+  # trusted private network; bearer authentication does not encrypt traffic.
+  # Kept false until the operator explicitly accepts that network trust boundary.
   allowPlaintextEnvd: false
 podAnnotations: {}
 nodeSelector: {}

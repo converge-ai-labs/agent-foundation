@@ -257,7 +257,27 @@ workspace_ids = ["ws_example"]
 
 在 Control 和 Worker 上配置相同的可信集群配置。`environments.kubernetes_clusters` 为空时，provider 目录不提供 Kubernetes。集群配置由运维管理；工作空间 provider 只能选择配置名称和允许的命名空间。Service 提供 Kubernetes 所需的 Host 集成；Harness UI 不将它作为独立的内置 provider 提供。
 
-```toml
+### Helm 部署
+
+chart 的集成是可选功能，默认关闭。在部署 values 中加入：
+
+```yaml title="values.yaml"
+kubernetesEnvironments:
+  enabled: true
+  namespace: agent-sandboxes
+  ownershipId: production-service
+  allowPlaintextEnvd: true
+```
+
+安装或升级前先创建 `agent-sandboxes`。Helm 为 Control 和 Worker 创建 `in-cluster` profile、命名空间级管理 RBAC，以及独立的 `<release>-a13n-sandbox` ServiceAccount。Kubernetes 凭据只投射到 Service 运行时容器。无需再添加 TOML 或工作空间凭据。`namespace` 为空时使用 release 命名空间；`ownershipId` 为空时使用由 release 派生的名称。生产环境应使用独立的沙箱命名空间。
+
+chart 配置基础设施访问权限。工作空间 provider、模板和 agent 按[首次运行流程](environments.md#kubernetes-sandboxes)在 Console 创建。镜像、StorageClass、Pod 资源、调度和实例网络策略属于原生模板；chart 不预置工作空间资源，也不强制全局沙箱镜像。
+
+### 手动配置进程
+
+不使用 Helm 集成时，在 **Control 和 Worker** 加载的 TOML 中加入以下内容，然后重启两个角色：
+
+```toml title="service.toml"
 [environments.kubernetes_clusters.in-cluster]
 authentication = "in_cluster"
 namespaces = ["agent-sandboxes"]
@@ -268,7 +288,37 @@ allow_plaintext_envd = true
 
 使用此配置前，先创建命名空间、沙箱 ServiceAccount 和管理 RBAC。[Helm chart](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/kubernetes#kubernetes-environments) 可通过 `kubernetesEnvironments.enabled` 创建这些绑定。它仅向 Service 运行时容器投射 API 凭据，并禁用沙箱的令牌自动挂载。生产环境使用独立的沙箱命名空间：原生 Pod 作者可以引用命名空间内的 Secret 并请求特权，因此需要实施 Pod Security 和准入策略。仅限制命名空间不能构成工作负载隔离策略。
 
-集群外的开发进程使用 `authentication = "kubeconfig"`，并指定绝对 `kubeconfig` 路径和明确的 `context`。只接受运维管理的 kubeconfig 文件及认证插件。配方使用 `connection: port_forward` 时，设置 `allow_port_forward = true` 并安装 `kubectl`；还需要 Kubernetes 的 `pods/portforward` 权限。`direct` 要求 Service 能够路由到 Pod IP。`allow_plaintext_envd` 默认为 false；仅在可信私有网络中启用，因为 Envd 凭据只认证流量，不加密流量。API 请求超时默认为 15 秒，最大为 60 秒。
+集群外的开发进程使用运维管理的 kubeconfig 和明确的 context：
+
+```toml
+[environments.kubernetes_clusters.local-kind]
+authentication = "kubeconfig"
+kubeconfig = "/absolute/path/to/kubeconfig"
+context = "kind-my-cluster"
+namespaces = ["agent-sandboxes"]
+ownership_id = "local-development"
+sandbox_service_account = "agent-sandbox"
+allow_plaintext_envd = true
+allow_port_forward = true
+```
+
+在使用 `connection: port_forward` 的每个进程中安装 `kubectl`，并为其管理身份授予 `pods/portforward` 的 `create` 权限。开发隧道属于使用它的进程。Helm 集成使用直接连接，不授予端口转发权限。
+
+### 网络与首次运行检查
+
+两种连接方式目前都使用 Bearer 认证的 HTTP。创建和连接需要将 `allow_plaintext_envd`（Helm：`allowPlaintextEnvd`）设为 true；默认保持 false，由运维显式接受网络信任边界。凭据验证请求，但不加密流量。仅允许 Envd 流量经过可信私有网络。使用 `direct` 时，Control 和 Worker 必须能够访问沙箱 Pod IP 的 `envd_port`（默认 8888）；Console 用户只需访问 Service URL。请按实际拓扑配置集群准入和网络策略。Kubernetes API 请求超时默认 15 秒，最大 60 秒。
+
+先用**检查连接**验证 profile 策略、认证和命名空间的 Pod 列举权限。再创建真实实例并执行 Files/Shell 任务，验证创建权限、镜像拉取、准入、调度、存储和 Envd 就绪。常见配置问题：
+
+| 现象                           | 检查项                                                                       |
+| ------------------------------ | ---------------------------------------------------------------------------- |
+| 目录中没有 Kubernetes          | Control 是否加载了非空 profile map；Worker 也需相同配置。                    |
+| profile 或命名空间被拒绝       | 使用列出的 profile 及其允许的命名空间，不要填 kubeconfig context 名称。      |
+| HTTP 显式授权被拒绝            | 确认网络路径可信后，显式启用明文选项。                                       |
+| `ImagePullBackOff`             | 将本地镜像加载到 kind，或使用可拉取的 tag/digest 并配置 `imagePullSecrets`。 |
+| Pod 已 Running，但实例仍在准备 | 检查选定容器是否启动 Envd、凭据文件配置及 Pod IP 路由。                      |
+| PVC 一直 Pending               | 检查 Events、StorageClass 和调度，包括 WaitForFirstConsumer。                |
+| 实例一直 deleting              | 检查 finalizer 及保留/借用资源记录；Service 不移除第三方 finalizer。         |
 
 实例存在期间，保持 `ownership_id`、集群配置名称、命名空间和沙箱身份稳定。移除集群配置或权限前，通过 Service 删除实例，并保留数据库及加密密钥环以便恢复。移除部署资源不会删除实例 Pod 或保留的存储卷。原生配方、存储处置、诊断和调试保留见 [Kubernetes 沙箱](environments.md#kubernetes-sandboxes)。
 

@@ -50,7 +50,14 @@ from a13n_service.resources.providers.service import (
 )
 from a13n_service.resources.providers.tables import EnvironmentProviderRow
 from a13n_service.runs.environments import bootstrap
-from a13n_service.runs.environments.adapters import Target, close, credential_version, open_provider, provider_identity
+from a13n_service.runs.environments.adapters import (
+    Target,
+    close,
+    credential_version,
+    managed_target,
+    open_provider,
+    provider_identity,
+)
 from a13n_service.runs.environments.monitoring import launch
 from a13n_service.runs.environments.schemas import Certainty, EnvironmentFailure, Handle, MetricsApplication
 from a13n_service.runs.environments.tables import EnvironmentRow, ThreadEnvironmentRow
@@ -199,6 +206,15 @@ def settled(environment: EnvironmentRow) -> bool:
         environment.lease_owner is None
         and not environment.operation_unsettled
         and (failure is None or failure["certainty"] != "unknown")
+    )
+
+
+def settled_clause() -> ColumnElement[bool]:
+    """SQL form of `settled` for maintenance candidate selection before its bounded batch."""
+    return (
+        EnvironmentRow.lease_owner.is_(None)
+        & EnvironmentRow.operation_unsettled.is_(False)
+        & or_(EnvironmentRow.failure.is_(None), EnvironmentRow.failure["certainty"].astext != "unknown")
     )
 
 
@@ -476,9 +492,7 @@ async def claim_locked(
         return None
     assert environment.provider_id is not None, "only managed instances have operations"
     failure = environment.failure or {}
-    unresolved = (
-        environment.lease_owner is not None or environment.operation_unsettled or failure.get("certainty") == "unknown"
-    )
+    unresolved = not settled(environment)
     if phase == "creating" and failure.get("permanent") and settled(environment) and environment.handle:
         handle = Handle.model_validate(environment.handle)
         if (
@@ -535,9 +549,7 @@ async def claim_locked(
         generation=environment.generation,
         operation_id=environment.operation_id,
         token=token,
-        target=Target(
-            environment.id, provider, handle.recipe, handle.state, bootstrap.restore(runtime.keys, environment)
-        ),
+        target=managed_target(runtime.keys, environment, provider, handle),
         unresolved=unresolved,
         seconds=seconds,
         credential_version=version,

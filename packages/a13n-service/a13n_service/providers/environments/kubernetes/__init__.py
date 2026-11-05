@@ -6,11 +6,12 @@ from typing import Self
 
 from a13n_harness.providers.environment.kubernetes.configuration import (
     ClusterProfile,
+    DNSLabel,
     KubernetesConnectionConfiguration,
 )
 from a13n_harness.providers.environment.kubernetes.provider import KUBERNETES as EXECUTION
 from a13n_harness.providers.environment.kubernetes.runtime import KubernetesRuntime, open_runtime
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from a13n_service.providers.environment.definition import EnvironmentManagementDefinition, management_definition
 from a13n_service.providers.environment.recipes.kubernetes import KubernetesRecipe
@@ -33,6 +34,17 @@ KUBERNETES = management_definition(
 
 def kubernetes(profiles: Mapping[str, ClusterProfile]) -> EnvironmentManagementDefinition:
     class Account(KubernetesConnectionConfiguration):
+        cluster: str = Field(
+            min_length=1,
+            max_length=128,
+            description="Operator-configured profile. Available profiles: " + ", ".join(profiles),
+            json_schema_extra={"enum": list(profiles)},
+        )
+        namespace: DNSLabel = Field(
+            description="Allowed namespaces by profile: "
+            + "; ".join(f"{name}: {', '.join(profile.namespaces)}" for name, profile in profiles.items())
+        )
+
         @model_validator(mode="after")
         def trusted_profile(self) -> Self:
             profile = profiles.get(self.cluster)

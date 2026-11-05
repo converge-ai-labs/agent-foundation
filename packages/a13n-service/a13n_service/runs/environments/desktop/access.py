@@ -11,8 +11,7 @@ from a13n_service.providers.environment import desktop_access as wire
 from a13n_service.providers.environment.management import DesktopSessionProvider
 from a13n_service.resources.providers.service import read_provider, resolve_provider
 from a13n_service.resources.providers.tables import EnvironmentProviderRow
-from a13n_service.runs.environments import bootstrap
-from a13n_service.runs.environments.adapters import Target, open_provider, provider_identity
+from a13n_service.runs.environments.adapters import Target, managed_target, open_provider, provider_identity
 from a13n_service.runs.environments.desktop.identity import environment_key
 from a13n_service.runs.environments.mounts import require_usable
 from a13n_service.runs.environments.schemas import Handle
@@ -59,7 +58,7 @@ async def target(
         )
     if environment.provider_identity != provider_identity(runtime.registry, account):
         raise conflict("environment", environment.id, "provider_identity_changed")
-    return Target(environment.id, account, handle.recipe, handle.state, bootstrap.restore(runtime.keys, environment))
+    return managed_target(runtime.keys, environment, account, handle)
 
 
 @asynccontextmanager

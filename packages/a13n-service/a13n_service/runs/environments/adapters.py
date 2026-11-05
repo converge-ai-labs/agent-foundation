@@ -23,6 +23,9 @@ from a13n_service.providers import envd
 from a13n_service.providers.environment.management import EnvironmentProvider
 from a13n_service.providers.registry import Registry
 from a13n_service.resources.providers.service import ResolvedProvider
+from a13n_service.runs.environments import bootstrap
+from a13n_service.runs.environments.schemas import Handle
+from a13n_service.runs.environments.tables import EnvironmentRow
 from a13n_service.runs.runtime import Runtime
 
 logger = get_logger(__name__)
@@ -60,6 +63,11 @@ class Target:
             object.__setattr__(
                 self, "recipe", {**self.recipe, "image": "ghcr.io/converge-ai-labs/a13n-docker-environment:dev"}
             )
+
+
+def managed_target(keys: KeyRing, environment: EnvironmentRow, account: ResolvedProvider, handle: Handle) -> Target:
+    """Detach a managed instance's frozen inputs and private bootstrap after the caller authorizes access."""
+    return Target(environment.id, account, handle.recipe, handle.state, bootstrap.restore(keys, environment))
 
 
 async def open_provider(runtime: Runtime, target: Target) -> EnvironmentProvider:
