@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 440" role="img" aria-label="Open development through Issues and PRs: discussion, independent work, review, and validation feed the next iteration.">
+  <title>Open discussion, independent work</title>
+  <desc>Community discussion and published conclusions from offline syncs enter Issues. A human assignee chooses tools and agents to implement and check agreed actions, then submits a PR for review. PRs may return to discussion or merge for continued testing and use. Findings and new actions return to Issues.</desc>
+  <path class="pl" d="M24 36H776"/>
+  <text class="pt" x="24" y="22">THINK / DISCUSS / IMPLEMENT / VERIFY</text>
+  <text class="pt acc" x="776" y="22" text-anchor="end">OPEN DEVELOPMENT</text>
+  <text class="pt ink" x="24" y="77">Community discussion</text>
+  <text class="pt ink" x="296" y="77">Offline sync</text>
+  <text class="pt" x="296" y="96">publish conclusions</text>
+  <path class="pf" d="M112 88V124M344 105V124H112V159M108 153L112 159L116 153"/>
+  <rect class="band" x="24" y="168" width="176" height="74" rx="2"/>
+  <rect class="pa thin" x="24" y="168" width="176" height="74" rx="2"/>
+  <text class="pt acc" x="112" y="196" text-anchor="middle">Issue</text>
+  <text class="pt" x="112" y="220" text-anchor="middle">discussion + actions</text>
+  <rect class="pl" x="264" y="168" width="176" height="74" rx="2"/>
+  <text class="pt ink" x="352" y="196" text-anchor="middle">Independent work</text>
+  <text class="pt" x="352" y="220" text-anchor="middle">human-led / checked</text>
+  <rect class="band" x="504" y="168" width="96" height="74" rx="2"/>
+  <rect class="pa thin" x="504" y="168" width="96" height="74" rx="2"/>
+  <text class="pt acc" x="552" y="196" text-anchor="middle">PR</text>
+  <text class="pt" x="552" y="220" text-anchor="middle">review</text>
+  <rect class="pl" x="664" y="168" width="112" height="74" rx="2"/>
+  <text class="pt ink" x="720" y="196" text-anchor="middle">Validation</text>
+  <text class="pt" x="720" y="220" text-anchor="middle">test + use</text>
+  <path class="pa thin" d="M208 205H256M250 201L256 205L250 209M448 205H496M490 201L496 205L490 209M608 205H656M650 201L656 205L650 209"/>
+  <text class="pt" x="232" y="155" text-anchor="middle">agree</text>
+  <text class="pt" x="472" y="155" text-anchor="middle">submit</text>
+  <text class="pt" x="632" y="155" text-anchor="middle">merge</text>
+  <path class="pf dash" d="M278 260H426"/>
+  <text class="pt" x="352" y="283" text-anchor="middle">focused execution</text>
+  <path class="pl" d="M552 250V322H144V250M140 256L144 250L148 256"/>
+  <text class="pt ink" x="348" y="343" text-anchor="middle">Return for discussion</text>
+  <path class="pa thin" d="M720 250V382H80V250M76 256L80 250L84 256"/>
+  <text class="pt acc" x="400" y="407" text-anchor="middle">Findings + new action items</text>
+</svg>
