@@ -17,6 +17,7 @@ from pydantic import ValidationError
 from a13n_harness_ui.errors import HarnessUiError
 
 _LIMIT = 2 * 1024 * 1024
+_WINDOWS = os.name == "nt"
 
 
 class HostAuthDocument:
@@ -25,6 +26,16 @@ class HostAuthDocument:
         self._observation_read = threading.Lock()
 
     def _read(self) -> dict[str, Any]:
+        if not _WINDOWS:
+            return self._read_unlocked()
+        # Windows file handles opened by Python do not share delete access.
+        # Coordinate readers with atomic replacement using the writer's lock.
+        if not self.path.parent.exists():
+            return {"version": 1, "keys": {}}
+        with FileLock(str(self.path) + ".lock", timeout=10, mode=0o600):
+            return self._read_unlocked()
+
+    def _read_unlocked(self) -> dict[str, Any]:
         try:
             with self.path.open("rb") as source:
                 raw = source.read(_LIMIT + 1)
@@ -69,7 +80,7 @@ class HostAuthDocument:
         if os.name != "nt":
             self.path.parent.chmod(0o700)
         with FileLock(str(self.path) + ".lock", timeout=10, mode=0o600):
-            document = self._read()
+            document = self._read_unlocked()
             result = change(document)
             raw = json.dumps(document, allow_nan=False)
             if len(raw.encode("utf-8")) > _LIMIT:
