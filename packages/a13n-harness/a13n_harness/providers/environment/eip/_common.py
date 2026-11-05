@@ -22,6 +22,7 @@ from pydantic import JsonValue
 from a13n_harness.environment.models import (
     DEFAULT_ENVIRONMENT_OPERATION_TIMEOUT_SECONDS,
     EnvironmentError,
+    EnvironmentInvocationError,
     EnvironmentOperationReceipt,
 )
 from a13n_harness.providers.environment._file_patterns import PATTERN_HINTS
@@ -186,20 +187,31 @@ def convert_error(error: BaseException) -> EnvironmentError:
         ):
             if value is not None:
                 details[key] = value
-        return EnvironmentError(
+        failure = (
+            EnvironmentInvocationError
+            if error_type
+            in {
+                eip.ErrorType.UNSUPPORTED,
+                eip.ErrorType.STALE_GENERATION,
+                eip.ErrorType.INVALID_HANDLE,
+                eip.ErrorType.PROVIDER_UNAVAILABLE,
+            }
+            else EnvironmentError
+        )
+        return failure(
             "EIP operation failed",
             code=code,
             details=details,
             retry_hint="reconcile_first" if code == "environment_unknown_outcome" else None,
         )
     if isinstance(error, EIPSessionStateError | EIPTransportClosedError | EIPTransportError):
-        return EnvironmentError(
+        return EnvironmentInvocationError(
             "EIP environment is unavailable",
             code="environment_unavailable",
             retry_hint="new_run",
         )
     if isinstance(error, EIPProtocolError):
-        return EnvironmentError(
+        return EnvironmentInvocationError(
             "EIP provider violated the protocol",
             code="environment_provider_failure",
             retry_hint="new_run",

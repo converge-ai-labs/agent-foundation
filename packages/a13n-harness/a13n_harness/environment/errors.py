@@ -167,7 +167,7 @@ def provider_error(
 
 # Operation diagnostics are separate from provider lifecycle failures above. These
 # messages are code-owned; exception descriptions remain local diagnostics only.
-_OPERATION_MESSAGES: dict[str, tuple[str, str]] = {
+_OPERATION_MESSAGES: dict[str, tuple[str, str | None]] = {
     "environment_request_invalid": (
         "Environment operation input is invalid.",
         "Check the operation schema and the indicated field, then correct the request before retrying.",
@@ -206,7 +206,7 @@ _OPERATION_MESSAGES: dict[str, tuple[str, str]] = {
     ),
     "environment_unsupported": (
         "This operation or option is not supported by the selected Environment.",
-        "Check the selected environment's advertised operations and supported options.",
+        None,
     ),
     "environment_too_large": (
         "The operation exceeded an Environment limit.",
@@ -246,7 +246,7 @@ _OPERATION_MESSAGES: dict[str, tuple[str, str]] = {
     ),
     "environment_provider_failure": (
         "The Environment provider could not complete the operation.",
-        "Check provider readiness and Host diagnostics; reconcile possible effects before retrying.",
+        None,
     ),
 }
 
@@ -261,7 +261,7 @@ def operation_error_projection(
     if not _CODE_PATTERN.fullmatch(code):
         code = "environment_provider_failure"
     message, hint = _OPERATION_MESSAGES.get(code, _OPERATION_MESSAGES["environment_provider_failure"])
-    safe: dict[str, JsonValue] = {"hint": hint}
+    safe: dict[str, JsonValue] = {"hint": hint} if hint else {}
     for key, limit in (("field", 128), ("reason", 128), ("hint", 1024)):
         value = details.get(key)
         if isinstance(value, str) and value.strip():

@@ -293,21 +293,31 @@ async def test_active_capacity_excludes_closed_history_and_discovery():
 
 
 @pytest.mark.parametrize(
-    "change",
+    "change, field",
     [
-        {"limits": CommandLimits(wall_time_seconds=1)},
-        {"limits": CommandLimits(stdin_bytes=10)},
-        {"environment": CommandEnvironment(unset=("SECRET",))},
-        {"command": ArgvCommand(executable="/bin/true")},
-        {"command": ShellCommand(profile_id="default", script="true", login=False)},
+        ({"limits": CommandLimits(wall_time_seconds=1)}, "execution_timeout_seconds"),
+        ({"limits": CommandLimits(stdin_bytes=10)}, "limits.stdin_bytes"),
+        ({"environment": CommandEnvironment(unset=("SECRET",))}, "environment.unset"),
+        ({"command": ArgvCommand(executable="/bin/true")}, "command.kind"),
+        ({"command": ShellCommand(profile_id="other", script="true")}, "command.profile_id"),
+        ({"command": ShellCommand(profile_id="default", script="true", login=False)}, "command.login"),
+        ({"network": "deny"}, "network"),
     ],
 )
-async def test_unsupported_guarantees_fail_before_native_dispatch(change):
+async def test_unsupported_guarantees_fail_before_native_dispatch(change, field):
+    from a13n_harness.toolsets.shell import _environment_error_result
+
     native = NativeCommands()
     process = adapter(native)
     with pytest.raises(EnvironmentError) as error:
         await process.start(request().model_copy(update=change))
-    assert error.value.code == "environment_unsupported"
+    diagnostic = _environment_error_result(error.value, may_have_effects=True)["error"]
+    assert (diagnostic["source"], diagnostic["code"]) == ("system", "environment_unsupported")
+    assert diagnostic["details"]["field"] == field
+    assert diagnostic["details"]["dispatch_stage"] == "pre_dispatch"
+    assert diagnostic["details"]["hint"]
+    assert diagnostic["outcome_known"] is True
+    assert diagnostic["retry_hint"] == "request_change"
     assert native.calls == []
     await process.close()
 

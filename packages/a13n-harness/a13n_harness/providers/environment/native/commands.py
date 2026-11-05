@@ -16,6 +16,7 @@ from a13n_harness.environment.commands import (
     ProcessStatus,
     ShellCommand,
     ShellExecResult,
+    unsupported_command_option,
 )
 from a13n_harness.environment.models import EnvironmentError, EnvironmentOperationReceipt
 from a13n_harness.environment.retention import EnvironmentOutputCapture
@@ -127,21 +128,19 @@ class NativeCommands:
     async def exec(self, request: CommandRequest) -> ShellExecResult:
         request = with_defaults(request, self.configuration.environment)
         config = self.configuration
-        unsupported = (
-            request.network != "configured"
-            or request.initial_stdin is not None
-            or request.keep_stdin_open
-            or request.output_policy.overflow == "retain"
-            or any(
-                value is not None for key, value in request.limits.model_dump().items() if key != "wall_time_seconds"
+        request.limits.require_supported("wall_time_seconds")
+        request.require_configured_network()
+        if request.initial_stdin is not None:
+            raise unsupported_command_option("initial_stdin", "Use an environment that accepts initial command input.")
+        if request.keep_stdin_open:
+            raise unsupported_command_option("keep_stdin_open", "Use an environment with interactive stdin.")
+        if request.output_policy.overflow == "retain":
+            raise unsupported_command_option(
+                "output_policy.overflow", "Use an environment that supports retained output."
             )
-        )
-        if unsupported:
-            raise EnvironmentError("Requested command guarantee is unsupported.", code="environment_unsupported")
         command = request.command
         if isinstance(command, ShellCommand):
-            if command.profile_id != "default":
-                raise EnvironmentError("Unknown shell profile.", code="environment_unsupported")
+            command.require_default_profile()
             argv = [config.shell, "-lc" if command.login else "-c", command.script]
         else:
             argv = [command.executable, *command.arguments]

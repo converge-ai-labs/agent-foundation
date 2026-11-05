@@ -490,3 +490,8 @@ async def test_publish_asset_attributes_the_run_and_bounds_the_file(
     assert "exceeds the 65536-byte asset limit" in str(await publish(bounded, "/workspace/large.bin"))
     assert "does not cover" in str(await publish(runtime, "/workspace/report.txt", verbs=frozenset({"read", "run"})))
     assert "regular file" in str(await publish(runtime, "/workspace"))
+    outside = await publish(runtime, "/unmounted/report.txt")
+    error = (json.loads(outside) if isinstance(outside, str) else outside)["error"]
+    assert error["source"] == "system"
+    assert error["details"]["field"] == "path"
+    assert error["details"]["hint"]

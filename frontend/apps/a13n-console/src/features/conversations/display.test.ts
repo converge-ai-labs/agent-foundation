@@ -271,6 +271,39 @@ it("normalizes every intact raw suffix identically to the Python producer", asyn
   }
 });
 
+it("attributes a system failure only when the result carries invocation metadata", () => {
+  const content = JSON.stringify({
+    ok: false,
+    error: {
+      source: "system",
+      code: "tool_denied",
+      message: "Denied",
+      details: {},
+    },
+  });
+  for (const systemFailure of [true, false]) {
+    const items = new Map<string, DisplayItem>();
+    new DisplayNormalizer().apply(items, {
+      ...delta(1),
+      event: {
+        type: "TOOL_CALL_RESULT",
+        toolCallId: "t",
+        content,
+        metadata: systemFailure ? { "a13n.system-failure": true } : {},
+      },
+      item: {
+        id: "tool",
+        kind: "tool_call",
+        state: systemFailure ? "failed" : "completed",
+      },
+    });
+    expect(items.get("tool")?.content.result).toBe(content);
+    expect(items.get("tool")?.content.outcome).toBe(
+      systemFailure ? "failed" : undefined,
+    );
+  }
+});
+
 it("does not parse a JSON fragment suffix after losing its prefix", () => {
   const normalizer = new DisplayNormalizer();
   const items = new Map<string, DisplayItem>();

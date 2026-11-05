@@ -9,6 +9,7 @@ from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from typing import Annotated, Any, Literal, get_args, get_origin, get_type_hints
 
+from a13n_harness.tools.diagnostics import INVALID_ARGUMENT, system_error
 from fastapi import FastAPI, Request
 from fastmcp.server.dependencies import get_http_request
 from fastmcp.tools import Tool, ToolResult
@@ -123,9 +124,15 @@ class PlatformTool(Tool):
         credential = cached_credential(request)
         contract = self._contract
         identity = request_id(request.scope)
+        if credential is None or credential.platform is None or contract.group not in credential.platform.groups:
+            return ToolResult(
+                structured_content={
+                    "error": system_error("forbidden", "Platform tool is not admitted."),
+                    "request_id": identity,
+                },
+                is_error=True,
+            )
         try:
-            if credential is None or credential.platform is None or contract.group not in credential.platform.groups:
-                raise ServiceError("forbidden", "Platform tool is not admitted")
             parsed = contract.inputs.model_validate(arguments)
             kwargs = {name: getattr(parsed, name) for name in parsed.model_fields_set}
             if isinstance(version := kwargs.get("expected_version"), str):
@@ -134,6 +141,28 @@ class PlatformTool(Tool):
                 kwargs[name] = model.model_validate(
                     {key: kwargs.pop(key) for key in model.model_fields if key in kwargs}
                 )
+        except ValidationError as error:
+            return ToolResult(
+                structured_content={
+                    "error": {
+                        **system_error(
+                            INVALID_ARGUMENT,
+                            "Tool arguments do not match the tool schema.",
+                            hint="Correct the indicated fields using the current tool schema.",
+                        ),
+                        "fields": [
+                            {
+                                "path": [part[:64] if isinstance(part, str) else part for part in item["loc"][:8]],
+                                "type": item["type"][:64],
+                            }
+                            for item in error.errors(include_input=False, include_context=False, include_url=False)[:8]
+                        ],
+                    },
+                    "request_id": identity,
+                },
+                is_error=True,
+            )
+        try:
             context = ToolContext(
                 self._app.state.runtime,
                 credential.principal,
@@ -149,16 +178,12 @@ class PlatformTool(Tool):
             value = TypeAdapter(Any).dump_python(result, mode="json")
             output = value if isinstance(value, dict) else {"result": value}
             return ToolResult(structured_content={**output, "request_id": identity})
-        except ValidationError as error:
+        except ValidationError:
+            # The public input passed. A validation error raised by the handler can
+            # describe private stored data; never project it as a caller correction.
             return ToolResult(
                 structured_content={
-                    "error": {
-                        "code": "invalid_argument",
-                        "fields": [
-                            {"path": list(item["loc"]), "type": item["type"]}
-                            for item in error.errors(include_input=False, include_context=False)
-                        ],
-                    },
+                    "error": {"code": "tool_validation_failed", "message": "The tool could not validate its data."},
                     "request_id": identity,
                 },
                 is_error=True,

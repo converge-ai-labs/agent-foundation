@@ -1,6 +1,7 @@
 """Execution ownership, storage, and foreground wait boundaries."""
 
 import asyncio
+import json
 from contextlib import asynccontextmanager
 
 import pytest
@@ -1003,3 +1004,26 @@ async def test_definite_admission_rejection_releases_capacity_without_poisoning_
     assert (await runtime.wait("thread-a", accepted.execution_id)).result == 42
     assert effects == [True]
     await runtime.close()
+
+
+async def test_retained_system_failure_preserves_code_and_has_no_default_hint():
+    from a13n_harness.tools.diagnostics import system_failure
+
+    async def operation():
+        raise system_failure("tool_unavailable", "The tool is unavailable.")
+
+    runtime = ToolExecutionRuntime()
+    try:
+        receipt = admit(runtime, operation)
+        await runtime.wait("thread-a", receipt.execution_id)
+        saved = await runtime.result("thread-a", receipt.execution_id)
+        assert saved.record.status == "failed"
+        assert saved.retry_prompt is None
+        assert json.loads(saved.record.error)["error"] == {
+            "source": "system",
+            "code": "tool_unavailable",
+            "message": "The tool is unavailable.",
+            "details": {},
+        }
+    finally:
+        await runtime.close()

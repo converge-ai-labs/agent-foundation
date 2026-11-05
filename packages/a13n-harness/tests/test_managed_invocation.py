@@ -239,7 +239,13 @@ async def test_explicit_invocation_policy_can_deny_managed_tool_dispatch() -> No
 
     assert executed is False
     assert result.status == "completed"
-    assert "Managed tool invocation was denied." in result.output_or_raise()
+    error = json.loads(result.output_or_raise().removeprefix("result="))["error"]
+    assert error == {
+        "source": "system",
+        "code": "tool_denied",
+        "message": "Managed tool invocation was denied.",
+        "details": {},
+    }
 
 
 async def test_programmatic_tool_manager_dispatch_crosses_the_same_boundary() -> None:
@@ -722,3 +728,31 @@ async def test_competing_outer_boundary_creates_a_fail_closed_ordering_cycle() -
     assert exc_info.value.code == "agent_build_failed"
     assert exc_info.value.__cause__ is not None
     assert "Circular ordering constraints" in str(exc_info.value.__cause__)
+
+
+async def test_failed_delivery_after_write_does_not_replay_the_tool():
+    writes = []
+
+    def write() -> str:
+        writes.append("committed")
+        return "x" * 2048
+
+    metadata = replace(
+        _metadata("write"),
+        effects=frozenset({"write"}),
+        idempotency="none",
+        output_policy=ToolOutputPolicy(max_inline_bytes=512, max_output_bytes=4096, overflow="fail"),
+    )
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=_tool_model("write", {}),
+        capabilities=(Capability(tools=[HarnessTool(write, harness_metadata=metadata)], id="test-tools"),),
+    )
+    result = await executable.run("go", bindings=RunBindings.embedded())
+    assert writes == ["committed"]
+    error = json.loads(result.output_or_raise().removeprefix("result="))["error"]
+    assert error["source"] == "system"
+    assert error["code"] == "tool_result_too_large"
+    assert "512 inline bytes" in error["message"]
+    assert "before repeating" in error["details"]["hint"]
