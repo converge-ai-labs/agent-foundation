@@ -1,20 +1,38 @@
-import { Button } from "a13n-ui";
+import { Button, ChoiceField, DisclosureSection } from "a13n-ui";
 import { ArrowSquareOutIcon } from "@phosphor-icons/react";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { FormSection, jsonObject, TextAreaField } from "../../shared/forms";
-import styles from "../../shared/shared.module.css";
+import {
+  Containers,
+  Fields,
+  Items,
+  MapFields,
+  Storage,
+} from "./kubernetes-editors";
+import {
+  connectionFields,
+  listField,
+  object,
+  objects,
+  schedulingFields,
+  string,
+  textField,
+  updateContainers,
+  type NativeObject,
+} from "./kubernetes-fields";
+import styles from "./kubernetes.module.css";
 
-/** Native Pod authoring stays native; starters fill an empty draft, never merge over user manifests. */
+/** Forms patch the native recipe in place; undisplayed fields stay intact. */
 export function KubernetesConfiguration({
   schema,
   text,
   onChange,
-  readOnly,
+  readOnly = false,
   error,
   children,
 }: {
-  schema?: Record<string, unknown>;
+  schema?: NativeObject;
   text: string;
   onChange: (value: string) => void;
   readOnly?: boolean;
@@ -22,74 +40,337 @@ export function KubernetesConfiguration({
   children?: ReactNode;
 }) {
   const { t } = useTranslation();
-  let empty = false;
+  const [advanced, setAdvanced] = useState(false);
+  let recipe: NativeObject | undefined;
   try {
-    empty = Object.keys(jsonObject(text)).length === 0;
+    recipe = jsonObject(text);
   } catch {
-    /* Preserve unfinished JSON. */
+    /* Keep unfinished native input editable. */
   }
-  const presets = schema?.["x-environment-presets"] as
-    Record<string, unknown> | undefined;
+  const empty = recipe && Object.keys(recipe).length === 0;
+  const presets = object(schema?.["x-environment-presets"]);
+  const template = object(recipe?.pod_template),
+    spec = object(template.spec);
+  const metadata = object(template.metadata);
+  const containers = objects(spec.containers);
+  function change(next: NativeObject) {
+    onChange(JSON.stringify(next, null, 2));
+  }
+  function changeSpec(next: NativeObject) {
+    change({ ...recipe, pod_template: { ...template, spec: next } });
+  }
+  const connectionOptions = [
+    { value: "direct", label: t("Direct Pod connection") },
+    { value: "port_forward", label: t("Local port forwarding") },
+  ];
   return (
-    <FormSection
-      title={t("Kubernetes recipe")}
-      description={t(
-        "Author a native PodTemplateSpec with an explicit Envd container. Names, credentials and sandbox identity are supplied by the Service.",
-      )}
-    >
-      {!readOnly && (
-        <div className={styles.stack}>
-          <p className={styles.muted}>
-            {t(
-              "Before the first run, load the sandbox image into your cluster or use a registry image the nodes can pull. Both connection modes require the operator's allow_plaintext_envd opt-in.",
-            )}
-          </p>
-          <a
-            href="https://a13n.dev/docs/a13n-service/environments#kubernetes-sandboxes"
-            target="_blank"
-            rel="noreferrer"
-            className={styles.actions}
-          >
-            {t("Kubernetes setup guide")}
-            <ArrowSquareOutIcon size={14} />
-          </a>
-        </div>
-      )}
-      {empty && presets && !readOnly && (
-        <div className={styles.actions}>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => onChange(JSON.stringify(presets.direct, null, 2))}
-          >
-            {t("In-cluster starter")}
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() =>
-              onChange(JSON.stringify(presets.port_forward, null, 2))
-            }
-          >
-            {t("Local port-forward starter")}
-          </Button>
-        </div>
-      )}
-      <TextAreaField
-        label={t("Native recipe JSON")}
-        value={text}
-        onChange={onChange}
-        readOnly={readOnly}
-        error={error}
-        code
-        rows={18}
-        hint={t(
-          "Starters use a13n-sandbox:local. Build with make image-sandbox, then load it with kind load docker-image a13n-sandbox:local --name <cluster>. Use env/valueFrom for container variables, environment for execution variables, and storage for PVC bindings.",
+    <div className={styles.groups}>
+      <FormSection
+        title={t("Sandbox connection")}
+        description={t(
+          "Cluster credentials and the sandbox ServiceAccount are managed by the operator. Choose how the Service reaches Envd.",
         )}
-      />
-      {children}
-    </FormSection>
+      >
+        {empty ? (
+          <>
+            <p className={styles.hint}>
+              {t("Choose a connection to start configuring your sandbox.")}
+            </p>
+            <div className={styles.starters}>
+              {connectionOptions.map(({ value, label }) => (
+                <Button
+                  key={value}
+                  type="button"
+                  variant="outline"
+                  disabled={readOnly || !presets[value]}
+                  onClick={() => change(object(presets[value]))}
+                >
+                  {label}
+                </Button>
+              ))}
+            </div>
+          </>
+        ) : (
+          recipe && (
+            <>
+              <ChoiceField
+                label={t("Connection mode")}
+                value={string(recipe.connection) || "direct"}
+                disabled={readOnly}
+                options={connectionOptions}
+                onValueChange={(connection) =>
+                  change({ ...recipe, connection })
+                }
+              />
+              <p className={styles.hint}>
+                {t(
+                  recipe.connection === "port_forward"
+                    ? "For a Service outside the cluster. Requires an operator kubeconfig profile, kubectl, and allow_port_forward on both Control and Worker."
+                    : "Works inside or outside the cluster when both Control and Worker can reach Pod IPs. Kubernetes API authentication comes from the operator profile.",
+                )}
+              </p>
+              <ChoiceField
+                label={t("Execution container")}
+                value={string(recipe.execution_container)}
+                disabled={readOnly}
+                required
+                options={containers
+                  .filter((item) => string(item.name))
+                  .map((item) => ({
+                    value: string(item.name),
+                    label: string(item.name),
+                  }))}
+                onValueChange={(execution_container) =>
+                  change({ ...recipe, execution_container })
+                }
+              />
+              <DisclosureSection title={t("Execution settings")}>
+                <Fields
+                  properties={connectionFields}
+                  value={recipe}
+                  onChange={change}
+                  readOnly={readOnly}
+                />
+              </DisclosureSection>
+              <MapFields
+                label={t("Execution variables")}
+                description={t(
+                  "Defaults for commands and child processes. Values are ordinary configuration, not secrets.",
+                )}
+                value={object(recipe.environment)}
+                onChange={(environment) => change({ ...recipe, environment })}
+                readOnly={readOnly}
+              />
+            </>
+          )
+        )}
+        <p className={styles.hint}>
+          {t(
+            "Both connection modes require the operator's allow_plaintext_envd opt-in. Build and load the sandbox image into the cluster, or use a registry image the nodes can pull.",
+          )}
+        </p>
+        <a
+          href="https://a13n.dev/docs/a13n-service/environments#kubernetes-sandboxes"
+          target="_blank"
+          rel="noreferrer"
+          className={styles.guide}
+        >
+          {t("Kubernetes setup guide")}
+          <ArrowSquareOutIcon size={14} />
+        </a>
+      </FormSection>
+      {recipe && !empty && (
+        <>
+          <FormSection
+            title={t("Containers")}
+            description={t(
+              "The execution container runs Envd. Add sidecars here; configure startup, resources and variables per container.",
+            )}
+          >
+            <Containers
+              value={containers}
+              onChange={(next) => change(updateContainers(recipe, next))}
+              readOnly={readOnly}
+            />
+            <DisclosureSection title={t("Init containers")}>
+              <Containers
+                init
+                value={objects(spec.initContainers)}
+                onChange={(initContainers) =>
+                  changeSpec({ ...spec, initContainers })
+                }
+                readOnly={readOnly}
+              />
+            </DisclosureSection>
+            <DisclosureSection title={t("Image pull secrets")}>
+              <Fields
+                properties={{
+                  imagePullSecrets: listField(
+                    "Image pull secrets",
+                    { name: textField("Secret name") },
+                    ["name"],
+                  ),
+                }}
+                value={spec}
+                onChange={changeSpec}
+                readOnly={readOnly}
+              />
+            </DisclosureSection>
+          </FormSection>
+          <FormSection
+            title={t("Persistent storage")}
+            description={t(
+              "Mount a new or existing claim into the execution container. New claims are retained by default.",
+            )}
+          >
+            <Storage
+              value={objects(recipe.storage)}
+              onChange={(storage) => change({ ...recipe, storage })}
+              readOnly={readOnly}
+            />
+            <DisclosureSection title={t("Native volumes")}>
+              <p className={styles.hint}>
+                {t(
+                  "Use native volumes for temporary files, ConfigMaps and Secrets. Add matching native volume mounts to each container that needs access.",
+                )}
+              </p>
+              <Items
+                value={objects(spec.volumes)}
+                onChange={(volumes) => changeSpec({ ...spec, volumes })}
+                readOnly={readOnly}
+                addLabel={t("Add volume")}
+                create={() => ({ name: "", emptyDir: {} })}
+              >
+                {(volume, update) => {
+                  const kinds = [
+                    "emptyDir",
+                    "configMap",
+                    "secret",
+                    "persistentVolumeClaim",
+                  ];
+                  const kind =
+                    kinds.find((key) => volume[key] != null) ?? "custom";
+                  return (
+                    <>
+                      <Fields
+                        properties={{ name: textField("Volume name") }}
+                        value={volume}
+                        onChange={update}
+                        required={["name"]}
+                        readOnly={readOnly}
+                      />
+                      <ChoiceField
+                        label={t("Volume source")}
+                        value={kind}
+                        disabled={readOnly || kind === "custom"}
+                        options={[
+                          {
+                            value: "emptyDir",
+                            label: t("Temporary directory"),
+                          },
+                          { value: "configMap", label: "ConfigMap" },
+                          { value: "secret", label: "Secret" },
+                          {
+                            value: "persistentVolumeClaim",
+                            label: t("Existing claim"),
+                          },
+                          ...(kind === "custom"
+                            ? [
+                                {
+                                  value: "custom",
+                                  label: t("Custom native volume (preserved)"),
+                                },
+                              ]
+                            : []),
+                        ]}
+                        onValueChange={(next) => {
+                          const value = { ...volume };
+                          delete value[kind];
+                          value[next] = {};
+                          update(value);
+                        }}
+                      />
+                      {kind !== "custom" && (
+                        <Fields
+                          properties={
+                            kind === "emptyDir"
+                              ? {
+                                  medium: textField(
+                                    "Medium (optional)",
+                                    "Use Memory for a memory-backed volume.",
+                                  ),
+                                  sizeLimit: textField("Size limit (optional)"),
+                                }
+                              : kind === "secret"
+                                ? { secretName: textField("Secret name") }
+                                : kind === "configMap"
+                                  ? { name: textField("ConfigMap name") }
+                                  : { claimName: textField("Claim name") }
+                          }
+                          value={object(volume[kind])}
+                          onChange={(next) =>
+                            update({ ...volume, [kind]: next })
+                          }
+                          readOnly={readOnly}
+                        />
+                      )}
+                    </>
+                  );
+                }}
+              </Items>
+            </DisclosureSection>
+          </FormSection>
+          <FormSection title={t("Scheduling and metadata")}>
+            <DisclosureSection title={t("Placement and restart policy")}>
+              <Fields
+                properties={schedulingFields}
+                value={spec}
+                onChange={changeSpec}
+                readOnly={readOnly}
+              />
+            </DisclosureSection>
+            <MapFields
+              label={t("Node selector")}
+              value={object(spec.nodeSelector)}
+              onChange={(nodeSelector) => changeSpec({ ...spec, nodeSelector })}
+              readOnly={readOnly}
+            />
+            {(["labels", "annotations"] as const).map((key) => (
+              <MapFields
+                key={key}
+                label={t(key === "labels" ? "Pod labels" : "Pod annotations")}
+                value={object(metadata[key])}
+                readOnly={readOnly}
+                onChange={(next) =>
+                  change({
+                    ...recipe,
+                    pod_template: {
+                      ...template,
+                      metadata: { ...metadata, [key]: next },
+                    },
+                  })
+                }
+              />
+            ))}
+          </FormSection>
+        </>
+      )}
+      <FormSection
+        title={t("Advanced configuration")}
+        description={t(
+          "Unshown native fields, including affinity, security contexts and network policies, are preserved when you edit the form.",
+        )}
+      >
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className={styles.add}
+          aria-expanded={advanced || !recipe}
+          onClick={() => setAdvanced(!advanced)}
+        >
+          {t(advanced ? "Hide native JSON" : "Edit native JSON")}
+        </Button>
+        {(advanced || !recipe) && (
+          <TextAreaField
+            label={t("Native recipe JSON")}
+            value={text}
+            onChange={onChange}
+            readOnly={readOnly}
+            code
+            rows={18}
+            hint={t(
+              "Advanced escape hatch for native Kubernetes fields. Changes are reflected in the form; invalid JSON is kept until corrected.",
+            )}
+          />
+        )}
+        {error && (
+          <p role="alert" className={styles.error}>
+            {error}
+          </p>
+        )}
+        {children}
+      </FormSection>
+    </div>
   );
 }

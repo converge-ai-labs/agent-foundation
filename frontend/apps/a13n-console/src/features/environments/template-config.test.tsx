@@ -152,7 +152,31 @@ beforeEach(() => {
                 display_name: "Kubernetes",
                 environment_schema: {
                   type: "object",
-                  properties: { pod_template: { type: "object" } },
+                  required: ["pod_template", "execution_container"],
+                  properties: {
+                    pod_template: { type: "object" },
+                    execution_container: { type: "string" },
+                  },
+                  "x-environment-presets": {
+                    direct: {
+                      execution_container: "envd",
+                      connection: "direct",
+                      pod_template: {
+                        spec: {
+                          containers: [{ name: "envd", image: "sandbox:test" }],
+                        },
+                      },
+                    },
+                    port_forward: {
+                      execution_container: "envd",
+                      connection: "port_forward",
+                      pod_template: {
+                        spec: {
+                          containers: [{ name: "envd", image: "sandbox:test" }],
+                        },
+                      },
+                    },
+                  },
                 },
                 supports_stop: false,
                 supports_destroy: true,
@@ -990,6 +1014,9 @@ it("preserves legacy timers when editing an opted-in template's reclamation poli
 it("saves Kubernetes idle-delete and preparation policy without VM stop timers", async () => {
   const user = userEvent.setup();
   await selectProvider(user, "Kubernetes");
+  await user.click(
+    screen.getByRole("button", { name: "Direct Pod connection" }),
+  );
   await user.type(
     screen.getByRole("textbox", { name: "Name" }),
     "Kubernetes sandbox",
@@ -1011,7 +1038,13 @@ it("saves Kubernetes idle-delete and preparation policy without VM stop timers",
         description: null,
         provider_id: "eprov_kubernetes",
         config: {
-          recipe: {},
+          recipe: {
+            execution_container: "envd",
+            connection: "direct",
+            pod_template: {
+              spec: { containers: [{ name: "envd", image: "sandbox:test" }] },
+            },
+          },
           stop_after_seconds: null,
           delete_after_seconds: null,
           reclamation: {

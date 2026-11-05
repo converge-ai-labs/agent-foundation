@@ -48,7 +48,7 @@ Kubernetes 将实例运行为原生 Pod，由选定容器中的 Envd 提供执�
 
 1. 请运维在 Control 和 Worker 上配置 `environments.kubernetes_clusters`，或按 [Kubernetes 运维配置](configuration.md#kubernetes-environments)中的说明启用 Helm 选项。
 2. 在**工作空间设置 → Providers → 环境**中创建 Kubernetes provider。选择运维配置的集群 profile，并填写获准的命名空间。Helm 示例对应 `config: {"cluster":"in-cluster","namespace":"agent-sandboxes"}`。保存 provider 后，重新打开并选择 **Check connection（检查连接）**。
-3. 按下方说明准备沙箱镜像，然后用原生 Pod recipe 创建模板。Console 的**使用集群内配置示例**只填充 recipe，回收策略通过独立控件设置。下方 JSON 是 API 模板的完整 `config`。
+3. 按下方说明准备沙箱镜像，然后创建模板。选择 **Pod 直连**或**本地端口转发**，通过卡片配置容器、资源请求与限制、变量、持久存储和调度。**生命周期**单独控制回收策略。常规配置无需编写 YAML 或 JSON；**编辑原生 JSON**提供其他原生字段，返回表单后修改配置也会保留这些字段。下方 JSON 是等价的 API 模板 `config`。
 4. 在已配置可用模型的 agent 上启用 **Files** 和 **Shell**，并选择此默认模板。新建会话，让 agent 写入 `hello.txt`，再发一条消息读取文件。只覆盖一次运行时，选择**运行选项 → 本次运行环境 → 从模板创建**。
 
 ```json
@@ -90,7 +90,7 @@ docker push registry.example.com/team/a13n-sandbox:reviewed
 
 资源请求与限制、init 容器、sidecar、调度、安全上下文及 ConfigMap、Secret 引用保留在 `pod_template.spec` 中，由 Kubernetes admission 校验这些原生字段。Service 管理 Pod 身份、沙箱 ServiceAccount 和私有 Envd 凭据注入。选定的执行容器必须启动 Envd；Pod 处于 Running 并不代表执行能力已经就绪。
 
-`direct` 从 Service 连接 Pod IP。本地调试可使用 `port_forward`，前提是运维 profile 明确允许且已安装 `kubectl`；隧道仅属于使用它的进程。两种方式目前都使用 Bearer 认证的 HTTP，需要 profile 显式设置 `allow_plaintext_envd = true`。此类流量应保留在可信私有网络内。provider 检查成功代表配置、认证和 Pod 列举权限正常；镜像拉取、Pod 创建、调度、存储和 Envd 就绪仍需通过真实实例验证。
+`direct` 从 Service 连接 Pod IP，Service 可以部署在集群内或集群外。集群外部署时，运维在 Control 和 Worker 上提供 kubeconfig profile。直连要求两个进程都能访问 Pod IP。没有 Pod IP 路由的本地调试可使用 `port_forward`，前提是 kubeconfig profile 明确允许且已安装 `kubectl`；隧道仅属于使用它的进程。两种方式目前都使用 Bearer 认证的 HTTP，需要 profile 显式设置 `allow_plaintext_envd = true`。此类流量应保留在可信私有网络内。provider 检查成功代表配置、认证和 Pod 列举权限正常；镜像拉取、Pod 创建、调度、存储和 Envd 就绪仍需通过真实实例验证。
 
 需要持久文件时，在 `recipe.storage` 中添加绑定，包含 `name`、`mount_path`，以及原生 `claim_template` 或 `existing_claim` 二选一。新建 PVC 默认使用 `disposition: retain`；选择 `delete` 会在回收时删除拥有的 PVC。已有 PVC 始终视为借用资源，即使绑定指定删除也会保留。`shared_directory: true` 在已有 PVC 中使用实例专属目录，并保留该目录。引用的 ConfigMap 和 Secret 也属于借用资源。`recipe.network_policy` 接受原生 NetworkPolicy 模板，Pod selector 由 Service 填入；实际执行网络策略需要兼容的集群网络实现。
 
