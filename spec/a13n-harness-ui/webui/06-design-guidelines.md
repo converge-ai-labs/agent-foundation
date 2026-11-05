@@ -15,7 +15,7 @@ Harness is compact, quiet and softly contrasted. Settings supply the grouping an
 | Sidebar rows                                                              | 30px high; 2px between adjacent fills           |
 | Touch targets                                                             | At least 44px; determined by pointer capability |
 | Radius: control / group and overlay / composer                            | 8 / 16 / 20px                                   |
-| Reading width: saved conversation / New chat / settings                   | Available pane / 720px / 760px                  |
+| Reading width: saved conversation / New chat / settings                   | 800px / 800px / 760px                           |
 | Standard form dialog                                                      | 480px wide; 24px desktop and 16px narrow insets |
 | Field groups / page sections                                              | 16 / 32px gaps                                  |
 | Default type: navigation / interface / prose / composer / code / terminal | 13 / 14 / 15 / 16 / 12 / 13px                   |
@@ -57,7 +57,7 @@ Rows drag directly without a grip icon. Use a compact preview and thin insertion
 
 ### Reading and Execution Details
 
-Saved conversations use the available chat pane width with symmetric gutters; transcript, Activity row and composer share an axis. Left navigation retains its existing layout and controls. New chat retains its centered 720px entry column. User bubbles fit content within a bounded width. User messages and intermediate and final assistant prose share primary text color, the conversation size (15px by default) and 1.7 line height. Markdown tables follow that size; heading levels use 1.5, 1.25, 1.125 and 1em. Inline code stays relative to surrounding prose. Code blocks and line numbers use the independent code size; their toolbar labels use the interface size. Interface labels and tool rows retain their compact scale. Tool and Thought labels use quiet gray, regular text; only hover or focus strengthens them, not expansion.
+Saved conversations and New chat use a centered column capped at 800px with symmetric gutters; transcript, Activity row and composer share an axis. Left navigation retains its existing layout and controls. User bubbles fit content within a bounded width. User messages and intermediate and final assistant prose share primary text color, the conversation size (15px by default) and 1.7 line height. Markdown tables follow that size; heading levels use 1.5, 1.25, 1.125 and 1em. Inline code stays relative to surrounding prose. Code blocks and line numbers use the independent code size; their toolbar labels use the interface size. Interface labels and tool rows retain their compact scale. Tool and Thought labels use quiet gray, regular text; only hover or focus strengthens them, not expansion.
 
 Completed work collapses behind **Worked for …**, leaving the final response visible, under the [conversation contract](04-workbench-interaction.md#conversation-and-shared-composer). Omit **Work log**, tool-count summaries and tool elapsed times. Recorded Run/Thought timing uses muted tabular figures.
 

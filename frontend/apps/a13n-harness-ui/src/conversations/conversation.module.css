@@ -570,8 +570,7 @@
   font-size: var(--a13n-text-body);
 }
 .page {
-  /* Saved conversations use the available pane rather than a fixed column. */
-  --harness-reading-width: 100%;
+  --harness-reading-width: 800px;
   container: conversation-page / inline-size;
   position: relative;
   display: flex;
