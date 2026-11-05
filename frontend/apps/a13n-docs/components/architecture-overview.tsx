@@ -273,6 +273,7 @@ export function ArchitectureOverview({
 
   return (
     <figure className={styles.overview}>
+      <figcaption className={styles.hint}>{hint}</figcaption>
       <div
         className={styles.scroll}
         role="region"
@@ -324,7 +325,6 @@ export function ArchitectureOverview({
           ))}
         </div>
       </div>
-      <figcaption className={styles.hint}>{hint}</figcaption>
     </figure>
   );
 }

@@ -1,5 +1,5 @@
 .overview {
-  margin: 0 0 3rem;
+  margin: 0;
 }
 
 .scroll {
@@ -91,7 +91,7 @@
 
   .hint {
     display: block;
-    margin-top: 10px;
+    margin-bottom: 10px;
     font-size: 12px;
     color: var(--color-fd-muted-foreground);
   }
