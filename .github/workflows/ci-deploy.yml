@@ -127,6 +127,10 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+        with:
+          # ubuntu-latest uses the containerd image store: build directly into it,
+          # without a second image tar export/load or a BuildKit container teardown.
+          driver: docker
 
       - name: Expose the job-scoped BuildKit cache credentials
         uses: actions/github-script@v8
@@ -136,6 +140,26 @@ jobs:
             for (const name of ['ACTIONS_RUNTIME_TOKEN', 'ACTIONS_RESULTS_URL']) {
               core.exportVariable(name, process.env[name]);
             }
+
+      - name: Build both checkout images alongside cluster creation
+        run: |
+          python3 - <<'PY'
+          import os
+          from concurrent.futures import ThreadPoolExecutor
+          from scripts.k8s_local import prepare_image
+
+          images = [
+              ("K8S_SERVICE_IMAGE", "a13n-service", "a13n-service:ci"),
+              ("K8S_SANDBOX_IMAGE", "sandbox", "a13n-sandbox:ci"),
+          ]
+          with ThreadPoolExecutor(max_workers=2) as pool:
+              builds = [(variable, pool.submit(prepare_image, component, tag))
+                        for variable, component, tag in images]
+              prepared = [(variable, build.result()) for variable, build in builds]
+          with open(os.environ["GITHUB_ENV"], "a") as output:
+              for variable, image in prepared:
+                  output.write(f"{variable}={image}\n")
+          PY
 
       - name: Require successful cluster creation
         timeout-minutes: 5
@@ -147,9 +171,8 @@ jobs:
       - name: Install locked test dependencies
         run: make sync
 
-      - name: Build both images while installing the Service and bootstrapping
-        # Sandbox build/import overlaps Service build/import, migration, readiness and bootstrap.
-        # k8s-up joins both branches before publishing deployment.json or starting smoke.
+      - name: Install the Service, bootstrap and verify a native run
+        # Image imports overlap; k8s-up joins both before publishing deployment.json.
         run: make k8s-up k8s-smoke
 
       # A new rollout annotation upgrades the release: a new migration Job, then rolling Deployments.
@@ -262,6 +285,10 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+        with:
+          # ubuntu-latest uses the containerd image store: build directly into it,
+          # without a second image tar export/load or a BuildKit container teardown.
+          driver: docker
 
       - name: Build the checkout sandbox with reusable layers
         uses: docker/build-push-action@v6
@@ -271,7 +298,7 @@ jobs:
           tags: a13n-sandbox:ci
           load: true
           cache-from: type=gha,scope=service-e2e-sandbox
-          cache-to: type=gha,scope=service-e2e-sandbox,mode=max,ignore-error=true
+          # Service E2E owns this cache; journey shards only consume it.
 
       - name: Require successful cluster creation
         timeout-minutes: 5

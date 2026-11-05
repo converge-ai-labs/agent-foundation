@@ -195,8 +195,6 @@ def prepare_image(component: str, destination: str) -> str:
                 "--load",
                 "--cache-from",
                 f"type=gha,version=2,scope={scope}",
-                "--cache-to",
-                f"type=gha,version=2,scope={scope},mode=max,ignore-error=true",
             )
         run(
             "docker",

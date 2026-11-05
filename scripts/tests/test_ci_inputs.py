@@ -589,6 +589,53 @@ def test_deployment_gate_requires_chart_helm_and_every_journey_shard(chart: str,
     assert (completed.returncode == 0) == (chart == helm == journeys == "success")
 
 
+@pytest.mark.parametrize("failure", [None, "a13n-service", "sandbox"])
+def test_deployment_image_preparation_joins_builds_before_publishing(tmp_path, monkeypatch, failure):
+    from threading import Barrier
+
+    from scripts import k8s_local
+
+    workflow = yaml.safe_load((WORKFLOWS / "ci-deploy.yml").read_text())
+    steps = workflow["jobs"]["helm"]["steps"]
+    build = next(step for step in steps if step.get("name") == "Build both checkout images alongside cluster creation")
+    ready = next(step for step in steps if step.get("name") == "Require successful cluster creation")
+    assert steps.index(build) < steps.index(ready)
+    barrier = Barrier(2)
+    finished = set()
+
+    def prepare(component, tag):
+        barrier.wait(timeout=5)
+        finished.add(component)
+        if component == failure:
+            raise RuntimeError(component)
+        return tag + "-built"
+
+    output = tmp_path / "environment"
+    monkeypatch.setenv("GITHUB_ENV", str(output))
+    monkeypatch.setattr(k8s_local, "prepare_image", prepare)
+    code = build["run"].partition("<<'PY'\n")[2].rsplit("\nPY", 1)[0]
+    if failure:
+        with pytest.raises(RuntimeError, match=failure):
+            exec(compile(code, "ci-deploy.yml", "exec"), {})
+        assert not output.exists()
+    else:
+        exec(compile(code, "ci-deploy.yml", "exec"), {})
+        assert output.read_text().splitlines() == [
+            "K8S_SERVICE_IMAGE=a13n-service:ci-built",
+            "K8S_SANDBOX_IMAGE=a13n-sandbox:ci-built",
+        ]
+    assert finished == {"a13n-service", "sandbox"}
+    for name in ("helm", "journeys"):
+        builder = next(step for step in workflow["jobs"][name]["steps"] if step.get("name") == "Set up Docker Buildx")
+        assert builder["with"]["driver"] == "docker"
+    journey_build = next(
+        step
+        for step in workflow["jobs"]["journeys"]["steps"]
+        if step.get("uses", "").startswith("docker/build-push-action@")
+    )
+    assert "cache-from" in journey_build["with"] and "cache-to" not in journey_build["with"]
+
+
 def test_harness_keeps_full_discovery_and_native_browser_coverage() -> None:
     workflow = yaml.safe_load((WORKFLOWS / "ci-a13n-harness.yml").read_text())
     job = workflow["jobs"]["harness"]

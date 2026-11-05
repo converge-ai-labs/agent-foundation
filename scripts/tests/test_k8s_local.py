@@ -491,7 +491,7 @@ def test_startup_builds_loads_and_waits_before_bootstrapping(
             scope = "ci-service" if "a13n-service" in " ".join(c) else "service-e2e-sandbox"
             assert "--load" in c
             assert f"type=gha,version=2,scope={scope}" in c
-            assert f"type=gha,version=2,scope={scope},mode=max,ignore-error=true" in c
+            assert "--cache-to" not in c  # Container and Service E2E CI own these caches.
     load = next(c for c in commands if c[:3] == ("kind", "load", "docker-image") and c[3].startswith("a13n-service:"))
     helm = next(c for c in commands if c[0] == "helm")
     assert len(builds) == (2 if environments else 1)
