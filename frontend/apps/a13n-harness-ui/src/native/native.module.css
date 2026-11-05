@@ -116,6 +116,8 @@
   overflow: auto;
 }
 .editorPage {
+  /* Keep positioned preview descendants inside the file's scroll container. */
+  position: relative;
   display: flex;
   flex-direction: column;
 }
