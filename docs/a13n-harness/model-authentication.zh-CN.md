@@ -204,7 +204,7 @@ Harness UI 和 Service 使用 `providers.model.oauth.chatgpt.ChatGPTAuthorizatio
 
 再次登录时，提供已签发的公开 `client_id` 和保留的 `id_token_hint`。回调使用 `http://127.0.0.1:<port>/auth/callback`，只有端口可变。升级前将机密 client 或托管 HTTPS 回调配置迁移为公开回环流程。已有公开 client 凭据仍可读取。
 
-用户曾拒绝订阅额度使用时，在新登录中请求同意，由用户批准。本地退出清除已保存 token，但既不撤销远端 OpenAI 访问，也不会停止使用缓存 token 的活跃 provider。远端访问在 ChatGPT 设置中管理。另见 [Service 回调配置](../a13n-service/models.md#self-hosted-callback)。
+用户曾拒绝订阅额度使用时，在新登录中请求同意，由用户批准。本地退出清除已保存 token，但既不撤销远端 OpenAI 访问，也不会停止使用缓存 token 的活跃 provider。远端访问在 ChatGPT 设置中管理。另见 [Service 回调配置](../a13n-service/model-providers.md#self-hosted-callback)。
 
 ## 身份验证失败
 

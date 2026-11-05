@@ -4,7 +4,7 @@ sidebarTitle: 内置示例
 description: 先运行本地文件示例，再了解 Envd Session 和 Docker 目标的所有权。
 ---
 
-运行 [`examples/environment-provider`](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/environment-provider)，了解谁创建目标、谁打开执行对象，以及关闭后保留什么。先用 Direct Local 完成离线文件读写，再通过其他示例引入本地守护进程、受管理的 Docker 容器或远程连接。示例使用 Harness 执行操作，使用 Service 管理 Docker，无需 agent 或模型凭据。云端后端见[云端 Provider](providers.md#cloud-providers)。
+运行 [`examples/environment-provider`](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/environment-provider)，了解谁创建目标、谁打开执行对象，以及关闭后保留什么。先用 Direct Local 完成离线文件读写，再通过其他示例引入本地守护进程、受管理的 Docker 容器或远程连接。示例使用 Harness 执行操作，使用 Service 管理 Docker，无需 agent 或模型凭据。云端后端见[云端 Provider](cloud-providers.md#cloud-providers)。
 
 ## 安装
 

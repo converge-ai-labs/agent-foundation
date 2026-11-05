@@ -25,7 +25,7 @@ description: 添加 Run 中间件，将其打包为可配置插件，并管理 E
 
 ### 包装执行并发出观察事件
 
-保存为 `plugin_demo.py`，运行 `python plugin_demo.py`。断言会检查两条观察事件与最终输出。
+保存为 `plugin_demo.py`，运行 `uv run python plugin_demo.py`。断言会检查两条观察事件与最终输出。
 
 ```python
 import asyncio
@@ -374,7 +374,7 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-运行 `python environment_extension_demo.py`，预期输出 `Extension example completed. Marker removed.`。首次文件操作准备挂载。单纯进入扩展不会准备目标；初始化需要某操作族就绪时，可从 `a13n_harness.environment` 导入 `EnvironmentReadinessRequirement`，再显式调用 `context.environment.ensure_ready(EnvironmentReadinessRequirement(operations=frozenset({"files"})))`。
+运行 `uv run python environment_extension_demo.py`，预期输出 `Extension example completed. Marker removed.`。首次文件操作准备挂载。单纯进入扩展不会准备目标；初始化需要某操作族就绪时，可从 `a13n_harness.environment` 导入 `EnvironmentReadinessRequirement`，再显式调用 `context.environment.ensure_ready(EnvironmentReadinessRequirement(operations=frozenset({"files"})))`。
 
 回调按注册顺序进入、逆序退出。成功进入后，即使后续失败或取消，`on_exit` 也会执行。如果 `on_enter` 自身在初始化中途失败，该回调负责清理已完成的部分。
 

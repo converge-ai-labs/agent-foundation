@@ -40,43 +40,22 @@ API 集合位于 `/api/v1` 下，例如 `/api/v1/agents`。凭据如何选择工
 
 在模型路径和 agent 配置中使用**模型 key**。Key 不可修改，且在工作空间内唯一：长度 1–128，由小写字母、数字、`-` 和 `.` 组成，以字母或数字开头（`^[a-z0-9][a-z0-9.-]{0,127}$`）。模型视图没有 `id`。其他资源使用带类型前缀的 ID，例如 agent 的 `ap_…` 和 skill 的 `sk_…`；修订版本也有各自的 ID。
 
-通过 API 更新时，先读取资源，再将返回的 `ETag` 放入 `If-Match`。以下用已有模型 provider 的重命名练习这个流程：
+更新前读取资源并保留 ETag，将原值作为 `If-Match` 提交。过期值返回 `412`，缺少必填值返回 `428`。按[条件更新示例](http.md#concurrency-control)操作，再次读取资源确认结果。
 
-1. 在装有 `curl` 的终端中，将 `A13N_URL` 设为 Service 源地址，`A13N_API_KEY` 设为所属主体具有 `write` 权限的工作空间密钥。将 `PROVIDER_ID` 设为你准备重命名的模型 provider ID。
-
-2. 读取 provider 及其响应头：
-
-   ```sh
-   curl --fail-with-body -sS -i "$A13N_URL/api/v1/model-providers/$PROVIDER_ID" \
-     -H "Authorization: Bearer $A13N_API_KEY"
-   ```
-
-3. 将 shell 变量 `ETAG` 设为返回的 ETag 值，保留其中的双引号。发送新名称：
-
-   ```sh
-   curl --fail-with-body -sS -i -X PATCH "$A13N_URL/api/v1/model-providers/$PROVIDER_ID" \
-     -H "Authorization: Bearer $A13N_API_KEY" \
-     -H "If-Match: $ETAG" -H "Content-Type: application/json" \
-     -d '{"name": "Project models"}'
-   ```
-
-4. 响应应为 `200` 并包含新名称。再次读取，确认保存结果；下次编辑使用新的 ETag。旧 ETag 会返回 `412`，应先读取并检查当前资源再重试。省略 `If-Match` 会返回 `428`。
-
-重命名不会改变凭据和配置。没有实际变化的更新不增加版本，也不产生审计事件。参阅[并发控制](http.md#concurrency-control)。
-
-Agent、skill 和环境模板可使用最多 32 个 `labels` 来组织资源。通过 `?label=key:value` 筛选，最多八个条件需全部匹配。Agent 和 skill 列表还接受 `q`，用于不区分大小写的名称或描述搜索，以及 `archived=true|false`。视图包含创建者、修改者 ID 和时间戳；[审计记录](identity.md#audit)记录资源变更。
+最多 32 个 `labels` 来组织资源。通过 `?label=key:value` 筛选，最多八个条件需全部匹配。Agent 和 skill 列表还接受 `q`，用于不区分大小写的名称或描述搜索，以及 `archived=true|false`。视图包含创建者、修改者 ID 和时间戳；[审计记录](identity.md#audit)记录资源变更。
 
 ## Provider
 
 Provider 保存一个配置好的后端账号。按工作需要选择类型：
 
-| 类别          | 用途                                             |
-| ------------- | ------------------------------------------------ |
-| `model`       | [模型推理](models.md)                            |
-| `web`         | [Web 搜索和抓取](tools.md#web-search-and-scrape) |
-| `environment` | [执行环境](environments.md)                      |
-| `connector`   | [Connector 连接](tools.md#composio-connections)  |
-| `memory`      | [记录型记忆](memory.md#record-memories)          |
+| 类别          | 用途                                               |
+| ------------- | -------------------------------------------------- |
+| `model`       | [模型推理](models.md)                              |
+| `web`         | [Web 搜索和抓取](tools.md#web-search-and-scrape)   |
+| `environment` | [执行环境](environments.md)                        |
+| `connector`   | [Connector 连接](tools.md#composio-connections)    |
+| `memory`      | [记录型记忆](standalone-memory.md#record-memories) |
+| `browser`     | [托管浏览器账号](browsers.md)                      |
 
 1. 打开**工作区设置 → 供应商**，选择类别，添加所需类型的 provider。
 2. 填写配置和凭据。Console 根据 `GET /api/v1/provider-types/{kind}` 构建表单：响应包含配置和凭据的 JSON Schema、凭据要求和设置链接。模型类型还描述 API 和参数；web 类型列出操作；环境类型描述配方和生命周期支持。

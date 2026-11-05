@@ -33,7 +33,7 @@ Check **Environments → Templates** before creating anything. The single-host C
 
 The socket-free quickstart has no automatic Docker setup. For source development, `make dev` enables **Local** and creates a **Local Workspace** template under the checkout's `var/dev/environments`. Each instance gets its own subdirectory. Local commands run directly as the Service process's operating-system user, without isolation.
 
-Generic Service settings leave both provisioning options off. To enable them or use a locally built image, follow [workspace provisioning configuration](configuration.md#workspace-provisioning). The `all` role prepares missing defaults at workspace creation and startup. If setup fails, repair Engine access and restart. Successful provisioning preserves subsequent template edits, disabling and deletion. It creates configuration resources; an instance is allocated when requested.
+Generic Service settings leave both provisioning options off. To enable them or use a locally built image, follow [workspace provisioning configuration](workspace-provisioning.md#workspace-provisioning). The `all` role prepares missing defaults at workspace creation and startup. If setup fails, repair Engine access and restart. Successful provisioning preserves subsequent template edits, disabling and deletion. It creates configuration resources; an instance is allocated when requested.
 
 ## Providers
 
@@ -91,7 +91,7 @@ In the template's **Environment variables**, add ordinary command defaults such 
 {"environment":{"APP_MODE":"agent","TOOL_ENDPOINT":"https://tools.example.com"}}
 ```
 
-This is a recipe fragment. Commands and their child processes receive these values. [Execution policy](agents-and-runs.md#execution-policy) and explicit command values can override them without changing the shared instance. Local also requires the names in `allowed_environment_keys`, unless that allowlist is unrestricted.
+This is a recipe fragment. Commands and their child processes receive these values. [Execution policy](execution-options.md#execution-policy) and explicit command values can override them without changing the shared instance. Local also requires the names in `allowed_environment_keys`, unless that allowlist is unrestricted.
 
 Use portable names and string values. Keep secrets in their credential or secret-binding controls: template variables are readable configuration. Platform bootstrap, desktop and telemetry names are reserved. Defaults freeze with the instance recipe; stop/start preserves them. Create a new instance to apply changed template defaults.
 
@@ -230,7 +230,7 @@ The default mount is `workspace`, or the sole user mount when there is no `works
 {"options":{"overrides":{"lazy_environment":false}}}
 ```
 
-Retries and continuations retain the accepted choice. Forks share mounts unless `fresh_environments` is selected; archiving removes the thread's mounts. Async [subagents](agents-and-runs.md#subagents) use their edge's `shared`, `dedicated` or no-environment policy. Inline children share the parent's environment.
+Retries and continuations retain the accepted choice. Forks share mounts unless `fresh_environments` is selected; archiving removes the thread's mounts. Async [subagents](agent-configuration.md#subagents) use their edge's `shared`, `dedicated` or no-environment policy. Inline children share the parent's environment.
 
 ### Reuse an instance with a project directory
 
@@ -242,90 +242,6 @@ Relative files, the mount route and command cwd use that directory. Two threads 
 
 ## Computer Use
 
-A desktop task needs three things: a compatible graphical environment, the agent's enabled **Computer** toolset, and Computer permissions on the thread mount. Prepare the desktop first, then enable observation or interaction.
+<span id="create-a-docker-desktop"></span> <span id="automatic-vercel-desktops"></span> <span id="enable-observation-and-interaction"></span> <span id="computer-coordinate-mode"></span> <span id="desktop-access-prerequisites"></span> <span id="get-and-return-desktop-control"></span> <span id="upgrade-desktop-control"></span> <span id="automatic-sprites-desktops"></span>
 
-### Create a Docker desktop
-
-1. Configure the Docker provider's **Environment operation channel** and **Host access address**. Workers must reach that address and the Docker-assigned port; Engine access is a separate connection.
-2. Create a Docker template and choose **Desktop environment**. The preset selects the desktop image, HTTP execution and desktop readiness requirement.
-3. Select the template as the agent's default environment, or create an instance and add it to a conversation.
-4. Once it is running, choose **Check desktop** in **Environments and memory**, then grant permissions below.
-
-Use loopback or an explicitly trusted private HTTP route with the matching outbound policy. Other hostnames need an explicit listen IP. For a custom graphical image compatible with Envd HTTP, set `execution: "envd_http"` and `desktop: true`. Human desktop control also needs a browser-reachable viewer route, described below.
-
-### Automatic Vercel desktops
-
-1. Add a Vercel provider with an access token. Choose **Load Vercel teams**, then select a team and project accessible to that token.
-2. Create a template with **Desktop environment → Automatic desktop**.
-3. Create an instance. The first build can take several minutes; Console shows its phase and elapsed time. Return to **Environment instances** to check progress after leaving the page.
-4. When ready, inspect the desktop preview and enable the agent's permissions.
-
-The token needs sandbox and snapshot creation, read and deletion permissions, with a lifetime suitable for unattended use. Subsequent creations reuse a validated snapshot within the same workspace, provider, credential version, team, project and build revision. Temporary builders are removed; the reusable snapshot stays in your Vercel project.
-
-### Enable observation and interaction
-
-1. Enable the agent's **Computer** toolset and save. Per-tool approvals still apply.
-2. In **Environments and memory**, open the mount's **Computer permissions**. Allow observation for screenshots, or interaction for mouse and keyboard actions.
-3. Send a new message asking the agent to describe the screen. Expand its work and choose **View screenshot** on the observation step.
-4. For an interaction task, inspect the next screenshot to confirm the application changed as intended.
-
-Computer permissions default off. Changes apply to newly accepted runs, including for `workspace`. Desktop readiness is separate: **Check desktop** probes a running instance without capturing pixels, sending input, granting permissions or starting a stopped instance. A saved step screenshot is historical; use desktop control for a live viewer.
-
-API clients update a mount with `PATCH /api/v1/threads/{thread_id}/environments/{name}` and the thread's ETag. This body permits only Computer observation:
-
-```json
-{"permission_ceiling":{"operations":["environment.computer.describe","environment.computer.observe","environment.computer.zoom"]}}
-```
-
-The action list replaces the entire permission set. Include file and execution actions you want to retain; Console's presets preserve them. Computer permissions govern Computer tools, while shell and other tools keep their separate authority.
-
-### Computer coordinate mode
-
-If the model returns relative positions, add this agent configuration fragment:
-
-```json
-{"toolsets":{"computer":{"enabled":true,"config":{"coordinate_space":"normalized_1000"}}}}
-```
-
-Pass positions from 0 to 1000 directly. Tools convert them to screenshot pixels, including both drag endpoints. Models that return pixels use the default `pixels` mode. Scroll distances and keyboard input are unchanged. Verify the application result after each action.
-
-### Desktop access prerequisites
-
-Enable `desktop: true` and `desktop_assistance: true` in the recipe. This prepares human viewing and Computer control, not an agent tool. Service has no built-in desktop-assistance request tool; an application can supply its own request workflow. Configure the agent's Computer tools and mount permissions separately. Prepare a compatible desktop-access v2 endpoint using the [provider guide](../environments/providers.md).
-
-For Docker, configure `desktop_viewer_url`, such as `wss://desktop.example/{container_id}/websockify`, routed to each container's port 6081. Engine and Envd access do not provide this browser route. Plain WS is accepted only on loopback. E2B needs an automatically prepared or compatible custom desktop template; a stock `desktop` template alone is insufficient. Other providers use their prepared supervisor and provider-specific routes. Opening the viewer does not start or extend the environment.
-
-### Get and return desktop control
-
-1. Select the **Desktop** icon beside **Browser** in an interactive conversation. The right-side panel automatically opens a read-only view of the selected environment mount.
-2. Choose **Take control** to reserve Computer input. Service blocks subsequent Computer calls and connects input once authorized. Already admitted calls may finish, including sending input.
-3. Use the desktop while files, Shell, processes, scripts, other desktops and the agent's model work continue.
-4. Choose **Renew control** when more time is needed. The default lease is five minutes; operators configure the default and request bounds through `control.desktop_control_seconds`, `control.desktop_control_min_seconds` and `control.desktop_control_max_seconds`.
-5. Choose **Return control** when finished. Service revokes input and confirms held-key/button cleanup before reopening the Computer channel.
-
-Closing the viewer or page disconnects that viewer and leaves control unchanged until explicit handback or lease expiry. Short connection grants refresh separately from the human lease. One principal controls a native desktop at a time, including when multiple environment aliases or threads share it. Read-only viewers remain independent. Browser control has its own lifecycle.
-
-Each normal model request includes the current Computer admission state for known native desktop mounts, separately from permissions and readiness. An agent that sees human control can call `computer_notify(alias="workspace")` to register for handback without attempting a blocked action. A Computer call blocked during takeover also registers the same notice automatically. Registrations deduplicate per thread and takeover; registration after handback returns `already_available` and does not subscribe to a future takeover. The agent can continue other work or finish its turn without polling. When that takeover ends, including cancellation before input was granted, the existing inbox delivers one notice to eligible callers. A later takeover does not erase that event. The notice asks the agent to check current Computer admission; it does not promise that the desktop is still available or register for a later takeover. The agent must observe the current desktop and make a new model decision before sending input; old gestures are never replayed. A settled child is not restarted. Pending questions and approvals still require their ordinary complete response batch.
-
-Unconfirmed human-viewer revocation or held-input cleanup keeps Computer access blocked for reconciliation. Failed or abandoned agent Computer calls do not delay takeover. This control boundary covers managed Computer calls, including calls inside CodeAct. It does not freeze arbitrary guest processes, Shell-launched UI automation or independent clients.
-
-### Upgrade desktop control
-
-This change replaces Run-scoped assistance and pause/resume APIs with Environment-scoped Computer control. Use a coordinated cutover:
-
-1. Stop new task and takeover admission on the old release. Drain its active workers and retained tool executions.
-2. Using the old release, revoke and reconcile every legacy desktop grant and reservation. Complete and resume legacy desktop waits, or cancel their current thread head. Keep completed historical runs unchanged. Resolve unknown cleanup before proceeding.
-3. Stop all old control and worker replicas. Back up the database, then run the schema migration once through the supported migration process. The migration refuses remaining live reservations, unresolved assistance or resumable desktop waits.
-4. Upgrade control, workers and clients together. Prepare desktop guests with protocol v2 before enabling human access. Existing v1 guests require an explicit compatible replacement or operator-managed upgrade; attachment does not upgrade them.
-5. Verify viewing, takeover and handback on a prepared target before reopening admission.
-
-Mixed old/new replicas are unsupported for this cutover. Database downgrade refuses new control or handback history that the old release cannot represent. Repair forward after new history exists.
-
-### Automatic Sprites desktops
-
-1. Add a Sprites provider with its organization and a token permitting ownership labels, execution, deletion and URL settings.
-2. Create a template with **Desktop environment** enabled.
-3. Create an instance. Each new Sprite installs Envd, desktop dependencies and Chrome. Console reports progress; return later to inspect it or retry a confirmed failure.
-4. When ready, choose **View desktop** for a snapshot. Use a conversation's desktop control for interactive access.
-
-An existing Sprite retains files and installation across sleep; a new Sprite installs again. Failed installation retains the owned target for explicit retry or deletion. Sprites has no explicit stop. Browser access uses short-lived grants and VNC authentication; the cloud API token stays in Service.
+- [Work with a desktop](computer-use.md)

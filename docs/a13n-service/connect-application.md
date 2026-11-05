@@ -1,9 +1,11 @@
 ---
 title: Connect your application
-description: Connect a server-side client, submit a message, read its result, and continue the conversation.
+description: Call an agent with a Service SDK or the HTTP API, read the result, and inspect the run in Console.
 ---
 
 Connect your application's backend to an agent you have already tested in Console. You will need the Service URL, the agent ID, and a workspace API key. If you are starting from scratch, deploy Service with the [quickstart](get-started.md), then configure and test an agent with the [Console guide](use-platform.md).
+
+After [setting up credentials](#set-up-credentials), choose the [SDK guide](#start-with-an-sdk) for your language or follow the [HTTP example](#direct-http-integration) with curl. Both paths finish with a saved result you can [inspect in Console](#inspect-the-run-in-console).
 
 ## Set up credentials
 
@@ -16,20 +18,39 @@ You can manage personal keys under **API keys** in the sidebar. A key acts in it
 
 ## Start with an SDK
 
-Use your language's quick start: [Python](https://github.com/converge-ai-labs/a13n-sdk-python/blob/main/README.md), [TypeScript](https://github.com/converge-ai-labs/a13n-sdk-typescript/blob/main/README.md), [Go](https://github.com/converge-ai-labs/a13n-sdk-go/blob/main/README.md), or [Rust](https://github.com/converge-ai-labs/a13n-sdk-rust/blob/main/README.md). Each repository owns installation, method signatures, and runnable examples. Read the documentation for the version you install and match its supported Service contract to your deployment; `main` may be ahead of a released package.
+On your server, set `A13N_URL` to the **Service URL** and `AGENT_ID` to the **Agent ID**. Use the `A13N_API_KEY` you saved above. Save this Python example as `call_agent.py`.
 
-Build the first interaction in this order:
+```python title="call_agent.py"
+import asyncio
+import os
 
-1. Initialize the client with the Service URL and API key.
-2. Start a conversation with the agent ID and a message such as “Summarize these project notes.” Give the submission an idempotency key. Retry the same submission with the same key if the response is lost.
-3. Retain the returned conversation and submission references. Your application needs to associate the result with this message, including any time the message spends queued.
-4. Read the result. Display `output` on completion, collect responses when waiting, and show the structured failure when execution fails.
+from a13n import Client
 
-Use the SDK's application workflow to follow the submission through these states. The [HTTP walkthrough below](#direct-http-integration) shows the underlying receipts and reads. A new conversation creates its session automatically, and streaming is optional when you only need the final result.
+
+async def main():
+    async with Client(os.environ["A13N_URL"], os.environ["A13N_API_KEY"]) as client:
+        agent = client.agents(os.environ["AGENT_ID"])
+        message = await agent.start("Name two colors.")
+        result = await message.result()
+        print(result.output if result.status == "completed" else result.status)
+
+
+asyncio.run(main())
+```
+
+Run it with Python 3.13 and SDK 0.0.98:
+
+```sh
+uv run --python 3.13 --with 'a13n==0.0.98' call_agent.py
+```
+
+On completion, the script prints the agent’s answer. If it prints `waiting`, [handle the pending requests](#handle-a-waiting-result). Keep `message.thread.id` to find this conversation in Console or send a follow-up.
+
+For runnable TypeScript, Go, and Rust examples, see the [SDK guides](sdks.md#choose-a-client). If your application needs to retry a submission after losing the response, save an idempotency key and the original input before sending. Reuse both on retry.
 
 ## Send a follow-up
 
-Send the next message to the same thread to continue its history. For example, follow “Summarize these project notes” with “Which task should I do first?” Keep the thread reference and give the new submission a new idempotency key. Track its result separately from the first message.
+Send the next message to the same thread to continue its history. For example, after “Name two colors,” ask “Spell the first one backwards.” Keep the thread reference and give the new submission a new idempotency key. Track its result separately from the first message.
 
 Closing the client stops local observation; Service continues the work. Use an explicit cancellation operation when you want to stop execution. Your [SDK's application guide](sdks.md#choose-a-client) owns its streaming, cleanup, and recovery calls.
 
@@ -81,7 +102,7 @@ Set `AGENT_ID` to the selected agent's `id`. Prepare one message and its idempot
 AGENT_ID=ap_replace_with_the_returned_id
 MESSAGE_KEY=$(uuidgen)
 jq -n --arg agent "$AGENT_ID" \
-  '{agent_id: $agent, payload: {content: [{type: "text", text: "What is a13n?"}]}}' > message.json
+  '{agent_id: $agent, payload: {content: [{type: "text", text: "Name two colors."}]}}' > message.json
 ```
 
 Submit the message and save the receipt. If the response is lost, repeat this request with the same body and `MESSAGE_KEY`; do not generate a new key for that retry.
@@ -138,7 +159,7 @@ After the first answer, send a follow-up to the same thread:
 ```sh
 MESSAGE_KEY=$(uuidgen)
 jq -n --arg agent "$AGENT_ID" \
-  '{agent_id: $agent, payload: {content: [{type: "text", text: "Which component should I start with?"}]}}' > message.json
+  '{agent_id: $agent, payload: {content: [{type: "text", text: "Spell the first one backwards."}]}}' > message.json
 curl --fail-with-body -sS -X POST "$A13N_URL/api/v1/threads/$THREAD_ID/inbox" \
   -H "Authorization: Bearer $A13N_API_KEY" -H "Content-Type: application/json" \
   -H "Idempotency-Key: $MESSAGE_KEY" \
@@ -146,6 +167,14 @@ curl --fail-with-body -sS -X POST "$A13N_URL/api/v1/threads/$THREAD_ID/inbox" \
 ENTRY_ID=$(jq -r '.entry.id' submitted.json)
 ```
 
-Repeat the entry and run reads for this new `ENTRY_ID`. For live updates, follow the [session stream](agents-and-runs.md#follow-a-session-stream) using `SESSION_ID`, or subscribe to [webhooks](files-and-webhooks.md#webhooks). Keep the submission IDs so reconnecting can resume observation of the same work.
+Repeat the entry and run reads for this new `ENTRY_ID`. For live updates, follow the [session stream](stream-and-read-results.md#follow-a-session-stream) using `SESSION_ID`, or subscribe to [webhooks](webhooks.md). Keep the submission IDs so reconnecting can resume observation of the same work.
 
 See [HTTP conventions](http.md) for pagination, conditional writes, and errors, and the [API reference](api-reference/index.md) for complete request and response schemas.
+
+## Inspect the run in Console
+
+1. Open **Sessions** in the workspace that issued your application's API key. Search for the thread ID from the submission receipt.
+2. Select **Inspect execution** to open Debug. Match the run ID to the run that consumed your entry. A queued entry may still be waiting for a run.
+3. Open that run’s **Details** to check its configuration, attempts, and usage. Inspect tool calls in the conversation. If the run failed, use its failure details; if it is waiting, [answer the pending requests](#handle-a-waiting-result).
+
+To continue the conversation in Console, select **Continue thread**. Your application can also [send a follow-up](#send-a-follow-up) to the same thread. See [Inspect a reply](use-platform.md#inspect-a-reply) for more ways to debug a run.

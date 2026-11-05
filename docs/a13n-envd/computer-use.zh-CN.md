@@ -5,6 +5,8 @@ description: 配对桌面，为线程授权，再通过截图引导并验证 Env
 
 Envd 让 agent 观测并操作已登录的桌面。先将设备与 Harness UI 配对，为线程授权桌面操作，再从截图开始。
 
+已有 `EIPSession` 的 Python 集成可直接使用[截图与缩放示例](#python-client)，Session 设置见 [Python EIP 客户端](python-client.md)。下文的配对与 Thread 授权步骤面向 Harness UI；其他 Host 自行管理注册和权限。
+
 ## 要求与限制
 
 选择受支持的桌面：

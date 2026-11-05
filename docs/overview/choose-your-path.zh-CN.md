@@ -22,14 +22,15 @@ description: 根据 agent 的运行位置和运维负责人，选择 Service、H
 
 ```mermaid
 flowchart TB
-    Client["Console 或你的应用"] -->|"HTTP API 或 SDK"| Service["Service 部署"]
+    Console["Console"] -->|"配置、测试、调试"| Service["Service 部署"]
+    Client["你的应用"] -->|"SDK 或 HTTP API"| Service
     Process["你的 Python 进程"]
     Workbench["Harness UI：终端或浏览器"]
     Service -->|"托管"| Harness["Harness 运行每个 agent"]
     Process -->|"嵌入"| Harness
     Workbench -->|"交互"| Harness
 
-    class Client,Process,Workbench app
+    class Console,Client,Process,Workbench app
     class Service,Harness a13n
 ```
 
@@ -46,4 +47,4 @@ Service 和 Harness UI 都内嵌 Harness。从其他应用调用 Service 部署�
 | 将 Harness 观测转换为 AG-UI 事件           | [Stream Protocol](../a13n-stream-protocol/index.md) |
 | 发行包名、导入路径和可运行示例             | [软件包目录](packages.md)                           |
 
-在[核心概念](core-concepts.md)中跟随一次 Service 对话，或通过[运维 Service](../a13n-service/operations.md)管理部署。选择 Service 客户端版本时，核对其[支持的协议约定](../a13n-service/sdks.md#keep-version-ownership-clear)是否匹配该部署。
+在[核心概念](../a13n-service/core-concepts.md)中跟随一次 Service 对话，或通过[运维 Service](../a13n-service/operations.md)管理部署。选择 Service 客户端版本时，核对其[支持的协议约定](../a13n-service/sdks.md#keep-version-ownership-clear)是否匹配该部署。

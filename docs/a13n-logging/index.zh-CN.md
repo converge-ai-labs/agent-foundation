@@ -39,6 +39,8 @@ stdout 会输出一条 JSON 记录。其 `message` 为 `job_started`，`job_id` 
 
 如果要将 stdout 留给 stdio MCP 等协议，就只向文件写日志。配置前先创建文件的父目录：
 
+`LogFile` 指定轮转文件的路径、字节上限和备份数量；配置后文件始终输出 JSON。`LogFormat` 只选择 stdout 的格式，不改变文件格式。
+
 ```python
 from pathlib import Path
 from a13n_logging import LogFile, LogFormat, configure_logging

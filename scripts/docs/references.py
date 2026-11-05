@@ -13,8 +13,13 @@ from a13n_harness.providers.environment.daytona.provider import (
     DaytonaEnvironmentConfiguration,
 )
 from a13n_harness.providers.environment.direct_local.configuration import DirectLocalEnvironmentConfiguration
+from a13n_harness.providers.environment.docker.configuration import DockerEnvironmentConfiguration
 from a13n_harness.providers.environment.docker.provider import DockerConnectionConfiguration
-from a13n_harness.providers.environment.e2b.configuration import E2BConnectionConfiguration, E2BCredential
+from a13n_harness.providers.environment.e2b.configuration import (
+    E2BConnectionConfiguration,
+    E2BCredential,
+    E2BEnvironmentConfiguration,
+)
 from a13n_harness.providers.environment.local_envd.configuration import (
     LocalEnvdEnvironmentConfiguration,
     LocalEnvdLaunchConfiguration,
@@ -43,8 +48,12 @@ from a13n_harness.providers.environment.vercel.provider import (
     VercelConnectionConfiguration,
     VercelEnvironmentConfiguration,
 )
+from a13n_service.providers.environment.recipes.daytona import DaytonaRecipe
 from a13n_service.providers.environment.recipes.docker import DockerRecipe
 from a13n_service.providers.environment.recipes.e2b import E2BRecipe
+from a13n_service.providers.environment.recipes.modal import ModalRecipe
+from a13n_service.providers.environment.recipes.sprites import SpritesRecipe
+from a13n_service.providers.environment.recipes.vercel import VercelRecipe
 from a13n_service.settings import Settings
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -152,8 +161,14 @@ ENVIRONMENT_CONFIGURATION_MODELS = (
     DirectLocalEnvironmentConfiguration,
     LocalEnvdEnvironmentConfiguration,
     LocalEnvdLaunchConfiguration,
+    DockerEnvironmentConfiguration,
     DockerRecipe,
+    E2BEnvironmentConfiguration,
     E2BRecipe,
+    DaytonaRecipe,
+    ModalRecipe,
+    VercelRecipe,
+    SpritesRecipe,
     DaytonaEnvironmentConfiguration,
     ModalEnvironmentConfiguration,
     VercelEnvironmentConfiguration,
@@ -180,27 +195,30 @@ ENVIRONMENT_CONFIGURATION_MODELS = (
 def render_environment_configuration() -> str:
     text = """---
 title: Provider configuration reference
-description: Every built-in Environment Provider configuration field, generated from the Provider models.
+description: Generated Harness execution inputs, Service management recipes, account settings, and credentials.
 ---
 
-Find your Provider's configuration model, then use its table to check field names, accepted values, and defaults. A type such as `DirectLocalRootConfiguration` has its own table below. Start with [Configure Providers](configuration.md) to assemble a recipe, backend settings, and private credentials into a working configuration.
+Choose the model for the boundary you are configuring. Harness execution inputs describe an already selected target. Service management recipes add target creation and desktop preparation. Account settings and credentials are separate from both. Use [Configure Providers](configuration.md) to assemble these inputs.
 
-A field marked **Required** must be supplied. **Default from model factory** means the model computes the value when constructed; this reference does not resolve values from your Host environment or credential store. The tables describe Provider configuration objects. For standalone daemon JSON settings, use [Envd configuration](../a13n-envd/configuration.md).
+A field marked **Required** must be supplied. **Default from model factory** means the model computes the value when constructed. The tables show field schemas, not cross-field validation or the values selected by a Host; follow the setup guide for automatic desktop defaults and valid combinations. Standalone daemon JSON uses [Envd configuration](../a13n-envd/configuration.md), not these models.
 
-The tables are generated from the built-in Provider models. Contributors changing those models regenerate the English page with `uv run --locked python scripts/docs/references.py` and synchronize the translated rows.
+These tables are generated from the selected built-in models in `scripts/docs/references.py`. Contributors regenerate them with `uv run --locked python scripts/docs/references.py` and synchronize the Chinese page. Keep each execution model distinct from its Service recipe.
 
 ## Cloud Providers
 
-Use the links to find each cloud Provider's three configuration objects. The recipe describes the target to create, backend settings select the account or endpoint, and credentials supply private authentication. For supported operations and setup examples, see [Cloud Providers](providers.md#cloud-providers).
+Choose the execution column for a fixed-target Harness connector, or the management column for a Service template. A Service recipe's automatic image or snapshot is resolved before execution. See [cloud setup and limits](cloud-providers.md) for preparation and valid desktop combinations.
 
-| Provider | Recipe | Backend | Credential |
-| --- | --- | --- | --- |
-| E2B | [E2BRecipe](#e2brecipe) | [E2BConnectionConfiguration](#e2bconnectionconfiguration) | [E2BCredential](#e2bcredential) |
-| Daytona | [DaytonaEnvironmentConfiguration](#daytonaenvironmentconfiguration) | [DaytonaConnectionConfiguration](#daytonaconnectionconfiguration) | [TokenCredential](#tokencredential) |
-| Modal | [ModalEnvironmentConfiguration](#modalenvironmentconfiguration) | [ModalConnectionConfiguration](#modalconnectionconfiguration) | [ModalCredential](#modalcredential) |
-| Vercel Sandbox | [VercelEnvironmentConfiguration](#vercelenvironmentconfiguration) | [VercelConnectionConfiguration](#vercelconnectionconfiguration) | [TokenCredential](#tokencredential) |
-| Fly.io Sprites | [SpritesEnvironmentConfiguration](#spritesenvironmentconfiguration) | [SpritesConnectionConfiguration](#spritesconnectionconfiguration) | [TokenCredential](#tokencredential) |
-| Runloop | [RunloopEnvironmentConfiguration](#runloopenvironmentconfiguration) | [RunloopConnectionConfiguration](#runloopconnectionconfiguration) | [TokenCredential](#tokencredential) |
+| Provider | Harness execution | Service management | Account | Credential |
+| --- | --- | --- | --- | --- |
+| Docker | [DockerEnvironmentConfiguration](#dockerenvironmentconfiguration) | [DockerRecipe](#dockerrecipe) | [DockerConnectionConfiguration](#dockerconnectionconfiguration) | Engine authentication |
+| E2B | [E2BEnvironmentConfiguration](#e2benvironmentconfiguration) | [E2BRecipe](#e2brecipe) | [E2BConnectionConfiguration](#e2bconnectionconfiguration) | [E2BCredential](#e2bcredential) |
+| Daytona | [DaytonaEnvironmentConfiguration](#daytonaenvironmentconfiguration) | [DaytonaRecipe](#daytonarecipe) | [DaytonaConnectionConfiguration](#daytonaconnectionconfiguration) | [TokenCredential](#tokencredential) |
+| Modal | [ModalEnvironmentConfiguration](#modalenvironmentconfiguration) | [ModalRecipe](#modalrecipe) | [ModalConnectionConfiguration](#modalconnectionconfiguration) | [ModalCredential](#modalcredential) |
+| Vercel Sandbox | [VercelEnvironmentConfiguration](#vercelenvironmentconfiguration) | [VercelRecipe](#vercelrecipe) | [VercelConnectionConfiguration](#vercelconnectionconfiguration) | [TokenCredential](#tokencredential) |
+| Fly.io Sprites | [SpritesEnvironmentConfiguration](#spritesenvironmentconfiguration) | [SpritesRecipe](#spritesrecipe) | [SpritesConnectionConfiguration](#spritesconnectionconfiguration) | [TokenCredential](#tokencredential) |
+| Runloop | [RunloopEnvironmentConfiguration](#runloopenvironmentconfiguration) | [RunloopEnvironmentConfiguration](#runloopenvironmentconfiguration) | [RunloopConnectionConfiguration](#runloopconnectionconfiguration) | [TokenCredential](#tokencredential) |
+
+Runloop uses the same configuration model for execution and management; it has no separate Service desktop recipe.
 
 """
     emitted: set[str] = set()

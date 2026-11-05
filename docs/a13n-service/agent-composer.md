@@ -17,8 +17,6 @@ You need an [enabled model](models.md) you can use and workspace `write` permiss
 
 A write uses the resource version Composer originally read. If someone changes the resource first, ask Composer to read it again and review the new proposal.
 
-For a new Console conversation with an existing Composer or Finding Agent, Console prepares the current definition before the first message when you have `write`. This also applies to **Try agent**. An explicitly pinned revision skips preparation. Without `write`, Console uses the existing default; a preparation permission error also falls back when a default exists. Other preparation errors stop submission and remain visible. Running still requires `run`. API clients prepare explicitly; deploying a new release alone does not refresh saved presets.
-
 ## Configure a provider
 
 Keep credentials in the private provider card:
@@ -90,7 +88,7 @@ For API edits, read the selected default and the original head ETag. Preserve th
 
 ## Use the toolset in your own agents
 
-A custom agent needs a model and a primary environment to use the `platform-operations` skill. This includes copies of Composer. Set a default environment template or choose a session environment before running; the skill is copied there using the ordinary [synchronization policy](skills.md#runtime-synchronization).
+A custom agent, including a copy of Composer, needs a usable model, the selected `platform-operations` built-in skill and authorized file tools. The skill is supplied through read-only Host mounts; no primary environment or workspace skill synchronization is required. [Imported workspace skills](skills.md#add-a-skill) still require a primary environment.
 
 1. Open the agent's tools and select [platform tools](tools.md#platform-tools) under **Advanced / Platform Features**.
 2. Enable `view`, `ls`, `glob` and `grep` so the agent can read the skill.
@@ -121,4 +119,8 @@ The built-in Composer reads the same packaged skill through read-only Worker mou
 
 ### Computer coordinate mode
 
-If your custom agent also uses Computer tools, choose pixel or relative coordinates in the [environment Computer configuration](environments.md#computer-coordinate-mode).
+If your custom agent also uses Computer tools, choose pixel or relative coordinates in the [environment Computer configuration](computer-use.md#computer-coordinate-mode).
+
+## Built-in preparation behavior
+
+For a new Console conversation with an existing Composer or Finding Agent, Console prepares the current definition before the first message when you have `write`. This also applies to **Try agent**. An explicitly pinned revision skips preparation. Without `write`, Console uses the existing default; a preparation permission error also falls back when a default exists. Other preparation errors stop submission and remain visible. Running still requires `run`. API clients prepare explicitly; deploying a new release alone does not refresh saved presets.

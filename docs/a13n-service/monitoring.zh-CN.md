@@ -9,11 +9,13 @@ description: 从请求追踪到运行，排查队列和投递问题，并检查�
 | ---------------------------- | ------------------------------------------------ |
 | 请求或运行为什么失败？       | [请求与运行排障](#troubleshoot-a-request-or-run) |
 | Worker 能跟上工作量吗？      | [Service 指标](#metrics)                         |
-| Agent 在一次尝试中做了什么？ | 该尝试的 [trace](agents-and-runs.md#traces)      |
+| Agent 在一次尝试中做了什么？ | 该尝试的 [trace](inspect-runs.md#traces)         |
 | 哪些 agent 或模型用量最多？  | [工作空间用量](#usage)                           |
 | 环境是否缺少 CPU 或内存？    | [环境监控](environment-monitoring.md)            |
 
 排查请求需要访问进程日志。指标需要配置抓取端点，trace 需要配置追踪后端。工作空间用量来自 PostgreSQL，可独立于这些后端使用。
+
+工作空间成员可按已有权限[检查运行](inspect-runs.md)和读取[用量](#usage)。下方日志访问与进程指标配置属于运维人员的职责。
 
 ## 排查请求或运行
 
@@ -112,7 +114,7 @@ curl --get "$A13N_URL/api/v1/usage/overview" \
   --data-urlencode "timezone=UTC"
 ```
 
-读取概览总计和每日分桶。使用相同时间范围调用 `GET /api/v1/usage/agents` 或 `/api/v1/usage/models`，得到分页明细（`limit` 和 `cursor`）。`GET /api/v1/usage` 提供运行、线程和会话汇总；参阅[用量查询](agents-and-runs.md#usage)。
+读取概览总计和每日分桶。使用相同时间范围调用 `GET /api/v1/usage/agents` 或 `/api/v1/usage/models`，得到分页明细（`limit` 和 `cursor`）。`GET /api/v1/usage` 提供运行、线程和会话汇总；参阅[用量查询](inspect-runs.md#usage)。
 
 ### Console 中的工作空间用量
 

@@ -60,7 +60,7 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-运行 `python capability_demo.py`。预期输出：
+运行 `uv run python capability_demo.py`。预期输出：
 
 ```text
 Capability instructions received.
@@ -150,7 +150,7 @@ Host 目录将精确类提供给该 builder，spec 则选择实例。仅注册�
 
 ## 常用定义 Capabilities
 
-将选定 Capability 添加到构建参数的 `capabilities` 元组。运行前检查依赖列：选择功能和提供服务是两个步骤。具体操作见[环境工具](environments.md)、[Skills](skills.md)、[记忆](context.md)和[委派](delegation-and-codeact.md)。
+将选定 Capability 添加到构建参数的 `capabilities` 元组。运行前检查依赖列：选择功能和提供服务是两个步骤。具体操作见[环境工具](environments.md)、[Skills](skills.md)、[记忆](memory.md)和[委派](delegation-and-codeact.md)。
 
 | Capability                     | 添加内容                                                             | 需要的协作对象                                       |
 | ------------------------------ | -------------------------------------------------------------------- | ---------------------------------------------------- |

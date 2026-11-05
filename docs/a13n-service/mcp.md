@@ -5,16 +5,6 @@ description: Connect an external client, update workspace resources, and investi
 
 Connect an MCP-capable client to Service to manage workspace resources and inspect execution. Start by listing agents or searching the installed documentation. Then use the same connection to read and update a resource with its returned ETag.
 
-## Internal agent tools
-
-Service-managed agents use a separate internal platform-tool catalog. The Host supplies its Run credential to `/api/v1/platform-tools/`; external workspace keys use the management connection described below. Internal tools take direct task fields and versioned deltas, return business results, and never fall back to raw API tools. For example, changing an agent model submits `agent_id`, the observed `expected_version` and `model`; the Service preserves other configuration. Schedule tools construct invocation from task instructions and execution choices. Connection secrets remain in trusted configuration or authorization flows. Internal Run credentials cannot use external management MCP or raw product HTTP as a bypass.
-
-Before Service 0.1, Service may introduce breaking changes and developers are responsible for migrating their own existing data. This internal-tool replacement is one such change: all previously normalized Agents may need complete reauthoring, including Agents whose removed tool entries were disabled. No compatibility layer, mixed-version Control/Worker operation or recovery of old Runs is promised. Before deployment, stop new admission and scheduled/manual dispatch, drain active Runs, and resolve pending approvals, waiting Runs and uncertain external-operation outcomes. Shut down the old deployment, update Control and Workers together, migrate or reauthor data, then resume admission.
-
-For Agent configuration deltas, naming `base_revision_id` also requires an explicit `make_default`; omission returns `invalid_argument`. Missing required versions fail validation and stale versions return `precondition_failed`. A conflict requires rereading and reviewing a new change, not silently refreshing an approved version.
-
-The remaining examples on this page describe the supported external management MCP contract, including its HTTP envelopes and `request_body` arguments.
-
 ## Connect with a workspace key
 
 You need an API-serving Service process (`control` or `all`), a reachable URL and a [workspace API key](identity.md#api-keys) with permission for your intended operations. Worker-only processes do not serve MCP.
@@ -41,17 +31,17 @@ For a deployment behind a proxy, set `server.public_url` to the externally reach
 
 Choose the transport for the task:
 
-| Task                                                                                                                               | Transport                                                                         |
-| ---------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| Manage agents, revisions, models, providers, skills, connections, environments, memories, asset metadata and webhook subscriptions | MCP                                                                               |
-| Configure schedules, preview times, enable/pause/archive, dispatch manually and read trigger history                               | MCP; see [schedules](schedules.md)                                                |
-| Read sessions, threads, inbox entries, runs, attempts, display content, usage, traces and spans                                    | MCP                                                                               |
-| Submit findings and read findings or analysis history                                                                              | MCP; see [execution issues](agents-and-runs.md#find-and-improve-execution-issues) |
-| Search bundled documentation                                                                                                       | MCP `search_documents`                                                            |
-| Submit agent input, resume/cancel/wait for execution, or follow live output/SSE                                                    | Direct HTTP                                                                       |
-| Upload or download files and raw binary content                                                                                    | Direct HTTP                                                                       |
-| Administer organizations, members or permissions; browser login and OAuth flows                                                    | Direct HTTP                                                                       |
-| Review findings, prepare the Finding Agent or start analysis                                                                       | Direct HTTP                                                                       |
+| Task                                                                                                                               | Transport                                                                      |
+| ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Manage agents, revisions, models, providers, skills, connections, environments, memories, asset metadata and webhook subscriptions | MCP                                                                            |
+| Configure schedules, preview times, enable/pause/archive, dispatch manually and read trigger history                               | MCP; see [schedules](schedules.md)                                             |
+| Read sessions, threads, inbox entries, runs, attempts, display content, usage, traces and spans                                    | MCP                                                                            |
+| Submit findings and read findings or analysis history                                                                              | MCP; see [execution issues](inspect-runs.md#find-and-improve-execution-issues) |
+| Search bundled documentation                                                                                                       | MCP `search_documents`                                                         |
+| Submit agent input, resume/cancel/wait for execution, or follow live output/SSE                                                    | Direct HTTP                                                                    |
+| Upload or download files and raw binary content                                                                                    | Direct HTTP                                                                    |
+| Administer organizations, members or permissions; browser login and OAuth flows                                                    | Direct HTTP                                                                    |
+| Review findings, prepare the Finding Agent or start analysis                                                                       | Direct HTTP                                                                    |
 
 Discover exact tool names and schemas from your deployment. Tools come from explicitly admitted operations in its assembled OpenAPI, including admitted Distribution extensions. Names derive from operation IDs; newly added HTTP routes appear only when explicitly admitted. MCP adds no permissions or approval authority: subscription management still needs workspace `admin`, for example.
 
@@ -152,4 +142,8 @@ curl --fail-with-body "$A13N_URL/api/v1/runs/$RUN_ID" \
 
 An assignment identifies the run handling the input; it does not confirm completion. For `completed`, read `output`. For `waiting`, collect the requested answer, approval or tool result and resume explicitly. Handle `failed` and `cancelled` separately. Follow-ups and resumes can create successor runs, so track the input and its run rather than only the conversation's first run. Client disconnection leaves execution running.
 
-For live output, follow the [session stream](agents-and-runs.md#follow-a-session-stream). Continue with [application integration](connect-application.md) for the full HTTP workflow and SDK options.
+For live output, follow the [session stream](stream-and-read-results.md#follow-a-session-stream). Continue with [application integration](connect-application.md) for the full HTTP workflow and SDK options.
+
+## Internal agent tools
+
+[Read the internal platform-tool reference](platform-tools.md#internal-agent-tools).

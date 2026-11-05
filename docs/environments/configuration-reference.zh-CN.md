@@ -1,26 +1,29 @@
 ---
 title: Provider 配置参考
-description: 从 provider 模型生成的全部内置环境 provider 配置字段。
+description: 从模型生成的 Harness 执行输入、Service 管理 recipe、账号设置与凭据。
 ---
 
-找到所用 Provider 的配置模型，再查表确认字段名、可选值和默认值。`DirectLocalRootConfiguration` 等类型在下方有单独的表格。要把目标配置、后端设置和私有凭据组合成可用配置，先读[配置 Provider](configuration.md)。
+先确认配置所在的边界。Harness 执行输入描述已经选定的目标；Service 管理 recipe 添加目标创建和桌面准备。账号设置与凭据独立于这两类输入。按[配置 Provider](configuration.md)组合这些对象。
 
-标为**必填**的字段必须提供。**默认值由模型工厂计算**表示模型在构造时计算该值；本参考页不会解析你的 Host 环境或凭据存储中的值。表格描述 Provider 配置对象。独立守护进程的 JSON 设置见 [Envd 配置](../a13n-envd/configuration.md)。
+标为**必填**的字段必须提供。**默认值由模型工厂计算**表示构造时计算默认值。表格展示字段 schema，不包含跨字段校验或 Host 最终选择的值；自动桌面默认值和有效组合按设置指南选择。独立守护进程 JSON 使用 [Envd 配置](../a13n-envd/configuration.md)，而非这些模型。
 
-表格由内置 Provider 模型生成。贡献者修改模型后，用 `uv run --locked python scripts/docs/references.py` 重新生成英文页面，并同步翻译后的表格行。
+表格由 `scripts/docs/references.py` 选定的内置模型生成。贡献者用 `uv run --locked python scripts/docs/references.py` 重新生成英文页面并同步中文。保留执行模型与对应 Service recipe 的区别。
 
 ## 云 provider
 
-通过下表链接查找各云 Provider 的三类配置对象。目标配置描述要创建的目标，后端设置选择账号或端点，凭据提供私有认证信息。支持的操作和配置示例见[云 Provider](providers.md#cloud-providers)。
+固定目标的 Harness connector 使用执行列；Service 模板使用管理列。Service recipe 中的自动镜像或快照会在执行前解析。准备步骤与有效桌面组合见[云端设置与限制](cloud-providers.md)。
 
-| Provider       | 目标配置                                                            | 后端                                                              | 凭据                                |
-| -------------- | ------------------------------------------------------------------- | ----------------------------------------------------------------- | ----------------------------------- |
-| E2B            | [E2BRecipe](#e2brecipe)                                             | [E2BConnectionConfiguration](#e2bconnectionconfiguration)         | [E2BCredential](#e2bcredential)     |
-| Daytona        | [DaytonaEnvironmentConfiguration](#daytonaenvironmentconfiguration) | [DaytonaConnectionConfiguration](#daytonaconnectionconfiguration) | [TokenCredential](#tokencredential) |
-| Modal          | [ModalEnvironmentConfiguration](#modalenvironmentconfiguration)     | [ModalConnectionConfiguration](#modalconnectionconfiguration)     | [ModalCredential](#modalcredential) |
-| Vercel Sandbox | [VercelEnvironmentConfiguration](#vercelenvironmentconfiguration)   | [VercelConnectionConfiguration](#vercelconnectionconfiguration)   | [TokenCredential](#tokencredential) |
-| Fly.io Sprites | [SpritesEnvironmentConfiguration](#spritesenvironmentconfiguration) | [SpritesConnectionConfiguration](#spritesconnectionconfiguration) | [TokenCredential](#tokencredential) |
-| Runloop        | [RunloopEnvironmentConfiguration](#runloopenvironmentconfiguration) | [RunloopConnectionConfiguration](#runloopconnectionconfiguration) | [TokenCredential](#tokencredential) |
+| Provider       | Harness 执行                                                        | Service 管理                                                        | 账号                                                              | 凭据                                |
+| -------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------- | ----------------------------------------------------------------- | ----------------------------------- |
+| Docker         | [DockerEnvironmentConfiguration](#dockerenvironmentconfiguration)   | [DockerRecipe](#dockerrecipe)                                       | [DockerConnectionConfiguration](#dockerconnectionconfiguration)   | Engine 认证                         |
+| E2B            | [E2BEnvironmentConfiguration](#e2benvironmentconfiguration)         | [E2BRecipe](#e2brecipe)                                             | [E2BConnectionConfiguration](#e2bconnectionconfiguration)         | [E2BCredential](#e2bcredential)     |
+| Daytona        | [DaytonaEnvironmentConfiguration](#daytonaenvironmentconfiguration) | [DaytonaRecipe](#daytonarecipe)                                     | [DaytonaConnectionConfiguration](#daytonaconnectionconfiguration) | [TokenCredential](#tokencredential) |
+| Modal          | [ModalEnvironmentConfiguration](#modalenvironmentconfiguration)     | [ModalRecipe](#modalrecipe)                                         | [ModalConnectionConfiguration](#modalconnectionconfiguration)     | [ModalCredential](#modalcredential) |
+| Vercel Sandbox | [VercelEnvironmentConfiguration](#vercelenvironmentconfiguration)   | [VercelRecipe](#vercelrecipe)                                       | [VercelConnectionConfiguration](#vercelconnectionconfiguration)   | [TokenCredential](#tokencredential) |
+| Fly.io Sprites | [SpritesEnvironmentConfiguration](#spritesenvironmentconfiguration) | [SpritesRecipe](#spritesrecipe)                                     | [SpritesConnectionConfiguration](#spritesconnectionconfiguration) | [TokenCredential](#tokencredential) |
+| Runloop        | [RunloopEnvironmentConfiguration](#runloopenvironmentconfiguration) | [RunloopEnvironmentConfiguration](#runloopenvironmentconfiguration) | [RunloopConnectionConfiguration](#runloopconnectionconfiguration) | [TokenCredential](#tokencredential) |
+
+Runloop 的执行与管理使用同一配置模型，没有独立的 Service 桌面 recipe。
 
 ## `DirectLocalEnvironmentConfiguration`
 
@@ -220,6 +223,40 @@ Agent 命令的默认变量。它们是可读取的普通配置，不用于存�
 | `allow_login`      | false | boolean       | default=false                       |
 | `max_script_bytes` | false | integer       | exclusiveMinimum=0; default=1048576 |
 
+## `DockerEnvironmentConfiguration`
+
+| 字段                          | 必填  | 类型 / 可选值                             | 约束与默认值                                                                     |
+| ----------------------------- | ----- | ----------------------------------------- | -------------------------------------------------------------------------------- |
+| `image`                       | false | string                                    | minLength=1; maxLength=1024; default="ghcr.io/converge-ai-labs/a13n-sandbox:dev" |
+| `execution`                   | false | "native" 或 "envd_http"                   | default="native"                                                                 |
+| `desktop`                     | false | boolean                                   | default=false                                                                    |
+| `mounts`                      | false | 数组，元素类型为 DockerMountConfiguration | default=[]                                                                       |
+| `environment`                 | false | EnvironmentVariables                      | —; 默认值由模型工厂计算                                                          |
+| `init_script`                 | false | string 或 null                            | maxLength=1048576; format="multiline"; default=null                              |
+| `disable_network`             | false | boolean                                   | default=false                                                                    |
+| `user`                        | false | string 或 null                            | minLength=1; maxLength=128; default=null                                         |
+| `shell`                       | false | string                                    | default="/bin/sh"                                                                |
+| `python`                      | false | string                                    | default="python3"                                                                |
+| `cpus`                        | false | number 或 null                            | minimum=0.001; default=null                                                      |
+| `memory_gb`                   | false | number 或 null                            | minimum=0.006291456; default=null                                                |
+| `pids_limit`                  | false | integer 或 null                           | exclusiveMinimum=0; default=null                                                 |
+| `stop_grace_seconds`          | false | integer                                   | minimum=0; maximum=300; default=10                                               |
+| `request_timeout_seconds`     | false | integer                                   | maximum=3600; exclusiveMinimum=0; default=60                                     |
+| `max_file_bytes`              | false | integer                                   | exclusiveMinimum=0; default=16777216                                             |
+| `max_query_entries`           | false | integer                                   | exclusiveMinimum=0; default=100000                                               |
+| `max_output_preview_bytes`    | false | integer                                   | exclusiveMinimum=0; default=65536                                                |
+| `max_output_bytes_per_stream` | false | integer                                   | exclusiveMinimum=0; default=16777216                                             |
+| `max_spool_bytes`             | false | integer                                   | exclusiveMinimum=0; default=67108864                                             |
+| `max_concurrent_processes`    | false | integer                                   | exclusiveMinimum=0; default=128                                                  |
+
+## `DockerMountConfiguration`
+
+| 字段        | 必填  | 类型 / 可选值 | 约束与默认值  |
+| ----------- | ----- | ------------- | ------------- |
+| `source`    | true  | string        | —             |
+| `target`    | true  | string        | format="path" |
+| `read_only` | false | boolean       | default=true  |
+
 ## `DockerRecipe`
 
 | 字段                          | 必填  | 类型 / 可选值                  | 约束与默认值                                                                     |
@@ -249,13 +286,24 @@ Agent 命令的默认变量。它们是可读取的普通配置，不用于存�
 | `desktop_viewer_url`          | false | string 或 null                 | maxLength=2048; default=null                                                     |
 | `pull_policy`                 | false | "never", "if_missing"          | default="if_missing"                                                             |
 
-## `DockerMountConfiguration`
+## `E2BEnvironmentConfiguration`
 
-| 字段        | 必填  | 类型 / 可选值 | 约束与默认值  |
-| ----------- | ----- | ------------- | ------------- |
-| `source`    | true  | string        | —             |
-| `target`    | true  | string        | format="path" |
-| `read_only` | false | boolean       | default=true  |
+| 字段                        | 必填  | 类型 / 可选值         | 约束与默认值                                              |
+| --------------------------- | ----- | --------------------- | --------------------------------------------------------- |
+| `template`                  | false | string                | minLength=1; maxLength=256; default="base"                |
+| `execution`                 | false | "native", "envd_http" | default="native"                                          |
+| `desktop`                   | false | boolean               | default=false                                             |
+| `environment`               | false | EnvironmentVariables  | —; 默认值由模型工厂计算                                   |
+| `root`                      | false | string                | default="/home/user"                                      |
+| `user`                      | false | string                | `pattern="^[a-z_][a-z0-9_-]{0,63}$"`; default="user"      |
+| `python`                    | false | string                | default="/usr/bin/python3"                                |
+| `request_timeout_seconds`   | false | number                | maximum=300; exclusiveMinimum=0; default=30               |
+| `allow_internet_access`     | false | boolean               | default=true                                              |
+| `max_file_bytes`            | false | integer               | maximum=1073741824; exclusiveMinimum=0; default=104857600 |
+| `max_observation_bytes`     | false | integer               | maximum=16777216; exclusiveMinimum=0; default=1048576     |
+| `max_active_observations`   | false | integer               | maximum=1024; exclusiveMinimum=0; default=128             |
+| `max_retained_output_bytes` | false | integer               | maximum=1073741824; exclusiveMinimum=0; default=134217728 |
+| `max_query_entries`         | false | integer               | maximum=100000; exclusiveMinimum=0; default=10000         |
 
 ## `E2BRecipe`
 
@@ -277,6 +325,66 @@ Agent 命令的默认变量。它们是可读取的普通配置，不用于存�
 | `max_query_entries`         | false | integer               | maximum=100000; exclusiveMinimum=0; default=10000         |
 | `desktop_assistance`        | false | boolean               | default=false                                             |
 | `timeout_seconds`           | false | integer               | minimum=30; maximum=86400; default=3600                   |
+
+## `DaytonaRecipe`
+
+| 字段                      | 必填  | 类型 / 可选值        | 约束与默认值                                 |
+| ------------------------- | ----- | -------------------- | -------------------------------------------- |
+| `snapshot`                | false | string               | minLength=1; maxLength=256; default="auto"   |
+| `desktop`                 | false | boolean              | default=false                                |
+| `environment`             | false | EnvironmentVariables | —; 默认值由模型工厂计算                      |
+| `request_timeout_seconds` | false | number               | maximum=600; exclusiveMinimum=0; default=120 |
+| `desktop_assistance`      | false | boolean              | default=false                                |
+
+## `ModalRecipe`
+
+| 字段                      | 必填  | 类型 / 可选值        | 约束与默认值                                 |
+| ------------------------- | ----- | -------------------- | -------------------------------------------- |
+| `image`                   | false | string               | minLength=1; maxLength=256; default="auto"   |
+| `desktop`                 | false | boolean              | default=false                                |
+| `environment`             | false | EnvironmentVariables | —; 默认值由模型工厂计算                      |
+| `request_timeout_seconds` | false | number               | maximum=600; exclusiveMinimum=0; default=120 |
+| `timeout_seconds`         | false | integer              | minimum=300; maximum=86400; default=86400    |
+| `cpu`                     | false | number               | maximum=64; exclusiveMinimum=0; default=1    |
+| `memory`                  | false | integer              | minimum=128; maximum=262144; default=1024    |
+| `desktop_assistance`      | false | boolean              | default=false                                |
+
+## `VercelRecipe`
+
+| 字段                      | 必填  | 类型 / 可选值         | 约束与默认值                                                                        |
+| ------------------------- | ----- | --------------------- | ----------------------------------------------------------------------------------- |
+| `environment`             | false | EnvironmentVariables  | —; 默认值由模型工厂计算                                                             |
+| `root`                    | false | string                | default="/vercel/sandbox"                                                           |
+| `python`                  | false | string                | default="/vercel/runtimes/python/bin/python3"                                       |
+| `shell`                   | false | string                | default="/bin/bash"                                                                 |
+| `request_timeout_seconds` | false | number                | maximum=600; exclusiveMinimum=0; default=120                                        |
+| `max_file_bytes`          | false | integer               | maximum=67108864; exclusiveMinimum=0; default=16777216                              |
+| `max_query_entries`       | false | integer               | maximum=100000; exclusiveMinimum=0; default=10000                                   |
+| `max_output_bytes`        | false | integer               | maximum=16777216; exclusiveMinimum=0; default=1048576                               |
+| `execution`               | false | "native", "envd_http" | default="native"                                                                    |
+| `snapshot`                | false | string 或 null        | minLength=1; maxLength=256; `pattern="^(auto\|snap_[A-Za-z0-9_-]+)$"`; default=null |
+| `desktop`                 | false | boolean               | default=false                                                                       |
+| `runtime`                 | false | string                | minLength=1; maxLength=128; default="python3.13"                                    |
+| `timeout_seconds`         | false | integer               | minimum=300; maximum=18000; default=3600                                            |
+| `vcpus`                   | false | integer               | minimum=2; maximum=8; default=2                                                     |
+| `desktop_assistance`      | false | boolean               | default=false                                                                       |
+
+## `SpritesRecipe`
+
+| 字段                      | 必填  | 类型 / 可选值         | 约束与默认值                                           |
+| ------------------------- | ----- | --------------------- | ------------------------------------------------------ |
+| `environment`             | false | EnvironmentVariables  | —; 默认值由模型工厂计算                                |
+| `root`                    | false | string                | default="/home/sprite"                                 |
+| `python`                  | false | string                | default="python3"                                      |
+| `shell`                   | false | string                | default="/bin/bash"                                    |
+| `request_timeout_seconds` | false | number                | maximum=600; exclusiveMinimum=0; default=120           |
+| `max_file_bytes`          | false | integer               | maximum=67108864; exclusiveMinimum=0; default=16777216 |
+| `max_query_entries`       | false | integer               | maximum=100000; exclusiveMinimum=0; default=10000      |
+| `max_output_bytes`        | false | integer               | maximum=16777216; exclusiveMinimum=0; default=1048576  |
+| `region`                  | false | string 或 null        | maxLength=64; default=null                             |
+| `execution`               | false | "native", "envd_http" | default="native"                                       |
+| `desktop`                 | false | boolean               | default=false                                          |
+| `desktop_assistance`      | false | boolean               | default=false                                          |
 
 ## `DaytonaEnvironmentConfiguration`
 

@@ -1,5 +1,5 @@
 ---
-title: SDKs and CLI
+title: Service SDKs and CLI
 description: Choose a Service client and build your first conversation against a running deployment.
 ---
 
@@ -21,27 +21,11 @@ The remote CLI belongs to the Rust SDK repository and has its own executable and
 
 ## Connect to your deployment
 
-1. Get the deployment's Service URL and select a configured agent in Console. The URL must be reachable from your application's runtime.
-2. Choose credentials for the intended workspace. A workspace API key selects its own workspace; a login session uses an explicit workspace ID. Keep API keys in server-side configuration. See [identity and access](identity.md) for credential setup.
-3. Follow the selected client's installation and initialization instructions at the version you use.
-4. Send one message and display its answer before adding streaming, tools, or resource management. [Connect your application](connect-application.md) walks through this first conversation and its HTTP equivalent.
-
-For browser applications, follow the client's browser authentication instructions and the Service [workspace and CSRF rules](http.md#authentication). For a new Service deployment, start with [Get started](get-started.md).
+Use the Service URL, agent ID, and workspace credentials from [Connect your application](connect-application.md#set-up-credentials). Follow your client’s quick start above to install and initialize it. For browser clients, check the [workspace and CSRF rules](http.md#authentication).
 
 ## Invoke an agent
 
-Start with the client's high-level conversation workflow. Use its low-level typed API when you need explicit resource operations or direct control over HTTP requests. Both use the same Service authorization and execution rules; exact method names and return types belong to the selected client's guide.
-
-Build each message exchange around one submission:
-
-1. Submit input with an idempotency key. Preserve the submission receipt and thread reference so a retry or reconnect can find the same work.
-2. Wait for the run that incorporates that input, including any queue time. The [entry tracking walkthrough](connect-application.md#read-the-result) explains why an assigned entry is not yet a consumed entry.
-3. Handle the outcome: display a completed answer, collect explicit responses for a wait, or report failure or cancellation. Waiting responses continue execution in a successor run.
-4. Send a follow-up to the retained thread as a new submission. Keep its result separate from the earlier exchange.
-
-Add streaming when your application needs progress while work runs. Live output is provisional and can have gaps; use the saved result and committed run items for readback. A session stream can span multiple runs, so use the submission's entry and run IDs to select the work your screen is displaying.
-
-Follow the client's guide to close streams and release local resources. A local timeout or disconnect stops observation, while Service continues execution. Cancel the run explicitly when stopping the work is the intended action. The application guides cover waiting actions, files, memory, authentication, and recovery; the CLI workflow guide covers shell usage and scripting.
+Use the SDK’s conversation workflow to send a message and wait for its saved result. Keep the thread reference for follow-ups. Follow [Connect your application](connect-application.md) to correlate queued input, handle a wait, or find the same run in Console. If you need resource operations or raw request control, use the typed API documented in your SDK repository.
 
 ## Keep version ownership clear
 

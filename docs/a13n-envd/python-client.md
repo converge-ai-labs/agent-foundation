@@ -92,7 +92,7 @@ Keep one `EIPDeviceConnection` alive for every adapter borrowing its Sessions. I
 Initialization also accepts a client name/version, `initialization_timeout=10.0`, `request_timeout=None` and per-Session `max_in_flight=32`. Device methods separate discovery from execution:
 
 - `descriptor` reads cached Device information; `describe()` fetches a fresh view. Both expose system information, path style, default directory and directory-discovery availability.
-- `metrics()` reads the latest cached sample when `device.metrics` is advertised. It opens no Session and starts no collection; `sample` remains `None` until the first collection completes. See [monitoring and sample semantics](configuration.md#system-information-and-resource-monitoring).
+- `metrics()` reads the latest cached sample when `device.metrics` is advertised. It opens no Session and starts no collection; `sample` remains `None` until the first collection completes. See [monitoring and sample semantics](monitoring.md#system-information-and-resource-monitoring).
 - `list_directories(DirectoryListParams(...))` lists one directory level with an absolute path, offset, limit, expected Device ID and generation. It opens no Session.
 - `open_session(working_directory=None, egress=None, required_methods=(), readiness_timeout=10.0)` creates a fresh Session. Omitted cwd selects the Device default. Supply `egress` for controlled Devices; other modes reject it. `required_methods` checks compatibility rather than granting permissions.
 - `attach_session(descriptor)` explicitly attaches to the exact existing Session in the same Device generation during disconnect grace. Operations and transfers are not replayed or resumed.

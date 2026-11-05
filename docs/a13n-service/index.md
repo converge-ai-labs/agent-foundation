@@ -4,7 +4,7 @@ sidebarTitle: Overview
 description: Build an agent in Console, share it with your team, and run it from your application.
 ---
 
-Service runs agents for your team and applications. Build an agent in Console, try it in a conversation, then call the same agent through the HTTP API. Service manages access, saves conversation history, and keeps accepted work running when a client disconnects.
+Service runs agents on your infrastructure and manages access, execution, and conversation history. In Console, its browser interface, configure an agent and test it in a conversation. Call the same agent from your application through a Service SDK or the HTTP API. Return to Console to inspect the run, its tool calls, and its usage. Service keeps accepted work running when a client disconnects.
 
 ## Start here
 
@@ -18,7 +18,7 @@ Choose the path that matches what you already have:
 
 ## Build an agent for your work
 
-Start with one model and instructions. For example, create an agent that turns project notes into concrete next steps. Test its response before adding more resources.
+Start with a model and instructions. Test the response in Console, then add the resources the agent needs.
 
 | Add this when the task needs it                   | Guide                                    |
 | ------------------------------------------------- | ---------------------------------------- |

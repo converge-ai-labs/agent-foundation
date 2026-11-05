@@ -4,7 +4,7 @@ sidebarTitle: Built-in examples
 description: Run the local file example, then explore Envd Sessions and Docker target ownership.
 ---
 
-Run [`examples/environment-provider`](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/environment-provider) to see who creates a target, who opens an execution, and what remains after close. Start with Direct Local for an offline file round trip. The other examples add a local daemon, a managed Docker container, or a remote connection. They use Harness for execution and Service for Docker management, without an Agent or model credentials. Cloud backends are covered in [Cloud Providers](providers.md#cloud-providers).
+Run [`examples/environment-provider`](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/environment-provider) to see who creates a target, who opens an execution, and what remains after close. Start with Direct Local for an offline file round trip. The other examples add a local daemon, a managed Docker container, or a remote connection. They use Harness for execution and Service for Docker management, without an Agent or model credentials. Cloud backends are covered in [Cloud Providers](cloud-providers.md#cloud-providers).
 
 ## Install
 

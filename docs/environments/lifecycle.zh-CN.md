@@ -106,4 +106,4 @@ async with await definition.open_provider(
 
 控制面失败表示证据不可用，不证明目标不存在。要重新连接，显式打开新的 execution 或替换 Harness 挂载。在新 execution 中使用新的进程、输出和电脑操作引用。
 
-Envd 可通过 [Host 恢复提示](remote-envd.md#state-concurrency-and-recovery)重新附加保留的 Session。该提示独立于可移植目标状态；重新附加既不重放操作，也不恢复旧 execution 引用。停止、文件保留和到期行为见 [Provider 对比](providers.md#reconnection-and-lifecycle)。
+Envd 可通过 [Host 恢复提示](remote-envd.md#state-concurrency-and-recovery)重新附加保留的 Session。该提示独立于可移植目标状态；重新附加既不重放操作，也不恢复旧 execution 引用。停止、文件保留和到期行为见 [Provider 对比](cloud-providers.md#reconnection-and-lifecycle)。

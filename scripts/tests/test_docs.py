@@ -146,6 +146,17 @@ def test_ui_http_input_examples_match_current_schemas() -> None:
     assert len(bodies) == 2
     CreateThreadRequest.model_validate_json(bodies[0])
     SubmitRequest.model_validate_json(bodies[1])
+    project_example = quickstart.split("### Give the conversation a Project", 1)[1].split(
+        "### Change a running operation", 1
+    )[0]
+    project_body = next(
+        token.content
+        for token in MarkdownIt().parse(project_example)
+        if token.type == "fence" and token.info.split()[:1] == ["json"]
+    )
+    project_thread = CreateThreadRequest.model_validate_json(project_body)
+    assert project_thread.defaults is not None
+    assert project_thread.defaults.project_id == "project-main"
     for heading in ("## Run-only execution environment", "### Ordered input bodies"):
         section = text.split(heading, 1)[1]
         match = re.search(r"^```json\n(.*?)^```", section, re.MULTILINE | re.DOTALL)
@@ -155,11 +166,14 @@ def test_ui_http_input_examples_match_current_schemas() -> None:
             RootSteerRequest.model_validate_json(match[1])
 
 
-def test_content_plugin_authoring_examples_match_current_schemas() -> None:
-    text = (ROOT / "docs/a13n-harness-ui/skills-and-content-plugins.md").read_text(encoding="utf-8")
+@pytest.mark.parametrize("suffix", ["", ".zh-CN"])
+def test_content_plugin_authoring_examples_match_current_schemas(suffix: str) -> None:
+    text = (ROOT / f"docs/a13n-harness-ui/skills-and-content-plugins{suffix}.md").read_text(encoding="utf-8")
     checked = 0
-    for block in re.findall(r"^```yaml\n(.*?)^```", text, re.MULTILINE | re.DOTALL):
-        value = yaml.safe_load(block)
+    for token in MarkdownIt().parse(text):
+        if token.type != "fence" or token.info.split()[:1] != ["yaml"]:
+            continue
+        value = yaml.safe_load(token.content)
         if not isinstance(value, dict) or "schema_version" not in value:
             continue
         if "plugins" in value:

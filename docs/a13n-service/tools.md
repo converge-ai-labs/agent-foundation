@@ -3,36 +3,36 @@ title: Tools and connections
 description: Select tools for an agent, connect an external service, and verify a tool call.
 ---
 
-Start with an agent that can [answer a message](use-platform.md). Add one tool source, save the agent's [revision](agents-and-runs.md#agent-configuration), then ask it to perform a small task and inspect the tool result.
+Start with an agent that can [answer a message](use-platform.md). Add one tool source, save the agent's [revision](agent-configuration.md#agent-configuration), then ask it to perform a small task and inspect the tool result.
 
 Choose the source by where the operation runs:
 
-| Task                                      | Source                            | Setup                                                                                                                     |
-| ----------------------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| Read files, run commands or use a desktop | Built-in toolsets                 | Mount an [environment](environments.md) and enable the required actions                                                   |
-| Search or retrieve web content            | Web tools                         | Select a web provider for search and scrape                                                                               |
-| Read or change Service resources          | [Platform tools](#platform-tools) | Enable the relevant group and set tool permissions                                                                        |
-| Call a remote MCP server or connected app | [Connections](#connections)       | Create, authorize and test a workspace connection                                                                         |
-| Call a function in your application       | Client tools                      | Declare its schema, handle `pending.calls`, then [resume with the results](agents-and-runs.md#client-tools-and-questions) |
-| Teach an agent a workflow                 | [Skills](skills.md)               | Attach instructions and files alongside the tools the workflow needs                                                      |
+| Task                                      | Source                            | Setup                                                                                                                         |
+| ----------------------------------------- | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Read files, run commands or use a desktop | Built-in toolsets                 | Mount an [environment](environments.md) and enable the required actions                                                       |
+| Search or retrieve web content            | Web tools                         | Select a web provider for search and scrape                                                                                   |
+| Read or change Service resources          | [Platform tools](#platform-tools) | Enable the relevant group and set tool permissions                                                                            |
+| Call a remote MCP server or connected app | [Connections](#connections)       | Create, authorize and test a workspace connection                                                                             |
+| Call a function in your application       | Client tools                      | Declare its schema, handle `pending.calls`, then [resume with the results](agent-configuration.md#client-tools-and-questions) |
+| Teach an agent a workflow                 | [Skills](skills.md)               | Attach instructions and files alongside the tools the workflow needs                                                          |
 
-Set [tool permissions](agents-and-runs.md#tool-permissions) in the revision: allow, ask for approval, use model review, or deny. A selected tool also needs its underlying resource and runtime permissions.
+Set [tool permissions](agent-configuration.md#tool-permissions) in the revision: allow, ask for approval, use model review, or deny. A selected tool also needs its underlying resource and runtime permissions.
 
 ## Built-in toolsets
 
 Use `GET /api/v1/toolsets` to inspect your deployment's tool keys, model-visible names, defaults and configuration schemas. Select tools by those keys; for example, the terminal's `exec` key exposes `shell_exec` to the model.
 
-| Toolset    | Use                                              | Default and prerequisite                                                      |
-| ---------- | ------------------------------------------------ | ----------------------------------------------------------------------------- |
-| `files`    | Read, search, write and organize files           | Enabled; requires a mounted environment                                       |
-| `shell`    | Start commands and inspect or control processes  | Enabled; requires a mounted environment with the relevant actions             |
-| `computer` | Observe and interact with a desktop              | Disabled; requires a compatible desktop and explicit mount permissions        |
-| `web`      | `search`, `scrape`, `fetch`, `download`          | Each tool disabled; enable individually                                       |
-| `memory`   | Read and update file or record memories          | Enabled; requires a matching memory mount                                     |
-| `assets`   | Publish an environment file with `publish_asset` | Disabled; produces a workspace asset                                          |
-| `browser`  | Observe and operate a managed browser            | Disabled; requires a [browser binding](browsers.md) and a registered supplier |
+| Toolset    | Use                                              | Default and prerequisite                                                                                   |
+| ---------- | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
+| `files`    | Read, search, write and organize files           | Enabled; user files require an environment; built-in skill files use Host mounts                           |
+| `shell`    | Start commands and inspect or control processes  | Enabled; user files require an environment; built-in skill files use Host mounts with the relevant actions |
+| `computer` | Observe and interact with a desktop              | Disabled; requires a compatible desktop and explicit mount permissions                                     |
+| `web`      | `search`, `scrape`, `fetch`, `download`          | Each tool disabled; enable individually                                                                    |
+| `memory`   | Read and update file or record memories          | Enabled; requires a matching memory mount                                                                  |
+| `assets`   | Publish an environment file with `publish_asset` | Disabled; produces a workspace asset                                                                       |
+| `browser`  | Observe and operate a managed browser            | Disabled; requires a [browser binding](browsers.md) and a registered supplier                              |
 
-After selecting file or terminal tools, mount an [environment](environments.md) before testing the agent. For desktop setup and screenshot previews, follow [Computer Use](environments.md#computer-use). A [memory](memory.md) mounted as `read` exposes only viewing, listing and searching; writable mounts offer the matching mutation tools. Published files become [assets](files-and-webhooks.md#assets).
+For user files or terminal commands, mount an [environment](environments.md) before testing the agent. Built-in skill documents use read-only Host mounts and need no user environment. For desktop setup and screenshot previews, follow [Computer Use](computer-use.md#computer-use). A [memory](memory.md) mounted as `read` exposes only viewing, listing and searching; writable mounts offer the matching mutation tools. Published files become [assets](files-and-webhooks.md#assets).
 
 ## Platform tools
 
@@ -49,7 +49,7 @@ Enable the required group under **Advanced / Platform Features** in the agent's 
 | `providers`             | Providers and tests of saved connections                             |
 | `execution`             | Read sessions, threads, runs, traces and findings; submit findings   |
 
-Platform calls use the run's short-lived credential within the authority of the person or key that started it. Each operation uses its MCP tool name as its configuration key. The `inherit` permission means `allow` for reads and `ask` for writes. The only write in `execution` is `POST /api/v1/findings`; choose one primary [finding category](agents-and-runs.md#find-and-improve-execution-issues) per issue.
+Platform calls use the run's short-lived credential within the authority of the person or key that started it. Each operation uses its MCP tool name as its configuration key. The `inherit` permission means `allow` for reads and `ask` for writes. The only write in `execution` is `POST /api/v1/findings`; choose one primary [finding category](inspect-runs.md#find-and-improve-execution-issues) per issue.
 
 Use the [Agent Composer example](agent-composer.md#use-the-toolset-in-your-own-agents) to pair platform tools with their operating skill. Verify a read first, then test the approval path for any writes you enabled.
 
@@ -134,26 +134,7 @@ Service keeps the MCP client for one execution attempt and checks current connec
 
 ### MCP Apps for embedding applications
 
-An embedding application can render an MCP App from a tool result. Service saves the original arguments, declaration and full result, including `_meta`; it fetches HTML when the application opens the App. Console does not render Apps.
-
-For live output:
-
-1. Subscribe to `GET /api/v1/sessions/{session_id}/stream`.
-2. Treat a delta containing `a13n.mcp_apps` as a loading reference. Even `unavailable: false` is provisional here.
-3. Wait for `app_ready`, which confirms that the original data and reference are committed. Identify each App by `(run_id, app_id)`; readiness events can repeat after reconnect.
-4. Open the App using the event's `run_id` and `apps[].app_id`.
-
-The event follows committed `items` after a checkpoint containing the App; the run need not have finished. Failed publication produces an unavailable reference and no ready event. Available committed references loaded from `GET /api/v1/runs/{run_id}/items` can be opened directly, including after a disconnected run has ended. The thread stream does not emit `app_ready`.
-
-| Request                                                   | Body                                  | Result                                          |
-| --------------------------------------------------------- | ------------------------------------- | ----------------------------------------------- |
-| `POST /api/v1/runs/{run_id}/apps/{app_id}/open`           | None                                  | Saved original data and current HTML            |
-| `POST /api/v1/runs/{run_id}/apps/{app_id}/tools/call`     | `{"name":"increment","arguments":{}}` | Raw MCP result under `result`                   |
-| `POST /api/v1/runs/{run_id}/apps/{app_id}/resources/read` | `{"uri":"ui://counter/app.html"}`     | Current HTML and metadata for the saved App URI |
-
-Each request uses a fresh MCP client and current access checks. Opening never repeats the original tool; servers requiring the worker's original MCP session are unsupported. Button calls must satisfy the original agent's tool selection and permission, the current connection's selection, and App visibility. Operations requiring approval or model review are refused. Deployments with an admission policy also need explicit App admission support.
-
-Create the iframe, enforce resource CSP and isolation, and supply the original arguments and result through your MCP App bridge. Your application owns view state and submits context or messages through the existing run API. Follow-up tool results stay with the caller; they do not replace the original or enter model history. Calls are not retried automatically: inspect external state before retrying `outcome_unknown`. HTML is fetched afresh and may differ from the version that produced an old result. When upgrading to checkpoint format 4, upgrade control processes and readers before starting new workers.
+- [Embed MCP Apps](mcp-apps.md)
 
 ### OAuth
 
@@ -217,7 +198,7 @@ Select **Discover tools on demand** under **Tool availability** in Console. The 
 
 In JSON, use `"tool_search": {"automatic": {}}`. Automatic `capabilities` defaults to `["browser", "computer"]`; add `files`, `shell` (Terminal), `web`, `memory` or `assets` as needed. `connections` defaults to true; set it to false to keep all MCP connections direct. `exclude_connections` excludes specific connection IDs, and `exclude_platform: true` keeps platform tools direct. Omit `automatic` to use explicit `groups`. Use separate `files`, `shell` and `computer` selectors; `environment` is not accepted. `GET /toolsets` returns the current automatic policy as `discovery_defaults` and the source metadata as `discovery_sources`. Include `connection_ids` to obtain selected connection descriptions and stable group names. Reordering or renaming connections does not change these names. If any requested connection is unknown or outside the workspace, the catalog request returns `404 not_found`.
 
-**Service breaking change:** replace any `environment` entry in a discovery group's `capabilities` with `files`, `shell` and `computer` (or the subset you need). Operators must repair affected stored Agent revisions and frozen Run, Inbox and Schedule configurations themselves. Service does not migrate or translate them. Individual reads and reuse of incompatible records return `409 conflict` with `reason: configuration_unavailable` and the affected resource ID. Agent revision, Inbox and Schedule lists keep valid items and identify incompatible records in `unavailable`; follow `next_cursor` even when `items` is empty. Session thread frames report incompatible runs and open entries in the same way so other threads continue to refresh. This selector change does not change standalone Harness or Harness UI configuration.
+Upgrading an existing deployment? Check [Tool-discovery selectors](upgrade-notes.md#tool-discovery-selectors).
 
 This fragment groups a selected connection. Replace `conn_...` in both places:
 
@@ -237,13 +218,13 @@ This fragment groups a selected connection. Replace `conn_...` in both places:
 
 The model searches with `discover_tools`, reads definitions with `describe_tool`, and calls members through `call_tool`. `list_tool_groups` lists groups; `list_tools(detail="full")` and `next_offset` page through definitions. Member schemas stay out of later model requests, while execution keeps the original credentials, caller headers and permissions.
 
-Groups accept selected `connections`, `plugins` by instance name, `capabilities` (`environment`, `web`), and `platform: true` for enabled platform tools. A source belongs to at most one group. Names start with a letter, contain at most 32 letters, digits, underscores or hyphens, and exclude `__`.
+Groups accept selected `connections`, `plugins` by instance name, `capabilities` (`files`, `shell`, `computer`, `browser`, `web`, `memory`, `assets`), and `platform: true` for enabled platform tools. A source belongs to at most one group. Names start with a letter, contain at most 32 letters, digits, underscores or hyphens, and exclude `__`.
 
 Ungrouped sources stay directly exposed. Keep tools requiring approval/resume direct; `client_tools` retain their external-call protocol. Each child agent uses its own revision's groups. A run override replaces the whole `tool_search` block; `groups: {}` disables grouping. See [Harness ToolSearch](../a13n-harness/tool-search.md) for optional `config`, control names and pagination limits.
 
 ### Caller headers
 
-Put non-credential context, such as a conversation ID, in the thread's `mcp_headers`: `{connection_id: {header: value}}`. A run captures the map when accepted; edits affect later runs. Connection authentication headers cannot be overridden. Follow the [caller headers example](agents-and-runs.md#caller-headers).
+Put non-credential context, such as a conversation ID, in the thread's `mcp_headers`: `{connection_id: {header: value}}`. A run captures the map when accepted; edits affect later runs. Connection authentication headers cannot be overridden. Follow the [caller headers example](execution-options.md#caller-headers).
 
 ## MCP server suggestions
 

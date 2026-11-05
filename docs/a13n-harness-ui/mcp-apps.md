@@ -3,7 +3,7 @@ title: Interactive MCP Apps
 description: Enable an MCP App, interact with its result, and configure a separate sandbox origin for remote WebUI.
 ---
 
-MCP Apps turn tool results into interactive cards in WebUI. For example, a counter can keep responding to clicks after the Agent finishes, using the same MCP server connection. This is a result interface, separate from [Host browser control](webui.md#browse-on-the-host).
+MCP Apps turn tool results into interactive cards in WebUI. For example, a counter can keep responding to clicks after the Agent finishes, using the same MCP server connection. This is a result interface, separate from [Host browser control](host-browser.md#browse-on-the-host).
 
 ## Enable Apps for selected servers
 

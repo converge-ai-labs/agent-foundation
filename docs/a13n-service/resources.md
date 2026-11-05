@@ -40,29 +40,7 @@ Use the resource's retirement operation when you no longer need it:
 
 Use a **model key** in model paths and agent configuration. Keys are immutable and workspace-unique: 1–128 lowercase letters, digits, `-` and `.`, starting with a letter or digit (`^[a-z0-9][a-z0-9.-]{0,127}$`). Model views have no `id`. Other resources use kind-prefixed IDs, such as `ap_…` for an agent and `sk_…` for a skill; revisions have their own IDs.
 
-For an API update, read the resource first and use its returned `ETag` in `If-Match`. Try renaming an existing model provider:
-
-1. In a terminal with `curl`, set `A13N_URL` to the Service origin and `A13N_API_KEY` to a workspace key whose principal has `write`. Set `PROVIDER_ID` to the ID of a model provider you intend to rename.
-
-2. Read the provider and its response headers:
-
-   ```sh
-   curl --fail-with-body -sS -i "$A13N_URL/api/v1/model-providers/$PROVIDER_ID" \
-     -H "Authorization: Bearer $A13N_API_KEY"
-   ```
-
-3. Set the shell variable `ETAG` to the returned ETag value, including its double quotes. Send the changed name:
-
-   ```sh
-   curl --fail-with-body -sS -i -X PATCH "$A13N_URL/api/v1/model-providers/$PROVIDER_ID" \
-     -H "Authorization: Bearer $A13N_API_KEY" \
-     -H "If-Match: $ETAG" -H "Content-Type: application/json" \
-     -d '{"name": "Project models"}'
-   ```
-
-4. Expect `200` and the new name. Repeat the read to confirm the saved result and use the new ETag for another edit. A stale ETag returns `412`; read and review the current resource before retrying. Omitting `If-Match` returns `428`.
-
-The rename leaves credentials and configuration unchanged. A no-op update keeps the version and records no audit event. See [Concurrency control](http.md#concurrency-control).
+Read the current resource and retain its ETag before an update. Send that exact value as `If-Match`; a stale value returns `412`, and a missing required value returns `428`. Follow the complete [conditional-update exercise](http.md#concurrency-control), then read the resource again to verify the change.
 
 Use up to 32 `labels` on agents, skills and environment templates to organize resources. Filter with `?label=key:value`; up to eight selectors must all match. Agent and skill lists also accept `q` for case-insensitive name/description search and `archived=true|false`. Views include creator/editor IDs and timestamps; the [audit trail](identity.md#audit) records resource changes.
 
@@ -76,7 +54,8 @@ A provider stores one configured backend account. Choose the kind for the work y
 | `web`         | [Web search and scrape](tools.md#web-search-and-scrape) |
 | `environment` | [Execution environments](environments.md)               |
 | `connector`   | [Connector connections](tools.md#composio-connections)  |
-| `memory`      | [Record memories](memory.md#record-memories)            |
+| `memory`      | [Record memories](standalone-memory.md#record-memories) |
+| `browser`     | [Managed browser accounts](browsers.md)                 |
 
 1. Open **Workspace settings → Providers**, choose the category and add a provider of the required type.
 2. Fill in its configuration and credentials. Console builds the form from `GET /api/v1/provider-types/{kind}`: the response contains configuration/credential JSON Schemas, credential requirements and setup links. Model types also describe APIs/settings; web types list operations; environment types describe recipes and lifecycle support.

@@ -42,14 +42,7 @@ Open the printed login link and leave the foreground server running. WebUI has i
 
 ### Browser Use prerequisites
 
-The WebUI itself opens in your browser. The optional **Browser** drawer launches a separate browser on the Linux or macOS WebUI Host for the Agent to use.
-
-Prepare the Host for your platform:
-
-- **Linux:** install Chrome, Chromium, or Edge and a compatible VNC server. For a container deployment, install them inside the container. TigerVNC supplies both the display and VNC server. Run as a non-root user with Chromium's sandbox enabled.
-- **macOS:** install a compatible browser and run Harness UI as the logged-in desktop user. Optional read-only preview needs macOS 14 or later and Screen Recording permission for the application running Harness UI. It shows only the conversation's owned browser window, including the address bar. Use **Pause automation** before operating the browser locally on the Mac, then **Resume automation**. No VNC service or password is needed.
-
-The default Auto mode prepares the shared browser when WebUI starts. Ask a Full Control Run to browse, or choose **Browser → Open browser**. Harness UI automatically selects compatible installed programs; use **Settings → General → Host browser** to change the Auto/Disabled mode or override program selection. Follow the [browser setup procedure](webui.md#first-time-setup) for platform steps and a first navigation. Harness UI already includes the browser automation dependencies. Keep computer sharing enabled: `--no-share-computer` also disables the Host browser.
+The optional Host browser runs on the Linux or macOS WebUI Host, separately from your WebUI client. It needs compatible browser software and platform-specific display or desktop permissions. Follow [Host browser setup](host-browser.md#first-time-setup) for prerequisites, installation, and a first navigation. `--no-share-computer` disables this browser as well as native file and terminal sharing.
 
 ## Upgrade
 
@@ -69,7 +62,7 @@ Upgrade all installations sharing a data root together:
 
 3. After every shared installation has been upgraded, restart the applications and reload open WebUI pages.
 
-The upgraded application reads existing conversations and writes the current checkpoint format. Older applications cannot read those newly written checkpoints, so keep shared installations on the same upgraded version.
+Upgrade every installation sharing a data root before starting the new version. Current checkpoints use payload codec `2`; older applications that support only codec `1` cannot read newly written checkpoints. Other compatible upgrades can preserve shared access, but a higher database migration number alone does not establish checkpoint compatibility. Check the release notes before mixing versions or downgrading, and retain a backup from before an incompatible format transition.
 
 Startup update checks only display a notice. To turn the check off for one invocation, use `--no-update-check`; for later starts, set `process.terminal_update_check: false` in the root YAML. See [updates and logs](automation-and-troubleshooting.md#logs-updates-and-exit).
 

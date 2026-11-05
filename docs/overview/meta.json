@@ -4,8 +4,8 @@
   "icon": "overview",
   "pages": [
     "choose-your-path",
-    "core-concepts",
     "---Reference---",
+    "core-concepts",
     "packages",
     "../a13n-logging/index"
   ]

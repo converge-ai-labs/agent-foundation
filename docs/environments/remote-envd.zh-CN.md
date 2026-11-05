@@ -210,68 +210,23 @@ Host 执行中断后，按以下步骤恢复：
 
 ## 连接 Harness UI
 
-交互式使用时，由 Harness UI 负责注册和连接所有权：
-
-1. 在需要使用其文件和工具的电脑上安装 `a13n-envd`。
-2. 在 Harness UI 打开 **Settings → Environments → Connect Device**，复制并运行命令。
-3. 保持 Envd 运行。打开打印的批准链接，登录，并在批准 Device 前核对验证码。
-4. 设备上线后，为对话或 Project 选择 Device 和工作目录。仅注册不会授予执行访问权限。
-
-第 2 步的典型命令如下：
-
-```bash
-a13n-envd connect https://your-host.example --host work --instance work
-```
-
-完整 UI 流程见 [Device 绑定指南](../a13n-harness-ui/environments-and-projects.md#add-device-bindings)。所选工作目录设置 Session 的起始位置，不会形成文件系统沙箱。
+按 Harness UI Device 绑定流程完成配对、选择工作目录并为 Thread 授权。注册本身不授予 Run 访问权限。 [操作步骤](../a13n-harness-ui/environments-and-projects.md#add-device-bindings)。
 
 ### 启用 shell 执行
 
-默认连接允许文件操作。要运行命令，可配置显式 shell profile 或选择 Full Control。Full Control 使用当前 OS 账号权限，因此只连接可信 Host。
-
-在 POSIX shell 中：
-
-```bash
-A13N_ENVD_FULL_CONTROL=1 a13n-envd connect https://your-host.example --host work --instance work
-```
-
-在 PowerShell 中：
-
-```powershell
-$env:A13N_ENVD_FULL_CONTROL = "1"
-a13n-envd connect https://your-host.example --host work --instance work
-```
-
-通过 [Envd 配置](../a13n-envd/configuration.md)选择更窄的执行策略。Full Control 不提供租户隔离。
+默认守护进程连接只开放文件操作。按守护进程配置选择显式 shell profile 或 Full Control；后者使用所选账号权限，不提供租户隔离。 [操作步骤](../a13n-envd/configuration.md#enable-commands)。
 
 ### 重启或连接另一个 Host
 
-批准后，Envd 保存端点和受保护的附加凭据。使用相同的已存别名、实例以及显式指定过的 `--state-dir` 重启：
-
-```bash
-a13n-envd connect work --instance work
-```
-
-重连复用已批准凭据。该凭据授权 Device 附加，不授予 Host 登录或通用 API 访问；Host 只保存其摘要。
-
-同一电脑要连接第二个 Host 时，用另一个实例启动独立进程：
-
-```bash
-a13n-envd connect https://other-host.example --host personal --instance personal
-```
-
-每个进程连接一个 Host，并拥有独立的守护进程身份、状态和凭据。停止该进程会使连接离线，文件和注册仍保留。
+重启时保留原 instance、Host 别名、状态目录与启动参数。连接另一个 Host 使用独立进程和 instance。 [操作步骤](../a13n-envd/configuration.md#saved-instances-and-hosts)。
 
 ### 管理与撤销
 
-要撤回访问权限，选择 **Settings → Environments → Revoke**，再选择 **Revoke connection**。撤销会阻止新访问，并在有界授权窗口内隔离活跃连接。远程文件、执行历史和已分派效果保留，撤销记录仍可见。
-
-确实需要重新注册时，使用新的 `--instance` 并显式批准。被拒绝的凭据不会自动替换，删除本地凭据也不能接管已有注册。
+用撤销操作解除信任；遗忘本地配置是另一项操作。远程文件与已经派发的效果保留。 [操作步骤](../a13n-harness-ui/environments-and-projects.md#revoke-a-device)。
 
 ### 故障排查
 
-- 连接另一台电脑时，使用其可达的 HTTPS 主机名。`localhost` 指运行 Envd 的电脑。回环地址允许 HTTP；私有 CA 使用 `--ca-file`。
-- 批准请求过期时，重新运行同一命令再次请求。撤销后认证被拒绝会使 Envd 退出，而非生成替代凭据。
+检查可达 HTTPS 地址、Device 批准与保存的凭据。已撤销凭据不会自动替换。 [操作步骤](../a13n-harness-ui/environments-and-projects.md#connect-and-approve-envd)。
 
 ## 连接 Service
 
