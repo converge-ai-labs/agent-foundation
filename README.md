@@ -4,32 +4,9 @@
 
 **Build, run, and manage AI agents at scale on your own infrastructure.**
 
-a13n is an open-source service for long-running agents on your own infrastructure. Choose the model, give the agent instructions and tools, and send it work through an API. a13n runs the agent, saves its progress, and keeps working after your application disconnects.
+a13n is an open-source service for running agents that use tools, work with files, and carry tasks across multiple turns. You define each agent’s instructions, model, and tools. Your application submits work through an API. Service runs the agent and saves its progress, even after the client disconnects.
 
 [Run your first agent](docs/a13n-service/get-started.md) · [Connect your application](docs/a13n-service/connect-application.md) · [Embed Harness in Python](docs/a13n-harness/getting-started.md)
-
-## Give an agent a task
-
-A support team wants to know which issues account for the most tickets. Give an agent access to the ticket export and a sandbox. Your backend can submit the analysis with the [Python SDK](https://github.com/converge-ai-labs/a13n-sdk-python#quick-start):
-
-```python
-from a13n import Client
-
-
-async def analyze_tickets(service_url, api_key, agent_id):
-    async with Client(service_url, api_key) as client:
-        analyst = client.agents(agent_id)
-        task = await analyst.start(
-            "Read support-tickets.csv, count tickets by issue, "
-            "and save the findings and recommended next steps to support-summary.md."
-        )
-        outcome = await task.result()
-        return outcome
-```
-
-In this scripted demo, the agent reads 120 tickets, counts them with a shell command, and writes the report. The largest category is login and account access, with 48 tickets. Console shows the tool calls behind that finding alongside the final answer.
-
-[![Console run showing the ticket export, shell command, saved report, and issue counts](.github/assets/console-run-details.jpg)](.github/assets/console-run-details.jpg)
 
 ## What Service manages
 
@@ -38,6 +15,8 @@ In this scripted demo, the agent reads 120 tickets, counts them with a shell com
 - **Access and usage.** Give team members and applications access to agents in a workspace. Inspect individual runs in Console and track [workspace usage and cost](.github/assets/console-usage.jpg).
 
 You operate Service and choose the [model](docs/a13n-service/models.md), [sandbox](docs/a13n-service/environments.md), [search](docs/a13n-service/tools.md#web-search-and-scrape), and [memory](docs/a13n-service/memory.md) providers.
+
+[![Agents and their configured models in Console (demo workspace)](.github/assets/console-managed-agents.jpg)](.github/assets/console-managed-agents.jpg)
 
 ## Get started
 
