@@ -1,5 +1,7 @@
 """Snapshots retain a leaf definition through acceptance, archival and continuation."""
 
+import asyncio
+
 import pytest
 from a13n_harness.capabilities import AsyncResumeRequest, SubagentOperatorContext
 from a13n_service.infra.db import short_session
@@ -303,8 +305,6 @@ async def test_snapshot_options_reject_changes_and_preserve_omitted_values(servi
     )
     for completed in (False, True):
         if completed:
-            scripted_model.say("Done")
-            await (await runs_kit.attempt(service))
             entries = await runs_kit.inbox(service, child.thread_id)
             assert [(entry["status"], entry["assigned_run_id"]) for entry in entries] == [
                 ("consumed", child.execution_id)
@@ -321,10 +321,19 @@ async def test_snapshot_options_reject_changes_and_preserve_omitted_values(servi
                 assert response.json()["error"]["details"]["reason"] == reason
         assert await runs_kit.inbox(service, child.thread_id) == before
         if not completed:
+            gate = asyncio.Event()
+            scripted_model.say("Done", gate=gate)
+            scripted_model.say("Done", gate=gate)
+            running = await runs_kit.attempt(service)
+            await scripted_model.request()
             steer = await runs_kit.submit(
                 service, child.thread_id, runs_kit.message(parent, "Steer", delivery="steer", options=options)
             )
             assert steer.status_code == 201, steer.text
+            # Observe incorporation before allowing the child to finish.
+            assert "Steer" in str(runs_kit.user_texts(await scripted_model.request()))
+            gate.set()
+            await running
     # Explicit restatements are valid; omitted values retain the same frozen bindings.
     same = await runs_kit.submit(service, child.thread_id, runs_kit.message(parent, "Again", options=options))
     assert same.status_code == 201, same.text

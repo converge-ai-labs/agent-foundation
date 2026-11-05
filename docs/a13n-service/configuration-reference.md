@@ -205,6 +205,21 @@ The tables are generated from `Settings`. Contributors updating those definition
 | `environments.docker_mount_roots`  | `A13N_ENVIRONMENTS__DOCKER_MOUNT_ROOTS`  | array of string | maxItems=64; default=[]                       |
 | `environments.kubernetes_clusters` | `A13N_ENVIRONMENTS__KUBERNETES_CLUSTERS` | object          | —                                             |
 
+## `client_environments`
+
+| Setting                                       | Environment variable                                | Type / choices | Constraints and default                         |
+| --------------------------------------------- | --------------------------------------------------- | -------------- | ----------------------------------------------- |
+| `client_environments.transfer_seconds`        | `A13N_CLIENT_ENVIRONMENTS__TRANSFER_SECONDS`        | number         | maximum=1800; exclusiveMinimum=0; default=120   |
+| `client_environments.max_connections`         | `A13N_CLIENT_ENVIRONMENTS__MAX_CONNECTIONS`         | integer        | minimum=1; maximum=10000; default=128           |
+| `client_environments.max_sessions`            | `A13N_CLIENT_ENVIRONMENTS__MAX_SESSIONS`            | integer        | minimum=1; maximum=10000; default=256           |
+| `client_environments.initialization_seconds`  | `A13N_CLIENT_ENVIRONMENTS__INITIALIZATION_SECONDS`  | number         | maximum=60; exclusiveMinimum=0; default=10      |
+| `client_environments.heartbeat_seconds`       | `A13N_CLIENT_ENVIRONMENTS__HEARTBEAT_SECONDS`       | number         | maximum=60; exclusiveMinimum=0; default=5       |
+| `client_environments.allow_loopback_ws`       | `A13N_CLIENT_ENVIRONMENTS__ALLOW_LOOPBACK_WS`       | boolean        | default=false                                   |
+| `client_environments.max_requests`            | `A13N_CLIENT_ENVIRONMENTS__MAX_REQUESTS`            | integer        | minimum=1; maximum=10000; default=128           |
+| `client_environments.message_bytes`           | `A13N_CLIENT_ENVIRONMENTS__MESSAGE_BYTES`           | integer        | minimum=1024; maximum=33554432; default=4194304 |
+| `client_environments.request_seconds`         | `A13N_CLIENT_ENVIRONMENTS__REQUEST_SECONDS`         | number         | maximum=3600; exclusiveMinimum=5; default=60    |
+| `client_environments.response_margin_seconds` | `A13N_CLIENT_ENVIRONMENTS__RESPONSE_MARGIN_SECONDS` | number         | maximum=30; exclusiveMinimum=0; default=2       |
+
 ## `browsers`
 
 | Setting                      | Environment variable               | Type / choices | Constraints and default                       |

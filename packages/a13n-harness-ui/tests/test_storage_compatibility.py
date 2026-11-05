@@ -34,7 +34,7 @@ def older_package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path
     """
     newer = tmp_path / "comment-migrations"
     shutil.copytree(migration.MIGRATIONS_PATH, newer, ignore=shutil.ignore_patterns("__pycache__"))
-    (newer / "versions/20261105_b52470a025af_move_tool_completion_suppression_into_.py").unlink()
+    (newer / "versions/20261105_f954b5d8f0b4_remove_tool_completion_suppression_state.py").unlink()
     (newer / "versions/20261105_068e83640c73_retain_tool_executions_and_completion_.py").unlink()
     (newer / "versions/20261029_1f69a2ed231f_record_deleted_threads_for_checkpoint_.py").unlink()
     (newer / "versions/20261026_62534972e2d6_retain_background_compaction_operations.py").unlink()
@@ -93,9 +93,6 @@ def older_package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path
             connection.execute(text("ALTER TABLE thread ADD COLUMN completed_at DATETIME"))
             connection.execute(text("ALTER TABLE thread ADD COLUMN touched_at DATETIME"))
             connection.execute(text("ALTER TABLE thread ADD COLUMN starred BOOLEAN NOT NULL DEFAULT 0"))
-            connection.execute(
-                text("ALTER TABLE thread ADD COLUMN tool_completion_suppressed BOOLEAN NOT NULL DEFAULT 0")
-            )
             connection.execute(text("ALTER TABLE thread ADD COLUMN memory_scope VARCHAR(256)"))
             connection.execute(text("CREATE UNIQUE INDEX uq_thread_memory_scope ON thread (memory_scope)"))
             connection.execute(text("ALTER TABLE thread ADD COLUMN read_model_digest VARCHAR(64)"))
@@ -251,10 +248,7 @@ def test_comment_retirement_preserves_threads_and_requires_backup_for_rollback(t
         migrator.upgrade()
         migrator.verify_current()
         with engine.connect() as connection:
-            assert dict(connection.execute(text("SELECT * FROM thread")).mappings().one()) == {
-                **before,
-                "tool_completion_suppressed": 0,
-            }
+            assert dict(connection.execute(text("SELECT * FROM thread")).mappings().one()) == before
             assert "output_comment" not in inspect(connection).get_table_names()
             assert "output_comment_tombstone" not in inspect(connection).get_table_names()
         with monkeypatch.context() as patch:
@@ -303,7 +297,6 @@ async def test_memory_migration_preserves_existing_threads_and_enforces_scope_id
                 **before,
                 "memory_scope": None,
                 "last_execution_json": None,
-                "tool_completion_suppressed": 0,
             }
             assert connection.execute(text("SELECT * FROM thread_configuration")).mappings().one() == before_config
         async with open_harness_ui_app(settings, configuration_path=configuration) as app:

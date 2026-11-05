@@ -205,6 +205,21 @@ description: Service 设置的每个字段，及其环境变量、类型、范�
 | `environments.docker_mount_roots`  | `A13N_ENVIRONMENTS__DOCKER_MOUNT_ROOTS`  | 字符串数组    | maxItems=64; default=[]                       |
 | `environments.kubernetes_clusters` | `A13N_ENVIRONMENTS__KUBERNETES_CLUSTERS` | 对象          | —                                             |
 
+## `client_environments`
+
+| 设置                                          | 环境变量                                            | 类型 / 选项 | 约束与默认值                                    |
+| --------------------------------------------- | --------------------------------------------------- | ----------- | ----------------------------------------------- |
+| `client_environments.transfer_seconds`        | `A13N_CLIENT_ENVIRONMENTS__TRANSFER_SECONDS`        | 数值        | maximum=1800; exclusiveMinimum=0; default=120   |
+| `client_environments.max_connections`         | `A13N_CLIENT_ENVIRONMENTS__MAX_CONNECTIONS`         | 整数        | minimum=1; maximum=10000; default=128           |
+| `client_environments.max_sessions`            | `A13N_CLIENT_ENVIRONMENTS__MAX_SESSIONS`            | 整数        | minimum=1; maximum=10000; default=256           |
+| `client_environments.initialization_seconds`  | `A13N_CLIENT_ENVIRONMENTS__INITIALIZATION_SECONDS`  | 数值        | maximum=60; exclusiveMinimum=0; default=10      |
+| `client_environments.heartbeat_seconds`       | `A13N_CLIENT_ENVIRONMENTS__HEARTBEAT_SECONDS`       | 数值        | maximum=60; exclusiveMinimum=0; default=5       |
+| `client_environments.allow_loopback_ws`       | `A13N_CLIENT_ENVIRONMENTS__ALLOW_LOOPBACK_WS`       | 布尔值      | default=false                                   |
+| `client_environments.max_requests`            | `A13N_CLIENT_ENVIRONMENTS__MAX_REQUESTS`            | 整数        | minimum=1; maximum=10000; default=128           |
+| `client_environments.message_bytes`           | `A13N_CLIENT_ENVIRONMENTS__MESSAGE_BYTES`           | 整数        | minimum=1024; maximum=33554432; default=4194304 |
+| `client_environments.request_seconds`         | `A13N_CLIENT_ENVIRONMENTS__REQUEST_SECONDS`         | 数值        | maximum=3600; exclusiveMinimum=5; default=60    |
+| `client_environments.response_margin_seconds` | `A13N_CLIENT_ENVIRONMENTS__RESPONSE_MARGIN_SECONDS` | 数值        | maximum=30; exclusiveMinimum=0; default=2       |
+
 ## `browsers`
 
 | 设置                         | 环境变量                           | 类型 / 选项   | 约束与默认值                                  |

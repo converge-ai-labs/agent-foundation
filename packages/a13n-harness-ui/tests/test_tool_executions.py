@@ -1571,7 +1571,7 @@ async def test_recovered_execution_holds_ownership_through_terminal_publication(
 @pytest.mark.parametrize(
     "code,terminal",
     [
-        ("environment_owner_busy", False),
+        ("device_connections_closed", False),
         ("device_unavailable", False),
         ("device_revoked", True),
         ("device_authentication_failed", True),
