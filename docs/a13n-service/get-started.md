@@ -1,5 +1,5 @@
 ---
-title: Service quickstart
+title: Self-host Service with Docker Compose
 sidebarTitle: Quickstart
 description: Start Service with Docker Compose and get a response from your first agent.
 ---
@@ -57,7 +57,7 @@ Continue with [Use Console](use-platform.md) to return to the thread, create bra
 
 ## Use the API
 
-Open your agent's **Connect to app** action for its ID and your Service URL. [Connect your application](connect-application.md) walks through credentials, a first message, and reading the result. Use an [SDK or remote CLI](sdks.md) for language-specific integration.
+In the agent’s menu, choose **Connect to app**. Copy the Service URL and agent ID. Follow [Connect your application](connect-application.md) to create a workspace API key, send a message from an SDK or over HTTP, and inspect that run in Console.
 
 ## Stop, resume, or reset the stack
 

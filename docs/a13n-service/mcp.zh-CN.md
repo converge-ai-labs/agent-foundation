@@ -5,16 +5,6 @@ description: 连接外部客户端，通过 MCP 更新工作空间资源并排�
 
 将支持 MCP 的客户端连接到 Service，即可管理工作空间资源并查看执行情况。先列出 agent 或搜索已安装版本的文档，再用同一连接读取资源，携带返回的 ETag 完成更新。
 
-## 内部 agent 工具
-
-Service 管理的 agent 使用独立的内部平台工具目录。Host 将 Run 凭证提供给 `/api/v1/platform-tools/`；外部工作空间密钥使用下文介绍的管理连接。内部工具接收直接的任务字段和带版本条件的差量，返回业务结果，不会回退到原始 API 工具。例如，修改 agent 的模型只提交 `agent_id`、原读取状态的 `expected_version` 和 `model`，其余配置由 Service 保留。Schedule 工具根据任务指令和执行选项构造 invocation。连接秘密仍通过受控配置或授权流程处理。内部 Run 凭证不能使用外部管理 MCP 或原始产品 HTTP 绕过工具准入。
-
-Service 0.1 之前可能引入破坏性变更，开发者须自行迁移已有数据。这次内部工具替换就是其中一次：所有此前保存过规范化配置的 Agent 都可能需要完整重写，即使被移除的工具条目原本处于禁用状态。此变更不提供兼容层，不保证新旧 Control/Worker 混合运行，也不保证恢复旧 Run。部署前应停止接收新任务及定时、手动调度，等待活动 Run 完成，并处理待审批、等待中的 Run 以及结果不明的外部操作。关闭旧部署，同步更新 Control 和 Worker，完成数据迁移或配置重写后，再恢复任务接收。
-
-修改 Agent 配置时，指定 `base_revision_id` 就必须显式指定 `make_default`，否则返回 `invalid_argument`。缺少必填版本会导致参数校验失败，版本过期则返回 `precondition_failed`。遇到冲突应重新读取并审核新的变更，不能悄悄替换已获批准的版本。
-
-本页后续示例描述仍受支持的外部管理 MCP 契约，包括 HTTP 响应封装和 `request_body` 参数。
-
 ## 使用工作区密钥连接
 
 准备提供 API 的 Service 进程（`control` 或 `all`）、可访问的地址，以及有权执行目标操作的[工作空间 API key](identity.md#api-keys)。仅运行 worker 的进程不提供 MCP。
@@ -41,17 +31,17 @@ Service 0.1 之前可能引入破坏性变更，开发者须自行迁移已有�
 
 根据任务选择传输方式：
 
-| 任务                                                                               | 传输方式                                                                  |
-| ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| 管理 agent、修订、模型、供应商、skill、连接、环境、记忆、资产元数据和 webhook 订阅 | MCP                                                                       |
-| 配置计划、预览时间、启用/暂停/归档、手动触发和读取触发历史                         | MCP；参阅[计划](schedules.md)                                             |
-| 读取会话、线程、输入队列条目、运行、执行尝试、展示内容、用量、trace 和 span        | MCP                                                                       |
-| 提交发现项，读取发现项或分析历史                                                   | MCP；参阅[执行问题](agents-and-runs.md#find-and-improve-execution-issues) |
-| 搜索随包文档                                                                       | MCP `search_documents`                                                    |
-| 提交 agent 输入、恢复/取消/等待执行，或跟踪实时输出/SSE                            | 直接 HTTP                                                                 |
-| 上传或下载文件及原始二进制内容                                                     | 直接 HTTP                                                                 |
-| 管理组织、成员或权限；浏览器登录和 OAuth 流程                                      | 直接 HTTP                                                                 |
-| 审阅发现项、准备 Finding Agent 或启动分析                                          | 直接 HTTP                                                                 |
+| 任务                                                                               | 传输方式                                                               |
+| ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| 管理 agent、修订、模型、供应商、skill、连接、环境、记忆、资产元数据和 webhook 订阅 | MCP                                                                    |
+| 配置计划、预览时间、启用/暂停/归档、手动触发和读取触发历史                         | MCP；参阅[计划](schedules.md)                                          |
+| 读取会话、线程、输入队列条目、运行、执行尝试、展示内容、用量、trace 和 span        | MCP                                                                    |
+| 提交发现项，读取发现项或分析历史                                                   | MCP；参阅[执行问题](inspect-runs.md#find-and-improve-execution-issues) |
+| 搜索随包文档                                                                       | MCP `search_documents`                                                 |
+| 提交 agent 输入、恢复/取消/等待执行，或跟踪实时输出/SSE                            | 直接 HTTP                                                              |
+| 上传或下载文件及原始二进制内容                                                     | 直接 HTTP                                                              |
+| 管理组织、成员或权限；浏览器登录和 OAuth 流程                                      | 直接 HTTP                                                              |
+| 审阅发现项、准备 Finding Agent 或启动分析                                          | 直接 HTTP                                                              |
 
 从实际部署发现准确的工具名和 schema。工具来自组装后的 OpenAPI 中显式允许的操作，包括已允许的 Distribution 扩展。名称由 operation ID 派生；新增 HTTP 路由只有显式允许后才会出现。MCP 不增加权限或审批权，例如订阅管理仍需要工作空间 `admin`。
 
@@ -152,4 +142,8 @@ curl --fail-with-body "$A13N_URL/api/v1/runs/$RUN_ID" \
 
 分配结果标明处理输入的运行，不代表执行完成。`completed` 时读取 `output`；`waiting` 时收集所需回答、审批或工具结果，再显式恢复。分别处理 `failed` 和 `cancelled`。后续输入和恢复可能产生后继运行，因此应跟踪输入及其运行，而不是只看对话的第一次运行。客户端断开连接后，执行仍会继续。
 
-实时输出可通过[会话事件流](agents-and-runs.md#follow-a-session-stream)跟踪。完整 HTTP 流程及 SDK 选择参阅[应用集成](connect-application.md)。
+实时输出可通过[会话事件流](stream-and-read-results.md#follow-a-session-stream)跟踪。完整 HTTP 流程及 SDK 选择参阅[应用集成](connect-application.md)。
+
+## 内部 agent 工具
+
+[阅读内部平台工具参考](platform-tools.md#internal-agent-tools)。

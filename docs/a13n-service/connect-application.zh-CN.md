@@ -1,9 +1,11 @@
 ---
-title: 连接你的应用
-description: 连接服务端客户端、提交消息、读取结果，并继续对话。
+title: 接入应用
+description: 通过 Service SDK 或 HTTP API 调用 agent，读取结果，并在 Console 调试这次运行。
 ---
 
 将应用后端连接到一个已在 Console 中测试通过的 agent。你需要 Service URL、agent ID 和工作空间 API 密钥。如果还没有部署，先按[快速入门](get-started.md)启动 Service，再按 [Console 指南](use-platform.md)配置并测试 agent。
+
+[配置凭据](#set-up-credentials)后，选择对应语言的 [SDK 指南](#start-with-an-sdk)，也可以用 curl 跟随 [HTTP 示例](#direct-http-integration)。两条路径都可以取得已保存的结果，再[回到 Console 检查运行](#inspect-the-run-in-console)。
 
 ## 配置凭据
 
@@ -21,7 +23,7 @@ description: 连接服务端客户端、提交消息、读取结果，并继续�
 按以下顺序实现首次交互：
 
 1. 使用 Service URL 和 API 密钥初始化客户端。
-2. 使用 agent ID 和消息开始对话，例如“总结这些项目笔记”。为本次提交提供幂等 key。如果响应丢失，使用相同 key 重试同一次提交。
+2. 使用 agent ID 和消息开始对话，例如“说出两种颜色”。为本次提交提供幂等 key。如果响应丢失，使用相同 key 重试同一次提交。
 3. 保存返回的对话和提交引用。应用需要将结果关联到这条消息，并跟踪消息排队期间的状态。
 4. 读取结果。完成后展示 `output`，等待时收集响应，执行失败时展示结构化错误。
 
@@ -29,7 +31,7 @@ description: 连接服务端客户端、提交消息、读取结果，并继续�
 
 ## 发送后续消息
 
-将下一条消息发送到同一线程，以继续使用已有历史。例如，在“总结这些项目笔记”之后追问“我应该先做哪个任务？”。保留线程引用，为新提交使用新的幂等 key，并单独跟踪它的结果。
+将下一条消息发送到同一线程，以继续使用已有历史。例如，在“说出两种颜色”之后追问“用第一个颜色造句”。保留线程引用，为新提交使用新的幂等 key，并单独跟踪它的结果。
 
 关闭客户端只会停止本地观察，Service 会继续工作。需要停止执行时，使用明确的取消操作。流式输出、资源清理和恢复的具体调用由 [SDK 应用指南](sdks.md#choose-a-client)说明。
 
@@ -81,7 +83,7 @@ curl --fail-with-body -sS -X POST "$A13N_URL/api/v1/agents" \
 AGENT_ID=ap_replace_with_the_returned_id
 MESSAGE_KEY=$(uuidgen)
 jq -n --arg agent "$AGENT_ID" \
-  '{agent_id: $agent, payload: {content: [{type: "text", text: "What is a13n?"}]}}' > message.json
+  '{agent_id: $agent, payload: {content: [{type: "text", text: "Name two colors."}]}}' > message.json
 ```
 
 提交消息并保存回执。如果响应丢失，使用相同请求体和 `MESSAGE_KEY` 重复此请求；此次重试不要生成新 key。
@@ -138,7 +140,7 @@ jq '{status, output, pending, failure}' run.json
 ```sh
 MESSAGE_KEY=$(uuidgen)
 jq -n --arg agent "$AGENT_ID" \
-  '{agent_id: $agent, payload: {content: [{type: "text", text: "Which component should I start with?"}]}}' > message.json
+  '{agent_id: $agent, payload: {content: [{type: "text", text: "Spell the first one backwards."}]}}' > message.json
 curl --fail-with-body -sS -X POST "$A13N_URL/api/v1/threads/$THREAD_ID/inbox" \
   -H "Authorization: Bearer $A13N_API_KEY" -H "Content-Type: application/json" \
   -H "Idempotency-Key: $MESSAGE_KEY" \
@@ -146,6 +148,14 @@ curl --fail-with-body -sS -X POST "$A13N_URL/api/v1/threads/$THREAD_ID/inbox" \
 ENTRY_ID=$(jq -r '.entry.id' submitted.json)
 ```
 
-对新的 `ENTRY_ID` 重复条目和运行读取步骤。需要实时更新时，使用 `SESSION_ID` 跟踪[会话事件流](agents-and-runs.md#follow-a-session-stream)，或订阅 [webhook](files-and-webhooks.md#webhooks)。保留提交 ID，重连后即可继续观察同一项工作。
+对新的 `ENTRY_ID` 重复条目和运行读取步骤。需要实时更新时，使用 `SESSION_ID` 跟踪[会话事件流](stream-and-read-results.md#follow-a-session-stream)，或订阅 [webhook](webhooks.md)。保留提交 ID，重连后即可继续观察同一项工作。
 
 分页、条件写入和错误处理请参阅 [HTTP 约定](http.md)；完整请求和响应 schema 请参阅 [API 参考](api-reference/index.md)。
+
+## 在 Console 中检查这次运行
+
+1. 打开签发应用 API 密钥的工作空间，进入**会话**，搜索提交回执里的线程 ID。
+2. 选择**检查执行**打开 Debug，找到实际消费该条目的运行 ID。还在排队的条目可能尚未分配运行。
+3. 打开该运行的**详情**，核对配置、执行尝试和用量。在对话中查看工具调用。运行失败时查看失败详情，正在等待时[处理待响应的请求](#handle-a-waiting-result)。
+
+需要在 Console 里继续对话时，选择**继续线程**。应用也可以向同一线程[发送追问](#send-a-follow-up)。更多调试方法见[检查回复](use-platform.md#inspect-a-reply)。

@@ -1,5 +1,5 @@
 ---
-title: Service 快速入门
+title: 使用 Docker Compose 自托管 Service
 sidebarTitle: 快速入门
 description: 使用 Docker Compose 启动 Service，并获得第一个 agent 的回复。
 ---
@@ -57,7 +57,7 @@ curl -fsS http://127.0.0.1:8080/readyz
 
 ## 使用 API
 
-打开 agent 的**接入应用**操作，获取其 ID 和你的 Service URL。[连接你的应用](connect-application.md)介绍了凭据、第一条消息和结果读取流程。各语言的集成可以使用 [SDK 或远程 CLI](sdks.md)。
+在 agent 菜单中选择**接入应用**，复制 Service URL 和 agent ID。按照[应用接入指南](connect-application.md)创建工作空间 API 密钥，通过 SDK 或 HTTP 发送消息，再回到 Console 检查这次运行。
 
 ## 停止、恢复或重置服务
 

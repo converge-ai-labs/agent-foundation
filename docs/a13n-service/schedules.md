@@ -116,10 +116,10 @@ Schedule management is also available through MCP and the `schedules` platform t
 
 ## Observe live state and load history
 
-Connect to the returned `stream_url`, `/api/v1/sessions/{session_id}/stream`, without extra query parameters. The ordinary [session output protocol](agents-and-runs.md#follow-a-session-stream) adds `schedule` and `occurrence` state frames for this session.
+Connect to the returned `stream_url`, `/api/v1/sessions/{session_id}/stream`, without extra query parameters. The ordinary [session output protocol](stream-and-read-results.md#follow-a-session-stream) adds `schedule` and `occurrence` state frames for this session.
 
 Each connection starts with current plan state, compact occurrence summaries and every thread in the session, then follows changes and live output. Completed, child and independent threads remain visible regardless of age. Use paginated history for browsing, occurrence detail for the full invocation and run items for saved output.
 
 Occurrence events belong to the session recorded on each occurrence, including after the schedule changes target. The stream synchronizes current state; brief intermediate states can coalesce. After reconnecting, refresh the visible history page and selected thread, entry, run and output. The Console schedule detail page uses manual **Refresh**, without a live subscription.
 
-For completion notifications, select **Add Webhook** on the detail page or configure **Settings → Webhooks** as a workspace administrator. Subscribe to `schedule_occurrence.completed` and inspect `execution_outcome`. `schedule.completed` marks the end of one-time scheduling, not execution. [Webhooks](files-and-webhooks.md#webhooks) also cover skips, submission failures, cancellations and automatic pauses.
+For completion notifications, select **Add Webhook** on the detail page or configure **Settings → Webhooks** as a workspace administrator. Subscribe to `schedule_occurrence.completed` and inspect `execution_outcome`. `schedule.completed` marks the end of one-time scheduling, not execution. [Webhooks](webhooks.md#webhooks) also cover skips, submission failures, cancellations and automatic pauses.

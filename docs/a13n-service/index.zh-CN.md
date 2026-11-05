@@ -4,7 +4,7 @@ sidebarTitle: 概览
 description: 在 Console 中构建 agent，与团队共享，并从应用中运行。
 ---
 
-Service 为团队和应用运行 agent。在 Console 中构建 agent，通过对话试用，再通过 HTTP API 调用同一个 agent。Service 管理访问权限、保存对话历史，并在客户端断开连接后继续执行已接受的工作。
+Service 在你的基础设施上运行 agent，管理访问权限、执行过程和对话历史。通过 Service 的浏览器界面 Console 配置 agent，发起对话并测试回复。应用通过 Service SDK 或 HTTP API 调用同一个 agent。回到 Console，可以检查这次运行、工具调用和用量。即使客户端断开，Service 也会继续处理已接受的任务。
 
 ## 从这里开始
 
@@ -18,7 +18,7 @@ Service 为团队和应用运行 agent。在 Console 中构建 agent，通过对
 
 ## 为你的工作构建 agent
 
-从一个模型和指令开始。例如，创建一个将项目笔记整理成具体后续行动的 agent。先验证回复，再添加其他资源。
+先选择模型，写好指令，在 Console 中测试回复。再按任务需要添加资源。
 
 | 按任务需要添加             | 指南                                    |
 | -------------------------- | --------------------------------------- |

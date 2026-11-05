@@ -39,6 +39,8 @@ Configuration takes effect immediately through `logging.config.dictConfig()`. Se
 
 To keep stdout available for a protocol such as stdio MCP, write logs only to a file. Create its parent directory before configuring logging:
 
+`LogFile` selects the rotating file path, byte limit, and backup count. File records always use JSON. `LogFormat` selects the stdout format independently.
+
 ```python
 from pathlib import Path
 from a13n_logging import LogFile, LogFormat, configure_logging

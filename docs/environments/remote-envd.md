@@ -210,68 +210,23 @@ Keep the WebSocket listener and execution in the same process, or explicitly rou
 
 ## Connect to Harness UI
 
-For interactive use, Harness UI handles registration and connection ownership:
-
-1. Install `a13n-envd` on the computer whose files and tools you want to use.
-2. In Harness UI, open **Settings → Environments → Connect Device**. Copy and run the command.
-3. Keep Envd running. Open its printed approval link, sign in, and compare the verification code before approving the Device.
-4. Once online, select the Device and a working directory for a conversation or Project. Registration alone does not give a Run access.
-
-A typical command for step 2 is:
-
-```bash
-a13n-envd connect https://your-host.example --host work --instance work
-```
-
-Use the [Device binding guide](../a13n-harness-ui/environments-and-projects.md#add-device-bindings) for the full UI workflow. The selected working directory sets the Session's starting location; it does not sandbox filesystem access.
+Follow the Harness UI Device binding workflow to pair a Device, select its working directory, and grant a Thread access. Registration alone grants no Run access. [Follow the steps](../a13n-harness-ui/environments-and-projects.md#add-device-bindings).
 
 ### Enable shell execution
 
-The default connection permits file operations. For commands, either configure explicit shell profiles or choose Full Control. Full Control uses the current OS account's authority, so connect only to a Host you trust.
-
-On a POSIX shell:
-
-```bash
-A13N_ENVD_FULL_CONTROL=1 a13n-envd connect https://your-host.example --host work --instance work
-```
-
-On PowerShell:
-
-```powershell
-$env:A13N_ENVD_FULL_CONTROL = "1"
-a13n-envd connect https://your-host.example --host work --instance work
-```
-
-Use [Envd configuration](../a13n-envd/configuration.md) to select a narrower execution policy. Full Control provides no tenant isolation.
+The default daemon connection is file-only. Select explicit shell profiles or Full Control using daemon configuration. Full Control runs under the selected account and provides no tenant isolation. [Follow the steps](../a13n-envd/configuration.md#enable-commands).
 
 ### Restart or connect another Host
 
-After approval, Envd saves the endpoint and a protected attachment credential. Restart with the same saved alias, instance, and any explicit `--state-dir`:
-
-```bash
-a13n-envd connect work --instance work
-```
-
-Reconnection reuses the approved credential. It authorizes Device attachment, not Host login or general API access; the Host stores only its digest.
-
-To connect the same computer to a second Host, run a separate process with another instance:
-
-```bash
-a13n-envd connect https://other-host.example --host personal --instance personal
-```
-
-Each process connects to one Host, with its own daemon identity, state, and credentials. Stopping that process takes the connection offline while preserving files and registration.
+Preserve the instance, Host alias, state directory, and launch flags when restarting. Run a separate process and instance for another Host. [Follow the steps](../a13n-envd/configuration.md#saved-instances-and-hosts).
 
 ### Manage and revoke
 
-To withdraw access, choose **Settings → Environments → Revoke**, then **Revoke connection**. Revocation blocks new access and fences the active connection within its bounded authority window. It preserves remote files, execution history, and already dispatched effects; the revoked record remains visible.
-
-To enroll again intentionally, use a new `--instance` and approve it explicitly. A rejected credential is not automatically replaced, and deleting it locally cannot take over an existing registration.
+Use Revoke to withdraw trust; forgetting local configuration is a different operation. Remote files and already dispatched effects remain. [Follow the steps](../a13n-harness-ui/environments-and-projects.md#revoke-a-device).
 
 ### Troubleshooting
 
-- For another computer, use its reachable HTTPS hostname. `localhost` refers to the computer running Envd. Loopback permits HTTP; private CAs use `--ca-file`.
-- If approval expires, rerun the same command to request approval again. Authentication denial after revocation makes Envd exit rather than generate a replacement credential.
+Check the reachable HTTPS origin, Device approval, and saved credential. A revoked credential is not replaced automatically. [Follow the steps](../a13n-harness-ui/environments-and-projects.md#connect-and-approve-envd).
 
 ## Connect to the Service
 

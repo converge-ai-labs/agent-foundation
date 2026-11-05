@@ -42,14 +42,7 @@ To use a published image, select a tag under `ghcr.io/converge-ai-labs/a13n-sand
 
 ## Managed Docker desktop in Service
 
-Prepare the Docker connection, then create a desktop environment:
-
-1. Build `a13n-sandbox:local-desktop` on the selected Docker Engine, or choose a compatible published desktop tag.
-2. Add a Docker connection in Console. Configure Engine access under **Container management**. Enable **Environment operation channel** and set **Host access address** to a hostname or IP reachable by every Service/Worker.
-3. For a local process using Docker Desktop, use `127.0.0.1` for the access and listen addresses. For a remote Engine, configure its reachable private address, listen interface and trusted plaintext private-link opt-in.
-4. Select **Desktop environment** in the template editor. This preset fixes the desktop image and HTTP EIP execution together. **Standard environment** selects the standard image and native Docker execution. Both allow CPU, memory and mount settings.
-5. For a local build or your own image, select **Custom image**. Set image `a13n-sandbox:local-desktop`, execution `envd_http`, **Desktop capability** (`desktop: true`) and `pull_policy: never` for the local build. Keep networking enabled. The image starts the desktop and Envd without an initialization script.
-6. Create the environment. Service publishes Envd's port, discovers the Docker-assigned host port, authenticates the device and checks desktop readiness. Enable the agent's Computer tools and the mount's required Computer operations before starting the task.
+Build `a13n-sandbox:local-desktop` on the selected Docker Engine, or choose a compatible published tag. Follow the [Service desktop creation steps](../a13n-service/computer-use.md#create-a-docker-desktop) for Console setup and agent permissions. A custom local image uses `execution="envd_http"`, `desktop=true`, and `pull_policy="never"`, with networking enabled. The image starts the desktop and Envd without an initialization script. The following sections describe the image connection and lifecycle contract.
 
 For a trusted private network, the Docker connection can use:
 
@@ -77,7 +70,7 @@ For lifecycle management:
 
 The root desktop launcher supervises Xvfb/Openbox running as `sandbox`, creates an Xauthority cookie and disables X11 TCP listening. A required desktop process exiting fails the container. X11 supports key events; literal Unicode `type_text` is unavailable.
 
-Human access is a separate opt-in. Set `desktop_assistance: true` and provide a browser-reachable `desktop_viewer_url` routed to the container's port 6081. Service enables the image's `A13N_DESKTOP_ACCESS` supervisor; the operator supplies the viewer route and TLS. Follow [desktop control](../a13n-service/environments.md#desktop-access-prerequisites) for permissions and the handback workflow.
+Human access is a separate opt-in. Set `desktop_assistance: true` and provide a browser-reachable `desktop_viewer_url` routed to the container's port 6081. Service enables the image's `A13N_DESKTOP_ACCESS` supervisor; the operator supplies the viewer route and TLS. Follow [desktop control](../a13n-service/computer-use.md#desktop-access-prerequisites) for permissions and the handback workflow.
 
 ## Run with a Host
 

@@ -65,17 +65,17 @@ const regions: Region[] = [
       },
       {
         label: "E2B",
-        href: "/environments/providers#e2b-runtime",
+        href: "/environments/cloud-providers#e2b-runtime",
         bounds: [110, 465, 100, 120],
       },
       {
         label: "Daytona",
-        href: "/environments/providers#daytona",
+        href: "/environments/cloud-providers#daytona",
         bounds: [245, 465, 110, 120],
       },
       {
         label: "Runloop",
-        href: "/environments/providers#runloop",
+        href: "/environments/cloud-providers#runloop",
         bounds: [380, 465, 110, 120],
       },
       {
@@ -107,7 +107,7 @@ const regions: Region[] = [
     links: [
       {
         label: "Agent Foundation",
-        href: "/overview/core-concepts",
+        href: "/a13n-service/core-concepts",
         bounds: [640, 550, 340, 125],
       },
       {
@@ -135,12 +135,12 @@ const regions: Region[] = [
       {
         label: "File memory",
         chinese: "文件记忆",
-        href: "/a13n-service/memory#create-a-file-memory",
+        href: "/a13n-service/standalone-memory#create-a-file-memory",
         bounds: [1505, 465, 120, 125],
       },
       {
         label: "mem0",
-        href: "/a13n-service/memory#record-memories",
+        href: "/a13n-service/standalone-memory#record-memories",
         bounds: [1665, 465, 120, 125],
       },
       {

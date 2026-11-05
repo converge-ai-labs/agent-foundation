@@ -24,6 +24,8 @@ Envd 在本地计算机、远程计算机或沙箱中执行文件和命令操作
 | 实现 EIP 客户端或 provider           | [Python EIP 客户端](python-client.md)                                  |
 | 管理会话、保留输出和结果不确定的操作 | [会话与输出](operations.md)                                            |
 
+设备资源采样、新鲜度与 Prometheus/OTLP 导出见[监控与指标](monitoring.md)。
+
 ## 提供的功能
 
 通过 Device 公布的方法，确认当前平台和配置提供哪些操作：

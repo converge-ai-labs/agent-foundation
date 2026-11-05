@@ -88,7 +88,7 @@ Codex 和 Grok 订阅连接使用 Host Web 独立获取 URL 和下载文件；�
 | 获取/下载 | `HttpxWebClient` 配合 `HttpWebPolicy`      | 有界 HTTP(S) 读取或保存文件 |
 | 抓取      | `HtmlScrapeProvider`，后端 `default`       | HTML/文本转换为 Markdown    |
 
-抓取直接读取 HTTP 响应，不渲染 JavaScript，也不使用 Browser 的登录状态。交互式站点使用 [Browser Use](webui.md#browse-on-the-host)。Host 请求遵循捕获的主机允许策略；未设置策略时允许私有目标。
+抓取直接读取 HTTP 响应，不渲染 JavaScript，也不使用 Browser 的登录状态。交互式站点使用 [Browser Use](host-browser.md#browse-on-the-host)。Host 请求遵循捕获的主机允许策略；未设置策略时允许私有目标。
 
 需要调整限制时，将以下字段合并到 `web` 条目的 `configuration`。这是设置片段，不是独立文件：
 

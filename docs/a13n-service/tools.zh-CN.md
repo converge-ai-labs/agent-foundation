@@ -3,20 +3,20 @@ title: 工具与连接
 description: 为 agent 选择工具、连接外部服务，并验证一次工具调用。
 ---
 
-先准备一个能[回复消息](use-platform.md)的 agent。添加一个工具来源，保存 agent 的[修订版本](agents-and-runs.md#agent-configuration)，再让它执行一个小任务并检查工具结果。
+先准备一个能[回复消息](use-platform.md)的 agent。添加一个工具来源，保存 agent 的[修订版本](agent-configuration.md#agent-configuration)，再让它执行一个小任务并检查工具结果。
 
 按操作执行的位置选择来源：
 
-| 任务                            | 来源                        | 配置                                                                                                 |
-| ------------------------------- | --------------------------- | ---------------------------------------------------------------------------------------------------- |
-| 读取文件、运行命令或操作桌面    | 内置工具集                  | 挂载[环境](environments.md)并启用所需动作                                                            |
-| 搜索或获取网页内容              | Web 工具                    | 为搜索和抓取选择 Web provider                                                                        |
-| 读取或修改 Service 资源         | [平台工具](#platform-tools) | 启用相关分组并设置工具权限                                                                           |
-| 调用远程 MCP 服务器或已连接应用 | [连接](#connections)        | 创建、授权并测试工作空间连接                                                                         |
-| 调用应用中的函数                | 客户端工具                  | 声明 schema，处理 `pending.calls`，再[提交结果并恢复](agents-and-runs.md#client-tools-and-questions) |
-| 教 agent 执行工作流             | [Skill](skills.md)          | 添加指令和文件，同时配置工作流需要的工具                                                             |
+| 任务                            | 来源                        | 配置                                                                                                     |
+| ------------------------------- | --------------------------- | -------------------------------------------------------------------------------------------------------- |
+| 读取文件、运行命令或操作桌面    | 内置工具集                  | 挂载[环境](environments.md)并启用所需动作                                                                |
+| 搜索或获取网页内容              | Web 工具                    | 为搜索和抓取选择 Web provider                                                                            |
+| 读取或修改 Service 资源         | [平台工具](#platform-tools) | 启用相关分组并设置工具权限                                                                               |
+| 调用远程 MCP 服务器或已连接应用 | [连接](#connections)        | 创建、授权并测试工作空间连接                                                                             |
+| 调用应用中的函数                | 客户端工具                  | 声明 schema，处理 `pending.calls`，再[提交结果并恢复](agent-configuration.md#client-tools-and-questions) |
+| 教 agent 执行工作流             | [Skill](skills.md)          | 添加指令和文件，同时配置工作流需要的工具                                                                 |
 
-在修订版本中设置[工具权限](agents-and-runs.md#tool-permissions)：允许、请求审批、由模型审核或拒绝。选中的工具还需要对应资源和运行时权限。
+在修订版本中设置[工具权限](agent-configuration.md#tool-permissions)：允许、请求审批、由模型审核或拒绝。选中的工具还需要对应资源和运行时权限。
 
 ## 内置工具集
 
@@ -32,7 +32,7 @@ description: 为 agent 选择工具、连接外部服务，并验证一次工具
 | `assets`   | 通过 `publish_asset` 发布环境文件       | 禁用；生成工作空间资产                              |
 | `browser`  | 观察和操作托管浏览器                    | 禁用；需要[浏览器绑定](browsers.md)及已注册的供应商 |
 
-选择文件或终端工具后，先挂载[环境](environments.md)，再测试 agent。桌面配置和截图预览参阅 [Computer Use](environments.md#computer-use)。以 `read` 挂载的[记忆](memory.md)只提供查看、列出和搜索；可写挂载提供相应修改工具。发布的文件成为[资产](files-and-webhooks.md#assets)。
+访问用户文件或执行终端命令前，先挂载[环境](environments.md)。内置 skill 文档通过宿主只读挂载提供，不需要用户环境。桌面配置和截图预览参阅 [Computer Use](computer-use.md#computer-use)。以 `read` 挂载的[记忆](memory.md)只提供查看、列出和搜索；可写挂载提供相应修改工具。发布的文件成为[资产](files-and-webhooks.md#assets)。
 
 ## 平台工具
 
@@ -49,7 +49,7 @@ description: 为 agent 选择工具、连接外部服务，并验证一次工具
 | `providers`             | Provider 及已保存连接的测试                           |
 | `execution`             | 读取 session、thread、run、trace 和发现项；提交发现项 |
 
-平台调用使用运行的短期凭据，权限不超过启动运行的人或密钥。各操作的配置 key 是其 MCP 工具名。`inherit` 对读取操作表示 `allow`，对写入操作表示 `ask`。`execution` 中唯一的写入是 `POST /api/v1/findings`；每个问题选择一种主要[发现类型](agents-and-runs.md#find-and-improve-execution-issues)。
+平台调用使用运行的短期凭据，权限不超过启动运行的人或密钥。各操作的配置 key 是其 MCP 工具名。`inherit` 对读取操作表示 `allow`，对写入操作表示 `ask`。`execution` 中唯一的写入是 `POST /api/v1/findings`；每个问题选择一种主要[发现类型](inspect-runs.md#find-and-improve-execution-issues)。
 
 按 [Agent Composer 示例](agent-composer.md#use-the-toolset-in-your-own-agents)为平台工具配上操作 skill。先验证一次读取，再测试已启用写入操作的审批流程。
 
@@ -134,26 +134,7 @@ Service 在一次执行尝试内保留 MCP 客户端，每次调用前检查连�
 
 ### 供接入方使用的 MCP Apps
 
-接入应用可以根据工具结果渲染 MCP App。Service 保存原始参数、声明和完整结果，包括 `_meta`；应用打开 App 时才获取 HTML。Console 不渲染 App。
-
-实时接入流程：
-
-1. 订阅 `GET /api/v1/sessions/{session_id}/stream`。
-2. 将含有 `a13n.mcp_apps` 的 delta 视为加载中的引用。此处即使 `unavailable: false`，也只是临时状态。
-3. 等待 `app_ready`，确认原始数据和引用已提交。用 `(run_id, app_id)` 标识每个 App；重连后可能重复收到就绪事件。
-4. 使用事件的 `run_id` 和 `apps[].app_id` 打开 App。
-
-包含 App 的检查点提交后，事件跟在已提交的 `items` 后面；无需等待运行结束。发布失败时，引用标记为不可用，不发送就绪事件。通过 `GET /api/v1/runs/{run_id}/items` 加载的可用已提交引用可直接打开，包括断线期间已经结束的运行。Thread 事件流不发送 `app_ready`。
-
-| 请求                                                      | 请求体                                | 结果                                |
-| --------------------------------------------------------- | ------------------------------------- | ----------------------------------- |
-| `POST /api/v1/runs/{run_id}/apps/{app_id}/open`           | 无                                    | 已保存的原始数据和当前 HTML         |
-| `POST /api/v1/runs/{run_id}/apps/{app_id}/tools/call`     | `{"name":"increment","arguments":{}}` | `result` 中的原始 MCP 结果          |
-| `POST /api/v1/runs/{run_id}/apps/{app_id}/resources/read` | `{"uri":"ui://counter/app.html"}`     | 已保存 App URI 的当前 HTML 和元数据 |
-
-每次请求使用新的 MCP 客户端并检查当前访问权限。打开 App 不会重跑原始工具；不支持依赖 worker 原 MCP 会话的服务器。按钮调用必须满足原 agent 的工具选择与权限、当前连接的工具选择及 App 可见性。需要审批或模型审核的操作会被拒绝。部署配置了准入策略时，还需要显式支持 App 准入。
-
-接入应用负责创建 iframe、执行资源 CSP 和隔离要求，并通过 MCP App bridge 提供原始参数和结果。应用自行保存视图状态，通过现有运行 API 提交上下文或消息。后续工具结果仅返回调用方，不替换原始结果，也不进入模型历史。调用不会自动重试：收到 `outcome_unknown` 后先检查外部状态，再决定是否重试。HTML 每次重新获取，可能与产生旧结果时的版本不同。升级到 checkpoint format 4 时，应先升级 control 进程和读取端，再启动新 worker。
+- [嵌入 MCP Apps](mcp-apps.md)
 
 ### OAuth
 
@@ -217,7 +198,7 @@ Grant 支持续期时，token 在使用时续期，并发调用者共享同一�
 
 JSON 配置使用 `"tool_search": {"automatic": {}}`。自动策略的 `capabilities` 默认为 `["browser", "computer"]`，可按需加入 `files`、`shell`（Terminal）、`web`、`memory` 或 `assets`。`connections` 默认为 true，设为 false 后所有 MCP 连接直接提供工具。`exclude_connections` 排除指定连接 ID，`exclude_platform: true` 让平台工具直接提供。使用显式 `groups` 时省略 `automatic`。请分别使用 `files`、`shell` 和 `computer`；不再接受 `environment`。`GET /toolsets` 通过 `discovery_defaults` 返回当前自动发现策略，通过 `discovery_sources` 返回来源信息。传入 `connection_ids` 可以获取指定连接的描述和稳定分组名。调整连接顺序或修改名称不会改变分组名。如果任一指定连接不存在或不属于当前工作区，目录请求返回 `404 not_found`。
 
-**Service 破坏性变更：** 将发现分组 `capabilities` 中的 `environment` 替换为 `files`、`shell` 和 `computer`，或其中需要的部分。运维人员需要自行修复受影响的 Agent 版本以及 Run、Inbox 和 Schedule 中冻结的配置。Service 不会迁移或转换这些数据。单独读取或复用不兼容记录时，接口返回 `409 conflict`，包含 `reason: configuration_unavailable` 和受影响的资源 ID。Agent 版本、Inbox 和 Schedule 列表保留正常记录，并通过 `unavailable` 列出不兼容记录；即使 `items` 为空，也应继续使用 `next_cursor` 翻页。会话的 thread 帧同样标记不兼容的 Run 和待处理条目，让其他线程继续刷新。此选择器变更不影响独立使用的 Harness 或 Harness UI 配置。
+升级已有部署前，请检查[兼容性说明](upgrade-notes.md#tool-discovery-selectors)。
 
 以下片段将一个已选连接加入分组。替换两处 `conn_...`：
 
@@ -237,13 +218,13 @@ JSON 配置使用 `"tool_search": {"automatic": {}}`。自动策略的 `capabili
 
 模型使用 `discover_tools` 搜索，通过 `describe_tool` 读取定义，并通过 `call_tool` 调用组内工具。`list_tool_groups` 列出分组；`list_tools(detail="full")` 配合 `next_offset` 分页读取定义。成员 schema 不会加入后续模型请求，执行仍保留原凭据、调用方请求头和权限。
 
-分组接受已选的 `connections`、按实例名引用的 `plugins`、`capabilities`（`environment`、`web`），以及代表已启用平台工具的 `platform: true`。每个来源最多属于一个分组。名称以字母开头，最多包含 32 个字母、数字、下划线或连字符，不能包含 `__`。
+分组接受已选的 `connections`、按实例名引用的 `plugins`、`capabilities`（`files`、`shell`、`computer`、`browser`、`web`、`memory`、`assets`），以及代表已启用平台工具的 `platform: true`。每个来源最多属于一个分组。名称以字母开头，最多包含 32 个字母、数字、下划线或连字符，不能包含 `__`。
 
 未分组来源仍直接暴露。`client_tools` 保留外部调用协议。每个子 agent 使用自身修订版本的分组。运行覆盖会替换整个 `tool_search` 块；`groups: {}` 关闭分组。可选 `config`、控制工具名称和分页限制参阅 [Harness ToolSearch](../a13n-harness/tool-search.md)。
 
 ### 调用方请求头
 
-将对话 ID 等非凭据上下文放入 thread 的 `mcp_headers`：`{connection_id: {header: value}}`。运行接受时捕获该映射，后续修改只影响之后的运行。连接的认证请求头不能被覆盖。参阅[调用方请求头示例](agents-and-runs.md#caller-headers)。
+将对话 ID 等非凭据上下文放入 thread 的 `mcp_headers`：`{connection_id: {header: value}}`。运行接受时捕获该映射，后续修改只影响之后的运行。连接的认证请求头不能被覆盖。参阅[调用方请求头示例](execution-options.md#caller-headers)。
 
 ## MCP 服务器建议
 

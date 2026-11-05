@@ -19,6 +19,7 @@ import openapiChinese from "./locales/openapi.zh-CN.json";
 import { translateOpenAPI } from "./translate-openapi";
 import { remarkTranslationHeadings } from "./remark-translation-headings";
 import { remarkAlerts } from "./remark-alerts";
+import { remarkExplicitAnchors } from "./remark-explicit-anchors";
 import { absoluteLinks, referenceFiles } from "./site";
 
 const docs = defineDocs({
@@ -30,6 +31,7 @@ const docs = defineDocs({
     mdxOptions: applyMdxPreset({
       remarkPlugins: (plugins) => [
         remarkTranslationHeadings,
+        remarkExplicitAnchors,
         ...plugins,
         remarkAlerts,
         remarkMdxMermaid,

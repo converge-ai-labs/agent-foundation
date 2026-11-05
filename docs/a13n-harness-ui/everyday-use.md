@@ -145,7 +145,7 @@ In Sandbox, a shell in the Project cannot automatically access the sibling Threa
 3. Select a row to preview it. Ctrl+T inspects history without switching.
 4. Press Enter to resume, then `/status` to check the working directory and selections.
 
-**Resume uses the launch directory's Project and roots**, while keeping saved history, Agent, and execution permissions. To retain the original Project and directories, launch from that Project's first root. An active conversation cannot be resumed in another TUI.
+Resuming within the same Project keeps the Thread's saved working directories, even if the Project file has changed. Resuming from another Project uses that launch directory's Project and local roots, while retaining history, Agent, Device bindings, and local execution mode. Check `/status` after resuming; see [Project and recovery rules](environments-and-projects.md#files-projects-and-recovery). An active conversation cannot be resumed in another TUI.
 
 | Browser action                                          | Key               |
 | ------------------------------------------------------- | ----------------- |

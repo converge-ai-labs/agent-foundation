@@ -204,7 +204,7 @@ The native Responses profile forces streaming and `store=false`. Ordinary reques
 
 For returning sign-in, supply the issued public `client_id` and retained `id_token_hint`. Callbacks use `http://127.0.0.1:<port>/auth/callback`, with only the port variable. Migrate confidential-client or hosted HTTPS callback configurations to a public loopback flow before upgrading. Existing public-client credentials remain readable.
 
-If the user declined plan usage, request consent on a new sign-in and let the user approve it. Local logout clears saved tokens; it neither revokes remote OpenAI access nor stops active providers using cached tokens. Manage remote access in ChatGPT settings. See [Service callback configuration](../a13n-service/models.md#self-hosted-callback).
+If the user declined plan usage, request consent on a new sign-in and let the user approve it. Local logout clears saved tokens; it neither revokes remote OpenAI access nor stops active providers using cached tokens. Manage remote access in ChatGPT settings. See [Service callback configuration](../a13n-service/model-providers.md#self-hosted-callback).
 
 ## Authentication failures
 

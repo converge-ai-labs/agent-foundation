@@ -80,7 +80,7 @@ uv sync --locked --package a13n-harness
 
 这里通过 builder 参数传入具体模型，因此保持 `AgentSpec.model` 未设置。只选择一种模型来源。即使 Agent 只返回文本，也要明确填写 `output_type`。
 
-## 构建一次，在线程中继续执行
+## 构建一次，继续同一 Thread
 
 保留第一个程序的导入、`respond()` 和最后的 `asyncio.run(main())`。只替换 `main()`：
 

@@ -81,7 +81,7 @@ a13n-service --config service.toml migrate
 a13n-service --config service.toml migrate --check
 ```
 
-检查成功表示数据库符合当前构建预期的 schema，且不存在旧的不分页运行指针。如果命令报告旧版对象，先完成[对象转换](#convert-legacy-run-objects)，再启动副本。
+检查成功表示数据库符合当前构建预期的 schema，且不存在旧的不分页运行指针。如果命令报告旧版对象，先完成[对象转换](upgrade-notes.md#convert-legacy-run-objects)，再启动副本。
 
 每个进程启动时都要求 schema 与自身构建精确匹配。滚动升级期间，已运行的旧进程可以继续使用修改后的 schema，但 schema head 不同时，就绪检查会变为不可用。选择滚动升级前，应检查迁移兼容性和负载均衡器行为。替换旧进程，检查每个新副本，再验证历史读取和执行。
 
@@ -102,7 +102,7 @@ Control 副本通过数据库领取机制协调维护任务。扫描失败后记
 | 记忆整理或后台压缩一直未结算 | 操作已保存的状态和 control 对账日志。                           |
 | Webhook 或邮件停止到达       | Outbox 错误、目标可用性和 dead 投递告警。                       |
 
-Outbox 提供至少一次投递。失败投递按指数退避重试，间隔最长一小时，达到对应类型的 `max_attempts` 后标记为 dead。修复目标后，工作空间管理员可检查并重新投递 [webhook](files-and-webhooks.md#webhooks)。
+Outbox 提供至少一次投递。失败投递按指数退避重试，间隔最长一小时，达到对应类型的 `max_attempts` 后标记为 dead。修复目标后，工作空间管理员可检查并重新投递 [webhook](webhooks.md#webhooks)。
 
 ## Outbox 保留与容量
 
@@ -125,7 +125,7 @@ parallel = 2
 
 ## 环境监控采集器
 
-启用可选的 vmagent 或 Grafana Alloy 集成时，先按[采集器初始化](environment-monitoring.md#bootstrap-an-optional-collector)操作。每个采集器只运行一个 `writer = true` 的 `all` 或 `control` 进程；其他 API 副本使用 `writer = false`。Worker 不同步采集器配置。
+启用可选的 vmagent 或 Grafana Alloy 集成时，先按[采集器初始化](environment-collectors.md#bootstrap-an-optional-collector)操作。每个采集器只运行一个 `writer = true` 的 `all` 或 `control` 进程；其他 API 副本使用 `writer = false`。Worker 不同步采集器配置。
 
 修改或停用采集器时，按以下顺序操作：
 
@@ -153,33 +153,6 @@ Helm 托管的 vmagent 使用专用写入进程/采集器 Recreate Pod，并保�
 
 ## Run 搜索部署
 
-升级到引入运行搜索的版本时，迁移会添加默认空值的搜索列，并并发创建 GIN 索引，不回填历史内容。列和触发器修改仍需短暂表锁；迁移超时配置限制执行时间。索引构建失败后可重新运行：无效索引会删除，已完成的有效索引保留。
+<span id="convert-legacy-run-objects"></span>
 
-先升级所有 control 进程和读取端，再启用新 worker。当前 worker 写入检查点格式 4，并读取格式 1–4；旧 worker 会跳过无法继续的格式。写入新格式后，回滚仍需保留兼容的读取端、Console 和 worker。数据库降级会删除派生的搜索数据，但不会转换已保存对象。
-
-## 转换旧版运行对象
-
-仅在从最初的不分页运行显示升级，且迁移命令报告旧版指针时，使用此流程。Schema 迁移重命名数据库字段；独立的转换步骤添加消息序号并压缩对象。
-
-1. 等待已接受和正在运行的任务结束，再停止**全部** control 和 worker 副本。
-2. 完成 schema 迁移。随后出现的旧版对象错误表示还需执行转换步骤。
-3. 使用数据库所有者权限，并在仓库之外准备持久私有备份目录。备份包含会话数据。
-4. 检查一批对象，再执行转换：
-
-```sh
-a13n-service --config service.toml migrate-run-objects
-a13n-service --config service.toml migrate-run-objects --apply --backup-dir /private/backups/a13n-run-objects
-```
-
-默认每批处理 100 条运行；`--limit` 接受 1–1000。命令先校验并备份原始对象和数据库指针，再替换每条运行的指针，保留消息 ID、顺序、内容、流覆盖范围及检查点载荷。已转换运行会跳过，因此中断的批次可以继续。
-
-5. 重复执行 apply 命令，直到报告 `"converted": 0`。遇到拒绝时先调查原因：未完成的检查点清理、已有显示分页、对象缺失或损坏、历史已截断，都需要解决后再继续。
-6. 检查部署迁移是否完成：
-
-```sh
-a13n-service --config service.toml migrate --check
-```
-
-7. 恢复副本，打开历史运行及其消息列表，再继续对话。
-
-回退到旧版不分页读取端时，停止副本，并一起恢复备份的数据库指针和对象。后续清理可能删除原始对象，因此应独立保留私有备份。
+- [Service 升级说明](upgrade-notes.md)

@@ -92,7 +92,7 @@ HTTPS 连接通过 `httpx2` 遵循 `HTTPS_PROXY`、`ALL_PROXY`、`NO_PROXY` 及�
 初始化还接受客户端名称/版本、`initialization_timeout=10.0`、`request_timeout=None`，以及逐会话的 `max_in_flight=32`。设备方法将发现与执行分开：
 
 - `descriptor` 读取缓存设备信息；`describe()` 获取新视图。两者提供系统信息、路径格式、默认目录和目录发现可用性。
-- 设备声明 `device.metrics` 时，`metrics()` 读取最新缓存样本。它不打开会话，也不启动采集；首次采集完成前，`sample` 保持 `None`。参见[监控与样本语义](configuration.md#system-information-and-resource-monitoring)。
+- 设备声明 `device.metrics` 时，`metrics()` 读取最新缓存样本。它不打开会话，也不启动采集；首次采集完成前，`sample` 保持 `None`。参见[监控与样本语义](monitoring.md#system-information-and-resource-monitoring)。
 - `list_directories(DirectoryListParams(...))` 使用绝对路径、偏移量、上限、预期设备 ID 和代际列出一层目录。它不打开会话。
 - `open_session(working_directory=None, egress=None, required_methods=(), readiness_timeout=10.0)` 创建新会话。省略 cwd 时采用设备默认值。controlled 设备需提供 `egress`；其他模式拒绝该字段。`required_methods` 检查兼容性，不授予权限。
 - `attach_session(descriptor)` 在断线宽限期内显式附加到同一设备代际的精确已有会话。操作和传输不会被重放或恢复。

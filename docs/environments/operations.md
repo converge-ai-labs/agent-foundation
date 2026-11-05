@@ -10,13 +10,14 @@ Use Environment operations to read and change files, run commands, and observe p
 
 Open a connector, then select the interface under `execution.operations` for your task. Each interface is optional; the execution's descriptor lists the supported families and exact actions.
 
-| Family    | Use it to                                              | Check before relying on the result                       |
-| --------- | ------------------------------------------------------ | -------------------------------------------------------- |
-| Files     | Read, write, list, search, and move files              | The Provider's path rules and access limits              |
-| Shell     | Run a foreground command with bounded output           | Allowed executables, shell syntax, and supported limits  |
-| Processes | Start a command and observe or control it across calls | Support for each action, including discovery and signals |
-| Outputs   | Read retained stdout/stderr by offset                  | Available ranges and whether observation is complete     |
-| Ports     | Observe whether a supported target is listening        | The configured address and port allowlist                |
+| Family    | Use it to                                              | Check before relying on the result                                                              |
+| --------- | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
+| Files     | Read, write, list, search, and move files              | The Provider's path rules and access limits                                                     |
+| Shell     | Run a foreground command with bounded output           | Allowed executables, shell syntax, and supported limits                                         |
+| Processes | Start a command and observe or control it across calls | Support for each action, including discovery and signals                                        |
+| Outputs   | Read retained stdout/stderr by offset                  | Available ranges and whether observation is complete                                            |
+| Ports     | Observe whether a supported target is listening        | The configured address and port allowlist                                                       |
+| Computer  | Observe and operate an enabled desktop                 | Explicit desktop permissions and [Envd computer-use requirements](../a13n-envd/computer-use.md) |
 
 Connector `open()` returns an execution with its advertised operation families ready. Call `check_ready()` for a later read-only check. A failure can affect one family while others remain usable; readiness checks do not repair the target.
 
@@ -108,4 +109,4 @@ Continue output reads from the returned offsets and inspect their available rang
 
 Keep process handles with the execution that owns them. Reopening the same target creates a fresh observation scope; old handles remain invalid. A new adapter can discover only what its Provider retained and supports discovering. Inspect the outcome of an interrupted command before taking further action, and never restart a missing command automatically.
 
-Use [Provider-specific limits](providers.md#cloud-providers) to check backend differences and [Harness Environment tools](../a13n-harness/environments.md) for model-facing signatures and policy.
+Use [Provider-specific limits](cloud-providers.md#cloud-providers) to check backend differences and [Harness Environment tools](../a13n-harness/environments.md) for model-facing signatures and policy.

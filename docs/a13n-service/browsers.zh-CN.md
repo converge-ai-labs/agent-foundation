@@ -22,9 +22,11 @@ description: 选择浏览器、连接 agent，并管理浏览器的保留策略�
 
 Docker 和 Native 停止后保留 cookie 和登录状态。云浏览器集成使用临时 profile，随供应商会话结束而删除。外部 CDP 的浏览器生命周期和 profile 由你管理。
 
+Docker 浏览器需要 Linux 宿主和[host-network 部署配置](#deployment-and-network)。仅能连接 Docker Engine，并不代表 bridge 网络中的 Service 容器能访问宿主回环端口。
+
 ## 使用 Console
 
-1. **启用浏览器工具。** 在 agent 修订版本中启用 `browser` 工具集，并选择所需的[工具权限](agents-and-runs.md#tool-permissions)。
+1. **启用浏览器工具。** 在 agent 修订版本中启用 `browser` 工具集，并选择所需的[工具权限](agent-configuration.md#tool-permissions)。
 2. **添加浏览器。** 使用托管浏览器时，先在 **Providers → Browser providers** 配置账号，再到 **Browsers** 创建浏览器。外部 CDP 则直接在 **Browsers** 接入端点，无需 provider 账号。
 3. **绑定 thread。** 打开 thread 的 **Browser** 操作，选择浏览器并保存。访问该 thread 创建的标签页时保留 `thread`；需要访问已有标签页时选择 `global`。
 4. **提交任务。** 默认的 `first_use` 在首次调用浏览器工具时准备浏览器。让 agent 打开或选择标签页，观察页面，再执行任务。

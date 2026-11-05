@@ -132,6 +132,9 @@ export A13N_ENCRYPTION__KEYS="{\"primary\": \"$(openssl rand -base64 32)\"}"
 4. 重启提供 API 的进程，发送邀请验证投递。
 
 ```toml
+[encryption]
+key_file = "/var/lib/a13n/encryption.key"
+
 [auth.mail]
 smtp_host = "smtp.example.com"
 smtp_port = 587
@@ -203,7 +206,7 @@ HTTPS Envd 连接使用这些变量；明文本地或 provider 私有 Envd HTTP 
 | 调整目标准备和维护   | `environments.*`。                                                                                    |
 | 限制保留工具调用     | `tool_executions.max_active`、保留和关闭设置。                                                        |
 
-保留调用默认每个 worker 最多 64 个活跃执行，前台等待五秒。该等待是[执行策略](agents-and-runs.md#execution-policy)的部署回退值，不是截止时间；agent、线程或单次运行可以覆盖。结果在完成后最多保留 24 小时。首次交付确认会启动较短的一小时重读窗口，不延长最大保留期限。
+保留调用默认每个 worker 最多 64 个活跃执行，前台等待五秒。该等待是[执行策略](execution-options.md#execution-policy)的部署回退值，不是截止时间；agent、线程或单次运行可以覆盖。结果在完成后最多保留 24 小时。首次交付确认会启动较短的一小时重读窗口，不延长最大保留期限。
 
 为关闭流程的所有阶段预留时间：先等待 worker 尝试交接，保留调用再获得 `shutdown_grace_seconds`（默认 300 秒），随后取消流程获得 `finalization_seconds`（默认 10 秒）用于清理和结果发布。进程退出后，租约协调将未完成记录标记为 lost。按这些阶段设置平台的终止宽限期，参阅[运维指南](operations.md)。
 
@@ -213,7 +216,7 @@ HTTPS Envd 连接使用这些变量；明文本地或 provider 私有 Envd HTTP 
 
 先使用 JSON 日志，需要时启用私有指标监听器。`telemetry.log_level` 和 `log_format` 适用于所有命令。服务器可通过 `log_file`、`log_file_max_mb` 和 `log_file_backups` 写入轮转 JSON 文件；`log_stdout = false` 要求配置文件。`metrics_port` 必须与 HTTP 端口不同。按[监控设置](monitoring.md#metrics)验证抓取。
 
-为导出和 [trace 查询](agents-and-runs.md#traces)选择同一后端：
+为导出和 [trace 查询](inspect-runs.md#traces)选择同一后端：
 
 | `telemetry.trace_backend` | 必需设置                                                    |
 | ------------------------- | ----------------------------------------------------------- |
@@ -227,7 +230,7 @@ HTTPS Envd 连接使用这些变量；明文本地或 provider 私有 Envd HTTP 
 
 `monitoring.enabled` 默认为 `true`，但目标选择数据源后才开始采集。查看第一张图表时，按[环境监控指南](environment-monitoring.md#bind-and-verify-an-environment)绑定 **Local Cache**。
 
-使用 pull 采集时，先配置 `monitoring.collectors.vmagent` 或 `.alloy`，再创建 pull 数据源。映射默认为空。每项需要绝对路径的共享目录和重载端点。每个采集器只将一个 `all` 或 `control` 进程设为 `writer = true`，其他进程使用默认 `false`。Alloy 还需要已有 `receiver`。挂载、凭据、重载策略和验证步骤见[采集器初始化](environment-monitoring.md#bootstrap-an-optional-collector)。环境变量覆盖使用完整 JSON 映射 `A13N_MONITORING__COLLECTORS`。
+使用 pull 采集时，先配置 `monitoring.collectors.vmagent` 或 `.alloy`，再创建 pull 数据源。映射默认为空。每项需要绝对路径的共享目录和重载端点。每个采集器只将一个 `all` 或 `control` 进程设为 `writer = true`，其他进程使用默认 `false`。Alloy 还需要已有 `receiver`。挂载、凭据、重载策略和验证步骤见[采集器初始化](environment-collectors.md#bootstrap-an-optional-collector)。环境变量覆盖使用完整 JSON 映射 `A13N_MONITORING__COLLECTORS`。
 
 采集器就绪后，可向指定工作空间提供可选预设：
 
@@ -239,7 +242,7 @@ query_endpoint = "https://metrics.example.com"
 workspace_ids = ["ws_example"]
 ```
 
-列表为空时不提供预设。`A13N_MONITORING__DEPLOYMENT_PRESET` 接受整个对象的 JSON。通过 `A13N_MONITORING__DEPLOYMENT_QUERY_BEARER_TOKEN` 单独提供可选读取令牌，再重启 control 进程。管理员[确认预设](environment-monitoring.md#confirm-a-deployment-preset)后创建数据源，并可选保存凭据快照。部署变化不会更新已有数据源或绑定。
+列表为空时不提供预设。`A13N_MONITORING__DEPLOYMENT_PRESET` 接受整个对象的 JSON。通过 `A13N_MONITORING__DEPLOYMENT_QUERY_BEARER_TOKEN` 单独提供可选读取令牌，再重启 control 进程。管理员[确认预设](environment-collectors.md#confirm-a-deployment-preset)后创建数据源，并可选保存凭据快照。部署变化不会更新已有数据源或绑定。
 
 ## 关联限制
 
@@ -255,43 +258,4 @@ workspace_ids = ["ws_example"]
 
 ## 工作空间自动配置
 
-Local/Docker provider 和模板的自动创建只在 `all` 角色运行。通用设置中两者默认关闭；提供的挂载 socket 的 Compose 部署启用 Docker，关闭 Local。分离的 control/worker 部署需要明确配置执行资源。
-
-初始化 Docker 时，先让 Service 进程通过 `environments.docker_host` 或其 Docker 环境访问目标 Engine。只安装 CLI 不会获得 Engine 访问权限。然后启用：
-
-```toml
-[provisioning.docker]
-enabled = true
-```
-
-默认模板使用 Service 审定的 sandbox 镜像和 `pull_policy = "if_missing"`。自动配置只创建一次资源，初始化时不拉取镜像或创建容器；实例需要镜像时才拉取。后续设置变化不覆盖已有模板，需要在 Console 或通过 API 编辑。已有实例保留原镜像。
-
-在仓库检出中使用本地构建镜像：
-
-1. 在仓库根目录运行 `make image-sandbox`。
-2. 将以下覆盖配置保存为该根目录下的 `compose.local.yaml`：
-
-```yaml
-services:
-  service:
-    environment:
-      A13N_PROVISIONING__DOCKER: '{"enabled":true,"image":"a13n-sandbox:local","pull_policy":"never"}'
-```
-
-3. 同时加载两个文件启动：
-
-```sh
-docker compose -f deploy/docker/compose/a13n-service.yaml -f compose.local.yaml up -d --wait
-```
-
-直接使用 TOML 部署时，将同样的 `image` 和 `pull_policy` 字段放入 `[provisioning.docker]`。镜像仓库中的镜像使用 `if_missing`。环境变量覆盖完整 JSON 对象；旧的 `A13N_DOCKER_ENVIRONMENT_IMAGE` 快捷变量不再读取。
-
-仅在开发部署中使用 Local 执行，并指定绝对根目录：
-
-```toml
-[provisioning.local]
-enabled = true
-root = "/srv/a13n/environments"
-```
-
-Local 直接在 worker 宿主机执行，没有隔离。禁用后保留目录和资源，但后续执行无法再使用 Local。禁用 Docker 自动配置后，手动配置的 Docker provider 仍可使用。重试和职责规则见[工作空间自动配置](environments.md#workspace-provisioning)。
+- [配置工作空间自动资源](workspace-provisioning.md)

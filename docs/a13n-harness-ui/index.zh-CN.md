@@ -40,6 +40,7 @@ Harness UI 让你在自己的电脑或连接的 Environment 中与 Agent 一起�
 - **调整 Agent 使用的模型：** [连接另一个 Model](models-and-authentication.md)，再[配置 Agent](agents-and-subagents.md)。
 - **选择工作位置：** [选择 Environment 并组织 Project](environments-and-projects.md)。
 - **教授可重复执行的任务：** [添加 Skill](skills-and-content-plugins.md)。
+- **让多个对话记住偏好：** [配置文件记忆](configuration.md#file-memory)，再[查看记忆文件与整理过程](webui.md#observe-memory)。
 - **连接其他工具服务：** [添加 MCP 服务器](mcp.md)；需要交互式结果时使用 [MCP Apps](mcp-apps.md)。
 - **使用提供方工具或媒体输入：** [配置原生工具与 Web 工具](native-and-web-tools.md)。
 
@@ -47,7 +48,7 @@ Harness UI 让你在自己的电脑或连接的 Environment 中与 Agent 一起�
 
 ## 共享并继续工作
 
-Agent 工作时保持 Harness UI 运行。关闭浏览器标签页后，活动 Run 会继续；停止应用则会结束当前执行。应用重启后，按照[恢复指南](automation-and-troubleshooting.md)从最后保存的检查点继续。
+Agent 工作时保持 Harness UI 运行。关闭浏览器标签页后，活动 Run 会继续。[正常重启 WebUI](running-webui.md#restart-or-update-the-server)时，保存与清理成功后，可自动继续兼容的中断任务。TUI 退出或进程崩溃后，检查最后保存的检查点，再[手动恢复](automation-and-troubleshooting.md#resume-after-exit-or-failure)。再次提交任务前，先检查已保存的结果。
 
 只与可信协作者共享 WebUI 实例。他们使用同一组凭据、配置和文件。Host 原生文件访问和终端默认开启；`--no-share-computer` 可关闭这些共享功能，与 Agent 执行权限分别设置。
 
