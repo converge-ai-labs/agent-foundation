@@ -18,6 +18,7 @@ from a13n_envd_client.websocket import WebSocketConnection
 from a13n_harness.environment.errors import EnvironmentProviderError
 from a13n_harness.environment.execution import EnvironmentConnector
 from a13n_harness.environment.models import EnvironmentState
+from a13n_harness.environment.session_recovery import EnvdSessionRecovery
 from a13n_harness.providers.environment.remote_envd.configuration import (
     HttpEnvdCredential,
     RemoteEnvdEnvironmentConfiguration,
@@ -276,7 +277,12 @@ class DeviceConnections:
             ) from error
 
     async def bind(
-        self, binding: ResolvedEnvironmentBinding, *, environment_id: str, state: EnvironmentState | None = None
+        self,
+        binding: ResolvedEnvironmentBinding,
+        *,
+        environment_id: str,
+        state: EnvironmentState | None = None,
+        session_recovery: EnvdSessionRecovery | None = None,
     ) -> EnvironmentConnector:
         resource = binding.device
         configuration = RemoteEnvdEnvironmentConfiguration(
@@ -286,6 +292,7 @@ class DeviceConnections:
         )
         if isinstance(resource.transport, HttpDeviceTransport):
             return HTTP_ENVD.execution_connector(
+                session_recovery=session_recovery,
                 environment=configuration,
                 configuration=resource.transport.configuration,
                 environment_id=environment_id,
@@ -296,6 +303,7 @@ class DeviceConnections:
                 runtime=await self._http_runtime(resource),
             )
         return WEBSOCKET_ENVD.execution_connector(
+            session_recovery=session_recovery,
             environment=configuration,
             configuration=resource.transport.configuration,
             environment_id=environment_id,

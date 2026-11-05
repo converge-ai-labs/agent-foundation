@@ -375,7 +375,11 @@ The run freezes its agent/thread/run overlay. Shell commands, background process
 
 ## Retained tool executions
 
-With automatic handoff, a supported call can continue on its original worker after the model receives an `exec-*` receipt. Read that reference's result rather than starting the call again. A retained CodeAct invocation includes its nested calls. Later runs can use other workers; losing the owner marks unfinished work `lost` with uncertain effects, without automatic replay.
+With automatic handoff, a supported call continues after the model receives an `exec-*` receipt. Read that reference's result rather than starting the call again. A retained CodeAct invocation includes its nested calls.
+
+Envd-backed Shell executions survive a worker replacement while the original daemon generation and Envd Session remain available. The replacement worker observes the same process under the original execution ID, including when the start response was lost. It uses the originating run's captured mount and current authorization without starting another command or run. Temporary connection loss leaves recovery pending. A lost daemon generation, expired Envd Session or missing native evidence ends the execution as `lost` with uncertain effects. Other in-process calls, including suspended CodeAct continuations, become `lost` when their worker disappears.
+
+A thread reuses compatible Envd Sessions across runs and human-input pauses. Active work maintains keepalive; final release starts the Session's idle window, one hour by default. Changed bindings or execution policies use separate Sessions. Runs remain on the worker holding the thread's live execution context until its ownership is released or taken over.
 
 Open **Tool executions** from the Console session menu or run details. Use **Inspect** for metadata and **Read result** for a bounded result fragment. API operations are under `/threads/{thread_id}`:
 

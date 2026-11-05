@@ -102,16 +102,17 @@ fn request(session: Option<&str>, method: &str, params: Value) -> Value {
     let mut request = json!({"jsonrpc":"2.0", "id":1, "method":method, "params":params});
     if let Some(session) = session {
         request["eip_session"] = json!(session);
+        request["eip_owner_epoch"] = json!(1);
     }
     request
 }
 
 fn initialize() -> Value {
-    json!({"supported_protocol_versions":["0.3"], "expected_device_id":"device-test", "client":{"name":"carrier-test", "version":"0"}})
+    json!({"supported_protocol_versions":["0.4"], "expected_device_id":"device-test", "client":{"name":"carrier-test", "version":"0"}})
 }
 
 fn open_params(descriptor: &Value, path: &str) -> Value {
-    json!({"expected_device_id":"device-test", "expected_generation":descriptor["generation"], "protocol_version":"0.3", "working_directory":path, "required_methods":[]})
+    json!({"expected_device_id":"device-test", "expected_generation":descriptor["generation"], "protocol_version":"0.4", "working_directory":path, "required_methods":[]})
 }
 
 fn context(operation: &str) -> Value {
@@ -352,12 +353,12 @@ async fn http_sessions_are_not_tcp_affine_and_close_is_scoped() {
 }
 
 #[tokio::test]
-async fn reverse_websocket_reattaches_sessions_within_disconnect_grace() {
+async fn reverse_websocket_reattaches_sessions_within_idle_deadline() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let device = DeviceProcess::start(
         "reverse_websocket",
         listener.local_addr().unwrap(),
-        json!({"idle_timeout_ms":10000, "disconnect_grace_ms":1500}),
+        json!({"idle_timeout_ms":10000}),
     );
     let mut socket = accept(&listener).await;
     let descriptor = result(
@@ -396,18 +397,22 @@ async fn reverse_websocket_reattaches_sessions_within_disconnect_grace() {
         descriptor["generation"]
     );
     let attached = result(
-        ws_control(
-            &mut socket,
-            request(Some(&session), "session.attach", json!({})),
-        )
+        ws_control(&mut socket, {
+            let mut attach = request(Some(&session), "session.attach", json!({}));
+            attach["eip_owner_epoch"] = json!(2);
+            attach
+        })
         .await,
     );
-    assert_eq!(attached["descriptor"], opened["descriptor"]);
+    let mut expected = opened["descriptor"].clone();
+    expected["owner_epoch"] = json!(2);
+    assert_eq!(attached["descriptor"], expected);
     result(
-        ws_control(
-            &mut socket,
-            request(Some(&session), "session.keepalive", json!({})),
-        )
+        ws_control(&mut socket, {
+            let mut keepalive = request(Some(&session), "session.keepalive", json!({}));
+            keepalive["eip_owner_epoch"] = json!(2);
+            keepalive
+        })
         .await,
     );
     device.stop().await;

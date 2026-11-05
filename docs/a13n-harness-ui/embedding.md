@@ -116,7 +116,7 @@ Root and child steering follow the current global `input.steering_mode`: `immedi
 
 Generic tools run inline by default. Set `tools.execution.mode: auto` for timeout-based handoff. Process-backed top-level Shell calls can yield after the foreground wait in either mode; foreground-only mounts follow the generic mode. The App supplies the runtime needed for immediate steering and retained execution.
 
-Use `app.tool_executions(thread_id, offset=0, limit=20)` for non-consuming, exact-Thread status and `app.cancel_tool_execution(thread_id, execution_id)` to request tool cancellation. Conversation cancellation and tool cancellation are separate. Cancelling a conversation also suppresses automatic completion wake until new user input. Retained execution records last until App shutdown and are lost on restart.
+Use `app.tool_executions(thread_id, offset=0, limit=20)` for non-consuming, exact-Thread status and `app.cancel_tool_execution(thread_id, execution_id)` to request tool cancellation. Conversation cancellation and tool cancellation are separate. Cancelling a conversation also suppresses automatic completion wake until new user input. Retained records and completed results survive App restart. Results expire one hour after first consumption, bounded by one day after completion. Envd Shell work can recover while its original external daemon and Session survive; other unfinished in-process calls become `lost` without replay.
 
 ## Thread queries and mutations
 

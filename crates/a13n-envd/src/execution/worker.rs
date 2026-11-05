@@ -43,8 +43,7 @@ pub(crate) struct WorkerConfig {
     pub working_directory: String,
     pub limits: DaemonLimits,
     pub command: Option<CommandConfig>,
-    pub idle_timeout_ms: u64,
-    pub disconnect_grace_ms: u64,
+    pub lifecycle: crate::eip::SessionLifecyclePolicy,
 }
 
 impl WorkerConfig {
@@ -69,8 +68,8 @@ impl WorkerConfig {
             transport: TransportConfig::Stdio,
             limits: self.limits.clone(),
             initialization_timeout: Duration::from_secs(30),
-            session_idle_timeout: Duration::from_millis(self.idle_timeout_ms),
-            disconnect_grace: Duration::from_millis(self.disconnect_grace_ms),
+            session_idle_timeout: Duration::from_millis(self.lifecycle.idle_timeout_ms),
+            session_max_lifetime: self.lifecycle.max_lifetime_ms.map(Duration::from_millis),
             command: self.command.clone(),
             runtime: Some(
                 RuntimeState::prepare(&self.runtime_directory).map_err(io::Error::other)?,

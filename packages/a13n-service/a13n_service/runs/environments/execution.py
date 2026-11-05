@@ -99,7 +99,14 @@ class Source:
             else:
                 await prove(self.runtime, self.lease)
         except (LeaseLost, AuthorityRevoked) as exc:
-            if current_execution() is not None and not execution_cleanup_active():
+            record = current_execution()
+            if record is not None and not execution_cleanup_active():
+                if isinstance(exc, LeaseLost):
+                    try:
+                        async with transaction(self.runtime.storage) as session:
+                            await lock_execution(session, self.lease, record.execution_id, cleanup=True)
+                    except LeaseLost:
+                        self.runtime.executions.suspend_shell(record.execution_id)
                 raise asyncio.CancelledError from exc
             raise
         yield
@@ -245,7 +252,6 @@ async def open_mounts(
     *,
     configuration: RunConfiguration | None = None,
     skill_cache: Cache | None = None,
-    envd_sessions: dict[str, EnvdSessionRecovery] | None = None,
 ) -> AsyncGenerator[dict[str, HarnessMount]]:
     """Publish inert sources. Only activated instances are marked used on completion."""
     sources: list[Source] = []
@@ -292,11 +298,12 @@ async def open_mounts(
                     state,
                     configuration,
                     skill_cache=skill_cache if mount.name == PRIMARY else None,
-                    session_recovery=envd_sessions.setdefault(mount.name, EnvdSessionRecovery())
-                    if envd_sessions is not None
-                    else None,
                 )
             )
+    for source in sources:
+        source.session_recovery = await runtime.environment_contexts.get(
+            lease, source.mount, configuration or RunConfiguration()
+        )
     try:
         yield {
             source.mount.name: HarnessMount(

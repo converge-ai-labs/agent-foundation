@@ -29,7 +29,7 @@ description: 为每个会话设置目标策略，通过 broker 注入 HTTPS 凭�
 {
   "expected_device_id": "device-example",
   "expected_generation": 123,
-  "protocol_version": "0.3",
+  "protocol_version": "0.4",
   "working_directory": "/workspace",
   "egress": {
     "destinations": {"mode": "allowlist", "hosts": ["api.github.com"]},
@@ -140,7 +140,7 @@ broker 拒绝私有、回环、链路本地、元数据及其他非公共上游�
 
 每次启动守护进程都应提供可信启动文件。管理快照保护运行中的 broker 不受后续系统修改影响；若系统树已被 root 工作负载修改，重启前应恢复或重建可信文件。彼此敌对的会话应使用独立部署。受控出站网络约束 worker 流量，不覆盖共享机器上的所有进程。
 
-分离连接后，worker 和策略保留到断线宽限期结束；重新附加返回当前策略元数据。关闭、过期、broker 失败或守护进程死亡会停止受控执行和网络。真实秘密与会话 CA 私钥保留在 broker 内存中。
+分离连接后，worker 和策略保留到会话过期；重新附加返回当前策略元数据。关闭、过期、broker 失败或守护进程死亡会停止受控执行和网络。真实秘密与会话 CA 私钥保留在 broker 内存中。
 
 每个会话在创建时按配置预算预留设备总额。如果空闲会话在达到 `max_sessions` 前耗尽设备总额，应提高相应总额。确认 worker 死亡后释放容量。如果无法确认暂存文件清理完成，其预留会一直计费到守护进程销毁。
 

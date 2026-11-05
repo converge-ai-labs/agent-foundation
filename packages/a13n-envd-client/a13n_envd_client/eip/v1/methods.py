@@ -87,6 +87,7 @@ from .models import (
     ProcessKillResult,
     ProcessReleaseParams,
     ProcessReleaseResult,
+    ProcessResolveStartParams,
     ProcessSignalParams,
     ProcessSignalResult,
     ProcessStartParams,
@@ -100,6 +101,8 @@ from .models import (
     SessionAttachParams,
     SessionCloseParams,
     SessionCloseResult,
+    SessionDetachParams,
+    SessionDetachResult,
     SessionKeepaliveParams,
     SessionKeepaliveResult,
     SessionOpenParams,
@@ -695,6 +698,19 @@ PROCESS_RELEASE = MethodSpec(
     device_scoped=False,
 )
 
+PROCESS_RESOLVE_START = MethodSpec(
+    name="process.resolve_start",
+    kind="request_response",
+    replay_class="active_only",
+    introduced="0.4",
+    error_family="process",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ProcessResolveStartParams,
+    result_type=ProcessStartResult,
+    device_scoped=False,
+)
+
 PROCESS_SIGNAL = MethodSpec(
     name="process.signal",
     kind="request_response",
@@ -786,6 +802,19 @@ SESSION_CLOSE = MethodSpec(
     device_scoped=False,
 )
 
+SESSION_DETACH = MethodSpec(
+    name="session.detach",
+    kind="request_response",
+    replay_class="ledger_external",
+    introduced="0.4",
+    error_family="session",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=SessionDetachParams,
+    result_type=SessionDetachResult,
+    device_scoped=False,
+)
+
 SESSION_KEEPALIVE = MethodSpec(
     name="session.keepalive",
     kind="request_response",
@@ -871,6 +900,7 @@ METHODS = MappingProxyType(
         PROCESS_INSPECT.name: PROCESS_INSPECT,
         PROCESS_KILL.name: PROCESS_KILL,
         PROCESS_RELEASE.name: PROCESS_RELEASE,
+        PROCESS_RESOLVE_START.name: PROCESS_RESOLVE_START,
         PROCESS_SIGNAL.name: PROCESS_SIGNAL,
         PROCESS_START.name: PROCESS_START,
         PROCESS_WAIT.name: PROCESS_WAIT,
@@ -878,6 +908,7 @@ METHODS = MappingProxyType(
         RECEIPT_GET.name: RECEIPT_GET,
         SESSION_ATTACH.name: SESSION_ATTACH,
         SESSION_CLOSE.name: SESSION_CLOSE,
+        SESSION_DETACH.name: SESSION_DETACH,
         SESSION_KEEPALIVE.name: SESSION_KEEPALIVE,
         SESSION_OPEN.name: SESSION_OPEN,
         SHELL_EXEC.name: SHELL_EXEC,

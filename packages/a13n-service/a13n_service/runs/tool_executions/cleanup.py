@@ -20,6 +20,7 @@ async def reconcile(runtime: Runtime, *, limit: int = 100) -> int:
                 select(ToolExecutionRow)
                 .where(
                     ToolExecutionRow.completed_at.is_(None),
+                    ToolExecutionRow.shell.is_(None),
                     ToolExecutionRow.lease_expires_at <= current,
                 )
                 .order_by(ToolExecutionRow.lease_expires_at)

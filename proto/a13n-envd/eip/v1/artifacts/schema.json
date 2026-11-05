@@ -5264,6 +5264,26 @@
       "title": "ProcessReleaseResult",
       "type": "object"
     },
+    "ProcessResolveStartParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "target_operation_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Target Operation Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "context",
+        "target_operation_id"
+      ],
+      "title": "ProcessResolveStartParams",
+      "type": "object"
+    },
     "ProcessSignal": {
       "enum": [
         "interrupt",
@@ -5755,6 +5775,12 @@
         "limits": {
           "$ref": "#/$defs/EIPLimits"
         },
+        "owner_epoch": {
+          "maximum": 18446744073709551615,
+          "minimum": 1,
+          "title": "Owner Epoch",
+          "type": "integer"
+        },
         "session_id": {
           "minLength": 1,
           "title": "Session Id",
@@ -5782,9 +5808,31 @@
         "limits",
         "execution_features",
         "lifecycle",
-        "boundary"
+        "boundary",
+        "owner_epoch"
       ],
       "title": "SessionDescriptor",
+      "type": "object"
+    },
+    "SessionDetachParams": {
+      "additionalProperties": false,
+      "properties": {},
+      "title": "SessionDetachParams",
+      "type": "object"
+    },
+    "SessionDetachResult": {
+      "additionalProperties": false,
+      "properties": {
+        "detached": {
+          "const": true,
+          "title": "Detached",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "detached"
+      ],
+      "title": "SessionDetachResult",
       "type": "object"
     },
     "SessionKeepaliveParams": {
@@ -5811,22 +5859,29 @@
     "SessionLifecyclePolicy": {
       "additionalProperties": false,
       "properties": {
-        "disconnect_grace_ms": {
-          "maximum": 18446744073709551615,
-          "minimum": 1,
-          "title": "Disconnect Grace Ms",
-          "type": "integer"
-        },
         "idle_timeout_ms": {
           "maximum": 18446744073709551615,
           "minimum": 1,
           "title": "Idle Timeout Ms",
           "type": "integer"
+        },
+        "max_lifetime_ms": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Lifetime Ms"
         }
       },
       "required": [
-        "idle_timeout_ms",
-        "disconnect_grace_ms"
+        "idle_timeout_ms"
       ],
       "title": "SessionLifecyclePolicy",
       "type": "object"
@@ -5855,6 +5910,17 @@
           "minimum": 1,
           "title": "Expected Generation",
           "type": "integer"
+        },
+        "lifecycle": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SessionLifecyclePolicy"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "protocol_version": {
           "pattern": "^(?:0\\.[1-9][0-9]*|[1-9][0-9]*\\.[0-9]+)$",
@@ -6340,5 +6406,5 @@
   },
   "$id": "https://github.com/converge-ai-labs/agent-foundation/eip/v1/schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Environment Interaction Protocol 0.3"
+  "title": "Environment Interaction Protocol 0.4"
 }

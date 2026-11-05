@@ -211,7 +211,7 @@ mod tests {
         frame(Command::Request {
             ticket,
             environment: Default::default(),
-            payload: json!({"jsonrpc":"2.0", "id":ticket, "eip_session":"session-framing-1", "method":method, "params":params}),
+            payload: json!({"jsonrpc":"2.0", "id":ticket, "eip_session":"session-framing-1", "eip_owner_epoch":1, "method":method, "params":params}),
         })
     }
     async fn received(reader: &mut (impl AsyncRead + Unpin)) -> Reply {

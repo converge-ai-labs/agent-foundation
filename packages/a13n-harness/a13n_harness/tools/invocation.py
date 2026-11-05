@@ -709,7 +709,7 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
             raise ModelRetry(result.retry_prompt)
         if result is not None and result.record.terminal:
             raise ToolFailed(result.record.error or f"Tool execution {result.record.status}.")
-        runtime.release_foreground(ctx.deps.thread_id, record.execution_id)
+        await runtime.release_foreground(ctx.deps.thread_id, record.execution_id)
         return state.receipt(result.record if result is not None else record)
 
     async def _call_observed(

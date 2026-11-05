@@ -106,7 +106,7 @@ from a13n_harness_ui.observation import (
     record_skill_event,
 )
 from a13n_harness_ui.restart import GracefulRestart, RestartPauseCapability
-from a13n_harness_ui.restart_models import RestartItem, RestartPrincipal
+from a13n_harness_ui.restart_models import RestartItem
 from a13n_harness_ui.storage import (
     AgentResourceSource,
     ChildExecutionHead,
@@ -121,7 +121,13 @@ from a13n_harness_ui.storage import (
     Thread,
     ThreadConfiguration,
 )
-from a13n_harness_ui.storage.contracts import StoredDeferredInput
+from a13n_harness_ui.storage.contracts import (
+    StoredChildAuthority,
+    StoredDeferredInput,
+    StoredPrincipal,
+)
+from a13n_harness_ui.storage.repositories import ChildCompletionGuard
+from a13n_harness_ui.storage.tool_executions import completion_ids, execution_composition
 from a13n_harness_ui.surfaces import (
     ChildActivityView,
     ChildExecutionPage,
@@ -774,6 +780,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         execution_id: str,
         message: RunInputValue,
         immediate: bool = False,
+        before_accept: Callable[[], None] | None = None,
     ) -> SubagentSteerResult:
         """Steer a locally owned segment scoped to its saved parent relationship."""
 
@@ -784,7 +791,9 @@ class HarnessUiSubagentOperator(SubagentOperator):
         try:
             if self._restart is not None:
                 self._restart.require_input()
-            enqueue_id = await active.stream.steer(message, immediate=immediate, best_effort=True)
+            enqueue_id = await active.stream.steer(
+                message, immediate=immediate, best_effort=True, before_accept=before_accept
+            )
         except Exception:
             return SubagentSteerResult(execution_id=execution_id, accepted=False)
         return SubagentSteerResult(
@@ -825,7 +834,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 status=head.status,
             )
         if self._tool_executions is not None:
-            self._tool_executions.suppress(head.child_thread_id)
+            await self._tool_executions.suppress(head.child_thread_id)
         if self._restart is not None:
             self._restart.active.pop(head.child_thread_id, None)
             self._restart.signal()
@@ -865,10 +874,53 @@ class HarnessUiSubagentOperator(SubagentOperator):
             usage_limits=plan.usage_limits,
         )
 
-    async def deliver_tool_completion(self, thread_id: str, prompt: RunInputValue) -> bool:
+    async def _restore_completion_continuation(self, thread_id: str) -> _CompletionContinuation | None:
+        previous = await self._store.child_executions.latest_for_child(thread_id)
+        if previous is None or not previous.resumable:
+            return None
+        checkpoint = await self._read_checkpoint(previous)
+        authority = checkpoint.authority
+        parent = await self._store.threads.get(previous.parent_thread_id)
+        if authority is None or parent is None:
+            return None
+        composition = await self._store.objects.read_model(authority.parent_composition, ResolvedRunComposition)
+        retained = _CompletionContinuation(
+            execution_id=previous.execution_id,
+            scope=ParentRunScope(
+                thread_id=parent.thread_id,
+                root_thread_id=await self._root_thread_id(parent),
+                parent_thread_id=parent.parent_thread_id,
+                run_id=authority.parent_run_id,
+                instance=AgentInstanceContext(
+                    identity=AgentIdentityRef(
+                        issuer=authority.parent_identity.issuer,
+                        subject=authority.parent_identity.subject,
+                        **authority.parent_identity.claims,
+                    ),
+                    agent_instance_id=_public_id("agent"),
+                ),
+                composition=composition,
+            ),
+            identity=AgentIdentityRef(
+                issuer=authority.identity.issuer, subject=authority.identity.subject, **authority.identity.claims
+            ),
+            usage_limits=None
+            if authority.usage_limits is None
+            else TypeAdapter(UsageLimits).validate_python(authority.usage_limits),
+            configuration_version=authority.configuration_version,
+        )
+        return self._completion_continuations.setdefault(thread_id, retained)
+
+    async def deliver_tool_completion(
+        self, thread_id: str, prompt: RunInputValue, *, before_accept: Callable[[], None] | None = None
+    ) -> bool:
         """Continue the exact child lane without admitting a root or impersonating a parent Run."""
+        if not self._accepting:
+            return False
         retained = self._completion_continuations.get(thread_id)
-        if retained is None or not self._accepting:
+        if retained is None:
+            retained = await self._restore_completion_continuation(thread_id)
+        if retained is None:
             return False
         previous = await self._require_execution_for_parent(retained.scope.thread_id, retained.execution_id)
         active = await self._active_segment(previous)
@@ -878,6 +930,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 execution_id=previous.execution_id,
                 message=prompt,
                 immediate=False,
+                before_accept=before_accept,
             )
             return result.accepted
         if not previous.resumable:
@@ -902,6 +955,12 @@ class HarnessUiSubagentOperator(SubagentOperator):
             input=prompt,
             identity=retained.identity,
             usage_limits=retained.usage_limits,
+            before_accept=before_accept,
+            automatic_completion=ChildCompletionGuard(
+                generation_digest=retained.scope.composition.generation_digest,
+                parent_configuration_version=retained.scope.composition.thread_configuration_version,
+                child_configuration_version=retained.configuration_version,
+            ),
         )
         return True
 
@@ -913,6 +972,8 @@ class HarnessUiSubagentOperator(SubagentOperator):
         input: RunInputValue,
         identity: AgentIdentityRef,
         usage_limits: UsageLimits | None,
+        before_accept: Callable[[], None] | None = None,
+        automatic_completion: ChildCompletionGuard | None = None,
     ) -> AsyncExecutionView:
         subagent_name, _ = await self._execution_identity(previous)
         checkpoint = await self._read_checkpoint(previous)
@@ -957,11 +1018,14 @@ class HarnessUiSubagentOperator(SubagentOperator):
             parent=scope,
             agent_instance_id=agent_instance_id,
         )
+        if before_accept is not None:
+            before_accept()
         head = await self._store.child_executions.resume(
             previous_execution_id=previous.execution_id,
             execution_id=execution_id,
             child_run_id=stream.run_id,
             run_composition=published.reference,
+            automatic_completion=automatic_completion,
         )
         prepared = _PreparedSegment(
             head=head,
@@ -1191,7 +1255,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                     deferred = result.deferred
                     assert state is not None and deferred is not None
                     expected_checkpoint = await self._publish_checkpoint(
-                        head=current.head,
+                        prepared=current,
                         memory_positions=current.reconstructed.memory_cursors.snapshot(),
                         run_id=result.run_id,
                         state=state,
@@ -1237,7 +1301,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                     continue
                 record_output(result.output, status=result.status)
                 durable_events = await self._finish_result(
-                    current.head,
+                    current,
                     result,
                     display,
                     expected_checkpoint,
@@ -1271,7 +1335,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 try:
                     state = await current.stream.export_state()
                     checkpoint = await self._publish_checkpoint_object(
-                        head=current.head,
+                        prepared=current,
                         memory_positions=current.reconstructed.memory_cursors.snapshot(),
                         run_id=current.stream.run_id,
                         state=state,
@@ -1304,7 +1368,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 async with self._lock:
                     self._active.pop(current.head.execution_id, None)
                     if self._tool_executions is not None:
-                        self._tool_executions.retry(current.state.thread_id)
+                        self._tool_executions.run_settled(current.state.thread_id)
                     self._release_completion_continuation(current.state.thread_id)
                     if self._restart is not None:
                         self._restart.finished(current.state.thread_id)
@@ -1326,7 +1390,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             return False
         assert restart_coordinator is not None
         checkpoint = await self._publish_checkpoint_object(
-            head=prepared.head,
+            prepared=prepared,
             memory_positions=prepared.reconstructed.memory_cursors.snapshot(),
             run_id=prepared.stream.run_id,
             state=state,
@@ -1357,12 +1421,12 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 checkpoint=checkpoint,
                 parent_composition=parent_composition.ref,
                 parent_run_id=prepared.scope.run_id,
-                identity=RestartPrincipal(
+                identity=StoredPrincipal(
                     issuer=prepared.identity.issuer,
                     subject=prepared.identity.subject,
                     claims=dict(prepared.identity.claims),
                 ),
-                parent_identity=RestartPrincipal(
+                parent_identity=StoredPrincipal(
                     issuer=prepared.scope.instance.identity.issuer,
                     subject=prepared.scope.instance.identity.subject,
                     claims=dict(prepared.scope.instance.identity.claims),
@@ -1400,30 +1464,34 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 instance=instance,
                 composition=prepared.composition,
             ):
-                async with prepared.stream as stream:
-                    async for item in stream:
-                        record_skill_event(item)
-                        await self._store.usage.observe(thread_id=prepared.state.thread_id, item=item)
-                        image_events = await tool_images.observe(item)
-                        app_events = (
-                            await self._mcp_apps.observe(
-                                item, thread_id=prepared.state.thread_id, run_id=stream.run_id, context=stream.context
+                with execution_composition(prepared.head.run_composition):
+                    async with prepared.stream as stream:
+                        async for item in stream:
+                            record_skill_event(item)
+                            await self._store.usage.observe(thread_id=prepared.state.thread_id, item=item)
+                            image_events = await tool_images.observe(item)
+                            app_events = (
+                                await self._mcp_apps.observe(
+                                    item,
+                                    thread_id=prepared.state.thread_id,
+                                    run_id=stream.run_id,
+                                    context=stream.context,
+                                )
+                                if self._mcp_apps is not None
+                                else ()
                             )
-                            if self._mcp_apps is not None
-                            else ()
-                        )
-                        events = (*observer.observe(item), *image_events, *app_events)
-                        compactor.observe(events)
-                        async with self._lock:
-                            active.display = compactor.snapshot()
-                        if isinstance(item, HarnessRunResultEvent):
-                            # Completion remains fenced by cleanup and checkpoint
-                            # publication in _finish_result; token delivery is not
-                            # evidence of a saved child outcome.
-                            result = item.result
-                            terminal_events = events
-                        else:
-                            await self._publish_live(prepared, events)
+                            events = (*observer.observe(item), *image_events, *app_events)
+                            compactor.observe(events)
+                            async with self._lock:
+                                active.display = compactor.snapshot()
+                            if isinstance(item, HarnessRunResultEvent):
+                                # Completion remains fenced by cleanup and checkpoint
+                                # publication in _finish_result; token delivery is not
+                                # evidence of a saved child outcome.
+                                result = item.result
+                                terminal_events = events
+                            else:
+                                await self._publish_live(prepared, events)
         except BaseException as exc:
             run_error = exc
 
@@ -1468,7 +1536,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
 
     async def _finish_result(
         self,
-        head: ChildExecutionHead,
+        prepared: _PreparedSegment,
         result: HarnessRunResult[Any],
         display: CompactChildDisplay,
         expected: ObjectRef | None,
@@ -1477,13 +1545,14 @@ class HarnessUiSubagentOperator(SubagentOperator):
         accepted: DeferredToolResume | None = None,
         memory_positions: Mapping[str, str | None] | None = None,
     ) -> tuple[AguiEvent, ...]:
+        head = prepared.head
         if result.status == "completed":
             state = result.state
             assert state is not None
             terminal_display = _with_completion(display, output=result.output)
             try:
                 checkpoint = await self._publish_checkpoint_object(
-                    head=head,
+                    prepared=prepared,
                     memory_positions=memory_positions,
                     run_id=result.run_id,
                     state=state,
@@ -1498,6 +1567,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                     expected_checkpoint=expected,
                     checkpoint=checkpoint,
                     child_run_id=result.run_id,
+                    tool_completions=completion_ids(state.message_history),
                 )
             except BaseException as exc:
                 failure = await self._fail_terminal_persistence(
@@ -1512,7 +1582,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             failure = result.failure or SafeFailure(code="subagent_failed", message="The child execution failed.")
             terminal_display = _with_failure(display, failure)
             await self._finish_non_success(
-                head=head,
+                prepared=prepared,
                 result=result,
                 display=terminal_display,
                 status="failed",
@@ -1526,7 +1596,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         if result.status == "cancelled":
             terminal_display = _with_completion(display, output=None)
             await self._finish_non_success(
-                head=head,
+                prepared=prepared,
                 result=result,
                 display=terminal_display,
                 status="cancelled",
@@ -1545,7 +1615,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
     async def _finish_non_success(
         self,
         *,
-        head: ChildExecutionHead,
+        prepared: _PreparedSegment,
         result: HarnessRunResult[Any],
         display: CompactChildDisplay,
         status: str,
@@ -1554,12 +1624,13 @@ class HarnessUiSubagentOperator(SubagentOperator):
         accepted: DeferredToolResume | None = None,
         memory_positions: Mapping[str, str | None] | None = None,
     ) -> None:
+        head = prepared.head
         checkpoint: ObjectRef | None = None
         state = result.state
         if state is not None:
             try:
                 checkpoint = await self._publish_checkpoint_object(
-                    head=head,
+                    prepared=prepared,
                     memory_positions=memory_positions,
                     run_id=result.run_id,
                     state=state,
@@ -1577,12 +1648,15 @@ class HarnessUiSubagentOperator(SubagentOperator):
             checkpoint=checkpoint,
             child_run_id=result.run_id,
             failure=failure,
+            tool_completions=completion_ids(state.message_history)
+            if checkpoint is not None and state is not None
+            else (),
         )
 
     async def _publish_checkpoint(
         self,
         *,
-        head: ChildExecutionHead,
+        prepared: _PreparedSegment,
         run_id: str,
         state: HarnessState,
         deferred_requests: DeferredToolRequests | None,
@@ -1591,8 +1665,9 @@ class HarnessUiSubagentOperator(SubagentOperator):
         expected: ObjectRef | None,
         memory_positions: Mapping[str, str | None] | None = None,
     ) -> ObjectRef:
+        head = prepared.head
         reference = await self._publish_checkpoint_object(
-            head=head,
+            prepared=prepared,
             memory_positions=memory_positions,
             run_id=run_id,
             state=state,
@@ -1605,6 +1680,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             expected=expected,
             checkpoint=reference,
             child_run_id=run_id,
+            tool_completions=completion_ids(state.message_history),
         )
         async with self._lock:
             self._signal_change_locked()
@@ -1613,7 +1689,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
     async def _publish_checkpoint_object(
         self,
         *,
-        head: ChildExecutionHead,
+        prepared: _PreparedSegment,
         run_id: str,
         state: HarnessState,
         deferred_requests: DeferredToolRequests | None,
@@ -1622,7 +1698,28 @@ class HarnessUiSubagentOperator(SubagentOperator):
         accepted: DeferredToolResume | None = None,
         memory_positions: Mapping[str, str | None] | None = None,
     ) -> ObjectRef:
+        head = prepared.head
+        parent_composition = await self._store.objects.publish_model(
+            object_kind=ObjectKind.run_composition, value=prepared.scope.composition
+        )
+        authority = StoredChildAuthority(
+            parent_composition=parent_composition.ref,
+            parent_run_id=prepared.scope.run_id,
+            parent_identity=StoredPrincipal(
+                issuer=prepared.scope.instance.identity.issuer,
+                subject=prepared.scope.instance.identity.subject,
+                claims=dict(prepared.scope.instance.identity.claims),
+            ),
+            identity=StoredPrincipal(
+                issuer=prepared.identity.issuer,
+                subject=prepared.identity.subject,
+                claims=dict(prepared.identity.claims),
+            ),
+            usage_limits=None if prepared.usage_limits is None else asdict(prepared.usage_limits),
+            configuration_version=prepared.composition.thread_configuration_version,
+        )
         value = StoredChildCheckpoint(
+            authority=authority,
             harness_release=harness_version,
             execution_id=head.execution_id,
             child_thread_id=head.child_thread_id,

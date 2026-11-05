@@ -169,7 +169,7 @@ Open **Work → Tools** to inspect an execution's originating Run/call, status, 
 
 Generic [automatic background execution](configuration.md#built-in-tools-and-subagents) is opt-in. Process-backed Shell yields after its configured foreground wait in either mode; immediate steering can release that wait sooner. Shell handles also have their own process view.
 
-**Stop** cancels the conversation and suppresses automatic completion wake until new user input. Cancel retained tools separately with their **Cancel** action. Cancellation does not promise remote rollback. Retained records/results expire and are process-local; App restart makes old references unavailable.
+**Stop** cancels the conversation and suppresses automatic completion wake until new user input. Cancel retained tools separately with their **Cancel** action. Cancellation does not promise remote rollback. Retained records and results survive App restart. Results expire one hour after first consumption, bounded by one day after completion. Envd Shell work recovers when its original external daemon and Session survive; other unfinished in-process calls become `lost` without replay.
 
 ## Pending questions, approvals, and external results
 

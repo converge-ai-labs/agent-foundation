@@ -84,7 +84,7 @@ class Device:
         self.sequence = 0
         self.descriptor = self.call(
             "initialize",
-            {"supported_protocol_versions": ["0.3"], "client": {"name": "egress-integration", "version": "1"}},
+            {"supported_protocol_versions": ["0.4"], "client": {"name": "egress-integration", "version": "1"}},
         )["descriptor"]
 
     def call(self, method, params, error=None, *, device_scope=False):
@@ -92,6 +92,7 @@ class Device:
         payload = {"jsonrpc": "2.0", "id": self.sequence, "method": method, "params": params}
         if self.session and not device_scope:
             payload["eip_session"] = self.session
+            payload["eip_owner_epoch"] = 1
         body = json.dumps(payload).encode()
         self.process.stdin.write(
             f"Content-Length: {len(body)}\r\nContent-Type: application/json; charset=utf-8\r\n\r\n".encode() + body
@@ -127,7 +128,7 @@ class Device:
             {
                 "expected_device_id": self.descriptor["device_id"],
                 "expected_generation": self.descriptor["generation"],
-                "protocol_version": "0.3",
+                "protocol_version": "0.4",
                 "working_directory": str(self.workspace),
                 **({"egress": policy} if policy is not None else {}),
             },

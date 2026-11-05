@@ -231,8 +231,8 @@ def test_current_release_sequence_preserves_consumer_requirements(tmp_path: Path
         assert checked.returncode == 0, checked.stderr
 
     for package, envd_requirement in (
-        ("a13n-harness", ">=0.5.0,<0.6.0"),
-        ("a13n-harness-ui", ">=0.5.1,<0.6.0"),
+        ("a13n-harness", ">=0.6.0,<0.7.0"),
+        ("a13n-harness-ui", ">=0.6.0,<0.7.0"),
     ):
         manifest = tomllib.loads((tmp_path / f"packages/{package}/pyproject.toml").read_text())
         assert f"a13n-envd-client{envd_requirement}" in manifest["project"]["dependencies"]
@@ -451,12 +451,12 @@ def test_mismatched_consumer_pins_are_blocked_without_writes(tmp_path: Path, com
 @pytest.mark.parametrize(
     ("component", "manifest", "dependency", "constraint"),
     [
-        ("a13n-harness", "a13n-harness", "a13n-envd-client", ">=0.5.0,<0.6.0"),
+        ("a13n-harness", "a13n-harness", "a13n-envd-client", ">=0.6.0,<0.7.0"),
         ("a13n-harness", "a13n-harness", "a13n-logging", ">=0.2.0,<0.3.0"),
         ("a13n-harness-ui", "a13n-harness-ui", "a13n-logging", ">=0.2.0,<0.3.0"),
         ("a13n-service", "a13n-service", "a13n-logging", ">=0.2.0,<0.3.0"),
-        ("a13n-service", "a13n-service", "a13n-envd-client", ">=0.5.1,<0.6.0"),
-        ("a13n-harness-ui", "a13n-harness-ui", "a13n-envd-client", ">=0.5.1,<0.6.0"),
+        ("a13n-service", "a13n-service", "a13n-envd-client", ">=0.6.0,<0.7.0"),
+        ("a13n-harness-ui", "a13n-harness-ui", "a13n-envd-client", ">=0.6.0,<0.7.0"),
     ],
 )
 def test_independent_dependency_ranges_are_injected_and_checked(
@@ -480,7 +480,7 @@ def test_independent_dependency_ranges_are_injected_and_checked(
 def test_invalid_independent_dependency_policy_is_atomic(tmp_path: Path, constraint: str) -> None:
     copy_release_files(tmp_path)
     path = tmp_path / "packages/a13n-harness/pyproject.toml"
-    path.write_text(path.read_text().replace(">=0.5.0,<0.6.0", constraint))
+    path.write_text(path.read_text().replace(">=0.6.0,<0.7.0", constraint))
     before = snapshot(tmp_path)
     result = run_script(PREPARER, tmp_path, "a13n-harness", "9.8.7")
     assert result.returncode != 0
@@ -490,10 +490,10 @@ def test_invalid_independent_dependency_policy_is_atomic(tmp_path: Path, constra
 def test_range_order_is_normalized_without_changing_policy(tmp_path: Path) -> None:
     copy_release_files(tmp_path)
     path = tmp_path / "packages/a13n-harness/pyproject.toml"
-    path.write_text(path.read_text().replace(">=0.5.0,<0.6.0", "<0.6.0,>=0.5.0"))
+    path.write_text(path.read_text().replace(">=0.6.0,<0.7.0", "<0.7.0,>=0.6.0"))
     result = run_script(PREPARER, tmp_path, "a13n-harness", "9.8.7")
     assert result.returncode == 0, result.stderr
-    assert '"a13n-envd-client>=0.5.0,<0.6.0"' in path.read_text()
+    assert '"a13n-envd-client>=0.6.0,<0.7.0"' in path.read_text()
 
 
 @pytest.mark.parametrize("version", ["9.8.7", "9.8.7-rc.2"])
@@ -547,8 +547,8 @@ def test_same_group_pins_preserve_extras(tmp_path: Path, version: str) -> None:
 @pytest.mark.parametrize(
     ("component", "version", "requirement"),
     [
-        ("a13n-service", "0.1.0", "==0.27.0"),
-        ("a13n-harness-ui", "0.21.0", "==0.27.0"),
+        ("a13n-service", "0.1.0", "==0.28.0"),
+        ("a13n-harness-ui", "0.21.0", "==0.28.0"),
     ],
 )
 def test_consumer_contract_line_is_injected_without_changing_source_versions(tmp_path, component, version, requirement):

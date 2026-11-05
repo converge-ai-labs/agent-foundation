@@ -4,15 +4,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
+from a13n_harness_ui.storage.contracts import StoredPrincipal as RestartPrincipal
 from a13n_harness_ui.storage.objects import ObjectRef
-
-
-class RestartPrincipal(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    issuer: str
-    subject: str
-    claims: dict[str, str]
 
 
 class RestartItem(BaseModel):

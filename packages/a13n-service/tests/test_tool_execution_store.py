@@ -8,6 +8,8 @@ from types import SimpleNamespace
 import pytest
 from a13n_harness.codeact.config import CodeActConfig
 from a13n_harness.codeact.state import CodeActStoredValues
+from a13n_harness.environment.process_recovery import EnvdProcessState, ShellExecutionState
+from a13n_harness.environment.retention import EnvironmentOutputPolicy
 from a13n_harness.tool_execution import (
     StoredToolExecution,
     ToolExecutionAdmissionRejected,
@@ -15,15 +17,16 @@ from a13n_harness.tool_execution import (
     ToolExecutionRecord,
     ToolExecutionRuntime,
 )
+from a13n_harness.tool_execution_payload import ToolExecutionPayload as Payload
 from a13n_service.infra import outbox
 from a13n_service.infra.db import transaction
 from a13n_service.runs.attempts import AttemptControl, LeaseLost
 from a13n_service.runs.claim import claim
 from a13n_service.runs.execute import execute
 from a13n_service.runs.tables import InboxEntryRow, ToolExecutionRow
+from a13n_service.runs.tool_executions.claims import claim_shells, relinquish_shell
 from a13n_service.runs.tool_executions.cleanup import prune, reconcile
 from a13n_service.runs.tool_executions.delivery import tool_results
-from a13n_service.runs.tool_executions.payload import Payload
 from a13n_service.runs.tool_executions.state import SharedCodeActState
 from a13n_service.runs.tool_executions.store import ORIGIN, Store
 from pydantic_ai import BinaryContent, ToolReturn
@@ -67,6 +70,87 @@ async def _deliver(runtime):
     return claims
 
 
+async def test_native_start_evidence_is_durable_without_a_result_object(service, scripted_model, runs_kit):
+    _, lease = await _origin(service, scripted_model, runs_kit)
+    store, record = Store(service.runtime), _record(lease)
+    await _save(store, lease, StoredToolExecution(record))
+    shell = ShellExecutionState(
+        mount_name="primary",
+        process=EnvdProcessState(
+            device_id="dev-original",
+            session_id="ses-original",
+            generation=1,
+            start_operation_id="op-original",
+            output_policy=EnvironmentOutputPolicy(max_inline_bytes=1024, max_output_bytes=4096, overflow="retain"),
+        ),
+    )
+    running = record.model_copy(update={"status": "running"})
+    await _save(store, lease, StoredToolExecution(running, shell=shell))
+    # Foreground release/progress must not erase pre-effect evidence.
+    await _save(store, lease, StoredToolExecution(running.model_copy(update={"foreground_released": True})))
+    restored = await Store(service.runtime).get(lease.thread_id, record.execution_id)
+    assert restored is not None and restored.shell == shell
+    assert restored.record.foreground_released
+    async with transaction(service.runtime.storage) as session:
+        row = await session.get_one(ToolExecutionRow, record.execution_id)
+        assert row.result_ref is None
+        assert row.shell == shell.model_dump(mode="json")
+    stale = replace(lease, token="not-the-owner")
+    with pytest.raises(LeaseLost):
+        await _save(store, stale, StoredToolExecution(running, shell=shell))
+
+
+@pytest.mark.parametrize("cancel_requested", [False, True])
+async def test_native_supervision_claim_is_exclusive_and_fences_old_owner(
+    service, scripted_model, runs_kit, cancel_requested
+):
+    _, lease = await _origin(service, scripted_model, runs_kit)
+    store, record = Store(service.runtime), _record(lease)
+    await _save(store, lease, StoredToolExecution(record))
+    shell = ShellExecutionState(
+        mount_name="primary",
+        process=EnvdProcessState(
+            device_id="dev-original",
+            session_id="ses-original",
+            generation=1,
+            start_operation_id="op-original",
+            output_policy=EnvironmentOutputPolicy(max_inline_bytes=1024, max_output_bytes=4096, overflow="retain"),
+        ),
+    )
+    running = record.model_copy(update={"status": "running"})
+    await _save(store, lease, StoredToolExecution(running, shell=shell))
+    scripted_model.say("The origin is finished")
+    await execute(service.runtime, lease, AttemptControl())
+    assert await claim_shells(service.runtime, worker_id="worker-b", limit=10) == []
+    if cancel_requested:
+        await store.request_cancellation(lease.thread_id, record.execution_id)
+    await relinquish_shell(service.runtime, lease, record.execution_id)
+    # Control reconciliation leaves native evidence to the worker recovery scanner.
+    assert await reconcile(service.runtime) == 0
+    batches = await asyncio.gather(
+        claim_shells(service.runtime, worker_id="worker-b", limit=10),
+        claim_shells(service.runtime, worker_id="worker-c", limit=10),
+    )
+    (claimed,) = [item for batch in batches for item in batch]
+    assert claimed.execution.shell == shell
+    assert claimed.execution.record.execution_id == record.execution_id
+    assert claimed.execution.record.cancel_requested is cancel_requested
+    assert claimed.lease.attempt_id == lease.attempt_id
+    assert claimed.lease.token != lease.token
+    await relinquish_shell(service.runtime, lease, record.execution_id)
+    assert await claim_shells(service.runtime, worker_id="worker-d", limit=10) == []
+    with pytest.raises(LeaseLost):
+        await _save(store, lease, StoredToolExecution(running, shell=shell))
+    complete = running.model_copy(
+        update={"status": "succeeded", "completed_at": datetime.now(UTC), "result_available": True}
+    )
+    await _save(store, claimed.lease, StoredToolExecution(complete, "original output"))
+    result = await store.get(lease.thread_id, record.execution_id)
+    assert result is not None and result.result == "original output"
+    assert result.record.foreground_released
+    assert len(await _deliver(service.runtime)) == 1
+
+
 async def test_original_invocation_survives_run_and_another_runtime_reads_result(service, scripted_model, runs_kit):
     _, lease = await _origin(service, scripted_model, runs_kit)
     first = ToolExecutionRuntime(store=Store(service.runtime))
@@ -94,7 +178,7 @@ async def test_original_invocation_survives_run_and_another_runtime_reads_result
         ORIGIN.reset(token)
     try:
         await asyncio.wait_for(entered.wait(), 5)
-        first.release_foreground(lease.thread_id, record.execution_id)
+        await first.release_foreground(lease.thread_id, record.execution_id)
         scripted_model.say("The original Run can finish")
         await execute(service.runtime, lease, AttemptControl())
         assert (await runs_kit.get_run(service, lease.run_id))["status"] == "completed"
@@ -110,12 +194,21 @@ async def test_original_invocation_survives_run_and_another_runtime_reads_result
         entries = await runs_kit.inbox(service, lease.thread_id)
         assert entries[-1]["kind"] == "tool_result"
         assert entries[-1]["payload"]["execution_id"] == record.execution_id
-        assert (await second.result(lease.thread_id, record.execution_id)).record.delivery_acknowledged
+        assert not (await second.result(lease.thread_id, record.execution_id)).record.delivery_acknowledged
+        async with transaction(service.runtime.storage) as session:
+            row = await session.get_one(ToolExecutionRow, record.execution_id)
+            maximum_deadline = row.expires_at
+            assert row.first_delivered_at is None
         # Delivery admits an ordinary successor. No worker affinity is introduced.
         (successor,) = await claim(service.runtime, worker_id="worker-b", worker_build="test", limit=1)
         assert successor.thread_id == lease.thread_id
         scripted_model.say("The result is available")
         await execute(service.runtime, successor, AttemptControl())
+        assert (await second.result(lease.thread_id, record.execution_id)).record.delivery_acknowledged
+        async with transaction(service.runtime.storage) as session:
+            row = await session.get_one(ToolExecutionRow, record.execution_id)
+            assert row.first_delivered_at is not None
+            assert row.expires_at < maximum_deadline
         assert await _deliver(service.runtime) == []
         assert (await second.result(lease.thread_id, record.execution_id)).result == {"answer": 42}
     finally:
@@ -637,7 +730,7 @@ async def test_recovery_preserves_admission_and_other_pending_calls(service, scr
         # Restoration must preserve the active claim rather than reset or duplicate it.
         assert await _deliver(service.runtime) == []
         await tool_results(service.runtime)(claims[0])
-        assert (await store.get(lease.thread_id, record.execution_id)).record.delivery_acknowledged
+        assert not (await store.get(lease.thread_id, record.execution_id)).record.delivery_acknowledged
     else:
         assert len(await _deliver(service.runtime)) == 1
 
@@ -829,3 +922,27 @@ async def test_execution_inspection_api_scopes_pages_results_and_cancellation(se
     assert not cancel.get("x-a13n-mcp")
     observe = schema["paths"]["/api/v1/threads/{thread_id}/tool-executions/{execution_id}/observation"]["get"]
     assert not observe.get("x-a13n-mcp")
+
+
+async def test_published_result_keeps_only_fenced_cleanup_authority(service, scripted_model, runs_kit):
+    from a13n_service.runs.tool_executions.authority import lock_execution
+
+    _, lease = await _origin(service, scripted_model, runs_kit)
+    store, record = Store(service.runtime), _record(lease)
+    await _save(store, lease, StoredToolExecution(record))
+    complete = record.model_copy(
+        update={"status": "succeeded", "completed_at": datetime.now(UTC), "result_available": True}
+    )
+    await _save(store, lease, StoredToolExecution(complete, "captured output"))
+    async with transaction(service.runtime.storage) as session:
+        await lock_execution(session, lease, record.execution_id, cleanup=True)
+    for candidate, cleanup in [(lease, False), (replace(lease, token="stale"), True)]:
+        with pytest.raises(LeaseLost):
+            async with transaction(service.runtime.storage) as session:
+                await lock_execution(session, candidate, record.execution_id, cleanup=cleanup)
+    async with transaction(service.runtime.storage) as session:
+        row = await session.get_one(ToolExecutionRow, record.execution_id)
+        row.lease_expires_at = row.created_at
+    with pytest.raises(LeaseLost):
+        async with transaction(service.runtime.storage) as session:
+            await lock_execution(session, lease, record.execution_id, cleanup=True)

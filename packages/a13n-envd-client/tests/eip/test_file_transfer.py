@@ -136,7 +136,8 @@ def descriptor() -> SessionDescriptor:
         session_id="ses-transfer",
         generation=1,
         working_directory="/",
-        lifecycle=SessionLifecyclePolicy(idle_timeout_ms=30_000, disconnect_grace_ms=1000),
+        owner_epoch=1,
+        lifecycle=SessionLifecyclePolicy(idle_timeout_ms=30_000),
         available_methods=(
             "file.open_reader",
             "file.close_reader",

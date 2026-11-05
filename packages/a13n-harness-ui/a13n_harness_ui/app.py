@@ -1721,7 +1721,7 @@ class HarnessUiApp:
                             busy_thread_ids=self._tool_executions.busy_thread_ids(),
                         )
                     for removed in deleted:
-                        self._tool_executions.suppress(removed)
+                        await self._tool_executions.suppress(removed)
                         self._tool_executions.clear_state(removed)
                         if (draft := self._shared_drafts.pop(removed, None)) is not None:
                             draft.close()
@@ -2120,6 +2120,7 @@ class HarnessUiApp:
             ("scratch", self._thread_files.prune),
             ("compaction", self._prune_compactions),
             ("checkpoint", self._store.checkpoints.prune),
+            ("tool_execution", self._store.tool_executions.prune),
         ):
             try:
                 await prune()
@@ -2316,7 +2317,7 @@ class HarnessUiApp:
                 human_input=True,
                 authorize=authorize_app_message if mcp_app_view is not None else None,
             )
-            self._tool_executions.user_input(thread_id)
+            await self._tool_executions.user_input(thread_id)
             await self._clear_submitted_draft(thread_id, draft_clear)
             self._terminal_projections.pin_active_skill_catalog(
                 receipt_id=receipt.receipt_id,
@@ -2428,24 +2429,45 @@ class HarnessUiApp:
                 kind="thread", thread_id=thread_id, root_thread_id=await self._subagent_operator._root_thread_id(thread)
             )
 
-    async def _deliver_tool_completion(self, thread_id: str, prompt: str) -> bool:
+    async def _deliver_tool_completion(self, thread_id: str, prompt: str, execution_ids: tuple[str, ...]) -> bool:
         if self._state is not AppState.ready:
             return False
         detail = await self._projections.detail(thread_id)
         if detail.thread.archived or detail.thread.memory_scope is not None or detail.deferred_requests:
             return False
+
+        def before_accept() -> None:
+            if self._state is not AppState.ready or not self._tool_executions.allows_completion(thread_id):
+                raise RunCoordinationError("Tool completion was suppressed.", code="tool_completion_suppressed")
+
+        async def authorize() -> None:
+            if await self._store.tool_executions.is_suppressed(thread_id):
+                raise RunCoordinationError("Tool completion was suppressed.", code="tool_completion_suppressed")
+            before_accept()
+
         # Lifecycle hints are model context, not human-authored messages. Keep
         # the annotation through active steering and idle continuation alike.
-        content = (ContentItem(prompt, ContentMetadata(display=False, source_id="tool_execution.completion")),)
+        content = (
+            ContentItem(
+                prompt,
+                ContentMetadata.model_validate(
+                    {"display": False, "source_id": "tool_execution.completion", "execution_ids": list(execution_ids)}
+                ),
+            ),
+        )
         if detail.thread.parent_thread_id is not None:
-            return await self._subagent_operator.deliver_tool_completion(thread_id, content)
+            return await self._subagent_operator.deliver_tool_completion(
+                thread_id, content, before_accept=before_accept
+            )
         operation = await self._root_runs.active(thread_id)
         if operation is not None:
             result = await self._root_runs.steer(
-                receipt_id=operation.receipt.receipt_id, message=content, immediate=False
+                receipt_id=operation.receipt.receipt_id, message=content, immediate=False, before_accept=before_accept
             )
             return result.accepted
-        await self._root_runs.submit_prompt(thread_id=thread_id, prompt=content)
+        await self._root_runs.submit_prompt(
+            thread_id=thread_id, prompt=content, reject_deferred=True, authorize=authorize
+        )
         return True
 
     async def _deliver_browser_handback(self, thread_id: str, prompt: str, current: Callable[[], bool]) -> bool:
@@ -2543,7 +2565,7 @@ class HarnessUiApp:
                 touch=True,
             )
             if result.accepted:
-                self._tool_executions.user_input(operation.receipt.thread_id)
+                await self._tool_executions.user_input(operation.receipt.thread_id)
                 if self._browsers is not None:
                     self._browsers.handback.user_input(operation.receipt.thread_id)
                 await self._clear_submitted_draft(operation.receipt.thread_id, draft_clear)
@@ -2608,7 +2630,7 @@ class HarnessUiApp:
             if result.accepted:
                 head = await self._store.child_executions.get(execution_id)
                 if head is not None:
-                    self._tool_executions.user_input(head.child_thread_id)
+                    await self._tool_executions.user_input(head.child_thread_id)
             return ChildControlResult(
                 execution_id=result.execution_id,
                 accepted=result.accepted,
@@ -3544,6 +3566,7 @@ async def open_harness_ui_app(
                 if configuration_path is not None
                 else None,
             )
+            resources.push_async_callback(environment_service.close)
             live_hub = HarnessUiLiveHub()
             summary_hub = HarnessUiSummaryHub(epoch=live_hub.epoch)
 
@@ -3620,7 +3643,7 @@ async def open_harness_ui_app(
                 resources.push_async_callback(mcp_operations.close)
 
             restart_coordinator = GracefulRestart(store.restarts, enabled=host_mode == "webui")
-            tool_executions = ToolExecutions()
+            tool_executions = ToolExecutions(store.tool_executions, environments=environment_service)
             operator = HarnessUiSubagentOperator(
                 tool_executions=tool_executions,
                 mcp_apps=mcp_apps,
@@ -3873,6 +3896,9 @@ async def open_harness_ui_app(
                     if host_mode == "webui":
                         background.start_soon(environment_monitoring.run)
                     await recover_restart(restart_coordinator, root_runs, operator)
+                    await tool_executions.recover()
+                    await tool_executions.restore()
+                    background.start_soon(tool_executions.maintain)
                     if web_push is not None:
                         background.start_soon(web_push.run)
                     if configuration_path is not None:

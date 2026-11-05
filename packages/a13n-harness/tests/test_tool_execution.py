@@ -108,7 +108,7 @@ async def test_receipt_during_result_publication_is_reported_as_detached(monkeyp
     record = admit(runtime, operation)
     await publishing.wait()
     assert not (await runtime.result("thread-a", record.execution_id)).record.result_available
-    runtime.release_foreground("thread-a", record.execution_id)
+    await runtime.release_foreground("thread-a", record.execution_id)
     finish.set()
     result = await runtime.wait("thread-a", record.execution_id)
     assert result.result == 42
@@ -1003,3 +1003,53 @@ async def test_definite_admission_rejection_releases_capacity_without_poisoning_
     assert (await runtime.wait("thread-a", accepted.execution_id)).result == 42
     assert effects == [True]
     await runtime.close()
+
+
+async def test_recovered_supervision_does_not_wait_for_a_later_sequential_call():
+    from a13n_harness.environment.process_recovery import EnvdProcessState, ShellExecutionState
+    from a13n_harness.environment.retention import EnvironmentOutputPolicy
+    from a13n_harness.tool_execution import ToolExecutionRecord
+
+    runtime = ToolExecutionRuntime()
+    entered, recovered = asyncio.Event(), asyncio.Event()
+
+    async def later_call():
+        entered.set()
+        # A Host's durable ordering check waits for an older retained execution.
+        await recovered.wait()
+
+    later = asyncio.create_task(runtime.inline(later_call, thread_id="thread-a", sequential=True))
+    await entered.wait()
+    record = ToolExecutionRecord(
+        execution_id="exec-recovered",
+        thread_id="thread-a",
+        run_id="run-old",
+        tool_call_id="call-old",
+        tool_name="shell_exec",
+        status="running",
+    )
+    shell = ShellExecutionState(
+        mount_name="workspace",
+        process=EnvdProcessState(
+            device_id="device",
+            session_id="session",
+            generation=1,
+            start_operation_id="op-start",
+            output_policy=EnvironmentOutputPolicy(max_inline_bytes=1024, max_output_bytes=4096, overflow="retain"),
+        ),
+    )
+
+    async def supervise():
+        recovered.set()
+        return "original output"
+
+    try:
+        runtime.resume_shell(StoredToolExecution(record, shell=shell), supervise)
+        async with asyncio.timeout(2):
+            await later
+            await runtime.join()
+        assert (await runtime.result("thread-a", record.execution_id)).record.status == "succeeded"
+    finally:
+        recovered.set()
+        await later
+        await runtime.close()

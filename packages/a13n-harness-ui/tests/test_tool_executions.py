@@ -13,8 +13,8 @@ from a13n_harness_ui.errors import ThreadError
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver
 from a13n_harness_ui.surfaces import RootOperationStatus
 from a13n_harness_ui.tool_executions import ToolExecutions
-from anyio import Event, create_task_group, fail_after
-from pydantic_ai import FunctionToolset, Tool
+from anyio import Event, create_task_group, fail_after, sleep
+from pydantic_ai import BinaryContent, FunctionToolset, Tool, ToolReturn
 from pydantic_ai.capabilities import Capability
 from pydantic_ai.messages import ToolReturnPart
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
@@ -45,7 +45,7 @@ async def test_completion_hints_coalesce_and_skip_fast_or_delivered_calls():
     hints = []
     delivered = Event()
 
-    async def deliver(thread_id, prompt):
+    async def deliver(thread_id, prompt, execution_ids):
         hints.append((thread_id, prompt))
         delivered.set()
         return True
@@ -70,7 +70,7 @@ async def test_completion_blocked_by_preparation_retries_after_settlement_withou
     attempted, delivered = Event(), Event()
     ready = False
 
-    async def deliver(thread_id, prompt):
+    async def deliver(thread_id, prompt, execution_ids):
         attempts.append(prompt)
         attempted.set()
         if ready:
@@ -96,7 +96,7 @@ async def test_stop_cancels_pending_delivery_and_new_input_reenables_future_wake
     hints = []
     blocked = True
 
-    async def deliver(thread_id, prompt):
+    async def deliver(thread_id, prompt, execution_ids):
         if blocked:
             preparing.set()
             await Event().wait()
@@ -109,10 +109,10 @@ async def test_stop_cancels_pending_delivery_and_new_input_reenables_future_wake
         owner.start(group)
         await complete(owner, "before-stop")
         await preparing.wait()
-        owner.suppress("thread-a")
+        await owner.suppress("thread-a")
         await complete(owner, "after-stop")
         blocked = False
-        owner.user_input("thread-a")
+        await owner.user_input("thread-a")
         await complete(owner, "new-input")
         await resumed.wait()
         assert len(hints) == 1 and "new-input" in hints[0]
@@ -155,7 +155,7 @@ async def test_completion_racing_failed_delivery_is_retried_without_loss(failure
     entered, release, delivered = Event(), Event(), Event()
     attempts = []
 
-    async def deliver(thread_id, prompt):
+    async def deliver(thread_id, prompt, execution_ids):
         attempts.append(prompt)
         if len(attempts) == 1:
             entered.set()
@@ -192,7 +192,7 @@ async def test_terminal_notifications_are_status_only_and_refresh_suppressed_thr
         assert thread_id == "thread-a"
         changed.set()
 
-    async def deliver(thread_id, prompt):
+    async def deliver(thread_id, prompt, execution_ids):
         hints.append(prompt)
         delivered.set()
         return True
@@ -218,7 +218,7 @@ async def test_terminal_notifications_are_status_only_and_refresh_suppressed_thr
         assert len(hints) == 1 and f"lookup ({status})" in hints[0]
         assert "PRIVATE" not in hints[0]
         assert not (await owner.runtime.info("thread-a", record.execution_id)).delivery_acknowledged
-        owner.suppress("thread-a")
+        await owner.suppress("thread-a")
         changed = Event()
         owner._completed(record)
         with fail_after(10):
@@ -317,8 +317,8 @@ async def test_app_detached_codeact_completion_resumes_once_and_keeps_late_state
         thread = await app.create_thread()
         original_deliver = app._tool_executions.deliver
 
-        async def observe_delivery(thread_id, prompt):
-            accepted = await original_deliver(thread_id, prompt)
+        async def observe_delivery(thread_id, prompt, execution_ids):
+            accepted = await original_deliver(thread_id, prompt, execution_ids)
             if accepted:
                 delivered.set()
             return accepted
@@ -413,7 +413,7 @@ async def test_clear_context_replaces_codeact_owner_and_isolates_late_writes(tmp
         await app.clear_thread_context(thread_id=thread.thread_id, expected_continuation_id=selected.continuation_id)
         fresh = app._tool_executions.state(thread.thread_id)
         assert fresh is not owner
-        app._tool_executions.suppress(thread.thread_id)
+        await app._tool_executions.suppress(thread.thread_id)
         finish.set()
         records = await app.tool_executions(thread.thread_id)
         result = await app._tool_executions.runtime.wait(thread.thread_id, records[0].execution_id, timeout_seconds=10)
@@ -550,11 +550,11 @@ async def test_child_completion_keeps_lane_and_admitted_authority(tmp_path, monk
         original = app._tool_executions.deliver
         accepted = []
 
-        async def observe(thread_id, prompt):
+        async def observe(thread_id, prompt, execution_ids):
             # IDs have left _pending, but delivery still owns the authority.
             app._subagent_operator._release_completion_continuation(thread_id)
             assert app._subagent_operator._completion_continuations[thread_id] is retained
-            result = await original(thread_id, prompt)
+            result = await original(thread_id, prompt, execution_ids)
             accepted.append(result)
             delivered.set()
             return result
@@ -594,6 +594,177 @@ async def test_child_completion_keeps_lane_and_admitted_authority(tmp_path, monk
             assert child_id in app._tool_executions._suppressed
 
 
+@pytest.mark.parametrize(
+    "change",
+    [
+        None,
+        "source",
+        "parent",
+        "child",
+        "stop",
+        "stop_during_prepare",
+        "parent_during_prepare",
+        "child_during_prepare",
+        "cache_replaced",
+    ],
+)
+async def test_child_completion_restores_frozen_authority_after_app_restart(tmp_path, monkeypatch, change):
+    from dataclasses import replace
+
+    from a13n_harness_ui.environment_runtime import EnvironmentRunService
+    from a13n_harness_ui.storage import StoredChildCheckpoint
+    from a13n_harness_ui.subagent_operator import HarnessUiSubagentOperator
+    from a13n_harness_ui.surfaces import NewThreadDefaults
+
+    from .test_builtin_subagents import _source
+
+    path = _source(tmp_path, ("explorer",))
+    path.write_text(path.read_text() + "tools:\n  execution: {mode: auto, foreground_wait_seconds: 0}\n")
+    finish, offered, resumed = Event(), Event(), Event()
+    stages = {"parent": 0, "child": 0}
+
+    async def slow() -> int:
+        await finish.wait()
+        return 42
+
+    install_slow_tool(monkeypatch, slow)
+
+    async def model(messages, info):
+        lane = "parent" if "delegate" in {tool.name for tool in info.function_tools} else "child"
+        stage = stages[lane]
+        stages[lane] += 1
+        if lane == "parent" and stage == 0:
+            yield {
+                0: DeltaToolCall(
+                    name="delegate", json_args='{"subagent_name":"explorer","prompt":"Work"}', tool_call_id="delegate"
+                )
+            }
+        elif lane == "parent" and stage == 1:
+            yield {0: DeltaToolCall(name="wait_subagent", json_args='{"timeout_seconds":10}', tool_call_id="wait")}
+        elif lane == "child" and stage == 0:
+            yield {0: DeltaToolCall(name="run_code", json_args='{"code":"await slow()"}', tool_call_id="runner")}
+        else:
+            if lane == "child" and stage == 2:
+                resumed.set()
+            yield "Finished."
+
+    async def resolve(self, context, model_id):
+        return FunctionModel(stream_function=model)
+
+    monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
+    settings = _settings(tmp_path / "state")
+    async with open_harness_ui_app(settings, configuration_path=path) as app:
+
+        async def defer_delivery(*args):
+            offered.set()
+            return False
+
+        app._tool_executions.deliver = defer_delivery
+        parent = await app.create_thread(defaults=NewThreadDefaults(agent_id="agent-main"))
+        receipt = await app.submit_thread(thread_id=parent.thread_id, prompt="Delegate")
+        with fail_after(10):
+            assert (await app.wait_root_operation(receipt.receipt_id)).status is RootOperationStatus.completed
+        page = await app.query_child_executions(parent_thread_id=parent.thread_id)
+        first = page.executions[0]
+        child_id = first.child_thread_id
+        head = await app._store.child_executions.get(first.execution_id)
+        checkpoint = await app._store.objects.read_model(head.selected_checkpoint, StoredChildCheckpoint)
+        assert checkpoint.authority is not None
+        if change == "cache_replaced":
+            operator = app._subagent_operator
+            admitted = operator._completion_continuations.pop(child_id)
+            newer = replace(admitted, scope=replace(admitted.scope, run_id="run-new-parent"))
+            original_root_thread_id = operator._root_thread_id
+
+            async def install_newer(thread):
+                operator._completion_continuations[child_id] = newer
+                return await original_root_thread_id(thread)
+
+            with monkeypatch.context() as patch:
+                patch.setattr(operator, "_root_thread_id", install_newer)
+                assert await operator._restore_completion_continuation(child_id) is newer
+            assert operator._completion_continuations[child_id] is newer
+        finish.set()
+        with fail_after(10):
+            await offered.wait()
+        if change == "stop":
+            await app._tool_executions.suppress(child_id)
+        elif change in {"parent", "child"}:
+            selected_id = parent.thread_id if change == "parent" else child_id
+            stored = await app._store.threads.get(selected_id)
+            await app._store.threads.update_configuration(
+                thread_id=selected_id,
+                expected_version=stored.configuration.version,
+                replacement=stored.configuration.model_copy(update={"version": stored.configuration.version + 1}),
+            )
+
+    if change == "source":
+        agent = tmp_path / "agents/main.yaml"
+        agent.write_text(agent.read_text() + "instructions: Changed authority.\n")
+    original_prepare = EnvironmentRunService.prepare
+    prepare_stopped = Event()
+
+    async def prepare(self, composition):
+        result = await original_prepare(self, composition)
+        if (
+            change in {"stop_during_prepare", "parent_during_prepare", "child_during_prepare"}
+            and composition.thread_id == child_id
+        ):
+            # A different App can change admission authority while this App prepares.
+            if change == "stop_during_prepare":
+                await self._store.tool_executions.suppress(child_id)
+            else:
+                selected_id = parent.thread_id if change == "parent_during_prepare" else child_id
+                stored = await self._store.threads.get(selected_id)
+                await self._store.threads.update_configuration(
+                    thread_id=selected_id,
+                    expected_version=stored.configuration.version,
+                    replacement=stored.configuration.model_copy(update={"version": stored.configuration.version + 1}),
+                )
+            prepare_stopped.set()
+        return result
+
+    monkeypatch.setattr(EnvironmentRunService, "prepare", prepare)
+    original_publish = HarnessUiSubagentOperator._publish_checkpoint_object
+
+    async def publish(self, **kwargs):
+        if change == "cache_replaced":
+            admitted = self._completion_continuations[child_id]
+            self._completion_continuations[child_id] = replace(
+                admitted, scope=replace(admitted.scope, run_id="run-unrelated-parent")
+            )
+        return await original_publish(self, **kwargs)
+
+    monkeypatch.setattr(HarnessUiSubagentOperator, "_publish_checkpoint_object", publish)
+    async with open_harness_ui_app(settings, configuration_path=path) as successor:
+        if change in {None, "cache_replaced"}:
+            with fail_after(10):
+                await resumed.wait()
+                await successor.wait_child_executions(parent_thread_id=parent.thread_id, timeout_seconds=10)
+            latest = await successor._store.child_executions.latest_for_child(child_id)
+            restored = await successor._store.objects.read_model(latest.selected_checkpoint, StoredChildCheckpoint)
+            assert latest.execution_id != first.execution_id
+            assert restored.authority == checkpoint.authority
+            assert not await successor._store.tool_executions.pending(child_id)
+        else:
+            if change in {"stop_during_prepare", "parent_during_prepare", "child_during_prepare"}:
+                with fail_after(10):
+                    await prepare_stopped.wait()
+            # Exercise the public delivery boundary after startup restoration.
+            if change in {"stop", "stop_during_prepare"}:
+                from a13n_harness_ui.errors import HarnessUiError
+
+                with pytest.raises(HarnessUiError, match="suppressed"):
+                    await successor._deliver_tool_completion(child_id, "Completed", ())
+            else:
+                assert not await successor._deliver_tool_completion(child_id, "Completed", ())
+            assert not resumed.is_set()
+        page = await successor.query_child_executions(parent_thread_id=parent.thread_id)
+        assert len(page.executions) == (2 if change in {None, "cache_replaced"} else 1)
+        assert {item.child_thread_id for item in page.executions} == {child_id}
+        assert stages["parent"] == 3
+
+
 async def test_http_execution_status_is_non_consuming_and_cancel_is_thread_scoped(tmp_path, monkeypatch):
     from contextlib import asynccontextmanager
 
@@ -616,7 +787,7 @@ async def test_http_execution_status_is_non_consuming_and_cancel_is_thread_scope
         assert app is not None
         first, other = await app.create_thread(), await app.create_thread()
         owner = app._tool_executions
-        owner.suppress(first.thread_id)
+        await owner.suppress(first.thread_id)
         entered = Event()
 
         async def slow():
@@ -729,7 +900,7 @@ async def test_global_steering_mode_defaults_immediate_for_root_and_child_but_no
             )
             assert root.call_args.kwargs["immediate"] is (mode != "queued")
             assert child.call_args.kwargs["immediate"] is (mode != "queued")
-            await app._deliver_tool_completion(thread.thread_id, "Tool completed")
+            await app._deliver_tool_completion(thread.thread_id, "Tool completed", ("exec-test",))
             assert root.call_args.kwargs["immediate"] is False
             content = root.call_args.kwargs["message"]
             assert content[0].value == "Tool completed"
@@ -1055,7 +1226,7 @@ async def test_pending_work_includes_inflight_delivery_until_final_bookkeeping(o
         if entered.is_set():
             settled.set()
 
-    async def deliver(thread_id, prompt):
+    async def deliver(thread_id, prompt, execution_ids):
         assert thread_id not in owner._pending
         assert owner.has_pending_work(thread_id)
         entered.set()
@@ -1071,7 +1242,7 @@ async def test_pending_work_includes_inflight_delivery_until_final_bookkeeping(o
         await complete(owner, "first")
         await entered.wait()
         if outcome == "suppressed":
-            owner.suppress("thread-a")
+            await owner.suppress("thread-a")
         finish.set()
     assert settled.is_set()
     assert observed[0] is True
@@ -1106,3 +1277,366 @@ async def test_pending_work_retains_cleanup_and_notifies_after_inline_completion
         await settled.wait()
     assert (await owner.runtime.result("thread-a", record.execution_id)).result == 42
     await owner.close(timeout_seconds=0)
+
+
+async def test_durable_execution_roundtrip_preserves_native_payload_and_monotonic_flags(tmp_path):
+    from datetime import UTC, datetime
+
+    from a13n_harness.environment.process_recovery import EnvdProcessState, ShellExecutionState
+    from a13n_harness.environment.retention import EnvironmentOutputPolicy
+    from a13n_harness.tool_execution import ToolExecutionArtifact
+    from a13n_harness_ui.storage.runtime import open_local_store
+
+    settings = _settings(tmp_path).storage
+    record = ToolExecutionRecord(
+        execution_id="exec-retained",
+        thread_id="thread-a",
+        run_id="run-a",
+        tool_call_id="call-a",
+        tool_name="shell_exec",
+    )
+    shell = ShellExecutionState(
+        mount_name="workspace",
+        process=EnvdProcessState(
+            device_id="device-a",
+            session_id="session-a",
+            generation=1,
+            start_operation_id="operation-a",
+            output_policy=EnvironmentOutputPolicy(max_inline_bytes=4096, max_output_bytes=4096, overflow="truncate"),
+        ),
+    )
+    async with open_local_store(settings) as store:
+        repository = store.tool_executions
+        await repository.save(StoredToolExecution(record, shell=shell))
+        await repository.release_foreground(record.thread_id, record.execution_id)
+        await repository.request_cancellation(record.thread_id, record.execution_id)
+        await repository.save(StoredToolExecution(record.model_copy(update={"status": "running"}), shell=shell))
+        saved = await repository.get(record.thread_id, record.execution_id)
+        assert saved.record.cancel_requested and saved.record.foreground_released
+        terminal = record.model_copy(
+            update={"status": "succeeded", "result_available": True, "completed_at": datetime.now(UTC)}
+        )
+        await repository.save(
+            StoredToolExecution(
+                terminal,
+                ToolReturn(
+                    return_value={"output": "native"}, content=[BinaryContent(data=b"evidence", media_type="image/png")]
+                ),
+                artifacts=(ToolExecutionArtifact("output", b"artifact", ".txt"),),
+                shell=shell,
+            )
+        )
+        await repository.acknowledge_delivery(record.thread_id, record.execution_id)
+        # Neither a stale running checkpoint nor another final publication can
+        # replace the first result or reset independent delivery/cancel metadata.
+        await repository.save(StoredToolExecution(record, shell=shell))
+        await repository.save(StoredToolExecution(terminal, "replacement"))
+    async with open_local_store(settings) as store:
+        saved = await store.tool_executions.get(record.thread_id, record.execution_id)
+        assert saved.record.terminal and saved.record.delivery_acknowledged
+        assert saved.record.foreground_released and saved.record.cancel_requested
+        assert isinstance(saved.result, ToolReturn)
+        assert saved.result.return_value == {"output": "native"}
+        assert len(saved.result.content) == 1
+        assert isinstance(saved.result.content[0], BinaryContent)
+        assert saved.result.content[0].data == b"evidence"
+        assert saved.result.content[0].media_type == "image/png"
+        assert saved.artifacts[0].data == b"artifact"
+        assert saved.shell == shell
+        assert await store.tool_executions.get("another-thread", record.execution_id) is None
+        assert await store.tool_executions.pending(record.thread_id) == ()
+
+
+@pytest.mark.parametrize("settlement", ["uncheckpointed", "consumed", "suppressed"])
+async def test_completion_restart_uses_durable_intent_not_callback_or_enqueue(tmp_path, settlement):
+    from a13n_harness_ui.storage.database import transaction
+    from a13n_harness_ui.storage.runtime import open_local_store
+    from a13n_harness_ui.storage.tool_executions import consume_completions
+
+    settings = _settings(tmp_path).storage
+    async with open_local_store(settings) as store:
+        owner = ToolExecutions(store.tool_executions)
+        # No task group and no callback delivery: simulate termination directly
+        # after terminal storage, before the process-local completion observer.
+        await complete(owner, "exec-completed")
+        if settlement == "consumed":
+            async with transaction(store.database.sessions) as session:
+                await consume_completions(session, "thread-a", ("exec-completed",))
+        elif settlement == "suppressed":
+            await owner.suppress("thread-a")
+    async with open_local_store(settings) as store:
+        owner = ToolExecutions(store.tool_executions)
+        deliveries = []
+        delivered = Event()
+
+        async def deliver(thread_id, prompt, execution_ids):
+            deliveries.append(execution_ids)
+            delivered.set()
+            return True
+
+        owner.deliver = deliver
+        async with create_task_group() as group:
+            owner.start(group)
+            await owner.restore()
+            if settlement == "uncheckpointed":
+                with fail_after(3):
+                    await delivered.wait()
+                assert deliveries == [("exec-completed",)]
+                assert len(await store.tool_executions.pending("thread-a")) == 1
+                assert not (await store.tool_executions.get("thread-a", "exec-completed")).record.delivery_acknowledged
+            else:
+                assert await store.tool_executions.pending("thread-a") == ()
+                assert not owner.has_pending_work("thread-a")
+                if settlement == "suppressed":
+                    assert not owner.allows_completion("thread-a")
+                    await owner.user_input("thread-a")
+                    assert owner.allows_completion("thread-a")
+                    assert await store.tool_executions.pending("thread-a") == ()
+            await owner.close(timeout_seconds=0)
+
+
+async def test_completion_consumption_rolls_back_with_checkpoint_transaction(tmp_path):
+    from a13n_harness_ui.storage.database import transaction
+    from a13n_harness_ui.storage.runtime import open_local_store
+    from a13n_harness_ui.storage.tool_executions import consume_completions
+
+    async with open_local_store(_settings(tmp_path).storage) as store:
+        await complete(ToolExecutions(store.tool_executions), "exec-completed")
+        with pytest.raises(ValueError, match="checkpoint rejected"):
+            async with transaction(store.database.sessions) as session:
+                await consume_completions(session, "thread-a", ("exec-completed",))
+                raise ValueError("checkpoint rejected")
+        assert len(await store.tool_executions.pending("thread-a")) == 1
+        async with transaction(store.database.sessions) as session:
+            await consume_completions(session, "another-thread", ("exec-completed",))
+        assert len(await store.tool_executions.pending("thread-a")) == 1
+
+
+async def test_completion_delivery_drains_later_pages_before_consumption(tmp_path):
+    from a13n_harness_ui.storage.runtime import open_local_store
+
+    async with open_local_store(_settings(tmp_path).storage) as store:
+        owner = ToolExecutions(store.tool_executions)
+        expected = {f"exec-{index:03}" for index in range(257)}
+        for execution_id in sorted(expected):
+            await complete(owner, execution_id)
+        batches = []
+        delivered = Event()
+
+        async def deliver(thread_id, prompt, execution_ids):
+            batches.append(execution_ids)
+            if sum(map(len, batches)) == len(expected):
+                delivered.set()
+            return True
+
+        owner.deliver = deliver
+        async with create_task_group() as group:
+            owner.start(group)
+            await owner.restore()
+            with fail_after(5):
+                await delivered.wait()
+            assert [len(batch) for batch in batches] == [256, 1]
+            assert {value for batch in batches for value in batch} == expected
+            assert len(await store.tool_executions.pending("thread-a")) == 256
+            assert await store.tool_executions.pending("thread-a", exclude=tuple(expected)) == ()
+            await owner.close(timeout_seconds=0)
+
+
+async def test_completion_thread_scans_use_bounded_keyset_pages(tmp_path):
+    from a13n_harness_ui.storage.runtime import open_local_store
+
+    async with open_local_store(_settings(tmp_path).storage) as store:
+        for index in range(3):
+            record = ToolExecutionRecord(
+                execution_id=f"exec-{index}",
+                thread_id=f"thread-{index}",
+                run_id="run-a",
+                tool_call_id=f"call-{index}",
+                tool_name="read",
+                status="succeeded",
+                result_available=True,
+                foreground_released=True,
+            )
+            await store.tool_executions.save(StoredToolExecution(record, "done"))
+        assert await store.tool_executions.pending_threads(limit=2) == ("thread-0", "thread-1")
+        assert await store.tool_executions.pending_threads(after="thread-1", limit=2) == ("thread-2",)
+        for index in range(3):
+            await store.tool_executions.suppress(f"thread-{index}")
+        assert await store.tool_executions.suppressed_threads(limit=2) == ("thread-0", "thread-1")
+        assert await store.tool_executions.suppressed_threads(after="thread-1", limit=2) == ("thread-2",)
+        assert await store.tool_executions.pending_threads() == ()
+
+
+async def test_recovered_execution_holds_ownership_through_terminal_publication(tmp_path, monkeypatch):
+    from functools import partial
+
+    from a13n_harness.environment.process_recovery import EnvdProcessState, ShellExecutionState
+    from a13n_harness.environment.retention import EnvironmentOutputPolicy
+    from a13n_harness.tool_execution import ToolExecutionRuntime
+    from a13n_harness_ui.storage.runtime import open_local_store
+
+    record = ToolExecutionRecord(
+        execution_id="exec-recovery",
+        thread_id="thread-a",
+        run_id="run-original",
+        tool_call_id="call-shell",
+        tool_name="shell_exec",
+    )
+    execution = StoredToolExecution(
+        record,
+        shell=ShellExecutionState(
+            mount_name="workspace",
+            process=EnvdProcessState(
+                device_id="device-a",
+                session_id="session-a",
+                generation=1,
+                start_operation_id="operation-a",
+                output_policy=EnvironmentOutputPolicy(
+                    max_inline_bytes=4096, max_output_bytes=4096, overflow="truncate"
+                ),
+            ),
+        ),
+    )
+    async with (
+        open_local_store(_settings(tmp_path).storage) as owner,
+        open_local_store(_settings(tmp_path).storage) as competitor,
+    ):
+        await owner.tool_executions.save(execution)
+        save = owner.tool_executions.save
+        checked = False
+
+        async def save_terminal(value):
+            nonlocal checked
+            if value.record.terminal:
+                assert not await competitor.tool_executions.owners.acquire(record.execution_id)
+                checked = True
+            await save(value)
+
+        monkeypatch.setattr(owner.tool_executions, "save", save_terminal)
+        runtime = ToolExecutionRuntime(store=owner.tool_executions)
+
+        async def recover():
+            raise ValueError("Native process is gone")
+
+        runtime.resume_shell(
+            execution,
+            recover,
+            release_ownership=partial(owner.tool_executions.owners.release, record.execution_id),
+        )
+        await runtime.join()
+        assert checked and runtime.accepting
+        assert (await owner.tool_executions.get(record.thread_id, record.execution_id)).record.status == "failed"
+        assert await competitor.tool_executions.owners.acquire(record.execution_id)
+        await competitor.tool_executions.owners.release(record.execution_id)
+
+
+@pytest.mark.parametrize(
+    "code,terminal",
+    [
+        ("environment_owner_busy", False),
+        ("device_unavailable", False),
+        ("device_revoked", True),
+        ("device_authentication_failed", True),
+        ("shell_mount_missing", True),
+    ],
+)
+async def test_shell_recovery_distinguishes_retryable_preparation_from_terminal_failure(
+    tmp_path, monkeypatch, code, terminal
+):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from a13n_harness.environment.process_recovery import EnvdProcessState, ShellExecutionState
+    from a13n_harness.environment.retention import EnvironmentOutputPolicy
+    from a13n_harness_ui.errors import EnvironmentLifecycleError
+    from a13n_harness_ui.storage import ObjectKind, ObjectRef
+    from a13n_harness_ui.storage.runtime import open_local_store
+    from a13n_harness_ui.storage.tool_executions import execution_composition
+
+    record = ToolExecutionRecord(
+        execution_id="exec-recovery",
+        thread_id="thread-a",
+        run_id="run-a",
+        tool_call_id="call-a",
+        tool_name="shell_exec",
+    )
+    shell = ShellExecutionState(
+        mount_name="build",
+        process=EnvdProcessState(
+            device_id="device-a",
+            session_id="session-a",
+            generation=1,
+            start_operation_id="operation-a",
+            output_policy=EnvironmentOutputPolicy(max_inline_bytes=4096, max_output_bytes=4096, overflow="truncate"),
+        ),
+    )
+    reference = ObjectRef(object_kind=ObjectKind.run_composition, object_schema_version="1", logical_digest="a" * 64)
+    async with open_local_store(_settings(tmp_path).storage) as store:
+        with execution_composition(reference):
+            await store.tool_executions.save(StoredToolExecution(record, shell=shell))
+        read_model = store.objects.read_model
+
+        async def read(ref, model):
+            if ref == reference:
+                return SimpleNamespace(thread_id="thread-a")
+            return await read_model(ref, model)
+
+        monkeypatch.setattr(store.objects, "read_model", read)
+        prepare = AsyncMock(side_effect=EnvironmentLifecycleError("Preparation failed", code=code))
+        owner = ToolExecutions(store.tool_executions, environments=SimpleNamespace(prepare_recovery=prepare))
+        await owner.recover()
+        saved = await store.tool_executions.get(record.thread_id, record.execution_id)
+        assert saved.record.terminal is terminal
+        assert not owner.runtime.active
+        if terminal:
+            assert saved.record.status == "failed"
+            assert code in saved.record.error
+            assert saved.record.foreground_released
+            assert len(await store.tool_executions.pending(record.thread_id)) == 1
+        await owner.recover()
+        assert prepare.await_count == (1 if terminal else 2)
+
+
+async def test_recovery_skips_live_generic_owner_and_marks_unowned_call_lost(tmp_path):
+    from types import SimpleNamespace
+
+    from a13n_harness_ui.storage.runtime import open_local_store
+
+    async with (
+        open_local_store(_settings(tmp_path).storage) as first,
+        open_local_store(_settings(tmp_path).storage) as second,
+    ):
+        record = ToolExecutionRecord(
+            execution_id="exec-generic", thread_id="thread-a", run_id="run-a", tool_call_id="call-a", tool_name="python"
+        )
+        await first.tool_executions.save(StoredToolExecution(record))
+        owner = ToolExecutions(second.tool_executions, environments=SimpleNamespace())
+        await owner.recover()
+        assert not (await second.tool_executions.get(record.thread_id, record.execution_id)).record.terminal
+        await first.tool_executions.owners.close()
+        await owner.recover()
+        saved = await second.tool_executions.get(record.thread_id, record.execution_id)
+        assert saved.record.status == "lost"
+        assert saved.record.foreground_released
+        assert len(await second.tool_executions.pending(record.thread_id)) == 1
+
+
+async def test_recovery_maintenance_survives_scan_failure(monkeypatch):
+    owner = ToolExecutions()
+    calls = 0
+
+    async def recover():
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise OSError("Store temporarily unavailable")
+        owner.stop()
+
+    async def no_delay(seconds):
+        await sleep(0)
+
+    monkeypatch.setattr(owner, "recover", recover)
+    monkeypatch.setattr("a13n_harness_ui.tool_executions.sleep", no_delay)
+    with fail_after(1):
+        await owner.maintain()
+    assert calls == 2

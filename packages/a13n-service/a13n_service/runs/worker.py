@@ -68,6 +68,7 @@ class Worker:
         self._report_slots()
         async with asyncio.TaskGroup() as group:
             group.create_task(self._supervise(), name="lease-supervisor")
+            group.create_task(self._recover_shells(), name="shell-recovery")
             group.create_task(self.runtime.executions.routing.run(self.id), name="shell-control-routing")
             group.create_task(self.runtime.executions.output.run(), name="shell-output-cache")
             try:
@@ -118,6 +119,8 @@ class Worker:
         tasks = [running.task for running in self.running.values()]
         if tasks:
             await asyncio.wait(tasks, timeout=self.runtime.settings.worker.drain_seconds)
+        # Native supervisors detach before attempt cancellation can reach their resources.
+        self.runtime.executions.yield_recoverable()
         for task in tasks:
             if not task.done() and not task.cancelling():
                 task.cancel()
@@ -174,6 +177,14 @@ class Worker:
         SLOTS.set(self.free, {"state": "free"})
         SLOTS.set(slots - self.free, {"state": "busy"})
 
+    async def _recover_shells(self) -> None:
+        while not self.stopping:
+            try:
+                await self.runtime.executions.recover(self.id)
+            except Exception as error:
+                logger.warning("Shell recovery scan failed", extra={"error_type": type(error).__name__})
+            await asyncio.sleep(self.runtime.settings.worker.scan_seconds)
+
     async def _supervise(self) -> None:
         """Every authority interval, one heartbeat polls cancellation and each principal's authority for all running
         attempts and renews the leases with no more than two thirds left, independently of the Harness tasks.
@@ -200,7 +211,9 @@ class Worker:
                 if execution_id in renewed:
                     self.runtime.executions.lease_deadlines[execution_id] = sent + settings.lease_seconds
                 deadline = self.runtime.executions.lease_deadlines[execution_id]
-                if deadline - loop.time() <= settings.lease_seconds / 3:
+                if deadline - loop.time() <= settings.lease_seconds / 3 and not self.runtime.executions.yield_shell(
+                    execution_id
+                ):
                     self.runtime.executions.request_cancellation(
                         record.thread_id,
                         execution_id,

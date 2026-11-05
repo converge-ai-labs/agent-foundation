@@ -60,8 +60,11 @@ struct SessionAdmission {
 
 struct SessionAdmissionState {
     owner: Option<u64>,
+    owner_epoch: u64,
     last_activity: Instant,
-    detached_at: Option<Instant>,
+    created_at: Instant,
+    idle_timeout: Duration,
+    max_lifetime: Option<Duration>,
     lifecycle: SessionState,
     active_session_work: usize,
 }
@@ -274,7 +277,9 @@ impl Daemon {
                 limits: config.limits.descriptor(),
                 lifecycle: eip::SessionLifecyclePolicy {
                     idle_timeout_ms: config.session_idle_timeout.as_millis() as u64,
-                    disconnect_grace_ms: config.disconnect_grace.as_millis() as u64,
+                    max_lifetime_ms: config
+                        .session_max_lifetime
+                        .map(|value| value.as_millis() as u64),
                 },
             },
             sessions: Mutex::new(BTreeMap::new()),
@@ -396,8 +401,8 @@ impl Daemon {
         if let (Some(request), Some(session)) = (&request, &session) {
             let lane = match request.method.as_str() {
                 "session.keepalive" => Some(&session.keepalive_capacity),
-                "session.attach" | "session.close" | "operation.cancel" | "process.kill"
-                | "process.release" | "output.release" | "file.abort_writer"
+                "session.attach" | "session.detach" | "session.close" | "operation.cancel"
+                | "process.kill" | "process.release" | "output.release" | "file.abort_writer"
                 | "file.close_reader" => Some(&session.cleanup_capacity),
                 _ => None,
             };
@@ -443,35 +448,58 @@ impl Daemon {
         clippy::result_large_err,
         reason = "the generated protocol error is the daemon's public error contract"
     )]
-    fn select_session(
+    async fn select_session(
         &self,
         carrier: &Carrier,
         request: &JsonRpcRequest,
-    ) -> Result<Arc<Session>, EIPError> {
+    ) -> Result<(Arc<Session>, Option<SessionAuthorityGuard>), EIPError> {
         let session = self.lookup(request.eip_session.as_deref().ok_or_else(|| {
             protocol_error(ErrorType::InvalidRequest, "session selector is required")
         })?)?;
+        if request.method == "session.attach" {
+            eip::decode::<eip::SessionAttachParams>(
+                &serde_json::to_string(&request.params).expect("JSON params are serializable"),
+            )
+            .map_err(|_| protocol_error(ErrorType::InvalidParams, "invalid attach parameters"))?;
+        }
+        let authority = match request.method.as_str() {
+            // A queued writer would block cancellation behind a long shell.exec.
+            // Reject before changing ownership; the Host can retry attachment.
+            "session.attach" | "session.detach" => Some(SessionAuthorityGuard::Exclusive {
+                _guard: session.authority.clone().try_write_owned().map_err(|_| {
+                    protocol_error(ErrorType::Busy, "Session operations are still in flight")
+                })?,
+            }),
+            "session.keepalive" | "process.wait" | "output.read" => None,
+            _ => Some(SessionAuthorityGuard::Shared {
+                _guard: session.authority.clone().read_owned().await,
+            }),
+        };
+        let epoch = request
+            .eip_owner_epoch
+            .filter(|epoch| *epoch > 0)
+            .ok_or_else(|| {
+                protocol_error(ErrorType::InvalidRequest, "Session owner epoch is required")
+            })?;
         {
             let mut state = session.session.state();
-            let expired = state.last_activity.elapsed() >= self.config.session_idle_timeout
-                || state
-                    .detached_at
-                    .is_some_and(|at| at.elapsed() >= self.config.disconnect_grace);
+            let expired = state.expired();
             if expired || state.lifecycle == SessionState::Closed {
                 return Err(protocol_error(
                     ErrorType::NotInitialized,
                     "session is closed or expired",
                 ));
             }
-            if request.method == "session.attach" && state.owner.is_none() {
-                session
-                    .transfers
-                    .attach(carrier.outbound.clone())
-                    .map_err(map_transfer_error)?;
-                state.owner = Some(carrier.id);
-                state.detached_at = None;
+            let attaching = request.method == "session.attach";
+            if (attaching && epoch <= state.owner_epoch)
+                || (!attaching && epoch != state.owner_epoch)
+            {
+                return Err(protocol_error(
+                    ErrorType::Conflict,
+                    "Session owner epoch is stale",
+                ));
             }
-            if state.owner != Some(carrier.id) {
+            if !attaching && state.owner != Some(carrier.id) {
                 return Err(protocol_error(
                     ErrorType::NotInitialized,
                     "session is not attached to this carrier",
@@ -479,8 +507,25 @@ impl Daemon {
             }
             state.last_activity = Instant::now();
         }
+        if request.method == "session.attach" {
+            let _cleanup = session.cleanup.lock().await;
+            session.detach_route().await?;
+            session
+                .transfers
+                .attach(carrier.outbound.clone())
+                .map_err(map_transfer_error)?;
+            let mut state = session.session.state();
+            if state.lifecycle == SessionState::Closed || state.expired() {
+                return Err(protocol_error(
+                    ErrorType::NotInitialized,
+                    "Session expired during attachment",
+                ));
+            }
+            state.owner_epoch = epoch;
+            state.owner = Some(carrier.id);
+        }
         session.preflight(&request.method)?;
-        Ok(session)
+        Ok((session, authority))
     }
 
     pub(crate) fn validate_data_session(
@@ -493,7 +538,7 @@ impl Daemon {
         if carrier.closed.load(Ordering::Acquire)
             || state.owner != Some(carrier.id)
             || state.lifecycle != SessionState::Ready
-            || state.last_activity.elapsed() >= self.config.session_idle_timeout
+            || state.expired()
         {
             Err(TransferError::Protocol)
         } else {
@@ -518,10 +563,11 @@ impl Daemon {
         carrier: &Carrier,
         frame: eip::DataFrame,
     ) -> Result<(), TransferError> {
-        self.validate_data_session(carrier, &frame.session_id)?;
         let session = self
             .lookup(&frame.session_id)
             .map_err(|_| TransferError::Protocol)?;
+        let _authority = session.authority.read().await;
+        self.validate_data_session(carrier, &frame.session_id)?;
         let _work = session
             .session
             .admit_work()
@@ -540,28 +586,28 @@ impl Daemon {
     pub(crate) async fn detach(&self, carrier: &Carrier) {
         carrier.closed.store(true, Ordering::Release);
         let sessions: Vec<_> = self.sessions().values().cloned().collect();
-        let detached_at = Instant::now();
         let mut detaching = tokio::task::JoinSet::new();
         for session in sessions {
             {
-                let mut state = session.session.state();
+                let state = session.session.state();
                 if state.owner != Some(carrier.id) {
                     continue;
                 }
-                // All owned Sessions begin grace now, not after a sibling's cleanup.
-                state.detached_at = Some(detached_at);
+                // Carrier loss never extends the existing idle deadline.
             }
+            let carrier_id = carrier.id;
             detaching.spawn(async move {
-                let clean = tokio::time::timeout(Duration::from_secs(5), async {
-                    let _cleanup = session.cleanup.lock().await;
-                    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
-                    if let Some(remote) = &session.remote {
-                        let _ = remote.client.detach().await;
-                    }
-                    session.transfers.detach().await;
-                })
-                .await
-                .is_ok();
+                // Carrier loss only retires its transfer route. It does not wait
+                // for native operations; the closed carrier cannot admit more work.
+                // Attachment holds this same lock through installing the new owner.
+                let _cleanup = session.cleanup.lock().await;
+                if session.session.state().owner != Some(carrier_id) {
+                    return;
+                }
+                let clean = matches!(
+                    tokio::time::timeout(Duration::from_secs(5), session.detach_route()).await,
+                    Ok(Ok(()))
+                );
                 if !clean {
                     session.session.close();
                 }
@@ -579,11 +625,7 @@ impl Daemon {
         for session in sessions {
             let expired = {
                 let mut state = session.session.state();
-                let expired = state.lifecycle == SessionState::Closed
-                    || state.last_activity.elapsed() >= self.config.session_idle_timeout
-                    || state
-                        .detached_at
-                        .is_some_and(|at| at.elapsed() >= self.config.disconnect_grace);
+                let expired = state.lifecycle == SessionState::Closed || state.expired();
                 if expired {
                     state.lifecycle = SessionState::Closed;
                 }
@@ -759,8 +801,9 @@ impl Daemon {
                 }
             }
         }
+        let mut _authority = None;
         let session = if method.device_scoped {
-            if selector.is_some() {
+            if selector.is_some() || request.eip_owner_epoch.is_some() {
                 return error_response(protocol_error(
                     ErrorType::InvalidRequest,
                     "Device methods cannot select a session",
@@ -768,15 +811,21 @@ impl Daemon {
             }
             None
         } else {
-            match self.select_session(carrier, &request) {
-                Ok(session) => Some(session),
+            match self.select_session(carrier, &request).await {
+                Ok((session, authority)) => {
+                    _authority = authority;
+                    Some(session)
+                }
                 Err(error) => return error_response(error),
             }
         };
         #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
         if let Some(session) = &session
             && session.remote.is_some()
-            && !matches!(request.method.as_str(), "egress.update" | "session.close")
+            && !matches!(
+                request.method.as_str(),
+                "egress.update" | "session.close" | "session.detach"
+            )
         {
             return match session.relay(carrier, &request).await {
                 Ok(response) => response,
@@ -1015,6 +1064,9 @@ impl EipDeviceHandler for DeviceRequest<'_> {
                 "required session method is unavailable",
             ));
         }
+        let lifecycle = params
+            .lifecycle
+            .unwrap_or_else(|| self.daemon.descriptor.lifecycle.clone());
         let path = params
             .working_directory
             .unwrap_or_else(|| self.daemon.config.default_working_directory.clone());
@@ -1048,7 +1100,7 @@ impl EipDeviceHandler for DeviceRequest<'_> {
             #[cfg(target_os = "linux")]
             return self
                 .daemon
-                .open_worker(self.carrier, cwd, Some(policy))
+                .open_worker(self.carrier, cwd, Some(policy), lifecycle)
                 .await;
             #[cfg(not(target_os = "linux"))]
             {
@@ -1061,7 +1113,10 @@ impl EipDeviceHandler for DeviceRequest<'_> {
         }
         #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
         if worker {
-            return self.daemon.open_worker(self.carrier, cwd, None).await;
+            return self
+                .daemon
+                .open_worker(self.carrier, cwd, None, lifecycle)
+                .await;
         }
         if self.daemon.sessions().len() >= self.daemon.config.limits.max_sessions {
             self.daemon.maintenance().await;
@@ -1083,9 +1138,9 @@ impl EipDeviceHandler for DeviceRequest<'_> {
         }
         let id = self.daemon.ids.next("session").map_err(map_ledger_error)?;
         let session = Arc::new(
-            Session::new(self.daemon, self.carrier.id, id.clone(), cwd).map_err(|_| {
-                protocol_error(ErrorType::InternalError, "session initialization failed")
-            })?,
+            Session::new(self.daemon, self.carrier.id, id.clone(), cwd, lifecycle).map_err(
+                |_| protocol_error(ErrorType::InternalError, "session initialization failed"),
+            )?,
         );
         session
             .transfers
@@ -1114,7 +1169,17 @@ impl Daemon {
     }
 }
 
+enum SessionAuthorityGuard {
+    Shared {
+        _guard: OwnedRwLockReadGuard<()>,
+    },
+    Exclusive {
+        _guard: tokio::sync::OwnedRwLockWriteGuard<()>,
+    },
+}
+
 pub(crate) struct Session {
+    authority: Arc<RwLock<()>>,
     computer: Arc<crate::computer::Computer>,
     #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
     remote: Option<crate::execution::runtime::Runtime>,
@@ -1137,6 +1202,18 @@ pub(crate) struct Session {
 }
 
 impl Session {
+    // The caller holds cleanup until ownership and the route are consistent.
+    async fn detach_route(&self) -> Result<(), EIPError> {
+        #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+        if let Some(remote) = &self.remote {
+            remote.client.detach().await.map_err(|_| {
+                protocol_error(ErrorType::NotInitialized, "Session worker is unavailable")
+            })?;
+        }
+        self.transfers.detach().await;
+        Ok(())
+    }
+
     fn local_resources(&self) -> Option<SessionResources> {
         Some(SessionResources {
             processes: self
@@ -1146,6 +1223,15 @@ impl Session {
             transfers: self.transfers.active_count()?,
             retained_output_bytes: self.retention.retained_bytes()?,
         })
+    }
+}
+
+impl SessionAdmissionState {
+    fn expired(&self) -> bool {
+        self.last_activity.elapsed() >= self.idle_timeout
+            || self
+                .max_lifetime
+                .is_some_and(|limit| self.created_at.elapsed() >= limit)
     }
 }
 
@@ -1202,6 +1288,7 @@ impl Session {
         owner: u64,
         session_id: String,
         working_directory: String,
+        lifecycle: eip::SessionLifecyclePolicy,
     ) -> Result<Self, DaemonInitError> {
         let config = &daemon.config;
         let operations = OperationLedger::new(
@@ -1235,6 +1322,7 @@ impl Session {
         .map_err(|_| DaemonInitError::new("transfer initialization failed"))?;
         let descriptor = SessionDescriptor {
             boundary: daemon.descriptor.boundary.clone(),
+            owner_epoch: 1,
             egress: None,
             device_id: config.device_id.clone(),
             generation: daemon.descriptor.generation,
@@ -1253,10 +1341,11 @@ impl Session {
                 signal_interrupt: execution.is_some() && cfg!(unix),
                 signal_terminate: execution.is_some() && cfg!(unix),
             },
-            lifecycle: daemon.descriptor.lifecycle.clone(),
+            lifecycle: lifecycle.clone(),
         };
         let (closed, _) = watch::channel(false);
         Ok(Self {
+            authority: Arc::new(RwLock::new(())),
             computer: Arc::new(crate::computer::Computer::new(daemon.ids.clone())),
             #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
             remote: None,
@@ -1273,8 +1362,11 @@ impl Session {
             session: SessionAdmission {
                 state: Mutex::new(SessionAdmissionState {
                     owner: Some(owner),
+                    owner_epoch: 1,
                     last_activity: Instant::now(),
-                    detached_at: None,
+                    created_at: Instant::now(),
+                    idle_timeout: Duration::from_millis(lifecycle.idle_timeout_ms),
+                    max_lifetime: lifecycle.max_lifetime_ms.map(Duration::from_millis),
                     lifecycle: SessionState::Initialized,
                     active_session_work: 0,
                 }),
@@ -1292,7 +1384,8 @@ impl Session {
 
     #[allow(clippy::result_large_err, reason = "generated EIP error contract")]
     fn current_descriptor(&self) -> Result<SessionDescriptor, EIPError> {
-        let descriptor = self.descriptor.clone();
+        let mut descriptor = self.descriptor.clone();
+        descriptor.owner_epoch = self.session.state().owner_epoch;
         #[cfg(target_os = "linux")]
         let descriptor = {
             let mut descriptor = descriptor;
@@ -1426,7 +1519,11 @@ impl Session {
         if state.lifecycle != SessionState::Ready
             && !matches!(
                 method,
-                "environment.readiness" | "session.attach" | "session.keepalive" | "session.close"
+                "environment.readiness"
+                    | "session.attach"
+                    | "session.keepalive"
+                    | "session.close"
+                    | "session.detach"
             )
         {
             return Err(protocol_error(
@@ -1689,6 +1786,18 @@ impl EipSessionHandler for Session {
         Ok(eip::SessionOpenResult {
             descriptor: self.current_descriptor()?,
         })
+    }
+
+    async fn session_detach(
+        &self,
+        _params: eip::SessionDetachParams,
+    ) -> Result<eip::SessionDetachResult, EIPError> {
+        let _cleanup = self.cleanup.lock().await;
+        self.detach_route().await?;
+        let mut state = self.session.state();
+        state.owner = None;
+        state.last_activity = Instant::now();
+        Ok(eip::SessionDetachResult { detached: true })
     }
 
     async fn session_keepalive(
@@ -2583,6 +2692,41 @@ impl EipSessionHandler for Session {
         operation
             .finish(&result, Some(receipt))
             .map_err(map_ledger_error)?;
+        Ok(result)
+    }
+
+    async fn process_resolve_start(
+        &self,
+        params: eip::ProcessResolveStartParams,
+    ) -> Result<eip::ProcessStartResult, EIPError> {
+        self.ensure_ready()?;
+        let operation =
+            match self.admit_record("process.resolve_start", &params.context, &params)? {
+                BeginOutcome::Replay(value) => return self.decode_replay(value),
+                BeginOutcome::ReplayFailure(error) => return Err(*error),
+                BeginOutcome::New(operation) => operation,
+            };
+        let value = self
+            .operations
+            .resolve("process.start", &params.target_operation_id)
+            .map_err(|error| match error {
+                LedgerError::TerminalFailure => {
+                    let mut error = protocol_error(
+                        ErrorType::UnknownOutcome,
+                        "process start evidence is unavailable",
+                    );
+                    error.data.retry_hint = RetryHint::ReconcileFirst;
+                    error.data.dispatch_stage = DispatchStage::Unknown;
+                    error
+                }
+                error => map_ledger_error(error),
+            })??;
+        let mut result: eip::ProcessStartResult = self.decode_replay(value)?;
+        result.process = self
+            .execution_manager()?
+            .inspect(&result.process.handle)
+            .map_err(map_process_error)?;
+        operation.finish(&result, None).map_err(map_ledger_error)?;
         Ok(result)
     }
 
@@ -3657,7 +3801,7 @@ mod tests {
         fn open_params(&self, required_methods: Value) -> Value {
             json!({"expected_device_id": self.device.descriptor.device_id,
                 "expected_generation": self.device.descriptor.generation,
-                "protocol_version": "0.3",
+                "protocol_version": "0.4",
                 "working_directory": self.device.descriptor.default_working_directory,
                 "required_methods": required_methods})
         }
@@ -3671,6 +3815,7 @@ mod tests {
                 && let Some(session) = self.opened.get()
             {
                 value["eip_session"] = json!(session.descriptor.session_id);
+                value["eip_owner_epoch"] = json!(session.descriptor.owner_epoch);
             }
             value.to_string()
         }
@@ -3713,7 +3858,7 @@ mod tests {
 
     fn initialize_params() -> Value {
         json!({
-            "supported_protocol_versions": ["0.3"],
+            "supported_protocol_versions": ["0.4"],
             "client": {"name": "test", "version": "1"},
             "expected_device_id": "env-test"
         })
@@ -3780,7 +3925,7 @@ mod tests {
         config.description = Some("Build artifacts".into());
         let fixture = Fixture::new(&config, 7);
         let initialized = initialize(&fixture).await;
-        assert_eq!(initialized["result"]["protocol_version"], "0.3");
+        assert_eq!(initialized["result"]["protocol_version"], "0.4");
         let device = fixture.call("device.describe", json!({})).await;
         assert_eq!(
             device["result"]["descriptor"],
@@ -3830,6 +3975,7 @@ mod tests {
         let mut attach: Value =
             serde_json::from_str(&request(json!(2), "session.attach", json!({}))).unwrap();
         attach["eip_session"] = json!(original.session_id);
+        attach["eip_owner_epoch"] = json!(original.owner_epoch + 1);
         let response = fixture
             .device
             .handle_payload_for_carrier(&carrier, &attach.to_string())
@@ -3837,7 +3983,11 @@ mod tests {
         let attached: Value = serde_json::from_slice(&response.payload).unwrap();
         assert_eq!(
             attached["result"]["descriptor"],
-            serde_json::to_value(original).unwrap()
+            serde_json::to_value(crate::eip::SessionDescriptor {
+                owner_epoch: original.owner_epoch + 1,
+                ..original
+            })
+            .unwrap()
         );
         let response = fixture
             .device
@@ -3855,16 +4005,105 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn expired_disconnect_grace_rejects_attach_but_allows_open() {
+    async fn takeover_does_not_queue_a_writer_or_change_owner_on_invalid_params() {
+        let fixture = Fixture::new(&Config::for_test("env-test"), 7);
+        initialize(&fixture).await;
+        let mut attach: Value = serde_json::from_str(&fixture.scoped_payload(&request(
+            json!(2),
+            "session.attach",
+            json!({}),
+        )))
+        .unwrap();
+        attach["eip_owner_epoch"] = json!(2);
+        let in_flight = fixture.authority.read().await;
+        let response = fixture
+            .device
+            .handle_payload_for_carrier(&fixture.carrier, &attach.to_string())
+            .await;
+        let response: Value = serde_json::from_slice(&response.payload).unwrap();
+        assert_eq!(response["error"]["data"]["error_type"], "busy");
+        // A pending writer must not prevent the current owner from cancelling.
+        assert!(fixture.authority.try_read().is_ok());
+        assert_eq!(fixture.session.state().owner_epoch, 1);
+        drop(in_flight);
+        attach["params"] = json!({"unexpected": true});
+        let response = fixture
+            .device
+            .handle_payload_for_carrier(&fixture.carrier, &attach.to_string())
+            .await;
+        let response: Value = serde_json::from_slice(&response.payload).unwrap();
+        assert_eq!(response["error"]["data"]["error_type"], "invalid_params");
+        assert_eq!(fixture.session.state().owner_epoch, 1);
+        assert_eq!(
+            fixture.call("session.keepalive", json!({})).await["result"]["alive"],
+            true
+        );
+    }
+
+    #[tokio::test]
+    async fn carrier_loss_does_not_wait_for_native_operations() {
+        let fixture = Fixture::new(&Config::for_test("env-test"), 7);
+        initialize(&fixture).await;
+        let _in_flight = fixture.authority.read().await;
+        tokio::time::timeout(
+            Duration::from_secs(1),
+            fixture.device.detach(&fixture.carrier),
+        )
+        .await
+        .expect("carrier cleanup must not wait for a long shell operation");
+        assert_eq!(fixture.session.state().owner, None);
+        assert_eq!(
+            fixture.session.state().lifecycle,
+            super::SessionState::Ready
+        );
+    }
+
+    #[tokio::test]
+    async fn stale_carrier_cleanup_cannot_detach_a_new_owner() {
+        let fixture = Fixture::new(&Config::for_test("env-test"), 7);
+        initialize(&fixture).await;
+        let (sender, _receiver) = tokio::sync::mpsc::channel(16);
+        let successor = fixture.device.carrier(sender);
+        fixture
+            .device
+            .handle_payload_for_carrier(
+                &successor,
+                &request(json!(1), "initialize", initialize_params()),
+            )
+            .await;
+        let mut attach: Value = serde_json::from_str(&fixture.scoped_payload(&request(
+            json!(2),
+            "session.attach",
+            json!({}),
+        )))
+        .unwrap();
+        attach["eip_owner_epoch"] = json!(2);
+        let response = fixture
+            .device
+            .handle_payload_for_carrier(&successor, &attach.to_string())
+            .await;
+        let response: Value = serde_json::from_slice(&response.payload).unwrap();
+        assert_eq!(response["result"]["descriptor"]["owner_epoch"], 2);
+        assert_eq!(
+            fixture.call("session.close", json!({})).await["error"]["data"]["error_type"],
+            "conflict"
+        );
+        fixture.device.detach(&fixture.carrier).await;
+        assert_eq!(fixture.session.state().owner, Some(successor.id));
+        assert_eq!(fixture.session.state().owner_epoch, 2);
+    }
+
+    #[tokio::test]
+    async fn expired_idle_deadline_rejects_attach_but_allows_open() {
         let config = Config::for_test("env-test");
         let fixture = Fixture::new(&config, 7);
         initialize(&fixture).await;
         let original = fixture.descriptor.clone();
         fixture.device.detach(&fixture.carrier).await;
-        // The next carrier stays uninitialized while the previous Session's grace expires.
+        // Carrier loss preserves the previous Session's idle deadline.
         let (sender, _receiver) = tokio::sync::mpsc::channel(16);
         let carrier = fixture.device.carrier(sender);
-        fixture.session.state().detached_at = Some(super::Instant::now() - config.disconnect_grace);
+        fixture.session.state().last_activity = super::Instant::now() - config.session_idle_timeout;
         let response = fixture
             .device
             .handle_payload_for_carrier(
@@ -3881,6 +4120,7 @@ mod tests {
         let mut attach: Value =
             serde_json::from_str(&request(json!(2), "session.attach", json!({}))).unwrap();
         attach["eip_session"] = json!(original.session_id);
+        attach["eip_owner_epoch"] = json!(original.owner_epoch + 1);
         let response = fixture
             .device
             .handle_payload_for_carrier(&carrier, &attach.to_string())

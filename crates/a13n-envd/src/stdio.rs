@@ -633,27 +633,27 @@ mod tests {
             .await
         });
         write_json_frame(&mut client, serde_json::json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{
-            "supported_protocol_versions":["0.3"],"client":{"name":"stdio-test","version":"1"},"expected_device_id":"env-test"
+            "supported_protocol_versions":["0.4"],"client":{"name":"stdio-test","version":"1"},"expected_device_id":"env-test"
         }})).await;
         let initialized = read_json(&mut client).await;
         let generation = initialized["result"]["descriptor"]["generation"].clone();
         let mut sessions = Vec::new();
         for id in [2, 3] {
             write_json_frame(&mut client, serde_json::json!({"jsonrpc":"2.0","id":id,"method":"session.open","params":{
-                "expected_device_id":"env-test","expected_generation":generation,"protocol_version":"0.3","working_directory":cwd,"required_methods":[]
+                "expected_device_id":"env-test","expected_generation":generation,"protocol_version":"0.4","working_directory":cwd,"required_methods":[]
             }})).await;
             let opened = read_json(&mut client).await;
             let session = opened["result"]["descriptor"]["session_id"]
                 .as_str()
                 .unwrap()
                 .to_owned();
-            write_json_frame(&mut client, serde_json::json!({"jsonrpc":"2.0","id":id+10,"eip_session":session,"method":"environment.readiness","params":{"context":{"operation_id":"ready"}}})).await;
+            write_json_frame(&mut client, serde_json::json!({"jsonrpc":"2.0","id":id+10,"eip_session":session,"eip_owner_epoch":1,"method":"environment.readiness","params":{"context":{"operation_id":"ready"}}})).await;
             assert_eq!(read_json(&mut client).await["result"]["ready"], true);
             sessions.push(session);
         }
         let mut handles = Vec::new();
         for session in &sessions {
-            write_json_frame(&mut client, serde_json::json!({"jsonrpc":"2.0","id":20,"eip_session":session,"method":"file.open_reader","params":{
+            write_json_frame(&mut client, serde_json::json!({"jsonrpc":"2.0","id":20,"eip_session":session,"eip_owner_epoch":1,"method":"file.open_reader","params":{
                 "context":{"operation_id":"open"},"path":{"path":crate::device_path::from_native(&source).unwrap()}
             }})).await;
             handles.push(
@@ -663,7 +663,7 @@ mod tests {
                     .to_owned(),
             );
         }
-        write_json_frame(&mut client, serde_json::json!({"jsonrpc":"2.0","id":30,"eip_session":sessions[0],"method":"session.close","params":{}})).await;
+        write_json_frame(&mut client, serde_json::json!({"jsonrpc":"2.0","id":30,"eip_session":sessions[0],"eip_owner_epoch":1,"method":"session.close","params":{}})).await;
         assert_eq!(read_json(&mut client).await["result"]["closed"], true);
         // A's old handle is fenced without disrupting B on the same data carrier.
         for index in [0, 1] {
@@ -717,7 +717,7 @@ mod tests {
             }
         }
         write_json_frame(&mut client, serde_json::json!({"jsonrpc":"2.0","id":40,"method":"session.open","params":{
-            "expected_device_id":"env-test","expected_generation":generation,"protocol_version":"0.3","working_directory":cwd,"required_methods":[]
+            "expected_device_id":"env-test","expected_generation":generation,"protocol_version":"0.4","working_directory":cwd,"required_methods":[]
         }})).await;
         let opened = read_json(&mut client).await;
         assert!(opened["result"]["descriptor"]["session_id"].is_string());
@@ -766,7 +766,7 @@ mod tests {
             "id": 1,
             "method": "initialize",
             "params": {
-                "supported_protocol_versions": ["0.3"],
+                "supported_protocol_versions": ["0.4"],
                 "client": {"name": "stdio-test", "version": "1"},
                 "expected_device_id": "env-test"
             }

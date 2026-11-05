@@ -1,7 +1,7 @@
 {
   "info": {
     "title": "Environment Interaction Protocol",
-    "version": "0.3"
+    "version": "0.4"
   },
   "methods": [
     {
@@ -2013,6 +2013,41 @@
       "x-eip-transfer-direction": null
     },
     {
+      "name": "process.resolve_start",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ProcessResolveStartParams/properties/context"
+          }
+        },
+        {
+          "name": "target_operation_id",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ProcessResolveStartParams/properties/target_operation_id"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/ProcessStartResult"
+        }
+      },
+      "x-eip-error-family": "process",
+      "x-eip-introduced": "0.4",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ProcessResolveStartParams"
+      },
+      "x-eip-replay-class": "active_only",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
       "name": "process.signal",
       "paramStructure": "by-name",
       "params": [
@@ -2256,6 +2291,26 @@
       "x-eip-transfer-direction": null
     },
     {
+      "name": "session.detach",
+      "paramStructure": "by-name",
+      "params": [],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/SessionDetachResult"
+        }
+      },
+      "x-eip-error-family": "session",
+      "x-eip-introduced": "0.4",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/SessionDetachParams"
+      },
+      "x-eip-replay-class": "ledger_external",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
       "name": "session.keepalive",
       "paramStructure": "by-name",
       "params": [],
@@ -2319,6 +2374,13 @@
           "required": false,
           "schema": {
             "$ref": "schema.json#/$defs/SessionOpenParams/properties/egress"
+          }
+        },
+        {
+          "name": "lifecycle",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/SessionOpenParams/properties/lifecycle"
           }
         }
       ],

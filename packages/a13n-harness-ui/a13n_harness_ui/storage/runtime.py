@@ -31,6 +31,7 @@ from .repositories import (
     ProjectModelPreferenceRepository,
     ThreadRepository,
 )
+from .tool_executions import ToolExecutionRepository
 from .usage import ThreadUsageRepository
 from .usage_analytics import UsageAnalyticsRepository
 from .voice import VoiceTranscriptRepository
@@ -71,6 +72,7 @@ class LocalStore:
         self.restarts = RestartRepository(database.sessions)
         self.child_executions = ChildExecutionRepository(database.sessions)
         self.environment_states = EnvironmentStateRepository(database.sessions)
+        self.tool_executions = ToolExecutionRepository(database.sessions, objects, layout.root)
 
     async def publish_object(
         self,
@@ -189,12 +191,17 @@ async def open_local_store(settings: StorageSettings) -> AsyncGenerator[LocalSto
     layout = StorageLayout.from_root(settings.data_root)
     await to_thread.run_sync(layout.prepare)
     async with open_database(layout.database, settings) as database:
-        yield LocalStore(
+        store = LocalStore(
             settings=settings,
             layout=layout,
             database=database,
             objects=ImmutableObjectStore(layout, settings, producer_release=__version__),
         )
+        try:
+            yield store
+        finally:
+            await store.tool_executions.owners.close()
+            await store.tool_executions.completion_owners.close()
 
 
 __all__ = ["LocalStore", "open_local_store"]

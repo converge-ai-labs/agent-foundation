@@ -1,6 +1,6 @@
 {
   "generated": true,
-  "method_count": 54,
+  "method_count": 56,
   "methods": [
     {
       "device_scoped": false,
@@ -577,6 +577,19 @@
     {
       "device_scoped": false,
       "error_family": "process",
+      "introduced": "0.4",
+      "jsonrpc_method": "process.resolve_start",
+      "kind": "request_response",
+      "params_type": "ProcessResolveStartParams",
+      "replay_class": "active_only",
+      "result_type": "ProcessStartResult",
+      "rpc_name": "ProcessResolveStart",
+      "transfer_action": null,
+      "transfer_direction": null
+    },
+    {
+      "device_scoped": false,
+      "error_family": "process",
       "introduced": "0.1",
       "jsonrpc_method": "process.signal",
       "kind": "request_response",
@@ -668,6 +681,19 @@
     {
       "device_scoped": false,
       "error_family": "session",
+      "introduced": "0.4",
+      "jsonrpc_method": "session.detach",
+      "kind": "request_response",
+      "params_type": "SessionDetachParams",
+      "replay_class": "ledger_external",
+      "result_type": "SessionDetachResult",
+      "rpc_name": "SessionDetach",
+      "transfer_action": null,
+      "transfer_direction": null
+    },
+    {
+      "device_scoped": false,
+      "error_family": "session",
       "introduced": "0.1",
       "jsonrpc_method": "session.keepalive",
       "kind": "request_response",
@@ -707,6 +733,6 @@
   ],
   "protocol": {
     "package": "a13n.agent_envd.eip.v1",
-    "version": "0.3"
+    "version": "0.4"
   }
 }

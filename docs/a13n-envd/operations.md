@@ -14,7 +14,7 @@ Open a Session for each scope of work, read the output you need, and close the S
 4. Open a Session with that working directory and the required methods, then wait for readiness before dispatching work.
 5. Save the Device generation, Session identity, and operation receipts together so later reads and reconciliation address the same work.
 
-Keep the owning scope alive with Session keepalive. The default idle TTL is 30 minutes; use the advertised idle and disconnect-grace values for your connection. Reattachment to the same Session is explicit and requires the same generation within its deadline. Reconnecting the carrier alone does not restore Sessions or in-flight operations.
+Keep the owning scope alive with Session keepalive. The default idle lifetime is one hour with no maximum lifetime; use the Session descriptor’s effective lifecycle policy. Reattachment to the same Session is explicit and requires the same generation and a newer owner epoch before its deadline. Reconnecting the carrier alone does not restore Sessions or in-flight operations.
 
 Close the Session when its scope ends. Cleanup leaves sibling Sessions and workspace files intact. Session admission and aggregate Device quotas limit concurrency; failed cleanup continues to consume capacity until reclamation is confirmed.
 

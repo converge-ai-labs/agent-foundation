@@ -4,7 +4,7 @@
 
 Trusted stdio, Host-dialed HTTP(S) and outbound reverse WebSocket carry the same EIP device handshake and independent logical Sessions. A device carrier can remain ready with zero Sessions or carry many concurrently. Envd remains the responder even when it dials a reverse connection. The Host owns product authentication and directory selection; transport routing never creates those permissions.
 
-[EIP](02-eip-protocol.md) owns methods/results and operation evidence. [Resource Lifetime](09-resource-lifetime-and-reclamation.md) owns Session liveness, disconnect grace and collection. This document owns framing, attachment authentication, routing and failure isolation. A Session owns its native resources; ordinary Sessions are not tenant sandboxes. Optional controlled Sessions follow [Execution Isolation](07-execution-isolation.md). A carrier owns delivery only.
+[EIP](02-eip-protocol.md) owns methods/results and operation evidence. [Resource Lifetime](09-resource-lifetime-and-reclamation.md) owns Session liveness, ownership transfer and collection. This document owns framing, attachment authentication, routing and failure isolation. A Session owns its native resources; ordinary Sessions are not tenant sandboxes. Optional controlled Sessions follow [Execution Isolation](07-execution-isolation.md). A carrier owns delivery only.
 
 Optional [resource monitoring](11-resource-monitoring.md) uses Device-scoped EIP methods over the same authenticated carrier. HTTP deployments additionally expose `GET /metrics` in standard Prometheus text format on the same listener with the same Bearer authentication and TLS policy. Both read the shared observation cache, require no Session and have no carrier liveness role.
 
@@ -16,7 +16,7 @@ A device-ready requester calls `session.open` with the selected device/generatio
 
 A Session is open/attached, detached, closing or closed. Before the first successful `environment.readiness`, only readiness, keepalive and close are admitted. No provider/model operation scope is published until readiness succeeds. A lost open response can leave an unclaimed Session until idle expiry; clients do not retry open automatically or interpret loss as non-creation.
 
-Every session-scoped control envelope carries `eip_session`; responses echo it. `initialize`, `device.describe`, `directory.list` and `session.open` requests omit it. JSON-RPC IDs are unique among outstanding calls within their scope; device calls use a separate scope. Binary frames carry the same Session selector. HTTP raw transfers use the `EIP-Session` header. Selectors are never URL/query/cookie values or model-facing credentials. A selector is usable only through the authenticated Host that owns the Session.
+Every session-scoped control envelope carries `eip_session`; responses echo it. Requests also carry `eip_owner_epoch`, which must match the installed owner except when `session.attach` installs a strictly newer epoch. `initialize`, `device.describe`, `directory.list` and `session.open` requests omit it. JSON-RPC IDs are unique among outstanding calls within their scope; device calls use a separate scope. Binary frames carry the same Session selector. HTTP raw transfers use the `EIP-Session` header. Selectors are never URL/query/cookie values or model-facing credentials. A selector is usable only through the authenticated Host that owns the Session.
 
 Closing/expiring one Session fences its new calls and cleans its operations, transfers, commands and output. It does not close sibling Sessions or reset the connection handshake. A writer commit either transfers its candidate and frozen destination authority before close, or remains Session-cleanup-owned. There is no sequential close/rearm barrier.
 
@@ -36,7 +36,7 @@ Carrier liveness, Session inactivity and operation/transfer deadlines are distin
 
 ## Binary Data-Frame Profile
 
-EIP 0.3 selects binary profile 1. Stdio and WebSocket share this network-byte-order frame; HTTP transfers use raw bodies instead.
+EIP 0.4 selects binary profile 1. Stdio and WebSocket share this network-byte-order frame; HTTP transfers use raw bodies instead.
 
 | Field               | Width | Contract                                                                         |
 | ------------------- | ----: | -------------------------------------------------------------------------------- |
@@ -80,7 +80,7 @@ The dedicated EIP listener requires an Authorization Bearer token on every contr
 
 `POST /eip/control` contains one control envelope. Selector-free initialize/device.describe observes Device info; directory.list performs optional bounded discovery without a Session. Selector-free session.open validates its explicit expected device/generation/version and creates another independent Session. This does not replace any existing Session. Subsequent control calls select via `eip_session` in the envelope, identically to framed carriers. An authenticated selector cannot be rebound to another trust principal or generation.
 
-An admitted request returns HTTP 200 with a typed EIP result/error. Missing/invalid credentials return 401; malformed media/framing 400/415; unknown raw-transfer session/handle 409; oversized bodies 413; capacity rejection 429; unsupported paths/methods 404/405. Pre-admission HTTP rejection proves that request did not dispatch. TCP pooling and affinity have no Session semantics.
+An admitted request returns HTTP 200 with a typed EIP result/error. Missing/invalid credentials return 401; malformed media/framing 400/415; unknown raw-transfer session/handle 409; oversized bodies 413; capacity rejection 429; unsupported paths/methods 404/405. Pre-admission HTTP rejection proves that request did not dispatch. TCP pooling and affinity have no Session semantics. A recovering Host takes over an existing HTTP Session with `session.attach` and a newer owner epoch; detach preserves its native resources until its lifecycle deadline.
 
 Raw readers/writers use fixed transfer resources with protected `EIP-Session`, transfer-handle and direction headers. Reader body completion is producer completion only; typed close verifies acceptance. Writer success confirms sealed upload only; typed commit publishes. Use bounded streaming and backpressure; no content encoding/compression, Range/multipart protocol, base64 file bodies or automatic retry/resume. Body failure aborts the attachment and pre-handoff candidate where owned. `DELETE` on the fixed transfer resource, with the same protected headers and an empty body, applies RESET and returns 204 on accepted cleanup. Clients use it on abandonment even after closing the body: a producer may already have sent all bytes into network buffers. It neither accepts a reader's content nor cancels a handed-off writer commit.
 
@@ -94,7 +94,7 @@ The first text message is device initialize. A finite handshake deadline applies
 
 One accepted device attachment remains online across Run boundaries. Session close does not close the socket even when no Sessions remain. WebSocket ping/pong and idle device presence do not maintain Session ownership.
 
-Carrier loss detaches its Sessions, destroys incomplete transfers and starts the short disconnect grace. Envd reconnects with capped jittered backoff and performs a fresh Device handshake. The same Host can explicitly reattach its existing Sessions before grace expiry, or open fresh ones. Reattachment preserves the original working directory/resources, but never restores pending response delivery, resumes transfers or replays operations. Expired or closed Sessions cannot be attached.
+Carrier loss detaches its Sessions and destroys incomplete transfers without changing their idle or maximum-lifetime deadlines. Envd reconnects with capped jittered backoff and performs a fresh Device handshake. The same Host can explicitly reattach its existing Sessions before expiry with a newer owner epoch, or open fresh ones. Reattachment preserves the original working directory/resources, but never restores pending response delivery, resumes transfers or replays operations. Expired or closed Sessions cannot be attached.
 
 Missing/malformed token, upgrade 401/403, invalid TLS/hostname, endpoint policy, redirect or incompatible subprotocol/framing is generation-fatal under the daemon contract. Transient DNS/connect/unavailability/liveness failures are reconnectable. Backoff resets only after a stable connection interval, not after each brief upgrade.
 
@@ -108,7 +108,7 @@ The listener and HTTP requester belong to trusted Host code. The Host owns produ
 | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
 | Device authentication/identity/version fails                       | No usable device connection or Session                                                 |
 | One Session open/readiness fails                                   | Close that Session; preserve carrier and siblings unless the carrier itself is corrupt |
-| Session idle/grace deadline expires                                | Clean that Session and its resources; preserve siblings and carrier                    |
+| Session idle/maximum-lifetime deadline expires                     | Clean that Session and its resources; preserve siblings and carrier                    |
 | Local caller timeout/cancel                                        | End that observation; bound correlation and preserve possible-dispatch evidence        |
 | Carrier fails after possible mutation dispatch                     | Unknown outcome unless stronger evidence; no replay                                    |
 | Session close races commit                                         | Exactly one candidate owner retains cleanup/publication responsibility                 |

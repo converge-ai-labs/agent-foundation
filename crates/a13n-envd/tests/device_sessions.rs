@@ -71,7 +71,7 @@ impl Device {
                 None,
                 "initialize",
                 json!({
-                    "supported_protocol_versions":["0.3"], "expected_device_id":"device-test",
+                    "supported_protocol_versions":["0.4"], "expected_device_id":"device-test",
                     "client":{"name":"integration-test", "version":"0"}
                 }),
             )
@@ -86,6 +86,7 @@ impl Device {
         let mut message = json!({"jsonrpc":"2.0", "id":id, "method":method, "params":params});
         if let Some(session) = session {
             message["eip_session"] = json!(session);
+            message["eip_owner_epoch"] = json!(1);
         }
         let bytes = serde_json::to_vec(&message).unwrap();
         let input = self.input.as_mut().unwrap();
@@ -145,7 +146,7 @@ impl Device {
     async fn open(&mut self, folder: &str) -> String {
         let result = self.call(None, "session.open", json!({
             "expected_device_id":"device-test", "expected_generation":self.descriptor["generation"],
-            "protocol_version":"0.3", "working_directory":device_path(&self.root.join(folder)), "required_methods":["file.read_text"]
+            "protocol_version":"0.4", "working_directory":device_path(&self.root.join(folder)), "required_methods":["file.read_text"]
         })).await;
         let session = result["descriptor"]["session_id"]
             .as_str()
@@ -247,7 +248,7 @@ async fn failed_open_and_disabled_discovery_do_not_poison_device() {
     assert_eq!(result["error"]["data"]["error_type"], "unsupported");
     let failed = device.response(None, "session.open", json!({
         "expected_device_id":"device-test", "expected_generation":device.descriptor["generation"],
-        "protocol_version":"0.3", "working_directory":device_path(&device.root.join("missing")), "required_methods":[]
+        "protocol_version":"0.4", "working_directory":device_path(&device.root.join("missing")), "required_methods":[]
     })).await;
     assert_eq!(failed["error"]["data"]["error_type"], "not_found_or_denied");
     let session = device.open("beta").await;
@@ -310,7 +311,7 @@ async fn symlink_outside_cwd_is_readable_and_session_processes_have_unique_outpu
 
 #[tokio::test]
 async fn keepalive_renews_only_its_owner_and_device_reads_do_not_keep_abandoned_sessions() {
-    let mut device = Device::start(json!({"idle_timeout_ms":300, "disconnect_grace_ms":100})).await;
+    let mut device = Device::start(json!({"idle_timeout_ms":300})).await;
     let alpha = device.open("alpha").await;
     let beta = device.open("beta").await;
     for _ in 0..6 {
@@ -433,6 +434,56 @@ async fn output_inactivity_is_refreshed_by_access_but_not_keepalive() {
     assert!(expired.get("error").is_some(), "{expired}");
     device
         .call(Some(&session), "session.close", json!({}))
+        .await;
+    device.stop().await;
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn resolve_start_returns_original_process_and_current_status_without_replay() {
+    let mut device = Device::start(shell_config(json!({}))).await;
+    let session = device.open("alpha").await;
+    let sibling = device.open("beta").await;
+    let started = device
+        .call(
+            Some(&session),
+            "process.start",
+            shell_params("once", "printf once >> effects; exit 7"),
+        )
+        .await;
+    let mut wait = context("wait");
+    wait["handle"] = started["process"]["handle"].clone();
+    wait["condition"] = json!("tree_cleaned");
+    let completed = device.call(Some(&session), "process.wait", wait).await;
+    for index in 0..2 {
+        let mut query = context(&format!("resolve-{index}"));
+        query["target_operation_id"] = json!("once");
+        let resolved = device
+            .call(Some(&session), "process.resolve_start", query)
+            .await;
+        assert_eq!(resolved["process"]["handle"], started["process"]["handle"]);
+        assert_eq!(resolved["receipt"], started["receipt"]);
+        assert_eq!(
+            resolved["process"]["status"],
+            completed["process"]["status"]
+        );
+        assert_eq!(resolved["process"]["status"]["exit_code"], 7);
+    }
+    assert_eq!(
+        std::fs::read_to_string(device.root.join("alpha/effects")).unwrap(),
+        "once"
+    );
+    let mut query = context("sibling-resolve");
+    query["target_operation_id"] = json!("once");
+    let missing = device
+        .response(Some(&sibling), "process.resolve_start", query)
+        .await;
+    assert_eq!(missing["error"]["data"]["error_type"], "unknown_outcome");
+    device
+        .call(Some(&session), "session.close", json!({}))
+        .await;
+    device
+        .call(Some(&sibling), "session.close", json!({}))
         .await;
     device.stop().await;
 }

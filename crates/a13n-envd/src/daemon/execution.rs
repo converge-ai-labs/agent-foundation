@@ -67,6 +67,7 @@ impl Daemon {
         carrier: &Carrier,
         cwd: String,
         policy: Option<eip::EgressPolicy>,
+        lifecycle: eip::SessionLifecyclePolicy,
     ) -> Result<eip::SessionOpenResult, EIPError> {
         if policy.is_some() != self.config.egress.controlled() {
             return Err(protocol_error(
@@ -86,9 +87,9 @@ impl Daemon {
         })?;
         let id = self.ids.next("session").map_err(map_ledger_error)?;
         let mut session =
-            Session::new(self, carrier.id, id.clone(), cwd.clone()).map_err(|_| {
-                protocol_error(ErrorType::InternalError, "session initialization failed")
-            })?;
+            Session::new(self, carrier.id, id.clone(), cwd.clone(), lifecycle.clone()).map_err(
+                |_| protocol_error(ErrorType::InternalError, "session initialization failed"),
+            )?;
         #[cfg(target_os = "linux")]
         let mut hide = self.config.bootstrap_files.clone();
         #[cfg(target_os = "linux")]
@@ -127,8 +128,7 @@ impl Daemon {
             working_directory: cwd,
             limits: self.config.limits.clone(),
             command: self.config.command.clone(),
-            idle_timeout_ms: self.config.session_idle_timeout.as_millis() as u64,
-            disconnect_grace_ms: self.config.disconnect_grace.as_millis() as u64,
+            lifecycle,
         };
         #[cfg(target_os = "linux")]
         let runtime = Runtime::start(worker, policy, hide, reservation).await;

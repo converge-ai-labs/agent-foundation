@@ -116,7 +116,7 @@ flowchart TD
 
 通用工具默认内联执行。设置 `tools.execution.mode: auto` 可开启超时移交。支持进程的顶层 Shell 调用在两种模式下都可在前台等待到期后让出；仅支持前台执行的挂载遵循通用模式。App 提供即时 steering 和保留执行所需的运行时。
 
-用 `app.tool_executions(thread_id, offset=0, limit=20)` 读取指定 Thread 的状态，不消耗结果；用 `app.cancel_tool_execution(thread_id, execution_id)` 请求取消工具。取消对话和取消工具是两件事。取消对话还会禁止完成事件自动唤醒，直到收到新的用户输入。保留的执行记录只在 App 生命周期内有效，重启后丢失。
+用 `app.tool_executions(thread_id, offset=0, limit=20)` 读取指定 Thread 的状态，不消耗结果；用 `app.cancel_tool_execution(thread_id, execution_id)` 请求取消工具。取消对话和取消工具是两件事。取消对话还会禁止完成事件自动唤醒，直到收到新的用户输入。保留的记录和已完成结果跨 App 重启存续。结果在首次消费后一小时过期，且不超过完成后一天。原外部 daemon 和 Session 存活时，Envd Shell 工作可以恢复；其他未完成的进程内调用标为 `lost`，不重放。
 
 ## Thread 查询与修改
 

@@ -223,9 +223,10 @@ async def test_root_coordinator_cancels_the_operation_scope_after_stream_creatio
         await executor.started.wait()
 
         assert (await coordinator.cancel(receipt.receipt_id)).accepted
-        operation = await coordinator.wait(receipt.receipt_id)
+        with fail_after(1):
+            operation = await coordinator.wait(receipt.receipt_id)
 
-        assert executor.stream.cancelled
+        assert not executor.stream.cancelled
         assert operation.status is RootOperationStatus.cancelled
     finally:
         await coordinator.close(timeout_seconds=1)

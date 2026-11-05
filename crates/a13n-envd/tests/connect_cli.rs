@@ -152,6 +152,7 @@ async fn call(
     let mut request = json!({"jsonrpc":"2.0", "id":1, "method":method, "params":params});
     if let Some(session) = session {
         request["eip_session"] = json!(session);
+        request["eip_owner_epoch"] = json!(1);
     }
     socket
         .send(Message::Text(request.to_string().into()))
@@ -269,7 +270,7 @@ async fn connect_preserves_monitoring_configuration_and_overlay_precedence() {
         let request: Value = serde_json::from_slice(&body).unwrap();
         respond(stream, json!({"status":"approved", "resource_id":"device-test", "websocket_url":format!("ws://{address}/api/devices/device-test/connect")})).await;
         let mut socket = accept(&listener, authorization).await;
-        let initialized = call(&mut socket, None, "initialize", json!({"supported_protocol_versions":["0.3"], "expected_device_id":request["device_id"], "client":{"name":"monitoring-test", "version":"1"}})).await;
+        let initialized = call(&mut socket, None, "initialize", json!({"supported_protocol_versions":["0.4"], "expected_device_id":request["device_id"], "client":{"name":"monitoring-test", "version":"1"}})).await;
         let descriptor = &initialized["descriptor"];
         if let Some(interval) = interval {
             let report = metrics_sample(&mut socket, descriptor).await;
@@ -309,7 +310,7 @@ async fn connect_pairs_once_runs_native_shell_and_reuses_credential_after_restar
     assert_eq!(serde_json::from_slice::<Value>(&body).unwrap(), request);
     respond(stream, json!({"status":"approved", "resource_id":"device-test", "websocket_url":format!("ws://{address}/api/devices/device-test/connect")})).await;
     let mut socket = accept(&listener, authorization).await;
-    let initialize = json!({"supported_protocol_versions":["0.3"], "expected_device_id":device_id, "client":{"name":"pairing-test", "version":"1"}});
+    let initialize = json!({"supported_protocol_versions":["0.4"], "expected_device_id":device_id, "client":{"name":"pairing-test", "version":"1"}});
     let first = call(&mut socket, None, "initialize", initialize.clone()).await;
     let descriptor = &first["descriptor"];
     let report = metrics_sample(&mut socket, descriptor).await;
@@ -326,7 +327,7 @@ async fn connect_pairs_once_runs_native_shell_and_reuses_credential_after_restar
             .unwrap()
             > 0
     );
-    let opened = call(&mut socket, None, "session.open", json!({"expected_device_id":device_id, "expected_generation":descriptor["generation"], "protocol_version":"0.3", "working_directory":descriptor["default_working_directory"], "required_methods":["shell.exec"]})).await;
+    let opened = call(&mut socket, None, "session.open", json!({"expected_device_id":device_id, "expected_generation":descriptor["generation"], "protocol_version":"0.4", "working_directory":descriptor["default_working_directory"], "required_methods":["shell.exec"]})).await;
     let session = opened["descriptor"]["session_id"].as_str().unwrap();
     assert_eq!(
         opened["descriptor"]["shell_profiles"][0]["profile_id"],
@@ -420,7 +421,7 @@ async fn ipv6_pending_pairing_resumes_with_saved_name_and_credential() {
     assert_eq!(serde_json::from_slice::<Value>(&body).unwrap(), request);
     respond(stream, json!({"status":"approved", "resource_id":"device-test", "websocket_url":format!("ws://{address}/api/devices/device-test/connect")})).await;
     let mut socket = accept(&listener, authorization).await;
-    let result = call(&mut socket, None, "initialize", json!({"supported_protocol_versions":["0.3"], "expected_device_id":request["device_id"], "client":{"name":"ipv6-test", "version":"1"}})).await;
+    let result = call(&mut socket, None, "initialize", json!({"supported_protocol_versions":["0.4"], "expected_device_id":request["device_id"], "client":{"name":"ipv6-test", "version":"1"}})).await;
     assert_eq!(result["descriptor"]["device_id"], request["device_id"]);
     stop(child, credential).await;
 }

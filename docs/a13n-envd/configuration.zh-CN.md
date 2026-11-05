@@ -127,7 +127,7 @@ if report.sample is not None:
     print(sample.sample_age_ms, sample.sequence)
 ```
 
-`device.metrics` 复用现有认证传输，并在采样开启时声明。Envd 和 `a13n-envd-client` 使用 EIP 0.3；迁移 0.1 或 0.2 部署时一起升级。传输帧和 `eip.v1` 命名空间保持不变。
+`device.metrics` 复用现有认证传输，并在采样开启时声明。Envd 和 `a13n-envd-client` 使用 EIP 0.4；迁移旧协议部署时一起升级。传输帧和 `eip.v1` 命名空间保持不变。
 
 资源字段的含义如下：
 
@@ -442,8 +442,8 @@ a13n-envd --version
 | `name`, `description`                        | 可选显示元数据                                                                                                       |
 | `default_working_directory`                  | 未设置时使用启动 cwd                                                                                                 |
 | `directory_discovery`                        | `true`                                                                                                               |
-| `idle_timeout_ms`                            | 会话空闲寿命                                                                                                         |
-| `disconnect_grace_ms`                        | 已分离会话重新附加的宽限期                                                                                           |
+| `idle_timeout_ms`                            | 默认会话空闲寿命：`3600000`（一小时）                                                                                |
+| `max_lifetime_ms`                            | 可选正数最大会话寿命；省略表示无限                                                                                   |
 | `execution.uid`, `execution.gid`             | 可选、成对的 Linux 原生 ID；省略时保留启动者身份，包括 root                                                          |
 | `execution.allow_sudo`                       | `true`；原生 sudoers 仍控制授权                                                                                      |
 | `sandbox`                                    | `{"mode":"disabled"}`；或包含目录 `grants` 的 `restricted`                                                           |

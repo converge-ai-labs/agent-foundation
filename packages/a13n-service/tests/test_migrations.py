@@ -797,6 +797,7 @@ async def test_browser_retention_migration_preserves_legacy_and_refuses_lossy_ro
 
     _, browser = await setup(service, runs_kit)
     database = service.runtime.settings.database
+    head = rows(database, "SELECT version_num FROM alembic_version")
     engine = create_engine(database.url.get_secret_value())
     try:
         for fact in (
@@ -819,7 +820,7 @@ async def test_browser_retention_migration_preserves_legacy_and_refuses_lossy_ro
             with pytest.raises(DBAPIError, match="rollback_retention"):
                 with migration_connection(database, OSS) as config:
                     command.downgrade(config, "29270d0290da")
-            assert rows(database, "SELECT version_num FROM alembic_version") == [("03610e577d35",)]
+            assert rows(database, "SELECT version_num FROM alembic_version") == head
         # Legacy rows retain the original idle_seconds meaning and gain no new idle policy on upgrade.
         with engine.begin() as connection:
             connection.execute(
@@ -908,3 +909,22 @@ async def test_unified_subagents_cutover_materializes_legacy_patches_and_digests
         command.downgrade(config, "91abbf7b03c8")
     upgrade(database, OSS)
     check(database, OSS)
+
+
+@pytest.mark.anyio
+async def test_execution_context_revision_preserves_pending_run(service, scripted_model, runs_kit):
+    from a13n_service.runs.claim import claim
+
+    await runs_kit.pause_sweeps(service)
+    agent = await runs_kit.create_agent(service, scripted_model)
+    submitted = await runs_kit.start_thread(service, agent, "Wait for a worker")
+    database = service.runtime.settings.database
+    with migration_connection(database, OSS) as config:
+        command.downgrade(config, "03610e577d35")
+    upgrade(database, OSS)
+    check(database, OSS)
+    assert rows(
+        database, "SELECT thread_id, worker_id, generation::text, sessions::text FROM thread_execution_contexts"
+    ) == [(submitted["thread"]["id"], None, "0", "{}")]
+    (lease,) = await claim(service.runtime, worker_id="worker-new", worker_build="test", limit=1)
+    assert lease.run_id == submitted["run"]["id"]

@@ -181,3 +181,19 @@ class ThreadEnvironmentRow(Base):
         JSONB, server_default=text("'" + json.dumps({"operations": sorted(FILE_EXECUTION_ACTIONS)}) + "'::jsonb")
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ThreadExecutionContextRow(Base):
+    """Continuing Envd bindings, co-located while execution leases remain live."""
+
+    __tablename__ = "thread_execution_contexts"
+    __table_args__ = (
+        ForeignKeyConstraint(["organization_id", "workspace_id"], ["workspaces.organization_id", "workspaces.id"]),
+        ForeignKeyConstraint(["workspace_id", "thread_id"], ["threads.workspace_id", "threads.id"]),
+    )
+    thread_id: Mapped[str] = mapped_column(String(72), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"))
+    workspace_id: Mapped[str]
+    worker_id: Mapped[str | None]
+    generation: Mapped[int] = mapped_column(BigInteger, server_default=text("0"))
+    sessions: Mapped[dict] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))

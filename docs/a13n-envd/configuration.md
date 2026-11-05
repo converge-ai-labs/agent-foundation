@@ -127,7 +127,7 @@ if report.sample is not None:
     print(sample.sample_age_ms, sample.sequence)
 ```
 
-`device.metrics` uses the existing authenticated carrier and is advertised when sampling is enabled. Envd and `a13n-envd-client` use EIP 0.3; upgrade both when migrating a 0.1 or 0.2 deployment. Carrier framing and the `eip.v1` namespace stay unchanged.
+`device.metrics` uses the existing authenticated carrier and is advertised when sampling is enabled. Envd and `a13n-envd-client` use EIP 0.4; upgrade both when migrating an older protocol deployment. Carrier framing and the `eip.v1` namespace stay unchanged.
 
 Interpret the resource fields as follows:
 
@@ -442,8 +442,8 @@ Use these fields in daemon JSON:
 | `name`, `description`                        | Optional display metadata                                                                                                                  |
 | `default_working_directory`                  | Startup cwd if unset                                                                                                                       |
 | `directory_discovery`                        | `true`                                                                                                                                     |
-| `idle_timeout_ms`                            | Session idle lifetime                                                                                                                      |
-| `disconnect_grace_ms`                        | Detached Session attachment grace                                                                                                          |
+| `idle_timeout_ms`                            | Default Session idle lifetime: `3600000` (one hour)                                                                                        |
+| `max_lifetime_ms`                            | Optional positive maximum Session lifetime; omitted means unlimited                                                                        |
 | `execution.uid`, `execution.gid`             | Optional paired Linux native IDs; omitted retains the launcher, including root                                                             |
 | `execution.allow_sudo`                       | `true`; native sudoers still controls authorization                                                                                        |
 | `sandbox`                                    | `{"mode":"disabled"}`; or `restricted` with directory `grants`                                                                             |

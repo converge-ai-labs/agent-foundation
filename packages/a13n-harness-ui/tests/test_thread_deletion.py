@@ -225,10 +225,10 @@ async def test_delete_waits_for_child_completion_delivery_and_resumed_run(tmp_pa
     async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=path) as app:
         original_delivery = app._tool_executions.deliver
 
-        async def gated_delivery(thread_id, prompt):
+        async def gated_delivery(thread_id, prompt, execution_ids):
             delivery_entered.set()
             await delivery_allowed.wait()
-            return await original_delivery(thread_id, prompt)
+            return await original_delivery(thread_id, prompt, execution_ids)
 
         app._tool_executions.deliver = gated_delivery
         thread = await app.create_thread(defaults=NewThreadDefaults(agent_id="agent-main"))

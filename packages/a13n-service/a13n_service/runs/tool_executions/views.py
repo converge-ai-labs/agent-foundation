@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Literal
 
 from a13n_harness.tool_execution import ToolExecutionRecord
+from a13n_harness.tool_execution_payload import ToolExecutionPayload as Payload
 from a13n_harness.toolsets.shell_observation import ShellStream
 from a13n_harness.toolsets.shell_results import ProcessStatusProjection, ShellExecSuccess
 from pydantic import BaseModel, TypeAdapter, ValidationError
@@ -18,7 +19,6 @@ from a13n_service.infra.objects.interface import ObjectRef, read
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.tables import ToolExecutionRow
 from a13n_service.runs.threads import get_thread
-from a13n_service.runs.tool_executions.payload import Payload
 from a13n_service.runs.tool_executions.store import available, observation
 from a13n_service.tenancy.access import workspace_scope
 from a13n_service.tenancy.authorize import Principal

@@ -29,7 +29,7 @@ Sessions use native accounts. With no execution UID/GID configured, they retain 
 {
   "expected_device_id": "device-example",
   "expected_generation": 123,
-  "protocol_version": "0.3",
+  "protocol_version": "0.4",
   "working_directory": "/workspace",
   "egress": {
     "destinations": {"mode": "allowlist", "hosts": ["api.github.com"]},
@@ -140,7 +140,7 @@ Use a dedicated disposable sandbox. Keep foreign privileged services, cron/syste
 
 Supply trusted launcher artifacts on every daemon start. The management snapshot protects the running broker from later system changes; restore or rebuild trusted artifacts before restarting from a tree modified by root workloads. Use separate deployments for mutually hostile Sessions. Controlled egress constrains worker traffic, not every process on a shared machine.
 
-Detach retains the worker and policy for the disconnect grace period; reattach returns current policy metadata. Close, expiry, broker failure or daemon death stops controlled execution and networking. Real secrets and the Session CA private key stay in broker memory.
+Detach retains the worker and policy until Session expiry; reattach returns current policy metadata. Close, expiry, broker failure or daemon death stops controlled execution and networking. Real secrets and the Session CA private key stay in broker memory.
 
 Each Session reserves its configured budgets against Device totals at creation. If idle Sessions exhaust a Device total before reaching `max_sessions`, increase the relevant total. Worker death releases capacity once confirmed. Staging reservations remain charged until daemon teardown when file cleanup cannot be confirmed.
 

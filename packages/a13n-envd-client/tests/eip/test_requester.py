@@ -104,6 +104,7 @@ def descriptor(session_id: str = "ses-a", *, idle_timeout_ms: int = 30_000) -> S
         device_id="device-test",
         generation=1,
         session_id=session_id,
+        owner_epoch=1,
         working_directory="/work",
         available_methods=("environment.readiness", "environment.describe", "session.keepalive", "session.close"),
         limits=limits(),
@@ -114,7 +115,7 @@ def descriptor(session_id: str = "ses-a", *, idle_timeout_ms: int = 30_000) -> S
             signal_interrupt=False,
             signal_terminate=False,
         ),
-        lifecycle=SessionLifecyclePolicy(idle_timeout_ms=idle_timeout_ms, disconnect_grace_ms=1000),
+        lifecycle=SessionLifecyclePolicy(idle_timeout_ms=idle_timeout_ms),
     )
 
 
@@ -144,14 +145,14 @@ async def initialized(transport: FakeTransport, *, monitoring: bool = False) -> 
     task = asyncio.create_task(EIPDeviceConnection.initialize(transport, expected_device_id="device-test"))
     request = await transport.request()
     assert request.method == "initialize" and request.eip_session is None
-    assert request.params["supported_protocol_versions"] == ["0.3"]
+    assert request.params["supported_protocol_versions"] == ["0.4"]
     advertised = device_descriptor().model_dump(mode="json", exclude_none=True)
     if monitoring:
         advertised["available_methods"].append("device.metrics")
     transport.reply(
         request,
         {
-            "protocol_version": "0.3",
+            "protocol_version": "0.4",
             "server": {"name": "a13n-envd", "version": "0"},
             "descriptor": advertised,
         },
@@ -501,9 +502,20 @@ def test_keepalive_runs_without_any_operations():
         transport = FakeTransport()
         device = await initialized(transport)
         session = await opened(device, transport, idle_timeout_ms=300)
+        await asyncio.sleep(0.15)
+        assert transport.sent.empty()
+        use = session.use()
+        await use.__aenter__()
         request = await transport.request()
         assert request.method == "session.keepalive" and request.eip_session == session.session_id
         transport.reply(request, {"alive": True})
+        release = asyncio.create_task(use.__aexit__(None, None, None))
+        touch = await transport.request()
+        assert touch.method == "session.keepalive"
+        transport.reply(touch, {"alive": True})
+        await release
+        await asyncio.sleep(0.15)
+        assert transport.sent.empty()
         await closed(session, transport)
         await device.close()
 
@@ -710,7 +722,10 @@ def test_exact_session_reattachment_does_not_initialize_or_replay_operations():
         task = asyncio.create_task(device.attach_session(descriptor()))
         request = await transport.request()
         assert request.method == "session.attach" and request.eip_session == "ses-a" and request.params == {}
-        transport.reply(request, {"descriptor": descriptor().model_dump(mode="json")})
+        assert request.eip_owner_epoch == 2
+        transport.reply(
+            request, {"descriptor": descriptor().model_copy(update={"owner_epoch": 2}).model_dump(mode="json")}
+        )
         ready = await transport.request()
         assert ready.method == "environment.readiness"
         transport.reply(ready, readiness())

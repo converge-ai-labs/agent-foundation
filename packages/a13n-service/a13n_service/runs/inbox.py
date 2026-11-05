@@ -8,11 +8,11 @@ the thread's limits.
 import hashlib
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Literal
 
 from pydantic import BaseModel, JsonValue
-from sqlalchemy import func, select, text, update
+from sqlalchemy import func, select, text, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.execution_policy import matches
@@ -20,7 +20,7 @@ from a13n_service.infra.errors import IDEMPOTENCY_KEY_REUSED, ServiceError, conf
 from a13n_service.infra.ids import new_object_id
 from a13n_service.resources.agents import stored
 from a13n_service.runs.schemas import EntryUpdate, Failure, Message, RequestContext, RunOptions, canonical_json
-from a13n_service.runs.tables import InboxEntryRow, RunRow, ThreadRow
+from a13n_service.runs.tables import InboxEntryRow, RunRow, ThreadRow, ToolExecutionRow
 from a13n_service.settings import Control
 from a13n_service.tenancy.authorize import ExecutionAuthority
 
@@ -425,17 +425,41 @@ async def assigned_entries(session: AsyncSession, run_id: str) -> Sequence[Inbox
 
 
 async def consume(
-    session: AsyncSession, run_id: str, entry_ids: Sequence[str], *, checkpoint_seq: int, at: datetime
+    session: AsyncSession,
+    run_id: str,
+    entry_ids: Sequence[str],
+    *,
+    checkpoint_seq: int,
+    at: datetime,
+    result_retention_seconds: int,
 ) -> None:
-    if entry_ids:
+    if not entry_ids:
+        return
+    consumed = await session.execute(
+        update(InboxEntryRow)
+        .where(
+            InboxEntryRow.assigned_run_id == run_id,
+            InboxEntryRow.status == "assigned",
+            InboxEntryRow.id.in_(entry_ids),
+        )
+        .values(status="consumed", incorporated_checkpoint_seq=checkpoint_seq, finished_at=at)
+        .returning(InboxEntryRow.thread_id, InboxEntryRow.kind, InboxEntryRow.payload)
+    )
+    results = [(thread_id, payload["execution_id"]) for thread_id, kind, payload in consumed if kind == "tool_result"]
+    if results:
+        # Enqueueing a hint is not consumption. Its checkpoint incorporation and
+        # the result's short reread deadline commit in this same transaction.
         await session.execute(
-            update(InboxEntryRow)
+            update(ToolExecutionRow)
             .where(
-                InboxEntryRow.assigned_run_id == run_id,
-                InboxEntryRow.status == "assigned",
-                InboxEntryRow.id.in_(entry_ids),
+                tuple_(ToolExecutionRow.thread_id, ToolExecutionRow.id).in_(results),
+                ToolExecutionRow.completed_at.is_not(None),
+                ToolExecutionRow.first_delivered_at.is_(None),
             )
-            .values(status="consumed", incorporated_checkpoint_seq=checkpoint_seq, finished_at=at)
+            .values(
+                first_delivered_at=at,
+                expires_at=func.least(ToolExecutionRow.expires_at, at + timedelta(seconds=result_retention_seconds)),
+            )
         )
 
 

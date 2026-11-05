@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field, JsonValue
 from a13n_service.providers.environment.vercel_build import BuildTarget, Snapshot
 
 SOURCE_REVISION = "1da9b5c08f1ed0a6095906583bef9555863eeb6a"
-RELEASE_URL = "https://github.com/converge-ai-labs/agent-foundation/releases/download/release/a13n-envd-v0.5.1/a13n-envd-0.5.1-x86_64-unknown-linux-gnu.tar.gz"
+RELEASE_URL = "https://github.com/converge-ai-labs/agent-foundation/releases/download/release/a13n-envd-v0.6.0/a13n-envd-0.6.0-x86_64-unknown-linux-gnu.tar.gz"
 RELEASE_SHA256 = "f2fd6eace212c2e59d2b4d6a2dc69ec010235005ad332ac1ddd1932f7bca258c"
 FILES = (
     (

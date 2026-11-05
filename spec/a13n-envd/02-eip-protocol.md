@@ -2,13 +2,13 @@
 
 ## Design Position
 
-EIP 0.3 separates a Device connection from the independent Sessions it carries. JSON-RPC 2.0 carries control; typed transfers carry raw file bytes. HTTP, reverse WebSocket and stdio share method, ownership and cleanup semantics. Provider provisioning and product authorization remain outside EIP.
+EIP 0.4 separates a Device connection from the independent Sessions it carries. JSON-RPC 2.0 carries control; typed transfers carry raw file bytes. HTTP, reverse WebSocket and stdio share method, ownership and cleanup semantics. Provider provisioning and product authorization remain outside EIP.
 
 The [canonical IDL](08-protocol-source-client-and-generation.md) generates Rust/Python wire types and fixtures.
 
 ## Control Envelope
 
-Each message is one JSON-RPC request/response, without batches or application notifications. IDs are strings or signed 64-bit integers, never booleans. A response echoes its request ID and contains exactly one result/error. Session-scoped messages carry and echo `eip_session`; `initialize`, `device.describe`, `device.metrics`, `directory.list` and `session.open` omit it. This field is a route selector, not a credential.
+Each message is one JSON-RPC request/response, without batches or application notifications. IDs are strings or signed 64-bit integers, never booleans. A response echoes its request ID and contains exactly one result/error. Session-scoped messages carry and echo `eip_session`; requests also carry `eip_owner_epoch` to fence obsolete owners; `initialize`, `device.describe`, `device.metrics`, `directory.list` and `session.open` omit it. This field is a route selector, not a credential.
 
 Framing, JSON sizes and typed values are bounded. Validate required types, method availability, route ownership and native operation inputs at their owning boundary. There is no additional per-resource authorization lattice. Small inherent bytes such as stdin use `EncodedBytes(encoding="base64", data=...)` with canonical unpadded base64. Native file content uses the raw data plane.
 
@@ -51,6 +51,7 @@ class SessionOpenParams(BaseModel):
     working_directory: str | None = None
     required_methods: tuple[str, ...]
     egress: EgressPolicy | None = None
+    lifecycle: SessionLifecyclePolicy | None = None
 
 
 class SessionDescriptor(BaseModel):
@@ -59,6 +60,7 @@ class SessionDescriptor(BaseModel):
     device_id: str
     generation: int
     session_id: str
+    owner_epoch: int
     working_directory: str
     available_methods: tuple[str, ...]
     limits: EIPLimits
@@ -83,9 +85,9 @@ Device methods and Session lifecycle controls are bounded and ledger-external. A
 
 Before initial readiness, a Session admits readiness, keepalive and close only. `environment.readiness` returns `ready`, `device_id`, `generation` and `session_id`; the requester checks them before publishing operations. `environment.describe` returns the Session descriptor. Readiness proves the current operation scope works, not future capacity or sandbox enforcement.
 
-`session.keepalive` maintains the one owning scope during quiet periods. `session.attach`, on a newly initialized framed carrier, reattaches that same Host's detached Session before its deadline and returns its fixed boundary and current nonsecret policy descriptor. HTTP ownership is independent of TCP connections and needs no reattachment. `session.close` begins cleanup of that Session only. Once cleanup starts, attach/keepalive fail rather than revive it.
+`session.keepalive` maintains the owning execution context during quiet periods. `session.attach` takes over that same Host's existing Session with a strictly newer owner epoch on HTTP or an initialized framed carrier. It returns the original working directory, fixed boundary, lifecycle policy and current nonsecret policy descriptor. `session.detach` releases the attachment and starts the idle window from final use while preserving commands, output and evidence. `session.close` begins cleanup of that Session only. Once cleanup starts, attach/keepalive fail rather than revive it.
 
-[Resource Lifetime](09-resource-lifetime-and-reclamation.md) owns inactivity, disconnect grace and collection. No cross-Session resource import, resource-retain method or command lease exists. A client never sends keepalive for a scope whose owner has ended.
+[Resource Lifetime](09-resource-lifetime-and-reclamation.md) owns inactivity, maximum lifetime, ownership transfer and collection. No cross-Session resource import, resource-retain method or command lease exists. A client never sends keepalive for a scope whose owner has ended.
 
 ## Common Operation Context and Replay
 
@@ -124,13 +126,13 @@ Response handoff and evidence publication are bounded and atomic at the operatio
 | Domain                      | Methods                                                                                                                                                  | Replay class                        |
 | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
 | Device                      | `initialize`, `device.describe`, `device.metrics`, `directory.list`, `session.open`                                                                      | Ledger-external                     |
-| Session lifecycle           | `session.attach`, `session.keepalive`, `session.close`                                                                                                   | Ledger-external                     |
+| Session lifecycle           | `session.attach`, `session.detach`, `session.keepalive`, `session.close`                                                                                 | Ledger-external                     |
 | Session observation         | `environment.readiness`, `environment.describe`                                                                                                          | `active_only`                       |
 | Evidence/control            | `operation.cancel`, `receipt.get`                                                                                                                        | `active_only`                       |
 | File observations/transfers | `file.stat`, `file.read_text`, `file.open_reader`, `file.close_reader`, `file.list`, `file.find`, `file.search`, `file.open_writer`, `file.abort_writer` | `active_only`                       |
 | File mutations              | `file.write_text`, `file.commit_writer`, `file.mkdir`, `file.patch_text`, `file.copy`, `file.move`, `file.remove`                                        | `terminal_evidence`                 |
 | Foreground command          | `shell.exec`                                                                                                                                             | `terminal_evidence`                 |
-| Background observations     | `process.inspect`, `process.wait`                                                                                                                        | `active_only`                       |
+| Background observations     | `process.resolve_start`, `process.inspect`, `process.wait`                                                                                               | `active_only`                       |
 | Background controls         | `process.start`, `process.write_stdin`, `process.close_stdin`, `process.signal`, `process.kill`, `process.release`                                       | `terminal_evidence`                 |
 | Ports                       | `port.inspect`, `port.wait`                                                                                                                              | `active_only`                       |
 | Output                      | `output.read` / `output.release`                                                                                                                         | `active_only` / `terminal_evidence` |
@@ -143,7 +145,7 @@ Unknown methods return `method_not_found`; known unavailable methods return `uns
 
 ProcessHandle and OutputReference identify records owned by one Session in one Device generation. FileReaderHandle and FileWriterHandle additionally bind to their current transfer attachment. Opaque IDs expose no PID, path or storage key. Every use resolves through the selected Session; sibling handles are invalid even when both Sessions use the same working directory.
 
-Same-Session reattachment preserves retained process/output/evidence references, not incomplete transfer handles or pending response delivery. Session cleanup and daemon restart invalidate them. Host Run-local process references remain a separate, shorter-lived projection.
+Same-Session reattachment preserves retained process/output/evidence references, not incomplete transfer handles or pending response delivery. Session cleanup and daemon restart invalidate them. Host process references and durable tool-execution IDs remain separate projections with Host-defined lifetimes.
 
 ## File Transfer Semantics
 
@@ -154,6 +156,8 @@ Writer open creates a destination-local candidate without changing the destinati
 ## Operation Ledger and Cancellation
 
 Each Session owns its bounded operation ledger; aggregate limits cover all ledgers. Running operations are not evicted. Evidence for live command resources stays with them; completed history is eligible for finite or pressure-driven collection. Missing evidence is not proof of non-dispatch.
+
+`process.resolve_start` observes a prior `process.start` by `target_operation_id` in the same Session. It never dispatches a command. A retained successful start returns its original process handle and receipt with the current process status. An active or completing start returns `operation_in_progress`; a retained failure returns its original error. A missing start returns `unknown_outcome`, and a target belonging to another method returns `conflict`. Missing evidence or a released process cannot justify replay. The query has its own fresh operation ID and uses active-only retention.
 
 Lifecycle, cancellation and release must still make progress when ordinary admission is full. Use the existing bounded control path rather than introducing a separate recovery subsystem. `operation.cancel` returns not_found/already_terminal/cancellation_requested/not_cancellable and never equates an acknowledgement with completed cleanup.
 
@@ -198,6 +202,6 @@ Expired/collected selectors return invalid/not-found or Session-expired errors; 
 
 The client never automatically replays possibly dispatched work after carrier loss, recreates it in another Session or chooses another operation ID to hide ambiguity. Exact retained same-Session replay is the only replay facility. Process inspect/wait, receipt lookup and output reads provide explicit bounded observation.
 
-EIP 0.3 requires binary profile 1 and Session addressing. Other protocol versions and profiles fail negotiation.
+EIP 0.4 requires binary profile 1, Session addressing and owner epochs. Other protocol versions and profiles fail negotiation.
 
 `egress.update` is the ledger-external Session control for atomic policy and secret updates. The [egress contract](07-execution-isolation.md#controlled-session-egress) owns revision, injection and isolation semantics; generated IDL owns its wire fields.

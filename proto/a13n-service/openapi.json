@@ -7944,6 +7944,11 @@
             "title": "Attempt Id",
             "type": "string"
           },
+          "cancel_requested": {
+            "default": false,
+            "title": "Cancel Requested",
+            "type": "boolean"
+          },
           "cancel_requested_at": {
             "anyOf": [
               {

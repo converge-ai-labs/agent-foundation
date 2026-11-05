@@ -550,6 +550,7 @@ async fn session_call(
         let mut request = json!({"jsonrpc":"2.0", "id":1, "method":method, "params":params});
         if let Some(session) = session {
             request["eip_session"] = json!(session);
+            request["eip_owner_epoch"] = json!(1);
         }
         let body = request.to_string();
         let frame = format!(
@@ -586,7 +587,7 @@ async fn session_call(
 }
 
 async fn initialize(child: &mut tokio::process::Child) -> serde_json::Value {
-    call(child, "initialize", json!({"supported_protocol_versions":["0.3"], "expected_device_id":"otlp-device", "client":{"name":"otlp-test", "version":"1"}})).await["descriptor"].clone()
+    call(child, "initialize", json!({"supported_protocol_versions":["0.4"], "expected_device_id":"otlp-device", "client":{"name":"otlp-test", "version":"1"}})).await["descriptor"].clone()
 }
 
 #[tokio::test]
@@ -732,7 +733,7 @@ async fn managed_mtls_export_keeps_credentials_out_of_sessions() {
             "session.open",
             json!({
                 "expected_device_id":"otlp-device", "expected_generation":descriptor["generation"],
-                "protocol_version":"0.3", "working_directory":workspace
+                "protocol_version":"0.4", "working_directory":workspace
             }),
         )
         .await;
@@ -814,7 +815,7 @@ async fn full_control_does_not_inherit_daemon_exporter_settings() {
         "session.open",
         json!({
             "expected_device_id":"otlp-device", "expected_generation":descriptor["generation"],
-            "protocol_version":"0.3", "working_directory":fixture.0
+            "protocol_version":"0.4", "working_directory":fixture.0
         }),
     )
     .await;

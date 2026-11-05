@@ -222,7 +222,9 @@ a13n-envd connect https://your-harness-ui.example.com
 
 浏览不打开 Session，在尚无 Run 时也可用。Device 不可用或发现功能关闭时，可以输入已知路径；执行仍要求 Device 和目录可访问。Windows Device 路径使用 `/C:/work` 或 `/UNC/server/share/work`，不是 Harness UI 服务器路径。
 
-**Add directory** 沿用已有分组的 Device 和访问策略。不同访问、网络或边界策略保留为不同组。**Advanced routing** 显示生成的别名。每次执行都有自己的 Session；同一 Device 的两个别名不共享进程句柄或保留输出。
+**Add directory** 沿用已有分组的 Device 和访问策略。不同访问、网络或边界策略保留为不同组。**Advanced routing** 显示生成的别名。绑定、工作目录和执行策略不变时，Thread 跨 Run 复用 Session。不同绑定保持独立的进程句柄和保留输出，即使它们使用同一 Device。
+
+Run 正常结束或等待人工输入时会释放 Session 使用权，不销毁 Session。活跃 Run 和保留的后台 Shell 工作维持保活。最后一次使用后默认有一小时空闲窗口，后续 Run 可在过期前重新附加。只要外部 daemon 和原 Session 存活，App 重启后就能恢复保留的 Envd Shell 执行，沿用原 `exec-*` 身份，不重新启动命令。临时连接失败时继续等待恢复。daemon 重启或 Session 过期后，原工作不可再用。App 管理的本地 daemon 随 App 停止，因此其中的原生进程不能跨 App 重启存活。
 
 纯远程 Project 使用 **Add project**，只添加 Device 目录，不添加本地根，再选择默认值。等价的完整 `projects/build.yaml` 如下。将 `device-build` 替换为已配置 Device ID，将 `/work/project` 替换为该 Device 上的已有目录：
 
@@ -291,7 +293,7 @@ WebUI 原生 Files、Git Changes 和 Terminal 面板访问 Harness UI 服务器�
 
 初始视图覆盖 15 分钟，每 60 秒刷新。可以改变范围、暂停刷新或手动刷新。拖拽图表或使用缩放控件选择共享历史时段，**Back to live** 恢复滚动窗口。悬停或左右方向键可检查各图表同一分钟。历史最多保留一小时的分钟平均值/峰值，包括缺口；缩放不会增加采样精度。
 
-内置本地 Sandbox、Envd 和 Desktop 启动时启用采样。远程 daemon 需在启动配置开启 `monitoring`。关闭采样时仍可查看静态系统信息。在 **Settings → Environments → Local runtime → Metrics collection** 选择 10、30 或 60 秒（默认 60），然后重启 App。根字段 `envd.monitoring_interval_seconds` 接受 10–60 的整数，用于 App 采集和内置本地采样。自定义启动配置及外部 daemon 保留自己的采样设置，浏览器刷新仍为一分钟。此概览要求 EIP 0.3；保持远程 daemon 与客户端版本兼容。
+内置本地 Sandbox、Envd 和 Desktop 启动时启用采样。远程 daemon 需在启动配置开启 `monitoring`。关闭采样时仍可查看静态系统信息。在 **Settings → Environments → Local runtime → Metrics collection** 选择 10、30 或 60 秒（默认 60），然后重启 App。根字段 `envd.monitoring_interval_seconds` 接受 10–60 的整数，用于 App 采集和内置本地采样。自定义启动配置及外部 daemon 保留自己的采样设置，浏览器刷新仍为一分钟。此概览要求 EIP 0.4；保持远程 daemon 与客户端版本兼容。
 
 历史保存在 App 内存，重启、Device 变更或撤销时清空。等待、禁用、过期、离线和采集上限状态会明确显示。计数器重置会中断速率基线；缺失或停滞样本留空，或显示上次值及其年龄。
 

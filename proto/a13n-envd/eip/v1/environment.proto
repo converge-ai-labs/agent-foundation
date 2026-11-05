@@ -47,7 +47,9 @@ message ExecutionFeatures {
 
 message SessionLifecyclePolicy {
   uint64 idle_timeout_ms = 1 [(eip_field).minimum = 1];
-  uint64 disconnect_grace_ms = 2 [(eip_field).minimum = 1];
+  reserved 2;
+  reserved "disconnect_grace_ms";
+  optional uint64 max_lifetime_ms = 3 [(eip_field).minimum = 1];
 }
 
 enum PathStyle {
@@ -143,6 +145,7 @@ message SessionDescriptor {
   SessionLifecyclePolicy lifecycle = 9;
   optional EgressStatus egress = 10;
   ExecutionBoundary boundary = 11;
+  uint64 owner_epoch = 12 [(eip_field).minimum = 1];
 }
 
 message InitializeResult {
@@ -164,6 +167,7 @@ message SessionOpenParams {
   optional string working_directory = 4 [(eip_field).string_format = EIP_STRING_FORMAT_PATH];
   repeated string required_methods = 5;
   optional EgressPolicy egress = 6;
+  optional SessionLifecyclePolicy lifecycle = 7;
 }
 
 message SessionOpenResult {
@@ -171,6 +175,12 @@ message SessionOpenResult {
 }
 
 message SessionAttachParams {}
+
+message SessionDetachParams {}
+
+message SessionDetachResult {
+  bool detached = 1 [(eip_field).const_bool = true];
+}
 
 message SessionKeepaliveParams {}
 

@@ -121,11 +121,11 @@ The current cross-group requirements are:
 
 | Consumer                     | Dependency               | Published requirement          |
 | ---------------------------- | ------------------------ | ------------------------------ |
-| Harness UI                   | Harness, Stream Protocol | `==0.27.0`, identical for both |
-| Service                      | Harness, Stream Protocol | `==0.27.0`, identical for both |
+| Harness UI                   | Harness, Stream Protocol | `==0.28.0`, identical for both |
+| Service                      | Harness, Stream Protocol | `==0.28.0`, identical for both |
 | Harness UI, Harness, Service | `a13n-logging`           | `>=0.2.0,<0.3.0`               |
-| Harness                      | `a13n-envd-client`       | `>=0.5.0,<0.6.0`               |
-| Harness UI, Service          | `a13n-envd-client`       | `>=0.5.1,<0.6.0`               |
+| Harness                      | `a13n-envd-client`       | `>=0.6.0,<0.7.0`               |
+| Harness UI, Service          | `a13n-envd-client`       | `>=0.6.0,<0.7.0`               |
 
 Harness constrains Pydantic AI to one reviewed minor line, currently `==2.65.*`. Direct Pydantic AI dependencies in its consumers and examples use the same line, while lock files select the tested patch release. A new minor line requires an explicit compatibility update and validation across consumers.
 

@@ -270,7 +270,7 @@ def test_only_native_whole_images_in_the_actual_request_authorize_input(surface)
 
 
 def test_retained_payload_preserves_capture_identity():
-    from a13n_service.runs.tool_executions.payload import Payload
+    from a13n_harness.tool_execution_payload import ToolExecutionPayload as Payload
 
     capability = Freshness()
     payload = captured(Invocation("agent", (), capability))

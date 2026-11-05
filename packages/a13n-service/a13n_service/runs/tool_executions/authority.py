@@ -38,7 +38,7 @@ async def lock_execution(
         or row.thread_id != lease.thread_id
         or row.worker_id != lease.worker_id
         or not hmac.compare_digest(row.lease_token_hash, secret_hash(lease.token))
-        or row.completed_at is not None
+        or (row.completed_at is not None and not cleanup)
         or row.lease_expires_at <= current
         or (not cleanup and (row.cancel_requested_at is not None or run.cancel_requested_at is not None))
     ):
@@ -147,7 +147,8 @@ async def heartbeat(runtime: Runtime, worker_id: str) -> tuple[tuple[tuple[str, 
         for row in rows:
             run = runs[row.run_id]
             if row.lease_expires_at <= current:
-                cancel.append((row.thread_id, row.id))
+                # Missing renewal is owner loss, not an explicit native cancellation.
+                # The worker yields recoverable Shells and cancels only other tools.
                 continue
             if run.cancel_requested_at is not None or isinstance(principals[run.id], ServiceError):
                 row.cancel_requested_at = row.cancel_requested_at or current

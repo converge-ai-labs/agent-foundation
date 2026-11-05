@@ -49,9 +49,9 @@ Before returning an admission receipt or scheduling preparation, the App capture
 - Session destinations, credential source references and expected Device boundaries, never resolved secret values;
 - selected Run Extensions.
 
-Preparation uses only captured selections. Current credentials resolve through captured credential references at use time. Each envd binding verifies the captured boundary requirement and opens a fresh Session with its captured working directory and freshly resolved egress policy. Repeated operations reuse that Session within the same execution owner. Concurrent Runs, independent children and identical directory paths do not share initialized Sessions.
+Preparation uses only captured selections. Current credentials resolve through captured credential references at use time. Each envd binding verifies the captured boundary requirement and resolves current egress credentials. Compatible Runs of one Thread borrow its continuing Session, including while retained work still uses it. Context identity includes the Thread, target, profile behavior, working directory and binding policy. Independent Threads and children retain separate contexts; identical paths alone do not imply shared ownership.
 
-Short same-runtime reattachment may reuse the same live Session and generation. Expired Sessions, replacement execution owners and application restarts require fresh Sessions; native handles and uncertain effects are not recovered or replayed. Session close preserves the shared Device connection and working files.
+The App persists Session restoration metadata in the binding state head, separate from portable provider state. Successive Runs and application restarts attach the saved Session when its daemon and generation survive. Proven Session loss permits a checkpointed replacement. Transient failures propagate without opening duplicates, and uncertain commands are never replayed. The final borrower detaches and stops keepalive; an idle saved Thread does not keep its Session alive.
 
 New children inherit the parent's captured selections; existing child Threads resume from their own selections. Remote adapters use virtual aggregate routes, not Host-path-preserving routing. Skills and file guidance use the selected Environment. Configuration and user-Skill mounts stay Host-only. Remote shell execution does not implicitly receive Thread files; cross-mount copying uses Environment file operations.
 
@@ -59,7 +59,7 @@ New children inherit the parent's captured selections; existing child Threads re
 
 Environment-state lookup/publication uses the Thread, alias, normalized Provider configuration, Device identity/backend and working directory. Presentation-only changes do not affect binding identity. Local roots retain their existing equivalent key.
 
-Device connections are App-owned process-local resources. Session selectors, daemon generations, keepalive tasks and native process/output references never enter persisted continuation. App shutdown closes owned Sessions before local daemons or connection managers. It does not stop external daemon infrastructure.
+Device connections and keepalive tasks are App-owned process-local resources. Session selectors and daemon generations are Host-private binding checkpoints rather than Agent continuation data. Run cleanup releases its use without destroying the shared Session. The App owns local daemon shutdown; externally managed daemons retain their independent lifetime.
 
 ## Human-facing Resource Monitoring
 

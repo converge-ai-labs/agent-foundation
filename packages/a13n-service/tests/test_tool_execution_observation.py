@@ -45,8 +45,12 @@ async def test_human_reads_preserve_delivery_and_retention(service, scripted_mod
         assert row.first_delivered_at is None
         assert row.expires_at == deadline
     assert len(await _deliver(service.runtime)) == 1
-    assert (await store.get(lease.thread_id, record.execution_id)).record.delivery_acknowledged
+    assert not (await store.get(lease.thread_id, record.execution_id)).record.delivery_acknowledged
     assert (await runs_kit.inbox(service, lease.thread_id))[-1]["kind"] == "tool_result"
+    async with transaction(service.runtime.storage) as session:
+        row = await session.get_one(ToolExecutionRow, record.execution_id)
+        assert row.first_delivered_at is None
+        assert row.expires_at == deadline
 
 
 async def test_live_observation_cache_miss_owner_loss_and_terminal_race(service, scripted_model, runs_kit, monkeypatch):

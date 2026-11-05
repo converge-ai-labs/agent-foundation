@@ -590,7 +590,7 @@ class RootRunCoordinator:
         if operation.status in _TERMINAL:
             return RootControlResult(receipt_id=receipt_id, accepted=False)
         if self._tool_executions is not None:
-            self._tool_executions.suppress(operation.receipt.thread_id)
+            await self._tool_executions.suppress(operation.receipt.thread_id)
         if self._browser_handback is not None:
             self._browser_handback.suppress(operation.receipt.thread_id)
         operation.cancel_requested = True
@@ -606,12 +606,10 @@ class RootRunCoordinator:
 
     async def _request_cancel(self, operation: _RootOperation) -> None:
         operation.cancel_requested = True
-        scope = operation.scope
-        stream = operation.stream
-        if stream is not None:
-            stream.cancel()
-        if scope is not None:
-            scope.cancel()
+        # The operation owns preparation, streaming and post-stream Host work.
+        # Harness handles native teardown when its consumer is cancelled.
+        if operation.scope is not None:
+            operation.scope.cancel()
 
     async def _run_operation(
         self,
@@ -766,7 +764,7 @@ class RootRunCoordinator:
                 self._restart.finished(operation.receipt.thread_id, failed=failure is not None)
             operation.done.set()
             if self._tool_executions is not None:
-                self._tool_executions.retry(thread_id)
+                self._tool_executions.run_settled(thread_id)
             if self._browser_handback is not None:
                 self._browser_handback.retry(thread_id)
             # Notify only after the Host has settled execution and continuation selection.
@@ -871,7 +869,7 @@ class RootRunCoordinator:
         await self._persist_execution(operation)
         await self._publish_change(operation)
         if cancel_requested:
-            stream.cancel()
+            await self._request_cancel(operation)
         elif self._tool_executions is not None:
             self._tool_executions.retry(operation.receipt.thread_id)
         if not operation.cancel_requested and self._browser_handback is not None:

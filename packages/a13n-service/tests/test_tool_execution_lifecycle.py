@@ -22,7 +22,7 @@ from .test_tool_execution_store import _deliver, _origin, _record, _save
 pytestmark = pytest.mark.anyio
 
 
-def _admit(runtime, lease, operation, *, sequential=False, release=None):
+async def _admit(runtime, lease, operation, *, sequential=False, release=None):
     token = ORIGIN.set(lease)
     try:
         record = runtime.executions.admit(
@@ -34,7 +34,7 @@ def _admit(runtime, lease, operation, *, sequential=False, release=None):
             sequential=sequential,
             release=release,
         )
-        runtime.executions.release_foreground(lease.thread_id, record.execution_id)
+        await runtime.executions.release_foreground(lease.thread_id, record.execution_id)
         return record
     finally:
         ORIGIN.reset(token)
@@ -52,7 +52,7 @@ async def test_stopped_origin_retains_cleanup_and_never_wakes(service, scripted_
         cleaning.set()
         await finish.wait()
 
-    record = _admit(service.runtime, lease, operation, release=cleanup)
+    record = await _admit(service.runtime, lease, operation, release=cleanup)
     try:
         await asyncio.wait_for(entered.wait(), 5)
         stopped = await service.client.post(f"{service.api}/runs/{lease.run_id}/interrupt")
@@ -90,7 +90,7 @@ async def test_cross_worker_barrier_and_later_stop_scope(
         await finish.wait()
         return "original"
 
-    record = _admit(service.runtime, origin, operation, sequential=prior_sequential)
+    record = await _admit(service.runtime, origin, operation, sequential=prior_sequential)
     second = replace(service.runtime)
     pending = None
     try:
@@ -176,7 +176,7 @@ async def test_full_inbox_defers_then_fenced_delivery_appends_once(serve, settin
         await deliver(current)
         results = [entry for entry in await runs_kit.inbox(service, lease.thread_id) if entry["kind"] == "tool_result"]
         assert len(results) == 1
-        assert (await store.get(lease.thread_id, record.execution_id)).record.delivery_acknowledged
+        assert not (await store.get(lease.thread_id, record.execution_id)).record.delivery_acknowledged
 
 
 async def test_archive_cancels_old_and_current_runs_and_rejects_late_admission(service, scripted_model, runs_kit):
@@ -189,7 +189,7 @@ async def test_archive_cancels_old_and_current_runs_and_rejects_late_admission(s
         entered.set()
         await finish.wait()
 
-    old = _admit(service.runtime, origin, operation)
+    old = await _admit(service.runtime, origin, operation)
     try:
         await asyncio.wait_for(entered.wait(), 5)
         scripted_model.say("Origin completed")
@@ -200,7 +200,7 @@ async def test_archive_cancels_old_and_current_runs_and_rejects_late_admission(s
         assert submitted.status_code == 201, submitted.text
         (successor,) = await claim(service.runtime, worker_id="worker-a", worker_build="test", limit=1)
         entered.clear()
-        current = _admit(service.runtime, successor, operation)
+        current = await _admit(service.runtime, successor, operation)
         await asyncio.wait_for(entered.wait(), 5)
         thread = await runs_kit.get_thread(service, origin.thread_id)
         archived = await service.client.post(
@@ -210,7 +210,7 @@ async def test_archive_cancels_old_and_current_runs_and_rejects_late_admission(s
         cancellations, renewed = await heartbeat(service.runtime, origin.worker_id)
         assert set(cancellations) == {(origin.thread_id, old.execution_id), (origin.thread_id, current.execution_id)}
         assert renewed == {old.execution_id, current.execution_id}
-        late = _admit(service.runtime, successor, operation)
+        late = await _admit(service.runtime, successor, operation)
         result = await service.runtime.executions.wait(origin.thread_id, late.execution_id)
         assert result.record.status == "failed" and service.runtime.executions.accepting
         async with transaction(service.runtime.storage) as session:
@@ -236,7 +236,7 @@ async def test_large_failure_hint_delivers_without_copying_error(service, script
     async def operation():
         raise ModelRetry(message) if retry else ToolFailed(message)
 
-    record = _admit(service.runtime, lease, operation)
+    record = await _admit(service.runtime, lease, operation)
     await service.runtime.executions.join()
     scripted_model.say("Origin finished")
     await execute(service.runtime, lease, AttemptControl())
@@ -264,7 +264,7 @@ async def test_failed_terminal_publication_is_not_renewed(service, scripted_mode
     async def unavailable(*args, **kwargs):
         raise OSError("object store unavailable")
 
-    record = _admit(service.runtime, lease, operation)
+    record = await _admit(service.runtime, lease, operation)
     await asyncio.wait_for(entered.wait(), 5)
     monkeypatch.setattr(service.runtime.objects, "put", unavailable)
     finish.set()
@@ -291,7 +291,7 @@ async def test_retained_cross_worker_call_stays_queued_until_barrier_clears(serv
         next_entered.set()
         return "next"
 
-    _admit(service.runtime, lease, first_operation, sequential=True)
+    await _admit(service.runtime, lease, first_operation, sequential=True)
     try:
         await asyncio.wait_for(entered.wait(), 5)
         scripted_model.say("Origin completed")
@@ -301,7 +301,7 @@ async def test_retained_cross_worker_call_stays_queued_until_barrier_clears(serv
         )
         assert submitted.status_code == 201, submitted.text
         (successor,) = await claim(second, worker_id="worker-b", worker_build="test", limit=1)
-        record = _admit(second, successor, next_operation)
+        record = await _admit(second, successor, next_operation)
         with pytest.raises(TimeoutError):
             await asyncio.wait_for(next_entered.wait(), 0.2)
         assert (await second.executions.info(lease.thread_id, record.execution_id)).status == "queued"
@@ -377,7 +377,7 @@ async def test_cleanup_after_revocation_keeps_identity_and_expiry_fences(service
                 row.lease_expires_at = datetime.now(UTC) + timedelta(seconds=60)
         return "verified"
 
-    record = _admit(service.runtime, lease, operation)
+    record = await _admit(service.runtime, lease, operation)
     try:
         await asyncio.wait_for(entered.wait(), 5)
         async with transaction(service.runtime.storage) as session:

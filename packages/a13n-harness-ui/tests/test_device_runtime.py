@@ -94,7 +94,7 @@ async def app_listener(tmp_path, recipe=None):
 
 
 @asynccontextmanager
-async def daemon(tmp_path, carrier, *, endpoint, monitoring=None):
+async def daemon(tmp_path, carrier, *, endpoint, monitoring=None, full_control=False):
     executable = Path(os.environ["A13N_ENVD_TEST_BINARY"]).resolve()
     root = tmp_path / "remote"
     root.mkdir()
@@ -107,6 +107,7 @@ async def daemon(tmp_path, carrier, *, endpoint, monitoring=None):
         json.dumps(
             {
                 "device_id": "native-build",
+                "full_control": full_control,
                 "default_working_directory": str(root),
                 "limits": {"max_sessions": 2},
                 "monitoring": monitoring,
@@ -272,7 +273,7 @@ async def test_device_browsing_and_independent_sessions_share_carrier(tmp_path, 
                 assert publication.status == "published"
                 assert publication.key.adapter_key == f"{carrier}_envd"
                 assert publication.key.normalized_root == device_path(root)
-                # A second owner restores only Device identity, never a live Session.
+                # Preparation is inert; the next acquisition restores the continuing Session.
                 restored = await service.prepare(captured.value)
                 try:
                     assert len(set(opened)) == 4
@@ -311,7 +312,7 @@ async def test_reverse_attachment_rejects_invalid_auth_before_upgrade(tmp_path, 
 @pytest.mark.parametrize("carrier", ["http", "websocket"])
 @pytest.mark.parametrize("default_environment", ["workspace", "build"])
 @pytest.mark.parametrize("mode", ["normal", "goal"])
-async def test_root_runs_use_remote_tools_skills_and_fresh_sessions(
+async def test_root_runs_use_remote_tools_skills_and_continue_session(
     tmp_path, monkeypatch, carrier, default_environment, mode
 ):
     """Only the model is scripted; App preparation and every file call use real providers."""
@@ -414,7 +415,7 @@ async def test_root_runs_use_remote_tools_skills_and_fresh_sessions(
 
             monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
             captures = []
-            for index in range(2):
+            for _ in range(2):
                 receipt = await app.submit_thread(
                     thread_id=thread.thread_id,
                     prompt="Use remote-build and inspect both environments.",
@@ -439,7 +440,7 @@ async def test_root_runs_use_remote_tools_skills_and_fresh_sessions(
                 assert capture.environment_bindings == (selection,)
                 assert capture.default_environment == default_environment
                 captures.append(capture)
-                assert len(set(opened)) == index + 1
+                assert len(set(opened)) == 1
                 assert (root / "output.txt").read_text() == "Written through a model tool"
                 assert not (workspace / "output.txt").exists()
             assert (await app.get_thread(thread.thread_id)).thread.configuration == thread.configuration
@@ -451,7 +452,7 @@ async def test_root_runs_use_remote_tools_skills_and_fresh_sessions(
 
 @requires_envd
 @pytest.mark.parametrize("mode", ["normal", "goal"])
-async def test_restart_reuses_captured_device_recipe_and_opens_a_fresh_session(tmp_path, monkeypatch, mode):
+async def test_restart_reuses_captured_device_recipe_and_session(tmp_path, monkeypatch, mode):
     """A restart restores accepted bindings, not the edited configuration catalog."""
     from anyio import Event, create_task_group, fail_after, sleep
     from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart
@@ -536,7 +537,7 @@ async def test_restart_reuses_captured_device_recipe_and_opens_a_fresh_session(t
                 while (await app.get_thread(thread.thread_id)).thread.completion is None:
                     await sleep(0.02)
             assert len(requests) == 3
-            assert len(set(opened)) == 2
+            assert len(set(opened)) == 1
             goal = (await app.get_thread(thread.thread_id)).thread.goal
             if mode == "goal":
                 assert goal.status == "verified"

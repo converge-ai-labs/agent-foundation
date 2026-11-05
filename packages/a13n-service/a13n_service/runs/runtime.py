@@ -31,6 +31,7 @@ from a13n_service.tenancy.workspaces import WorkspaceCreated
 
 if TYPE_CHECKING:
     from a13n_service.runs.compaction_model import BackgroundCompaction
+    from a13n_service.runs.environments.contexts import Contexts
     from a13n_service.runs.environments.monitoring.proxy import Proxy
     from a13n_service.runs.tool_executions.owner import Executions
 
@@ -63,6 +64,12 @@ class Runtime:
     @cached_property
     def mailbox(self) -> Mailbox:
         return Mailbox(self.storage, interval=self.settings.worker.authority_seconds)
+
+    @cached_property
+    def environment_contexts(self) -> Contexts:
+        from a13n_service.runs.environments.contexts import Contexts
+
+        return Contexts(self)
 
     @cached_property
     def executions(self) -> Executions:

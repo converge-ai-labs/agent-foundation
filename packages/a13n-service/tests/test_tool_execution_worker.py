@@ -53,7 +53,7 @@ async def _setup(service, scripted_model, runs_kit, *, grace=0.01, lease_seconds
     return runtime, lease, started
 
 
-def _admit(runtime, lease, operation, *, release=None):
+async def _admit(runtime, lease, operation, *, release=None):
     token = ORIGIN.set(lease)
     try:
         record = runtime.executions.admit(
@@ -64,7 +64,7 @@ def _admit(runtime, lease, operation, *, release=None):
             tool_name="slow_tool",
             release=release,
         )
-        runtime.executions.release_foreground(lease.thread_id, record.execution_id)
+        await runtime.executions.release_foreground(lease.thread_id, record.execution_id)
         return record
     finally:
         ORIGIN.reset(token)
@@ -85,7 +85,7 @@ async def test_shutdown_keeps_heartbeat_and_publishes_before_closing(service, sc
         cleanup_started.set()
         await cleanup.wait()
 
-    record = _admit(runtime, lease, operation, release=release)
+    record = await _admit(runtime, lease, operation, release=release)
     await asyncio.wait_for(entered.wait(), 5)
     scripted_model.say("The original Run finishes first")
     await execute(runtime, lease, AttemptControl())
@@ -153,7 +153,7 @@ async def test_failed_heartbeat_cancels_locally_once_without_waiting_for_databas
     async def forbidden_cancel(*args):
         pytest.fail("Local lease cancellation must not call the database-backed cancel operation")
 
-    record = _admit(runtime, lease, operation)
+    record = await _admit(runtime, lease, operation)
     await asyncio.wait_for(entered.wait(), 5)
     monkeypatch.setattr(worker_module, "heartbeat", hanging_heartbeat)
     monkeypatch.setattr(runtime.executions, "cancel", forbidden_cancel)
@@ -248,9 +248,10 @@ async def test_closed_tool_admission_exits_worker_with_all_slots_busy():
             executions = ToolExecutionRuntime()
             executions.routing = SimpleNamespace(run=idle)
             executions.output = SimpleNamespace(run=idle)
+            executions.recover = idle
             executions.lease_deadlines = {}
             runtime = SimpleNamespace(executions=executions, settings=SimpleNamespace(
-                worker=SimpleNamespace(slots=1, drain_seconds=0, authority_seconds=0.01, lease_seconds=30),
+                worker=SimpleNamespace(slots=1, drain_seconds=0, authority_seconds=0.01, lease_seconds=30, scan_seconds=1),
                 tool_executions=SimpleNamespace(shutdown_grace_seconds=0.01, finalization_seconds=0.01),
             ))
             worker = Worker(runtime, None)
@@ -294,6 +295,7 @@ async def test_worker_fatal_boundary_preserves_normal_shutdown(cause):
                 await entered.wait()
                 raise RuntimeError("injected worker failure")
             executions = ToolExecutionRuntime()
+            executions.recover = idle
             executions.routing = SimpleNamespace(run=fail if cause == "routing" else idle)
             executions.output = SimpleNamespace(run=fail if cause == "output" else idle)
             runtime = SimpleNamespace(executions=executions, settings=SimpleNamespace(

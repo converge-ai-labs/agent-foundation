@@ -17,7 +17,7 @@ uv add a13n-envd-client
 
 客户端和原生守护进程使用相同的 Envd 发布版本。升级时一起更新，包括自定义镜像和远程端点中的守护进程。仍保留旧镜像的环境应重新创建。运行源码示例时，使用仓库锁文件和匹配的源码守护进程。
 
-协议协商使用独立的线上协议标识。当前源码使用 EIP `0.3`；只提供 `0.1` 或 `0.2` 的对端会协商失败。生成的 Python 命名空间仍为 `eip.v1`，二进制数据帧 profile 仍为 `1`。仓库发布依赖设置中，Harness 要求 client `>=0.5.0,<0.6.0`，Harness UI 要求 `>=0.5.1,<0.6.0`。
+协议协商使用独立的线上协议标识。当前源码使用 EIP `0.4`；只提供旧协议版本的对端会协商失败。生成的 Python 命名空间仍为 `eip.v1`，二进制数据帧 profile 仍为 `1`。Harness、Harness UI 和 Service 发布时要求 client `>=0.6.0,<0.7.0`。
 
 ## 连接已有 HTTP 守护进程
 
@@ -94,13 +94,17 @@ HTTPS 连接通过 `httpx2` 遵循 `HTTPS_PROXY`、`ALL_PROXY`、`NO_PROXY` 及�
 - `descriptor` 读取缓存设备信息；`describe()` 获取新视图。两者提供系统信息、路径格式、默认目录和目录发现可用性。
 - 设备声明 `device.metrics` 时，`metrics()` 读取最新缓存样本。它不打开会话，也不启动采集；首次采集完成前，`sample` 保持 `None`。参见[监控与样本语义](configuration.md#system-information-and-resource-monitoring)。
 - `list_directories(DirectoryListParams(...))` 使用绝对路径、偏移量、上限、预期设备 ID 和代际列出一层目录。它不打开会话。
-- `open_session(working_directory=None, egress=None, required_methods=(), readiness_timeout=10.0)` 创建新会话。省略 cwd 时采用设备默认值。controlled 设备需提供 `egress`；其他模式拒绝该字段。`required_methods` 检查兼容性，不授予权限。
-- `attach_session(descriptor)` 在断线宽限期内显式附加到同一设备代际的精确已有会话。操作和传输不会被重放或恢复。
+- `open_session(working_directory=None, egress=None, lifecycle=None, required_methods=(), readiness_timeout=10.0)` 创建新会话。省略 cwd 时采用设备默认值。controlled 设备需提供 `egress`；其他模式拒绝该字段。`required_methods` 检查兼容性，不授予权限。
+- `attach_session(descriptor, owner_epoch=None)` 在过期前接管同一设备代际的精确已有会话。默认 epoch 为保存的描述符 epoch 加一。存在并发恢复者的 Host 必须在执行锁下分配并持久化更新的 epoch。操作和传输不会被重放或恢复。
 - `close()` 先关闭本地管理的会话，再关闭物理连接。
 
 会话管理自己的生成代码客户端 `client`、传输、命令、输出和回执命名空间。身份、代际和工作目录保持固定。会话可在所有传输通道上并发运行；不同会话中的相同操作 ID 对应不同证据。
 
 通过 `EIPSession.describe()` 和 `readiness(timeout=10.0)` 检查会话，通过 `open_reader()`、`open_writer()`、`open_output()` 或 `observe_computer()` 使用资源 helper。客户端在会话打开期间维护保活。`close()` 和 `abort()` 保留同级会话及借用的传输通道。`abort()` 尝试在有限时间内关闭；结果不确定的操作仍需核对。
+
+通过 `lifecycle` 传入 `SessionLifecyclePolicy(idle_timeout_ms=3600000, max_lifetime_ms=None)`，选择会话不可变的保留策略。设备默认空闲寿命为一小时，无最大寿命。`EIPSession.detach()` 停止保活、释放附加关系并刷新空闲期限，同时保留原生命令、输出和证据。在分离前保存描述符，供后续附加使用。显式关闭会销毁这些资源。daemon 重启或会话过期后，旧资源不可再用。
+
+`process.start` 响应不确定时，使用生成的 `process_resolve_start` 方法，传入 `ProcessResolveStartParams(context=..., target_operation_id=...)`。查询观察原始启动，不会再次执行命令。成功时返回原始句柄和回执，以及当前进程状态。缺失证据仍表示结果未知。
 
 刷新描述符可以收窄方法和限制。未就绪响应或会话内协议失败会阻止继续使用该会话；传输损坏或丢失会终止连接上的全部本地范围。
 
@@ -236,6 +240,7 @@ reader 检查引用身份、连续偏移量、单调计数器/完成状态、不
 | `process.inspect`            | `process_inspect`            | `ProcessInspectParams`         | `ProcessInspectResult`         | `active_only`       |
 | `process.kill`               | `process_kill`               | `ProcessKillParams`            | `ProcessKillResult`            | `terminal_evidence` |
 | `process.release`            | `process_release`            | `ProcessReleaseParams`         | `ProcessReleaseResult`         | `terminal_evidence` |
+| `process.resolve_start`      | `process_resolve_start`      | `ProcessResolveStartParams`    | `ProcessStartResult`           | `active_only`       |
 | `process.signal`             | `process_signal`             | `ProcessSignalParams`          | `ProcessSignalResult`          | `terminal_evidence` |
 | `process.start`              | `process_start`              | `ProcessStartParams`           | `ProcessStartResult`           | `terminal_evidence` |
 | `process.wait`               | `process_wait`               | `ProcessWaitParams`            | `ProcessWaitResult`            | `active_only`       |
@@ -243,6 +248,7 @@ reader 检查引用身份、连续偏移量、单调计数器/完成状态、不
 | `receipt.get`                | `receipt_get`                | `ReceiptGetParams`             | `ReceiptGetResult`             | `active_only`       |
 | `session.attach`             | `session_attach`             | `SessionAttachParams`          | `SessionOpenResult`            | `ledger_external`   |
 | `session.close`              | `session_close`              | `SessionCloseParams`           | `SessionCloseResult`           | `ledger_external`   |
+| `session.detach`             | `session_detach`             | `SessionDetachParams`          | `SessionDetachResult`          | `ledger_external`   |
 | `session.keepalive`          | `session_keepalive`          | `SessionKeepaliveParams`       | `SessionKeepaliveResult`       | `ledger_external`   |
 | `session.open`               | `session_open`               | `SessionOpenParams`            | `SessionOpenResult`            | `ledger_external`   |
 | `shell.exec`                 | `shell_exec`                 | `ShellExecParams`              | `ShellExecResult`              | `terminal_evidence` |
