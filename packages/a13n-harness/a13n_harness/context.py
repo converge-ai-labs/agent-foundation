@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable, Iterator, Mapping, Sequence
+from collections.abc import AsyncIterable, Awaitable, Callable, Iterator, Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass, field
 from time import monotonic
@@ -187,6 +187,7 @@ class RunBindings:
     usage_reporter: UsageReporter | UsageDeltaReporter | None = None
     observation: HarnessObservationContext | None = None
     tool_result_directory: str | None = None
+    shell_output_directory: str | None = None
     context_recovery_scope_id: str | None = None
     retained_history_directory: str | None = None
     state_store: StateStore | None = None
@@ -218,6 +219,11 @@ class RunBindings:
                 parse_mount_path(self.tool_result_directory)
             except ValueError as exc:
                 raise ValueError("tool_result_directory must be a canonical absolute Environment path") from exc
+        if self.shell_output_directory is not None:
+            try:
+                parse_mount_path(self.shell_output_directory)
+            except ValueError as exc:
+                raise ValueError("shell_output_directory must be a canonical absolute Environment path") from exc
         if self.retained_history_directory is not None:
             parse_mount_path(self.retained_history_directory)
         if self.context_recovery_scope_id is not None and not self.context_recovery_scope_id:
@@ -285,6 +291,7 @@ class RunBindings:
         metadata: Mapping[str, JsonValue] | None = None,
         observation: HarnessObservationContext | None = None,
         tool_result_directory: str | None = None,
+        shell_output_directory: str | None = None,
         context_recovery_scope_id: str | None = None,
         retained_history_directory: str | None = None,
         state_store: StateStore | None = None,
@@ -318,6 +325,7 @@ class RunBindings:
             producer_observer=producer_observer,
             client_toolsets=client_toolsets,
             tool_result_directory=tool_result_directory,
+            shell_output_directory=shell_output_directory,
             context_recovery_scope_id=context_recovery_scope_id,
             retained_history_directory=retained_history_directory,
             metadata=metadata or {},
@@ -480,6 +488,7 @@ class AgentContext:
         compare=False,
     )
     tool_result_directory: str | None = None
+    shell_output_directory: str | None = None
     context_recovery_scope_id: str | None = None
     retained_history_directory: str | None = None
     _storage: RunStorage = field(default_factory=lambda: RunStorage(None), repr=False, compare=False)
@@ -491,6 +500,8 @@ class AgentContext:
         repr=False,
         compare=False,
     )
+
+    _shell_output_spill_store: _ToolResultSpillStore | None = field(default=None, repr=False, compare=False)
 
     _review_history_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False, compare=False)
     _tool_permission_checks: dict[str, PermissionCheck] = field(default_factory=dict, repr=False, compare=False)
@@ -564,6 +575,17 @@ class AgentContext:
             if (artifacts := _TOOL_EXECUTION_ARTIFACTS.get()) is not None:
                 artifacts.append(ToolExecutionArtifact(path, data, suffix))
         return path
+
+    async def _spill_shell_output(self, chunks: AsyncIterable[bytes]) -> str | None:
+        """Stream temporary Shell text without retaining a second in-memory artifact."""
+        store = self._shell_output_spill_store
+        if store is None:
+            from a13n_harness.tools._output import _ToolResultSpillStore
+
+            store = _ToolResultSpillStore(self, directory=self.shell_output_directory)
+            object.__setattr__(self, "_shell_output_spill_store", store)
+            self._register_run_cleanup("a13n.shell-output-spills", store.close)
+        return await store.write_stream(chunks, suffix=".txt")
 
     @property
     def identity(self) -> AgentIdentityRef:

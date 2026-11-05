@@ -405,6 +405,14 @@ Without runtime ownership, and inside CodeAct callbacks, process-backed Shell ca
 
 The Host supplies the initial wait policy; `shell_wait.timeout_seconds` controls subsequent observation waits. `execution_timeout_seconds` requests a Provider-enforced hard execution deadline and is rejected before dispatch where unsupported. Neither wait policy imposes a command execution deadline.
 
+### Final output files
+
+Process-backed `shell_exec` admits a finite 16 MiB retention budget per stdout/stderr stream, subject to Provider capture ceilings. Before releasing a terminal process reference, Shell reads available output in bounded pages. Streams that exceed the inline preview are written incrementally as redacted UTF-8 text, with independent 16 MiB source and file byte ceilings per stream. Harness keeps only bounded pages and previews in memory; it does not assemble the complete log or duplicate it into a retained execution artifact. Foreground-only Providers keep their bounded capture/disclosure behavior.
+
+Each affected `stdout` or `stderr` projection adds `offload` with `path`, `bytes`, `content_complete`, `reason`, and `hint`. `bytes` measures the saved redacted UTF-8 text, while the surrounding offsets still describe original source bytes. Inline `content_complete` describes the preview; `offload.content_complete` describes coverage of the producing stream. A budget stop, unavailable source range, Provider loss, or read failure yields an explicitly incomplete file where writing succeeds. An unavailable or failed sink yields `path=null`. Output failures preserve the observed command status and never replay the command. Cancellation interrupts capture and follows existing process cleanup.
+
+`RunBindings.shell_output_directory` optionally selects a canonical absolute Environment directory. Its default is `tool_result_directory` when supplied, otherwise `.a13n/tmp/tool-results` below the default mount root. Writes use the existing selection-pinned Run-private spill directories and cleanup. These are temporary files: the Agent reads or copies them before cleanup. Cleanup does not wait for a read acknowledgement, and later result retrieval does not recreate these files. An unavailable explicit directory never redirects to another sink.
+
 ### Query, observation and control
 
 `shell_info()` without an ID requests bounded native discovery on the selected alias/default mount and assigns fresh Run-local references. Repeated discovery deduplicates the same bound native identity. It returns status and optional stdin-state evidence, not native PIDs, arbitrary argv or environment variables. `has_more` describes the bounded projection; no generic stable server cursor is promised. Discovery allocates no output stream and installs no watcher for every listed process.

@@ -325,6 +325,8 @@ Harness 在每次调用后关闭凭据 lease。单独持有的客户端由 Host 
 
 溢出文件需要当前 Environment 的写权限，默认写入默认挂载 `.a13n/tmp/tool-results/` 下的 Run 私有目录。用绝对路径 `RunBindings.tool_result_directory` 选择其他位置。目标不可用时，预览不带文件路径。Harness 清理时尝试移除自己创建的 Run 私有目录；需要长期保留的产物应另存。
 
+支持进程操作的 Shell 命令会将超出内联预览的最终 stdout 和 stderr 分别保存为临时 UTF-8 文本文件，每个流最多 16 MiB。每个流的 `offload` 提供路径、已保存字节数、完整性和部分输出的原因。用 `RunBindings.shell_output_directory` 选择保存位置；默认使用 `tool_result_directory`，未设置时使用上述默认临时目录。Agent 应在 Run 内读取或复制文件，文件会随常规清理移除。
+
 输出失败或截断发生时，工具可能已经完成操作，效果不会撤销。文件访问见 [Environment 工具](environments.md)；保留执行和结果的归属见 [Host 嵌入](hosting.md)。
 
 ## 工具调用错误

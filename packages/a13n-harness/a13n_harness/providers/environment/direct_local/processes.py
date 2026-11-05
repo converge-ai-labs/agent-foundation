@@ -78,6 +78,7 @@ class _OutputCollector:
         self._preview_bytes = b""
         self.reference: BoundOutputReference | None = None
         self.complete = False
+        self._finished_capture: EnvironmentOutputCapture | None = None
 
     async def consume(self, stream: asyncio.StreamReader) -> None:
         try:
@@ -140,12 +141,32 @@ class _OutputCollector:
                 inline=preview,
                 available_end=len(preview),
             )
+        self._finished_capture = capture
         self.preview.clear()
         self._preview_bytes = b""
         self.writer = None
         return capture
 
+    def failed_capture(self) -> EnvironmentOutputCapture:
+        snapshot = self.snapshot()
+        preview = snapshot.inline or b"".join(segment.data for segment in snapshot.preview)
+        return EnvironmentOutputCapture(
+            kind="truncated",
+            observation_closed=True,
+            coverage="partial",
+            reason="connection_lost",
+            producer_complete=self.complete,
+            content_complete=False,
+            produced_bytes=self.produced,
+            captured_bytes=len(preview),
+            dropped_bytes=max(self.produced - len(preview), 0),
+            inline=preview,
+            available_end=len(preview),
+        )
+
     def snapshot(self) -> EnvironmentOutputCapture:
+        if self._finished_capture is not None:
+            return self._finished_capture
         # The preview is append-only until finish. Silent inspect/read polls reuse
         # immutable bytes instead of copying the entire capture on every call.
         if len(self._preview_bytes) != len(self.preview):
@@ -153,6 +174,7 @@ class _OutputCollector:
         preview = self._preview_bytes
         return EnvironmentOutputCapture(
             kind="empty" if not preview and self.complete else "inline" if self.complete else "truncated",
+            observation_closed=False,
             producer_complete=self.complete,
             content_complete=self.complete and self.produced <= len(preview),
             produced_bytes=self.produced,
@@ -549,6 +571,10 @@ class LocalProcessManager:
                         await collector.writer.abort()
                 except EnvironmentError:
                     pass
+            record.output = ProcessOutputSnapshot(
+                stdout=record.stdout.failed_capture(),
+                stderr=record.stderr.failed_capture(),
+            )
             record.status = ProcessStatus(
                 phase="failed",
                 termination_reason="backend_lost",

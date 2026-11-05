@@ -297,12 +297,14 @@ class ShellToolset:
                     expected_mount_id=mount_id,
                     runtime=ctx.deps.tool_execution,
                     execution_id=owned.execution_id,
+                    context=ctx.deps,
                 )
             else:
                 result = await self._process_controller.start(
                     request,
                     alias=alias,
                     yield_time_seconds=ctx.deps._tool_executions.config.foreground_wait_seconds,
+                    context=ctx.deps,
                     expected_mount_id=mount_id,
                 )
                 if ctx.tool_call_id is not None:
