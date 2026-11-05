@@ -55,6 +55,7 @@ from a13n_service.runs.schemas import (
 )
 from a13n_service.runs.search import seed, vector
 from a13n_service.runs.tables import InboxEntryRow, RunRow, SessionRow, ThreadRow
+from a13n_service.runs.threads import lock_thread
 from a13n_service.runs.webhooks import notify_subscribers
 from a13n_service.tenancy.access import principal_for, require_active_workspace
 from a13n_service.tenancy.authorize import ExecutionAuthority, Principal, WorkspaceScope, authorize
@@ -575,9 +576,7 @@ async def advance(runtime: Runtime, thread_id: str, *, skip_locked: bool = False
     """Successor acceptance in its own transaction after a seal or delivery; the sweep covers a lost call."""
     try:
         async with transaction(runtime.storage) as session:
-            thread = await session.scalar(
-                select(ThreadRow).where(ThreadRow.id == thread_id).with_for_update(skip_locked=skip_locked)
-            )
+            thread = await lock_thread(session, thread_id, skip_locked=skip_locked)
             if thread is None:
                 return
             await accept(session, runtime, thread)

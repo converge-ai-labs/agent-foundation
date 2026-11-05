@@ -104,7 +104,8 @@ def workers_of(stack, run_id: str) -> list[str]:  # type: ignore[no-untyped-def]
     return [row["worker_id"] for row in rows]
 
 
-@pytest.mark.isolated_service(worker_slots=1)
+# Use the normal worker lease for the concurrent edits. The recovery journeys exercise short leases.
+@pytest.mark.isolated_service(worker_slots=1, lease_seconds=30)
 async def test_two_workers_edit_one_file_and_the_next_run_gets_the_changes(stack) -> None:  # type: ignore[no-untyped-def]
     api, model = stack.api, stack.model
     agent = await api.create_agent("Helper", await api.create_model(model.base_url))

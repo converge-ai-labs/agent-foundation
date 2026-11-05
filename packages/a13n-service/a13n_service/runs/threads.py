@@ -39,11 +39,19 @@ async def get_thread(
     if not history:
         query = query.options(defer(ThreadRow.message_history, raiseload=True))
     if lock:
-        query = query.with_for_update().execution_options(populate_existing=True)
+        # Serialize writers while allowing PostgreSQL to validate a fork's foreign key to its origin.
+        query = query.with_for_update(key_share=True).execution_options(populate_existing=True)
     thread = await session.scalar(query)
     if thread is None:
         raise not_found("thread", thread_id)
     return thread
+
+
+async def lock_thread(session: AsyncSession, thread_id: str, *, skip_locked: bool = False) -> ThreadRow | None:
+    """Take the same non-key writer lock as get_thread for an internal thread ID."""
+    return await session.get(
+        ThreadRow, thread_id, with_for_update={"key_share": True, "skip_locked": skip_locked}, populate_existing=True
+    )
 
 
 async def get_run(session: AsyncSession, workspace_id: str, run_id: str, *, lock: bool = False) -> RunRow:

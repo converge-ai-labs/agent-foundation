@@ -403,18 +403,29 @@ async def test_concurrent_recovery_of_a_thread_and_its_fork_reserves_one_success
     pinned = await start(env, options={"environment": {"mode": "existing", "environment_id": sandbox}})
     await lose_sandbox(env, sandbox)
 
-    # Both transactions have seen the original loss before either acquires the reservation lock.
-    barrier = asyncio.Barrier(2)
+    # Both own their thread lock. Let the fork select the successor first so its origin FK is checked
+    # while the origin is waiting for the same reservation lock.
+    origin_ready = asyncio.Event()
+    fork_selected = asyncio.Event()
     latest = mounts.latest_replacement
 
-    async def together(*args):
-        await asyncio.wait_for(barrier.wait(), timeout=10)
-        return await latest(*args)
+    async def fork_first(*args):
+        if not origin_ready.is_set():
+            origin_ready.set()
+            await fork_selected.wait()
+            return await latest(*args)
+        successor = await latest(*args)
+        fork_selected.set()
+        return successor
 
-    monkeypatch.setattr(mounts, "latest_replacement", together)
-    responses = await asyncio.gather(*(follow_up(env, r["thread"]["id"], "continue") for r in (origin, child)))
+    monkeypatch.setattr(mounts, "latest_replacement", fork_first)
+    async with asyncio.timeout(15), asyncio.TaskGroup() as group:
+        original = group.create_task(follow_up(env, origin["thread"]["id"], "continue"))
+        await origin_ready.wait()
+        forked = group.create_task(follow_up(env, child["thread"]["id"], "continue"))
+    responses = [original.result(), forked.result()]
+    assert [r.status_code for r in responses] == [201, 201], [r.text for r in responses]
     runs = [r.json()["run"] for r in responses]
-    assert all(r.status_code == 201 for r in responses)
     successor = runs[0]["environment_mounts"][0]["environment_id"]
     assert successor != sandbox
     assert [r["environment_mounts"] for r in runs] == [[{**mount, "environment_id": successor}]] * 2
