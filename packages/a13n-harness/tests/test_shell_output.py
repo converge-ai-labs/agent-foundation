@@ -25,7 +25,7 @@ pytestmark = pytest.mark.anyio
 
 
 def test_streamed_utf8_and_bearer_redaction_at_every_boundary():
-    text = "你好\nBearer abc.def+/=\nXBearer visible\nBearer \tsecret! end Bearer"
+    text = "你好\nBearer abc.def-~+/=\nXBearer visible\nBearer \tsecret! end Bearer"
     data = text.encode()
     expected = "你好\nBearer [REDACTED]\nXBearer visible\nBearer \t[REDACTED]! end Bearer".encode()
     for size in range(1, len(data) + 1):
@@ -37,6 +37,34 @@ def test_streamed_utf8_and_bearer_redaction_at_every_boundary():
     assert redactor.feed(b"Bearer " + b"x" * 65536) == b"Bearer [REDACTED]"
     assert redactor.feed(b"x" * 65536) == b""
     assert redactor.feed(b"!", final=True) == b"!"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX shell fixture")
+@pytest.mark.parametrize("padding", [0, 80000])
+async def test_shell_redacts_bearer_in_inline_preview_and_saved_text(tmp_path, monkeypatch, padding):
+    original = _ProcessController._retire
+    expected = b"Bearer [REDACTED]!" + b"x" * padding
+
+    async def retire(controller, entry):
+        files = list(tmp_path.rglob("tool-result-*.txt"))
+        if padding:
+            assert len(files) == 1
+            assert files[0].read_bytes() == expected
+        else:
+            assert files == []
+        await original(controller, entry)
+
+    monkeypatch.setattr(_ProcessController, "_retire", retire)
+    command = f"{shlex.quote(sys.executable)} -c " + shlex.quote(
+        f"import sys; sys.stdout.write('Bearer abc.def-~+/=!'+ 'x'*{padding})"
+    )
+    results = []
+    await executable([("shell_exec", {"command": command})], results, mode="inline", wait_seconds=15).run(
+        "capture", environment=source(tmp_path), bindings=bindings(None)
+    )
+    assert results[0]["stdout"]["text"].startswith("Bearer [REDACTED]!")
+    assert "abc.def" not in json.dumps(results)
+    assert not list(tmp_path.rglob("tool-result-*.txt"))
 
 
 def page(data, offset, total, *, complete=True):
@@ -129,17 +157,88 @@ async def test_spool_commit_failure_closes_output_observation(tmp_path, monkeypa
         started = await processes.start(
             _request("import sys; sys.stdout.write('o'*100000); sys.stderr.write('e'*100000)")
         )
-        record = processes._record(started.process.handle)
-        with pytest.raises(EnvironmentError, match="spool commit failed"):
-            await asyncio.wait_for(record.watcher, timeout=5)
-        # Read only after the failed watcher settles, as a later Shell poll would.
-        result = await processes.read_output(started.process.handle, policy=OUTPUT)
-        for stream in (result.stdout, result.stderr):
-            assert stream.capture.observation_closed
-            assert not stream.capture.content_complete
-            assert stream.capture.reference is None
-            assert stream.capture.reason == "connection_lost"
-        assert (await processes.inspect(started.process.handle)).status.phase == "failed"
+        # The observer is already waiting when publication fails.
+        result = await processes.read_output(started.process.handle, policy=OUTPUT, wait_seconds=5)
+        failed = result.stdout if failed_stream == "stdout" else result.stderr
+        healthy = result.stderr if failed_stream == "stdout" else result.stdout
+        assert failed.capture.observation_closed
+        assert not failed.capture.content_complete
+        assert failed.capture.reference is None
+        assert failed.capture.reason == "connection_lost"
+        assert healthy.capture.observation_closed
+        assert healthy.capture.reason is None
+        assert healthy.capture.available_end == 65536  # The fixture's native retention cap.
+        assert healthy.capture.produced_bytes == 100000
+        assert healthy.capture.reference is not None
+        status = (await processes.inspect(started.process.handle)).status
+        assert status.phase == "exited"
+        assert status.exit_code == 0
+        assert status.cleanup == "complete"
+
+
+@pytest.mark.parametrize("complete", [True, False])
+async def test_offload_at_provider_clamped_limit(monkeypatch, complete):
+    monkeypatch.setattr(shell_output, "SHELL_OUTPUT_BYTES", 24)
+    written = bytearray()
+
+    async def write(chunks):
+        async for chunk in chunks:
+            written.extend(chunk)
+        return "/tmp/clamped.txt"
+
+    async def read(offset):
+        pytest.fail(f"Unexpected read past closed capture: {offset}")
+
+    saved = await offload_stream(
+        SimpleNamespace(_spill_shell_output=write), page(b"x" * 24, 0, 24, complete=complete), read
+    )
+    assert saved["content_complete"] is complete
+    assert saved["reason"] == (None if complete else "output_limit")
+    assert saved["bytes"] == len(written) == 24
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX shell fixture")
+@pytest.mark.parametrize("owned", [True, False])
+@pytest.mark.parametrize("operation", ["write", "commit"])
+@pytest.mark.parametrize("exit_code", [0, 7])
+async def test_shell_waiting_on_spool_failure_preserves_exit(tmp_path, monkeypatch, owned, operation, exit_code):
+    from a13n_harness.environment.models import EnvironmentError
+    from a13n_harness.providers.environment._local_retention import LocalRetentionWriter
+
+    failures = 0
+
+    async def fail(*args, **kwargs):
+        nonlocal failures
+        failures += 1
+        if operation == "write":
+            raise OSError("spool write failed")
+        raise EnvironmentError("spool commit failed", code="environment_provider_failure")
+
+    monkeypatch.setattr(LocalRetentionWriter, operation, fail)
+    command = f"{shlex.quote(sys.executable)} -c " + shlex.quote(
+        f"import sys; sys.stdout.write('x'*2097152); sys.stderr.write('healthy'); sys.exit({exit_code})"
+    )
+    runtime = ToolExecutionRuntime() if owned else None
+    results = []
+    try:
+        await executable([("shell_exec", {"command": command})], results, mode="inline", wait_seconds=15).run(
+            "capture", environment=source(tmp_path), bindings=bindings(runtime)
+        )
+        result = results[0]
+        assert failures
+        assert result["ok"], result
+        assert result["status"]["phase"] == "exited"
+        assert result["status"]["exit_code"] == exit_code
+        assert result["status"]["cleanup"] == "complete"
+        assert result["stdout"]["observation_closed"]
+        assert result["stdout"]["produced_bytes"] == 2097152
+        assert not result["stdout"]["offload"]["content_complete"]
+        assert result["stdout"]["offload"]["reason"] == "connection_lost"
+        assert result["stderr"]["text"] == "healthy"
+        assert result["stderr"]["content_complete"]
+    finally:
+        if runtime is not None:
+            await runtime.close()
 
 
 async def test_eip_retained_output_offloads_all_pages_beyond_one_mebibyte():

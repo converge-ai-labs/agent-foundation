@@ -65,10 +65,13 @@ _REFERENCE_PATTERN = re.compile(r"^process-([0-9a-f]{4})-([1-9][0-9]*)$")
 
 
 def _retain_shell_output(request: CommandRequest) -> CommandRequest:
+    """Install model-facing Shell's capture budget; direct Environment calls keep their own policy."""
+    # Keep the live readable prefix: providers may publish retained output only
+    # after exit. Final file paging has its own smaller read budget.
     return request.model_copy(
         update={
             "output_policy": EnvironmentOutputPolicy(
-                max_inline_bytes=_DEFAULT_INLINE_BYTES,
+                max_inline_bytes=_MAX_MODEL_OUTPUT_BYTES,
                 max_output_bytes=SHELL_OUTPUT_BYTES,
                 overflow="retain",
             )
@@ -388,6 +391,16 @@ class _ProcessController:
                     "reason": "read_failed",
                     "hint": "Final output could not be read. The command was not replayed.",
                 }
+            return result
+        # Preserve complete small results for ordinary disclosure. Incomplete
+        # pages use a bounded preview plus streamed files, not duplicate artifacts.
+        result = _shell_exec_result(None, final, bound_output=False)
+        if all(
+            stream["content_complete"]
+            and stream["start_offset"] == 0
+            and stream["next_offset"] >= stream["available_end"]
+            for stream in (result["stdout"], result["stderr"])
+        ):
             return result
         result = _shell_exec_result(None, final)
         for name in ("stdout", "stderr"):

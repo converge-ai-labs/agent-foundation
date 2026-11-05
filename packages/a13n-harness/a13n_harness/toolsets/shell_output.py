@@ -107,7 +107,9 @@ async def offload_stream(
             if offset >= page.capture.available_end:
                 saved["content_complete"] = page.capture.content_complete and page.capture.observation_closed
                 if not saved["content_complete"]:
-                    saved["reason"] = page.capture.reason or "provider_incomplete"
+                    saved["reason"] = page.capture.reason or (
+                        "output_limit" if offset >= SHELL_OUTPUT_BYTES else "provider_incomplete"
+                    )
                 break
             if offset >= SHELL_OUTPUT_BYTES:
                 saved["reason"] = "output_limit"
