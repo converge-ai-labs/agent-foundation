@@ -681,9 +681,10 @@ def test_eip_zoom_advertisement_requires_exact_method_and_reader_cleanup(methods
         ),
         device_id="device-zoom",
         session_id="ses-zoom",
+        owner_epoch=1,
         generation=1,
         working_directory="/",
-        lifecycle=eip.SessionLifecyclePolicy(idle_timeout_ms=30000, disconnect_grace_ms=1000),
+        lifecycle=eip.SessionLifecyclePolicy(idle_timeout_ms=30000),
         available_methods=methods,
         limits=eip.EIPLimits(
             max_request_bytes=1024,

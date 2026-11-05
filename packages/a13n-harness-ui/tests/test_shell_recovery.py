@@ -80,14 +80,18 @@ async def test_owned_daemon_shutdown_loses_old_job_and_reuses_replacement(tmp_pa
                 if original.shell is not None and original.shell.process.identity is not None:
                     break
                 await asyncio.sleep(0.02)
-        await owner._tool_executions.suppress(thread.thread_id)
         pid = int((workspace / "admitted").read_text())
         assert len(opened) == 1
     if os.name != "nt":
         with pytest.raises(ProcessLookupError):
             os.kill(pid, 0)
     calls_before_restart = calls
+
+    async def defer_delivery(*args):
+        return False
+
     async with open_harness_ui_app(settings, configuration_path=path) as successor:
+        successor._tool_executions.deliver = defer_delivery
         async with asyncio.timeout(15):
             while True:
                 lost = await successor._store.tool_executions.get(thread.thread_id, original.record.execution_id)
@@ -99,10 +103,6 @@ async def test_owned_daemon_shutdown_loses_old_job_and_reuses_replacement(tmp_pa
         assert calls == calls_before_restart
         assert len(opened) == 2 and opened[0] != opened[1]
 
-        async def defer_delivery(*args):
-            return False
-
-        successor._tool_executions.deliver = defer_delivery
         for _ in range(2):
             commands.append("printf replacement-ready")
             receipt = await successor.submit_thread(thread_id=thread.thread_id, prompt="Use replacement")
@@ -305,8 +305,17 @@ async def test_external_shell_survives_app_restart_without_new_run_or_command(
             else:
                 (root / "finish").touch()
             async with asyncio.timeout(15):
-                await resumed.wait()
                 await successor._tool_executions.runtime.join()
+                if not foreground_wait:
+                    await resumed.wait()
+            if foreground_wait:
+                # Shutdown cancelled the foreground Root, not its external jobs.
+                latest = await successor._store.threads.get(thread.thread_id)
+                assert latest.last_execution.status == "cancelled"
+                assert not await successor._deliver_tool_completion(
+                    thread.thread_id, "Tool executions completed", tuple(identities)
+                )
+                assert stage == expected_stage and not resumed.is_set()
             for execution_id, original in identities.items():
                 saved = await successor._store.tool_executions.get(thread.thread_id, execution_id)
                 assert saved.record.status == ("cancelled" if cancel_from_other_app else "succeeded"), saved.record
@@ -329,8 +338,8 @@ async def test_external_shell_survives_app_restart_without_new_run_or_command(
 
 @requires_envd
 async def test_binding_owner_excludes_other_apps_but_shares_local_borrowers(tmp_path, monkeypatch):
+    from a13n_harness.environment.models import EnvironmentError
     from a13n_harness_ui.composition.models import ResolvedEnvironmentBinding
-    from a13n_harness_ui.errors import EnvironmentLifecycleError
 
     monkeypatch.setenv("DEVICE_TOKEN", TOKEN)
     path = _write_configuration(tmp_path)
@@ -376,16 +385,21 @@ async def test_binding_owner_excludes_other_apps_but_shares_local_borrowers(tmp_
                 async with asyncio.timeout(10):
                     while not (await observer.device_info(recipe.id)).available:
                         await asyncio.sleep(0.02)
-                with pytest.raises(EnvironmentLifecycleError) as busy:
-                    await other._prepare_device_mount(thread.thread_id, binding)
-                assert busy.value.code == "environment_owner_busy"
+                recovered, _ = await other._prepare_device_mount(thread.thread_id, binding)
+                assert not service._owners._held and not other._owners._held
                 assert not await owner._store.tool_executions.active()  # No execution lock participates.
                 first_open = await first.environment.open()
                 second_open = await second.environment.open()
                 try:
                     assert len(opened) == 1
                     assert attached == []
+                    with pytest.raises(EnvironmentError) as busy:
+                        await recovered.environment.open()
+                    assert busy.value.code == "environment_busy"
                     await first_open.close()
+                    with pytest.raises(EnvironmentError) as busy:
+                        await recovered.environment.open()
+                    assert busy.value.code == "environment_busy"
                     assert second_open.operations.files is not None
                     assert (await second_open.operations.files.list(device_path(root), max_results=10)).entries
                     # A changed binding receives a separate Session and independent ownership.
@@ -399,14 +413,18 @@ async def test_binding_owner_excludes_other_apps_but_shares_local_borrowers(tmp_
                 finally:
                     await first_open.close()
                     await second_open.close()
-                await service.close()
-                recovered, _ = await other._prepare_device_mount(thread.thread_id, binding)
+                assert not service._owners._held
                 recovered_open = await recovered.environment.open()
                 try:
                     assert attached == [opened[0]]
                     assert len(opened) == 2
                 finally:
                     await recovered_open.close()
+                # The original connector reloads B's newer epoch before taking over again.
+                reopened = await first.environment.open()
+                await reopened.close()
+                assert attached == [opened[0], opened[0]]
+                assert not service._owners._held and not other._owners._held
 
 
 @requires_envd
@@ -430,7 +448,7 @@ async def test_external_shell_survives_hard_app_death_and_lost_start_response(tm
     resumed = asyncio.Event()
 
     async def model(messages, info):
-        assert "Tool executions completed" in str(messages)
+        assert "Continue explicitly" in str(messages)
         resumed.set()
         yield "Completion received."
 
@@ -474,9 +492,26 @@ async def test_external_shell_survives_hard_app_death_and_lost_start_response(tm
                 (root / "finish").touch()
                 async with open_harness_ui_app(settings, configuration_path=path) as successor:
                     async with asyncio.timeout(20):
-                        await resumed.wait()
+                        while True:
+                            saved = await successor._store.tool_executions.get(
+                                original["thread_id"], original["execution_id"]
+                            )
+                            if saved.record.terminal:
+                                break
+                            await asyncio.sleep(0.02)
                         await successor._tool_executions.runtime.join()
-                    saved = await successor._store.tool_executions.get(original["thread_id"], original["execution_id"])
+                    assert not await successor._deliver_tool_completion(
+                        original["thread_id"], "Tool executions completed", (original["execution_id"],)
+                    )
+                    assert not resumed.is_set()
+                    assert not saved.record.delivery_acknowledged
+                    receipt = await successor.submit_thread(
+                        thread_id=original["thread_id"], prompt="Continue explicitly"
+                    )
+                    assert (
+                        await successor.wait_root_operation(receipt.receipt_id)
+                    ).status is RootOperationStatus.completed
+                    assert resumed.is_set()
                     assert saved.record.status == "succeeded", saved.record
                     assert saved.shell.process.identity.model_dump(mode="json") == original["process"]["identity"]
                     assert saved.shell.process.session_id == original["process"]["session_id"]

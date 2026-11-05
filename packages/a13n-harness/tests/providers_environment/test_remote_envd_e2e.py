@@ -885,6 +885,126 @@ async def test_session_context_shares_live_borrowers_and_restores_after_final_re
         assert len(checkpoints) == 3  # Open, epoch reservation, attached descriptor.
 
 
+@pytest.mark.parametrize("failure", ["open", "checkpoint", "cancel_checkpoint", "attach"])
+async def test_session_ownership_unwinds_failed_acquisition(binary, tmp_path, http_runtime, monkeypatch, failure):
+    from a13n_envd_client import EIPSession, EIPTransportError
+    from a13n_harness.environment.session_recovery import EnvdSessionRecovery
+    from anyio import create_task_group, sleep_forever
+
+    endpoint = f"http://127.0.0.1:{free_port()}"
+    events = []
+    durable = None
+    failing = False
+    checkpoint_entered = asyncio.Event()
+
+    @asynccontextmanager
+    async def ownership():
+        events.append("acquire")
+        try:
+            yield durable
+        finally:
+            events.append("release")
+
+    async def checkpoint(state):
+        nonlocal durable
+        if failing and failure in {"checkpoint", "cancel_checkpoint"}:
+            if failure == "cancel_checkpoint":
+                checkpoint_entered.set()
+                await sleep_forever()
+            raise OSError("checkpoint failed")
+        durable = state
+
+    detach = EIPSession.detach
+
+    async def tracked_detach(self):
+        events.append("detach")
+        await detach(self)
+
+    monkeypatch.setattr(EIPSession, "detach", tracked_detach)
+    context = EnvdSessionRecovery(checkpoint=checkpoint, ownership=ownership)
+    async with daemon(binary, tmp_path, "http", endpoint.removeprefix("http://")):
+        runtime = http_runtime(endpoint)
+        device = await runtime.acquire_device(expected_device_id=NATIVE_ID)
+
+        async def acquire():
+            async with runtime.open_session(
+                expected_device_id=NATIVE_ID, required_methods=frozenset(), session_recovery=context
+            ):
+                assert not failing
+
+        if failure == "attach":
+            await acquire()
+            events.clear()
+        method = "attach_session" if failure == "attach" else "open_session"
+        original = getattr(device, method)
+
+        async def fail(*args, **kwargs):
+            raise EIPTransportError("acquisition failed")
+
+        failing = True
+        if failure in {"open", "attach"}:
+            monkeypatch.setattr(device, method, fail)
+        if failure == "cancel_checkpoint":
+            async with create_task_group() as group:
+                group.start_soon(acquire)
+                async with asyncio.timeout(5):
+                    await checkpoint_entered.wait()
+                group.cancel_scope.cancel()
+        else:
+            with pytest.raises((EIPTransportError, OSError)):
+                await acquire()
+        expected = ["acquire", "release"]
+        if failure in {"checkpoint", "cancel_checkpoint"}:
+            expected.insert(1, "detach")
+        assert events == expected
+        assert context._scope is None and context._session is None and context._users == 0
+        failing = False
+        monkeypatch.setattr(device, method, original)
+        await acquire()
+        assert events[len(expected) :] == ["acquire", "detach", "release"]
+
+
+async def test_dead_session_late_borrower_does_not_release_successor_owner(binary, tmp_path, http_runtime):
+    from a13n_harness.environment.session_recovery import EnvdSessionRecovery
+
+    endpoint = f"http://127.0.0.1:{free_port()}"
+    durable = None
+    events = []
+
+    @asynccontextmanager
+    async def ownership():
+        events.append("acquire")
+        try:
+            yield durable
+        finally:
+            events.append("release")
+
+    async def checkpoint(state):
+        nonlocal durable
+        durable = state
+
+    context = EnvdSessionRecovery(checkpoint=checkpoint, ownership=ownership)
+    async with daemon(binary, tmp_path, "http", endpoint.removeprefix("http://")):
+        runtime = http_runtime(endpoint)
+
+        def borrow():
+            return runtime.open_session(
+                expected_device_id=NATIVE_ID, required_methods=frozenset(), session_recovery=context
+            )
+
+        old_scope = borrow()
+        old = await old_scope.__aenter__()
+        old.session._finish()
+        async with borrow() as successor:
+            assert successor.session.session_id == old.session.session_id
+            assert successor.session.descriptor.owner_epoch > old.session.descriptor.owner_epoch
+            assert events == ["acquire", "release", "acquire"]
+            await old_scope.__aexit__(None, None, None)
+            assert events == ["acquire", "release", "acquire"]
+            assert (await successor.session.readiness()).ready
+        assert events == ["acquire", "release", "acquire", "release"]
+
+
 async def test_uncertain_takeover_keeps_checkpoint_and_advances_epoch_on_retry(
     binary, tmp_path, http_runtime, monkeypatch
 ):
@@ -927,7 +1047,17 @@ async def test_uncertain_takeover_keeps_checkpoint_and_advances_epoch_on_retry(
 
 @pytest.mark.parametrize(
     "failure",
-    ["handoff", "lost_identity", "lost_reply", "checkpoint", "observation", "cancelled_start", "publication_cancel"],
+    [
+        "handoff",
+        "lost_identity",
+        "lost_reply",
+        "checkpoint",
+        "observation",
+        "cancelled_start",
+        "publication_cancel",
+        "disclosure",
+        "disclosure_handoff",
+    ],
 )
 async def test_owned_shell_handoff_recovers_same_process_without_start_replay(
     binary, tmp_path, http_runtime, monkeypatch, failure
@@ -947,6 +1077,43 @@ async def test_owned_shell_handoff_recovers_same_process_without_start_replay(
         identity=AgentIdentityRef(issuer="test", subject="agent"), agent_instance_id="agent-1"
     )
     store = MemoryToolExecutionStore()
+    disclosure = failure in {"disclosure", "disclosure_handoff"}
+    payload = "Bearer test-sensitive-value\n" + "x" * 40000 + "\nfinished"
+
+    async def assert_disclosed(result):
+        from types import SimpleNamespace
+
+        from a13n_harness.capabilities.tool_execution import _result
+        from a13n_harness.tools._output import DEFAULT_TOOL_OUTPUT_CHARS
+        from a13n_harness.toolsets.output import tool_output_size
+
+        assert result.record.status == "succeeded", result
+        assert "test-sensitive-value" not in json.dumps(result.result)
+        assert tool_output_size(result.result) <= DEFAULT_TOOL_OUTPUT_CHARS
+        assert result.result["disclosure"]["content_complete"]
+        retained = await store.get("thread-a", record.execution_id)
+        assert retained.artifacts == result.artifacts
+        assert len(retained.artifacts) == 2
+        for artifact in retained.artifacts:
+            assert b"test-sensitive-value" not in artifact.data
+            assert b"Bearer [REDACTED]" in artifact.data
+            assert b"x" * 40000 in artifact.data
+
+        async def spill(data, *, suffix):
+            path = tmp_path / ("materialized" + suffix)
+            path.write_bytes(data)
+            return str(path)
+
+        deps = SimpleNamespace(
+            _spill_tool_result=spill,
+            _tool_executions=SimpleNamespace(delivered_result=lambda call, record, value: value),
+        )
+        materialized = await _result(SimpleNamespace(deps=deps, tool_call_id="retrieve"), retained)
+        assert "tool-execution-artifact://" not in json.dumps(materialized)
+        assert Path(materialized["disclosure"]["text_file_paths"]["/stdout/text"]).read_text() == (
+            "ready\n" + payload.replace("test-sensitive-value", "[REDACTED]") + "\n"
+        )
+
     original_process_id = None
     start_returned, lose_start_reply = asyncio.Event(), asyncio.Event()
     publication_started, fail_publication = asyncio.Event(), asyncio.Event()
@@ -1026,13 +1193,15 @@ async def test_owned_shell_handoff_recovers_same_process_without_start_replay(
                         + (
                             "print('finished')"
                             if failure == "publication_cancel"
+                            else f"sys.stdin.readline(); print({payload!r})"
+                            if disclosure
                             else "print(sys.stdin.readline().strip())"
                         ),
                     ),
                 ),
                 keep_stdin_open=True,
                 output_policy=EnvironmentOutputPolicy(
-                    max_inline_bytes=4096, max_output_bytes=4096, overflow="truncate"
+                    max_inline_bytes=4096, max_output_bytes=131072 if disclosure else 4096, overflow="truncate"
                 ),
             )
 
@@ -1057,12 +1226,22 @@ async def test_owned_shell_handoff_recovers_same_process_without_start_replay(
                 await publication_started.wait()
                 await first.cancel("thread-a", record.execution_id)
                 fail_publication.set()
-            if failure in {"handoff", "lost_identity"}:
+            if failure in {"handoff", "lost_identity", "disclosure", "disclosure_handoff"}:
                 async with asyncio.timeout(5):
                     while first.resource("thread-a", record.execution_id) is None:
                         assert not (await first.info("thread-a", record.execution_id)).terminal
                         await asyncio.sleep(0.01)
                 original_identity = first.resource("thread-a", record.execution_id).identity
+                if failure == "disclosure":
+                    await first.call_resource(
+                        "thread-a", record.execution_id, {"operation": "input", "data": "finish\n"}
+                    )
+                    await assert_disclosed(await first.wait("thread-a", record.execution_id, timeout_seconds=5))
+                    assert (workspace / "admissions").read_text() == "1"
+                    assert [item.execution_id for item in completions] == [record.execution_id]
+                    await controller.close()
+                    assert await first.close() == ()
+                    return
                 # Release after the identity checkpoint, with no later native
                 # checkpoint to accidentally make the receipt durable.
                 await first.release_foreground("thread-a", record.execution_id)
@@ -1123,7 +1302,10 @@ async def test_owned_shell_handoff_recovers_same_process_without_start_replay(
             await successor.call_resource("thread-a", record.execution_id, {"operation": "input", "data": "finished\n"})
             result = await successor.wait("thread-a", record.execution_id, timeout_seconds=5)
             assert result.record.status == "succeeded", result
-            assert result.result["stdout"]["text"] == "ready\nfinished\n"
+            if disclosure:
+                await assert_disclosed(result)
+            else:
+                assert result.result["stdout"]["text"] == "ready\nfinished\n"
         assert (workspace / "admissions").read_text() == "1"
         assert [item.execution_id for item in completions] == [record.execution_id]
         assert await first.close() == ()

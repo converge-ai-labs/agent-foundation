@@ -25,7 +25,10 @@ def test_tool_execution_migration_preserves_threads_and_roundtrips_empty_schema(
         with engine.begin() as connection:
             assert dict(connection.execute(text("SELECT * FROM thread")).mappings().one()) == before
             assert connection.execute(text("SELECT count(*) FROM tool_execution")).scalar_one() == 0
-            assert connection.execute(text("SELECT count(*) FROM tool_completion_suppression")).scalar_one() == 0
+            assert "tool_completion_suppression" not in inspect(connection).get_table_names()
+            assert "tool_completion_suppressed" not in {
+                column["name"] for column in inspect(connection).get_columns("thread")
+            }
         columns = {column["name"]: column for column in inspect(engine).get_columns("tool_execution")}
         assert columns["payload_digest"]["nullable"]
         assert columns["consumed_at"]["nullable"] and columns["expires_at"]["nullable"]

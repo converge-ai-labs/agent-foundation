@@ -187,6 +187,36 @@ async def running_device(
         assert b"fixture-device-token" not in stderr
 
 
+@pytest.mark.parametrize("failure", ["transport", "timeout", "closed"])
+def test_final_keepalive_preserves_body_exception(tmp_path, monkeypatch, failure):
+    from a13n_envd_client.errors import EIPTransportError
+
+    async def scenario():
+        async with running_device(tmp_path, "http") as device:
+            session = await device.open_session()
+            calls = []
+
+            async def fail(params):
+                calls.append(params)
+                if failure == "timeout":
+                    raise TimeoutError("final keepalive timed out")
+                raise EIPTransportError("final keepalive failed")
+
+            monkeypatch.setattr(session._client, "session_keepalive", fail)
+            with pytest.raises(ValueError, match="body failed"):
+                async with session.use():
+                    if failure == "closed":
+                        await device.close()
+                    raise ValueError("body failed")
+            assert len(calls) == (0 if failure == "closed" else 1)
+            assert session._users == 0
+            assert session._keepalive_task is not None
+            await asyncio.gather(session._keepalive_task, return_exceptions=True)
+            assert session._keepalive_task.done()
+
+    asyncio.run(scenario())
+
+
 @pytest.mark.parametrize("carrier", ["stdio", "http", "websocket"])
 def test_real_shared_device_independent_sessions_and_transfers(tmp_path: Path, carrier: str):
     async def scenario():

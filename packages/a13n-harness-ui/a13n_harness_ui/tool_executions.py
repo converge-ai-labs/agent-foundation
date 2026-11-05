@@ -51,12 +51,11 @@ class ToolExecutions:
         self.store = store
         self._environments = environments
         self._recovery_lock = Lock()
-        self._suppression_lock = Lock()
         self.runtime = ToolExecutionRuntime(store=store, on_completed=self._completed)
         self._states: dict[str, CodeActStateOwner] = {}
         self._pending: OrderedDict[str, set[str]] = OrderedDict()
-        self._suppressed: set[str] = set()
         self._scheduled: set[str] = set()
+        self._changed: set[str] = set()
         self._offered: dict[str, set[str]] = {}
         self._retry: set[str] = set()
         self._deliveries: dict[str, CancelScope] = {}
@@ -98,21 +97,21 @@ class ToolExecutions:
         self._group = group
 
     async def restore(self) -> None:
-        if self.store is not None:
-            after = ""
-            while batch := await self.store.suppressed_threads(after=after):
-                self._suppressed.update(batch)
-                after = batch[-1]
-            await self._restore_pending()
+        await self._restore_pending()
 
     async def _restore_pending(self) -> None:
         if self.store is None:
             return
         after = ""
+        local_pending = set(self._pending)
         while batch := await self.store.pending_threads(after=after):
             for thread_id in batch:
+                local_pending.discard(thread_id)
                 self.retry(thread_id, refresh=True)
             after = batch[-1]
+        # Refresh local offers that another App consumed or expired.
+        for thread_id in local_pending:
+            self.retry(thread_id, refresh=True)
 
     async def recover(self) -> None:
         """Claim unfinished calls without admitting a model Run or replaying tools."""
@@ -157,7 +156,6 @@ class ToolExecutions:
                             )
                         except (ConfigurationError, EnvironmentLifecycleError, StoreIntegrityError) as exc:
                             if isinstance(exc, EnvironmentLifecycleError) and exc.code in {
-                                "environment_owner_busy",
                                 "device_unavailable",
                                 "device_connections_closed",
                             }:
@@ -220,33 +218,13 @@ class ToolExecutions:
                 self.runtime.suspend_shell(record.execution_id)
             raise
 
-    async def suppress(self, thread_id: str) -> None:
-        """Stop automatic wake before cancelling the conversation."""
-        async with self._suppression_lock:
-            self._suppressed.add(thread_id)
-            self._pending.pop(thread_id, None)
-            if (scope := self._deliveries.get(thread_id)) is not None:
-                scope.cancel()
-            if self.store is not None:
-                await self.store.suppress(thread_id)
+    def forget(self, thread_id: str) -> None:
+        """Release local delivery bookkeeping when a Thread is deleted."""
+        self._pending.pop(thread_id, None)
+        self._offered.pop(thread_id, None)
+        if (scope := self._deliveries.get(thread_id)) is not None:
+            scope.cancel()
         self._notify_settled(thread_id)
-
-    async def user_input(self, thread_id: str) -> None:
-        async with self._suppression_lock:
-            if self.store is not None:
-                await self.store.user_input(thread_id)
-            self._suppressed.discard(thread_id)
-        self.retry(thread_id)
-
-    async def _refresh_suppression(self, thread_id: str) -> None:
-        if self.store is not None:
-            # Serialize the snapshot with this App's Stop/input writes so a
-            # delayed read cannot undo a newer local suppression decision.
-            async with self._suppression_lock:
-                if await self.store.is_suppressed(thread_id):
-                    self._suppressed.add(thread_id)
-                else:
-                    self._suppressed.discard(thread_id)
 
     def stop(self) -> None:
         self._accepting = False
@@ -259,23 +237,20 @@ class ToolExecutions:
             self._notify_settled(record.thread_id)
             return
         thread_id = record.thread_id
-        if thread_id not in self._suppressed:
-            pending = self._pending.setdefault(thread_id, set())
-            if self.store is not None or len(pending) < 256:
-                pending.add(record.execution_id)
-            # Memory-only owners retain the original bounded hint queue.
-            while self.store is None and len(self._pending) > 256:
-                evicted, _ = self._pending.popitem(last=False)
-                self._notify_settled(evicted)
+        self._changed.add(thread_id)
+        pending = self._pending.setdefault(thread_id, set())
+        if self.store is not None or len(pending) < 256:
+            pending.add(record.execution_id)
+        # Memory-only owners retain the original bounded hint queue.
+        while self.store is None and len(self._pending) > 256:
+            evicted, _ = self._pending.popitem(last=False)
+            self._notify_settled(evicted)
         self.retry(thread_id, refresh=True)
         self._notify_settled(thread_id)
 
     def run_settled(self, thread_id: str) -> None:
         self._offered.pop(thread_id, None)
         self.retry(thread_id, refresh=self.store is not None)
-
-    def allows_completion(self, thread_id: str) -> bool:
-        return self._accepting and thread_id not in self._suppressed
 
     def retry(self, thread_id: str, *, refresh: bool = False) -> None:
         if not self._accepting or self._group is None or (thread_id not in self._pending and not refresh):
@@ -293,21 +268,22 @@ class ToolExecutions:
         try:
             with scope:
                 await checkpoint()  # Coalesce completions from the same dispatch batch.
-                if self.changed is not None:
-                    await self.changed(thread_id)
+                if thread_id in self._changed:
+                    self._changed.discard(thread_id)
+                    if self.changed is not None:
+                        await self.changed(thread_id)
                 if self.store is not None:
                     # Keep the offer owner through Run settlement, not merely
                     # enqueue. Process death releases the OS lock for takeover.
                     if not await self.store.completion_owners.acquire(thread_id):
                         return
-                    await self._refresh_suppression(thread_id)
                     records = await self.store.pending(thread_id, exclude=tuple(self._offered.get(thread_id, ())))
                     pending = {record.execution_id for record in records}
                     if pending:
                         self._pending[thread_id] = pending
                     else:
                         self._pending.pop(thread_id, None)
-                if thread_id not in self._pending or thread_id in self._suppressed or self.deliver is None:
+                if thread_id not in self._pending or self.deliver is None:
                     return
                 # Pop before awaiting: racing completions receive their own hint.
                 execution_ids = self._pending.pop(thread_id)

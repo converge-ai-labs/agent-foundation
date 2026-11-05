@@ -109,7 +109,12 @@ class Executions(ToolExecutionRuntime):
     async def _release_recovered(self, claim: ShellClaim) -> None:
         execution_id = claim.execution.record.execution_id
         try:
-            await relinquish_shell(self.runtime, claim.lease, execution_id)
+            await relinquish_shell(
+                self.runtime,
+                claim.lease,
+                execution_id,
+                retry_after_seconds=self.runtime.settings.worker.lease_seconds if self.accepting else 0,
+            )
         finally:
             self._forget_owner(execution_id)
 

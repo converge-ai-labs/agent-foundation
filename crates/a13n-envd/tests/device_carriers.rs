@@ -418,6 +418,102 @@ async fn reverse_websocket_reattaches_sessions_within_idle_deadline() {
     device.stop().await;
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn reverse_websocket_takeover_cancels_original_in_flight_shell() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let device = DeviceProcess::start(
+        "reverse_websocket",
+        listener.local_addr().unwrap(),
+        json!({
+            "idle_timeout_ms":30000,
+            "trusted_executable_roots":["/bin", "/usr/bin"],
+            "shell_profiles":[{"profile_id":"sh", "display_name":"Shell", "native_executable":"/bin/sh",
+                "fixed_arguments":["-c"], "executable_search_roots":["/bin", "/usr/bin"], "max_script_bytes":4096}]
+        }),
+    );
+    let mut socket = accept(&listener).await;
+    let descriptor = result(
+        ws_control(&mut socket, request(None, "initialize", initialize())).await,
+    )["descriptor"]
+        .clone();
+    let opened = result(
+        ws_control(
+            &mut socket,
+            request(
+                None,
+                "session.open",
+                open_params(&descriptor, &device.path("alpha")),
+            ),
+        )
+        .await,
+    );
+    let session = opened["descriptor"]["session_id"].as_str().unwrap();
+    result(
+        ws_control(
+            &mut socket,
+            request(Some(session), "environment.readiness", context("ready")),
+        )
+        .await,
+    );
+    let mut start = request(
+        Some(session),
+        "shell.exec",
+        json!({
+            "context":{"operation_id":"long-shell", "timeout_ms":60000},
+            "request":{"command":{"kind":"shell", "profile_id":"sh", "script":"printf once >> started; sleep 300"}}
+        }),
+    );
+    start["id"] = json!(99);
+    socket
+        .send(Message::Text(start.to_string().into()))
+        .await
+        .unwrap();
+    timeout(Duration::from_secs(5), async {
+        while !device.root.join("alpha/started").exists() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("native shell has started");
+    // Takeover must work while the old request still has its response waiter.
+    let mut attach = request(Some(session), "session.attach", json!({}));
+    attach["eip_owner_epoch"] = json!(2);
+    let attached = result(ws_control(&mut socket, attach).await);
+    assert_eq!(attached["descriptor"]["owner_epoch"], 2);
+    let stale = ws_control(
+        &mut socket,
+        request(Some(session), "session.keepalive", json!({})),
+    )
+    .await;
+    assert_eq!(stale["error"]["data"]["error_type"], "conflict");
+    socket.close(None).await.unwrap();
+    drop(socket);
+    let mut socket = accept(&listener).await;
+    result(ws_control(&mut socket, request(None, "initialize", initialize())).await);
+    let mut attach = request(Some(session), "session.attach", json!({}));
+    attach["eip_owner_epoch"] = json!(3);
+    result(ws_control(&mut socket, attach).await);
+    let mut cancel = request(
+        Some(session),
+        "operation.cancel",
+        json!({
+            "context":{"operation_id":"cancel-original"}, "target_operation_id":"long-shell"
+        }),
+    );
+    cancel["eip_owner_epoch"] = json!(3);
+    let cancelled = result(ws_control(&mut socket, cancel).await);
+    assert_eq!(cancelled["status"], "cancellation_requested");
+    assert_eq!(
+        std::fs::read_to_string(device.root.join("alpha/started")).unwrap(),
+        "once"
+    );
+    let mut close = request(Some(session), "session.close", json!({}));
+    close["eip_owner_epoch"] = json!(3);
+    result(ws_control(&mut socket, close).await);
+    device.stop().await;
+}
+
 async fn ws_send_frame(
     socket: &mut WebSocketStream<TcpStream>,
     session: &str,

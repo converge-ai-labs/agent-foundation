@@ -48,7 +48,6 @@ from .models import (
     ShareGrantRecord,
     ThreadConfigurationRecord,
     ThreadRecord,
-    ToolCompletionSuppressionRecord,
     ToolExecutionHeadRecord,
 )
 from .objects import ObjectKind, ObjectRef
@@ -500,9 +499,6 @@ class ThreadRepository:
                 delete(ToolExecutionHeadRecord).where(ToolExecutionHeadRecord.thread_id.in_(thread_ids))
             )
             await session.execute(
-                delete(ToolCompletionSuppressionRecord).where(ToolCompletionSuppressionRecord.thread_id.in_(thread_ids))
-            )
-            await session.execute(
                 delete(ShareGrantRecord).where(
                     ShareGrantRecord.scope == "thread", ShareGrantRecord.target_id.in_(thread_ids)
                 )
@@ -901,11 +897,9 @@ class ChildExecutionRepository:
             if previous is None:
                 raise StoreIntegrityError("Previous child execution does not exist.", code="child_execution_missing")
             if automatic_completion is not None:
-                from .models import ToolCompletionSuppressionRecord
-
-                suppressed = await session.get(ToolCompletionSuppressionRecord, previous.child_thread_id)
-                if suppressed is not None:
-                    raise StoreIntegrityError("Tool completion was suppressed.", code="tool_completion_suppressed")
+                child = await session.get(ThreadRecord, previous.child_thread_id)
+                if child is None or child.archived:
+                    raise StoreIntegrityError("The child Thread is unavailable.", code="child_execution_not_resumable")
                 parent = await session.get(ThreadRecord, previous.parent_thread_id)
                 parent_config = await session.get(ThreadConfigurationRecord, previous.parent_thread_id)
                 child_config = await session.get(ThreadConfigurationRecord, previous.child_thread_id)

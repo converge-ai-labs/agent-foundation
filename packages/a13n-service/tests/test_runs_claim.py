@@ -82,7 +82,8 @@ async def test_claim_sql_growth(service: SimpleNamespace, scripted_model, runs_k
         finished = perf_counter()
         assert len(leases) == count
         rows = (2 * count if subscribed else 0) + (count if recovery else 0)
-        assert len(sql) == 6 + int(recovery) + (rows + 255) // 256
+        # Context locking and transfer add two statements for the entire batch.
+        assert len(sql) == 8 + int(recovery) + (rows + 255) // 256
         assert len({lease.token for lease in leases}) == count
         async with short_session(service.runtime.storage) as session:
             attempts = (

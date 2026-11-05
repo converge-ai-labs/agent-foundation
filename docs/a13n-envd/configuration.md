@@ -265,7 +265,7 @@ Use these fields in daemon JSON:
 | `default_working_directory`                  | Startup cwd if unset                                                                                                                       |
 | `directory_discovery`                        | `true`                                                                                                                                     |
 | `idle_timeout_ms`                            | Default Session idle lifetime: `3600000` (one hour)                                                                                        |
-| `max_lifetime_ms`                            | Optional positive maximum Session lifetime; omitted means unlimited                                                                        |
+| `max_lifetime_ms`                            | Default maximum Session lifetime; positive when set, otherwise unlimited                                                                   |
 | `execution.uid`, `execution.gid`             | Optional paired Linux native IDs; omitted retains the launcher, including root                                                             |
 | `execution.allow_sudo`                       | `true`; native sudoers still controls authorization                                                                                        |
 | `sandbox`                                    | `{"mode":"disabled"}`; or `restricted` with directory `grants`                                                                             |
@@ -275,6 +275,8 @@ Use these fields in daemon JSON:
 | `computer_use_permission_timeout_ms`         | `120000`; positive startup deadline for macOS permissions or X11/Windows desktop readiness before any EIP transport starts                 |
 | `trusted_executable_roots`, `shell_profiles` | Empty; command methods disabled unless Full Control is enabled                                                                             |
 | `limits`                                     | Device aggregates and per-Session limits                                                                                                   |
+
+`idle_timeout_ms` and `max_lifetime_ms` are defaults used when `session.open` omits `lifecycle`. An explicit Session lifecycle overrides these defaults and remains immutable for that Session.
 
 Default capacity is 128 Sessions, 256 concurrent Device operations, 128 concurrent operations per Session, 4 GiB Device spool, 1 GiB Session spool, 256 MiB per output stream and 2 MiB previews. Keep Session capacities within Device aggregates, previews within stream capacity, and enough spool capacity reserved for both streams.
 

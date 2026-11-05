@@ -22,7 +22,7 @@ pytestmark = pytest.mark.anyio
 
 @pytest.mark.parametrize("cancel_owner", [False, True])
 @pytest.mark.parametrize("cached", [False, True])
-async def test_successor_worker_controls_original_shell(
+async def test_separate_runtime_routes_controls_to_original_shell(
     serve, settings, scripted_model, runs_kit, tmp_path, monkeypatch, cancel_owner, cached, caplog
 ):
     settings = settings.model_copy(
@@ -108,10 +108,10 @@ async def test_successor_worker_controls_original_shell(
             assert refused.status_code == 409 and refused.json()["error"]["details"]["reason"] == "in_use", refused.text
             original_close = resource.close
 
-            async def delayed_close():
+            async def delayed_close(*, detach=False):
                 cleanup_started.set()
                 await cleanup_allowed.wait()
-                await original_close()
+                await original_close(detach=detach)
 
             monkeypatch.setattr(resource, "close", delayed_close)
             # A legitimate new Run freezes reduced permissions. The receiver must use that snapshot,
@@ -127,7 +127,10 @@ async def test_successor_worker_controls_original_shell(
             assert reduced.status_code == 200, reduced.text
             submitted = await runs_kit.submit(service, origin.thread_id, runs_kit.message(agent, "inspect only"))
             assert submitted.status_code == 201, submitted.text
-            (restricted,) = await claim(successor_runtime, worker_id="worker-b", worker_build="test", limit=1)
+            # Live native work keeps Thread affinity. A separate runtime still
+            # exercises the Redis receiver and the frozen caller permissions.
+            assert await claim(successor_runtime, worker_id="worker-b", worker_build="test", limit=1) == []
+            (restricted,) = await claim(successor_runtime, worker_id="worker-a", worker_build="test", limit=1)
             denied_input = Request(
                 thread_id=origin.thread_id,
                 execution_id=record.execution_id,
@@ -157,7 +160,7 @@ async def test_successor_worker_controls_original_shell(
             assert restored.status_code == 200, restored.text
             submitted = await runs_kit.submit(service, origin.thread_id, runs_kit.message(agent, "control it"))
             assert submitted.status_code == 201, submitted.text
-            (successor,) = await claim(successor_runtime, worker_id="worker-b", worker_build="test", limit=1)
+            (successor,) = await claim(successor_runtime, worker_id="worker-a", worker_build="test", limit=1)
             control = Request(
                 thread_id=origin.thread_id,
                 execution_id=record.execution_id,

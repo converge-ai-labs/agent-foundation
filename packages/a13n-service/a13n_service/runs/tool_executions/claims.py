@@ -58,9 +58,10 @@ async def claim_shells(runtime: Runtime, *, worker_id: str, limit: int) -> list[
             if rows
             else {}
         )
+        owned = await contexts.claim(session, {row.thread_id for row in rows}, worker_id)
         current = await now(session)
         for row in rows:
-            if not await contexts.claim(session, row.thread_id, worker_id):
+            if row.thread_id not in owned:
                 continue
             token = secrets.token_urlsafe(32)
             row.worker_id = worker_id
@@ -86,7 +87,9 @@ async def claim_shells(runtime: Runtime, *, worker_id: str, limit: int) -> list[
     return claims
 
 
-async def relinquish_shell(runtime: Runtime, lease: Lease, execution_id: str) -> None:
+async def relinquish_shell(
+    runtime: Runtime, lease: Lease, execution_id: str, *, retry_after_seconds: float = 0
+) -> None:
     """Make detached supervision claimable; a late old-owner release changes nothing."""
     async with transaction(runtime.storage) as session:
         row = await lock(session, ToolExecutionRow, execution_id)
@@ -98,5 +101,6 @@ async def relinquish_shell(runtime: Runtime, lease: Lease, execution_id: str) ->
             and row.completed_at is None
             and row.shell is not None
         ):
-            row.lease_expires_at = await now(session)
-            runtime.wake_workers(session)
+            row.lease_expires_at = await now(session) + timedelta(seconds=retry_after_seconds)
+            if retry_after_seconds == 0:
+                runtime.wake_workers(session)

@@ -58,7 +58,8 @@ async def claim(runtime: Runtime, *, worker_id: str, worker_build: str, limit: i
                 .with_for_update(of=RunRow, skip_locked=True)
             )
         ).all()
-        runs = [run for run, _, _ in candidates if await contexts.claim(session, run.thread_id, worker_id)]
+        owned = await contexts.claim(session, {run.thread_id for run, _, _ in candidates}, worker_id)
+        runs = [run for run, _, _ in candidates if run.thread_id in owned]
         schedule_origins = {
             run.id: ScheduleOrigin(schedule_id=schedule_id, occurrence_id=occurrence_id)
             for run, schedule_id, occurrence_id in candidates

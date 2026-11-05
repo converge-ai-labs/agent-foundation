@@ -3,7 +3,7 @@
 import asyncio
 import hashlib
 from collections.abc import AsyncIterator, Awaitable, Callable
-from contextlib import asynccontextmanager
+from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field
 
 from a13n_envd_client import EIPDeviceConnection, EIPSession, EIPSessionStateError
@@ -36,6 +36,10 @@ class EnvdSessionRecovery:
 
     state: EnvdSessionState | None = field(default=None, repr=False)
     checkpoint: Callable[[EnvdSessionState], Awaitable[None]] | None = field(default=None, repr=False)
+    ownership: Callable[[], AbstractAsyncContextManager[EnvdSessionState | None]] | None = field(
+        default=None, repr=False
+    )
+    _scope: AsyncExitStack | None = field(default=None, init=False, repr=False)
     _session: EIPSession | None = field(default=None, init=False, repr=False)
     _users: int = field(default=0, init=False)
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False, repr=False)
@@ -58,38 +62,44 @@ class EnvdSessionRecovery:
                 raise EIPSessionStateError("Session context belongs to another Device")
             if expected_boundary is not None:
                 expected_boundary.check(device.descriptor.boundary)
-            compatible = self._compatible(device, target, working_directory, required_methods, policy_digest)
             if self._session is not None and self._session.is_closed:
-                self._session = None
-                self._users = 0
+                with CancelScope(shield=True):
+                    await self._release()
             if self._session is not None:
-                if not compatible:
+                if not self._compatible(device, target, working_directory, required_methods, policy_digest):
                     raise EIPSessionStateError("Active Session context has an incompatible binding")
                 session = self._session
             else:
-                session = None
-                previous = self.state
-                if compatible and previous is not None:
-                    # Reserve the next epoch durably before takeover. An uncertain
-                    # response retains this reservation; a later attempt advances it.
-                    epoch = previous.descriptor.owner_epoch + 1
-                    await self._save(
-                        previous.model_copy(
-                            update={"descriptor": previous.descriptor.model_copy(update={"owner_epoch": epoch})}
-                        )
-                    )
-                    try:
-                        session = await device.attach_session(previous.descriptor, owner_epoch=epoch)
-                    except EIPMethodError as error:
-                        if error.error.data.error_type != ErrorType.NOT_INITIALIZED:
-                            raise
-                if session is None:
-                    session = await device.open_session(
-                        working_directory=working_directory,
-                        required_methods=tuple(sorted(required_methods)),
-                        egress=egress,
-                    )
+                scope = AsyncExitStack()
                 try:
+                    if self.ownership is not None:
+                        # Reload under Host ownership, even if an old connector kept
+                        # this context alive while another Host advanced its epoch.
+                        self.state = await scope.enter_async_context(self.ownership())
+                    compatible = self._compatible(device, target, working_directory, required_methods, policy_digest)
+                    session = None
+                    previous = self.state
+                    if compatible and previous is not None:
+                        # Reserve the next epoch durably before takeover. An uncertain
+                        # response retains this reservation; a later attempt advances it.
+                        epoch = previous.descriptor.owner_epoch + 1
+                        await self._save(
+                            previous.model_copy(
+                                update={"descriptor": previous.descriptor.model_copy(update={"owner_epoch": epoch})}
+                            )
+                        )
+                        try:
+                            session = await device.attach_session(previous.descriptor, owner_epoch=epoch)
+                        except EIPMethodError as error:
+                            if error.error.data.error_type != ErrorType.NOT_INITIALIZED:
+                                raise
+                    if session is None:
+                        session = await device.open_session(
+                            working_directory=working_directory,
+                            required_methods=tuple(sorted(required_methods)),
+                            egress=egress,
+                        )
+                    scope.push_async_callback(session.detach)
                     await self._save(
                         EnvdSessionState(
                             target=target,
@@ -100,8 +110,9 @@ class EnvdSessionRecovery:
                     )
                 except BaseException:
                     with CancelScope(shield=True):
-                        await session.detach()
+                        await scope.aclose()
                     raise
+                self._scope = scope
                 self._session = session
             self._users += 1
         try:
@@ -115,8 +126,14 @@ class EnvdSessionRecovery:
                     if self._session is session:
                         self._users -= 1
                         if self._users == 0:
-                            self._session = None
-                            await session.detach()
+                            await self._release()
+
+    async def _release(self) -> None:
+        self._session = None
+        self._users = 0
+        scope, self._scope = self._scope, None
+        if scope is not None:
+            await scope.aclose()
 
     def _compatible(
         self,

@@ -16,14 +16,14 @@ from a13n_harness.tool_execution_payload import ToolExecutionPayload
 from a13n_logging import get_logger
 from pydantic import BaseModel
 from pydantic_ai.messages import ModelMessage, ModelRequest
-from sqlalchemy import case, delete, select, update
+from sqlalchemy import and_, case, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_harness_ui.errors import ObjectIntegrityError
 
 from .checkpoint_lock import checkpoint_lock
 from .database import DatabaseSessions, short_session, transaction
-from .models import DeletedThreadRecord, ToolCompletionSuppressionRecord, ToolExecutionHeadRecord
+from .models import DeletedThreadRecord, ToolExecutionHeadRecord
 from .objects import ImmutableObjectStore, ObjectKind, ObjectRef
 from .ownership import OwnershipLocks
 
@@ -78,10 +78,9 @@ def consumed(row: ToolExecutionHeadRecord, at: datetime) -> None:
             row.expires_at = min(row.expires_at, at + RESULT_RETENTION)
 
 
-async def notify(session: AsyncSession, row: ToolExecutionHeadRecord) -> None:
+def notify(row: ToolExecutionHeadRecord) -> None:
     if row.terminal and row.foreground_released and row.completion_state == "waiting":
-        suppressed = await session.get(ToolCompletionSuppressionRecord, row.thread_id)
-        row.completion_state = "suppressed" if suppressed is not None else "pending"
+        row.completion_state = "pending"
     if row.delivery_acknowledged:
         consumed(row, datetime.now(UTC))
 
@@ -141,12 +140,16 @@ class ToolExecutionRepository:
             if await session.get(DeletedThreadRecord, record.thread_id) is not None:
                 raise ValueError("Execution belongs to a deleted Thread")
             row = await session.get(ToolExecutionHeadRecord, record.execution_id)
+            if row is None and record.created_at + MAX_RESULT_RETENTION <= datetime.now(UTC):
+                # Only fresh admissions create heads. Old owners cannot recreate
+                # a collected execution after its bounded tombstone window.
+                return True
             if row is not None and row.thread_id != record.thread_id:
                 raise ValueError("Execution belongs to another Thread")
             if row is not None and row.terminal:
                 row.foreground_released |= record.foreground_released
                 row.delivery_acknowledged |= record.delivery_acknowledged
-                await notify(session, row)
+                notify(row)
                 return True
         payload = ExecutionPayload(
             execution_id=record.execution_id,
@@ -193,7 +196,7 @@ class ToolExecutionRepository:
                         row.expires_at = (record.completed_at or datetime.now(UTC)) + MAX_RESULT_RETENTION
                 row.foreground_released |= record.foreground_released
                 row.delivery_acknowledged |= record.delivery_acknowledged
-            await notify(session, row)
+            notify(row)
         return record.terminal
 
     async def get(self, thread_id: str, execution_id: str) -> StoredToolExecution | None:
@@ -210,7 +213,17 @@ class ToolExecutionRepository:
             return replace(payload.result.execution(record), shell=payload.shell)
 
     async def prune(self, *, limit: int = 100) -> int:
-        """Collect superseded, expired and deleted-Thread payloads in bounded batches."""
+        """Collect payloads and expired heads through the existing bounded maintenance sweep."""
+        async with transaction(self.sessions) as session:
+            expired = (
+                select(ToolExecutionHeadRecord.execution_id)
+                .where(ToolExecutionHeadRecord.expires_at <= datetime.now(UTC) - MAX_RESULT_RETENTION)
+                .order_by(ToolExecutionHeadRecord.expires_at, ToolExecutionHeadRecord.execution_id)
+                .limit(limit)
+            )
+            await session.execute(
+                delete(ToolExecutionHeadRecord).where(ToolExecutionHeadRecord.execution_id.in_(expired))
+            )
         references = sorted(
             (ref for ref in await self.objects.references() if ref.object_kind == ObjectKind.tool_execution),
             key=lambda ref: ref.logical_digest,
@@ -231,6 +244,8 @@ class ToolExecutionRepository:
                                 continue
                             row.payload_digest = None
                             row.composition_json = None
+                            if row.completion_state in {"waiting", "pending"}:
+                                row.completion_state = "expired"
                     # Commit the released reference before file deletion. A crash
                     # here leaves an orphan that the next scan can safely remove.
                     await self.objects.remove(reference)
@@ -251,8 +266,23 @@ class ToolExecutionRepository:
     async def list(self, thread_id: str, *, offset: int, limit: int) -> tuple[ToolExecutionRecord, ...]:
         priority = case(
             (ToolExecutionHeadRecord.terminal.is_(False), 0),
-            (ToolExecutionHeadRecord.delivery_acknowledged.is_(False), 1),
-            else_=2,
+            (
+                and_(
+                    ToolExecutionHeadRecord.delivery_acknowledged.is_(False),
+                    ToolExecutionHeadRecord.payload_digest.is_not(None),
+                    or_(
+                        ToolExecutionHeadRecord.expires_at.is_(None),
+                        ToolExecutionHeadRecord.expires_at > datetime.now(UTC),
+                    ),
+                    func.json_extract(ToolExecutionHeadRecord.record_json, "$.result_available") == 1,
+                ),
+                1,
+            ),
+            (
+                func.json_extract(ToolExecutionHeadRecord.record_json, "$.status").in_(("failed", "cancelled", "lost")),
+                2,
+            ),
+            else_=3,
         )
         async with short_session(self.sessions) as session:
             rows = await session.scalars(
@@ -279,7 +309,7 @@ class ToolExecutionRepository:
             row = await session.get(ToolExecutionHeadRecord, execution_id)
             if row is not None and row.thread_id == thread_id:
                 row.foreground_released = True
-                await notify(session, row)
+                notify(row)
 
     async def request_cancellation(self, thread_id: str, execution_id: str) -> None:
         async with transaction(self.sessions) as session:
@@ -303,6 +333,7 @@ class ToolExecutionRepository:
                 .where(
                     ToolExecutionHeadRecord.thread_id == thread_id,
                     ToolExecutionHeadRecord.completion_state == "pending",
+                    ToolExecutionHeadRecord.expires_at > datetime.now(UTC),
                     ToolExecutionHeadRecord.execution_id.not_in(exclude),
                 )
                 .order_by(ToolExecutionHeadRecord.execution_id)
@@ -317,44 +348,11 @@ class ToolExecutionRepository:
                     select(ToolExecutionHeadRecord.thread_id)
                     .where(
                         ToolExecutionHeadRecord.completion_state == "pending",
+                        ToolExecutionHeadRecord.expires_at > datetime.now(UTC),
                         ToolExecutionHeadRecord.thread_id > after,
                     )
                     .distinct()
                     .order_by(ToolExecutionHeadRecord.thread_id)
-                    .limit(limit)
-                )
-            )
-
-    async def suppress(self, thread_id: str) -> None:
-        async with transaction(self.sessions) as session:
-            if await session.get(ToolCompletionSuppressionRecord, thread_id) is None:
-                session.add(ToolCompletionSuppressionRecord(thread_id=thread_id))
-            await session.execute(
-                update(ToolExecutionHeadRecord)
-                .where(
-                    ToolExecutionHeadRecord.thread_id == thread_id,
-                    ToolExecutionHeadRecord.completion_state == "pending",
-                )
-                .values(completion_state="suppressed")
-            )
-
-    async def user_input(self, thread_id: str) -> None:
-        async with transaction(self.sessions) as session:
-            await session.execute(
-                delete(ToolCompletionSuppressionRecord).where(ToolCompletionSuppressionRecord.thread_id == thread_id)
-            )
-
-    async def is_suppressed(self, thread_id: str) -> bool:
-        async with short_session(self.sessions) as session:
-            return await session.get(ToolCompletionSuppressionRecord, thread_id) is not None
-
-    async def suppressed_threads(self, *, after: str = "", limit: int = 100) -> tuple[str, ...]:
-        async with short_session(self.sessions) as session:
-            return tuple(
-                await session.scalars(
-                    select(ToolCompletionSuppressionRecord.thread_id)
-                    .where(ToolCompletionSuppressionRecord.thread_id > after)
-                    .order_by(ToolCompletionSuppressionRecord.thread_id)
                     .limit(limit)
                 )
             )

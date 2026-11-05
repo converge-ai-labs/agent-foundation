@@ -15,7 +15,10 @@ impl Daemon {
         let mut daemon = Self::with_generation(config, generation)?;
         daemon.ids = ShortIdAllocator::for_session(&session_id);
         let daemon = Arc::new(daemon);
-        let carrier = daemon.carrier(outbound.clone());
+        let mut carrier = daemon.carrier(outbound.clone());
+        Arc::get_mut(&mut carrier)
+            .expect("new private carrier")
+            .authority = CarrierAuthority::Delegated;
         carrier.initialized.store(true, Ordering::Release);
         let session = Arc::new(Session::new(
             &daemon,
@@ -51,8 +54,8 @@ impl Daemon {
         let session = self.lookup(session_id)?;
         let _cleanup = session.cleanup.lock().await;
         session.transfers.detach().await;
-        let mut state = session.session.state();
-        state.owner = None;
+        // The outer Session owns public attachment. This private carrier remains
+        // authorized for already-admitted work while its transfer route is absent.
         Ok(())
     }
 }

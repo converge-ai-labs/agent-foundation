@@ -364,10 +364,9 @@ async def test_cleanup_after_revocation_keeps_identity_and_expiry_fences(service
             async with transaction(service.runtime.storage) as session:
                 row = await session.get_one(ToolExecutionRow, record.execution_id)
                 row.lease_expires_at = datetime.now(UTC) - timedelta(seconds=1)
-            assert await heartbeat(service.runtime, lease.worker_id) == (
-                ((lease.thread_id, record.execution_id),),
-                set(),
-            )
+            # Expiry loses ownership; heartbeat must neither renew nor request
+            # native cancellation on behalf of the stale owner.
+            assert await heartbeat(service.runtime, lease.worker_id) == ((), set())
             with pytest.raises(LeaseLost):
                 async with source.operation_guard(EnvironmentAction.PROCESS_KILL):
                     pytest.fail("cleanup must retain expiry fencing")

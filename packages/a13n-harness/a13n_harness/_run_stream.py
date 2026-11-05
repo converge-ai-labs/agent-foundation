@@ -1076,7 +1076,14 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             raise RunError("The run is not active.", code="run_not_active")
         context = self._context
         if not immediate:
-            return await context._steering.steer(input, input_id=input_id, before_accept=before_accept)
+
+            def check_active() -> None:
+                if self._steering_stopped.is_set():
+                    raise RunError("The run is not active.", code="run_not_active")
+                if before_accept is not None:
+                    before_accept()
+
+            return await context._steering.steer(input, input_id=input_id, before_accept=check_active)
         if context.tool_execution is None and not best_effort:
             raise RunError(
                 "Immediate steering requires a Host-bound ToolExecutionRuntime; ordinary steering remains available.",

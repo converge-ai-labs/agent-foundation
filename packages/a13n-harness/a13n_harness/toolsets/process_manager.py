@@ -38,6 +38,7 @@ from a13n_harness.tool_execution import (
 )
 
 from .events import ShellStatusEvent
+from .output import disclose_text_paths
 from .shell_control import ShellControl, ShellTarget
 from .shell_observation import (
     ShellObservation,
@@ -417,7 +418,21 @@ class _ProcessController:
                         wait_seconds=0,
                         max_inline_bytes=_MAX_MODEL_OUTPUT_BYTES,
                     )
-                    result = _shell_exec_result(None, final, bound_output=False)
+                    native_result = _shell_exec_result(None, final, bound_output=False)
+                    result = cast(
+                        ShellExecSuccess,
+                        await disclose_text_paths(
+                            self._context if self._context is not None else runtime,
+                            cast(dict[str, JsonValue], native_result),
+                            text_paths=(("stdout", "text"), ("stderr", "text")),
+                            content_complete=(
+                                native_result["stdout"]["content_complete"]
+                                and native_result["stderr"]["content_complete"]
+                            ),
+                            noun="command result",
+                            preserve_tail=True,
+                        ),
+                    )
                     await runtime.publish_shell_result(result)
                     return result
                 if _is_final(info):

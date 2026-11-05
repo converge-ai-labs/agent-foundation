@@ -5,12 +5,25 @@ from a13n_harness.tool_execution import StoredToolExecution, ToolExecutionRecord
 from a13n_harness_ui.settings import StorageSettings
 from a13n_harness_ui.storage import tool_executions
 from a13n_harness_ui.storage.database import short_session, transaction
-from a13n_harness_ui.storage.models import ToolExecutionHeadRecord
+from a13n_harness_ui.storage.models import ThreadRecord, ToolExecutionHeadRecord
 from a13n_harness_ui.storage.objects import ObjectKind
 from a13n_harness_ui.storage.runtime import open_local_store
 from anyio import Event, create_task_group, fail_after, sleep
 
 pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
+
+
+async def seed_thread(store, thread_id="thread-a"):
+    async with transaction(store.database.sessions) as session:
+        session.add(
+            ThreadRecord(
+                thread_id=thread_id,
+                created_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
+                initial_state_schema_version="1",
+                initial_state_digest="a" * 64,
+            )
+        )
 
 
 def execution(identity="exec-a", thread_id="thread-a", *, terminal=True):
@@ -82,10 +95,18 @@ async def test_retention_starts_at_consumption_and_keeps_independent_maximum(tmp
         assert not (await repo.get("thread-a", "exec-a")).record.result_available
         assert not (await repo.list("thread-a", offset=0, limit=10))[0].result_available
         assert not [ref for ref in await store.objects.references() if ref.object_kind == ObjectKind.tool_execution]
+        assert await repo.pending("thread-a") == ()
+        assert await repo.pending_threads() == ()
         # Stale saves must not recreate a result or reset expiration.
         await repo.save(original)
         assert not (await repo.get("thread-a", "exec-a")).record.result_available
         assert not [ref for ref in await store.objects.references() if ref.object_kind == ObjectKind.tool_execution]
+        clock.current += timedelta(days=1)
+        await repo.prune()
+        assert await repo.get("thread-a", "exec-a") is None
+        assert await repo.list("thread-a", offset=0, limit=10) == ()
+        await repo.save(original)
+        assert await repo.get("thread-a", "exec-a") is None
 
 
 async def test_pruning_collects_superseded_and_unselected_publications_without_sharing_results(tmp_path, monkeypatch):
@@ -191,7 +212,6 @@ async def test_completion_offer_has_one_app_owner_until_settlement_or_owner_exit
 async def test_deletion_blocks_retained_work_and_collects_only_deleted_family(tmp_path):
     from a13n_harness_ui.app import open_harness_ui_app
     from a13n_harness_ui.errors import StoreConflictError
-    from a13n_harness_ui.storage.models import ToolCompletionSuppressionRecord
 
     from .test_app import _settings, _write_configuration
 
@@ -216,7 +236,6 @@ async def test_deletion_blocks_retained_work_and_collects_only_deleted_family(tm
                 busy_thread_ids=frozenset(),
             )
         await repo.save(execution(thread_id=child.thread_id))
-        await repo.suppress(child.thread_id)
         await repo.save(execution("exec-b", "unrelated-thread"))
         await app._store.threads.delete(
             root.thread_id,
@@ -226,21 +245,20 @@ async def test_deletion_blocks_retained_work_and_collects_only_deleted_family(tm
         )
         assert await repo.get(child.thread_id, "exec-a") is None
         async with short_session(app._store.database.sessions) as session:
-            assert await session.get(ToolCompletionSuppressionRecord, child.thread_id) is None
+            assert await session.get(ThreadRecord, child.thread_id) is None
+        app._tool_executions.forget(child.thread_id)
         assert await repo.prune() == 2
         assert (await repo.get("unrelated-thread", "exec-b")).result == "same result"
 
 
-async def test_successor_refreshes_suppression_cleared_by_another_app(tmp_path):
+async def test_successor_discovers_results_published_by_another_app(tmp_path):
     from a13n_harness_ui.tool_executions import ToolExecutions
 
     settings = StorageSettings(data_root=tmp_path)
     async with open_local_store(settings) as first, open_local_store(settings) as second:
+        await seed_thread(first)
         owners = [ToolExecutions(first.tool_executions), ToolExecutions(second.tool_executions)]
-        await owners[0].suppress("thread-a")
         await owners[1].restore()
-        assert not owners[1].allows_completion("thread-a")
-        await owners[0].user_input("thread-a")
         await first.tool_executions.save(execution())
         owners[0].stop()
         delivered = Event()
@@ -259,3 +277,83 @@ async def test_successor_refreshes_suppression_cleared_by_another_app(tmp_path):
                 await delivered.wait()
                 owners[1].stop()
         assert offers == [("exec-a",)]
+
+
+async def test_completion_retries_publish_change_only_for_new_completion(tmp_path):
+    from a13n_harness_ui.tool_executions import ToolExecutions
+
+    async with open_local_store(StorageSettings(data_root=tmp_path)) as store:
+        owner = ToolExecutions(store.tool_executions)
+        original = execution()
+        await store.tool_executions.save(original)
+        changes, offers = [], []
+
+        async def changed(thread_id):
+            changes.append(thread_id)
+
+        async def blocked(thread_id, prompt, identities):
+            offers.append(identities)
+            return False
+
+        owner.changed, owner.deliver = changed, blocked
+        owner._completed(original.record)
+        for _ in range(3):
+            await owner._deliver("thread-a")
+        assert changes == ["thread-a"]
+        assert offers == [("exec-a",)] * 3
+        await owner.close(timeout_seconds=0)
+
+
+async def test_retained_listing_matches_harness_priority_before_pagination(tmp_path):
+    from dataclasses import replace
+
+    from a13n_harness.tool_execution import MemoryToolExecutionStore
+
+    async with open_local_store(StorageSettings(data_root=tmp_path)) as store:
+        memory = MemoryToolExecutionStore()
+        for index, (status, available, acknowledged) in enumerate(
+            [
+                ("failed", False, False),
+                ("succeeded", True, True),
+                ("succeeded", False, False),
+                ("succeeded", True, False),
+                ("running", False, False),
+                ("cancelled", False, True),
+            ]
+        ):
+            item = execution(f"exec-{index}", terminal=status != "running")
+            item = replace(
+                item,
+                record=item.record.model_copy(
+                    update={
+                        "status": status,
+                        "result_available": available,
+                        "delivery_acknowledged": acknowledged,
+                    }
+                ),
+            )
+            await store.tool_executions.save(item)
+            await memory.save(item)
+        for offset in range(6):
+            expected = await memory.list("thread-a", offset=offset, limit=1)
+            actual = await store.tool_executions.list("thread-a", offset=offset, limit=1)
+            assert [record.execution_id for record in actual] == [record.execution_id for record in expected]
+
+
+async def test_head_collection_is_bounded_and_preserves_active_calls(tmp_path, clock):
+    async with open_local_store(StorageSettings(data_root=tmp_path)) as store:
+        repo = store.tool_executions
+        originals = [execution(f"exec-{index}") for index in range(3)]
+        for item in originals:
+            await repo.save(item)
+        active = execution("exec-active", terminal=False)
+        await repo.save(active)
+        clock.current += timedelta(days=3)
+        assert await repo.pending_threads() == ()
+        for remaining in (2, 1, 0):
+            await repo.prune(limit=1)
+            assert len(await repo.list("thread-a", offset=0, limit=10)) == remaining + 1
+        assert (await repo.get("thread-a", "exec-active")).record.status == "running"
+        for item in originals:
+            await repo.save(item)
+        assert len(await repo.list("thread-a", offset=0, limit=10)) == 1

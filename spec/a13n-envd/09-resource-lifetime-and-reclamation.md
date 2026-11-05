@@ -26,7 +26,7 @@ The Host persists Session identity and recovery metadata separately from live cl
 
 A new Session starts at `owner_epoch = 1`. Every Session control request carries `eip_owner_epoch`; Device requests omit it. `session.attach` requires a strictly newer epoch and returns it in the descriptor. Other requests must match the installed epoch and attachment. Stale requests fail with `conflict` without refreshing activity or changing resources. The authenticated Host allocates and persists takeover epochs under its own execution ownership; the epoch fences obsolete owners, not authorization between independent principals.
 
-Takeover serializes with native mutations and cleanup at the Session boundary, aborts old incomplete transfers, installs the new attachment and fences delayed old-carrier cleanup. The Host fences result publication separately in its durable store. Lost attachment responses do not authorize command replay. Native operation identity and evidence remain unchanged across attachment.
+Takeover serializes with request admission and attachment cleanup at the outer Session boundary, aborts old incomplete transfers, installs the new attachment and fences delayed old-carrier cleanup. It rejects subsequent admissions from the old owner; already-admitted native operations settle under their original identity without blocking takeover. The private isolated-worker carrier executes outer-admitted requests without a second public ownership fence. The Host fences result publication separately in its durable store. Lost attachment responses do not authorize command replay. Native operation identity and evidence remain unchanged across attachment.
 
 ## Session Cleanup
 

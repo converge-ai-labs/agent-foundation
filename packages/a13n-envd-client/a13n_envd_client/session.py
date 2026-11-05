@@ -4,7 +4,7 @@ import asyncio
 import math
 import secrets
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from importlib.metadata import PackageNotFoundError, version
 from types import TracebackType
 
@@ -331,9 +331,12 @@ class EIPSession:
             self._users -= 1
             if self._users == 0:
                 self._stop_keepalive()
-                if not self._closed:
-                    async with asyncio.timeout(5.0):
-                        await self._client.session_keepalive(SessionKeepaliveParams())
+                if not self.is_closed:
+                    # A final touch only extends the idle window; transport failure
+                    # must not replace the caller's result or exception.
+                    with suppress(EIPClientError, TimeoutError):
+                        async with asyncio.timeout(5.0):
+                            await self._client.session_keepalive(SessionKeepaliveParams())
 
     def _acquire(self) -> None:
         self._ensure_open()

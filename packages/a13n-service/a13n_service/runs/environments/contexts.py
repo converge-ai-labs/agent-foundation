@@ -14,7 +14,7 @@ from weakref import WeakValueDictionary
 
 from a13n_harness import RunConfiguration
 from a13n_harness.environment.session_recovery import EnvdSessionRecovery, EnvdSessionState
-from sqlalchemy import SQLColumnExpression, exists, func, or_, select
+from sqlalchemy import SQLColumnExpression, case, exists, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
@@ -23,7 +23,7 @@ from sqlalchemy.sql.elements import ColumnElement
 from a13n_service.infra.db import lock, transaction
 from a13n_service.runs.attempts import Lease, LeaseLost
 from a13n_service.runs.environments.tables import ThreadExecutionContextRow
-from a13n_service.runs.schemas import EnvironmentMount, canonical_json
+from a13n_service.runs.schemas import EnvironmentMount, RunOptions, canonical_json
 from a13n_service.runs.tables import AttemptRow, RunRow, ThreadRow, ToolExecutionRow
 
 if TYPE_CHECKING:
@@ -81,21 +81,36 @@ async def prepare(session: AsyncSession, thread: ThreadRow) -> None:
     )
 
 
-async def claim(session: AsyncSession, thread_id: str, worker_id: str) -> bool:
-    row = await session.scalar(
-        select(ThreadExecutionContextRow)
-        .where(ThreadExecutionContextRow.thread_id == thread_id)
-        .with_for_update(skip_locked=True)
+async def claim(session: AsyncSession, thread_ids: set[str], worker_id: str) -> set[str]:
+    """Lock candidate contexts together, then recheck live leases before one batch transfer."""
+    if not thread_ids:
+        return set()
+    row = ThreadExecutionContextRow
+    locked = list(
+        await session.scalars(
+            select(row.thread_id)
+            .where(row.thread_id.in_(thread_ids))
+            .order_by(row.thread_id)
+            .with_for_update(skip_locked=True)
+        )
     )
-    if row is None:
-        return False
-    if row.worker_id == worker_id:
-        return True
-    if row.worker_id is not None and await session.scalar(select(live_owner(thread_id, row.worker_id))):
-        return False
-    row.worker_id = worker_id
-    row.generation += 1
-    return True
+    if not locked:
+        return set()
+    return set(
+        await session.scalars(
+            update(row)
+            .where(
+                row.thread_id.in_(locked),
+                or_(row.worker_id == worker_id, row.worker_id.is_(None), ~live_owner(row.thread_id, row.worker_id)),
+            )
+            .values(
+                worker_id=worker_id,
+                generation=case((row.worker_id == worker_id, row.generation), else_=row.generation + 1),
+            )
+            .returning(row.thread_id)
+            .execution_options(synchronize_session=False)
+        )
+    )
 
 
 def binding_key(mount: EnvironmentMount, configuration: RunConfiguration) -> str:
@@ -103,6 +118,25 @@ def binding_key(mount: EnvironmentMount, configuration: RunConfiguration) -> str
     return hashlib.sha256(
         canonical_json({"mount": mount.model_dump(mode="json"), "configuration": configuration.model_dump(mode="json")})
     ).hexdigest()
+
+
+async def retained_bindings(session: AsyncSession, lease: Lease) -> set[str]:
+    """Keep the continuation head, current Run and bindings needed by unfinished work."""
+    last_run = select(ThreadRow.last_run_id).where(ThreadRow.id == lease.thread_id).scalar_subquery()
+    runs = select(RunRow.environment_mounts, RunRow.options).where(
+        RunRow.thread_id == lease.thread_id,
+        or_(RunRow.id == lease.run_id, RunRow.id == last_run, RunRow.status.in_(("accepted", "running", "waiting"))),
+    )
+    tools = (
+        select(ToolExecutionRow.environment_mounts, RunRow.options)
+        .join(RunRow, RunRow.id == ToolExecutionRow.run_id)
+        .where(ToolExecutionRow.thread_id == lease.thread_id, ToolExecutionRow.completed_at.is_(None))
+    )
+    bindings: set[str] = set()
+    for mounts, options in await session.execute(runs.union_all(tools)):
+        configuration = RunOptions.model_validate(options).configuration or RunConfiguration()
+        bindings.update(binding_key(EnvironmentMount.model_validate(mount), configuration) for mount in mounts)
+    return bindings
 
 
 class Contexts:
@@ -137,7 +171,11 @@ class Contexts:
                             or not await session.scalar(select(live_owner(lease.thread_id, lease.worker_id)))
                         ):
                             raise LeaseLost()
-                        row.sessions = {**row.sessions, binding: state.model_dump(mode="json")}
+                        retained = await retained_bindings(session, lease)
+                        row.sessions = {
+                            **{key: value for key, value in row.sessions.items() if key in retained},
+                            binding: state.model_dump(mode="json"),
+                        }
 
                 recovery = EnvdSessionRecovery(
                     None if saved is None else EnvdSessionState.model_validate(saved), checkpoint=checkpoint

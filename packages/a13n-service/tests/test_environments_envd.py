@@ -693,7 +693,15 @@ async def test_retained_shell_recovers_original_process_after_run_seals(
             context = await session.get_one(ThreadExecutionContextRow, thread_id)
             original_sessions = context.sessions
         scripted_model.say("The original command is still running.")
-        following = await runs_kit.submit(service, thread_id, runs_kit.message(agent, "Continue while it runs"))
+        following = await runs_kit.submit(
+            service,
+            thread_id,
+            runs_kit.message(
+                agent,
+                "Continue while it runs",
+                options={"configuration": {"extensions": {"test.partition": "successor"}}},
+            ),
+        )
         assert following.status_code == 201, following.text
         assert await claim(service.runtime, worker_id="worker-other", worker_build="test", limit=1) == []
         unrelated = await runs_kit.start_thread(service, agent, "Unrelated work")
@@ -704,7 +712,8 @@ async def test_retained_shell_recovers_original_process_after_run_seals(
         assert any(record.execution_id == execution_id for record in service.runtime.executions.active)
         async with transaction(service.runtime.storage) as session:
             context = await session.get_one(ThreadExecutionContextRow, thread_id)
-            assert context.sessions == original_sessions
+            assert original_sessions.items() <= context.sessions.items()
+            assert len(context.sessions) == len(original_sessions) + 1
 
     # A scanner must not rotate the lease of its own still-detaching supervisor.
     async with transaction(service.runtime.storage) as session:
@@ -748,8 +757,18 @@ async def test_retained_shell_recovers_original_process_after_run_seals(
 
             with monkeypatch.context() as patch:
                 patch.setattr(EIPDeviceConnection, "attach_session", unavailable)
-                await successor.executions.recover("worker-successor")
-                await asyncio.wait_for(successor.executions.join(), 10)
+                from a13n_service.infra.db import now
+
+                for _ in range(2):
+                    await successor.executions.recover("worker-successor")
+                    await asyncio.wait_for(successor.executions.join(), 10)
+                    # Repeated outages wait a lease interval, without losing native identity.
+                    assert await claim_shells(successor, worker_id="worker-successor", limit=1) == []
+                    async with transaction(service.runtime.storage) as session:
+                        row = await session.get_one(ToolExecutionRow, execution_id)
+                        current = await now(session)
+                        assert (row.lease_expires_at - current).total_seconds() > 0
+                        row.lease_expires_at = current
             pending = await successor.executions.store.get(thread_id, execution_id)
             assert pending is not None and not pending.record.terminal
             assert pending.shell is not None and pending.shell.process.identity is not None
@@ -999,7 +1018,14 @@ async def test_thread_context_cache_restores_bindings_and_fences_checkpoints(
             target=daemon.endpoint, descriptor=native.descriptor, working_directory=str(daemon.workspace)
         )
         assert recovery.checkpoint is not None
+        async with transaction(service.runtime.storage) as session:
+            row = await session.get_one(ThreadExecutionContextRow, lease.thread_id)
+            row.sessions = {f"obsolete-{index}": saved.model_dump(mode="json") for index in range(20)}
         await recovery.checkpoint(saved)
+        async with transaction(service.runtime.storage) as session:
+            row = await session.get_one(ThreadExecutionContextRow, lease.thread_id)
+            assert len(row.sessions) == 1
+            assert list(row.sessions.values()) == [saved.model_dump(mode="json")]
         await native.close()
     reference = weakref.ref(recovery)
     del recovery

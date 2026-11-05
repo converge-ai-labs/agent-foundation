@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from copy import deepcopy
-from typing import Literal, NotRequired, TypedDict, cast
+from typing import Literal, NotRequired, Protocol, TypedDict, cast
 
 from pydantic import JsonValue, TypeAdapter
 
@@ -49,8 +49,14 @@ def tool_output_size(value: Mapping[str, JsonValue]) -> int:
     return len(tool_output_text(value))
 
 
+class ToolOutputSpill(Protocol):
+    """Save disclosure bytes in a Run or retain them for later materialization."""
+
+    async def _spill_tool_result(self, data: bytes, *, suffix: str) -> str | None: ...
+
+
 async def create_tool_output_disclosure(
-    context: AgentContext,
+    context: ToolOutputSpill,
     value: Mapping[str, JsonValue],
     *,
     content_complete: bool,
@@ -149,7 +155,7 @@ async def disclose_text_fields(
 
 
 async def disclose_text_paths(
-    context: AgentContext,
+    context: ToolOutputSpill,
     value: Mapping[str, JsonValue],
     *,
     text_paths: Sequence[tuple[str, ...]],

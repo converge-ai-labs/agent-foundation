@@ -555,8 +555,15 @@ class RootRunCoordinator:
             raise RunCoordinationError("Root receipt does not exist in this App.", code="root_receipt_missing")
         stream = operation.stream if operation.status is RootOperationStatus.running else None
         input_files = operation.input_files
-        if stream is None:
+        if stream is None or operation.cancel_requested:
             return RootControlResult(receipt_id=receipt_id, accepted=False)
+
+        def check_active() -> None:
+            if operation.cancel_requested or operation.status is not RootOperationStatus.running:
+                raise RunCoordinationError("The root operation is no longer accepting input.", code="root_not_running")
+            if before_accept is not None:
+                before_accept()
+
         try:
             prepared = (
                 await input_files.prepare(message, stream.context.environment) if input_files is not None else message
@@ -565,9 +572,7 @@ class RootRunCoordinator:
                 self._restart.require_input()
             if authorize is not None:
                 await authorize()
-            enqueue_id = await stream.steer(
-                prepared, immediate=immediate, best_effort=True, before_accept=before_accept
-            )
+            enqueue_id = await stream.steer(prepared, immediate=immediate, best_effort=True, before_accept=check_active)
         except Exception:
             return RootControlResult(receipt_id=receipt_id, accepted=False)
         if touch and self._touch_thread is not None:
@@ -589,8 +594,6 @@ class RootRunCoordinator:
             raise RunCoordinationError("Root receipt does not exist in this App.", code="root_receipt_missing")
         if operation.status in _TERMINAL:
             return RootControlResult(receipt_id=receipt_id, accepted=False)
-        if self._tool_executions is not None:
-            await self._tool_executions.suppress(operation.receipt.thread_id)
         if self._browser_handback is not None:
             self._browser_handback.suppress(operation.receipt.thread_id)
         operation.cancel_requested = True
@@ -698,7 +701,7 @@ class RootRunCoordinator:
                     await self._touch_thread(operation.receipt.thread_id)
                 except Exception:
                     get_logger(__name__).exception("Could not touch completed Thread: %s", operation.receipt.thread_id)
-            if cancelled:
+            if cancelled or (operation.cancel_requested and failure is None):
                 operation.status = RootOperationStatus.cancelled
             elif failure is not None:
                 operation.status = RootOperationStatus.failed

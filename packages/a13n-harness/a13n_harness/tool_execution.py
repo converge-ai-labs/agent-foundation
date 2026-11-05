@@ -550,6 +550,15 @@ class ToolExecutionRuntime:
             raise
         live.shell = state
 
+    async def _spill_tool_result(self, data: bytes, *, suffix: str) -> str:
+        """Retain recovered output without requiring a live Run's file area."""
+        artifacts = _TOOL_EXECUTION_ARTIFACTS.get()
+        if artifacts is None:
+            raise RuntimeError("No active execution owns this artifact")
+        path = f"tool-execution-artifact://{uuid4().hex}{suffix}"
+        artifacts.append(ToolExecutionArtifact(path, data, suffix))
+        return path
+
     async def publish_shell_result(self, result: Any) -> None:
         """Save captured output before its native process/output records are released."""
         record = current_execution()
@@ -565,7 +574,7 @@ class ToolExecutionRuntime:
                 "result_available": True,
             }
         )
-        saved = StoredToolExecution(terminal, result, shell=live.shell)
+        saved = StoredToolExecution(terminal, result, tuple(_TOOL_EXECUTION_ARTIFACTS.get() or ()), shell=live.shell)
         try:
             await self.store.save(saved)
             if live.record.foreground_released and not terminal.foreground_released:

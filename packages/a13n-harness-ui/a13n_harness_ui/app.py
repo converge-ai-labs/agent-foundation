@@ -1721,7 +1721,7 @@ class HarnessUiApp:
                             busy_thread_ids=self._tool_executions.busy_thread_ids(),
                         )
                     for removed in deleted:
-                        await self._tool_executions.suppress(removed)
+                        self._tool_executions.forget(removed)
                         self._tool_executions.clear_state(removed)
                         if (draft := self._shared_drafts.pop(removed, None)) is not None:
                             draft.close()
@@ -2317,7 +2317,7 @@ class HarnessUiApp:
                 human_input=True,
                 authorize=authorize_app_message if mcp_app_view is not None else None,
             )
-            await self._tool_executions.user_input(thread_id)
+            self._tool_executions.retry(thread_id, refresh=True)
             await self._clear_submitted_draft(thread_id, draft_clear)
             self._terminal_projections.pin_active_skill_catalog(
                 receipt_id=receipt.receipt_id,
@@ -2437,12 +2437,22 @@ class HarnessUiApp:
             return False
 
         def before_accept() -> None:
-            if self._state is not AppState.ready or not self._tool_executions.allows_completion(thread_id):
-                raise RunCoordinationError("Tool completion was suppressed.", code="tool_completion_suppressed")
+            if self._state is not AppState.ready:
+                raise RunCoordinationError("The App is stopping.", code="app_stopping")
 
         async def authorize() -> None:
-            if await self._store.tool_executions.is_suppressed(thread_id):
-                raise RunCoordinationError("Tool completion was suppressed.", code="tool_completion_suppressed")
+            # Called under root admission fencing after capture. A retained result
+            # cannot authorize a new attempt after cancellation or process loss.
+            thread = await self._store.threads.get(thread_id)
+            if (
+                thread is None
+                or thread.archived
+                or thread.last_execution is None
+                or thread.last_execution.status != "completed"
+            ):
+                raise RunCoordinationError(
+                    "The last root execution cannot continue automatically.", code="tool_completion_not_eligible"
+                )
             before_accept()
 
         # Lifecycle hints are model context, not human-authored messages. Keep
@@ -2465,9 +2475,12 @@ class HarnessUiApp:
                 receipt_id=operation.receipt.receipt_id, message=content, immediate=False, before_accept=before_accept
             )
             return result.accepted
-        await self._root_runs.submit_prompt(
-            thread_id=thread_id, prompt=content, reject_deferred=True, authorize=authorize
-        )
+        try:
+            await self._root_runs.submit_prompt(
+                thread_id=thread_id, prompt=content, reject_deferred=True, authorize=authorize
+            )
+        except RunCoordinationError:
+            return False
         return True
 
     async def _deliver_browser_handback(self, thread_id: str, prompt: str, current: Callable[[], bool]) -> bool:
@@ -2565,7 +2578,7 @@ class HarnessUiApp:
                 touch=True,
             )
             if result.accepted:
-                await self._tool_executions.user_input(operation.receipt.thread_id)
+                self._tool_executions.retry(operation.receipt.thread_id, refresh=True)
                 if self._browsers is not None:
                     self._browsers.handback.user_input(operation.receipt.thread_id)
                 await self._clear_submitted_draft(operation.receipt.thread_id, draft_clear)
@@ -2630,7 +2643,7 @@ class HarnessUiApp:
             if result.accepted:
                 head = await self._store.child_executions.get(execution_id)
                 if head is not None:
-                    await self._tool_executions.user_input(head.child_thread_id)
+                    self._tool_executions.retry(head.child_thread_id, refresh=True)
             return ChildControlResult(
                 execution_id=result.execution_id,
                 accepted=result.accepted,

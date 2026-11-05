@@ -479,4 +479,17 @@ async def test_management_publication_preserves_session_and_rejects_stale_head(t
             await environments._publish_state(key, initial, original, observed)
         assert (await app._store.environment_states.get(key)).state == publication.replacement
         recovered = await environments._session_context(key)
-        assert recovered.state == session
+        assert recovered.ownership is not None
+        async with recovered.ownership() as saved:
+            assert saved == session
+        import gc
+        import weakref
+
+        reference = weakref.ref(recovered)
+        del recovered
+        gc.collect()
+        assert reference() is None
+        assert not environments._sessions and not environments._owners._held
+        recovered = await environments._session_context(key)
+        async with recovered.ownership() as saved:
+            assert saved == session

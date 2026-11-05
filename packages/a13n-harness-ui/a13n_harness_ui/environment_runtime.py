@@ -7,12 +7,14 @@ import hashlib
 import inspect
 import os
 import stat
-from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Mapping, Sequence
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from types import MappingProxyType
 from typing import Literal
+from weakref import WeakValueDictionary
 
 from a13n_harness.environment import (
     FILE_ACTIONS,
@@ -29,6 +31,7 @@ from a13n_harness.environment.models import (
     COMPUTER_ACTIONS,
     FILE_EXECUTION_ACTIONS,
     EnvironmentDescriptor,
+    EnvironmentError,
     EnvironmentState,
 )
 from a13n_harness.environment.providers import EnvironmentRuntime
@@ -301,7 +304,7 @@ class EnvironmentRunService:
         self._thread_files = thread_files or ThreadFiles(store.layout.root)
         self._configuration_root = configuration_root
         self._devices = devices
-        self._sessions: dict[str, EnvdSessionRecovery] = {}
+        self._sessions: WeakValueDictionary[str, EnvdSessionRecovery] = WeakValueDictionary()
         self._session_lock = asyncio.Lock()
         self._owners = OwnershipLocks(store.layout.root / "envd-session-locks")
 
@@ -720,19 +723,29 @@ class EnvironmentRunService:
     async def _session_context(self, key: EnvironmentBindingKey, *, exclusive: bool = False) -> EnvdSessionRecovery:
         identity = canonical_digest(key.model_dump(mode="json"))
         async with self._session_lock:
-            if exclusive and not await self._owners.acquire(identity):
-                raise EnvironmentLifecycleError("Another App owns this Envd binding.", code="environment_owner_busy")
             existing = self._sessions.get(identity)
             if existing is not None:
                 return existing
-            head = await self._store.environment_states.get(key)
-            stored = (
-                await self._store.objects.read_model(head.state, StoredEnvironmentState)
-                if head is not None and head.state is not None
-                else None
-            )
-            if stored is not None and stored.binding != key:
-                raise EnvironmentLifecycleError("Stored Session binding changed", code="environment_state_incompatible")
+
+            @asynccontextmanager
+            async def ownership() -> AsyncIterator[EnvdSessionState | None]:
+                if exclusive and not await self._owners.acquire(identity):
+                    raise EnvironmentError("Another App owns this Envd binding.", code="environment_busy")
+                try:
+                    head = await self._store.environment_states.get(key)
+                    stored = (
+                        await self._store.objects.read_model(head.state, StoredEnvironmentState)
+                        if head is not None and head.state is not None
+                        else None
+                    )
+                    if stored is not None and stored.binding != key:
+                        raise EnvironmentLifecycleError(
+                            "Stored Session binding changed", code="environment_state_incompatible"
+                        )
+                    yield stored.envd_session if stored is not None else None
+                finally:
+                    if exclusive:
+                        await self._owners.release(identity)
 
             async def checkpoint(state: EnvdSessionState) -> None:
                 with CancelScope(shield=True), fail_after(30):
@@ -757,7 +770,7 @@ class EnvironmentRunService:
                     ).ref
                     await self._store.environment_states.select(key=key, expected=expected, replacement=replacement)
 
-            context = EnvdSessionRecovery(stored.envd_session if stored is not None else None, checkpoint)
+            context = EnvdSessionRecovery(checkpoint=checkpoint, ownership=ownership)
             self._sessions[identity] = context
             return context
 

@@ -9,7 +9,7 @@ import re
 from collections import OrderedDict
 from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from functools import partial, wraps
 from types import CoroutineType
@@ -203,6 +203,8 @@ class _ActiveSegment:
     done: Event
     display: CompactChildDisplay
     cleanup_succeeded: bool = False
+    status: Literal["running", "cancelling", "succeeded", "cancelled"] = "running"
+    settlement_lock: Lock = field(default_factory=Lock)
 
 
 @dataclass(frozen=True, slots=True)
@@ -791,8 +793,15 @@ class HarnessUiSubagentOperator(SubagentOperator):
         try:
             if self._restart is not None:
                 self._restart.require_input()
+
+            def check_active() -> None:
+                if active.status != "running":
+                    raise RunCoordinationError("The child execution is stopping.", code="subagent_not_active")
+                if before_accept is not None:
+                    before_accept()
+
             enqueue_id = await active.stream.steer(
-                message, immediate=immediate, best_effort=True, before_accept=before_accept
+                message, immediate=immediate, best_effort=True, before_accept=check_active
             )
         except Exception:
             return SubagentSteerResult(execution_id=execution_id, accepted=False)
@@ -833,17 +842,20 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 accepted=False,
                 status=head.status,
             )
-        if self._tool_executions is not None:
-            await self._tool_executions.suppress(head.child_thread_id)
-        if self._restart is not None:
-            self._restart.active.pop(head.child_thread_id, None)
-            self._restart.signal()
-        active.stream.cancel()
-        return SubagentCancelResult(
-            execution_id=execution_id,
-            accepted=True,
-            status="running",
-        )
+        async with active.settlement_lock:
+            head = await self._require_execution_for_parent(parent_thread_id, execution_id)
+            if head.status != "running":
+                return SubagentCancelResult(execution_id=execution_id, accepted=False, status=head.status)
+            active.status = "cancelling"
+            if self._restart is not None:
+                self._restart.active.pop(head.child_thread_id, None)
+                self._restart.signal()
+            active.stream.cancel()
+            return SubagentCancelResult(
+                execution_id=execution_id,
+                accepted=True,
+                status="running",
+            )
 
     @_subagent_tool
     async def resume(
@@ -1281,6 +1293,8 @@ class HarnessUiSubagentOperator(SubagentOperator):
                     async with self._lock:
                         retained = self._active.get(current.head.execution_id)
                         if retained is not None:
+                            if retained.status == "cancelling":
+                                next_stream.cancel()
                             retained.stream = next_stream
                             retained.display = display
                             self._signal_change_locked()
@@ -1306,6 +1320,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                     display,
                     expected_checkpoint,
                     terminal_events,
+                    active=active,
                     accepted=current.stream.pending_deferred_input,
                     memory_positions=current.reconstructed.memory_cursors.snapshot(),
                 )
@@ -1542,6 +1557,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         expected: ObjectRef | None,
         terminal_events: tuple[AguiEvent, ...],
         *,
+        active: _ActiveSegment,
         accepted: DeferredToolResume | None = None,
         memory_positions: Mapping[str, str | None] | None = None,
     ) -> tuple[AguiEvent, ...]:
@@ -1561,14 +1577,19 @@ class HarnessUiSubagentOperator(SubagentOperator):
                     display=terminal_display,
                     terminal=True,
                 )
-                await self._store.child_executions.finish(
-                    execution_id=head.execution_id,
-                    status="succeeded",
-                    expected_checkpoint=expected,
-                    checkpoint=checkpoint,
-                    child_run_id=result.run_id,
-                    tool_completions=completion_ids(state.message_history),
-                )
+                # Stop remains admissible while the checkpoint is being written.
+                # Serialize its acceptance with the final durable state selection.
+                async with active.settlement_lock:
+                    status = "cancelled" if active.status == "cancelling" else "succeeded"
+                    await self._store.child_executions.finish(
+                        execution_id=head.execution_id,
+                        status=status,
+                        expected_checkpoint=expected,
+                        checkpoint=checkpoint,
+                        child_run_id=result.run_id,
+                        tool_completions=completion_ids(state.message_history),
+                    )
+                    active.status = status
             except BaseException as exc:
                 failure = await self._fail_terminal_persistence(
                     head.execution_id,

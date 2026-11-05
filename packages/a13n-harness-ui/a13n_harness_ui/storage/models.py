@@ -116,12 +116,6 @@ class ToolExecutionHeadRecord(Base):
     completion_state: Mapped[str] = mapped_column(String(16), nullable=False, default="waiting", index=True)
 
 
-class ToolCompletionSuppressionRecord(Base):
-    __tablename__ = "tool_completion_suppression"
-
-    thread_id: Mapped[str] = mapped_column(String(_ID), primary_key=True)
-
-
 class PlannedRestartRecord(Base):
     """The only prepared/claimed update handoff for this local data root."""
 
