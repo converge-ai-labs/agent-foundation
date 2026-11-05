@@ -285,9 +285,10 @@ async def test_download_ranges_have_no_whole_file_limit(tmp_path: Path, name: st
         # Keep the real >5 GiB range check without writing gigabytes of zeros.
         subprocess.run(["fsutil", "sparse", "setflag", str(path)], check=True, capture_output=True)
     with path.open("r+b") as stream:
-        stream.truncate(size)
+        # Extend by writing the tail; Windows truncate fills the intervening bytes.
         stream.seek(size - 4)
         stream.write(b"TAIL")
+    assert path.stat().st_size == size
     files = HostFiles(enabled=True)
     reviewed = await files.metadata(str(path))
     selected = FileTransferRequest(path=str(path), expected_revision=reviewed.revision, disposition="attachment")

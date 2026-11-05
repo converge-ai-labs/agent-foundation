@@ -114,8 +114,8 @@ async def test_browser_executable_configuration_survives_source_loading(tmp_path
     source = await load_harness_ui_settings(path)
     assert source.configuration is not None and source.candidate_error is None
     browser = source.configuration.document.browser
-    assert browser.executable == chrome
-    assert browser.vnc_executable == vnc
+    assert browser.executable == str(Path(chrome).resolve())
+    assert browser.vnc_executable == str(Path(vnc).resolve())
 
 
 @pytest.mark.parametrize("field", ["executable", "vnc_executable"])

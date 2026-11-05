@@ -178,12 +178,14 @@ def bootstrap(admin: dict[str, str]) -> bool:
     raise RuntimeError(f"Administrator bootstrap failed (exit {result.returncode}); inspect {CONTROL} logs")
 
 
-def prepare_image(component: str, destination: str) -> None:
+def prepare_image(component: str, destination: str) -> str:
     """Build locally by default; CI can supply its already-built checkout image."""
     variable = "K8S_SERVICE_IMAGE" if component == "a13n-service" else "K8S_SANDBOX_IMAGE"
     if source := os.environ.get(variable):
-        # A new tag still rolls Deployments and exercises the next migration revision.
-        # docker tag requires a local image; it never pulls a mutable registry fallback.
+        # Reuse the content tag so kind does not import unchanged image layers again.
+        # Inspect requires a local image; it never pulls a mutable registry fallback.
+        image_id = run("docker", "image", "inspect", source, "--format", "{{.Id}}", capture=True).strip()
+        destination = f"{destination.split(':')[0]}:local-{image_id.removeprefix('sha256:')}"
         run("docker", "tag", source, destination)
     else:
         print(f"Building {destination}...", flush=True)
@@ -197,6 +199,7 @@ def prepare_image(component: str, destination: str) -> None:
             destination,
             ".",
         )
+    return destination
 
 
 def start(state: Path, *, environments: bool = False) -> None:
@@ -230,13 +233,12 @@ def start(state: Path, *, environments: bool = False) -> None:
         kubectl("create", "namespace", NAMESPACE)
     admin = prepare(state)
     tag = "local-" + secrets.token_hex(6)
-    image = f"a13n-service:{tag}"
-    prepare_image("a13n-service", image)
+    image = prepare_image("a13n-service", f"a13n-service:{tag}")
     run("kind", "load", "docker-image", image, "--name", CLUSTER)
     overlay: tuple[str, ...] = ()
+    sandbox = None
     if environments:
-        sandbox = f"a13n-sandbox:{tag}"
-        prepare_image("sandbox", sandbox)
+        sandbox = prepare_image("sandbox", f"a13n-sandbox:{tag}")
         run("kind", "load", "docker-image", sandbox, "--name", CLUSTER)
         overlay = ("-f", "deploy/kubernetes/helm/values-environments-smoke.yaml")
     print("Deploying; Helm waits for migration and readiness (up to 20 minutes)...", flush=True)
@@ -257,7 +259,10 @@ def start(state: Path, *, environments: bool = False) -> None:
             "--set-string",
             f"publicUrl={CONSOLE_URL}",
             "--set-string",
-            f"image.tag={tag}",
+            f"image.tag={image.split(':')[1]}",
+            # Even unchanged images must exercise rolling replacement on each invocation.
+            "--set-string",
+            f"podAnnotations.a13n-local-rollout={tag}",
             "--wait",
             "--timeout",
             "20m",
@@ -266,9 +271,7 @@ def start(state: Path, *, environments: bool = False) -> None:
         kubectl("get", "pods,jobs,pvc")
         print("Inspect migration Job and Service logs and namespace events; credentials and PVCs are retained.")
         raise
-    (state / "deployment.json").write_text(
-        json.dumps({"service_image": image, "sandbox_image": f"a13n-sandbox:{tag}" if environments else None})
-    )
+    (state / "deployment.json").write_text(json.dumps({"service_image": image, "sandbox_image": sandbox}))
     kubectl("get", "pods,pvc")
     print(f"Console: {CONSOLE_URL}", flush=True)
     if admin is None:

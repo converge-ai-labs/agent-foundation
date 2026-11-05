@@ -137,7 +137,7 @@ jobs:
       - name: Install the chart and create the administrator
         run: make k8s-up k8s-smoke
 
-      # A new local tag upgrades the release: a new migration Job, then rolling Deployments.
+      # A new rollout annotation upgrades the release: a new migration Job, then rolling Deployments.
       - name: Upgrade the release
         run: make k8s-up k8s-smoke
 

@@ -454,6 +454,8 @@ def test_startup_builds_loads_and_waits_before_bootstrapping(
 
     def run(*args, **kwargs):
         commands.append(args)
+        if args[:3] == ("docker", "image", "inspect"):
+            return "sha256:" + "a" * 64 + "\n"
         if args[:3] == ("kind", "get", "clusters"):
             return "a13n-local\n" if existing else ""
         if args[:3] == ("kind", "get", "nodes"):
@@ -492,11 +494,20 @@ def test_startup_builds_loads_and_waits_before_bootstrapping(
     assert image in load
     assert "--wait" in helm and "--kube-context" in helm and k8s.NAMESPACE in helm
     assert f"image.tag={image.split(':')[1]}" in helm
+    assert any(arg.startswith("podAnnotations.a13n-local-rollout=local-") for arg in helm)
     order = [commands.index(c) for c in (("prepare",), builds[0], load, helm, ("bootstrap", "owner@example.com"))]
     assert order == sorted(order)
     assert any(c[:3] == ("kind", "create", "cluster") for c in commands) != existing
     output = capsys.readouterr().out
     assert "owner@example.com" in output and "secret-password" not in output
+    if prebuilt:
+        first_rollout = next(arg for arg in helm if arg.startswith("podAnnotations.a13n-local-rollout="))
+        commands.clear()
+        k8s.start(tmp_path, environments=environments)
+        assert json.loads((tmp_path / "deployment.json").read_text()) == deployment
+        second_helm = next(c for c in commands if c[0] == "helm")
+        assert first_rollout not in second_helm
+        assert f"image.tag={image.split(':')[1]}" in second_helm
 
 
 def test_wrong_port_mapping_stops_before_mutation(tmp_path, monkeypatch):
