@@ -252,6 +252,7 @@ def _registry(distribution: Distribution, config: Settings) -> Registry:
             allow_local=config.provisioning.local.enabled,
             docker_host=environments.docker_host,
             docker_mount_roots=environments.docker_mount_roots,
+            kubernetes_clusters=environments.kubernetes_clusters,
         )
     )
 

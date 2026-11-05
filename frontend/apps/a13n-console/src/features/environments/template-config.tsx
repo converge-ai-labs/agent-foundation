@@ -95,10 +95,24 @@ export function TemplateConfig({
     savedDestroy = saved?.config.delete_after_seconds?.toString() ?? "";
   const [stop, setStop] = useState(savedStop),
     [destroy, setDestroy] = useState(savedDestroy);
+  const savedReclamation = saved?.config.reclamation;
+  const [idleDelete, setIdleDelete] = useState(
+    savedReclamation
+      ? (savedReclamation.idle_delete_seconds?.toString() ?? "")
+      : "1800",
+  );
+  const [preparation, setPreparation] = useState(
+    String(savedReclamation?.preparation_seconds ?? 600),
+  );
+  const [failedRetention, setFailedRetention] = useState(
+    String(savedReclamation?.failed_retention_seconds ?? 3600),
+  );
   const provider = providers.data?.find((item) => item.id === providerId);
   const definition = types.data?.items.find(
     (item) => item.type === (standalone ? runtimeType : provider?.type),
   );
+  const instancePolicy =
+    definition?.type === "kubernetes" || !!savedReclamation;
   function chooseRuntime(type: string) {
     save.reset();
     setRuntimeType(type);
@@ -146,6 +160,16 @@ export function TemplateConfig({
           recipe: parsedConfiguration,
           stop_after_seconds: stop === "" ? null : Number(stop),
           delete_after_seconds: destroy === "" ? null : Number(destroy),
+          ...(instancePolicy
+            ? {
+                reclamation: {
+                  idle_delete_seconds:
+                    idleDelete === "" ? null : Number(idleDelete),
+                  preparation_seconds: Number(preparation),
+                  failed_retention_seconds: Number(failedRetention),
+                },
+              }
+            : {}),
         },
       };
       if (basis)
@@ -198,6 +222,14 @@ export function TemplateConfig({
     providerId !== saved?.provider_id ||
     stop !== savedStop ||
     destroy !== savedDestroy ||
+    (instancePolicy &&
+      (idleDelete !==
+        (savedReclamation
+          ? (savedReclamation.idle_delete_seconds?.toString() ?? "")
+          : "1800") ||
+        preparation !== String(savedReclamation?.preparation_seconds ?? 600) ||
+        failedRetention !==
+          String(savedReclamation?.failed_retention_seconds ?? 3600))) ||
     !sameConfiguration(configuration, savedConfiguration);
   if (choosing && !standalone)
     return (
@@ -321,61 +353,123 @@ export function TemplateConfig({
                   : undefined
               }
               variant={
-                definition?.type === "docker"
-                  ? "docker"
-                  : definition?.type === "e2b"
-                    ? "e2b"
-                    : definition?.type === "daytona"
-                      ? "daytona"
-                      : definition?.type === "modal"
-                        ? "modal"
-                        : definition?.type === "vercel"
-                          ? "vercel"
-                          : definition?.type === "sprites"
-                            ? "sprites"
-                            : "default"
+                definition?.type === "kubernetes"
+                  ? "kubernetes"
+                  : definition?.type === "docker"
+                    ? "docker"
+                    : definition?.type === "e2b"
+                      ? "e2b"
+                      : definition?.type === "daytona"
+                        ? "daytona"
+                        : definition?.type === "modal"
+                          ? "modal"
+                          : definition?.type === "vercel"
+                            ? "vercel"
+                            : definition?.type === "sprites"
+                              ? "sprites"
+                              : "default"
               }
             >
               <DisclosureSection
                 className={editorStyles.advanced}
                 title={t("Lifecycle")}
               >
-                <div className={styles.twoColumns}>
-                  <FormField
-                    className="min-w-0 w-full"
-                    label={t("Stop after idle seconds")}
-                    description={t(
-                      "Leave empty to disable automatic stopping.",
-                    )}
-                    disabled={definition?.supports_stop === false}
-                  >
-                    <Input
-                      readOnly={readOnly}
-                      type="number"
-                      min={60}
-                      step={1}
-                      value={stop}
-                      onChange={(event) => setStop(event.target.value)}
-                    />
-                  </FormField>
-                  <FormField
-                    className="min-w-0 w-full"
-                    label={t("Delete after idle seconds")}
-                    description={t(
-                      "Leave empty to disable automatic deletion. If both are set, deletion must be later than stopping.",
-                    )}
-                    disabled={definition?.supports_destroy === false}
-                  >
-                    <Input
-                      readOnly={readOnly}
-                      type="number"
-                      min={60}
-                      step={1}
-                      value={destroy}
-                      onChange={(event) => setDestroy(event.target.value)}
-                    />
-                  </FormField>
-                </div>
+                {instancePolicy ? (
+                  <>
+                    <p>
+                      {t(
+                        "Policy is copied to new instances. Idle cleanup deletes the instance. Active runs, tools and desktop use postpone idle cleanup.",
+                      )}
+                    </p>
+                    <div className={styles.twoColumns}>
+                      <FormField
+                        label={t("Delete after idle seconds")}
+                        description={t(
+                          "Leave empty to disable automatic deletion.",
+                        )}
+                      >
+                        <Input
+                          type="number"
+                          min={60}
+                          max={31536000}
+                          step={1}
+                          value={idleDelete}
+                          readOnly={readOnly}
+                          onChange={(event) =>
+                            setIdleDelete(event.target.value)
+                          }
+                        />
+                      </FormField>
+                      <FormField label={t("Preparation deadline (seconds)")}>
+                        <Input
+                          type="number"
+                          required
+                          min={30}
+                          max={86400}
+                          step={1}
+                          value={preparation}
+                          readOnly={readOnly}
+                          onChange={(event) =>
+                            setPreparation(event.target.value)
+                          }
+                        />
+                      </FormField>
+                      <FormField
+                        label={t("Failed instance retention (seconds)")}
+                      >
+                        <Input
+                          type="number"
+                          required
+                          min={0}
+                          max={604800}
+                          step={1}
+                          value={failedRetention}
+                          readOnly={readOnly}
+                          onChange={(event) =>
+                            setFailedRetention(event.target.value)
+                          }
+                        />
+                      </FormField>
+                    </div>
+                  </>
+                ) : (
+                  <div className={styles.twoColumns}>
+                    <FormField
+                      className="min-w-0 w-full"
+                      label={t("Stop after idle seconds")}
+                      description={t(
+                        "Leave empty to disable automatic stopping.",
+                      )}
+                      disabled={definition?.supports_stop === false}
+                    >
+                      <Input
+                        readOnly={readOnly}
+                        type="number"
+                        min={60}
+                        step={1}
+                        value={stop}
+                        onChange={(event) => setStop(event.target.value)}
+                      />
+                    </FormField>
+                    <FormField
+                      className="min-w-0 w-full"
+                      label={t("Delete after idle seconds")}
+                      description={t(
+                        "Leave empty to disable automatic deletion. If both are set, deletion must be later than stopping.",
+                      )}
+                      disabled={definition?.supports_destroy === false}
+                    >
+                      <Input
+                        readOnly={readOnly}
+                        type="number"
+                        min={60}
+                        step={1}
+                        value={destroy}
+                        onChange={(event) => setDestroy(event.target.value)}
+                      />
+                    </FormField>
+                  </div>
+                )}
               </DisclosureSection>
             </ProviderConfiguration>
           )}

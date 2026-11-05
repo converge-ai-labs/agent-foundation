@@ -60,6 +60,13 @@ export function RunOptions({
           value={options.labels.environment ?? options.environment}
         />
       )}
+      {options.runEnvironment !== "inherit" && (
+        <OptionChip
+          onClick={() => edit("run-environment")}
+          label={t("Run environment")}
+          value={options.labels.runEnvironment ?? options.runEnvironment}
+        />
+      )}
       {newThread && options.memories.length > 0 && (
         <OptionChip
           onClick={() => edit("memories")}

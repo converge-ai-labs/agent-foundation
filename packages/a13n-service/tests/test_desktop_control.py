@@ -60,18 +60,31 @@ async def desktop(service, scripted_model, runs_kit, monkeypatch, request):
             ),
         ).model_dump(mode="json")
     agent = await runs_kit.create_agent(service, scripted_model, toolsets={"computer": {"enabled": True}})
+    run_only = getattr(request, "param", None) == "run_only"
+    permissions = ["environment.computer.observe", "environment.computer.click"]
     first = await runs_kit.start_thread(
         service,
         agent,
         "Work on the desktop",
-        environments=[
+        options={
+            "environment": {
+                "mode": "existing",
+                "environment_id": environment_id,
+                "permission_ceiling": {"operations": permissions},
+            }
+        }
+        if run_only
+        else {},
+        environments=[]
+        if run_only
+        else [
             {
                 "name": "workspace",
                 "environment_id": environment_id,
                 "permission_ceiling": {
                     "operations": request.param
-                    if hasattr(request, "param")
-                    else ["environment.computer.observe", "environment.computer.click"]
+                    if hasattr(request, "param") and request.param is not None
+                    else permissions
                 },
             }
         ],
@@ -764,6 +777,7 @@ async def test_native_alias_is_retained_by_control_and_read_only_view(service, d
         assert not await session.scalar(select(lifecycle.in_use(alias_id)))
 
 
+@pytest.mark.parametrize("desktop", [None, "run_only"], indirect=True)
 async def test_http_control_is_independent_of_resume_and_keeps_credentials_out_of_metadata(service, desktop, runs_kit):
     first, environment_id, *_ = desktop
     root = f"{service.api}/environments/{environment_id}"
@@ -838,6 +852,7 @@ async def returned_notice(service, desktop):
     return lease, mount, notice
 
 
+@pytest.mark.parametrize("desktop", [None, "run_only"], indirect=True)
 @pytest.mark.parametrize("retake_before_delivery", [False, True])
 async def test_handback_delivers_once_across_retake(service, desktop, runs_kit, retake_before_delivery):
     from a13n_service.runs import inbox
@@ -922,6 +937,7 @@ async def test_obsolete_handback_is_suppressed_before_delivery(service, desktop,
         assert (await session.get_one(DesktopBlockedRow, notice.payload["registration_id"])).suppressed
 
 
+@pytest.mark.parametrize("desktop", [None, "run_only"], indirect=True)
 async def test_idle_handback_inherits_origin_authority_and_mount_without_resume(service, desktop):
     from a13n_service.runs.attempts import AttemptControl
     from a13n_service.runs.environments.desktop.delivery import handbacks

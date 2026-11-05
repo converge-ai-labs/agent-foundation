@@ -1,5 +1,6 @@
 """Durable Sprites installation progress and explicit retry preserve the original target."""
 
+from datetime import timedelta
 from unittest.mock import AsyncMock
 
 import pytest
@@ -11,6 +12,8 @@ from a13n_harness.providers.environment.sprites.shared import SpritesTargetState
 from a13n_service.providers.environment.errors import EnvironmentManagementError
 from a13n_service.providers.environment.recipes.sprites import SpritesRecipe
 from a13n_service.runs.environments import lifecycle
+
+from .environments_support import backdate
 
 pytestmark = pytest.mark.anyio
 
@@ -66,6 +69,8 @@ async def test_pending_publication_restart_failure_and_explicit_retry(service, r
     await lifecycle.publish(service.runtime, op, outcome)
     progress = await service.client.get(f"/api/v1/environments/{identity}/creation")
     assert progress.json()["stage"] == "building" and not progress.json()["retryable"]
+    assert await lifecycle.claim(service.runtime, identity, owner="early-worker") is None
+    await backdate(service, identity, next_operation_at=timedelta(seconds=1))
     resumed = await lifecycle.claim(service.runtime, identity, owner="replacement-worker")
     assert resumed is not None and resumed.target.state == state
     failed = state.model_copy(update={"state": {**state.state, "desktop_phase": "failed"}})

@@ -10,6 +10,28 @@ on:
       - "deploy/kubernetes/**"
       - "scripts/deploy_smoke.py"
       - "scripts/k8s_local.py"
+      - "e2e/service/**"
+      - "dev/service/**"
+      - "scripts/tests/test_service_e2e_tooling.py"
+      - "conftest.py"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".dockerignore"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "LICENSE"
+      - "dev/fixtures/**"
+      - "deploy/docker/images/sandbox/**"
+      - "crates/a13n-envd/**"
+      - "packages/a13n-envd-client/**"
+      - "packages/a13n-harness/pyproject.toml"
+      - "packages/a13n-harness/*.py"
+      - "packages/a13n-harness/a13n_harness/**"
+      - "packages/a13n-service/pyproject.toml"
+      - "packages/a13n-service/*.py"
+      - "packages/a13n-service/a13n_service/**"
+      - "packages/a13n-stream-protocol/**"
+      - "packages/a13n-logging/**"
   workflow_dispatch:
 
 env:
@@ -27,12 +49,20 @@ jobs:
     name: Helm install and upgrade on kind
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
+    env:
+      K8S_ENVIRONMENTS: "1"
+      E2E_KUBERNETES_CONNECTION: port_forward
     steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
           persist-credentials: false
+
+      - name: Select private temporary state paths
+        run: |
+          echo "K8S_STATE_DIR=$RUNNER_TEMP/a13n-kind" >> "$GITHUB_ENV"
+          echo "E2E_KUBERNETES_PROFILE=$RUNNER_TEMP/kubernetes-e2e.json" >> "$GITHUB_ENV"
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -46,11 +76,21 @@ jobs:
 
       - name: Set up Helm
         uses: azure/setup-helm@v4
+        with:
+          version: v3.19.0
 
-      - name: Set up kind
+      - name: Create the pinned kind cluster
         uses: helm/kind-action@v1
         with:
-          install_only: true
+          version: v0.30.0
+          kubectl_version: v1.34.1
+          node_image: kindest/node:v1.34.0@sha256:7416a61b42b1662ca6ca89f02028ac133a309a2a30ba309614e8ec94d976dc5a
+          cluster_name: a13n-local
+          config: deploy/kubernetes/kind-local.yaml
+          wait: 5m
+
+      - name: Install locked test dependencies
+        run: make sync
 
       - name: Lint and test the chart for every values file
         run: make k8s-check
@@ -67,8 +107,63 @@ jobs:
           test "$(helm --kube-context kind-a13n-local -n a13n-service status a13n -o json | jq .version)" = 2
           kubectl --context kind-a13n-local -n a13n-service wait --for=condition=complete job/a13n-a13n-migrate-2 --timeout=60s
 
+      # Host-owned Service processes permit SIGKILL/restart faults; their sandboxes
+      # use the same real cluster/image as the separate in-cluster Helm smoke above.
+      - name: Configure the real Pod journeys
+        run: |
+          kind get kubeconfig --name a13n-local > "$RUNNER_TEMP/kubernetes-e2e.kubeconfig"
+          chmod 600 "$RUNNER_TEMP/kubernetes-e2e.kubeconfig"
+          python - <<'PYCODE'
+          import json
+          import os
+          from pathlib import Path
+
+          profile = {
+              "authentication": "kubeconfig",
+              "kubeconfig": str(Path(os.environ["RUNNER_TEMP"]) / "kubernetes-e2e.kubeconfig"),
+              "context": "kind-a13n-local",
+              "namespaces": ["a13n-service"],
+              "ownership_id": "service-e2e",
+              "sandbox_service_account": "default",
+              "allow_port_forward": True,
+              "allow_plaintext_envd": True,
+          }
+          Path(os.environ["E2E_KUBERNETES_PROFILE"]).write_text(json.dumps(profile))
+          PYCODE
+          echo "SANDBOX_IMAGE=$(jq -er '.sandbox_image' "$K8S_STATE_DIR/deployment.json")" >> "$GITHUB_ENV"
+
+      - name: Run Kubernetes lifecycle, storage and recovery journeys
+        run: make service-e2e SERVICE_E2E_ARGS="-m kubernetes --require-all --junitxml=test-results/kubernetes-e2e.xml"
+
+      - name: Require all nine Kubernetes journeys without skips
+        if: always()
+        shell: bash
+        run: |
+          python - <<'PYCODE' | tee -a "$GITHUB_STEP_SUMMARY"
+          import xml.etree.ElementTree as ET
+
+          cases = ET.parse("test-results/kubernetes-e2e.xml").getroot().findall(".//testcase")
+          skipped = [case for case in cases if case.find("skipped") is not None]
+          failed = [case for case in cases if case.find("failure") is not None or case.find("error") is not None]
+          print(f"Kubernetes E2E: {len(cases)} collected, {len(cases) - len(skipped)} executed, "
+                f"{len(skipped)} skipped, {len(failed)} failed")
+          assert len(cases) == 9 and not skipped and not failed, "All nine Kubernetes journeys must pass"
+          PYCODE
+
       - name: Show the deployment on failure
         if: failure()
         run: |
           kubectl --context kind-a13n-local -n a13n-service get pods,jobs,pvc,events || true
           kubectl --context kind-a13n-local -n a13n-service logs deployment/a13n-a13n-control --all-containers --tail 200 || true
+          kubectl --context kind-a13n-local -n a13n-service logs deployment/a13n-a13n-worker --all-containers --tail 200 || true
+          kubectl --context kind-a13n-local -n a13n-service logs job/a13n-a13n-migrate-2 --all-containers --tail 200 || true
+          kubectl --context kind-a13n-local get pv,storageclasses || true
+          kind export logs --name a13n-local test-results/kind || true
+
+      - name: Retain Kubernetes reports and failure logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kubernetes-e2e-${{ github.run_attempt }}
+          path: test-results/
+          retention-days: 7

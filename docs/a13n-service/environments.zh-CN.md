@@ -42,6 +42,76 @@ Docker 默认使用运维设置的 `environments.docker_host`。provider 单独�
 
 编辑 provider 时，省略凭据会保留原值，新值会替换原值，`null` 会移除凭据。保留的模板或实例引用会阻止删除 provider。删除无引用的 provider 只移除已保存的配置和凭据，不删除底层 Engine 或云账号。
 
+## Kubernetes 沙箱
+
+Kubernetes 将实例运行为原生 Pod，由选定容器中的 Envd 提供执行能力。运维配置受信任的集群 profile、允许的命名空间和沙箱 ServiceAccount 后，Kubernetes 才会出现在 provider 目录中。工作空间用户选择 profile 和命名空间；Kubernetes API 凭据由运维持有。
+
+1. 请运维在 Control 和 Worker 上配置 `environments.kubernetes_clusters`，或按 [Kubernetes 运维配置](configuration.md#kubernetes-environments)中的说明启用 Helm 选项。
+2. 在**工作空间设置 → Providers → 环境**中创建 Kubernetes provider。选择运维配置的集群 profile，并填写获准的命名空间。Helm 示例对应 `config: {"cluster":"in-cluster","namespace":"agent-sandboxes"}`。保存 provider 后，重新打开并选择 **Check connection（检查连接）**。
+3. 按下方说明准备沙箱镜像，然后创建模板。选择 **Pod 直连**或**本地端口转发**，通过卡片配置容器、资源请求与限制、变量、持久存储和调度。**生命周期**单独控制回收策略。常规配置无需编写 YAML 或 JSON；**编辑原生 JSON**提供其他原生字段，返回表单后修改配置也会保留这些字段。下方 JSON 是等价的 API 模板 `config`。
+4. 在已配置可用模型的 agent 上启用 **Files** 和 **Shell**，并选择此默认模板。新建会话，让 agent 写入 `hello.txt`，再发一条消息读取文件。只覆盖一次运行时，选择**运行选项 → 本次运行环境 → 从模板创建**。
+
+```json
+{
+  "recipe": {
+    "execution_container": "envd",
+    "connection": "direct",
+    "pod_template": {
+      "spec": {
+        "restartPolicy": "Never",
+        "containers": [{"name": "envd", "image": "a13n-sandbox:local"}]
+      }
+    }
+  },
+  "reclamation": {
+    "idle_delete_seconds": 1800,
+    "preparation_seconds": 600,
+    "failed_retention_seconds": 3600
+  }
+}
+```
+
+**首次运行前先准备镜像。** 示例中的 `a13n-sandbox:local` 是本地构建，不是仓库镜像。在本 checkout 中构建并加载到已有 kind 集群（将 `my-cluster` 替换为实际名称）：
+
+```sh
+make image-sandbox SANDBOX_IMAGE=a13n-sandbox:local
+kind load docker-image a13n-sandbox:local --name my-cluster
+```
+
+其他集群需要按节点架构构建本 checkout 的沙箱镜像并推送到仓库，再把准确的 tag 或 digest 写入 `pod_template.spec.containers[].image`：
+
+```sh
+make image-sandbox SANDBOX_IMAGE=registry.example.com/team/a13n-sandbox:reviewed
+# Authenticate to your registry before pushing.
+docker push registry.example.com/team/a13n-sandbox:reviewed
+```
+
+私有仓库还需配置原生 `imagePullSecrets`。镜像必须启动 Envd，并使用 Service 注入的凭据文件路径；使用与 Service 相同 checkout 构建的沙箱镜像。`make k8s-up K8S_ENVIRONMENTS=1` 会构建并加载自己的镜像 tag；请读取其 `K8S_STATE_DIR` 下 `deployment.json` 中的 `sandbox_image`，不要假定它是 `:local`。默认目录是 `~/.config/a13n-service-kind`；使用非默认 `K8S_CLUSTER` 时追加 `-<cluster>`。
+
+资源请求与限制、init 容器、sidecar、调度、安全上下文及 ConfigMap、Secret 引用保留在 `pod_template.spec` 中，由 Kubernetes admission 校验这些原生字段。Service 管理 Pod 身份、沙箱 ServiceAccount 和私有 Envd 凭据注入。选定的执行容器必须启动 Envd；Pod 处于 Running 并不代表执行能力已经就绪。
+
+`direct` 从 Service 连接 Pod IP，Service 可以部署在集群内或集群外。集群外部署时，运维在 Control 和 Worker 上提供 kubeconfig profile。直连要求两个进程都能访问 Pod IP。没有 Pod IP 路由的本地调试可使用 `port_forward`，前提是 kubeconfig profile 明确允许且已安装 `kubectl`；隧道仅属于使用它的进程。两种方式目前都使用 Bearer 认证的 HTTP，需要 profile 显式设置 `allow_plaintext_envd = true`。此类流量应保留在可信私有网络内。provider 检查成功代表配置、认证和 Pod 列举权限正常；镜像拉取、Pod 创建、调度、存储和 Envd 就绪仍需通过真实实例验证。
+
+需要持久文件时，在 `recipe.storage` 中添加绑定，包含 `name`、`mount_path`，以及原生 `claim_template` 或 `existing_claim` 二选一。新建 PVC 默认使用 `disposition: retain`；选择 `delete` 会在回收时删除拥有的 PVC。已有 PVC 始终视为借用资源，即使绑定指定删除也会保留。`shared_directory: true` 在已有 PVC 中使用实例专属目录，并保留该目录。引用的 ConfigMap 和 Secret 也属于借用资源。`recipe.network_policy` 接受原生 NetworkPolicy 模板，Pod selector 由 Service 填入；实际执行网络策略需要兼容的集群网络实现。
+
+Kubernetes 支持创建、复用和删除。回收设置在预留实例时复制到实例。默认空闲 30 分钟后删除，准备时间上限为 10 分钟，准备失败后保留一小时。Kubernetes 没有停止/恢复操作。删除会等待所拥有的资源消失；finalizer 可能使实例保持 `deleting`。保留和借用的资源仍可在回收记录中查看。
+
+在实例的 Kubernetes 面板查看 Pod UID、调度和容器状态、Events、存储处置与 Envd 就绪状态。`GET /api/v1/environments/{id}/kubernetes/diagnostics` 和 `/kubernetes/logs` 需要工作空间 `run` 权限。日志有大小限制，可选择容器和上一轮容器日志。这些查询不重置空闲计时。调试时，可用当前 `If-Match` 向 `PUT /api/v1/environments/{id}/debug-hold` 提交 `{"seconds":3600}`，暂缓自动回收；`{"seconds":null}` 清除保留。每次保留最长一天。Pod 被替换且 UID 改变时属于目标丢失，应创建新实例，不会静默接管替代 Pod。
+
+## 仅本次运行的环境选择
+
+会话的运行选项可以为一次运行新建工作空间，或选择已有实例。API 客户端提交 `options.environment`：
+
+```json
+{"mode":"fresh","template_id":"envtpl_..."}
+```
+
+```json
+{"mode":"existing","environment_id":"env_..."}
+```
+
+接收后的运行固定实例 ID 和权限。同一次已接收运行的重试保留原选择。覆盖只替换本次运行的 `workspace` 挂载，不修改线程的期望挂载。省略该选项时，继续使用正常的线程挂载和 agent 默认行为。选择不可用的已有实例会失败，不会自动创建替代实例。
+
 ## 模板
 
 通过 Console 创建第一个工作空间：
@@ -67,7 +137,7 @@ curl -sS -X POST "$A13N_URL/api/v1/environment-templates" \
 
 保存返回的模板 ID。此例在空闲 30 分钟后停止实例，七天后删除实例。两个计时器都从最后使用时间起算；`null` 关闭对应策略。空闲删除会移除线程挂载和实例文件。配置了默认模板的线程可以在下次运行时获得新工作空间。
 
-更新模板时，将模板 ETag 放入 `If-Match`。Recipe 在首次认领创建任务时固定，应在此之前修改，或创建新实例。空闲策略立即适用于已有实例。禁用模板会阻止新预留，也会阻止尚处于预留状态的实例首次创建；已经创建的实例继续可用。
+更新模板时，将模板 ETag 放入 `If-Match`。Recipe 在首次认领创建任务时固定，应在此之前修改，或创建新实例。使用 `stop_after_seconds` 和 `delete_after_seconds` 的 provider，其空闲策略修改立即适用于已有实例。Kubernetes 的 `reclamation` 在预留时固定；修改仅影响新的预留。禁用模板会阻止新预留，也会阻止尚处于预留状态的实例首次创建；已经创建的实例继续可用。
 
 ### 默认环境变量
 

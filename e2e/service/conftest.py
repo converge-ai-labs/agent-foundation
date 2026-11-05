@@ -47,6 +47,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 
 
 def pytest_configure(config: pytest.Config) -> None:
+    config.addinivalue_line("markers", "kubernetes: a journey on an explicitly configured development cluster")
     config.addinivalue_line("markers", "hosted(type): a journey on a hosted sandbox vendor, run only when asked for")
     config.addinivalue_line(
         "markers",
@@ -57,10 +58,15 @@ def pytest_configure(config: pytest.Config) -> None:
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
     """Hosted journeys run only when asked for: with `--hosted`, a `-m` expression naming the `hosted` marker, or a
     `-k` expression naming the journey's vendor type; any other selection leaves them out."""
-    if config.getoption("--hosted") or re.search(r"\bhosted\b", config.getoption("markexpr") or ""):
-        return
     named = set(re.findall(r"\w+", config.getoption("keyword") or ""))
-    left_out = [item for item in items if (marker := item.get_closest_marker("hosted")) and marker.args[0] not in named]
+    markers = set(re.findall(r"\w+", config.getoption("markexpr") or ""))
+    hosted = config.getoption("--hosted") or "hosted" in markers
+    left_out = [
+        item
+        for item in items
+        if ((marker := item.get_closest_marker("hosted")) and not hosted and marker.args[0] not in named)
+        or (item.get_closest_marker("kubernetes") and "kubernetes" not in named | markers)
+    ]
     if left_out:
         config.hook.pytest_deselected(items=left_out)
         items[:] = [item for item in items if item not in left_out]

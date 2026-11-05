@@ -36,7 +36,8 @@ import { ModelOptions, MediaOptions } from "./model-options";
 import { MemoryOptions } from "./memory-options";
 import styles from "./composer.module.css";
 
-export type OptionField = "agent" | "environment" | "memories";
+export type OptionField =
+  "agent" | "environment" | "run-environment" | "memories";
 
 export function optionFieldId(field: OptionField) {
   return `run-option-${field}`;
@@ -74,10 +75,13 @@ export function useRunOptions() {
   const [overrideInstructions, setOverrideInstructions] = useState(false);
   const [environment, setEnvironment] = useState("inherit"),
     [workingDirectory, setWorkingDirectory] = useState("");
+  const [runEnvironment, setRunEnvironment] = useState("inherit");
+  const [runWorkingDirectory, setRunWorkingDirectory] = useState("");
   const [memories, setMemories] = useState<Schema["MemoryMount"][]>([]);
   /** Chips name what was chosen, so the picked labels travel with the values. */
   const [labels, setLabels] = useState<{
     environment?: string;
+    runEnvironment?: string;
     agent?: string;
   }>({});
   const [advanced, setAdvanced] = useState("{}");
@@ -92,6 +96,8 @@ export function useRunOptions() {
     overrideInstructions,
     environment,
     workingDirectory,
+    runEnvironment,
+    runWorkingDirectory,
     memories,
     labels,
     advanced,
@@ -105,6 +111,7 @@ export function useRunOptions() {
       overrideInstructions ||
       memories.length ||
       environment !== "inherit" ||
+      runEnvironment !== "inherit" ||
       mediaSelected(mediaUnderstanding).length ||
       executionOverride(execution) ||
       Object.keys(jsonObject(advanced)).length
@@ -124,6 +131,8 @@ export function useRunOptions() {
       setExecution({});
       setEnvironment("inherit");
       setWorkingDirectory("");
+      setRunEnvironment("inherit");
+      setRunWorkingDirectory("");
       setMemories([]);
       setLabels({});
       setAdvanced("{}");
@@ -139,6 +148,8 @@ export function useRunOptions() {
       setOverrideInstructions(saved.overrideInstructions);
       setEnvironment(saved.environment);
       setWorkingDirectory(saved.workingDirectory);
+      setRunEnvironment(saved.runEnvironment);
+      setRunWorkingDirectory(saved.runWorkingDirectory);
       setMemories(saved.memories);
       setLabels(saved.labels);
       setAdvanced(saved.advanced);
@@ -165,6 +176,13 @@ export function useRunOptions() {
     },
     workingDirectory,
     setWorkingDirectory,
+    runEnvironment,
+    setRunEnvironment: (value: string) => {
+      setRunEnvironment(value);
+      setRunWorkingDirectory("");
+    },
+    runWorkingDirectory,
+    setRunWorkingDirectory,
     memories,
     setMemories,
     advanced,
@@ -187,7 +205,20 @@ export function useRunOptions() {
         ...(overrideInstructions ? { instructions } : {}),
       });
       const policy = executionOverride(execution);
-      const runOptions = {
+      const runOptions: NonNullable<Schema["NewThread"]["options"]> = {
+        ...(runEnvironment === "inherit"
+          ? {}
+          : {
+              environment: runEnvironment.startsWith("template:")
+                ? { mode: "fresh", template_id: runEnvironment.slice(9) }
+                : {
+                    mode: "existing",
+                    environment_id: runEnvironment.slice(9),
+                    ...(runWorkingDirectory
+                      ? { working_directory: runWorkingDirectory }
+                      : {}),
+                  },
+            }),
         ...(Object.keys(override).length ? { overrides: override } : {}),
         ...(policy ? { execution: policy } : {}),
       };
@@ -261,22 +292,18 @@ export function RunOptionsDialog({
         allPages((cursor) =>
           api.models(signal, cursor, undefined, undefined, true),
         ),
-        newThread
-          ? allPages((cursor) =>
-              environmentTemplates(client, workspace.id, signal, cursor),
-            )
-          : [],
-        newThread
-          ? allPages((cursor) =>
-              client
-                .workspace(workspace.id)
-                .GET("/api/v1/environments", {
-                  params: { query: { cursor } },
-                  signal,
-                })
-                .then(data),
-            )
-          : [],
+        allPages((cursor) =>
+          environmentTemplates(client, workspace.id, signal, cursor),
+        ),
+        allPages((cursor) =>
+          client
+            .workspace(workspace.id)
+            .GET("/api/v1/environments", {
+              params: { query: { cursor } },
+              signal,
+            })
+            .then(data),
+        ),
       ]);
       return { agents, models, templates, environments };
     },
@@ -298,7 +325,8 @@ export function RunOptionsDialog({
     ...(choices.data?.templates ?? []).map((template) => ({
       value: `template:${template.id}`,
       label: template.name,
-      description: t("Create from template"),
+      description: template.enabled ? t("Create from template") : t("Disabled"),
+      disabled: !template.enabled,
       icon: <StackIcon size={20} className={styles.optionGlyph} />,
     })),
     // A deleted environment is never mounted again.
@@ -405,6 +433,46 @@ export function RunOptionsDialog({
           )}
         </FormSection>
         <div className={styles.settingsDisclosures}>
+          <DisclosureSection
+            className={styles.settingsGroup}
+            title={t("Run environment")}
+            defaultOpen={focus === "run-environment"}
+          >
+            <FormField
+              data-field-layout="stacked"
+              label={t("Primary environment for this run")}
+              description={t(
+                "Inherit follows the conversation. Create from template reserves a fresh instance for this run; reuse selects an exact existing instance. Retries keep the accepted instance. Conversation mounts are unchanged.",
+              )}
+            >
+              <SearchPicker
+                id="run-option-run-environment"
+                label={t("Primary environment for this run")}
+                placeholder={t("Search environments")}
+                emptyMessage={t("No matching environments")}
+                value={options.runEnvironment}
+                groups={[
+                  { label: t("Environment"), options: environmentOptions },
+                ]}
+                onValueChange={(value) => {
+                  options.setRunEnvironment(value);
+                  options.setLabels((previous) => ({
+                    ...previous,
+                    runEnvironment: environmentOptions.find(
+                      (item) => item.value === value,
+                    )?.label,
+                  }));
+                }}
+              />
+            </FormField>
+            {open && options.runEnvironment.startsWith("instance:") && (
+              <WorkingDirectory
+                key={options.runEnvironment}
+                value={options.runWorkingDirectory}
+                onChange={options.setRunWorkingDirectory}
+              />
+            )}
+          </DisclosureSection>
           <DisclosureSection
             className={styles.settingsGroup}
             title={t("Execution policy")}

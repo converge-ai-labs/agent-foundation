@@ -20,6 +20,7 @@ from a13n_harness.http import (
     outbound_tls_verify,
 )
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
+from a13n_harness.providers.environment.kubernetes.configuration import ClusterProfile
 from a13n_logging import LogFile, LogFormat
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 from pydantic_ai.exceptions import UserError
@@ -375,6 +376,9 @@ class Environments(Section):
     # environment plant links that a later mount below the same root follows, so allow only directories whose
     # contents every workspace may share.
     docker_mount_roots: tuple[PurePosixPath, ...] = Field(default=(), max_length=64)
+    # Native Pod authoring uses these operator-approved profiles and cluster admission.
+    # Empty disables the provider. Credentials and exec plugins never come from tenant input.
+    kubernetes_clusters: dict[str, ClusterProfile] = Field(default_factory=dict)
 
     @field_validator("docker_mount_roots")
     @classmethod

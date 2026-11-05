@@ -93,6 +93,10 @@ examples-check-all: examples-check examples-test examples-smoke examples-build #
 setup: ## Prepare this checkout's stores, schema and local administrator without starting applications
 	@$(SERVICE_DEV) setup
 
+.PHONY: dev-kubernetes
+dev-kubernetes: ## Configure, list or explicitly clean up Kubernetes environments (ARGS="...")
+	@uv run --locked python -m dev.service.kubernetes $(ARGS)
+
 .PHONY: k8s-up k8s-check k8s-smoke
 k8s-up: ## Build and start local kind Kubernetes, preserving credentials and creating the first administrator
 	@python3 scripts/k8s_local.py up
@@ -101,6 +105,7 @@ k8s-check: ## Test the chart and local Kubernetes launcher without building imag
 	@uv run --locked python -m pytest scripts/tests/test_k8s_local.py
 	@helm lint deploy/kubernetes/helm/a13n-service --strict
 	@helm lint deploy/kubernetes/helm/a13n-service -f deploy/kubernetes/helm/values-local.yaml --strict
+	@helm lint deploy/kubernetes/helm/a13n-service -f deploy/kubernetes/helm/values-local.yaml -f deploy/kubernetes/helm/values-environments-smoke.yaml --strict
 
 k8s-smoke: ## Check the running local kind deployment: Console, administrator sign-in and credential storage
 	@python3 scripts/deploy_smoke.py kind

@@ -23,7 +23,7 @@ from a13n_harness.providers.environment.docker.provider import DOCKER, DockerCon
 from a13n_harness.providers.environment.docker.runtime import DockerSDKEngine
 from a13n_harness.providers.memory import MemoryProviderDefinition, MemoryStoreError
 from a13n_harness.providers.model.definition import ModelProviderDefinition, ProviderOperationError
-from anyio import fail_after, to_thread
+from anyio import CancelScope, fail_after, move_on_after, to_thread
 from pydantic import JsonValue
 
 from a13n_service.infra.errors import ServiceError
@@ -34,7 +34,7 @@ from a13n_service.providers.registry import ProviderKind, RegisteredProvider, Re
 type ProbeStatus = Literal["succeeded", "failed", "unsupported"]
 
 # The environment types whose account a read alone can check.
-_ENVIRONMENT_PROBES = frozenset({DOCKER.type})
+_ENVIRONMENT_PROBES = frozenset({DOCKER.type, "kubernetes"})
 # Default memory namespaces are `a13n-` and a hash, so the probe's never holds a memory's records.
 PROBE_NAMESPACE = "a13n-probe"
 
@@ -118,6 +118,33 @@ async def probe(
         with fail_after(timeout):
             if isinstance(definition, EnvironmentManagementDefinition):
                 await registry.check_environment_endpoint(type_, config, policy)
+                if type_ == "kubernetes":
+                    from a13n_harness.providers.environment.kubernetes.runtime import open_runtime
+                    from kubernetes_asyncio.client.exceptions import ApiException
+
+                    runtime = await open_runtime(
+                        configuration=definition.configuration_model.model_validate(config),
+                        credential=None,
+                    )
+                    try:
+                        if not runtime.profile.allow_plaintext_envd:
+                            return ProbeResult(
+                                "failed",
+                                "Kubernetes Envd currently requires authenticated HTTP. Ask the operator to enable "
+                                "allow_plaintext_envd (Helm: kubernetesEnvironments.allowPlaintextEnvd) "
+                                "on a trusted private network, then check again.",
+                            )
+                        await runtime.call("GET", runtime.path("Pod"), query=[("limit", 1)])
+                    except ApiException:
+                        return ProbeResult("failed", "kubernetes_namespace_unavailable")
+                    finally:
+                        with CancelScope(shield=True), move_on_after(5):
+                            await runtime.close()
+                    return ProbeResult(
+                        "succeeded",
+                        "Cluster authentication and namespace Pod listing succeeded; "
+                        "creation permissions, admission, scheduling, storage and Envd require a smoke environment",
+                    )
                 endpoint = registry.environment_endpoint(type_, config)
                 await _ping_engine(definition, config, endpoint, policy=policy, timeout=timeout, max_bytes=max_bytes)
             else:

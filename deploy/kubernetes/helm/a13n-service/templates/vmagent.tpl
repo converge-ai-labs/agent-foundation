@@ -83,7 +83,7 @@ spec:
             {{- toYaml (default .Values.resources $vm.writerResources) | nindent 12 }}
       containers:
         - name: writer
-          {{- include "a13n.container" $writer | nindent 10 }}
+          {{- include "a13n.container" (merge (dict "kubernetesManagement" true) $writer) | nindent 10 }}
           args: ["a13n-service", "--config", "/app/service.toml", "run", "--role", "control"]
           env:
             {{- include "a13n.monitoringEnv" $writer | nindent 12 }}
@@ -159,6 +159,7 @@ spec:
             {{- toYaml $vm.resources | nindent 12 }}
       volumes:
         {{- include "a13n.volumes" . | nindent 8 }}
+        {{- include "a13n.kubernetesVolumes" . | nindent 8 }}
         - name: monitoring
           persistentVolumeClaim:
             claimName: {{ default $name $vm.persistence.existingClaim }}

@@ -11,6 +11,7 @@ from a13n_service.infra.outbox import Claim, Handler, settle
 from a13n_service.runs import inbox
 from a13n_service.runs.environments.desktop import access, identity
 from a13n_service.runs.environments.desktop.tables import DesktopBlockedRow, DesktopControlRow
+from a13n_service.runs.environments.mounts import interactive_mounts
 from a13n_service.runs.environments.tables import EnvironmentRow, ThreadEnvironmentRow
 from a13n_service.runs.notices import StaleNotice
 from a13n_service.runs.runtime import Runtime
@@ -54,7 +55,7 @@ async def eligible(session: AsyncSession, runtime: Runtime, registration: Deskto
     thread = await session.get(ThreadRow, registration.thread_id)
     mount = EnvironmentMount.model_validate(registration.mount)
     environment = await session.get(EnvironmentRow, mount.environment_id)
-    binding = await session.get(ThreadEnvironmentRow, (registration.thread_id, mount.name))
+    bindings = await interactive_mounts(session, thread) if thread is not None else []
     current = await now(session)
     if (
         registration.suppressed
@@ -71,8 +72,7 @@ async def eligible(session: AsyncSession, runtime: Runtime, registration: Deskto
         or thread is None
         or thread.archived_at is not None
         or (thread.origin == "child" and thread.current_run_id is None)
-        or binding is None
-        or EnvironmentMount.model_validate(binding, from_attributes=True) != mount
+        or mount not in bindings
     ):
         return None
     scope = WorkspaceScope(origin.organization_id, origin.workspace_id)

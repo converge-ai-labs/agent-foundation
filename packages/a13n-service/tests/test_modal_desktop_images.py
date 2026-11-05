@@ -91,7 +91,10 @@ async def test_first_build_then_reuse_pins_exact_image_before_allocation(setup, 
     async with transaction(runtime.storage) as session:
         row = await session.get(EnvironmentRow, op.environment_id)
         assert Handle.model_validate(row.handle).recipe["image"] == "im-TestImage"
+        assert row.next_operation_at is not None
+        row.next_operation_at = await now(session) - timedelta(seconds=1)
     allocation = await lifecycle.claim(runtime, op.environment_id, owner="test")
+    assert allocation is not None
     result = await lifecycle.perform(runtime, allocation)
     assert result.fault is None
     assert provider.create.call_args.args[0]["image"] == "im-TestImage"
