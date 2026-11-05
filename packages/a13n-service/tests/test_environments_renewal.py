@@ -521,6 +521,57 @@ async def test_opted_out_session_keeps_its_lost_mount_after_another_session_reco
     assert joined["environment_mounts"][0]["environment_id"] == successor
 
 
+async def test_idle_retired_successor_releases_quota_then_reunites_its_sharers(env):
+    settings = env.runtime.settings
+    limits = settings.environments.model_copy(update={"managed_count": 1})
+    env.app.state.runtime = env.runtime = replace(
+        env.runtime, settings=settings.model_copy(update={"environments": limits})
+    )
+    lost_id = await ready_sandbox(env)
+    template = (await environment(env, lost_id))["template_id"]
+    path = f"{env.api}/environment-templates/{template}"
+    etag = (await env.client.get(path)).headers["etag"]
+    patch = await env.client.patch(path, headers={"if-match": etag}, json={"config": {"delete_after_seconds": 3600}})
+    assert patch.status_code == 200, patch.text
+    mount = {
+        "name": "workspace",
+        "environment_id": lost_id,
+        "working_directory": "/project",
+        "permission_ceiling": {"operations": []},
+    }
+    early, late = [await start(env, environments=[mount]) for _ in range(2)]
+    for receipt in (early, late):
+        await interrupt(env, receipt["run"]["id"])
+    await lose_sandbox(env, lost_id)
+    first = (await follow_up(env, early["thread"]["id"], "recover")).json()["run"]
+    idle_id = first["environment_mounts"][0]["environment_id"]
+    await interrupt(env, first["id"])
+    await backdate(env, idle_id, last_used_at=timedelta(days=1))
+    await maintain_environments(env.runtime, owner="sweep")
+    assert (await environment(env, idle_id))["status"] == "deleted"
+
+    # Idle deletion returned the slot. A successor competes with ordinary reservations for it.
+    other = (await reserve(env, template))["id"]
+    for receipt in (early, late):
+        blocked = (await follow_up(env, receipt["thread"]["id"], "full")).json()
+        assert blocked["run"] is None and blocked["entry"]["failure"]["code"] == "environment_limit"
+    assert (await act(env, "DELETE", other))[0] == 202
+
+    # The late thread still selects the original loss. The early thread's mount names its retired successor.
+    responses = await asyncio.gather(*(follow_up(env, r["thread"]["id"], "resume") for r in (late, early)))
+    assert [r.status_code for r in responses] == [201, 201], [r.text for r in responses]
+    bindings = [r.json()["run"]["environment_mounts"] for r in responses]
+    new_id = bindings[0][0]["environment_id"]
+    assert new_id not in {lost_id, idle_id}
+    assert bindings == [[{**mount, "environment_id": new_id}]] * 2
+    async with transaction(env.runtime.storage) as session:
+        assert list(
+            await session.scalars(select(EnvironmentRow.id).where(EnvironmentRow.replaces_environment_id == idle_id))
+        ) == [new_id]
+    exact = await start(env, options={"environment": {"mode": "existing", "environment_id": idle_id}})
+    assert exact["run"] is None and exact["entry"]["failure"]["code"] == "environment_deleted"
+
+
 async def test_a_late_thread_refuses_a_conflicting_mount_or_deleted_successor(env):
     original = await ready_sandbox(env)
     mounts = [{"name": "workspace", "environment_id": original}]

@@ -17,6 +17,8 @@ from alembic import command
 from sqlalchemy import MetaData, create_engine, text
 from sqlalchemy.exc import DBAPIError, IntegrityError
 
+from .conftest import pause_sweeps
+
 RULES = """
 SELECT 'function', p.proname, regexp_replace(pg_get_functiondef(p.oid), '\\s+', ' ', 'g')
 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public'
@@ -148,6 +150,7 @@ def test_run_usage_index_build_allows_run_writers(empty_database: Database) -> N
 
 @pytest.mark.anyio
 async def test_session_recreation_migration_preserves_existing_sessions_and_opt_out(service):
+    await pause_sweeps(service)
     database = service.runtime.settings.database
     path = f"{service.api}/sessions"
     created = await service.client.post(path, json={})
@@ -178,7 +181,8 @@ async def test_replacement_migration_recovers_an_interrupted_index_and_preserves
     original, successor, duplicate = [(await reserve(env, env.template["id"]))["id"] for _ in range(3)]
     with migration_connection(database, OSS) as config:
         command.downgrade(config, "63bd482bbce1")
-    upgrade(database, OSS)
+    with migration_connection(database, OSS) as config:
+        command.upgrade(config, "3fd7115ea45e")
     with migration_connection(database, OSS) as config:
         connection = config.attributes["connection"]
         assert connection.scalar(text("SELECT count(*) FROM environments WHERE replaces_environment_id IS NULL")) == 3
@@ -196,6 +200,17 @@ async def test_replacement_migration_recovers_an_interrupted_index_and_preserves
     with pytest.raises(IntegrityError, match="uq_environments_replaces"):
         async with transaction(env.runtime.storage) as session:
             await session.execute(link, {"original": original, "successor": duplicate})
+    async with transaction(env.runtime.storage) as session:
+        await session.execute(text("UPDATE environments SET retired_for_idle = true WHERE id = :id"), {"id": successor})
+    with (
+        pytest.raises(RuntimeError, match="Cannot discard idle retirement"),
+        migration_connection(database, OSS) as config,
+    ):
+        command.downgrade(config, "3fd7115ea45e")
+    async with transaction(env.runtime.storage) as session:
+        await session.execute(
+            text("UPDATE environments SET retired_for_idle = false WHERE id = :id"), {"id": successor}
+        )
     with (
         pytest.raises(RuntimeError, match="Cannot drop environment replacement links"),
         migration_connection(database, OSS) as config,

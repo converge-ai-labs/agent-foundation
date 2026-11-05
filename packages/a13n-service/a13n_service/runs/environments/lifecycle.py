@@ -256,8 +256,9 @@ async def reserve(
     need a free slot. Nothing external exists until create is dispatched."""
     template = await resolve_template(session, principal, scope, template_id)
     await resolve_provider(session, principal, EnvironmentProviderRow, scope, template.provider_id)
-    if replaces is None:
-        await lock_reservations(session, scope.workspace_id)
+    await lock_reservations(session, scope.workspace_id)
+    # A confirmed loss still holds a slot. Idle deletion has already returned its slot to the workspace.
+    if replaces is None or replaces.status == "deleted":
         held = await session.scalar(
             select(func.count())
             .select_from(EnvironmentRow)

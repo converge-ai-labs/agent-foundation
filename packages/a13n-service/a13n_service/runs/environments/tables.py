@@ -121,6 +121,8 @@ class EnvironmentRow(Stamped, Base):
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
     organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"))
     workspace_id: Mapped[str]
+    # An idle retirement releases its quota slot. A retired replacement can be continued on demand.
+    retired_for_idle: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
     # Set at reservation only. The predecessor keeps its identity for frozen Runs and exact selections.
     replaces_environment_id: Mapped[str | None] = mapped_column(String(72))
     # NULL only for external targets, which no provider account reaches.

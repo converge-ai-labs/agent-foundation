@@ -2,9 +2,8 @@
 `renew_environments` renews the ready sandboxes that end unless renewed.
 
 Each maintenance pass begins stop and delete operations for managed instances idle past their template's thresholds,
-then dispatches a bounded batch of outstanding operations whose claim is free or expired. An idle delete removes the
-threads' mounts of the instance with it, so a thread that loses its primary sandbox gets a new one at its next
-acceptance. It revisits failed operations at its fixed interval with the same operation ID; it never invents a new
+then dispatches a bounded batch of outstanding operations whose claim is free or expired. Idle deletion detaches
+mounts except shared replacement primaries, which keep their link for the next acceptance. It revisits failed operations at its fixed interval with the same operation ID; it never invents a new
 one. Renewal has its own sweep, so a slow lifecycle call never delays it.
 """
 
@@ -34,6 +33,7 @@ from a13n_service.runs.environments.lifecycle import (
     superseded,
     supports,
 )
+from a13n_service.runs.environments.mounts import PRIMARY
 from a13n_service.runs.environments.renewal import renew
 from a13n_service.runs.environments.tables import OPERATIONS, EnvironmentRow, ThreadEnvironmentRow
 from a13n_service.runs.runtime import Runtime
@@ -158,6 +158,10 @@ async def _retire_idle(runtime: Runtime, phase: Literal["stopping", "deleting"],
                     if mounting:
                         continue
                     reason = "replaced"
+                environment.retired_for_idle = reason == "idle"
+                if environment.retired_for_idle and environment.replaces_environment_id is not None:
+                    # Keep the shared primary binding so both early and late sharers can find the next successor.
+                    mounts = mounts & (ThreadEnvironmentRow.name != PRIMARY)
                 await session.execute(delete(ThreadEnvironmentRow).where(mounts))
             if environment.provider_identity is None:
                 environment.status = "deleted"

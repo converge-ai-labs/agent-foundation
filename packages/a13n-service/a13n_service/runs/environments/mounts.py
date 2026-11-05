@@ -160,7 +160,11 @@ async def _locked_environments(
         if environment is None:
             raise not_found("environment", environment_id)
         # An exact selection of a lost ID keeps its refusal even after maintenance retires the provider handle.
-        if environment.status in {"deleting", "deleted"} and await session.scalar(select(superseded(environment_id))):
+        if (
+            environment.status in {"deleting", "deleted"}
+            and not environment.retired_for_idle
+            and await session.scalar(select(superseded(environment_id)))
+        ):
             raise conflict("environment", environment_id, LOST.code)
     return found
 
@@ -243,6 +247,14 @@ async def _recovery_enabled(session: AsyncSession, thread: ThreadRow) -> bool:
     )
 
 
+def _idle_retired_replacement(environment: EnvironmentRow) -> bool:
+    return (
+        environment.retired_for_idle
+        and environment.status == "deleted"
+        and environment.replaces_environment_id is not None
+    )
+
+
 async def _recover_primary(
     session: AsyncSession,
     principal: Principal,
@@ -252,7 +264,7 @@ async def _recover_primary(
     limit: int,
 ) -> None:
     scope = WorkspaceScope(thread.organization_id, thread.workspace_id)
-    if confirmed_loss(latest):
+    if confirmed_loss(latest) or _idle_retired_replacement(latest):
         assert latest.template_id is not None
         latest = await reserve(session, principal, scope, latest.template_id, limit=limit, replaces=latest)
     require_usable(latest, principal.id)
@@ -277,9 +289,11 @@ async def freeze_mounts(
     recreation_limit: int | None,
 ) -> list[dict]:
     """Freeze desired mounts with an optional Run-only primary; lock only the selected instances in ID order."""
-    # Read the primary's loss code with its desired mount so a successor can join the same ID-ordered lock set.
+    # Read recovery eligibility with the desired mount so its successor joins the same ID-ordered lock set.
     query = (
-        select(ThreadEnvironmentRow, EnvironmentRow.failure["code"].astext)
+        select(
+            ThreadEnvironmentRow, (EnvironmentRow.failure["code"].astext == LOST.code) | EnvironmentRow.retired_for_idle
+        )
         .outerjoin(
             EnvironmentRow,
             and_(ThreadEnvironmentRow.name == PRIMARY, ThreadEnvironmentRow.environment_id == EnvironmentRow.id),
@@ -290,9 +304,9 @@ async def freeze_mounts(
         query = query.where(ThreadEnvironmentRow.name != PRIMARY)
     recovery_id = None
     selected: list[ThreadEnvironmentRow | EnvironmentMount] = []
-    for mount, failure_code in await session.execute(query):
+    for mount, can_recover in await session.execute(query):
         selected.append(mount)
-        if failure_code == LOST.code and recreation_limit is not None and await _recovery_enabled(session, thread):
+        if can_recover and recreation_limit is not None and await _recovery_enabled(session, thread):
             recovery_id = await latest_replacement(session, thread.workspace_id, mount.environment_id)
     if primary is not None:
         if any(mount.environment_id == primary.environment_id for mount in selected):
@@ -305,7 +319,11 @@ async def freeze_mounts(
     frozen = []
     for mount in sorted(selected, key=lambda mount: mount.name):
         environment = locked[mount.environment_id]
-        if recovery_id is not None and mount.name == PRIMARY and confirmed_loss(environment):
+        if (
+            recovery_id is not None
+            and mount.name == PRIMARY
+            and (confirmed_loss(environment) or _idle_retired_replacement(environment))
+        ):
             assert isinstance(mount, ThreadEnvironmentRow) and recreation_limit is not None
             if any(other.name != PRIMARY and other.environment_id == recovery_id for other in selected):
                 raise conflict("environment", recovery_id, "already_mounted")
