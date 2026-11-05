@@ -77,7 +77,7 @@ def test_migration_connection_assembles_schema_once(empty_database: Database, mo
     assert calls == {"metadata": 1, "rules": 1}
 
 
-@pytest.mark.parametrize("previous_head", ["cfd41d5330b6", "41e808ec703b", "ac17878758f6", "ba66b54e3c14"])
+@pytest.mark.parametrize("previous_head", ["cfd41d5330b6", "41e808ec703b", "ba66b54e3c14"])
 def test_client_and_recovery_migrations_converge(empty_database: Database, previous_head: str) -> None:
     with migration_connection(empty_database, OSS) as config:
         command.upgrade(config, previous_head)
@@ -1044,7 +1044,7 @@ async def test_execution_context_revision_preserves_pending_run(service, scripte
     submitted = await runs_kit.start_thread(service, agent, "Wait for a worker")
     database = service.runtime.settings.database
     with migration_connection(database, OSS) as config:
-        command.downgrade(config, "03610e577d35")
+        command.downgrade(config, "ba66b54e3c14")
     upgrade(database, OSS)
     check(database, OSS)
     assert rows(

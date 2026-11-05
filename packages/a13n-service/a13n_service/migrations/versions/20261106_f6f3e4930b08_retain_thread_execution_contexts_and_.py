@@ -1,15 +1,15 @@
 """retain thread execution contexts and native shell supervision
 
-Revision ID: ac17878758f6
-Revises: a3d0f1eb7aa7
+Revision ID: f6f3e4930b08
+Revises: ba66b54e3c14
 """
 
 import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision = "ac17878758f6"
-down_revision = "a3d0f1eb7aa7"
+revision = "f6f3e4930b08"
+down_revision = "ba66b54e3c14"
 branch_labels = None
 depends_on = None
 
