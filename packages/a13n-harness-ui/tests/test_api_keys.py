@@ -144,7 +144,20 @@ async def main():
             await ApiKeyStore(path).put(ApiKeyInput(
                 credential_ref=f"key-{role}-{index}", key=SecretStr("synthetic-key")))
 
-anyio.run(main)
+try:
+    anyio.run(main)
+except Exception as error:
+    # Production errors deliberately hide credential-bearing exception messages.
+    # Retain syscall codes and frame locations for this synthetic concurrency test.
+    import traceback
+    while error is not None:
+        print(type(error).__name__, file=sys.stderr)
+        if isinstance(error, OSError):
+            print("errno", error.errno, "winerror", getattr(error, "winerror", None), file=sys.stderr)
+        for frame in traceback.extract_tb(error.__traceback__):
+            print(frame.filename, frame.lineno, frame.name, file=sys.stderr)
+        error = error.__cause__ or error.__context__
+    raise SystemExit(1)
 """
     finished = set()
 
