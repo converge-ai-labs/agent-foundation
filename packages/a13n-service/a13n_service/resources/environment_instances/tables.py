@@ -45,6 +45,17 @@ class EnvironmentRow(Stamped, Base):
             ["metrics_data_sources.workspace_id", "metrics_data_sources.id"],
             name="fk_environments_metrics_data_source",
         ),
+        ForeignKeyConstraint(
+            ["workspace_id", "replaces_environment_id"],
+            ["environments.workspace_id", "environments.id"],
+            name="fk_environments_predecessor",
+        ),
+        Index(
+            "uq_environments_replaces",
+            "replaces_environment_id",
+            unique=True,
+            postgresql_where=text("replaces_environment_id IS NOT NULL"),
+        ),
         CheckConstraint(f"status IN {STATUSES}", name="status"),
         CheckConstraint("kind IN ('managed', 'external_http', 'external')", name="kind"),
         CheckConstraint("status <> 'disabled' OR kind = 'external'", name="disabled"),
@@ -126,6 +137,10 @@ class EnvironmentRow(Stamped, Base):
     kind: Mapped[str] = mapped_column(String(24), default="managed")
     organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"))
     workspace_id: Mapped[str]
+    # An idle retirement releases its quota slot. A retired replacement can be continued on demand.
+    retired_for_idle: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
+    # Set at reservation only. The predecessor keeps its identity for frozen Runs and exact selections.
+    replaces_environment_id: Mapped[str | None] = mapped_column(String(72))
     # NULL only for external targets, which no provider account reaches.
     provider_id: Mapped[str | None]
     # The non-secret provider type and backend locator that give `handle` meaning, frozen before a managed instance's

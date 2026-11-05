@@ -23,7 +23,6 @@ from a13n_service.resources.agents import stored
 from a13n_service.resources.agents.schemas import AgentConfig, AgentOverride
 from a13n_service.resources.agents.service import (
     SelectedRevision,
-    load_revision,
     select_revision,
     validate_override,
 )
@@ -35,6 +34,7 @@ from a13n_service.runs.environments.lifecycle import reserve
 from a13n_service.runs.environments.mounts import (
     PRIMARY,
     adopt_mounts,
+    child_environment_policy,
     freeze_mounts,
     has_primary,
     mount_environments,
@@ -57,6 +57,7 @@ from a13n_service.runs.schemas import (
 )
 from a13n_service.runs.search import seed, vector
 from a13n_service.runs.tables import InboxEntryRow, RunRow, SessionRow, ThreadRow
+from a13n_service.runs.threads import lock_thread
 from a13n_service.runs.webhooks import notify_subscribers
 from a13n_service.tenancy.access import principal_for, require_active_workspace
 from a13n_service.tenancy.authorize import ExecutionAuthority, Principal, WorkspaceScope, authorize
@@ -328,13 +329,8 @@ async def primary_source(
         if config.default_environment_id is not None:
             return MountCreate(name=PRIMARY, environment_id=config.default_environment_id)
         return config.default_environment_template_id
-    origin = await session.get(RunRow, thread.origin_run_id)
-    assert origin is not None and thread.origin_thread_id is not None and thread.subagent is not None
-    assert origin.agent_revision_id is not None
-    revision = await load_revision(session, origin.agent_id, origin.agent_revision_id)
-    override = stored.require(RunOptions, origin.options, kind="run", id=origin.id).overrides
-    spawning = stored.require_effective(revision.config, override, revision_id=revision.revision_id)
-    policy = spawning.subagents.named[thread.subagent].environment
+    policy = await child_environment_policy(session, thread)
+    assert thread.origin_thread_id is not None
     if policy.mode == "shared":
         return await primary_mount(session, thread.origin_thread_id)
     return policy.template_id
@@ -412,8 +408,10 @@ async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, 
     mounts = await freeze_mounts(
         session,
         thread,
-        principal_id=principal.id,
+        principal=principal,
         primary=primary_override,
+        # A desktop handback requires the original target and already holds its exclusive lock.
+        recreation_limit=None if source.trigger == "desktop_handback" else runtime.settings.environments.managed_count,
     )
     if source.trigger == "desktop_handback" and source.entry is not None:
         # Eligibility proved the desired mount still equals its originating frozen binding.
@@ -591,9 +589,7 @@ async def advance(runtime: Runtime, thread_id: str, *, skip_locked: bool = False
     """Successor acceptance in its own transaction after a seal or delivery; the sweep covers a lost call."""
     try:
         async with transaction(runtime.storage) as session:
-            thread = await session.scalar(
-                select(ThreadRow).where(ThreadRow.id == thread_id).with_for_update(skip_locked=skip_locked)
-            )
+            thread = await lock_thread(session, thread_id, skip_locked=skip_locked)
             if thread is None:
                 return
             await accept(session, runtime, thread)

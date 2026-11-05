@@ -191,7 +191,7 @@ async def submit_message(
     runtime: Runtime, actor: Principal, workspace_id: str, thread_id: str, message: Message, *, request_key: str
 ) -> tuple[Submitted, bool]:
     async def create(session: AsyncSession, scope: WorkspaceScope, request: Request) -> tuple[ThreadRow, Source]:
-        thread = await get_thread(session, scope.workspace_id, thread_id, lock=True)
+        thread = await get_thread(session, scope.workspace_id, thread_id, lock="acceptance")
         require_open(thread)
         return thread, await prepare_message(
             session, runtime, actor, scope, thread, message, request, authority=execution_authority(actor, scope)
@@ -268,7 +268,7 @@ async def fork(
 
     async def create(session: AsyncSession, scope: WorkspaceScope, request: Request) -> tuple[ThreadRow, Source]:
         origin = await get_run(session, scope.workspace_id, run_id)
-        origin_thread = await get_thread(session, scope.workspace_id, origin.thread_id, lock=True)
+        origin_thread = await get_thread(session, scope.workspace_id, origin.thread_id, lock="acceptance")
         # A fork continues a sealed run's last checkpoint, whatever its outcome.
         if origin.sealed_at is None:
             raise conflict("run", origin.id, f"run_{origin.status}")

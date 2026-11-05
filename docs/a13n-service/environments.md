@@ -190,7 +190,11 @@ Open **Environments → Instances** to inspect creation and use. API clients use
 | `stopping`, `stopped`  | Wait for stopping to finish; a later run starts it again |
 | `deleting`, `deleted`  | Select another instance                                  |
 
-A failure reports its code, message and whether the operation outcome is known. Service reconciles unfinished operations using their existing identity. For `provider_credential_changed`, restore access to the instance's original account. For a permanent failure such as `environment_lost`, repair the cause where possible or delete the failed instance and create another.
+A failure reports its code, message and whether the operation outcome is known. Service reconciles unfinished operations using their existing identity. For `provider_credential_changed`, restore access to the instance's original account. When a provider confirms `environment_lost` on a thread's template-backed `workspace` mount, the next run using that mount gets a fresh instance from the same template. Files and processes from the lost sandbox are gone. The run's usual `lazy_environment` setting controls when the new sandbox starts. A run already using the lost instance can fail.
+
+Threads that shared the lost instance, including forks, use the same replacement as each resumes. If the instance is lost again, a returning thread joins the latest replacement. Replacing a lost instance uses its existing quota slot, even when the limit is one. If idle policy deletes the replacement, it frees that slot. The next eligible run needs a free slot to create another shared instance. If the workspace is full, the run is refused with `environment_limit`; the threads can try again when a slot is free.
+
+If your application needs the original disk, set `"auto_recreate_lost_environment": false` when creating the session, or send it in `PATCH /api/v1/sessions/{id}` with the session's current `If-Match`. The default is `true`. Runs that select an exact instance, shared child agents, and mounts with other names continue to report their original instance's failure.
 
 ### Reserve a managed environment
 

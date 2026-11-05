@@ -564,6 +564,18 @@ async def test_a_child_without_a_primary_gets_one_from_its_edge(env, scripted_mo
     assert renewed["environment_id"] != primary["environment_id"]
     assert await next_mounts(builder, worker) == [renewed]
 
+    # A confirmed loss can replace a dedicated sandbox. A shared child must still refer to the parent's instance.
+    for mount in (restored, renewed):
+        await advance(env.runtime, mount["environment_id"], owner="test")
+    async with transaction(env.runtime.storage) as session:
+        for mount in (restored, renewed):
+            row = await session.get_one(EnvironmentRow, mount["environment_id"])
+            lifecycle.record_failure(row, lifecycle.LOST, row.created_at, unresolved=False)
+    refused = await runs_kit.submit(env, builder, runs_kit.message(worker, "use shared sandbox"))
+    assert refused.json()["entry"]["failure"]["code"] == "environment_lost"
+    [replacement] = await next_mounts(tester, worker)
+    assert replacement["environment_id"] != restored["environment_id"]
+
 
 async def advance(runtime, environment_id: str, *, owner: str) -> None:
     """Explicitly prepare the reservation used by these lifecycle tests."""

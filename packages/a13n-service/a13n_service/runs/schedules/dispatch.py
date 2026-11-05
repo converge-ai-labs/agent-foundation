@@ -154,7 +154,7 @@ async def process(runtime: Runtime, schedule_id: str) -> None:
                     schedule_occurrence_id=item.id,
                 )
             else:
-                thread = await get_thread(session, row.workspace_id, row.thread_id, lock=True)
+                thread = await get_thread(session, row.workspace_id, row.thread_id, lock="acceptance")
                 require_open(thread)
                 item.session_id = thread.session_id
                 source = await prepare_message(

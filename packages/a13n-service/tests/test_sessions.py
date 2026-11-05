@@ -42,6 +42,22 @@ async def test_identity_create_update_clear_and_stale_editor(service) -> None:
     assert listed[0]["title"] is None and listed[0]["origin"] is None
 
 
+async def test_session_environment_recreation_setting(service):
+    path = f"{service.api}/sessions"
+    created = await service.client.post(path, json={"auto_recreate_lost_environment": False})
+    assert created.status_code == 201 and created.json()["auto_recreate_lost_environment"] is False
+    session = f"{path}/{created.json()['id']}"
+    patched = await service.client.patch(
+        session, json={"title": "Keep original"}, headers={"if-match": created.headers["etag"]}
+    )
+    assert patched.json()["auto_recreate_lost_environment"] is False
+    enabled = await service.client.patch(
+        session, json={"auto_recreate_lost_environment": True}, headers={"if-match": patched.headers["etag"]}
+    )
+    assert enabled.status_code == 200 and enabled.json()["auto_recreate_lost_environment"] is True
+    assert (await service.client.get(path)).json()["items"][0]["auto_recreate_lost_environment"] is True
+
+
 @pytest.mark.parametrize(
     "identity",
     [
@@ -153,6 +169,19 @@ def test_old_thread_requests_retain_their_idempotency_digest() -> None:
     previous = body.model_dump(mode="json", exclude={"session"})
     expected = hashlib.sha256(canonical_json(["thread", "ws_example", previous])).hexdigest()
     assert Request.of("retry", "thread", "ws_example", body).digest == expected
+
+
+def test_existing_inline_session_digest_includes_only_an_opt_out() -> None:
+    fields = {"agent_id": "ap_11111111111111111111", "payload": {"content": [{"type": "text", "text": "hello"}]}}
+    body = NewThread.model_validate({**fields, "session": {"title": "One"}})
+    previous = body.model_dump(mode="json")
+    assert "auto_recreate_lost_environment" not in previous["session"]
+    expected = hashlib.sha256(canonical_json(["thread", "ws_example", previous])).hexdigest()
+    for enabled in (True, False):
+        request = NewThread.model_validate(
+            {**fields, "session": {"title": "One", "auto_recreate_lost_environment": enabled}}
+        )
+        assert (Request.of("retry", "thread", "ws_example", request).digest == expected) is enabled
 
 
 async def test_navigation_pages_keep_global_positions_and_parent_references(service, scripted_model, runs_kit):

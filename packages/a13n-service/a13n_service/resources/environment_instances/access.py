@@ -2,11 +2,22 @@
 
 from collections.abc import Sequence
 
-from sqlalchemy import select
+from sqlalchemy import ColumnElement, SQLColumnExpression, exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from a13n_service.infra.errors import ServiceError, conflict, not_found
 from a13n_service.resources.environment_instances.tables import EnvironmentRow
+
+ENVIRONMENT_LOST = "environment_lost"
+
+
+def superseded(environment_id: SQLColumnExpression[str] | str) -> ColumnElement[bool]:
+    """A successor keeps the predecessor's quota slot, even after either row is retired."""
+    successor = aliased(EnvironmentRow)
+    return exists(
+        select(successor.id).where(successor.replaces_environment_id == environment_id).correlate_except(successor)
+    )
 
 
 def unusable(environment: EnvironmentRow) -> bool:
@@ -32,15 +43,13 @@ def require_usable(environment: EnvironmentRow, principal_id: str) -> None:
     require_usable_state(environment)
 
 
-async def lock_environments(
-    session: AsyncSession, workspace_id: str, environment_ids: Sequence[str], *, principal_id: str
-) -> list[EnvironmentRow]:
-    """Share-lock the workspace's instances in ID order, the order every multi-environment writer uses, and check
-    each is usable. New use waits for a stop, delete or lifecycle step, which lock the row exclusively, but never
-    for other new use."""
+async def lock_environment_rows(
+    session: AsyncSession, workspace_id: str, environment_ids: Sequence[str]
+) -> dict[str, EnvironmentRow]:
+    """Share-lock the selected instances in ID order before deciding whether each can be mounted."""
     ids = sorted(set(environment_ids))
     if not ids:
-        return []
+        return {}
     rows = (
         await session.scalars(
             select(EnvironmentRow)
@@ -50,10 +59,27 @@ async def lock_environments(
             .execution_options(populate_existing=True)
         )
     ).all()
-    found = {row.id for row in rows}
-    for missing in ids:
-        if missing not in found:
-            raise not_found("environment", missing)
-    for row in rows:
+    found = {row.id: row for row in rows}
+    for environment_id in ids:
+        environment = found.get(environment_id)
+        if environment is None:
+            raise not_found("environment", environment_id)
+        # An exact selection of a lost ID keeps its refusal even after maintenance retires the provider handle.
+        if (
+            environment.status in {"deleting", "deleted"}
+            and environment.kind == "managed"
+            and not environment.retired_for_idle
+            and await session.scalar(select(superseded(environment_id)))
+        ):
+            raise conflict("environment", environment_id, ENVIRONMENT_LOST)
+    return found
+
+
+async def lock_environments(
+    session: AsyncSession, workspace_id: str, environment_ids: Sequence[str], *, principal_id: str
+) -> list[EnvironmentRow]:
+    """Lock the selected instances and require each to be usable by the principal."""
+    rows = await lock_environment_rows(session, workspace_id, environment_ids)
+    for row in rows.values():
         require_usable(row, principal_id)
-    return list(rows)
+    return list(rows.values())

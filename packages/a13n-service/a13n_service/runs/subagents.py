@@ -65,7 +65,7 @@ from a13n_service.runs.schemas import (
 )
 from a13n_service.runs.seal import stop
 from a13n_service.runs.tables import InboxEntryRow, RunRow, SessionRow, ThreadRow
-from a13n_service.runs.threads import new_thread
+from a13n_service.runs.threads import lock_thread, new_thread
 from a13n_service.runs.tool_executions.authority import lock_owner, prove
 from a13n_service.runs.tools import tool_failures
 from a13n_service.tenancy.authorize import ExecutionAuthority, WorkspaceScope
@@ -142,7 +142,7 @@ class ChildRuns(SubagentOperator):
             raise invalid("tool_call", "a child is identified by the tool call that delegates it")
         settings = self.runtime.settings.worker
         async with transaction(self.runtime.storage) as session:
-            thread = await lock(session, ThreadRow, self.lease.thread_id)
+            thread = await lock_thread(session, self.lease.thread_id)
             if thread is None or thread.archived_at is not None:
                 raise LeaseLost()
             run, _ = await lock_owner(session, self.runtime, self.lease)
@@ -360,7 +360,7 @@ class ChildRuns(SubagentOperator):
         """Prove the parent's lease, then lock the child thread and its run; only this thread's children."""
         parent, _ = await lock_owner(session, self.runtime, self.lease)
         run = await session.get(RunRow, run_id)
-        thread = await lock(session, ThreadRow, run.thread_id) if run is not None else None
+        thread = await lock_thread(session, run.thread_id) if run is not None else None
         if run is None or thread is None or thread.origin != "child" or thread.origin_thread_id != parent.thread_id:
             raise not_found("execution", run_id)
         locked = await lock(session, RunRow, run.id)

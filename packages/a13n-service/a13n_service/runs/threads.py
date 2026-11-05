@@ -2,6 +2,7 @@
 and the thread resource's reads and settings."""
 
 from collections.abc import Sequence
+from typing import Literal
 
 from sqlalchemy import func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,17 +34,30 @@ from a13n_service.tenancy.authorize import Principal
 
 
 async def get_thread(
-    session: AsyncSession, workspace_id: str, thread_id: str, *, lock: bool = False, history: bool = True
+    session: AsyncSession,
+    workspace_id: str,
+    thread_id: str,
+    *,
+    lock: bool | Literal["acceptance"] = False,
+    history: bool = True,
 ) -> ThreadRow:
     query = select(ThreadRow).where(ThreadRow.workspace_id == workspace_id, ThreadRow.id == thread_id)
     if not history:
         query = query.options(defer(ThreadRow.message_history, raiseload=True))
     if lock:
-        query = query.with_for_update().execution_options(populate_existing=True)
+        # Acceptance serializes writers but lets a concurrent fork validate its foreign key to its origin.
+        query = query.with_for_update(key_share=lock == "acceptance").execution_options(populate_existing=True)
     thread = await session.scalar(query)
     if thread is None:
         raise not_found("thread", thread_id)
     return thread
+
+
+async def lock_thread(session: AsyncSession, thread_id: str, *, skip_locked: bool = False) -> ThreadRow | None:
+    """Take the same non-key writer lock as get_thread for an internal thread ID."""
+    return await session.get(
+        ThreadRow, thread_id, with_for_update={"key_share": True, "skip_locked": skip_locked}, populate_existing=True
+    )
 
 
 async def get_run(session: AsyncSession, workspace_id: str, run_id: str, *, lock: bool = False) -> RunRow:
