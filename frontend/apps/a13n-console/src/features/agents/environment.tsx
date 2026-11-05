@@ -9,7 +9,6 @@ import { OptionsRefresh } from "../../shared/forms/options-refresh";
 import { Section } from "../../shared/page";
 import { environmentApi, environmentTemplates } from "../environments/api";
 import { useEnvironmentTypes } from "../environments/providers";
-import { runtimeGroup } from "../environments/runtime-catalog";
 
 export function AgentEnvironment({
   value,
@@ -62,11 +61,6 @@ export function AgentEnvironment({
       !["disabled", "deleting", "deleted"].includes(item.status) &&
       !item.failure?.permanent,
   );
-  const groups = [
-    { key: "cloud", label: t("Cloud hosting") },
-    { key: "own", label: t("Own hosting") },
-    { key: "other", label: t("Other runtimes") },
-  ] as const;
   const choices = (templates.data ?? []).map((item) => {
     const provider = providers.data?.find(
       (provider) => provider.id === item.provider_id,
@@ -78,7 +72,6 @@ export function AgentEnvironment({
     return {
       value: item.id,
       label: item.name,
-      category: runtimeGroup(type),
       hint: ["local", "direct_local"].includes(type)
         ? t("Local directory")
         : (definition?.display_name ?? provider?.type),
@@ -123,17 +116,16 @@ export function AgentEnvironment({
           ...instances.map((item) => ({
             value: `instance:${item.id}`,
             label: item.name,
-            group: t("Existing environments"),
+            group: t("Existing environment instances"),
           })),
           ...(environmentId &&
           !instances.some((item) => item.id === environmentId)
             ? [{ value: `instance:${environmentId}`, label: environmentId }]
             : []),
-          ...groups.flatMap((group) =>
-            choices
-              .filter((item) => item.category === group.key)
-              .map((item) => ({ ...item, group: group.label })),
-          ),
+          ...choices.map((item) => ({
+            ...item,
+            group: t("Environment templates"),
+          })),
           ...(value && !templates.data?.some((item) => item.id === value)
             ? [{ value, label: value }]
             : []),

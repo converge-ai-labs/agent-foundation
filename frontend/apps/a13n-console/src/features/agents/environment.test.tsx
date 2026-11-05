@@ -149,14 +149,15 @@ it("preserves collapsed model settings and saves them with the environment choic
       name: "Environment",
     }),
   );
-  const cloud = await screen.findByRole("group", { name: "Cloud hosting" });
+  const templates = await screen.findByRole("group", {
+    name: "Environment templates",
+  });
   expect(
-    within(screen.getByRole("group", { name: "Own hosting" })).getByRole(
-      "option",
-      { name: "Sandbox Local directory" },
-    ),
+    within(templates).getByRole("option", { name: "Sandbox Local directory" }),
   ).toBeTruthy();
-  await user.click(within(cloud).getByRole("option", { name: "Sandbox E2B" }));
+  await user.click(
+    within(templates).getByRole("option", { name: "Sandbox E2B" }),
+  );
   expect(
     screen.getByRole("combobox", {
       name: "Environment",

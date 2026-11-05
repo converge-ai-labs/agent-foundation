@@ -3697,7 +3697,7 @@
   "Choose which connections use on-demand discovery. Unchecked connections provide tools directly. New connections follow the MCP tools setting.": "Choose which connections use on-demand discovery. Unchecked connections provide tools directly. New connections follow the MCP tools setting.",
   "{{selected}} of {{total}} connections": "{{selected}} of {{total}} connections",
   "Optional. When a session has no primary environment, use an existing environment or create one from a template. Saving the agent does not connect or start an environment.": "Optional. When a session has no primary environment, use an existing environment or create one from a template. Saving the agent does not connect or start an environment.",
-  "Existing environments": "Existing environments",
+  "Existing environment instances": "Existing environment instances",
   "Envd ws": "Envd outbound WebSocket",
   "Envd outbound WebSocket (Service)": "Envd outbound WebSocket (Service)",
   "Native Docker exec, Envd HTTP, or Service-managed outbound WebSocket. HTTP alone requires inbound routing.": "Native Docker exec, Envd HTTP, or Service-managed outbound WebSocket. HTTP alone requires inbound routing.",

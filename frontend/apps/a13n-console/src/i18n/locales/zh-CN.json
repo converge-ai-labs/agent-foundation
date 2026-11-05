@@ -3697,7 +3697,7 @@
   "Choose which connections use on-demand discovery. Unchecked connections provide tools directly. New connections follow the MCP tools setting.": "选择需要按需发现的连接。未勾选的连接会直接提供工具。新增连接遵循 MCP 工具的设置。",
   "{{selected}} of {{total}} connections": "{{selected}} / {{total}} 个连接",
   "Optional. When a session has no primary environment, use an existing environment or create one from a template. Saving the agent does not connect or start an environment.": "可选。会话尚未挂载主环境时，使用已有环境或通过模板创建环境。保存 Agent 不会连接或启动环境。",
-  "Existing environments": "已有环境",
+  "Existing environment instances": "已有环境实例",
   "Envd ws": "Envd 主动 WebSocket",
   "Envd outbound WebSocket (Service)": "Envd 主动 WebSocket（Service）",
   "Native Docker exec, Envd HTTP, or Service-managed outbound WebSocket. HTTP alone requires inbound routing.": "选择 Docker 原生命令执行、Envd HTTP 或 Service 管理的主动 WebSocket。只有 HTTP 需要配置入站连接。",
