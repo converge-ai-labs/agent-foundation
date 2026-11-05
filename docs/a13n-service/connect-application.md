@@ -18,16 +18,35 @@ You can manage personal keys under **API keys** in the sidebar. A key acts in it
 
 ## Start with an SDK
 
-Use your language's quick start: [Python](https://github.com/converge-ai-labs/a13n-sdk-python/blob/main/README.md), [TypeScript](https://github.com/converge-ai-labs/a13n-sdk-typescript/blob/main/README.md), [Go](https://github.com/converge-ai-labs/a13n-sdk-go/blob/main/README.md), or [Rust](https://github.com/converge-ai-labs/a13n-sdk-rust/blob/main/README.md). Each repository owns installation, method signatures, and runnable examples. Read the documentation for the version you install and match its supported Service contract to your deployment; `main` may be ahead of a released package.
+On your server, set `A13N_URL` to the **Service URL** and `AGENT_ID` to the **Agent ID**. Use the `A13N_API_KEY` you saved above. Save this Python example as `call_agent.py`.
 
-Build the first interaction in this order:
+```python title="call_agent.py"
+import asyncio
+import os
 
-1. Initialize the client with the Service URL and API key.
-2. Start a conversation with the agent ID and a short message such as “Name two colors.” Give the submission an idempotency key. Retry the same submission with the same key if the response is lost.
-3. Retain the returned conversation and submission references. Your application needs to associate the result with this message, including any time the message spends queued.
-4. Read the result. Display `output` on completion, collect responses when waiting, and show the structured failure when execution fails.
+from a13n import Client
 
-Use the SDK's application workflow to follow the submission through these states. The [HTTP walkthrough below](#direct-http-integration) shows the underlying receipts and reads. A new conversation creates its session automatically, and streaming is optional when you only need the final result.
+
+async def main():
+    async with Client(os.environ["A13N_URL"], os.environ["A13N_API_KEY"]) as client:
+        agent = client.agents(os.environ["AGENT_ID"])
+        message = await agent.start("Name two colors.")
+        result = await message.result()
+        print(result.output if result.status == "completed" else result.status)
+
+
+asyncio.run(main())
+```
+
+Run it with Python 3.13 and SDK 0.0.98:
+
+```sh
+uv run --python 3.13 --with 'a13n==0.0.98' call_agent.py
+```
+
+On completion, the script prints the agent’s answer. If it prints `waiting`, [handle the pending requests](#handle-a-waiting-result). Keep `message.thread.id` to find this conversation in Console or send a follow-up.
+
+For runnable TypeScript, Go, and Rust examples, see the [SDK guides](sdks.md#choose-a-client). If your application needs to retry a submission after losing the response, save an idempotency key and the original input before sending. Reuse both on retry.
 
 ## Send a follow-up
 

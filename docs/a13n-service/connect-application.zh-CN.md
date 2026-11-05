@@ -18,16 +18,35 @@ description: 通过 Service SDK 或 HTTP API 调用 agent，读取结果，并�
 
 ## 从 SDK 开始
 
-选择所用语言的快速入门：[Python](https://github.com/converge-ai-labs/a13n-sdk-python/blob/main/README.md)、[TypeScript](https://github.com/converge-ai-labs/a13n-sdk-typescript/blob/main/README.md)、[Go](https://github.com/converge-ai-labs/a13n-sdk-go/blob/main/README.md) 或 [Rust](https://github.com/converge-ai-labs/a13n-sdk-rust/blob/main/README.md)。各仓库维护安装方式、方法签名和可运行示例。请阅读所安装版本的文档，并确认其支持的 Service 协议与部署版本匹配；`main` 可能领先于已发布的软件包。
+在服务端设置三个环境变量：将 **Service URL** 存入 `A13N_URL`，将 **Agent ID** 存入 `AGENT_ID`，并使用上一步保存的 `A13N_API_KEY`。将下面的 Python 示例保存为 `call_agent.py`。
 
-按以下顺序实现首次交互：
+```python title="call_agent.py"
+import asyncio
+import os
 
-1. 使用 Service URL 和 API 密钥初始化客户端。
-2. 使用 agent ID 和消息开始对话，例如“说出两种颜色”。为本次提交提供幂等 key。如果响应丢失，使用相同 key 重试同一次提交。
-3. 保存返回的对话和提交引用。应用需要将结果关联到这条消息，并跟踪消息排队期间的状态。
-4. 读取结果。完成后展示 `output`，等待时收集响应，执行失败时展示结构化错误。
+from a13n import Client
 
-使用 SDK 的应用工作流跟踪提交过程。[下方 HTTP 示例](#direct-http-integration)展示了底层回执和读取步骤。新对话会自动创建所属会话；只需要最终结果时，可以不读取流式输出。
+
+async def main():
+    async with Client(os.environ["A13N_URL"], os.environ["A13N_API_KEY"]) as client:
+        agent = client.agents(os.environ["AGENT_ID"])
+        message = await agent.start("Name two colors.")
+        result = await message.result()
+        print(result.output if result.status == "completed" else result.status)
+
+
+asyncio.run(main())
+```
+
+使用 Python 3.13 和 SDK 0.0.98 运行：
+
+```sh
+uv run --python 3.13 --with 'a13n==0.0.98' call_agent.py
+```
+
+运行完成后，终端会打印 agent 的回答。若输出 `waiting`，请[处理待响应的请求](#handle-a-waiting-result)。要在 Console 中查看这次对话或稍后追问，请保留 `message.thread.id`。
+
+其他语言的可运行示例见 [TypeScript、Go 和 Rust SDK 指南](sdks.md#choose-a-client)。应用若需要在提交后丢失响应时重试，请在发送前保存幂等 key 和原始输入；重试时使用相同的 key 和输入。
 
 ## 发送后续消息
 
