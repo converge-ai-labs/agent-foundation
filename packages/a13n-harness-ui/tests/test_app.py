@@ -331,7 +331,7 @@ async def test_startup_rejects_missing_model_with_actionable_log(
     reported_path = Path(error.details["path"])
     assert (reported_path if reported_path.is_absolute() else root.parent / reported_path) == expected_path
     assert "Startup aborted" in caplog.text
-    assert str(expected_path.relative_to(tmp_path)) in caplog.text
+    assert expected_path.relative_to(tmp_path).as_posix() in caplog.text
     assert field in caplog.text
     assert "model-missing" in caplog.text
     assert code in caplog.text
@@ -706,8 +706,10 @@ async def test_environment_run_service_prepares_sandbox_with_canonical_host_path
         local_envd = plan.environments["workspace"]
         assert isinstance(local_envd, EnvironmentConnector)
         assert prepared == []  # Host preparation constructs inert connectors.
-        assert local_envd.environment.working_directory == project_root
-        assert plan._mounts[0].provider_root == project_root
+        from a13n_harness.providers.environment.local_envd.configuration import local_envd_path
+
+        assert local_envd.environment.working_directory == local_envd_path(Path(project_root))
+        assert plan._mounts[0].provider_root == local_envd_path(Path(project_root))
         assert local_envd.runtime is plan.environments["thread-files"].runtime
         finalization = plan.finalization
 

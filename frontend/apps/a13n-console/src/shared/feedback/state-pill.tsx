@@ -10,6 +10,8 @@ const variants: Record<string, StatusPillVariant> = {
   error: "danger",
   failed: "danger",
   interrupted: "danger",
+  online: "success",
+  connecting: "info",
   pending: "warning",
   revoked: "danger",
   queued: "warning",

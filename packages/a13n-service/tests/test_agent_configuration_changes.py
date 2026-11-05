@@ -268,3 +268,25 @@ def test_reviewer_current_platform_and_connection_rules_are_accepted():
         }
     )
     assert len(config.reviewer.rules) == 4
+
+
+def test_existing_environment_and_template_defaults_are_mutually_exclusive():
+    original = AgentConfig(model="model", default_environment_template_id="envtpl_0123456789abcdef0123")
+    with pytest.raises(ValidationError, match="Choose either"):
+        apply_configuration_changes(
+            original, AgentConfigurationChanges(default_environment_id="env_0123456789abcdef0123")
+        )
+    selected = apply_configuration_changes(
+        original,
+        AgentConfigurationChanges(
+            default_environment_template_id=None, default_environment_id="env_0123456789abcdef0123"
+        ),
+    )
+    assert selected.default_environment_id == "env_0123456789abcdef0123"
+    assert selected.default_environment_template_id is None
+    assert (
+        apply_configuration_changes(
+            selected, AgentConfigurationChanges(instructions="Keep device")
+        ).default_environment_id
+        == "env_0123456789abcdef0123"
+    )

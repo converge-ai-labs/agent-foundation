@@ -7,9 +7,10 @@ from a13n_harness.environment.models import EnvironmentError
 
 from a13n_service.infra.db import short_session
 from a13n_service.infra.errors import ServiceError, conflict
+from a13n_service.runs.environments.access import find
 from a13n_service.runs.environments.adapters import close, execution_connector
 from a13n_service.runs.environments.desktop.access import target as provider_target
-from a13n_service.runs.environments.service import _find
+from a13n_service.runs.environments.read_views import environment_view
 from a13n_service.runs.runtime import Runtime
 from a13n_service.tenancy.access import workspace_scope
 from a13n_service.tenancy.authorize import Principal
@@ -18,16 +19,10 @@ from a13n_service.tenancy.authorize import Principal
 async def capture(runtime: Runtime, actor: Principal, workspace_id: str, identity: str) -> ComputerScreenshot:
     async with short_session(runtime.storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "run")
-        row = await _find(session, scope, identity)
-        target = await provider_target(session, runtime, row, actor=actor)
-        if not row.provider_identity or row.provider_identity.get("type") not in {
-            "e2b",
-            "modal",
-            "daytona",
-            "vercel",
-            "sprites",
-        }:
+        row = await find(session, scope, identity)
+        if environment_view(row).desktop_preview != "supported":
             raise conflict("environment", identity, "desktop_preview_unsupported")
+        target = await provider_target(session, runtime, row, actor=actor)
     execution = None
     try:
         with anyio.fail_after(runtime.settings.providers.operation_seconds):
@@ -39,7 +34,7 @@ async def capture(runtime: Runtime, actor: Principal, workspace_id: str, identit
             screenshot = await computer.observe()
             async with short_session(runtime.storage) as session:
                 scope = await workspace_scope(session, actor, workspace_id, "run")
-                current = await provider_target(session, runtime, await _find(session, scope, identity), actor=actor)
+                current = await provider_target(session, runtime, await find(session, scope, identity), actor=actor)
                 if current != target:
                     raise conflict("environment", identity, "desktop_target_changed")
             return screenshot

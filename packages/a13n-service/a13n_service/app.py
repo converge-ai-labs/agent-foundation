@@ -46,6 +46,8 @@ from a13n_service.providers.metrics import Queries
 from a13n_service.providers.registry import Registry
 from a13n_service.provisioning.service import Initializer
 from a13n_service.resources.models.catalog import ModelsDevCatalog, catalog_channels, run_official_catalog
+from a13n_service.runs.environments.clients.routing import Routing
+from a13n_service.runs.environments.clients.tables import ClientSettingsRow
 from a13n_service.runs.environments.monitoring.proxy import Proxy
 from a13n_service.runs.environments.monitoring.pull import run as run_collector
 from a13n_service.runs.execute import execute
@@ -184,6 +186,8 @@ async def open_runtime(
         decode_responses=True,
     )
     stack.push_async_callback(redis.aclose)
+    client_routing = Routing(config.redis, config.client_environments)
+    stack.push_async_callback(client_routing.close)
     telemetry = config.telemetry
     instrumentation = await stack.enter_async_context(
         open_instrumentation(
@@ -215,6 +219,7 @@ async def open_runtime(
         objects=objects,
         tasks=tasks,
         redis=redis,
+        client_routing=client_routing,
         keys=_key_ring(config.encryption),
         settings=config,
         registry=registry,
@@ -321,6 +326,10 @@ def build_app(
                     await initializer.existing()
                 runtime.tasks.start(run_official_catalog(runtime.endpoint_policy), name="official-model-catalog")
                 if serves_api:
+                    if ClientSettingsRow in distribution.tables:
+                        runtime.tasks.start(
+                            runtime.client_sessions.serve(), name="client-environment-sessions", service=True
+                        )
                     if config.monitoring.enabled:
                         assert runtime.metrics_proxy is not None
                         runtime.tasks.start(runtime.metrics_proxy.run(), name="environment-monitoring", service=True)
@@ -411,9 +420,15 @@ def build_app(
         from a13n_service.runs.browsers.viewer import relay as browser_viewer_relay
         from a13n_service.runs.devices.tables import DeviceRow
         from a13n_service.runs.devices.transport import install as install_device_transport
+        from a13n_service.runs.environments.clients.transport import connect as connect_client_environment
 
         if DeviceRow in distribution.tables:
             install_device_transport(app)
+        if ClientSettingsRow in distribution.tables:
+            app.add_api_websocket_route("/api/v1/environments/{environment_id}/connect", connect_client_environment)
+            app.add_api_websocket_route(
+                "/api/v1/client-environments/{environment_id}/connect", connect_client_environment
+            )
         if BrowserRow in distribution.tables:
             app.add_api_websocket_route(
                 "/api/v1/browsers/{browser_id}/viewer/connect", browser_viewer_relay, name="browser_viewer_connect"

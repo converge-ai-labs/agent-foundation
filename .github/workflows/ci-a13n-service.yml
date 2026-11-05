@@ -155,7 +155,8 @@ jobs:
               )
               # Weights never select tests: new files receive the current suite's median.
               durations = json.loads(Path(".github/service-test-durations.json").read_text())
-              for shard, targets in enumerate(balanced_shards(files, 6, durations), start=1):
+              matrix.append({"name": "native", "runner": "ubuntu-24.04", "targets": ""})
+              for shard, targets in enumerate(balanced_shards(files, 10, durations), start=1):
                   assert targets, "Service test shards must not be empty"
                   print(f"Service shard {shard}: {len(targets)} files")
                   matrix.append({
@@ -225,14 +226,14 @@ jobs:
         run: make dev-state-check
 
       - name: Set up Chrome for Testing
-        if: startsWith(matrix.name, 'tests-')
+        if: startsWith(matrix.name, 'tests-') || matrix.name == 'native'
         id: chrome
         uses: browser-actions/setup-chrome@v2
         with:
           chrome-version: stable
 
       - name: Allow the test browser to create sandbox namespaces
-        if: startsWith(matrix.name, 'tests-')
+        if: startsWith(matrix.name, 'tests-') || matrix.name == 'native'
         shell: bash
         env:
           BROWSER_EXECUTABLE: ${{ steps.chrome.outputs.chrome-path }}
@@ -270,13 +271,13 @@ jobs:
             "${targets[@]}"
 
       - name: Install native Browser desktop dependencies
-        if: matrix.name == 'tests-1'
+        if: matrix.name == 'native'
         run: |
           sudo apt-get update
           sudo apt-get install -y xvfb openbox xauth x11vnc websockify x11-apps x11-utils
 
       - name: Test native Browser lifecycle and Service assets
-        if: matrix.name == 'tests-1'
+        if: matrix.name == 'native'
         env:
           A13N_TEST_BROWSER_NATIVE_CHROMIUM: ${{ steps.chrome.outputs.chrome-path }}
         run: |
@@ -290,7 +291,7 @@ jobs:
           PY
 
       - name: Test native Environment management drivers
-        if: matrix.name == 'tests-1'
+        if: matrix.name == 'native'
         run: uv run --locked python -m pytest packages/a13n-service/tests/environment_providers --junitxml=test-results/environment-providers.xml
 
       - name: Require Service execution without skips

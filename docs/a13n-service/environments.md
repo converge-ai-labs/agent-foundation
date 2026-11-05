@@ -13,7 +13,19 @@ Three resources connect the workflow:
 | Template     | Image, resources, environment variables and idle policy | A recipe for new managed instances |
 | Thread mount | An instance, name, directory and permissions            | Later runs can use that instance   |
 
-For a computer you already operate, [register its Envd endpoint](#register-an-external-target) instead. Service connects to that computer; you own its lifecycle. Every accepted run captures its mounts and permissions, so changes apply to later runs.
+For a computer you already operate, [connect Envd outbound](#connect-a-client-computer), or [register its HTTP endpoint](#register-an-external-target) if Service can reach it directly. You own its lifecycle. Every accepted run captures its mounts and permissions, so changes apply to later runs.
+
+## Outbound WebSocket for managed sandboxes
+
+Set `execution: "envd_ws"` in a Docker, E2B, Daytona, Modal, Sprites or Vercel template recipe to let its Envd connect to Control. The existing Provider still manages creation, stop/start and destruction. Runs continue selecting the same environment ID; no client registration or ordinary API token is needed inside the sandbox.
+
+Standalone Console desktop preview is currently unavailable for `envd_ws`; the button explains this restriction. Agent Computer tools remain available when the daemon and permissions support them. If an execution Session expires while the device stays online, the failed tool reports it and the run can prepare a new Session at its next tool use. Previous commands are not replayed, and old process handles are not restored.
+
+Configure `server.public_url` as an HTTPS origin reachable from the sandbox and allow WebSocket forwarding. Use an updated compatible Envd image/template with `a13n-sandbox-entrypoint`. E2B and Vercel need their compatible template/snapshot; Sprites needs its desktop mode. In Console, choose the execution connection in template configuration (Docker: select a custom environment).
+
+Service supplies a private per-environment connection credential and waits for EIP initialization before marking creation/start ready. A failed connection preserves the allocated sandbox for retry or cleanup. Worker tools use the outbound connection without reaching an Envd HTTP port. Provider lifecycle APIs, human desktop access and metrics retain their own network requirements. Binary files and screenshots use Redis Streams between Worker and Control, and the existing WebSocket between Control and Envd.
+
+Existing templates keep their native or HTTP default. This execution mode requires Service; standalone Harness provider connectors reject it. Changing a template affects new environments, not already-created instances.
 
 ## Workspace provisioning
 
@@ -124,6 +136,8 @@ Create the first workspace through Console:
 
 The agent field is `default_environment_template_id`. On acceptance of a root-thread run without a `workspace` mount, Service reserves an instance and mounts it as `workspace`. A `reserved` instance has an ID but no vendor resource yet. First use prepares it. Reservations count toward the managed-environment quota.
 
+To reuse an existing environment, set `agent.config.default_environment_id` instead. The two fields are mutually exclusive. A thread's explicit `workspace` mount takes precedence; changing the Agent default does not replace it or affect accepted runs. Client environments may be selected while offline. The execution principal must still be allowed to use the environment; this setting does not share a private computer with other users. Child runs keep the spawning edge's environment policy.
+
 For API setup, use the URL and workspace API key from [direct HTTP integration](connect-application.md#direct-http-integration). Replace `eprov_...` with your Docker provider ID. Creating or editing a template requires `write`:
 
 ```sh
@@ -213,6 +227,43 @@ Service verifies the device, stores the token encrypted, and returns a `ready` i
 To rotate the token or move the endpoint, `PATCH /api/v1/environments/{id}` with the environment's ETag. Include the token when changing the endpoint. Service verifies that the new connection reaches the same device; another device is refused with `provider_device_mismatch`. Deleting the registration forgets its token and leaves the computer running.
 
 Worker recovery makes a best-effort attempt to reuse a checkpointed Envd Session. A closed or expired Session requires a fresh one. Recovery does not restore run-local process references or output observations; inspect current state before retrying an uncertain command. Normal cleanup closes the Session, and later runs use separate Sessions.
+
+### Connect a client computer
+
+Use this path when Envd can make an outbound connection to Control but Workers cannot dial the computer. You can register the environment and mount it on a thread before starting Envd.
+
+When upgrading to the client-environment schema, drain active work and stop all old Controls and Workers before applying the migration. Existing managed and HTTP environments are preserved, but old versions cannot write the new schema. After any client registration exists, including a deleted one, use forward repair instead of downgrading the schema.
+
+For automatic first registration, run `a13n-envd connect-service` with an ordinary API token, workspace ID and local working directory. See [Connect to Service](../a13n-envd/configuration.md#connect-to-service) for the command and credential recovery. The enrollment endpoint is `POST /api/v1/client-environments/connect?workspace_id=…`; it accepts the registration fields below plus optional `environment_id`. Without an ID, only an absent owner/workspace/device binding creates an environment. Supplying an ID requires that exact existing binding. Existing configuration is unchanged, and disabled, deleted or revoked registrations are rejected. A repeated request returns no token; explicit rotation handles lost delivery.
+
+To register while the computer is offline or set a narrower permission ceiling before connecting:
+
+1. As the workspace principal that will run the agent, send `POST /api/v1/client-environments?workspace_id=…` with the installation's persistent device ID, an existing directory and the permitted actions. For example:
+
+   ```json
+   {
+     "device_id": "dev-example",
+     "name": "Laptop",
+     "default_working_directory": "/Users/example/project",
+     "permission_ceiling": {"operations": ["environment.file.list", "environment.file.read_text"]}
+   }
+   ```
+
+2. Save `client.environment.id` and put the returned `token` in a private local credential file (mode `0600` on Unix). The first registration returns 201; registering the same installation again returns 200 and no token. Keep a separate environment ID and token file for each Service origin, account and workspace. Use the explicit `rotate-credential` API with the current Environment ETag if the token is lost. The device ID identifies an installation, not physical hardware. Copying both the ID and the token copies the installation's access.
+
+3. Run Envd with the same device ID and its normal local access policy. Set `A13N_ENVD_TRANSPORT=reverse_websocket`, `A13N_ENVD_REVERSE_WS_URL` to the Control `wss://` origin plus the returned `connection_path`, and `A13N_ENVD_REVERSE_WS_CREDENTIAL_FILE` to the token file. [Envd configuration](../a13n-envd/configuration.md) describes the runtime directory, installation identity and local permission settings. Do not put the token in the URL.
+
+4. [Mount the environment on the thread](#mount-environments-on-a-thread). A run keeps the directory and permissions selected at acceptance. `ready` means selectable; the first actual tool use checks the connection, opens a Session and verifies the directory. Device connection alone never mounts it on a run.
+
+Use the `device-id` in Envd’s installation state directory, or have the installer generate and save an ID and supply the same value to registration and `A13N_ENVD_DEVICE_ID`. When Computer Use is enabled, Envd checks desktop permissions locally. Registration runs no test command, and a successful handshake does not prove that a particular executable is installed.
+
+An offline tool reports that it did not dispatch. After such a failure, the next normal agent iteration can report that the selected mount has reconnected. Recovery does not repeat the command. On a process-capable mount, one agent `shell_exec` starts the process and waits briefly. The agent can later use `shell_info` or `shell_wait` with the returned reference. A wait timeout does not kill the process. If a reply is lost after dispatch, the result is unknown.
+
+The Instances page shows when the connection state was checked. An offline computer remains registered. If envd reports `device_id_mismatch`, check the environment and pass its registered Device ID with `--device-id`. Press Ctrl+C in the envd terminal to disconnect.
+
+Binary files and screenshots pass through Redis Streams, so Workers need no per-replica Control URL. Remove the obsolete `A13N_CLIENT_ENVIRONMENTS__TRANSFER_ORIGIN` setting when upgrading, drain active work and update Workers and Controls together. Device credentials never go to Workers.
+
+Each transfer creates `a13n:client-environment:{environment_id}:transfer:{epoch}:{transfer_id}:w2c` and the corresponding `:c2w` key. They carry frames in opposite directions, retain at most eight unconsumed frames each, and expire after five minutes without activity. Successful close, cancellation or failure deletes them. `A13N_CLIENT_ENVIRONMENTS__TRANSFER_SECONDS` bounds each transfer, including slow-producer/consumer waits (default: 120 seconds). An interrupted transfer fails; it does not automatically resume or repeat a file commit.
 
 ### Stop, rename and delete
 

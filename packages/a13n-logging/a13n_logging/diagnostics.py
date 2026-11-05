@@ -53,6 +53,14 @@ def exception_details(error: BaseException) -> list[dict[str, Any]]:
         details.append(item)
         if isinstance(current, BaseExceptionGroup):
             pending.extend((child, index) for child in reversed(current.exceptions))
+        # Lifecycle errors may retain independent cleanup failures without using
+        # __cause__, which belongs to the primary execution failure.
+        try:
+            causes = getattr(current, "causes", ())
+        except Exception:
+            causes = ()
+        if isinstance(causes, tuple):
+            pending.extend((child, index) for child in reversed(causes[:32]) if isinstance(child, BaseException))
         cause = current.__cause__ or current.__context__
         if cause is not None:
             pending.append((cause, index))

@@ -30,6 +30,7 @@ const environment = {
   id: "env_test",
   workspace_id: "ws_test",
   status: "creating",
+  desktop_preview: "supported",
   created_at: "2026-10-22T10:00:00Z",
   operation_started_at: "2026-10-22T10:00:00Z",
   failure: null,
@@ -178,4 +179,25 @@ it("shows Sprites installation rather than a reusable template build", async () 
   expect(screen.queryByText("Building desktop template in E2B")).toBeNull();
   view.unmount();
   view.cache.clear();
+});
+
+it("disables unsupported instance previews without sending a request", async () => {
+  http.GET.mockClear();
+  mount(
+    <DesktopPreview
+      environment={{
+        ...environment,
+        desktop_preview: "connection_unsupported",
+      }}
+    />,
+  );
+  const button = screen.getByRole("button", { name: "View desktop" });
+  expect((button as HTMLButtonElement).disabled).toBe(true);
+  expect(
+    screen.getByText(
+      "Desktop preview is not supported for this connection mode.",
+    ),
+  ).toBeTruthy();
+  await userEvent.click(button);
+  expect(http.GET).not.toHaveBeenCalled();
 });

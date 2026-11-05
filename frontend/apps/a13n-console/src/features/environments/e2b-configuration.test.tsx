@@ -16,7 +16,7 @@ const schema = {
   properties: {
     execution: {
       type: "string",
-      enum: ["native", "envd_http"],
+      enum: ["native", "envd_http", "envd_ws"],
       default: "native",
       title: "Execution transport",
     },
@@ -128,4 +128,25 @@ it("permits custom templates in ordinary mode and resets the custom selection", 
   await user.click(screen.getByRole("button", { name: "Reset to defaults" }));
   expect(screen.queryByRole("textbox", { name: "E2B template" })).toBeNull();
   expect(screen.getByText("base", { exact: true })).toBeTruthy();
+});
+
+it("requires a compatible template for outbound WebSocket and retains it when enabling desktop", async () => {
+  render(<Editor />);
+  const user = userEvent.setup();
+  await user.click(
+    screen.getByRole("combobox", { name: "Execution transport" }),
+  );
+  await user.click(screen.getByRole("option", { name: "Envd ws" }));
+  expect(configuration().template).toBe("");
+  expect(screen.queryByRole("textbox", { name: "Root" })).toBeNull();
+  await user.type(
+    screen.getByRole("textbox", { name: "E2B template" }),
+    "team-envd",
+  );
+  await user.click(screen.getByRole("switch", { name: "Desktop environment" }));
+  expect(configuration()).toMatchObject({
+    execution: "envd_ws",
+    template: "team-envd",
+    desktop: true,
+  });
 });

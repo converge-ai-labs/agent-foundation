@@ -1,7 +1,6 @@
 """Vercel management implementation."""
 
 import asyncio
-import json
 import math
 from datetime import UTC, datetime
 
@@ -51,16 +50,19 @@ class VercelManagement(VercelReference, NativeManagement[VercelEnvironmentConfig
                 raise failure(self.provider_key, "provider_target_missing", Category.MISSING)
             raw = await self.transport().request(
                 "POST",
-                "/v3/sandboxes" if self.config.execution == "envd_http" else "/v2/sandboxes",
+                "/v3/sandboxes" if self.config.execution != "native" else "/v2/sandboxes",
                 body={
                     "name": self.name,
                     "projectId": self.backend.project_id,
                     **(
                         {
                             "source": {"type": "snapshot", "snapshotId": self.config.snapshot},
-                            "ports": [8888, *([access.PORT] if self.recipe.desktop_assistance else [])],
+                            "ports": [
+                                *([8888] if self.config.execution == "envd_http" else []),
+                                *([access.PORT] if self.recipe.desktop_assistance else []),
+                            ],
                         }
-                        if self.config.execution == "envd_http"
+                        if self.config.execution != "native"
                         else {"runtime": self.config.runtime}
                     ),
                     "persistent": True,
@@ -74,7 +76,7 @@ class VercelManagement(VercelReference, NativeManagement[VercelEnvironmentConfig
             response = decode_response(SandboxResponse, raw, self.provider_key, mutation=True)
             self.accept(response)
             created = True
-        if created and self.config.execution == "envd_http":
+        if created and self.config.execution != "native":
             await self._ready(response, bootstrap=True)
         else:
             await self.start()
@@ -100,7 +102,7 @@ class VercelManagement(VercelReference, NativeManagement[VercelEnvironmentConfig
         if response is None or response.session.status != "running":
             raise failure(self.provider_key, "provider_unavailable", Category.UNAVAILABLE)
 
-        if self.config.execution == "envd_http":
+        if self.config.execution != "native":
             await self._ready(response, bootstrap=resumed)
 
     async def _ready(self, response: SandboxResponse, *, bootstrap: bool) -> None:
@@ -126,9 +128,10 @@ class VercelManagement(VercelReference, NativeManagement[VercelEnvironmentConfig
             program = "a13n-sandbox-desktop" if self.config.desktop else "a13n-envd"
             # A snapshot retains disk, including stale X11 socket paths, but not
             # processes. The per-session marker fences duplicate bootstrap attempts.
+            settings = self.bootstrap_environment(settings)
             script = """import json,os,subprocess,sys
 from pathlib import Path
-session,program,settings=sys.argv[1:]
+session,program=sys.argv[1:]
 os.umask(0o077)
 root=Path('/var/lib/a13n-envd');root.mkdir(mode=0o700,exist_ok=True)
 marker=root/('session-'+session)
@@ -137,16 +140,19 @@ for name in ['/tmp/.X99-lock','/tmp/.X11-unix/X99','/run/a13n-desktop-access/con
  Path(name).unlink(missing_ok=True)
 with (root/'startup.log').open('ab') as log:
  subprocess.Popen(['flock','-n',str(root/'start.lock'),'a13n-sandbox-entrypoint',program],
-  env={**os.environ,**json.loads(settings)},cwd='/workspace',stdin=subprocess.DEVNULL,
+  env=dict(os.environ),cwd='/workspace',stdin=subprocess.DEVNULL,
   stdout=log,stderr=log,start_new_session=True)
 """
             await command(
                 self,
                 response.session.id,
-                ["python3", "-I", "-c", script, response.session.id, program, json.dumps(settings)],
+                ["python3", "-I", "-c", script, response.session.id, program],
+                env=settings,
                 sudo=True,
                 timeout=15,
             )
+        if self.config.execution == "envd_ws":
+            return
         probe = """import socket,time
 end=time.monotonic()+30
 while time.monotonic()<end:

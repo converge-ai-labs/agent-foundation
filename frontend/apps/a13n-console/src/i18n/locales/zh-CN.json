@@ -1,4 +1,12 @@
 {
+  "Client computer": "客户端电脑",
+  "Registered": "已登记",
+  "Registration": "登记状态",
+  "Connection checked": "连接检查时间",
+  "state.online": "在线",
+  "state.offline": "离线",
+  "state.connecting": "连接中",
+  "state.unknown": "未知",
   "Search sessions or enter a session ID": "搜索会话或输入会话 ID",
   "Analyze": "分析对象",
   "Select agent": "选择智能体",
@@ -3869,6 +3877,15 @@
   "About connection discovery": "关于连接发现",
   "Choose which connections use on-demand discovery. Unchecked connections provide tools directly. New connections follow the MCP tools setting.": "选择需要按需发现的连接。未勾选的连接会直接提供工具。新增连接遵循 MCP 工具的设置。",
   "{{selected}} of {{total}} connections": "{{selected}} / {{total}} 个连接",
+  "Optional. When a session has no primary environment, use an existing environment or create one from a template. Saving the agent does not connect or start an environment.": "可选。会话尚未挂载主环境时，使用已有环境或通过模板创建环境。保存 Agent 不会连接或启动环境。",
+  "Existing environment instances": "已有环境实例",
+  "Envd ws": "Envd 主动 WebSocket",
+  "Envd outbound WebSocket (Service)": "Envd 主动 WebSocket（Service）",
+  "Native Docker exec, Envd HTTP, or Service-managed outbound WebSocket. HTTP alone requires inbound routing.": "选择 Docker 原生命令执行、Envd HTTP 或 Service 管理的主动 WebSocket。只有 HTTP 需要配置入站连接。",
+  "Require an observable, input-ready desktop from the image-managed envd. Requires envd_http or envd_ws execution and a desktop image. Computer permissions remain separate.": "要求镜像中的 envd 提供可观察、可操作的桌面。需要桌面镜像，以及 envd_http 或 envd_ws 执行方式。Computer 权限单独配置。",
+  "Native E2B Files & Shell, Envd HTTP, or Service-managed outbound WebSocket. Envd modes require a compatible template.": "选择 E2B 原生文件与命令执行、Envd HTTP 或 Service 管理的主动 WebSocket。Envd 模式需要兼容模板。",
+  "Require Computer operations from a13n-envd. Requires envd_http or envd_ws and a compatible template.": "使用 a13n-envd 提供 Computer 操作，需要 envd_http 或 envd_ws 和兼容模板。",
+  "Requires a desktop image and Envd HTTP or outbound WebSocket execution. Agent tools and mount permissions are configured separately.": "需要桌面镜像，以及 Envd HTTP 或主动 WebSocket 执行方式。Agent 工具和挂载权限单独配置。",
   "Subagents": "子智能体",
   "Add subagent": "添加子智能体",
   "Configure subagent": "配置子智能体",
@@ -3978,5 +3995,6 @@
   "Use agent settings": "使用智能体设置",
   "Use thread settings": "使用线程设置",
   "Wait before letting a tool continue in the background. Applies to Auto and process-backed shell commands; does not stop the tool. Empty uses the parent settings.": "等待多久后让工具转入后台、智能体继续工作。适用于 Auto 和支持进程管理的 Shell 命令，不会终止工具。留空使用上级设置。",
-  "Wait before letting a tool continue in the background. Applies to Auto and process-backed shell commands; does not stop the tool. Empty uses the default (normally 5 seconds).": "等待多久后让工具转入后台、智能体继续工作。适用于 Auto 和支持进程管理的 Shell 命令，不会终止工具。留空使用默认值（通常为 5 秒）。"
+  "Wait before letting a tool continue in the background. Applies to Auto and process-backed shell commands; does not stop the tool. Empty uses the default (normally 5 seconds).": "等待多久后让工具转入后台、智能体继续工作。适用于 Auto 和支持进程管理的 Shell 命令，不会终止工具。留空使用默认值（通常为 5 秒）。",
+  "Desktop preview is not supported for this connection mode.": "当前连接方式暂不支持桌面预览。"
 }

@@ -1,6 +1,7 @@
 """Native Copilot account lifecycle with synthetic grants and disposable stores."""
 
 import json
+import os
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
@@ -47,7 +48,8 @@ async def test_host_grants_normalize_expiry_once_and_preserve_accounts_on_logout
     assert (await login(store, original)).usable
     reloaded = CopilotAccountStore(path)
     assert await reloaded.load() == replace(original, source_id=store.native_source_id)
-    assert path.stat().st_mode & 0o777 == 0o600
+    if os.name != "nt":
+        assert path.stat().st_mode & 0o777 == 0o600
     document = json.loads(path.read_text())
     document["accounts"]["other-user"] = {"unrelated": "preserved"}
     document["future_metadata"] = True

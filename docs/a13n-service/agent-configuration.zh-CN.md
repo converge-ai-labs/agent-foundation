@@ -32,7 +32,7 @@ description: 保存修订版本、选择工具、配置委派并扩展 agent。
 | 审查调用或理解媒体 | `reviewer`、`media_understanding`；参阅[媒体理解](models.md#media-understanding)                                                               |
 | 要求结构化输出     | `output_spec`：一个 JSON Schema 或 2–32 个命名 `variants`；省略时返回文本                                                                      |
 | 限制重试           | `retries.tools` 和 `retries.output`，各为 0–100                                                                                                |
-| 提供工作环境       | `default_environment_template_id`、`lazy_environment`；参阅[环境](environments.md)                                                             |
+| 提供工作环境       | `default_environment_id`、`default_environment_template_id`、`lazy_environment`；参阅[环境](environments.md)                                   |
 | 保留知识           | `memory`、`memory_mounts`；参阅[记忆](memory.md)                                                                                               |
 | 调整长时间工作     | `background_compaction`、`execution`；参阅[压缩](agent-configuration.md#context-compaction)和[执行策略](execution-options.md#execution-policy) |
 | 扩展运行时         | `plugins`；参阅 [Console 插件](agent-configuration.md#configure-plugins-in-console)                                                            |

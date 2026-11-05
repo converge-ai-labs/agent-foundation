@@ -19,13 +19,14 @@ from a13n_service.infra.http import require_match
 from a13n_service.resources.agents import stored
 from a13n_service.resources.agents.schemas import ChildEnvironmentPolicy
 from a13n_service.resources.agents.service import load_revision
+from a13n_service.resources.environment_instances.access import lock_environment_rows, lock_environments
+from a13n_service.resources.environment_instances.access import require_usable as require_usable
+from a13n_service.runs.environments.clients.tables import ClientSettingsRow
 from a13n_service.runs.environments.lifecycle import (
     LOST,
     confirmed_loss,
     latest_replacement,
-    require_usable_state,
     reserve,
-    superseded,
 )
 from a13n_service.runs.environments.schemas import (
     DEFAULT_MOUNT_PERMISSIONS,
@@ -127,53 +128,6 @@ async def adopt_mounts(session: AsyncSession, thread: ThreadRow, mounts: Sequenc
     for mount in mounts:
         session.add(_mount(thread, mount.environment_id, mount.name, mount.working_directory, mount.permission_ceiling))
     await session.flush()
-
-
-def require_usable(environment: EnvironmentRow, principal_id: str) -> None:
-    """New use refuses retiring instances, unresolved permanent failures and other principals' devices."""
-    if environment.owner_principal_id not in {None, principal_id}:
-        raise ServiceError("forbidden", "Private environments are usable only by their owner", {"id": environment.id})
-    if environment.status in {"deleting", "deleted"}:
-        raise conflict("environment", environment.id, f"environment_{environment.status}")
-    require_usable_state(environment)
-
-
-async def _locked_environments(
-    session: AsyncSession, workspace_id: str, environment_ids: Sequence[str]
-) -> dict[str, EnvironmentRow]:
-    """Share-lock the selected instances in ID order before deciding whether each can be mounted."""
-    ids = sorted(set(environment_ids))
-    if not ids:
-        return {}
-    rows = (
-        await session.scalars(
-            select(EnvironmentRow)
-            .where(EnvironmentRow.workspace_id == workspace_id, EnvironmentRow.id.in_(ids))
-            .order_by(EnvironmentRow.id)
-            .with_for_update(read=True)
-            .execution_options(populate_existing=True)
-        )
-    ).all()
-    found = {row.id: row for row in rows}
-    for environment_id in ids:
-        environment = found.get(environment_id)
-        if environment is None:
-            raise not_found("environment", environment_id)
-        # An exact selection of a lost ID keeps its refusal even after maintenance retires the provider handle.
-        if (
-            environment.status in {"deleting", "deleted"}
-            and not environment.retired_for_idle
-            and await session.scalar(select(superseded(environment_id)))
-        ):
-            raise conflict("environment", environment_id, LOST.code)
-    return found
-
-
-async def lock_environments(
-    session: AsyncSession, workspace_id: str, environment_ids: Sequence[str], *, principal_id: str
-) -> None:
-    for environment in (await _locked_environments(session, workspace_id, environment_ids)).values():
-        require_usable(environment, principal_id)
 
 
 async def mount_environments(
@@ -315,9 +269,8 @@ async def freeze_mounts(
     ids = [mount.environment_id for mount in selected]
     if recovery_id is not None:
         ids.append(recovery_id)
-    locked = await _locked_environments(session, thread.workspace_id, ids)
-    frozen = []
-    for mount in sorted(selected, key=lambda mount: mount.name):
+    locked = await lock_environment_rows(session, thread.workspace_id, ids)
+    for mount in selected:
         environment = locked[mount.environment_id]
         if (
             recovery_id is not None
@@ -330,7 +283,41 @@ async def freeze_mounts(
             await _recover_primary(session, principal, thread, mount, locked[recovery_id], recreation_limit)
         else:
             require_usable(environment, principal.id)
-        frozen.append(EnvironmentMount.model_validate(mount, from_attributes=True).model_dump(mode="json"))
+
+    client_ids = [environment.id for environment in locked.values() if environment.kind == "external"]
+    configurations = (
+        {
+            config.environment_id: config
+            for config in await session.scalars(
+                select(ClientSettingsRow).where(ClientSettingsRow.environment_id.in_(client_ids))
+            )
+        }
+        if client_ids
+        else {}
+    )
+    for environment_id in client_ids:
+        if environment_id not in configurations:
+            raise conflict("environment", environment_id, "client_configuration_missing")
+    frozen = []
+    for mount in sorted(selected, key=lambda mount: mount.name):
+        directory = mount.working_directory
+        permissions = EnvironmentPermissionSet.model_validate(mount.permission_ceiling)
+        if config := configurations.get(mount.environment_id):
+            directory = directory or config.default_working_directory
+            operations = (
+                permissions.operations & EnvironmentPermissionSet.model_validate(config.permission_ceiling).operations
+            )
+            if config.declared_capabilities is not None:
+                operations &= EnvironmentPermissionSet.model_validate(config.declared_capabilities).operations
+            permissions = EnvironmentPermissionSet(operations=operations)
+        frozen.append(
+            EnvironmentMount(
+                name=mount.name,
+                environment_id=mount.environment_id,
+                working_directory=directory,
+                permission_ceiling=permissions,
+            ).model_dump(mode="json")
+        )
     return frozen
 
 

@@ -11,6 +11,7 @@ from a13n_harness.environment.models import (
 )
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, JsonValue, SecretStr, StringConstraints
 
+from a13n_service.infra.crypto import Envelope
 from a13n_service.infra.ids import ObjectId
 from a13n_service.providers import envd
 from a13n_service.resources.environment_templates.schemas import Reclamation
@@ -46,12 +47,23 @@ EnvdToken = Annotated[SecretStr, Field(min_length=1, max_length=4096), AfterVali
 type Certainty = Literal["not_dispatched", "known", "unknown"]
 
 
+class OutboundBinding(BaseModel):
+    """Private managed connection configuration, frozen before provisioning I/O."""
+
+    device_id: str
+    url: str
+    credential: Envelope = Field(repr=False)
+    token_hash: str = Field(repr=False)
+    credential_version: int = 1
+
+
 class Handle(BaseModel):
     """What reaches one managed instance: the recipe it was built from, which its provider state is bound to, that
     state, and the version of the provider credential that last reached it. A stateless provider has no state."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
     recipe: dict[str, JsonValue]
+    outbound: OutboundBinding | None = Field(default=None, repr=False, exclude_if=lambda value: value is None)
     state: EnvironmentState | None = None
     credential_version: str | None = None
     e2b_desktop_template: str | None = None
@@ -93,9 +105,17 @@ class MetricsApplication(BaseModel):
     applied_at: datetime | None = None
 
 
+class ClientConnectionObservation(BaseModel):
+    state: Literal["offline", "connecting", "online", "unknown"]
+    observed_at: datetime
+
+
 class EnvironmentView(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: str
+    kind: Literal["managed", "external_http", "external"]
+    client_connection: ClientConnectionObservation | None = None
+    desktop_preview: Literal["supported", "connection_unsupported", "not_configured"] = "not_configured"
     organization_id: str
     workspace_id: str
     # NULL for an external target.

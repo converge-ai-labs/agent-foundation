@@ -64,6 +64,7 @@ const STATUSES = [
   "stopping",
   "stopped",
   "deleting",
+  "disabled",
 ] as const;
 
 /** The environments that exist right now, with their lifecycle state. */
@@ -190,9 +191,11 @@ export function EnvironmentInstances() {
                 ),
               },
               {
-                label: t("Provider"),
+                label: t("Source"),
                 render: (item) => {
                   // An external target is reached at its own endpoint.
+                  if (item.kind === "external")
+                    return <span>{item.device_id}</span>;
                   if (item.endpoint) return <span>{item.endpoint}</span>;
                   const provider = item.provider_id
                     ? providerById.get(item.provider_id)

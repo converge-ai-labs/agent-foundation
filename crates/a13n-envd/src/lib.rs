@@ -119,17 +119,31 @@ pub fn run_from_environment() -> Result<(), Box<dyn Error + Send + Sync>> {
             ]
     {
         println!("{}", connect::HELP);
+        println!("\nConnect to Service: a13n-envd connect-service --help");
         println!("\nUpdate the native installation: a13n-envd update --help");
         return Ok(());
     }
-    let config = if arguments
+    if arguments.as_slice() == ["connect-service", "--help"] {
+        println!("{}", connect::service::HELP);
+        return Ok(());
+    }
+    let service_connection = arguments
         .first()
-        .is_some_and(|argument| argument == "connect")
+        .is_some_and(|argument| argument == "connect-service");
+    let config = if service_connection
+        || arguments
+            .first()
+            .is_some_and(|argument| argument == "connect")
     {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()?;
-        let config = runtime.block_on(connect::prepare(arguments.into_iter().skip(1).collect()))?;
+        let options = arguments.into_iter().skip(1).collect();
+        let config = if service_connection {
+            runtime.block_on(connect::service::prepare(options))?
+        } else {
+            runtime.block_on(connect::prepare(options))?
+        };
         drop(runtime);
         config
     } else if arguments.as_slice() == [std::ffi::OsString::from("--internal-managed-broker")] {

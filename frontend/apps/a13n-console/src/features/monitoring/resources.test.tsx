@@ -55,6 +55,7 @@ const source: Source = {
   updated_at: "2026-10-19T00:00:00Z",
 };
 const environment: Schema["EnvironmentView"] = {
+  kind: "managed",
   id: "env_test",
   name: "Test environment",
   organization_id: "org_test",

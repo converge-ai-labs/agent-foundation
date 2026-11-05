@@ -19,6 +19,7 @@ from a13n_service.infra.audit import record
 from a13n_service.infra.db import transaction
 from a13n_service.infra.ids import new_object_id
 from a13n_service.infra.sweeps import Sweep
+from a13n_service.resources.environment_instances.access import superseded
 from a13n_service.resources.environment_templates.service import idle_past
 from a13n_service.runs.environments.lifecycle import (
     LOST,
@@ -30,7 +31,6 @@ from a13n_service.runs.environments.lifecycle import (
     mounted,
     settled,
     settled_clause,
-    superseded,
     supports,
 )
 from a13n_service.runs.environments.mounts import PRIMARY

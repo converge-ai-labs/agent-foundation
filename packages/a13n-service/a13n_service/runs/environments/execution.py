@@ -8,6 +8,7 @@ from dataclasses import dataclass
 import anyio
 from a13n_harness import EnvironmentMount as HarnessMount
 from a13n_harness import RunConfiguration
+from a13n_harness.environment.commands import BoundProcessHandle
 from a13n_harness.environment.computer import ComputerCall
 from a13n_harness.environment.execution import EnvironmentConnector, EnvironmentExecution
 from a13n_harness.environment.files import FileOperator
@@ -23,6 +24,7 @@ from a13n_harness.environment.operations import EnvironmentOperations
 from a13n_harness.environment.session_recovery import EnvdSessionRecovery
 from a13n_harness.errors import EnvironmentActivationError
 from a13n_harness.providers.environment.remote_envd.http import HTTP_ENVD
+from a13n_harness.providers.environment.remote_envd.websocket import WEBSOCKET_ENVD
 from a13n_harness.tool_execution import current_execution, execution_cleanup_active
 from a13n_logging import exception_details, get_logger
 from sqlalchemy import func, update
@@ -35,6 +37,8 @@ from a13n_service.resources.providers.tables import EnvironmentProviderRow
 from a13n_service.runs.attempts import AuthorityRevoked, Lease, LeaseLost, lock_lease
 from a13n_service.runs.environments import external
 from a13n_service.runs.environments.adapters import Target, execution_connector, managed_target, provider_identity
+from a13n_service.runs.environments.clients.observations import Incarnation
+from a13n_service.runs.environments.clients.worker import Target as ClientTarget
 from a13n_service.runs.environments.desktop import admission as desktop_admission
 from a13n_service.runs.environments.lifecycle import Operation, begin, claim_locked, dispatch
 from a13n_service.runs.environments.mounts import PRIMARY, require_usable
@@ -56,7 +60,7 @@ class PreparedMount:
 
     name: str
     working_directory: str | None
-    target: Target
+    target: Target | ClientTarget
 
 
 class EnvironmentUnavailable(Exception):
@@ -79,6 +83,7 @@ class Source:
     activated: bool = False
     skill_cache: Cache | None = None
     session_recovery: EnvdSessionRecovery | None = None
+    client: Incarnation | None = None
 
     @property
     def environment_id(self) -> str:
@@ -121,12 +126,18 @@ class Source:
                         self.authority,
                         self.mount,
                     )
-                    connector = await execution_connector(
-                        self.runtime,
-                        prepared.target,
-                        configuration=self.configuration,
-                        session_recovery=self.session_recovery,
-                    )
+                    if isinstance(prepared.target, ClientTarget):
+                        assert self.client is not None
+                        connector = prepared.target.connector(
+                            self.runtime, self.lease, self.session_recovery, self.client
+                        )
+                    else:
+                        connector = await execution_connector(
+                            self.runtime,
+                            prepared.target,
+                            configuration=self.configuration,
+                            session_recovery=self.session_recovery,
+                        )
             except TimeoutError as error:
                 raise _not_ready(self.mount.environment_id) from error
         except ServiceError as error:
@@ -177,7 +188,7 @@ async def _ready(
     deadline: float,
 ) -> PreparedMount:
     while True:
-        target, operation = await _inspect(runtime, lease, principal, authority, mount.environment_id)
+        target, operation = await _inspect(runtime, lease, principal, authority, mount)
         if target is not None:
             return PreparedMount(mount.name, mount.working_directory, target)
         if operation is not None:
@@ -201,16 +212,20 @@ async def _ready(
 
 
 async def _inspect(
-    runtime: Runtime, lease: Lease, principal: Principal, authority: ExecutionAuthority, environment_id: str
-) -> tuple[Target | None, Operation | None]:
+    runtime: Runtime, lease: Lease, principal: Principal, authority: ExecutionAuthority, mount: EnvironmentMount
+) -> tuple[Target | ClientTarget | None, Operation | None]:
     """Inspect readiness, beginning and claiming new work atomically under the lease and instance locks."""
     async with transaction(runtime.storage) as session:
         _, principal = await lock_owner(session, runtime, lease)
+        environment_id = mount.environment_id
         environment = await lock(session, EnvironmentRow, environment_id)
         if environment is None:
             raise not_found("environment", environment_id)
         require_usable(environment, principal.id)
-        if environment.template_id is None:
+        if environment.kind == "external":
+            assert environment.device_id is not None and mount.working_directory is not None
+            return ClientTarget(environment.id, environment.device_id, mount.working_directory, mount.name), None
+        if environment.kind == "external_http":
             # An external target is always ready; it is reached with its own endpoint and token.
             environment.last_used_at = await now(session)
             return Target(environment.id, external.account(environment), {}, None), None
@@ -225,6 +240,20 @@ async def _inspect(
                 raise conflict("environment", environment.id, "provider_identity_changed")
             environment.last_used_at = await now(session)
             handle = Handle.model_validate(environment.handle)
+            from a13n_service.runs.environments.connection import resolve
+
+            plan = resolve(runtime.registry.get("environment", provider.type), handle, mount)
+            if plan.mode == "envd_ws":
+                from a13n_service.runs.environments import outbound
+
+                binding = outbound.binding_for(runtime.registry, environment, provider, executing=True)
+                return ClientTarget(
+                    environment.id,
+                    binding.device_id,
+                    plan.working_directory,
+                    mount.name,
+                    handle.state,
+                ), None
             return managed_target(runtime.keys, environment, provider, handle), None
         if environment.status == "reserved":
             await begin(session, environment, "creating")
@@ -256,12 +285,18 @@ async def open_mounts(
             if environment is None:
                 raise not_found("environment", mount.environment_id)
             require_usable(environment, principal.id)
-            if environment.template_id is None:
+            if environment.kind == "external":
+                definition = WEBSOCKET_ENVD
+                recipe = {"working_directory": mount.working_directory}
+                state = EnvironmentState(
+                    provider_key=definition.type, state_version="1", state={"device_id": environment.device_id}
+                )
+            elif environment.kind == "external_http":
                 definition = HTTP_ENVD
                 recipe = {}
                 state = None
             else:
-                assert environment.provider_id is not None
+                assert environment.provider_id is not None and environment.template_id is not None
                 provider = await resolve_provider(
                     session,
                     principal,
@@ -277,9 +312,29 @@ async def open_mounts(
                 else:
                     handle = Handle.model_validate(environment.handle)
                     recipe, state = handle.recipe, handle.state
-            descriptor = definition.describe_environment(definition.validate_environment(recipe))
+            from a13n_harness.providers.environment.execution_mode import capabilities
+
+            validated = definition.validate_environment(recipe)
+            transport = capabilities(validated)
+            descriptor = definition.describe_environment(validated)
             # Service Local uses the shared Direct Local execution provider key.
             provider_key = "direct_local" if definition.type == "local" else definition.type
+            device_id = (
+                environment.device_id
+                if environment.kind == "external"
+                else environment.id
+                if transport.host_connection
+                else None
+            )
+            if transport.host_connection:
+                provider_key = WEBSOCKET_ENVD.type
+                descriptor = WEBSOCKET_ENVD.describe_environment(
+                    WEBSOCKET_ENVD.validate_environment(
+                        {
+                            "working_directory": mount.working_directory or descriptor.working_directory,
+                        }
+                    )
+                )
             sources.append(
                 Source(
                     runtime,
@@ -291,6 +346,7 @@ async def open_mounts(
                     provider_key,
                     state,
                     configuration,
+                    client=Incarnation(device_id) if device_id else None,
                     skill_cache=skill_cache if mount.name == PRIMARY else None,
                     session_recovery=envd_sessions.setdefault(mount.name, EnvdSessionRecovery())
                     if envd_sessions is not None
@@ -301,6 +357,7 @@ async def open_mounts(
         yield {
             source.mount.name: HarnessMount(
                 source=source,
+                observer=source.client.observe if source.client is not None else None,
                 operation_guard=source.operation_guard,
                 computer_guard=source.computer_guard,
                 permission_ceiling=source.mount.permission_ceiling,
@@ -344,7 +401,9 @@ class _DirectoryConnector(EnvironmentConnector):
         try:
             with anyio.fail_after(self._seconds):
                 execution = await self._connector.open()
-                if self._mount.working_directory is not None:
+                # Control verifies the client's fixed cwd during Session admission.
+                # A shell-only client mount need not grant an extra directory listing.
+                if self._mount.working_directory is not None and not isinstance(self._mount.target, ClientTarget):
                     await _check_directory(self._mount, execution.operations.files)
             if self._cache is not None:
                 root = self._mount.working_directory or self.descriptor.working_directory
@@ -451,6 +510,9 @@ class _CacheExecution(EnvironmentExecution):
 
     async def check_ready(self, operations: frozenset[EnvironmentOperationFamily]) -> None:
         await self._execution.check_ready(operations)
+
+    async def cleanup_process(self, handle: BoundProcessHandle) -> None:
+        await self._execution.cleanup_process(handle)
 
     async def close(self) -> None:
         try:

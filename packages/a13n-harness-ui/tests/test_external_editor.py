@@ -23,6 +23,15 @@ from prompt_toolkit.document import Document
 from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output import DummyOutput
 
+# Child processes publish complete records before the parent can observe the marker.
+_PUBLISH_MARKER = """
+def publish_marker(destination, text):
+    destination = Path(destination)
+    pending = destination.with_name(destination.name + '.tmp')
+    pending.write_text(text, encoding='utf-8')
+    pending.replace(destination)
+"""
+
 
 @pytest.fixture(autouse=True)
 def editor_temp_directory(tmp_path, monkeypatch) -> None:
@@ -31,7 +40,10 @@ def editor_temp_directory(tmp_path, monkeypatch) -> None:
 
 def _editor(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, script: str) -> Path:
     editor = tmp_path / "editor fixture.py"
-    editor.write_text("import sys\nfrom pathlib import Path\npath = Path(sys.argv[-1])\n" + script, encoding="utf-8")
+    editor.write_text(
+        "import sys\nfrom pathlib import Path\n" + _PUBLISH_MARKER + "\npath = Path(sys.argv[-1])\n" + script,
+        encoding="utf-8",
+    )
     monkeypatch.delenv("VISUAL", raising=False)
     arguments = [sys.executable, str(editor), "--wait"]
     monkeypatch.setenv("EDITOR", subprocess.list2cmdline(arguments) if os.name == "nt" else shlex.join(arguments))
@@ -195,7 +207,7 @@ async def test_editor_cancellation_reaps_process_and_removes_file(tmp_path, monk
         monkeypatch,
         f"""
 import time
-Path({str(ready)!r}).write_text(str(path))
+publish_marker({str(ready)!r}, str(path))
 time.sleep(60)
 """,
     )
@@ -204,7 +216,7 @@ time.sleep(60)
         async with asyncio.timeout(5):
             while not ready.exists():
                 await asyncio.sleep(0.01)
-        path = Path(ready.read_text())
+        path = Path(ready.read_text(encoding="utf-8"))
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await task
@@ -257,7 +269,7 @@ async def _until_file(path: Path) -> str:
     async with asyncio.timeout(8):
         while not path.exists():
             await asyncio.sleep(0.01)
-    return path.read_text()
+    return path.read_text(encoding="utf-8")
 
 
 def _is_live(pid: int) -> bool:
@@ -273,7 +285,8 @@ async def test_cancel_launcher_stops_its_editor_child(tmp_path, monkeypatch) -> 
     child = f"""
 import os, time
 from pathlib import Path
-Path({str(ready)!r}).write_text(str(os.getpid()))
+{_PUBLISH_MARKER}
+publish_marker({str(ready)!r}, str(os.getpid()))
 time.sleep(60)
 """
     _editor(tmp_path, monkeypatch, f"import subprocess\nsubprocess.Popen([sys.executable, '-c', {child!r}]).wait()\n")
@@ -305,8 +318,8 @@ async def test_repeated_cancellation_waits_for_term_ignoring_editor(tmp_path, mo
         monkeypatch,
         f"""
 import os, signal, time
-signal.signal(signal.SIGTERM, lambda *_: Path({str(terminated)!r}).write_text('TERM'))
-Path({str(ready)!r}).write_text(str(os.getpid()) + '\\n' + str(path))
+signal.signal(signal.SIGTERM, lambda *_: publish_marker({str(terminated)!r}, 'TERM'))
+publish_marker({str(ready)!r}, str(os.getpid()) + '\\n' + str(path))
 time.sleep(60)
 """,
     )
@@ -363,7 +376,7 @@ async def test_repeated_cancellation_during_process_acquisition(tmp_path, monkey
     _editor(
         tmp_path,
         monkeypatch,
-        f"import os, time\nPath({str(ready)!r}).write_text(str(os.getpid()) + '\\n' + str(path))\ntime.sleep(60)\n",
+        f"import os, time\npublish_marker({str(ready)!r}, str(os.getpid()) + '\\n' + str(path))\ntime.sleep(60)\n",
     )
     release = asyncio.Event()
     spawn = asyncio.create_subprocess_exec
@@ -414,7 +427,7 @@ async def test_shell_repeated_cancellation_waits_for_editor_cleanup(
     _editor(
         tmp_path,
         monkeypatch,
-        f"import os, time\nPath({str(ready)!r}).write_text(str(os.getpid()) + '\\n' + str(path))\ntime.sleep(60)\n",
+        f"import os, time\npublish_marker({str(ready)!r}, str(os.getpid()) + '\\n' + str(path))\ntime.sleep(60)\n",
     )
     stopping, release = asyncio.Event(), asyncio.Event()
     stop_editor = external_editor._stop_editor
@@ -482,7 +495,7 @@ async def test_application_shutdown_cancels_editor_before_waiting_for_terminal(t
         monkeypatch,
         f"""
 import os, time
-Path({str(ready)!r}).write_text(str(os.getpid()) + '\\n' + str(path))
+publish_marker({str(ready)!r}, str(os.getpid()) + '\\n' + str(path))
 time.sleep(60)
 """,
     )

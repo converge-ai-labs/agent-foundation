@@ -366,6 +366,67 @@ async def test_stop_fences_runtime_and_requires_confirmed_exit(tmp_path, monkeyp
     assert await provider.stop("browser_stop", {"runtime_id": "current"}) == stopped
 
 
+@pytest.fixture
+def starting_runtime(tmp_path):
+    import asyncio
+    from types import SimpleNamespace
+
+    instance = object.__new__(runtime.Runtime)
+    instance.root = tmp_path
+    instance.stop = asyncio.Event()
+    instance.cdp_url = None
+    instance.guest = SimpleNamespace(call=AsyncMock(return_value={"result": {"generation": "viewer"}}))
+    (tmp_path / "desktop").mkdir()
+    (tmp_path / "desktop" / "control.sock").touch()
+    endpoint = tmp_path / "DevToolsActivePort"
+    endpoint.write_text("1234\n/devtools/browser/test\n")
+    return instance, endpoint, SimpleNamespace(returncode=None)
+
+
+@pytest.mark.parametrize("failure", [ConnectionRefusedError, FileNotFoundError])
+async def test_runtime_waits_for_viewer_response_not_socket_existence(starting_runtime, failure):
+    instance, endpoint, child = starting_runtime
+    description = {"result": {"generation": "viewer"}}
+    instance.guest.call.side_effect = [failure(), description]
+    assert await instance.wait_ready(endpoint, (child,)) == ("1234", "/devtools/browser/test", description)
+    assert instance.guest.call.await_count == 2
+    assert instance.cdp_url == "ws://127.0.0.1:1234/devtools/browser/test"
+    instance.guest.call.assert_awaited_with(instance.root / "desktop", {"protocol_version": 2, "operation": "describe"})
+
+
+@pytest.mark.parametrize("failure", ["child_exit", "stop", "timeout", "viewer_error", "permission"])
+async def test_runtime_readiness_remains_bounded_and_propagates_failures(starting_runtime, monkeypatch, failure):
+    import asyncio
+
+    instance, endpoint, child = starting_runtime
+    original_timeout = asyncio.timeout
+    budgets = []
+
+    def timeout(seconds):
+        budgets.append(seconds)
+        return original_timeout(0.02 if failure == "timeout" else seconds)
+
+    monkeypatch.setattr(runtime.asyncio, "timeout", timeout)
+
+    async def describe(*args):
+        if failure == "child_exit":
+            child.returncode = 1
+        elif failure == "stop":
+            instance.stop.set()
+        elif failure == "viewer_error":
+            return {"error": "operation_unconfirmed"}
+        elif failure == "permission":
+            raise PermissionError("denied")
+        raise ConnectionRefusedError()
+
+    instance.guest.call.side_effect = describe
+    error = TimeoutError if failure == "timeout" else PermissionError if failure == "permission" else RuntimeError
+    with pytest.raises(error):
+        await instance.wait_ready(endpoint, (child,))
+    assert budgets == [30]
+    assert instance.guest.call.await_count == 1
+
+
 async def test_runtime_child_cleanup_has_one_shared_deadline(monkeypatch):
     import asyncio
 

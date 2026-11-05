@@ -5,16 +5,21 @@ ARG ENVD_BINARY_SOURCE=source
 ARG SANDBOX_VARIANT=standard
 
 FROM rust:1.96-trixie AS builder
+ARG TARGETARCH
 
 WORKDIR /src
 COPY Cargo.toml Cargo.lock ./
 COPY crates/a13n-envd crates/a13n-envd
+# Keep compiler intermediates out of exported image/cache layers. Only the daemon
+# is consumed by the runtime; cache mounts still accelerate repeated local builds.
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
-    cargo build --release --locked --package a13n-envd
+    --mount=type=cache,id=a13n-envd-target-${TARGETARCH},target=/src/target,sharing=locked \
+    cargo build --release --locked --package a13n-envd \
+    && install -D target/release/a13n-envd /out/a13n-envd
 
 FROM scratch AS envd-source
-COPY --from=builder /src/target/release/a13n-envd /a13n-envd
+COPY --from=builder /out/a13n-envd /a13n-envd
 
 FROM scratch AS envd-prebuilt
 ARG TARGETARCH

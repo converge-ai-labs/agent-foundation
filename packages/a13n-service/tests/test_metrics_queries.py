@@ -105,6 +105,7 @@ async def environment(service, source_id, owner_id):
     async with transaction(service.runtime.storage) as session:
         session.add(
             EnvironmentRow(
+                kind="external_http",
                 id=environment_id,
                 organization_id=tenant.organization_id,
                 workspace_id=tenant.workspace_id,
@@ -349,7 +350,7 @@ async def test_external_identity_cannot_self_authorize_a_shared_source(service, 
         # A second endpoint can self-report exactly the same device identity as a private target.
         victim = await environment(service, source_id, service.tenant.principal_id)
         impostor = await environment(service, None, owner.id)
-        view = await environments.get_environment(service.runtime.storage, owner, workspace, impostor)
+        view = await environments.get_environment(service.runtime, owner, workspace, impostor)
         with pytest.raises(ServiceError) as error:
             await environments.select_metrics_source(
                 service.runtime,

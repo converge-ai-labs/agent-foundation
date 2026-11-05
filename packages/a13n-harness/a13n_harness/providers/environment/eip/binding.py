@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from types import MappingProxyType
 
 from a13n_envd_client import EIPSession
 from a13n_envd_client.eip import v1 as eip
@@ -28,45 +29,47 @@ from a13n_harness.providers.environment.eip.processes import (
     _ProcessConversions,
 )
 
-_METHOD_ACTIONS: dict[str, tuple[EnvironmentAction, ...]] = {
-    "computer.describe": (EnvironmentAction.COMPUTER_DESCRIBE,),
-    "computer.observe": (EnvironmentAction.COMPUTER_OBSERVE,),
-    "computer.zoom": (EnvironmentAction.COMPUTER_ZOOM,),
-    "computer.click": (EnvironmentAction.COMPUTER_CLICK,),
-    "computer.move": (EnvironmentAction.COMPUTER_MOVE,),
-    "computer.drag": (EnvironmentAction.COMPUTER_DRAG,),
-    "computer.scroll": (EnvironmentAction.COMPUTER_SCROLL,),
-    "computer.type_text": (EnvironmentAction.COMPUTER_TYPE_TEXT,),
-    "computer.press_keys": (EnvironmentAction.COMPUTER_PRESS_KEYS,),
-    "computer.read_clipboard": (EnvironmentAction.COMPUTER_READ_CLIPBOARD,),
-    "computer.write_clipboard": (EnvironmentAction.COMPUTER_WRITE_CLIPBOARD,),
-    "file.stat": (EnvironmentAction.FILE_STAT,),
-    "file.read_text": (EnvironmentAction.FILE_READ_TEXT,),
-    "file.open_reader": (EnvironmentAction.FILE_READ_BYTES,),
-    "file.write_text": (EnvironmentAction.FILE_WRITE_TEXT,),
-    "file.patch_text": (EnvironmentAction.FILE_PATCH_TEXT,),
-    "file.list": (EnvironmentAction.FILE_LIST,),
-    "file.find": (EnvironmentAction.FILE_QUERY,),
-    "file.search": (EnvironmentAction.FILE_SEARCH_TEXT,),
-    "file.mkdir": (EnvironmentAction.FILE_MKDIR,),
-    "file.move": (EnvironmentAction.FILE_MOVE,),
-    "file.remove": (EnvironmentAction.FILE_REMOVE,),
-    "file.open_writer": (EnvironmentAction.FILE_WRITE_BYTES,),
-    "file.copy": (EnvironmentAction.FILE_COPY_SOURCE, EnvironmentAction.FILE_COPY_DESTINATION),
-    "shell.exec": (EnvironmentAction.SHELL_EXEC,),
-    "process.start": (EnvironmentAction.PROCESS_START,),
-    "process.inspect": (EnvironmentAction.PROCESS_INSPECT,),
-    "process.write_stdin": (EnvironmentAction.PROCESS_WRITE_STDIN,),
-    "process.close_stdin": (EnvironmentAction.PROCESS_CLOSE_STDIN,),
-    "process.signal": (EnvironmentAction.PROCESS_SIGNAL,),
-    "process.wait": (EnvironmentAction.PROCESS_WAIT,),
-    "process.kill": (EnvironmentAction.PROCESS_KILL,),
-    "process.release": (EnvironmentAction.PROCESS_RELEASE,),
-    "output.read": (EnvironmentAction.OUTPUT_READ,),
-    "output.release": (EnvironmentAction.OUTPUT_RELEASE,),
-    "port.inspect": (EnvironmentAction.PORT_INSPECT,),
-    "port.wait": (EnvironmentAction.PORT_WAIT,),
-}
+EIP_METHOD_ACTIONS = MappingProxyType(
+    {
+        "computer.describe": (EnvironmentAction.COMPUTER_DESCRIBE,),
+        "computer.observe": (EnvironmentAction.COMPUTER_OBSERVE,),
+        "computer.zoom": (EnvironmentAction.COMPUTER_ZOOM,),
+        "computer.click": (EnvironmentAction.COMPUTER_CLICK,),
+        "computer.move": (EnvironmentAction.COMPUTER_MOVE,),
+        "computer.drag": (EnvironmentAction.COMPUTER_DRAG,),
+        "computer.scroll": (EnvironmentAction.COMPUTER_SCROLL,),
+        "computer.type_text": (EnvironmentAction.COMPUTER_TYPE_TEXT,),
+        "computer.press_keys": (EnvironmentAction.COMPUTER_PRESS_KEYS,),
+        "computer.read_clipboard": (EnvironmentAction.COMPUTER_READ_CLIPBOARD,),
+        "computer.write_clipboard": (EnvironmentAction.COMPUTER_WRITE_CLIPBOARD,),
+        "file.stat": (EnvironmentAction.FILE_STAT,),
+        "file.read_text": (EnvironmentAction.FILE_READ_TEXT,),
+        "file.open_reader": (EnvironmentAction.FILE_READ_BYTES,),
+        "file.write_text": (EnvironmentAction.FILE_WRITE_TEXT,),
+        "file.patch_text": (EnvironmentAction.FILE_PATCH_TEXT,),
+        "file.list": (EnvironmentAction.FILE_LIST,),
+        "file.find": (EnvironmentAction.FILE_QUERY,),
+        "file.search": (EnvironmentAction.FILE_SEARCH_TEXT,),
+        "file.mkdir": (EnvironmentAction.FILE_MKDIR,),
+        "file.move": (EnvironmentAction.FILE_MOVE,),
+        "file.remove": (EnvironmentAction.FILE_REMOVE,),
+        "file.open_writer": (EnvironmentAction.FILE_WRITE_BYTES,),
+        "file.copy": (EnvironmentAction.FILE_COPY_SOURCE, EnvironmentAction.FILE_COPY_DESTINATION),
+        "shell.exec": (EnvironmentAction.SHELL_EXEC,),
+        "process.start": (EnvironmentAction.PROCESS_START,),
+        "process.inspect": (EnvironmentAction.PROCESS_INSPECT,),
+        "process.write_stdin": (EnvironmentAction.PROCESS_WRITE_STDIN,),
+        "process.close_stdin": (EnvironmentAction.PROCESS_CLOSE_STDIN,),
+        "process.signal": (EnvironmentAction.PROCESS_SIGNAL,),
+        "process.wait": (EnvironmentAction.PROCESS_WAIT,),
+        "process.kill": (EnvironmentAction.PROCESS_KILL,),
+        "process.release": (EnvironmentAction.PROCESS_RELEASE,),
+        "output.read": (EnvironmentAction.OUTPUT_READ,),
+        "output.release": (EnvironmentAction.OUTPUT_RELEASE,),
+        "port.inspect": (EnvironmentAction.PORT_INSPECT,),
+        "port.wait": (EnvironmentAction.PORT_WAIT,),
+    }
+)
 
 
 @asynccontextmanager
@@ -207,6 +210,10 @@ class EIPEnvironmentSession:
         )
 
     async def close(self) -> None:
+        if not await self._session.prepare_cleanup():
+            # The Host fenced this logical carrier. Native cleanup cannot be
+            # dispatched on it and must never follow a successor attachment.
+            return
         first_error: EnvironmentError | None = None
         try:
             await self._conversions.cleanup_owned()
@@ -223,7 +230,7 @@ class EIPEnvironmentSession:
 
 def _convert_descriptor(descriptor: eip.SessionDescriptor) -> EnvironmentDescriptor:
     methods = set(descriptor.available_methods)
-    actions = {action for method in methods for action in _METHOD_ACTIONS.get(method, ())}
+    actions = {action for method in methods for action in EIP_METHOD_ACTIONS.get(method, ())}
     if "process.inspect" in methods and "output.read" in methods:
         actions.add(EnvironmentAction.PROCESS_READ_OUTPUT)
     if "computer.close_observation" not in methods:
@@ -266,7 +273,7 @@ def _convert_descriptor(descriptor: eip.SessionDescriptor) -> EnvironmentDescrip
 
 
 def configured_descriptor(*, working_directory: str | None = None) -> EnvironmentDescriptor:
-    actions = {action for values in _METHOD_ACTIONS.values() for action in values}
+    actions = {action for values in EIP_METHOD_ACTIONS.values() for action in values}
     actions.add(EnvironmentAction.PROCESS_READ_OUTPUT)
     from a13n_harness.environment.models import ENVIRONMENT_ACTION_DISPATCH
 

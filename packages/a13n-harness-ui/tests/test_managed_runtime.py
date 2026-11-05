@@ -576,7 +576,11 @@ async def test_cancelled_native_process_is_joined_before_owned_scratch_cleanup(t
         "import pathlib, sys, time\n"
         "scratch = pathlib.Path(sys.argv[sys.argv.index('--staging-dir') + 1])\n"
         "(scratch / 'partial').write_bytes(b'partial archive')\n"
-        f"pathlib.Path({str(marker)!r}).write_text(str(scratch))\n"
+        # Publish the path only after the complete record has been written and closed.
+        f"marker = pathlib.Path({str(marker)!r})\n"
+        "pending = marker.with_name(marker.name + '.tmp')\n"
+        "pending.write_text(str(scratch), encoding='utf-8')\n"
+        "pending.replace(marker)\n"
         "time.sleep(60)\n"
     )
     executable.chmod(0o700)
@@ -585,7 +589,7 @@ async def test_cancelled_native_process_is_joined_before_owned_scratch_cleanup(t
         with anyio.fail_after(5):
             while not marker.exists():
                 await anyio.sleep(0.01)
-        scratch = Path(marker.read_text())
+        scratch = Path(marker.read_text(encoding="utf-8"))
         assert (scratch / "partial").exists()
         tasks.cancel_scope.cancel()
     assert not scratch.exists()

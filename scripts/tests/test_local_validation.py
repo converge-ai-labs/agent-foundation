@@ -6,7 +6,7 @@ import re
 import shutil
 import subprocess
 import sys
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 import pytest
 import yaml
@@ -69,7 +69,7 @@ def test_file_shards_are_disjoint_complete_and_include_new_nested_files(test_wor
         (nested / name).touch()
     expected = sorted(
         [f"{UI}/test_one.py", f"{UI}/test_two.py"]
-        + [str(nested / name) for name in ("test_new.py", "another_test.py", "test_space $(false).py")]
+        + [(nested / name).as_posix() for name in ("test_new.py", "another_test.py", "test_space $(false).py")]
     )
     for shard in (1, 2):
         assert main(["--shard", str(shard), "2", "--workers", "3", UI]) == 0
@@ -97,7 +97,7 @@ def test_balanced_cli_shards_cover_discovered_files_once(test_workspace, tmp_pat
     for shard in (1, 2):
         assert main(["--shard", str(shard), "2", "--durations", str(durations), UI]) == 0
     selections = [command[7:] for command in test_workspace]
-    assert selections == [[f"{UI}/test_one.py"], [str(new), f"{UI}/test_two.py"]]
+    assert selections == [[f"{UI}/test_one.py"], [new.as_posix(), f"{UI}/test_two.py"]]
 
 
 @pytest.mark.parametrize(
@@ -259,3 +259,14 @@ def test_root_targets_do_not_require_sdk_checkouts(tmp_path: Path, target: str) 
     assert "sdk-" not in result.stdout
     assert "a13n-service-cli" not in result.stdout
     assert not (tmp_path / "sdk").exists()
+
+
+def test_windows_shard_paths_match_portable_duration_keys(test_workspace, tmp_path, monkeypatch):
+    files = [f"{UI}/test_one.py", f"{UI}/test_two.py"]
+    monkeypatch.setattr(
+        "scripts.run_python_tests.selected_files", lambda selections: {PureWindowsPath(path) for path in files}
+    )
+    durations = tmp_path / "durations.json"
+    durations.write_text(json.dumps({files[0]: 20.0, files[1]: 2.0}))
+    assert main(["--workers", "2", "--shard", "1", "2", "--durations", str(durations), UI]) == 0
+    assert test_workspace[0][7:] == [files[0]]

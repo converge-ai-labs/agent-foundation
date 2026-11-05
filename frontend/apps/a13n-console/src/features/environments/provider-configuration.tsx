@@ -92,7 +92,9 @@ export function ProviderConfiguration({
   }
   const e2bDefaultTemplate = value?.desktop === true ? "auto" : "base";
   const e2bRequiresEnvd =
-    value?.execution === "envd_http" || value?.desktop === true;
+    value?.execution === "envd_http" ||
+    value?.execution === "envd_ws" ||
+    value?.desktop === true;
   const e2bUsesCustomTemplate =
     (e2bRequiresEnvd && value?.desktop !== true) ||
     e2bCustom ||
@@ -154,13 +156,8 @@ export function ProviderConfiguration({
     )
       continue;
     if (variant === "e2b" && key === "template") continue;
-    if (
-      variant === "vercel" &&
-      ["execution", "snapshot", "desktop"].includes(key)
-    )
-      continue;
-    if (variant === "sprites" && ["desktop", "execution"].includes(key))
-      continue;
+    if (variant === "vercel" && ["snapshot", "desktop"].includes(key)) continue;
+    if (variant === "sprites" && key === "desktop") continue;
     if (variant === "modal" && ["image", "desktop"].includes(key)) continue;
     if (variant === "daytona" && ["snapshot", "desktop"].includes(key))
       continue;
@@ -182,11 +179,7 @@ export function ProviderConfiguration({
           title: "Container image",
         },
       ]);
-    } else if (
-      (variant === "docker" || variant === "e2b") &&
-      key === "execution"
-    )
-      execution.push(property);
+    } else if (key === "execution") execution.push(property);
     else if ((variant === "docker" || variant === "e2b") && key === "desktop")
       continue;
     else if (variant === "docker" && key === "mounts") mounts.push(property);
@@ -336,7 +329,11 @@ export function ProviderConfiguration({
                         ...value,
                         desktop: enabled,
                         desktop_assistance: enabled,
-                        execution: enabled ? "envd_http" : "native",
+                        execution: enabled
+                          ? value.execution === "envd_ws"
+                            ? "envd_ws"
+                            : "envd_http"
+                          : "native",
                       })
                     }
                   />
@@ -531,7 +528,11 @@ export function ProviderConfiguration({
                       change({
                         ...value,
                         desktop: enabled,
-                        execution: enabled ? "envd_http" : "native",
+                        execution: enabled
+                          ? value.execution === "envd_ws"
+                            ? "envd_ws"
+                            : "envd_http"
+                          : "native",
                         ...(enabled && value.timeout_seconds === undefined
                           ? { timeout_seconds: 2700 }
                           : {}),
@@ -622,8 +623,12 @@ export function ProviderConfiguration({
                     ...(next.execution === "native"
                       ? { desktop: false, desktop_assistance: false }
                       : {}),
+                    ...(variant === "vercel" && next.execution === "native"
+                      ? { snapshot: null }
+                      : {}),
                     ...(variant === "e2b" &&
-                    next.execution === "envd_http" &&
+                    (next.execution === "envd_http" ||
+                      next.execution === "envd_ws") &&
                     ["base", "desktop"].includes(
                       String(next.template ?? "base"),
                     )
@@ -638,7 +643,7 @@ export function ProviderConfiguration({
                 <SettingsRow
                   label={t("Desktop capability")}
                   description={t(
-                    "Requires a desktop image and the Docker provider’s Envd HTTP route. Enabling this selects EIP execution and checks desktop readiness. Agent tools and mount permissions are configured separately.",
+                    "Requires a desktop image and Envd HTTP or outbound WebSocket execution. Agent tools and mount permissions are configured separately.",
                   )}
                   controlId={desktopId}
                   stackOnNarrow={false}
@@ -653,7 +658,14 @@ export function ProviderConfiguration({
                       change({
                         ...value,
                         desktop: enabled,
-                        ...(enabled ? { execution: "envd_http" } : {}),
+                        ...(enabled
+                          ? {
+                              execution:
+                                value.execution === "envd_ws"
+                                  ? "envd_ws"
+                                  : "envd_http",
+                            }
+                          : {}),
                       })
                     }
                     disabled={readOnly}
@@ -682,7 +694,12 @@ export function ProviderConfiguration({
                         ...value,
                         desktop: enabled,
                         ...(enabled
-                          ? { execution: "envd_http" }
+                          ? {
+                              execution:
+                                value.execution === "envd_ws"
+                                  ? "envd_ws"
+                                  : "envd_http",
+                            }
                           : { desktop_assistance: false }),
                         ...(enabled &&
                         (!value.template ||

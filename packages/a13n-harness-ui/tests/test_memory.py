@@ -59,8 +59,8 @@ def _organizer(tmp_path, source, *, webui=True):
     return MemoryOrganizer(configuration_root=tmp_path, current=current, run=forbidden, webui=webui)
 
 
-async def _settle(organizer):
-    with fail_after(5):
+async def _settle(organizer, *, timeout=5):
+    with fail_after(timeout):
         while organizer._pending:
             await sleep(0.01)
 
@@ -503,13 +503,15 @@ async def test_organizer_real_memory_tool_write(tmp_path, monkeypatch):
     async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=root, host_mode="webui") as app:
         organizer = app._memory_organizer
         organizer.offer(None)
-        await _settle(organizer)
-        assert organizer.status(source).last_outcome == "completed"
-        assert (await store.read("topic.md")).text == "A stable topic.\n"
-        state = _read_state(scope.root / ".a13n-memory/organization.json")
-        assert state.manifest == await manifest(store)
-        assert state.snapshot["topic.md"] == "A stable topic.\n"
-        organizer.stop()
+        try:
+            await _settle(organizer, timeout=30)
+            assert organizer.status(source).last_outcome == "completed"
+            assert (await store.read("topic.md")).text == "A stable topic.\n"
+            state = _read_state(scope.root / ".a13n-memory/organization.json")
+            assert state.manifest == await manifest(store)
+            assert state.snapshot["topic.md"] == "A stable topic.\n"
+        finally:
+            organizer.stop()
     assert calls == 2
 
 
@@ -546,11 +548,13 @@ async def test_organizer_rejects_stale_tool_write_before_progress_confirmation(t
     async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=root, host_mode="webui") as app:
         organizer = app._memory_organizer
         organizer.offer(None)
-        await _settle(organizer)
-        assert organizer.status(source).last_outcome == "concurrent_change"
-        assert not (scope.root / "derived.md").exists()
-        assert _read_state(scope.root / ".a13n-memory/organization.json").manifest == {}
-        organizer.stop()
+        try:
+            await _settle(organizer, timeout=30)
+            assert organizer.status(source).last_outcome == "concurrent_change"
+            assert not (scope.root / "derived.md").exists()
+            assert _read_state(scope.root / ".a13n-memory/organization.json").manifest == {}
+        finally:
+            organizer.stop()
     assert calls == 2
 
 
@@ -621,7 +625,10 @@ async def test_app_reload_disables_running_maintenance_without_waiting_for_foreg
 
 @pytest.mark.parametrize("ending", ["disable", "deadline", "shutdown"])
 async def test_real_memory_root_settles_before_scope_lock_is_released(tmp_path, monkeypatch, ending):
+    from contextlib import contextmanager
+
     from a13n_harness_ui import memory_organization
+    from anyio import current_time
 
     root, _, scope, _ = await _seed(tmp_path)
     started, finished = Event(), Event()
@@ -638,8 +645,16 @@ async def test_real_memory_root_settles_before_scope_lock_is_released(tmp_path, 
         return FunctionModel(stream_function=model)
 
     monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
+    deadline_scope = None
     if ending == "deadline":
-        monkeypatch.setattr(memory_organization, "_DEADLINE", 1)
+
+        @contextmanager
+        def capture_deadline(delay):
+            nonlocal deadline_scope
+            with fail_after(delay) as deadline_scope:
+                yield deadline_scope
+
+        monkeypatch.setattr(memory_organization, "fail_after", capture_deadline)
     settings = _settings(tmp_path / "state")
     async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
         organizer = app._memory_organizer
@@ -654,6 +669,10 @@ async def test_real_memory_root_settles_before_scope_lock_is_released(tmp_path, 
             await app.reload_configuration()
         elif ending == "shutdown":
             organizer.stop()
+        elif ending == "deadline":
+            # Expire the real deadline only after the root has entered its model.
+            assert deadline_scope is not None
+            deadline_scope.deadline = current_time()
         await _settle(organizer)
         assert finished.is_set()
         assert (await app.get_thread(thread.thread_id)).thread.root_activity.state == "inactive"

@@ -37,10 +37,12 @@ from a13n_service.runs.environments.mounts import (
     child_environment_policy,
     freeze_mounts,
     has_primary,
+    mount_environments,
     primary_mount,
     reserve_primary,
     thread_has_primary,
 )
+from a13n_service.runs.environments.schemas import MountCreate
 from a13n_service.runs.memories.mounts import freeze_memories, inherited_cursors
 from a13n_service.runs.memories.session_memory import inherit_defaults
 from a13n_service.runs.runtime import Runtime
@@ -314,14 +316,18 @@ async def delegation(session: AsyncSession, thread: ThreadRow, run_id: str) -> D
 
 async def primary_source(
     session: AsyncSession, thread: ThreadRow, config: AgentConfig
-) -> str | EnvironmentMount | None:
-    """Where acceptance gets a primary sandbox for a thread that mounts none: a template to reserve it from, or a
-    mount to share. It is the agent's default template, except on a child thread, whose spawning edge decides, never
-    the child agent: the edge's template when dedicated, and when shared the parent thread's primary, which a parent
-    without one cannot give until its own acceptance reserves one."""
+) -> str | MountCreate | EnvironmentMount | None:
+    """Select an absent primary for both message admission and run acceptance.
+
+    A root uses the agent's default instance or template. A child uses its spawning
+    edge's policy, never the child agent's default: a dedicated template or the
+    parent's primary mount, available after the parent's acceptance reserves it.
+    """
     if thread.agent_snapshot is not None:
         return None
     if thread.origin != "child":
+        if config.default_environment_id is not None:
+            return MountCreate(name=PRIMARY, environment_id=config.default_environment_id)
         return config.default_environment_template_id
     policy = await child_environment_policy(session, thread)
     assert thread.origin_thread_id is not None
@@ -371,7 +377,14 @@ async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, 
         )
     if primary_override is None and not await thread_has_primary(session, thread):
         primary = await primary_source(session, thread, revision.config)
-        if isinstance(primary, EnvironmentMount):
+        if isinstance(primary, MountCreate):
+            await mount_environments(
+                session,
+                thread,
+                [primary],
+                principal_id=principal.id,
+            )
+        elif isinstance(primary, EnvironmentMount):
             await adopt_mounts(session, thread, [primary])
         elif primary is not None:
             await reserve_primary(

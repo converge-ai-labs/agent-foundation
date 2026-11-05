@@ -1080,7 +1080,7 @@ impl StartupArguments {
     }
 }
 
-fn validate_identity(value: &str, field: &str) -> Result<(), ConfigError> {
+pub(crate) fn validate_identity(value: &str, field: &str) -> Result<(), ConfigError> {
     if value.trim() != value
         || value.is_empty()
         || value.len() > 256

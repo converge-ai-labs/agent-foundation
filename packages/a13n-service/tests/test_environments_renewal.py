@@ -381,6 +381,41 @@ async def lose_sandbox(env, sandbox):
     assert (await environment(env, sandbox))["failure"]["code"] == "environment_lost"
 
 
+async def test_recovering_primary_preserves_offline_client_mount_settings(env):
+    sandbox = await ready_sandbox(env)
+    registered = await env.client.post(
+        f"{env.api}/client-environments",
+        json={
+            "device_id": "offline-laptop",
+            "name": "Laptop",
+            "default_working_directory": "/project",
+            "permission_ceiling": {"operations": ["environment.file.list", "environment.file.read_text"]},
+            "declared_capabilities": {"operations": ["environment.file.list"]},
+        },
+    )
+    assert registered.status_code == 201, registered.text
+    client_id = registered.json()["client"]["environment"]["id"]
+    receipt = await start(
+        env,
+        environments=[
+            {"name": "workspace", "environment_id": sandbox},
+            {"name": "laptop", "environment_id": client_id},
+        ],
+    )
+    await interrupt(env, receipt["run"]["id"])
+    await lose_sandbox(env, sandbox)
+    followup = await follow_up(env, receipt["thread"]["id"], "continue")
+    assert followup.status_code == 201, followup.text
+    laptop, workspace = followup.json()["run"]["environment_mounts"]
+    assert workspace["name"] == "workspace" and workspace["environment_id"] != sandbox
+    assert laptop == {
+        "name": "laptop",
+        "environment_id": client_id,
+        "working_directory": "/project",
+        "permission_ceiling": {"operations": ["environment.file.list"]},
+    }
+
+
 async def test_concurrent_recovery_of_a_thread_and_its_fork_reserves_one_successor(env, runs_kit, monkeypatch):
     sandbox = await ready_sandbox(env)
     mount = {
