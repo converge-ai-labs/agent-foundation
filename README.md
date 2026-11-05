@@ -6,11 +6,11 @@
 
 **Build, run, and manage AI agents at scale on your own infrastructure.**
 
-a13n is an open-source managed agent service. It brings the harness, API, and Console together so you can build agent applications without building the serving infrastructure yourself.
+a13n Service is an open-source runtime for managing and running agents. Use Console, its web interface, to configure an agent, try it in a conversation, and debug its tool calls. Your application can then call that same agent through the [HTTP API](docs/a13n-service/connect-application.md) or a [Python, TypeScript, Go, or Rust SDK](docs/a13n-service/sdks.md). Service handles execution and recovery for those requests.
 
 - **Long-running tasks:** Agents keep working when clients disconnect.
 - **Durable execution:** Interrupted runs can resume from saved checkpoints after worker failures.
-- **Management and monitoring:** Configure agents, inspect runs, and track usage and cost in Console.
+- **Run visibility:** Inspect runs from your application in Console and track workspace usage and cost.
 
 Choose your [model](docs/a13n-service/models.md), [sandbox](docs/a13n-service/environments.md), [search](docs/a13n-service/tools.md#web-search-and-scrape), and [memory](docs/a13n-service/memory.md) providers. Bring your own keys.
 
