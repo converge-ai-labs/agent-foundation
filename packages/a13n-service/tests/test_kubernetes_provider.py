@@ -3,7 +3,7 @@
 from copy import deepcopy
 from importlib import import_module
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from a13n_harness.environment.errors import EnvironmentProviderError
@@ -643,6 +643,7 @@ async def test_session_recovery_uses_pod_identity_not_forwarded_port(native, mon
         device_id=target.environment_id,
         generation="generation",
         session_id="original-session",
+        owner_epoch=1,
         available_methods=tuple(http.REQUIRED_METHODS),
         egress=None,
         boundary=None,
@@ -651,6 +652,7 @@ async def test_session_recovery_uses_pod_identity_not_forwarded_port(native, mon
     opened.descriptor = descriptor
     opened.session_id = descriptor.session_id
     opened.__aenter__.return_value = opened
+    opened.use = Mock(return_value=opened)
     device = SimpleNamespace(
         descriptor=SimpleNamespace(device_id=target.environment_id, generation="generation", boundary=None),
         open_session=AsyncMock(return_value=opened),
@@ -677,7 +679,9 @@ async def test_session_recovery_uses_pod_identity_not_forwarded_port(native, mon
     async with http.session(native.runtime, target, config, session_recovery=resumed):
         assert resumed.state.descriptor.session_id == "original-session"
     device.open_session.assert_awaited_once()
-    device.attach_session.assert_awaited_once_with(descriptor)
+    device.attach_session.assert_awaited_once_with(descriptor, owner_epoch=descriptor.owner_epoch + 1)
+    assert opened.use.call_count == 2
+    assert opened.detach.await_count == 2
 
 
 @pytest.mark.parametrize("exit_path", ["normal", "cancel", "uid_change", "failure", "timeout"])
