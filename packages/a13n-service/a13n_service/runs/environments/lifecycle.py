@@ -312,10 +312,10 @@ class Outcome:
     settled: bool = True
 
 
-# The provider no longer has the instance: nothing can bring it back, and it is never silently recreated.
+# A confirmed loss is permanent for this instance ID.
 LOST = Fault(
     "environment_lost",
-    "The sandbox no longer exists at its provider; delete this environment and use a new one",
+    "The sandbox no longer exists at its provider",
     "known",
     permanent=True,
 )

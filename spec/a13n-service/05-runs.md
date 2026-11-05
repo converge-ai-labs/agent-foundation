@@ -36,13 +36,13 @@ At execution, accepted input distinguishes message content from a deferred-resul
 
 ## Session display identity
 
-A Session optionally carries a caller-owned `title` and structured `origin`, independent of Thread execution lineage. Applications set these values in `POST /sessions` or in the optional `session` object of `POST /threads`, alongside Session labels and memory settings. `session` and `session_id` are mutually exclusive; inline creation and the first input commit atomically under the existing idempotency key. Omitting `session` preserves the previous request digest and creation behavior.
+A Session optionally carries a caller-owned `title` and structured `origin`, independent of Thread execution lineage. Applications set these values in `POST /sessions` or in the optional `session` object of `POST /threads`, alongside Session labels, memory settings and the [primary environment recreation policy](06-environments.md#confirmed-loss-of-the-primary-environment). `session` and `session_id` are mutually exclusive; inline creation and the first input commit atomically under the existing idempotency key. Omitting `session` preserves the previous request digest and creation behavior.
 
 `title` is trimmed, nonempty when supplied, and at most 256 characters. If the Session has no title when its first input is accepted, Service stores the first input's text with whitespace collapsed and a 256-character limit. Later inputs do not replace that title. Existing Sessions are not backfilled from historical input.
 
 `origin` contains a required application key `application` (up to 128 characters), optional readable `name` (256) and application-owned `external_id` (512). These fields name the application and conversation a Session came from; they carry no link to the external system, grant no authority, do not establish verified provenance, and are not inserted into model context. Project, role and other application dimensions use existing Session labels.
 
-`PATCH /sessions/{session}` uses the Session's existing `run` permission and `If-Match` precondition. Omitted identity fields remain unchanged; explicit null clears them. A supplied origin replaces the entire object. Creation, read, list and update representations expose both fields, including null for older Sessions.
+`PATCH /sessions/{session}` uses the Session's existing `run` permission and `If-Match` precondition. Omitted identity fields remain unchanged; explicit null clears them. A supplied origin replaces the entire object. Creation, read, list and update representations expose both fields, including null for older Sessions. These representations also expose `auto_recreate_lost_environment`. A patch can set the boolean and omission preserves its value.
 
 ## Execution queries
 
@@ -112,7 +112,7 @@ The tenant foreign-key rules in [03](03-tenancy.md#tenant-integrity) apply throu
 
 ```
 sessions
-  id  organization_id  workspace_id  title NULL  origin JSONB NULL  labels  memory  purpose  created_by_id  last_run_id NULL
+  id  organization_id  workspace_id  title NULL  origin JSONB NULL  labels  memory  auto_recreate_lost_environment  purpose  created_by_id  last_run_id NULL
   version  created_at  updated_at
   -- last_run_id and updated_at change without a version bump
 

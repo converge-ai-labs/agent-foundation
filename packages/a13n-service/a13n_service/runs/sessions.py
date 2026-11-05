@@ -42,6 +42,7 @@ def new_session(
         id=new_object_id("sess"),
         organization_id=organization_id,
         workspace_id=workspace_id,
+        auto_recreate_lost_environment=details.auto_recreate_lost_environment,
         title=details.title,
         origin=details.origin.model_dump(mode="json") if details.origin is not None else None,
         labels=dict(details.labels),
@@ -113,6 +114,7 @@ async def _views(session: AsyncSession, rows: Sequence[SessionRow]) -> list[Sess
             {
                 "id": row.id,
                 "workspace_id": row.workspace_id,
+                "auto_recreate_lost_environment": row.auto_recreate_lost_environment,
                 "title": row.title,
                 "origin": row.origin,
                 "labels": row.labels,
@@ -290,6 +292,8 @@ async def update_session(
         scope = await workspace_scope(session, actor, workspace_id, "run")
         row = await find_session(session, scope.workspace_id, session_id, lock=True)
         require_match(if_match, row.id, row.version)
+        if isinstance(body.auto_recreate_lost_environment, bool):
+            row.auto_recreate_lost_environment = body.auto_recreate_lost_environment
         if "title" in body.model_fields_set:
             row.title = body.title
         if "origin" in body.model_fields_set:

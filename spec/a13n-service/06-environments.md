@@ -2,7 +2,7 @@
 
 ## Design position
 
-A thread chooses environments; a run uses the mount set frozen for it at acceptance. Several threads may share one instance, so lifecycle coordination is a property of the **instance and all its active users**, never of one thread or worker. Every external lifecycle call belongs to a durable, fenced operation, and an instance is never silently replaced: a lost instance refuses new use as `environment_lost` until a caller deletes it or mounts another in its place.
+A thread chooses environments; a run uses the mount set frozen for it at acceptance. Several threads may share one instance, so lifecycle coordination is a property of the **instance and all its active users**, never of one thread or worker. Every external lifecycle call belongs to a durable, fenced operation. A confirmed-lost instance refuses new use with `environment_lost`. A session can authorize a new primary instance for a later run.
 
 ## Boundaries
 
@@ -90,7 +90,7 @@ A failed or timed-out build is deleted only after its private alias and build ow
 
 ## Mounts
 
-A thread's **desired mounts** are the environments later runs will use. `POST …/threads/{thread}/environments` adds one (`{name, environment_id, working_directory?, permission_ceiling?}`) and `DELETE …/threads/{thread}/environments/{name}` removes one; both need `run` and the thread `If-Match`, answer with the new thread ETag, and are audited as `thread_environment.create` and `.delete`. Adding needs an open thread. Replacing a mount is explicit: remove the name, then add it again. A duplicate name is `already_exists` (kind `mount`); an environment already mounted on the thread is `conflict` (`already_mounted`). A thread holds at most 32 desired mounts: a path that would add more is `conflict` (`mount_limit`, details `limit`), and a request naming more than 32 is `invalid_argument`. Acceptance's primary reservation below may add one beyond them, and a `shared` child adopts all of its parent run's frozen mounts. `GET` lists the mounts with the thread ETag.
+A thread's **desired mounts** are the environments later runs will use. `POST …/threads/{thread}/environments` adds one (`{name, environment_id, working_directory?, permission_ceiling?}`) and `DELETE …/threads/{thread}/environments/{name}` removes one; both need `run` and the thread `If-Match`, answer with the new thread ETag, and are audited as `thread_environment.create` and `.delete`. Adding needs an open thread. To replace a mount manually, remove the name and add it again. A duplicate name is `already_exists` (kind `mount`); an environment already mounted on the thread is `conflict` (`already_mounted`). A thread holds at most 32 desired mounts: a path that would add more is `conflict` (`mount_limit`, details `limit`), and a request naming more than 32 is `invalid_argument`. Acceptance's primary reservation below may add one beyond them, and a `shared` child adopts all of its parent run's frozen mounts. `GET` lists the mounts with the thread ETag.
 
 Mount representations include read-only `desktop_enabled`, derived from the instance's frozen `desktop` and `desktop_assistance` recipe settings. It is false before a recipe is frozen. This flag lets clients select human-desktop candidates independently of Agent Computer permissions and later template edits. It does not probe readiness or grant access; desktop operations retain their current authority and lifecycle checks. Mount creation/update inputs and frozen Run mounts contain no such projection.
 
@@ -105,6 +105,14 @@ Mounts share-lock their instances in ID order: new use excludes a concurrent sto
 - **New threads and forks** may name up to 32 initial `environments`, added in the transaction that accepts the first run. A fork also shares the origin thread's desired mounts unless `fresh_environments` is set, and its shared and named mounts together count against the 32; shared and named mounts are checked and locked in one ID-ordered pass, so an unusable shared mount refuses the fork (`forbidden` or `conflict`).
 - **Child threads** take their mounts from the delegating edge ([05](05-runs.md#child-runs)): `shared` adopts the parent run's frozen mounts, `dedicated` reserves an instance from the edge's template, `none` mounts nothing.
 - **Acceptance** freezes the thread's desired mounts into `runs.environment_mounts` ([05](05-runs.md#source-selection)), checking each instance for the run's principal. If the thread has no `workspace` mount, acceptance first gives it one from its primary source. A new or forked thread's source is its agent's `default_environment_template_id`: acceptance reserves a managed instance from it and mounts it as `workspace`. A child thread never uses its agent's default template. Its source is the edge that spawned it, as its parent run resolved it ([05](05-runs.md#child-runs)): a `dedicated` edge's template, used the same way, or for a `shared` edge the parent thread's current `workspace` mount, mounted with the same working directory and permission ceiling. A shared child whose parent has no `workspace` mounts none until the parent's own acceptance gets one.
+
+### Confirmed loss of the primary environment
+
+The session boolean `auto_recreate_lost_environment` defaults to true, including for existing sessions. When accepting a run that uses the thread's desired `workspace` mount, Service checks the instance's recorded failure. A permanent `environment_lost` with certainty `known` allows a fresh reservation from the lost instance's `template_id`. Reservation, replacement of the desired mount's instance ID, and run acceptance commit together. The working directory and permission ceiling carry over. The audit event `thread_environment.recreate` records both instance IDs. The usual template, provider, authorization and capacity checks apply. A refused acceptance rolls back the replacement.
+
+Only the accepting thread changes its binding. A named child can replace its dedicated environment; shared children, explicit run-only selections and desktop handback retain their exact targets. Other mount names and external targets follow their ordinary usability checks. Disabling the setting preserves the `environment_lost` refusal. Each accepted run keeps its frozen mount set across attempts, including when its own first use discovers the loss.
+
+The replacement starts with the template's fresh filesystem. The usual [preparation policy](#execution) determines when its native sandbox is created. A later run sees the mount change through the [turn reminder](05-runs.md#turn-reminder).
 
 ### Run-only primary selection
 
@@ -267,8 +275,8 @@ A provider error carries a category and a certainty. Invalid, unsupported, missi
 | Dispatcher dies mid-call                                                                        | Claim expires; `environment_operation_interrupted` when it could publish | The next dispatcher reconciles the same operation |
 | Permanent refusal (disabled provider or template, identity changed, invalid recipe)             | Permanent `failure`; new mounts and acceptance refused with its code     | Fix the cause, or delete the instance             |
 | Template moved to another provider before the create was claimed (`environment_template_moved`) | Permanent `failure`                                                      | Reserve a new environment                         |
-| Instance lost while stopped                                                                     | `starting` fails permanently with `environment_lost`                     | Delete it or mount another; no silent replacement |
-| Provider no longer has a ready sandbox that it should keep                                      | The renewal records the permanent `environment_lost`; renewal ends       | Delete it or mount another; no silent replacement |
+| Instance lost while stopped                                                                     | `starting` fails permanently with `environment_lost`                     | Next eligible run reserves a fresh primary        |
+| Provider no longer has a ready sandbox that it should keep                                      | The renewal records the permanent `environment_lost`; renewal ends       | Next eligible run reserves a fresh primary        |
 | Provider's changed credential no longer sees a ready sandbox                                    | `provider_credential_changed`, not permanent; renewal goes on            | Restore a credential of the sandbox's account     |
 | Provider stopped a ready sandbox itself                                                         | The renewal leaves the instance `stopped`                                | The next run starts it                            |
 | Provider cannot keep a ready sandbox any longer (`provider_keepalive_limit`)                    | Nothing recorded; the next renewal waits for the expiry                  | The renewal then finds it gone or stopped         |
@@ -280,7 +288,7 @@ A provider error carries a category and a certainty. Invalid, unsupported, missi
 ## Trade-offs
 
 - **Shared environments share mutable files.** Threads, forks and children that mount one instance see each other's changes and can run tools concurrently. Checkpoints neither snapshot nor roll back files; a caller that needs isolation mounts fresh environments.
-- **Frozen recipes.** A template fix does not reach existing instances; replacing an instance is explicit.
+- **Frozen recipes.** Each newly reserved instance uses the template recipe in effect at its first create claim.
 - **Fixed-interval recovery.** A failed operation waits for the next maintenance pass instead of a per-instance schedule, in exchange for one simple rule: an operation is only ever continued, never duplicated.
 
 ## Invariants

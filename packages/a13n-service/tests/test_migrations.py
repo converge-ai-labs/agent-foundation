@@ -146,6 +146,29 @@ def test_run_usage_index_build_allows_run_writers(empty_database: Database) -> N
     check(empty_database, OSS)
 
 
+@pytest.mark.anyio
+async def test_session_recreation_migration_preserves_existing_sessions_and_opt_out(service):
+    database = service.runtime.settings.database
+    path = f"{service.api}/sessions"
+    created = await service.client.post(path, json={})
+    assert created.status_code == 201
+    session_id = created.json()["id"]
+    with migration_connection(database, OSS) as config:
+        command.downgrade(config, "a3d0f1eb7aa7")
+    upgrade(database, OSS)
+    before = await service.client.get(f"{path}/{session_id}")
+    assert before.json()["auto_recreate_lost_environment"] is True
+    patched = await service.client.patch(
+        f"{path}/{session_id}",
+        headers={"if-match": before.headers["etag"]},
+        json={"auto_recreate_lost_environment": False},
+    )
+    assert patched.status_code == 200
+    with pytest.raises(RuntimeError, match="sessions have opted out"), migration_connection(database, OSS) as config:
+        command.downgrade(config, "a3d0f1eb7aa7")
+    assert (await service.client.get(f"{path}/{session_id}")).json()["auto_recreate_lost_environment"] is False
+
+
 def test_compaction_revision_roundtrip(empty_database: Database) -> None:
     with migration_connection(empty_database, OSS) as config:
         command.upgrade(config, "1c461368ce87")

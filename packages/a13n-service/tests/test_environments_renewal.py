@@ -1,5 +1,6 @@
 """Renewal: the ready sandboxes of a type that ends them unless renewed, kept alive by their own sweep."""
 
+import asyncio
 import json
 from datetime import datetime, timedelta
 from types import SimpleNamespace
@@ -7,6 +8,7 @@ from types import SimpleNamespace
 import pytest
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory, provider_error
 from a13n_service.distribution import OSS
+from a13n_service.infra.audit import AuditEventRow
 from a13n_service.infra.db import now, transaction
 from a13n_service.runs.environments import lifecycle, renewal
 from a13n_service.runs.environments.lifecycle import advance
@@ -222,9 +224,13 @@ async def test_a_failed_renewal_backs_off_and_one_the_provider_cannot_grant_wait
     assert await schedule(env, sandbox) == (BACKEND.expiries[sandbox], BACKEND.expiries[sandbox])
 
 
-async def test_a_stopped_sandbox_waits_for_a_run_and_a_lost_one_for_its_deletion(env) -> None:  # type: ignore[no-untyped-def]
+async def test_a_stopped_sandbox_waits_for_a_run_and_an_opted_out_session_waits_for_explicit_replacement(env) -> None:  # type: ignore[no-untyped-def]
     sandbox = await ready_sandbox(env)
-    submitted = await start(env, environments=[{"name": "workspace", "environment_id": sandbox}])
+    submitted = await start(
+        env,
+        session={"auto_recreate_lost_environment": False},
+        environments=[{"name": "workspace", "environment_id": sandbox}],
+    )
     thread_id = submitted["thread"]["id"]
     await interrupt(env, submitted["run"]["id"])
 
@@ -265,6 +271,133 @@ async def test_a_stopped_sandbox_waits_for_a_run_and_a_lost_one_for_its_deletion
     assert mount["name"] == "workspace" and mount["environment_id"] != sandbox
 
 
+@pytest.mark.parametrize("lazy", [True, False])
+async def test_lost_primary_uses_ordinary_reservation_and_preparation(env, scripted_model, runs_kit, monkeypatch, lazy):
+    from a13n_service.runs import execute
+
+    template = env.template["id"]
+    sandbox = (await reserve(env, template))["id"]
+    agent = await runs_kit.create_agent(env, scripted_model)
+    first = await runs_kit.start_thread(
+        env, agent, "first", environments=[{"name": "workspace", "environment_id": sandbox}]
+    )
+    thread = first["thread"]["id"]
+    scripted_model.say("Started")
+    await (await runs_kit.attempt(env))
+    assert (await runs_kit.get_run(env, first["run"]["id"]))["status"] == "completed"
+    code, _ = await act(env, "POST", f"{sandbox}/stop")
+    assert code == 202
+    await advance(env.runtime, sandbox, owner="test")
+    del BACKEND.instances[sandbox]
+
+    # The Run that first discovers the loss is already bound to the original instance.
+    discovery = (await runs_kit.submit(env, thread, runs_kit.message(agent, "use original"))).json()["run"]
+    await (await runs_kit.attempt(env))
+    assert (await runs_kit.get_run(env, discovery["id"]))["status"] == "failed"
+    assert (await environment(env, sandbox))["failure"]["code"] == "environment_lost"
+
+    path = f"{env.api}/threads/{thread}/inbox"
+    body = runs_kit.message(agent, "continue", options={"overrides": {"lazy_environment": lazy}})
+    headers = runs_kit.fresh_key()
+    receipts = await asyncio.gather(*(env.client.post(path, json=body, headers=headers) for _ in range(2)))
+    assert sorted(response.status_code for response in receipts) == [200, 201]
+    run = receipts[0].json()["run"]
+    assert run["id"] == receipts[1].json()["run"]["id"]
+    [mount] = run["environment_mounts"]
+    replacement = mount["environment_id"]
+    assert replacement != sandbox and BACKEND.instances == {}
+    environments = (await env.client.get(f"{env.api}/environments")).json()["items"]
+    assert {item["id"] for item in environments} == {sandbox, replacement}
+    instance = await environment(env, replacement)
+    assert (instance["status"], instance["template_id"]) == ("reserved", template)
+    [desired] = (await env.client.get(f"{env.api}/threads/{thread}/environments")).json()["items"]
+    assert desired == {**mount, "desktop_enabled": False}
+    assert (await runs_kit.get_run(env, first["run"]["id"]))["environment_mounts"][0]["environment_id"] == sandbox
+
+    async with transaction(env.runtime.storage) as session:
+        audits = await session.scalars(
+            select(AuditEventRow.details).where(
+                AuditEventRow.action == "thread_environment.recreate", AuditEventRow.target_id == thread
+            )
+        )
+        assert audits.all() == [
+            {"name": "workspace", "previous_environment_id": sandbox, "environment_id": replacement}
+        ]
+
+    # Project guidance can touch the primary during Harness execution, even on a text-only turn.
+    # Observe before opening the Host's mount sources to distinguish eager preparation from that first use.
+    open_mounts = execute.open_mounts
+    prepared_before_open = []
+
+    def observe_open(*args, **kwargs):
+        prepared_before_open.append(replacement in BACKEND.instances)
+        return open_mounts(*args, **kwargs)
+
+    monkeypatch.setattr(execute, "open_mounts", observe_open)
+    scripted_model.say("Done")
+    await (await runs_kit.attempt(env))
+    assert (await runs_kit.get_run(env, run["id"]))["status"] == "completed"
+    assert prepared_before_open == [not lazy]
+    assert set(BACKEND.instances) == {replacement}
+
+
+async def test_lost_instance_is_only_replaced_for_the_desired_primary(env, runs_kit):
+    sandbox = await ready_sandbox(env)
+    mount = {
+        "name": "workspace",
+        "environment_id": sandbox,
+        "working_directory": "/project",
+        "permission_ceiling": {"operations": []},
+    }
+    primary = await start(env, environments=[mount])
+    named = await start(env, environments=[{**mount, "name": "data"}])
+    for receipt in (primary, named):
+        await interrupt(env, receipt["run"]["id"])
+    del BACKEND.instances[sandbox]
+    await due_now(env, sandbox)
+    await renew_environments(env.runtime)
+
+    pinned = runs_kit.message(
+        env.agent, "use original", options={"environment": {"mode": "existing", "environment_id": sandbox}}
+    )
+    refused = await runs_kit.submit(env, primary["thread"]["id"], pinned)
+    assert refused.json()["entry"]["failure"]["code"] == "environment_lost"
+    refused = await follow_up(env, named["thread"]["id"], "use named mount")
+    assert refused.json()["entry"]["failure"]["code"] == "environment_lost"
+
+    restored = await follow_up(env, primary["thread"]["id"], "use workspace")
+    [replacement] = restored.json()["run"]["environment_mounts"]
+    assert replacement["environment_id"] != sandbox
+    assert {**replacement, "environment_id": sandbox} == mount
+
+
+async def test_refused_acceptance_rolls_back_recreation(env):
+    primary = await ready_sandbox(env)
+    template = (await environment(env, primary))["template_id"]
+    other = (await reserve(env, template))["id"]
+    await maintain_environments(env.runtime, owner="test")
+    desired = [{"name": "workspace", "environment_id": primary}, {"name": "z-data", "environment_id": other}]
+    first = await start(env, environments=desired)
+    await interrupt(env, first["run"]["id"])
+    thread = first["thread"]["id"]
+    for instance in (primary, other):
+        del BACKEND.instances[instance]
+        await due_now(env, instance)
+    await renew_environments(env.runtime)
+
+    # The lost named mount refuses the Run even though its primary qualified for a fresh reservation.
+    refused = (await follow_up(env, thread, "continue")).json()
+    assert refused["run"] is None and refused["entry"]["failure"]["code"] == "environment_lost"
+    mounts = (await env.client.get(f"{env.api}/threads/{thread}/environments")).json()["items"]
+    assert [(m["name"], m["environment_id"]) for m in mounts] == [("workspace", primary), ("z-data", other)]
+    assert {e["id"] for e in (await env.client.get(f"{env.api}/environments")).json()["items"]} == {primary, other}
+    async with transaction(env.runtime.storage) as session:
+        assert (
+            await session.scalar(select(AuditEventRow.id).where(AuditEventRow.action == "thread_environment.recreate"))
+            is None
+        )
+
+
 async def test_a_sandbox_a_new_credential_cannot_see_is_not_lost(env) -> None:  # type: ignore[no-untyped-def]
     sandbox = await ready_sandbox(env, credential={"api_key": "first"})
     first = (await handle(env, sandbox))["credential_version"]
@@ -285,6 +418,10 @@ async def test_a_sandbox_a_new_credential_cannot_see_is_not_lost(env) -> None:  
     unseen = await environment(env, sandbox)
     assert (unseen["failure"]["code"], unseen["failure"]["permanent"]) == ("provider_credential_changed", False)
     assert (await schedule(env, sandbox))[0] is not None, "renewal goes on"
+
+    selected = await start(env, environments=[{"name": "workspace", "environment_id": sandbox}])
+    assert selected["run"]["environment_mounts"][0]["environment_id"] == sandbox
+    await interrupt(env, selected["run"]["id"])
 
     # A credential of the first account, rotated, sees it again; renewing records the credential that did.
     await replace_credential("first-rotated")

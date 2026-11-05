@@ -20565,6 +20565,11 @@
       "SessionCreate": {
         "additionalProperties": false,
         "properties": {
+          "auto_recreate_lost_environment": {
+            "default": true,
+            "title": "Auto Recreate Lost Environment",
+            "type": "boolean"
+          },
           "labels": {
             "additionalProperties": {
               "maxLength": 128,
@@ -20790,6 +20795,10 @@
       "SessionUpdate": {
         "additionalProperties": false,
         "properties": {
+          "auto_recreate_lost_environment": {
+            "title": "Auto Recreate Lost Environment",
+            "type": "boolean"
+          },
           "labels": {
             "anyOf": [
               {
@@ -20849,6 +20858,10 @@
       },
       "SessionView": {
         "properties": {
+          "auto_recreate_lost_environment": {
+            "title": "Auto Recreate Lost Environment",
+            "type": "boolean"
+          },
           "cost": {
             "anyOf": [
               {
@@ -20969,6 +20982,7 @@
           }
         },
         "required": [
+          "auto_recreate_lost_environment",
           "id",
           "workspace_id",
           "labels",
