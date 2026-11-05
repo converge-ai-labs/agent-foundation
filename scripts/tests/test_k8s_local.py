@@ -446,7 +446,10 @@ def test_failed_captured_command_does_not_disclose_secrets(monkeypatch):
 
 @pytest.mark.parametrize("existing", [False, True])
 @pytest.mark.parametrize("environments", [False, True])
-def test_startup_builds_loads_and_waits_before_bootstrapping(tmp_path, monkeypatch, capsys, existing, environments):
+@pytest.mark.parametrize("prebuilt", [False, True])
+def test_startup_builds_loads_and_waits_before_bootstrapping(
+    tmp_path, monkeypatch, capsys, existing, environments, prebuilt
+):
     commands = []
 
     def run(*args, **kwargs):
@@ -461,25 +464,31 @@ def test_startup_builds_loads_and_waits_before_bootstrapping(tmp_path, monkeypat
             )
         return ""
 
+    for variable, image in (("K8S_SERVICE_IMAGE", "a13n-service:ci"), ("K8S_SANDBOX_IMAGE", "a13n-sandbox:ci")):
+        if prebuilt:
+            monkeypatch.setenv(variable, image)
+        else:
+            monkeypatch.delenv(variable, raising=False)
     admin = {"EMAIL": "owner@example.com", "PASSWORD": "secret-password"}
     monkeypatch.setattr(k8s, "run", run)
     monkeypatch.setattr(k8s.shutil, "which", lambda name: "/bin/" + name)
     monkeypatch.setattr(k8s, "prepare", lambda path: commands.append(("prepare",)) or admin)
     monkeypatch.setattr(k8s, "bootstrap", lambda selected: commands.append(("bootstrap", selected["EMAIL"])) or True)
     k8s.start(tmp_path, environments=environments)
-    builds = [c for c in commands if c[:2] == ("docker", "build")]
+    builds = [c for c in commands if c[:2] == ("docker", "tag" if prebuilt else "build")]
+    assert not any(c[:2] == ("docker", "build" if prebuilt else "tag") for c in commands)
     load = next(c for c in commands if c[:3] == ("kind", "load", "docker-image"))
     helm = next(c for c in commands if c[0] == "helm")
     assert len(builds) == (2 if environments else 1)
     assert ("deploy/kubernetes/helm/values-environments-smoke.yaml" in helm) is environments
     deployment = json.loads((tmp_path / "deployment.json").read_text())
     if environments:
-        sandbox = builds[1][builds[1].index("-t") + 1]
+        sandbox = builds[1][-1] if prebuilt else builds[1][builds[1].index("-t") + 1]
         assert deployment["sandbox_image"] == sandbox
         assert ("kind", "load", "docker-image", sandbox, "--name", k8s.CLUSTER) in commands
     else:
         assert deployment["sandbox_image"] is None
-    image = builds[0][builds[0].index("-t") + 1]
+    image = builds[0][-1] if prebuilt else builds[0][builds[0].index("-t") + 1]
     assert image in load
     assert "--wait" in helm and "--kube-context" in helm and k8s.NAMESPACE in helm
     assert f"image.tag={image.split(':')[1]}" in helm

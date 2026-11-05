@@ -45,7 +45,15 @@ def test_browser_image_has_input_filter_and_selectable_matrix(name, tmp_path):
 def test_browser_latest_workflow_builds_tests_and_publishes_same_artifacts():
     document = workflow("browser-image.yml")
     triggers = document[True]  # PyYAML parses the YAML 1.1 key `on` as True.
-    assert {"push", "pull_request", "schedule", "workflow_dispatch"} <= triggers.keys()
+    assert {"push", "schedule", "workflow_dispatch"} == triggers.keys()
+    # Container CI owns PR build/smoke coverage on both native architectures.
+    ci = workflow("ci-containers.yml")
+    filters = yaml.safe_load(
+        next(step for step in ci["jobs"]["changes"]["steps"] if step.get("id") == "filter")["with"]["filters"]
+    )
+    for path in triggers["push"]["paths"]:
+        assert any(Path(path).full_match(pattern) for pattern in ci[True]["pull_request"]["paths"])
+        assert any(Path(path).full_match(pattern) for pattern in filters["browser"])
     assert triggers["push"]["branches"] == ["main"]
     concurrency = document["concurrency"]
     assert "'publish'" in concurrency["group"]

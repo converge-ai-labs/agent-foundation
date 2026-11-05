@@ -178,6 +178,27 @@ def bootstrap(admin: dict[str, str]) -> bool:
     raise RuntimeError(f"Administrator bootstrap failed (exit {result.returncode}); inspect {CONTROL} logs")
 
 
+def prepare_image(component: str, destination: str) -> None:
+    """Build locally by default; CI can supply its already-built checkout image."""
+    variable = "K8S_SERVICE_IMAGE" if component == "a13n-service" else "K8S_SANDBOX_IMAGE"
+    if source := os.environ.get(variable):
+        # A new tag still rolls Deployments and exercises the next migration revision.
+        # docker tag requires a local image; it never pulls a mutable registry fallback.
+        run("docker", "tag", source, destination)
+    else:
+        print(f"Building {destination}...", flush=True)
+        run(
+            "docker",
+            "build",
+            "--progress=plain",
+            "-f",
+            f"deploy/docker/images/{component}/Dockerfile",
+            "-t",
+            destination,
+            ".",
+        )
+
+
 def start(state: Path, *, environments: bool = False) -> None:
     for tool in ("docker", "kind", "kubectl", "helm"):
         if not shutil.which(tool):
@@ -210,13 +231,12 @@ def start(state: Path, *, environments: bool = False) -> None:
     admin = prepare(state)
     tag = "local-" + secrets.token_hex(6)
     image = f"a13n-service:{tag}"
-    print(f"Building {image}...", flush=True)
-    run("docker", "build", "--progress=plain", "-f", "deploy/docker/images/a13n-service/Dockerfile", "-t", image, ".")
+    prepare_image("a13n-service", image)
     run("kind", "load", "docker-image", image, "--name", CLUSTER)
     overlay: tuple[str, ...] = ()
     if environments:
         sandbox = f"a13n-sandbox:{tag}"
-        run("docker", "build", "--progress=plain", "-f", "deploy/docker/images/sandbox/Dockerfile", "-t", sandbox, ".")
+        prepare_image("sandbox", sandbox)
         run("kind", "load", "docker-image", sandbox, "--name", CLUSTER)
         overlay = ("-f", "deploy/kubernetes/helm/values-environments-smoke.yaml")
     print("Deploying; Helm waits for migration and readiness (up to 20 minutes)...", flush=True)

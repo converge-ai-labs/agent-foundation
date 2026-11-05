@@ -11,16 +11,6 @@ on:
       - 'packages/a13n-service/a13n_service/providers/environment/desktop_guest.py'
       - 'packages/a13n-service/tests/test_browser_selfhost_live.py'
       - 'LICENSE'
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-    paths:
-      - '.github/workflows/browser-image.yml'
-      - '.dockerignore'
-      - 'deploy/docker/images/browser/**'
-      - 'packages/a13n-service/a13n_service/providers/browser/runtime.py'
-      - 'packages/a13n-service/a13n_service/providers/environment/desktop_guest.py'
-      - 'packages/a13n-service/tests/test_browser_selfhost_live.py'
-      - 'LICENSE'
   schedule:
     - cron: '17 4 * * 1'
   workflow_dispatch:

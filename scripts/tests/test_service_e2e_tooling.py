@@ -145,16 +145,22 @@ def test_the_e2e_suite_collects_every_module_and_requires_opt_in_for_external_jo
     assert f"{lifecycle}[kubernetes]" in kubernetes
     assert len(kubernetes) == 9
     deployment = yaml.safe_load((ROOT / ".github/workflows/ci-deploy.yml").read_text())
-    [journey_step] = [
-        step for step in deployment["jobs"]["kind"]["steps"] if step.get("run", "").startswith("make service-e2e ")
-    ]
+    journeys = deployment["jobs"]["journeys"]
+    [journey_step] = [step for step in journeys["steps"] if step.get("run", "").startswith("make service-e2e ")]
     [arguments] = [
         part.removeprefix("SERVICE_E2E_ARGS=")
         for part in shlex.split(journey_step["run"])
         if part.startswith("SERVICE_E2E_ARGS=")
     ]
     assert "--require-all" in shlex.split(arguments)
-    assert collect_scenarios(*shlex.split(arguments)) == kubernetes
+    selected_kubernetes: set[str] = set()
+    for shard in journeys["strategy"]["matrix"]["include"]:
+        nodes = collect_scenarios(*shlex.split(arguments.replace("$SELECTION", shard["selection"])))
+        assert len(nodes) == shard["count"]
+        assert not selected_kubernetes.intersection(nodes)
+        selected_kubernetes.update(nodes)
+    assert selected_kubernetes == kubernetes
+    assert deployment["jobs"]["kind"]["needs"] == ["helm", "journeys"]
     workflow = yaml.safe_load((ROOT / ".github/workflows/ci-a13n-service-e2e.yml").read_text())
     shards = workflow["jobs"]["scenarios"]["strategy"]["matrix"]["include"]
     selected: set[str] = set()
@@ -181,8 +187,8 @@ def test_kubernetes_report_gate_rejects_incomplete_or_unsuccessful_journeys(tmp_
     workflow = yaml.safe_load((ROOT / ".github/workflows/ci-deploy.yml").read_text())
     [step] = [
         step
-        for step in workflow["jobs"]["kind"]["steps"]
-        if step.get("name") == "Require all nine Kubernetes journeys without skips"
+        for step in workflow["jobs"]["journeys"]["steps"]
+        if step.get("name") == "Require every selected Kubernetes journey without skips"
     ]
     if report != "missing":
         results = tmp_path / "test-results"
@@ -198,7 +204,7 @@ def test_kubernetes_report_gate_rejects_incomplete_or_unsuccessful_journeys(tmp_
     result = subprocess.run(
         [*command, "-c", step["run"]],
         cwd=tmp_path,
-        env={**os.environ, "GITHUB_STEP_SUMMARY": str(tmp_path / "summary.md")},
+        env={**os.environ, "GITHUB_STEP_SUMMARY": str(tmp_path / "summary.md"), "EXPECTED": "9"},
         capture_output=True,
         text=True,
         timeout=10,

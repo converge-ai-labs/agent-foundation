@@ -157,6 +157,8 @@ On a fresh installation it generates a random PostgreSQL password and encryption
 
 The terminal then prints the Console URL, <http://127.0.0.1:8080>, and where the administrator password is stored; it never prints the password. If existing data has no local administrator record, the launcher prints the manual bootstrap command instead. The launcher does not delete clusters, PVCs or existing Secrets. Node port 30080 must be free: uninstall any other release that holds it before `make k8s-up`. `make k8s-smoke` then checks the running deployment the way its administrator uses it: Console loads, the administrator signs in and a credential can be stored. `make k8s-check` runs the offline launcher and Chart tests and lints the Chart with its default and local values without building images or changing a cluster. Deployment CI enables the native Environment smoke overlay on install and upgrade, exercising the deployed Worker after both migrations.
 
+CI can supply locally built images through `K8S_SERVICE_IMAGE` and `K8S_SANDBOX_IMAGE`. The launcher retags each supplied image with a fresh deployment tag and loads it into kind, preserving rolling upgrades without rebuilding identical content. Unset variables keep the source-build behavior; a missing supplied image fails immediately.
+
 ### Native Environment deployment smoke
 
 ```sh

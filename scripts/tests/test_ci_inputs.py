@@ -263,8 +263,8 @@ def _service_matrix(workflow: dict, tests_changed: str, tmp_path: Path, *, root:
 def test_service_ci_partitions_the_current_suite_without_duplicates(tmp_path: Path) -> None:
     workflow = yaml.safe_load((WORKFLOWS / "ci-a13n-service.yml").read_text())
     matrix = _service_matrix(workflow, "true", tmp_path)
-    assert [entry["name"] for entry in matrix] == ["checks", *[f"tests-{index}" for index in range(1, 7)]]
-    assert all(entry["targets"] for entry in matrix[1:])
+    assert [entry["name"] for entry in matrix] == ["checks", "native", *[f"tests-{index}" for index in range(1, 9)]]
+    assert all(entry["targets"] for entry in matrix[2:])
     targets = [path for entry in matrix[1:] for path in entry["targets"].splitlines()]
     assert targets
     assert len(targets) == len(set(targets))
@@ -296,6 +296,8 @@ def test_service_selection_includes_new_nested_files_and_passes_paths_literally(
         "test_space $(false).py",
         "test_fifth.py",
         "test_sixth.py",
+        "test_seventh.py",
+        "test_eighth.py",
     ]
     excluded = [
         "conftest.py",
@@ -549,6 +551,51 @@ def test_component_jobs_retain_scoped_failure_reports(workflow_name: str, job: s
         marker in commands
         for marker in ("junitxml", "--reporter=junit", "test-results/native.log", "EIP_TEST_REPORT_DIR")
     )
+
+
+@pytest.mark.parametrize("result", ["success", "failure", "cancelled", "skipped"])
+def test_harness_gate_requires_every_matrix_member(result: str) -> None:
+    workflow = yaml.safe_load((WORKFLOWS / "ci-a13n-harness.yml").read_text())
+    gate = workflow["jobs"]["linux"]
+    assert gate["name"] == "a13n Harness (Linux)" and gate["needs"] == "harness"
+    assert "always()" in gate["if"]
+    step = gate["steps"][0]
+    assert step["env"] == {"RESULT": "${{ needs.harness.result }}"}
+    completed = subprocess.run(["bash", "-e", "-c", step["run"]], env={"RESULT": result}, check=False)
+    assert (completed.returncode == 0) == (result == "success")
+
+
+@pytest.mark.parametrize("helm", ["success", "failure", "cancelled", "skipped"])
+@pytest.mark.parametrize("journeys", ["success", "failure", "cancelled", "skipped"])
+def test_deployment_gate_requires_helm_and_every_journey_shard(helm: str, journeys: str) -> None:
+    workflow = yaml.safe_load((WORKFLOWS / "ci-deploy.yml").read_text())
+    gate = workflow["jobs"]["kind"]
+    assert gate["name"] == "Helm install and upgrade on kind"
+    assert set(gate["needs"]) == {"helm", "journeys"} and "always()" in gate["if"]
+    step = gate["steps"][0]
+    assert step["env"] == {"HELM_RESULT": "${{ needs.helm.result }}", "JOURNEYS_RESULT": "${{ needs.journeys.result }}"}
+    completed = subprocess.run(
+        ["bash", "-e", "-c", step["run"]], env={"HELM_RESULT": helm, "JOURNEYS_RESULT": journeys}, check=False
+    )
+    assert (completed.returncode == 0) == (helm == journeys == "success")
+
+
+def test_harness_keeps_full_discovery_and_native_browser_coverage() -> None:
+    workflow = yaml.safe_load((WORKFLOWS / "ci-a13n-harness.yml").read_text())
+    job = workflow["jobs"]["harness"]
+    matrix = job["strategy"]["matrix"]["include"]
+    assert job["strategy"]["fail-fast"] is False
+    assert [entry["shard"] for entry in matrix if "shard" in entry] == [1, 2]
+    steps = job["steps"]
+    unit = next(step for step in steps if step.get("name") == "Test a13n Harness shard")
+    assert unit["if"] == "startsWith(matrix.name, 'tests-')"
+    assert "scripts/run_python_tests.py" in unit["run"]
+    assert "--shard ${{ matrix.shard }} 2 packages/a13n-harness/tests" in unit["run"]
+    browser = next(step for step in steps if step.get("name") == "Test native Chromium browser workflows")
+    assert browser["if"] == "matrix.name == 'browser'"
+    assert "test_browser_cdp_native.py" in browser["run"] and "test_browser_workflows_native.py" in browser["run"]
+    assert "--browser-executable=" in browser["run"]
+    assert any(entry["name"] == "Windows" for entry in matrix)
 
 
 def test_failure_report_contains_fixture_phase_and_captured_output(tmp_path: Path) -> None:

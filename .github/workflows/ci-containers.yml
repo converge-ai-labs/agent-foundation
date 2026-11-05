@@ -6,6 +6,7 @@ on:
     paths:
       - ".dockerignore"
       - ".github/workflows/ci-containers.yml"
+      - ".github/workflows/browser-image.yml"
       - "Cargo.lock"
       - "Cargo.toml"
       - "deploy/docker/images/a13n-service/Dockerfile"
@@ -99,6 +100,7 @@ jobs:
               - 'frontend/apps/a13n-console/package.json'
               - 'frontend/packages/a13n-ui/package.json'
             browser:
+              - '.github/workflows/browser-image.yml'
               - '.dockerignore'
               - 'Makefile'
               - '.github/workflows/ci-containers.yml'
@@ -192,5 +194,24 @@ jobs:
         with:
           enable-cache: true
 
-      - name: Build and smoke-check image
-        run: make ${{ matrix.build_target }} ${{ matrix.check_target }} ${{ matrix.smoke_target }}
+      - name: Set up Docker Buildx
+        if: matrix.name == 'a13n-service'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build the checkout Service with reusable layers
+        if: matrix.name == 'a13n-service'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/images/a13n-service/Dockerfile
+          tags: a13n-service:local
+          load: true
+          cache-from: type=gha,scope=ci-service
+          cache-to: type=gha,scope=ci-service,mode=max,ignore-error=true
+
+      - name: Build other images
+        if: matrix.name != 'a13n-service'
+        run: make ${{ matrix.build_target }}
+
+      - name: Smoke-check image
+        run: make ${{ matrix.check_target }} ${{ matrix.smoke_target }}
