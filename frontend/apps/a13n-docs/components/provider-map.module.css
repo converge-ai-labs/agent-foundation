@@ -86,7 +86,7 @@
 
 @media (max-width: 767px) {
   .canvas {
-    min-width: 800px;
+    min-width: 1040px;
   }
 
   .hint {
