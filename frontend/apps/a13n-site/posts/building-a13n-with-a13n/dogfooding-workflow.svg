@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 620" role="img" aria-labelledby="cycle-title cycle-desc">
+  <title id="cycle-title">Build the tools. Work with them. Improve the foundation.</title>
+  <desc id="cycle-desc">Three collaboration goals guide development: continuous context, responsive interaction and long-running operation. Issues carry public discussion and action items. A human assignee chooses tools and Agents to implement and test. PRs receive owner review and validation. Merged improvements to a13n return to the team's bot and daily development. Use produces observations and new Issues; review may also return to discussion.</desc>
+  <text class="pt acc" x="24" y="22">DOGFOODING / PURPOSE TO PRACTICE</text>
+  <text class="pt ink" x="24" y="53" style="font-size:22px">The tools we build become the tools we use.</text>
+  <path class="pf" d="M24 78H936"/>
+  <text class="pt" x="24" y="102">OUR GOALS</text>
+  <text class="pt ink" x="24" y="133" style="font-size:15px">Continuous context</text>
+  <text class="pt" x="24" y="156">Continue across conversations</text>
+  <text class="pt ink" x="350" y="133" style="font-size:15px">Responsive interaction</text>
+  <text class="pt" x="350" y="156">Fast replies + quality outcomes</text>
+  <text class="pt ink" x="676" y="133" style="font-size:15px">Long-running operation</text>
+  <text class="pt" x="676" y="156">Grow knowledge, tasks and resources</text>
+  <path class="pf" d="M24 178H936"/>
+  <path class="pl dash" d="M792 242V222H168V242M163 236L168 242L173 236"/>
+  <text class="pt" x="480" y="209" text-anchor="middle">Review can return a change to discussion.</text>
+  <rect class="band" x="48" y="250" width="240" height="96" rx="3"/>
+  <rect class="pa thin" x="48" y="250" width="240" height="96" rx="3"/>
+  <text class="pt acc" x="68" y="274">01 / THINK + DISCUSS</text>
+  <text class="pt ink" x="68" y="304" style="font-size:20px">Issue</text>
+  <text class="pt" x="68" y="328">Goals / decisions / actions</text>
+  <rect class="pl" x="360" y="250" width="240" height="96" rx="3"/>
+  <text class="pt" x="380" y="274">02 / PRACTICE</text>
+  <text class="pt ink" x="380" y="304" style="font-size:20px">Human-led work</text>
+  <text class="pt" x="380" y="328">Implement / test / update spec</text>
+  <rect class="pl" x="672" y="250" width="240" height="96" rx="3"/>
+  <text class="pt" x="692" y="274">03 / REVIEW + VERIFY</text>
+  <text class="pt ink" x="692" y="304" style="font-size:20px">PR + owner review</text>
+  <text class="pt" x="692" y="328">Behavior / boundaries / quality</text>
+  <path class="pl" d="M296 298H352M346 293L352 298L346 303M608 298H664M658 293L664 298L658 303"/>
+  <text class="pt" x="324" y="285" text-anchor="middle" style="font-size:10px">assign</text>
+  <text class="pt" x="636" y="285" text-anchor="middle" style="font-size:10px">submit</text>
+  <path class="pl" d="M792 354V430M787 424L792 430L797 424"/>
+  <text class="pt" x="809" y="396">merge</text>
+  <rect class="band" x="672" y="438" width="240" height="96" rx="3"/>
+  <rect class="pa thin" x="672" y="438" width="240" height="96" rx="3"/>
+  <text class="pt acc" x="692" y="462">04 / IMPROVE THE FOUNDATION</text>
+  <text class="pt ink" x="692" y="492" style="font-size:20px">a13n</text>
+  <text class="pt" x="692" y="516">Async / context / resources</text>
+  <rect class="pl" x="48" y="438" width="240" height="96" rx="3"/>
+  <text class="pt" x="68" y="462">05 / USE + VERIFY</text>
+  <text class="pt ink" x="68" y="492" style="font-size:20px">Bot + daily work</text>
+  <text class="pt" x="68" y="516">Develop a13n with a13n</text>
+  <path class="pa" d="M664 486H296M303 481L296 486L303 491"/>
+  <text class="pt acc" x="480" y="471" text-anchor="middle" style="font-size:13px">Back into real work</text>
+  <text class="pt" x="480" y="512" text-anchor="middle">Observe the next problem.</text>
+  <path class="pa" d="M168 430V354M163 361L168 354L173 361"/>
+  <text class="pt acc" x="185" y="390">feedback</text>
+  <text class="pt" x="185" y="408">evidence + new actions</text>
+  <path class="pf" d="M24 568H936"/>
+  <text class="pt ink" x="24" y="596">Open discussion.</text>
+  <text class="pt ink" x="274" y="596">Independent judgment.</text>
+  <text class="pt ink" x="560" y="596">Shared contracts.</text>
+  <text class="pt acc" x="936" y="596" text-anchor="end">Continuous validation.</text>
+</svg>
