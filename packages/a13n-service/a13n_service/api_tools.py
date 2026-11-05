@@ -12,7 +12,7 @@ from copy import deepcopy
 from typing import Any
 
 import httpx2
-from a13n_harness.tools.diagnostics import system_error, tool_error_text
+from a13n_harness.tools.diagnostics import INVALID_ARGUMENT, system_error, tool_error_text
 from fastapi.routing import APIRoute
 from fastmcp.exceptions import ToolError
 from fastmcp.server.dependencies import get_http_request
@@ -238,7 +238,7 @@ class ApiTool(Tool):
             raise ToolError(
                 tool_error_text(
                     system_error(
-                        "invalid_argument",
+                        INVALID_ARGUMENT,
                         "Unknown operation arguments.",
                         field=", ".join(
                             sorted(key for key in unknown if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_-]{0,63}", key))
@@ -254,7 +254,7 @@ class ApiTool(Tool):
                     raise ToolError(
                         tool_error_text(
                             system_error(
-                                "invalid_argument",
+                                INVALID_ARGUMENT,
                                 "Invalid path parameter for this HTTP operation.",
                                 field=name,
                                 hint="Supply a path parameter matching the tool schema.",

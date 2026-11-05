@@ -330,3 +330,5 @@ Harness 在每次调用后关闭凭据 lease。单独持有的客户端由 Host 
 ## 工具调用错误
 
 调用系统自身的错误通过 `error.source="system"`、错误码和安全消息标识。调用者有明确的下一步时，`details.hint` 会给出提示。例如，环境可能在命令启动前拒绝 `execution_timeout_seconds`；省略它会放弃本次调用要求的硬截止时间。命令已运行并以退出码 1 结束时，Shell 返回进程状态。如果写入结果交付失败，请先核对原操作，再决定是否重试。
+
+原生 `ToolFailed` 现在用 JSON 表示权限拒绝。调用方应解析诊断并判断 `error.code`（例如 `tool_denied`），避免依赖异常文本。

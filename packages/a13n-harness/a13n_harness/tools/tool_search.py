@@ -14,7 +14,7 @@ from pydantic_ai.toolsets import ToolsetTool
 
 from a13n_harness._handoff import HANDOFF_TOOL_METADATA_KEY
 from a13n_harness.context import AgentContext
-from a13n_harness.tools.diagnostics import system_error, tool_error_text
+from a13n_harness.tools.diagnostics import INVALID_ARGUMENT, system_error, tool_error_text
 
 PROXY_MEMBERSHIP_KEY = "a13n.tool_search.member"
 PROXY_CONTROL_KEY = "a13n.tool_search.control"
@@ -168,7 +168,7 @@ def resolve_proxy_call(
         raise ModelRetry(
             tool_error_text(
                 system_error(
-                    "invalid_arguments",
+                    INVALID_ARGUMENT,
                     "Tool lookup arguments are invalid.",
                     hint="Supply group, tool, and an arguments object matching the tool's complete current schema.",
                 )
@@ -176,7 +176,7 @@ def resolve_proxy_call(
         )
     if set(arguments) != {"group", "tool", "arguments"}:
         raise ModelRetry(
-            tool_error_text(system_error("invalid_arguments", "Tool calls accept only group, tool, and arguments."))
+            tool_error_text(system_error(INVALID_ARGUMENT, "Tool calls accept only group, tool, and arguments."))
         )
     return resolve_proxy_tool(tools, group, tool), values
 

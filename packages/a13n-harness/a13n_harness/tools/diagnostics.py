@@ -30,6 +30,7 @@ class ToolFailure(TypedDict):
     error: ToolError
 
 
+INVALID_ARGUMENT = "invalid_argument"
 SYSTEM_FAILURE_METADATA_KEY = "a13n.system-failure"
 
 

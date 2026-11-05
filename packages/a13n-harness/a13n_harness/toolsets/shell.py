@@ -206,7 +206,7 @@ class ShellToolset:
                 expected_mount_id=None,
             )
         except EnvironmentError as exc:
-            return cast(ShellExecToolResult, _environment_error_result(exc))
+            return cast(ShellExecToolResult, _environment_error_result(exc, may_have_effects=True))
 
     async def _execute_foreground_request(
         self,
@@ -320,7 +320,7 @@ class ShellToolset:
                 ),
             )
         except EnvironmentError as exc:
-            return cast(ShellExecToolResult, _environment_error_result(exc))
+            return cast(ShellExecToolResult, _environment_error_result(exc, may_have_effects=True))
 
     async def shell_info(
         self,
@@ -415,7 +415,7 @@ class ShellToolset:
                 ),
             )
         except EnvironmentError as exc:
-            return cast(ProcessInputResult, _environment_error_result(exc))
+            return cast(ProcessInputResult, _environment_error_result(exc, may_have_effects=True))
 
     async def shell_signal(
         self,
@@ -430,7 +430,7 @@ class ShellToolset:
                 await self._control(ctx.deps, process_id, ShellControl(operation="signal", signal=signal)),
             )
         except EnvironmentError as exc:
-            return cast(ProcessSignalResult, _environment_error_result(exc))
+            return cast(ProcessSignalResult, _environment_error_result(exc, may_have_effects=True))
 
     async def _command_resources(
         self, arguments: Mapping[str, object], *, context: AgentContext
@@ -626,7 +626,7 @@ def _project_capture(capture: EnvironmentOutputCapture) -> OutputPageProjection:
     }
 
 
-def _environment_error_result(error: EnvironmentError) -> ToolFailure:
+def _environment_error_result(error: EnvironmentError, *, may_have_effects: bool = False) -> ToolFailure:
     result = environment_failure(error)
     details = result["error"]["details"]
     if details.get("field") == "limits.wall_time_seconds":
@@ -635,7 +635,10 @@ def _environment_error_result(error: EnvironmentError) -> ToolFailure:
             result["error"]["message"] = (
                 "The command did not start. This environment cannot enforce execution_timeout_seconds."
             )
-    result["error"]["outcome_known"] = error.code != "environment_unknown_outcome"
+    outcome_known = details.get("dispatch_stage") == "pre_dispatch" and error.code != "environment_unknown_outcome"
+    result["error"]["outcome_known"] = outcome_known
+    if may_have_effects and not outcome_known:
+        details.setdefault("hint", "Check the original process and its effects before repeating the operation.")
     return result
 
 

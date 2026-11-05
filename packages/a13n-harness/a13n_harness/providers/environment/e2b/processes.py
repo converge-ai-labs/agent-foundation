@@ -22,8 +22,9 @@ from a13n_harness.environment.commands import (
     ProcessWriteStdinResult,
     ShellCommand,
     ShellExecResult,
+    unsupported_command_option,
 )
-from a13n_harness.environment.models import EnvironmentError, EnvironmentInvocationError, EnvironmentOperationReceipt
+from a13n_harness.environment.models import EnvironmentError, EnvironmentOperationReceipt
 from a13n_harness.environment.retention import (
     BoundOutputCursor,
     EnvironmentOutputPolicy,
@@ -71,19 +72,18 @@ class E2BProcesses:
         request = with_defaults(request, self.commands.configuration.environment)
         config = self.commands.configuration
         command = request.command
-        if not isinstance(command, ShellCommand) or command.profile_id != "default" or command.login is False:
-            raise EnvironmentInvocationError(
-                "E2B supports its native login Bash shell only.", code="environment_unsupported"
-            )
+        if not isinstance(command, ShellCommand):
+            raise unsupported_command_option("command.kind", "Use a shell command with the default login Bash profile.")
+        command.require_default_profile()
+        if command.login is False:
+            raise unsupported_command_option("command.login", "Use the default login Bash shell on this environment.")
         request.limits.require_supported()
         if request.environment.unset:
-            raise EnvironmentInvocationError(
-                "E2B cannot enforce these command guarantees.", code="environment_unsupported"
+            raise unsupported_command_option(
+                "environment.unset", "Use an environment that supports unsetting command variables."
             )
-        if request.network == "deny" and config.allow_internet_access:
-            raise EnvironmentInvocationError(
-                "Per-command network denial is unsupported.", code="environment_unsupported"
-            )
+        if config.allow_internet_access:
+            request.require_configured_network()
         if len(request.initial_stdin or b"") > 1024 * 1024:
             raise EnvironmentError("Initial stdin exceeds its request limit.", code="environment_too_large")
         cwd = (await self.commands.files("resolve", {"path": request.cwd or "/"}))["path"]

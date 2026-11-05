@@ -86,6 +86,20 @@ class _ProcessEntry:
     notification_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
+def _observation_failed_after_start(error: EnvironmentError) -> EnvironmentInvocationError:
+    # The nested read can fail before its own dispatch after the command already started.
+    return EnvironmentInvocationError(
+        "The started process could not be observed.",
+        code=error.code,
+        retry_hint="reconcile_first",
+        details={
+            "dispatch_stage": "dispatched",
+            "reason": "process_observation_failed",
+            "hint": "Check the original process and its effects before repeating the command.",
+        },
+    )
+
+
 class _OwnedProcess:
     """One runtime-owned process control surface, closed before its lease releases."""
 
@@ -211,25 +225,21 @@ class _ProcessController:
         if cancellation is not None and _OWNED_TOOL_EXECUTION.get():
             raise cancellation
         try:
-            if cancellation is None:
-                await self._emit_status(entry)
-                if yield_time_seconds > 0:
-                    try:
-                        baseline = entry.latest
-                        waited = await self._environment.processes.wait(
-                            entry.handle,
-                            condition="initial_terminal",
-                            timeout_seconds=yield_time_seconds,
-                        )
-                        self._adopt_info(entry, waited, baseline=baseline)
-                    except EnvironmentError as exc:
-                        if exc.code != "environment_timeout":
-                            raise
-            observation = await self._observe(entry, stdout_offset=0, stderr_offset=0, wait_seconds=0)
-        except asyncio.CancelledError:
-            if _OWNED_TOOL_EXECUTION.get():
-                raise
-            observation = await self._observe(entry, stdout_offset=0, stderr_offset=0, wait_seconds=0)
+            try:
+                if cancellation is None:
+                    await self._emit_status(entry)
+                observation = await self._observe(
+                    entry,
+                    stdout_offset=0,
+                    stderr_offset=0,
+                    wait_seconds=yield_time_seconds if cancellation is None else 0,
+                )
+            except asyncio.CancelledError:
+                if _OWNED_TOOL_EXECUTION.get():
+                    raise
+                observation = await self._observe(entry, stdout_offset=0, stderr_offset=0, wait_seconds=0)
+        except EnvironmentError as exc:
+            raise _observation_failed_after_start(exc) from exc
         if _is_final(observation[0]):
             result = _shell_exec_result(None, observation, bound_output=False)
             try:
@@ -324,6 +334,8 @@ class _ProcessController:
                 if _is_final(info):
                     # Native exit can precede output producer closure.
                     await asyncio.sleep(0.05)
+        except EnvironmentError as exc:
+            raise _observation_failed_after_start(exc) from exc
         except asyncio.CancelledError:
             try:
                 with execution_cleanup():

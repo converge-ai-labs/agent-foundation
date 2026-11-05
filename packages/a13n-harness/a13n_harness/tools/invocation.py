@@ -56,7 +56,13 @@ from a13n_harness.tools.approval import (
     compact_target,
     tool_approval_scope,
 )
-from a13n_harness.tools.diagnostics import ReportedToolFailure, ToolError, reported_failure, system_failure
+from a13n_harness.tools.diagnostics import (
+    INVALID_ARGUMENT,
+    ReportedToolFailure,
+    ToolError,
+    reported_failure,
+    system_failure,
+)
 from a13n_harness.tools.identity import identify_tool, tool_identity
 from a13n_harness.tools.metadata import (
     HARNESS_TOOL_METADATA_KEY,
@@ -840,7 +846,7 @@ async def _prepare_invocation(
         normalized = _JSON_OBJECT_ADAPTER.validate_python(projected, strict=True)
         encoded = dump_json_bytes(normalized, sort_keys=True)
     except (TypeError, ValueError, ValidationError) as exc:
-        raise system_failure("invalid_arguments", "Managed tool arguments cannot be represented safely.") from exc
+        raise system_failure(INVALID_ARGUMENT, "Managed tool arguments cannot be represented safely.") from exc
     if len(encoded) > MAX_ARGUMENT_BYTES:
         raise system_failure("arguments_too_large", "Managed tool arguments exceed the supported size.")
     digest = hashlib.sha256(encoded).hexdigest()

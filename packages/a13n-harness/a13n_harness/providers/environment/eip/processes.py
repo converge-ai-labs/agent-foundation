@@ -66,10 +66,7 @@ class _ProcessRecord:
 
 
 def convert_command_request(request: CommandRequest, *, files: EIPFileOperator) -> eip.CommandRequest:
-    if request.network != "configured":
-        raise EnvironmentError(
-            "Per-command network policy requires an outer Host boundary", code="environment_unsupported"
-        )
+    request.require_configured_network()
     command = request.command
     if isinstance(command, ArgvCommand):
         executable = (

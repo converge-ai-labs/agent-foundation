@@ -9,7 +9,7 @@ from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from typing import Annotated, Any, Literal, get_args, get_origin, get_type_hints
 
-from a13n_harness.tools.diagnostics import system_error
+from a13n_harness.tools.diagnostics import INVALID_ARGUMENT, system_error
 from fastapi import FastAPI, Request
 from fastmcp.server.dependencies import get_http_request
 from fastmcp.tools import Tool, ToolResult
@@ -146,7 +146,7 @@ class PlatformTool(Tool):
                 structured_content={
                     "error": {
                         **system_error(
-                            "invalid_argument",
+                            INVALID_ARGUMENT,
                             "Tool arguments do not match the tool schema.",
                             hint="Correct the indicated fields using the current tool schema.",
                         ),

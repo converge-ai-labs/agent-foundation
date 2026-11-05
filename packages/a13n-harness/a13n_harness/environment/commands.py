@@ -20,6 +20,18 @@ from a13n_harness.environment.retention import (
 )
 
 
+def unsupported_command_option(
+    field: str, hint: str, *, reason: str = "unsupported_command_option"
+) -> EnvironmentInvocationError:
+    """Report a command admission check with a public field and known dispatch stage."""
+    return EnvironmentInvocationError(
+        "The selected environment cannot honor a command option.",
+        code="environment_unsupported",
+        retry_hint="request_change",
+        details={"field": field, "reason": reason, "dispatch_stage": "pre_dispatch", "hint": hint},
+    )
+
+
 class ArgvCommand(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -35,6 +47,10 @@ class ShellCommand(BaseModel):
     profile_id: str
     script: str
     login: bool | None = None
+
+    def require_default_profile(self) -> None:
+        if self.profile_id != "default":
+            raise unsupported_command_option("command.profile_id", "Use the default shell profile on this environment.")
 
 
 type CommandSpec = Annotated[ArgvCommand | ShellCommand, Field(discriminator="kind")]
@@ -88,17 +104,11 @@ class CommandLimits(BaseModel):
         """Reject the first explicit resource guarantee the adapter cannot enforce."""
         for field in self.model_dump(exclude_none=True):
             if field not in fields:
-                raise EnvironmentInvocationError(
-                    "The provider cannot enforce the requested per-command limit.",
-                    code="environment_unsupported",
-                    retry_hint="request_change",
-                    details={
-                        "field": f"limits.{field}",
-                        "reason": "unsupported_command_limit",
-                        "dispatch_stage": "pre_dispatch",
-                        "hint": "Omit this option only if the command can run without that limit, "
-                        "or choose an environment that can enforce it.",
-                    },
+                raise unsupported_command_option(
+                    f"limits.{field}",
+                    "Omit this option only if the command can run without that limit, "
+                    "or choose an environment that can enforce it.",
+                    reason="unsupported_command_limit",
                 )
 
 
@@ -113,6 +123,12 @@ class CommandRequest(BaseModel):
     initial_stdin: bytes | None = None
     keep_stdin_open: bool = False
     output_policy: EnvironmentOutputPolicy
+
+    def require_configured_network(self) -> None:
+        if self.network != "configured":
+            raise unsupported_command_option(
+                "network", "Choose an environment that enforces the requested network isolation."
+            )
 
     @model_validator(mode="after")
     def _bounded_shape(self) -> CommandRequest:

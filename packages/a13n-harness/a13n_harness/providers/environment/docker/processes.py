@@ -26,7 +26,7 @@ from a13n_harness.environment.commands import (
     ShellCommand,
     ShellExecResult,
 )
-from a13n_harness.environment.models import EnvironmentError, EnvironmentInvocationError, EnvironmentOperationReceipt
+from a13n_harness.environment.models import EnvironmentError, EnvironmentOperationReceipt
 from a13n_harness.environment.retention import (
     BoundOutputCursor,
     EnvironmentOutputPolicy,
@@ -86,16 +86,13 @@ class DockerProcesses:
         self.commands.check_open()
         config = self.commands.config
         request.limits.require_supported()
-        if request.network == "deny" and not config.disable_network:
-            raise EnvironmentInvocationError(
-                "Network denial must be configured on the container", code="environment_unsupported"
-            )
+        if not config.disable_network:
+            request.require_configured_network()
         if len(request.initial_stdin or b"") > 1048576:
             raise EnvironmentError("Initial stdin is too large", code="environment_too_large")
         command = request.command
         if isinstance(command, ShellCommand):
-            if command.profile_id != "default":
-                raise EnvironmentInvocationError("Unknown Docker shell profile", code="environment_unsupported")
+            command.require_default_profile()
             argv = [config.shell, "-lc" if command.login else "-c", command.script]
         else:
             argv = [command.executable, *command.arguments]

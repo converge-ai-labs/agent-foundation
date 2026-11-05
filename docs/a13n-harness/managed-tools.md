@@ -330,3 +330,5 @@ Output failure or truncation occurs after the tool may have acted. It does not u
 ## Tool call errors
 
 A failure owned by the invocation system carries `error.source="system"`, a code and a safe message. Use `details.hint` when the caller can take a specific next step. For example, an environment may reject `execution_timeout_seconds` before starting a command. Omitting that option drops the requested per-command deadline. A command that starts and exits with code 1 reports its normal process status. If delivery of a write result fails, check the original operation before sending another write.
+
+A permission denial carried by native `ToolFailed` now contains JSON. Parse the diagnostic and match `error.code` (for example, `tool_denied`) instead of matching the exception text.

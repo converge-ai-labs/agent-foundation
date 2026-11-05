@@ -41,7 +41,7 @@ from a13n_harness.tools.approval import (
     resolve_tool_approval,
     tool_approval_scope,
 )
-from a13n_harness.tools.diagnostics import system_failure
+from a13n_harness.tools.diagnostics import INVALID_ARGUMENT, system_failure
 from a13n_harness.tools.identity import ToolPermissionMode, tool_identity
 from a13n_harness.tools.permissions import TOOL_PERMISSIONS_CAPABILITY_ID, ToolPermissionsCapability
 from a13n_harness.tools.policy import InvocationDecisionKind
@@ -70,9 +70,7 @@ def _arguments(args: dict[str, Any]) -> dict[str, JsonValue]:
     try:
         return _JSON.validate_python(project_json(args), strict=True)
     except (TypeError, ValueError) as exc:
-        raise system_failure(
-            "invalid_arguments", "Tool arguments cannot be represented for permission checks."
-        ) from exc
+        raise system_failure(INVALID_ARGUMENT, "Tool arguments cannot be represented for permission checks.") from exc
 
 
 def _binding(tool_def: ToolDefinition, args: dict[str, JsonValue]) -> str:

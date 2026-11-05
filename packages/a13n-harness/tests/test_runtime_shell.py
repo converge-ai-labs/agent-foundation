@@ -16,6 +16,7 @@ from a13n_harness.providers.environment.direct_local.configuration import (
 )
 from a13n_harness.tool_execution import ToolExecutionConfig, ToolExecutionRuntime
 from a13n_harness.tools import InvocationPolicyCapability, InvocationPolicyDecision
+from pydantic_ai import ToolReturn
 from pydantic_ai.messages import ToolReturnPart
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 
@@ -554,7 +555,10 @@ async def test_cancel_during_admission_starts_once_then_terminates(tmp_path, mon
 
 
 @pytest.mark.parametrize("operation", ["wait", "inspect", "read_output"])
-@pytest.mark.parametrize("code", ["environment_unavailable", "environment_denied", "environment_reference_stale"])
+@pytest.mark.parametrize(
+    "code",
+    ["environment_unavailable", "environment_denied", "environment_reference_stale", "environment_provider_failure"],
+)
 async def test_shell_observation_failure_does_not_kill_native_process(tmp_path, monkeypatch, operation, code):
     import os
 
@@ -573,7 +577,7 @@ async def test_shell_observation_failure_does_not_kill_native_process(tmp_path, 
         if handle == target:
             await fail.wait()
             failures += 1
-            raise EnvironmentError("Observation failed", code=code)
+            raise EnvironmentError("Observation failed", code=code, details={"dispatch_stage": "pre_dispatch"})
         return await original(self, handle, **kwargs)
 
     monkeypatch.setattr(LocalProcessManager, operation, failed_observation)
@@ -594,8 +598,13 @@ async def test_shell_observation_failure_does_not_kill_native_process(tmp_path, 
         fail.set()
         settled = await runtime.wait(first.thread_id, results[0]["execution_id"], timeout_seconds=5)
         assert settled.record.status == "succeeded", settled
-        assert settled.result["ok"] is False
-        assert settled.result["error"]["code"] == code
+        assert isinstance(settled.result, ToolReturn)
+        assert settled.result.metadata["a13n.system-failure"] is True
+        assert settled.result.return_value["ok"] is False
+        error = settled.result.return_value["error"]
+        assert (error["code"], error["outcome_known"]) == (code, False)
+        assert error["details"]["dispatch_stage"] == "dispatched"
+        assert "before repeating" in error["details"]["hint"]
         assert failures == (4 if code == "environment_unavailable" else 1)
         assert (await runtime.info(first.thread_id, results[1]["execution_id"])).status == "running"
         # The sibling keeps the provider scope alive. Observation failure alone cannot kill its process.
