@@ -483,6 +483,7 @@ class HostBrowsers:
 
             self.monitor = asyncio.create_task(watch())
             self.runtime_failed = False
+            self.startup_error = None
             self.runtime_ready = True
         except BaseException:
             await self.close_runtime()
