@@ -316,9 +316,9 @@ class ToolExecutions:
 
     async def close(self, *, timeout_seconds: float) -> None:
         self.stop()
-        self.runtime.stop_admission()
-        await self.runtime.relinquish()
-        await self.runtime.close(timeout_seconds=timeout_seconds)
+        pending = await self.runtime.close(timeout_seconds=timeout_seconds, preserve_recoverable=True)
+        if pending:
+            get_logger(__name__).warning("Joining retained tool cleanup after grace: %s", ", ".join(pending))
         # Storage, MCP clients and Environment collaborators outlive retained scopes.
         await self.runtime.join()
         if self.store is not None:

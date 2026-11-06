@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import socket
+from collections.abc import Callable
 from time import monotonic
 from types import FrameType
 
@@ -14,21 +15,39 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from a13n_harness_ui.shutdown import Shutdown
+
 logger = get_logger("a13n_harness_ui.webui")
 
 
 class WebUIServer(uvicorn.Server):
     """Wake infinite browser streams before Uvicorn drains HTTP requests."""
 
-    def __init__(self, config: uvicorn.Config, *, stopping: Event) -> None:
+    def __init__(
+        self, config: uvicorn.Config, *, stopping: Event, app_shutdown: Callable[[], Shutdown | None] | None = None
+    ) -> None:
         super().__init__(config)
         self._stopping = stopping
+        self._app_shutdown = app_shutdown
+        self._expedited = False
 
     def handle_exit(self, sig: int, frame: FrameType | None) -> None:
+        if self.should_exit:
+            self._expedited = True
+            shutdown = self._app_shutdown() if self._app_shutdown is not None else None
+            if shutdown is not None:
+                shutdown.expedite()
+            logger.warning(
+                "Stop requested again: ending App grace; owned cleanup still joins before storage closes. "
+                "A process supervisor is required to force termination of uncooperative cleanup."
+            )
+            # Uvicorn's force_exit skips lifespan shutdown, and cannot interrupt
+            # it once entered. Always retain the App's cleanup ownership.
+            return
         logger.info(
-            "Stop requested. Waiting for WebUI startup or cleanup to finish."
-            if self.should_exit or not self.started
-            else "Stop requested."
+            "Stop requested. Press Ctrl+C again to end the App grace period."
+            if self.started
+            else "Stop requested. Waiting for WebUI startup or cleanup to finish."
         )
         super().handle_exit(sig, frame)
 
@@ -41,15 +60,17 @@ class WebUIServer(uvicorn.Server):
     async def shutdown(self, sockets: list[socket.socket] | None = None) -> None:
         logger.info("Stopping WebUI: closing browser connections and cleaning up active work…")
         self._stopping.set()
+        shutdown = self._app_shutdown() if self._app_shutdown is not None else None
+        if self._expedited and shutdown is not None:
+            shutdown.expedite()
         started = monotonic()
         async with create_task_group() as group:
 
             async def report_waiting() -> None:
                 while True:
                     await sleep(2)
-                    logger.info(
-                        "Still stopping WebUI (%ds): waiting for connections or App cleanup.", monotonic() - started
-                    )
+                    detail = shutdown.describe() if shutdown is not None else "waiting for connections or App cleanup"
+                    logger.info("Still stopping WebUI (%ds): %s.", monotonic() - started, detail)
 
             group.start_soon(report_waiting)
             try:

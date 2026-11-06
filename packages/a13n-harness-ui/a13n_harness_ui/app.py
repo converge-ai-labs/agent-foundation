@@ -31,7 +31,7 @@ from a13n_harness.providers.memory import DirectoryFileStore, MemoryStoreError
 from a13n_harness.providers.model.oauth import GrokCredentials
 from a13n_harness.usage import RunUsageSummary
 from a13n_logging import get_logger
-from anyio import CancelScope, Event, Lock, create_task_group, move_on_after, sleep, to_thread
+from anyio import CancelScope, Event, Lock, create_task_group, sleep, to_thread
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 from pydantic_ai import BinaryContent, prices
 from pydantic_ai.capabilities import AbstractCapability
@@ -191,6 +191,7 @@ from a13n_harness_ui.model_accounts import (
     Provider,
 )
 from a13n_harness_ui.model_accounts.api_keys import ApiKeyInput, ApiKeyStatus, ApiKeyStore
+from a13n_harness_ui.shutdown import Shutdown
 
 if TYPE_CHECKING:
     from a13n_harness_ui.model_accounts.chatgpt import ChatGPTAccountStore
@@ -446,6 +447,7 @@ class HarnessUiApp:
             browsers.handback.deliver = self._deliver_browser_handback
         self._compaction = compaction
         self._settings = settings
+        self.shutdown = Shutdown()
         self._mcp_apps = mcp_apps
         self._mcp_connections = mcp_connections or (mcp_apps.connections if mcp_apps else None)
         self._mcp_inputs = mcp_inputs
@@ -3363,40 +3365,54 @@ class HarnessUiApp:
             )
 
     async def _stop(self, *, graceful: bool = False) -> None:
-        get_logger(__name__).debug("Stopping App: finishing admitted operations…")
+        self.shutdown.begin(self._settings.shutdown_timeout_seconds)
+        self.shutdown.enter("stopping admission and human input")
         async with self._operation_lock:
             if self._state is not AppState.ready:
                 return
             self._state = AppState.stopping
-            idle = self._operations_idle
         self._tool_executions.stop()
         if self._browsers is not None:
             self._browsers.handback.stop()
         self._memory_organizer.stop()
+        await self._root_runs.seal_admission()
+        if self._mcp_inputs is not None:
+            await self._mcp_inputs.close()
         if self._voice is not None:
             await self._voice.stop()
-        await self._root_runs.stop_admission()
+
+        self.shutdown.enter("draining admission fences")
+        with self.shutdown.grace() as admission:
+            await self._root_runs.drain_admission()
+        if admission.cancel_called:
+            self._cancel_operations()
+            # Captures can shield persistence. Join them while storage is open;
+            # the expired budget must not be renewed for later phases.
+            self.shutdown.enter("joining admission cleanup after cancellation")
+            await self._root_runs.drain_admission()
         if graceful:
-            await self._restart.drain(self._settings.shutdown_timeout_seconds)
+            self.shutdown.enter("saving restart boundaries")
+            await self._restart.drain(self.shutdown.remaining, shutdown=self.shutdown)
         await self._subagent_operator.stop_admission()
         if self._compaction is not None:
             await self._compaction.stop_admission()
 
-        with move_on_after(self._settings.shutdown_timeout_seconds) as drain_scope:
-            await idle.wait()
-        if not drain_scope.cancel_called:
-            return
+        self.shutdown.enter("draining App operations")
+        with self.shutdown.grace():
+            await self._operations_idle.wait()
+        self._cancel_operations()
+        # Signal retained readers before joining any Run or Shell supervisor.
+        self._tool_executions.runtime.begin_close(preserve_recoverable=True)
+        self.shutdown.enter("joining App operations")
+        await self._operations_idle.wait()
 
-        async with self._operation_lock:
-            scopes = tuple(self._operation_scopes)
-            idle = self._operations_idle
-        get_logger(__name__).debug("Cancelling %d unfinished App operation(s)…", len(scopes))
-        for scope in scopes:
+    def _cancel_operations(self) -> None:
+        for scope in tuple(self._operation_scopes):
             scope.cancel()
-        with move_on_after(self._settings.shutdown_timeout_seconds):
-            await idle.wait()
 
     async def _close_collaborators(self) -> None:
+        self.shutdown.begin(self._settings.shutdown_timeout_seconds)
+        self._tool_executions.runtime.begin_close(preserve_recoverable=True)
         if self._mcp_inputs is not None:
             await self._mcp_inputs.close()
         self._page_presence.close()
@@ -3405,22 +3421,22 @@ class HarnessUiApp:
         self._shared_drafts.clear()
         try:
             try:
-                get_logger(__name__).debug("Closing native terminal sessions…")
+                self.shutdown.enter("closing native terminal sessions")
                 await self._host_terminal.close()
             finally:
-                get_logger(__name__).debug("Stopping active root Runs…")
-                await self._root_runs.close(timeout_seconds=self._settings.shutdown_timeout_seconds)
+                self.shutdown.enter("joining root Runs")
+                await self._root_runs.close(timeout_seconds=self.shutdown.remaining, shutdown=self.shutdown)
         finally:
             try:
-                get_logger(__name__).debug("Stopping child Runs…")
-                await self._subagent_operator.close(timeout_seconds=self._settings.shutdown_timeout_seconds)
+                self.shutdown.enter("joining child Runs")
+                await self._subagent_operator.close(timeout_seconds=self.shutdown.remaining, shutdown=self.shutdown)
             finally:
-                get_logger(__name__).debug("Closing live subscriptions…")
+                self.shutdown.enter("closing compaction and retained tools")
                 with CancelScope(shield=True):
                     if self._compaction is not None:
                         await self._compaction.close()
                     try:
-                        await self._tool_executions.close(timeout_seconds=self._settings.shutdown_timeout_seconds)
+                        await self._tool_executions.close(timeout_seconds=0)
                     finally:
                         try:
                             await self._live_hub.close()
@@ -3931,7 +3947,9 @@ async def open_harness_ui_app(
             finally:
                 await app._close_collaborators()
                 with CancelScope(shield=True):
+                    app.shutdown.enter("committing restart handoff")
                     await restart_coordinator.commit()
+                    app.shutdown.enter("closing shared resources and storage")
                 app._state = AppState.closed
     finally:
         if app is not None:

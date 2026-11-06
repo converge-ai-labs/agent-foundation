@@ -559,6 +559,7 @@ def create_webui(
     async def lifespan(_server: FastAPI) -> AsyncGenerator[None]:
         nonlocal owner, allowed_origins, sandbox_url, sandbox_error
         async with app_factory() as opened, AsyncExitStack() as resources:
+            _server.state.shutdown = opened.shutdown
             source = await opened.current_configuration()
             if source is not None and source.document.webui.mcp_apps.enabled:
                 sandbox = source.document.webui.mcp_apps.sandbox
@@ -587,6 +588,7 @@ def create_webui(
     server = FastAPI(
         title="Harness UI", version=API_VERSION, lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None
     )
+    server.state.shutdown = None
     ipaddress.ip_address(host)
     # Wildcard binds accept IP literals, never arbitrary DNS names.
     hosts = frozenset({host, "localhost", "127.0.0.1", "::1"})
@@ -2687,4 +2689,5 @@ async def run(
             ws_max_size=1024 * 1024,
         ),
         stopping=stopping,
+        app_shutdown=lambda: server.state.shutdown,
     ).serve()

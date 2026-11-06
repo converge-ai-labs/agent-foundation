@@ -42,18 +42,20 @@ Device pairing returns root-relative paths resolved against the paired Host URL,
 
 Graceful shutdown saves root/child checkpoints, finalizes Environments, and records a restart handoff. The next start consumes it once and continues compatible interrupted work in new Runs, without resending prompts or replaying the saved tool batch.
 
-`shutdown_timeout_seconds` (default 60 seconds) bounds waiting for a safe boundary, not total process exit. If a batch cannot finish, or checkpoint/finalization fails, that batch is not armed for automatic recovery. Cancellation and cleanup still take time. Let the old process finish before starting its replacement.
+`shutdown_timeout_seconds` (default 60 seconds) is one shared App grace budget for admission, restart boundaries, and active work. Each phase uses the remaining time rather than starting another timeout. Press Ctrl+C again to end the remaining grace period and request cancellation sooner. This does not skip task cleanup or storage finalization.
+
+The grace budget does not bound total process exit. If a batch cannot finish, or checkpoint/finalization fails, that batch is not armed for automatic recovery. Cancellation and cleanup still take time; trusted Python code that ignores cancellation can delay exit. Use an external process supervisor if you need a hard termination deadline. Let the old process finish before starting its replacement.
 
 After forced termination or failed reconstruction, inspect saved history/logs before retrying uncertain work. Pending decisions remain unanswered. Native terminals, old Shell handles, shared drafts, and unsaved editors are not restored.
 
 ## Server logs and shutdown
 
-Use `process.log_level` and `process.log_format` to control logs. INFO reports normal API activity; DEBUG adds assets, health probes, and cleanup stages. API entries record route templates, status, elapsed time, codes, and generated IDs, excluding bodies, keys, query values, and native paths.
+Use `process.log_level` and `process.log_format` to control logs. INFO reports normal API activity and shutdown phases with elapsed time and remaining App grace; DEBUG adds assets, health probes, and cleanup details. API entries record route templates, status, elapsed time, codes, and generated IDs, excluding bodies, keys, query values, and native paths.
 
 | Observation                                                            | Action                                                                                   |
 | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
 | **Stopping WebUI**                                                     | Wait for cleanup; **WebUI stopped** confirms completion                                  |
-| Slow shutdown                                                          | Inspect DEBUG stages; connection-drain timeout is not an App cleanup deadline            |
+| Slow shutdown                                                          | Inspect the reported App phase; press Ctrl+C again to end grace, not abandon cleanup     |
 | **Connection interrupted**                                             | Let reconnect run or choose **Retry now**; restart the server first if stopped           |
 | `thread_history_continuation_changed` / `thread_continuation_conflict` | Refresh the conversation                                                                 |
 | `object_payload_incompatible`                                          | Inspect object/version/validation details in storage warnings; retain the data directory |

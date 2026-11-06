@@ -16,6 +16,7 @@ from pydantic_ai.models import ModelRequestContext
 
 from a13n_harness_ui.errors import RunCoordinationError
 from a13n_harness_ui.restart_models import RestartBatch, RestartItem
+from a13n_harness_ui.shutdown import Shutdown
 from a13n_harness_ui.storage.restarts import RestartRepository
 
 
@@ -64,7 +65,7 @@ class GracefulRestart:
         if self.requested or self.restoring:
             raise RunCoordinationError("The App is stopping or restoring saved work.", code="app_stopping")
 
-    async def drain(self, timeout_seconds: float) -> None:
+    async def drain(self, timeout_seconds: float, *, shutdown: Shutdown | None = None) -> None:
         """Request safe boundaries while already admitted tool batches finish."""
         if not self.enabled:
             return
@@ -73,7 +74,7 @@ class GracefulRestart:
         self.finalized.clear()
         self.pause_requested.set()
         self.signal()
-        with move_on_after(timeout_seconds):
+        with shutdown.grace() if shutdown is not None else move_on_after(timeout_seconds):
             while any(entry.state is None for entry in self.active.values()):
                 changed = self.changed
                 await changed.wait()

@@ -37,6 +37,7 @@ from a13n_harness_ui.restart import GracefulRestart
 from a13n_harness_ui.restart_models import RestartItem
 from a13n_harness_ui.root_execution import RootRunAdmission, RootRunExecutor, RootRunOutcome
 from a13n_harness_ui.root_input import RootInputFiles, detach_input
+from a13n_harness_ui.shutdown import Shutdown
 from a13n_harness_ui.storage import ObjectRef, ThreadConfigurationMutation
 from a13n_harness_ui.storage.contracts import ThreadExecution
 from a13n_harness_ui.surfaces import (
@@ -175,14 +176,20 @@ class RootRunCoordinator:
                 self._browser_handback.start(task_group)
             self._accepting = True
 
-    async def stop_admission(self) -> None:
+    async def seal_admission(self) -> None:
+        """Reject new fence users without waiting for caller-owned captures."""
         async with self._lock:
             self._accepting = False
-            # Capture belongs to the submitting caller until receipt admission.
-            # Seal new fence users, then join existing holders AND waiters before
-            # clearing pending responses or starting restart/task-group draining.
-            await self._fences_idle.wait()
-            self._cancel_interactions()
+
+    async def stop_admission(self) -> None:
+        await self.seal_admission()
+        await self.drain_admission()
+
+    async def drain_admission(self) -> None:
+        """Join caller-owned captures and mutations after sealing new fence users."""
+        await self._fences_idle.wait()
+        # A capture already holding a fence can install an interaction as it exits.
+        self._cancel_interactions()
 
     def _cancel_interactions(self) -> None:
         for pending in self._interaction_waits.values():
@@ -206,9 +213,9 @@ class RootRunCoordinator:
 
         return len(self._active_by_thread)
 
-    async def close(self, *, timeout_seconds: float) -> None:
-        if timeout_seconds <= 0:
-            raise ValueError("timeout_seconds must be positive")
+    async def close(self, *, timeout_seconds: float, shutdown: Shutdown | None = None) -> None:
+        if timeout_seconds < 0:
+            raise ValueError("timeout_seconds must be nonnegative")
         context = self._task_group_context
         task_group = self._task_group
         if task_group is not None:
@@ -227,7 +234,7 @@ class RootRunCoordinator:
                 await self._request_cancel(operation)
         if context is None or task_group is None:
             return
-        with move_on_after(timeout_seconds, shield=True) as grace:
+        with shutdown.grace() if shutdown is not None else move_on_after(timeout_seconds, shield=True) as grace:
             for operation in active:
                 await operation.done.wait()
         if grace.cancel_called:

@@ -107,6 +107,7 @@ from a13n_harness_ui.observation import (
 )
 from a13n_harness_ui.restart import GracefulRestart, RestartPauseCapability
 from a13n_harness_ui.restart_models import RestartItem
+from a13n_harness_ui.shutdown import Shutdown
 from a13n_harness_ui.storage import (
     AgentResourceSource,
     ChildExecutionHead,
@@ -330,11 +331,11 @@ class HarnessUiSubagentOperator(SubagentOperator):
         async with self._lock:
             self._accepting = False
 
-    async def close(self, *, timeout_seconds: float = 30.0) -> None:
+    async def close(self, *, timeout_seconds: float = 30.0, shutdown: Shutdown | None = None) -> None:
         """Stop admission, request cancellation, and bound process-local cleanup."""
 
-        if timeout_seconds <= 0:
-            raise ValueError("timeout_seconds must be positive")
+        if timeout_seconds < 0:
+            raise ValueError("timeout_seconds must be nonnegative")
         context = self._task_group_context
         task_group = self._task_group
         if task_group is not None:
@@ -351,7 +352,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         if context is None or task_group is None:
             return
 
-        with move_on_after(timeout_seconds, shield=True) as grace:
+        with shutdown.grace() if shutdown is not None else move_on_after(timeout_seconds, shield=True) as grace:
             for segment in active:
                 await segment.done.wait()
         if grace.cancel_called:

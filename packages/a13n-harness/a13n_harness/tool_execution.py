@@ -621,13 +621,9 @@ class ToolExecutionRuntime:
             self.yield_shell(execution_id)
 
     async def relinquish(self) -> None:
-        """Yield and join recoverable supervisors before cancelling other work."""
-        self.yield_recoverable()
-        tasks = {live.task for live in self._live.values() if live.yield_requested and live.task is not None}
-        if tasks:
-            await asyncio.wait(tasks)
-            for task in tasks:
-                task.result()
+        """Yield native supervisors and cancel their readers before joining cleanup."""
+        self.begin_close(preserve_recoverable=True)
+        await self.join()
 
     def resume_shell(
         self,
@@ -813,13 +809,21 @@ class ToolExecutionRuntime:
         """Begin Host drain without cancelling already admitted work."""
         self._closing = True
 
-    async def close(self, *, timeout_seconds: float = 5.0, reason: str | None = None) -> tuple[str, ...]:
-        """Stop admission and request cancellation; report operations still draining."""
-        self._closing = True
-        executions = tuple(self._live.values())
-        for live in executions:
-            self.request_cancellation(live.record.thread_id, live.record.execution_id, reason=reason)
-        tasks = {live.task for live in executions if live.task is not None}
+    def begin_close(self, *, preserve_recoverable: bool = False, reason: str | None = None) -> None:
+        """Signal every owner before joining any cleanup that can depend on another."""
+        self.stop_admission()
+        if preserve_recoverable:
+            self.yield_recoverable()
+        for live in tuple(self._live.values()):
+            if not (preserve_recoverable and live.yield_requested):
+                self.request_cancellation(live.record.thread_id, live.record.execution_id, reason=reason)
+
+    async def close(
+        self, *, timeout_seconds: float = 5.0, reason: str | None = None, preserve_recoverable: bool = False
+    ) -> tuple[str, ...]:
+        """Signal shutdown and wait boundedly; report operations still draining."""
+        self.begin_close(preserve_recoverable=preserve_recoverable, reason=reason)
+        tasks = {live.task for live in self._live.values() if live.task is not None}
         if tasks:
             done, _ = await asyncio.wait(tasks, timeout=timeout_seconds)
             for task in done:
