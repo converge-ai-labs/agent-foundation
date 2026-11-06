@@ -2539,7 +2539,14 @@ def create_webui(
             headers={
                 "Cache-Control": "no-cache",
                 "Content-Security-Policy": (
-                    "default-src 'self'; connect-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; "
+                    "default-src 'self'; connect-src 'self'; "
+                    # Remote image origins used by a13n-ui's brand registry.
+                    # Script, connection and sandbox policies remain unchanged.
+                    "img-src 'self' data: blob: https://cdn.jsdelivr.net https://svgl.app "
+                    "https://cdn.simpleicons.org https://deepwiki.com https://composio.dev "
+                    "https://parallel.ai https://serpapi.com https://www.tinyfish.ai "
+                    "https://e2b.dev https://modal.com https://framerusercontent.com "
+                    "https://docs.runloop.ai https://fly.io; media-src 'self' blob:; "
                     "style-src 'self' 'unsafe-inline'; "
                     "script-src 'self'; frame-ancestors 'none'; base-uri 'none'; frame-src "
                     + (origin(sandbox_url.removesuffix("/sandbox.html")) if sandbox_url is not None else "'none'")
