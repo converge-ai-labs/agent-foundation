@@ -36,9 +36,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from a13n_service.infra.db import Storage, short_session
 from a13n_service.infra.errors import ServiceError
 from a13n_service.resources.memories import provenance
+from a13n_service.resources.memories.guidance import time_context
 from a13n_service.resources.memories.records import RecordMemory, backend, open_record_store, record_memory
 from a13n_service.resources.memories.schemas import MemoryRecordSource
-from a13n_service.resources.memories.service import inherited_guide
+from a13n_service.resources.memories.service import inherited_record_guide
 from a13n_service.resources.memories.store import PostgresFileStore, file_format
 from a13n_service.resources.memories.tables import MemoryRow
 from a13n_service.resources.providers.tables import MemoryProviderRow
@@ -99,7 +100,7 @@ async def resolve_memories(session: AsyncSession, run: RunRow) -> tuple[PlannedM
             own_index = f"sessions/{run.session_id}/MEMORY.md"
             if own_index.startswith(mount.roots) and own_index not in always_load:
                 always_load += (own_index,)
-        planned.append(PlannedMemory(mount, row.guide, always_load, record))
+        planned.append(PlannedMemory(mount, row.guide if record is not None else mount.file_guide, always_load, record))
     return tuple(planned)
 
 
@@ -124,11 +125,20 @@ def _guide(memory: PlannedMemory, settings: MemorySettings) -> str:
     guide = (
         memory.guide
         if memory.guide is not None
-        else inherited_guide(settings, "file" if memory.record is None else "record")
+        else inherited_record_guide(settings)
+        if memory.record is not None
+        else ""
     )
+    if memory.record is None:
+        guide += "\n" + time_context(memory.mount.timezone, datetime.now(UTC))
     if memory.mount.space_id is not None:
         guide += "\nThis Memory Space exposes: " + ", ".join(memory.mount.roots)
-        guide += ". Save shared knowledge under global/ and conversation notes under your Session folder."
+        guide += (
+            ". Resolve shared MEMORY.md, topics/ and journal/ paths beneath global/. "
+            "Session-specific notes and events belong under the visible sessions/<session-id>/ root. "
+            "Never link shared knowledge to another Session as its only usable evidence; preserve the "
+            "necessary supported context within the shared view. Respect each mount's read/write access."
+        )
     return guide
 
 

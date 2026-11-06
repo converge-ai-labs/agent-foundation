@@ -5,8 +5,10 @@ from typing import Annotated
 
 from fastapi import APIRouter, Path, Query, Response
 
+from a13n_service.infra.db import short_session
 from a13n_service.infra.http import IfMatch, PageLimit, tagged
 from a13n_service.resources.memories import files, records, service
+from a13n_service.resources.memories.guidance import PRESETS, MemoryGuidancePresets
 from a13n_service.resources.memories.schemas import (
     HistoryPurge,
     Memory,
@@ -28,6 +30,7 @@ from a13n_service.resources.memories.schemas import (
 )
 from a13n_service.resources.memories.tables import MemoryKind
 from a13n_service.resources.requests import CurrentRuntime
+from a13n_service.tenancy.access import workspace_scope
 from a13n_service.tenancy.requests import Actor, WorkspaceId
 
 router = APIRouter(prefix="/api/v1/memories", tags=["memories"])
@@ -66,6 +69,15 @@ async def list_memories(
         cursor=cursor,
         settings=runtime.settings.memory,
     )
+
+
+@router.get("/guidance-presets", response_model=MemoryGuidancePresets, openapi_extra={"x-a13n-mcp": True})
+async def list_memory_guidance_presets(
+    workspace_id: WorkspaceId, actor: Actor, runtime: CurrentRuntime
+) -> MemoryGuidancePresets:
+    async with short_session(runtime.storage) as session:
+        await workspace_scope(session, actor, workspace_id, "read")
+    return MemoryGuidancePresets(items=list(PRESETS))
 
 
 @router.get("/{memory_id}", response_model=Memory, openapi_extra={"x-a13n-mcp": True})

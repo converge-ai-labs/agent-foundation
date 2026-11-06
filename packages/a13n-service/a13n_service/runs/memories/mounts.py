@@ -16,6 +16,7 @@ from a13n_service.infra.audit import record
 from a13n_service.infra.db import Storage, assign, short_session, transaction
 from a13n_service.infra.errors import ServiceError, at_field, conflict, not_found
 from a13n_service.infra.http import require_match
+from a13n_service.resources.memories.guidance import FileMemoryGuidance, resolve_guidance
 from a13n_service.resources.memories.schemas import MemoryMount, SessionMemorySettings
 from a13n_service.resources.memories.tables import MemoryRow, MemorySpaceRow
 from a13n_service.resources.rows import given
@@ -103,13 +104,13 @@ async def shared_memory_mounts(session: AsyncSession, origin: ThreadRow) -> list
 
 async def adopt_memory_mounts(session: AsyncSession, child: ThreadRow, frozen: Sequence[dict]) -> None:
     """A child thread mounts the memories its parent run froze, except those deleted since."""
-    mounts = [MemoryMount.model_validate(mount) for mount in frozen if mount.get("space_id") is None]
+    mounts = [FrozenMemoryMount.model_validate(mount) for mount in frozen if mount.get("space_id") is None]
     existing = await _existing(session, child.workspace_id, [mount.memory_id for mount in mounts])
     session.add_all(_row(child, mount) for mount in mounts if mount.memory_id in existing)
     await session.flush()
 
 
-async def freeze_memories(
+async def _select_memories(
     session: AsyncSession, thread: ThreadRow, defaults: Sequence[MemoryMount], *, limit: int
 ) -> list[dict]:
     """The mount set a new run uses. At the thread's first acceptance the agent's `defaults` join first; a
@@ -192,6 +193,31 @@ async def freeze_memories(
     if len(mounts) > limit:
         raise conflict("thread", thread.id, "memory_mount_limit", limit=limit)
     return sorted(mounts, key=lambda mount: mount["name"])
+
+
+async def freeze_memories(
+    session: AsyncSession, thread: ThreadRow, defaults: Sequence[MemoryMount], *, limit: int
+) -> list[dict]:
+    mounts = await _select_memories(session, thread, defaults, limit=limit)
+    files = (
+        {
+            row.id: FileMemoryGuidance.model_validate(row.guidance)
+            for row in await session.scalars(
+                select(MemoryRow).where(
+                    MemoryRow.workspace_id == thread.workspace_id,
+                    MemoryRow.id.in_([mount["memory_id"] for mount in mounts]),
+                    MemoryRow.kind == "file",
+                )
+            )
+        }
+        if mounts
+        else {}
+    )
+    for mount in mounts:
+        if (guidance := files.get(mount["memory_id"])) is not None:
+            mount["file_guide"] = resolve_guidance(guidance)
+            mount["timezone"] = guidance.timezone
+    return mounts
 
 
 def inherited_cursors(parent: RunRow | None, mounts: Sequence[dict]) -> dict[str, str | None]:

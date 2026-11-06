@@ -11,6 +11,9 @@ class FrozenMemoryMount(MemoryMount):
 
     space_id: str | None = None
     roots: tuple[str, ...] = ()
+    # Resolved at acceptance, including the built-in preset text.
+    file_guide: str | None = None
+    timezone: str = "UTC"
 
     @property
     def cursor_key(self) -> str:

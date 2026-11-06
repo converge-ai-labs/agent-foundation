@@ -48,7 +48,9 @@ async def test_thread_mounts_are_edited_under_the_thread_version(service, script
     assert mounted(run) == [("team", team["id"], "write")]
     mounts = f"{service.api}/threads/{started['thread']['id']}/memories"
     listing = await client.get(mounts)
-    assert listing.json()["items"] == run["memory_mounts"]
+    assert listing.json()["items"] == [
+        {key: item[key] for key in ("name", "memory_id", "access", "recall")} for item in run["memory_mounts"]
+    ]
     version = listing.headers["etag"]
 
     body = mount("notes", notes, "read")

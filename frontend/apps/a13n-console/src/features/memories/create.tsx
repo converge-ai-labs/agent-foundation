@@ -22,9 +22,12 @@ import { FormActions, TextAreaField } from "../../shared/forms";
 import shared from "../../shared/shared.module.css";
 import { ManageProvidersLink } from "../providers";
 import { invalidateMemories, memoryProviders } from "./api";
-import { AlwaysLoadField, GuideField, useMemoryTypeName } from "./fields";
+import { AlwaysLoadField, RecordGuideField, useMemoryTypeName } from "./fields";
 import { memoryCreate, memoryDraft } from "./form";
 import styles from "./memories.module.css";
+
+import { FileGuidanceField } from "./guidance-field";
+import { validGuidance } from "./guidance";
 
 type Kind = Schema["MemoryKind"];
 
@@ -216,11 +219,17 @@ function CreateForm({
         </FormSection>
       )}
       <FormSection title={t("Memory instructions")}>
-        <GuideField
-          kind={kind}
-          value={draft.guide}
-          onChange={(guide) => setDraft({ ...draft, guide })}
-        />
+        {record ? (
+          <RecordGuideField
+            value={draft.guide}
+            onChange={(guide) => setDraft({ ...draft, guide })}
+          />
+        ) : (
+          <FileGuidanceField
+            value={draft.guidance}
+            onChange={(guidance) => setDraft({ ...draft, guidance })}
+          />
+        )}
         {!record && (
           <div className="grid gap-2">
             <span className="text-[13px] font-medium">
@@ -237,7 +246,7 @@ function CreateForm({
       <FormActions
         onCancel={onCancel}
         pending={create.isPending}
-        disabled={record && !provider}
+        disabled={record ? !provider : !validGuidance(draft.guidance)}
         label={t("Create collection")}
       />
     </form>

@@ -48,7 +48,9 @@ def seed_memories(api: Api, model: Json, model_url: str) -> Memories:
             "name": "Team handbook",
             "description": "How the fictional product team works.",
             "labels": {"team": "docs"},
-            "guide": "Keep one file per process under process/. Agents read this memory; people maintain it.",
+            "guidance": {
+                "custom": "Keep one file per process under process/. Agents read this memory; people maintain it."
+            },
             "always_load": ["README.md"],
         },
         HANDBOOK,

@@ -9016,6 +9016,42 @@
         "title": "FailureSummary",
         "type": "object"
       },
+      "FileMemoryGuidance": {
+        "additionalProperties": false,
+        "properties": {
+          "custom": {
+            "default": "",
+            "maxLength": 65536,
+            "title": "Custom",
+            "type": "string"
+          },
+          "system_override": {
+            "anyOf": [
+              {
+                "maxLength": 65536,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "System Override"
+          },
+          "system_preset": {
+            "$ref": "#/components/schemas/SystemPreset",
+            "default": "general"
+          },
+          "timezone": {
+            "default": "UTC",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Timezone",
+            "type": "string"
+          }
+        },
+        "title": "FileMemoryGuidance",
+        "type": "object"
+      },
       "FilesystemInventory": {
         "additionalProperties": false,
         "properties": {
@@ -9643,6 +9679,17 @@
           "access": {
             "$ref": "#/components/schemas/MemoryAccess"
           },
+          "file_guide": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Guide"
+          },
           "memory_id": {
             "maxLength": 41,
             "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
@@ -9677,6 +9724,11 @@
               }
             ],
             "title": "Space Id"
+          },
+          "timezone": {
+            "default": "UTC",
+            "title": "Timezone",
+            "type": "string"
           }
         },
         "required": [
@@ -11622,6 +11674,16 @@
             ],
             "title": "File Count"
           },
+          "guidance": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FileMemoryGuidance"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "guide": {
             "anyOf": [
               {
@@ -11649,8 +11711,15 @@
             "type": "string"
           },
           "inherited_guide": {
-            "title": "Inherited Guide",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inherited Guide"
           },
           "kind": {
             "$ref": "#/components/schemas/MemoryKind"
@@ -11726,6 +11795,7 @@
           "namespace",
           "guide",
           "inherited_guide",
+          "guidance",
           "always_load",
           "labels",
           "file_count",
@@ -11773,6 +11843,16 @@
               }
             ],
             "title": "Description"
+          },
+          "guidance": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FileMemoryGuidance"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "guide": {
             "anyOf": [
@@ -12198,6 +12278,49 @@
           "file"
         ],
         "title": "MemoryFileState",
+        "type": "object"
+      },
+      "MemoryGuidancePreset": {
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "id": {
+            "$ref": "#/components/schemas/SystemPreset"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "system_guide": {
+            "title": "System Guide",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "system_guide"
+        ],
+        "title": "MemoryGuidancePreset",
+        "type": "object"
+      },
+      "MemoryGuidancePresets": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryGuidancePreset"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "MemoryGuidancePresets",
         "type": "object"
       },
       "MemoryKind": {
@@ -12831,16 +12954,8 @@
             "title": "File Count",
             "type": "integer"
           },
-          "guide": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Guide"
+          "guidance": {
+            "$ref": "#/components/schemas/FileMemoryGuidance"
           },
           "history_bytes": {
             "title": "History Bytes",
@@ -12900,7 +13015,7 @@
           "enabled",
           "organization",
           "memory_id",
-          "guide",
+          "guidance",
           "always_load",
           "file_count",
           "content_bytes",
@@ -12947,17 +13062,8 @@
             "title": "Enabled",
             "type": "boolean"
           },
-          "guide": {
-            "anyOf": [
-              {
-                "maxLength": 65536,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Guide"
+          "guidance": {
+            "$ref": "#/components/schemas/FileMemoryGuidance"
           },
           "labels": {
             "additionalProperties": {
@@ -13059,17 +13165,15 @@
             ],
             "title": "Enabled"
           },
-          "guide": {
+          "guidance": {
             "anyOf": [
               {
-                "maxLength": 65536,
-                "type": "string"
+                "$ref": "#/components/schemas/FileMemoryGuidance"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Guide"
+            ]
           },
           "labels": {
             "anyOf": [
@@ -13150,6 +13254,16 @@
               }
             ],
             "title": "Description"
+          },
+          "guidance": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FileMemoryGuidance"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "guide": {
             "anyOf": [
@@ -23523,6 +23637,13 @@
         },
         "title": "SystemMetrics",
         "type": "object"
+      },
+      "SystemPreset": {
+        "enum": [
+          "general",
+          "journal"
+        ],
+        "type": "string"
       },
       "Template": {
         "properties": {
@@ -37503,6 +37624,64 @@
           }
         ],
         "summary": "Create Memory",
+        "tags": [
+          "memories"
+        ],
+        "x-a13n-mcp": true
+      }
+    },
+    "/api/v1/memories/guidance-presets": {
+      "get": {
+        "operationId": "list_memory_guidance_presets",
+        "parameters": [
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryGuidancePresets"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "List Memory Guidance Presets",
         "tags": [
           "memories"
         ],

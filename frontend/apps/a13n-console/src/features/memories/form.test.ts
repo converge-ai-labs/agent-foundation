@@ -10,8 +10,12 @@ import {
   sameDraft,
 } from "./form";
 
+import { defaultGuidance, selectSystemPreset } from "./guidance";
+
 const saved = {
   id: "mem_1",
+  kind: "file",
+  guidance: defaultGuidance(),
   name: "Handbook",
   description: "Team rules",
   labels: { team: "docs", tier: "gold" },
@@ -40,7 +44,7 @@ it("creates a PostgreSQL file memory from the draft", () => {
     type: "postgres",
     name: "Handbook",
     description: null,
-    guide: "",
+    guidance: defaultGuidance(),
     always_load: ["README.md"],
   });
 });
@@ -70,10 +74,14 @@ it("updates only the fields the draft changed", () => {
     memoryUpdate(saved, {
       ...draft,
       description: " ",
-      guide: { mode: "custom", text: "Mine" },
+      guidance: { ...draft.guidance, custom: "Mine" },
       alwaysLoad: [],
     }),
-  ).toEqual({ description: null, guide: "Mine", always_load: [] });
+  ).toEqual({
+    description: null,
+    guidance: { ...draft.guidance, custom: "Mine" },
+    always_load: [],
+  });
 });
 
 it("compares drafts by what they would save", () => {
@@ -94,4 +102,18 @@ it("carries only the draft's own changes onto a newer memory", () => {
   expect(
     rebaseDraft(previous, { ...previous, description: "Mine" }, current),
   ).toEqual({ ...current, description: "Mine" });
+});
+
+it("selects a new system preset without losing custom guide or time zone", () => {
+  const custom = {
+    ...defaultGuidance(),
+    system_override: "Authored rules",
+    custom: "Project decisions",
+    timezone: "Asia/Taipei",
+  };
+  expect(selectSystemPreset(custom, "journal")).toEqual({
+    ...custom,
+    system_preset: "journal",
+    system_override: null,
+  });
 });

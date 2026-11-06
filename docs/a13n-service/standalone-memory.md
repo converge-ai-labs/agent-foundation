@@ -22,15 +22,17 @@ With workspace `write` permission, create the store:
 curl -X POST "$A13N_URL/api/v1/memories" \
   -H "Authorization: Bearer $A13N_API_KEY" -H "Content-Type: application/json" \
   -d '{"name": "Team conventions", "type": "postgres",
-       "guide": "Keep one file per topic. Record decisions with their reason.",
+       "guidance": {"system_preset": "general", "custom": "Record decisions with their reason.", "timezone": "UTC"},
        "always_load": ["README.md"]}'
 ```
 
 Save the returned `id` (`mem_...`), then [mount it on a thread](standalone-memory.md#mount-a-memory-on-a-thread). `postgres` is the default type; memories have IDs rather than keys.
 
-`guide` tells agents what to save and how to organize it. Omit it or use `null` to inherit the deployment's guide for that memory kind; `""` supplies no guide. `inherited_guide` shows the inherited text. `always_load` selects up to 64 paths to include first within the context budget when a thread first sees the memory. Those paths can be created later. Only a principal with `write` can change this selection.
+`guidance` selects `general` or `journal` with `system_preset`. Both maintain topic knowledge; `journal` also records important events by date. `custom` adds business instructions. `system_override: null` uses the preset, while authored text replaces its system rules. `timezone` is an IANA time zone, defaulting to UTC. List available presets and their rules with `GET /memories/guidance-presets`. Console offers the presets directly, with Custom guide visible and System guide and time zone under Advanced settings. Changing guidance does not move or delete existing files.
 
-`PATCH /memories/{id}` with the memory's `If-Match` changes its name, description, labels, guide and always-loaded paths. Changes apply to later attempts, including a later attempt of an existing run. `GET /memories` filters by `label`, `kind` and `type`; file memories expose file, content and history counters.
+`always_load` selects up to 64 paths to include first within the context budget. Paths can be created later. Only a principal with `write` can change this selection.
+
+`PATCH /memories/{id}` with the memory's `If-Match` changes its name, description, labels, guidance and always-loaded paths. File guidance is frozen when a Run is accepted; changes apply to newly accepted Runs. Always-loaded paths apply to later attempts. `GET /memories` filters by `label`, `kind` and `type`; file memories expose file, content and history counters.
 
 `DELETE /memories/{id}` needs `write` and `If-Match`. It removes the files, history and thread mounts. A running agent using that memory receives `memory_deleted` on its next memory tool call.
 
@@ -122,7 +124,7 @@ Async [subagent](agent-configuration.md#subagents) threads inherit the parent ru
 
 The `memory` [toolset](tools.md#built-in-toolsets) is enabled by default. Mounted file memories use the Harness [file tools](../a13n-harness/memory.md#what-the-model-gets). Record memories use `memory_record_search`, `memory_record_list`, `memory_record_add`, `memory_record_update` and `memory_record_delete`. Tool keys use `file_*` or `record_*`; permission IDs use `memory.file.*` or `memory.record.*`. Disabling a tool removes it across mounts. Disabling the toolset leaves automatic context and recall available.
 
-A file memory initially supplies its always-loaded files and file index. Later runs receive changed files, including edits from other threads and people. After compaction, the thread gets full context again. Context remains bounded by `memory.context_bytes` (default 32 KiB) and `memory.always_load_bytes`. Truncated or omitted files need an explicit `memory_file_view`. If even minimal blocks cannot fit, the run receives a view-and-cleanup reminder. These bounded deliveries still advance the context cursor, so unchanged omissions are not automatically resent.
+A file memory initially supplies its always-loaded files and file index. Later runs receive changed files, including edits from other threads and people. After compaction, the thread gets full context again. Context remains bounded by `memory.context_bytes` (default 32 KiB) and `memory.always_load_bytes`. Truncated or omitted files need an explicit `memory_file_view`. If even minimal blocks cannot fit, the run receives a reminder to read missing content and follow the memory guide. These bounded deliveries still advance the context cursor, so unchanged omissions are not automatically resent.
 
 Each tool call checks current workspace access: `read` for reads and searches, `run` for mutations. Refused calls return `forbidden`; record tools return `unavailable` for a disabled provider. Failed file calls leave the store unchanged. After a worker stops between a write and its checkpoint, the recovered attempt can report an unknown outcome. Read the file or search records before repeating that write.
 

@@ -3996,5 +3996,21 @@
   "Unshown native fields, including affinity, security contexts and network policies, are preserved when you edit the form.": "Unshown native fields, including affinity, security contexts and network policies, are preserved when you edit the form.",
   "Hide native JSON": "Hide native JSON",
   "Edit native JSON": "Edit native JSON",
-  "Advanced escape hatch for native Kubernetes fields. Changes are reflected in the form; invalid JSON is kept until corrected.": "Advanced escape hatch for native Kubernetes fields. Changes are reflected in the form; invalid JSON is kept until corrected."
+  "Advanced escape hatch for native Kubernetes fields. Changes are reflected in the form; invalid JSON is kept until corrected.": "Advanced escape hatch for native Kubernetes fields. Changes are reflected in the form; invalid JSON is kept until corrected.",
+  "General with daily records": "General with daily records",
+  "Maintain reusable preferences, decisions and topic knowledge.": "Maintain reusable preferences, decisions and topic knowledge.",
+  "Keep important events by date alongside reusable topic knowledge.": "Keep important events by date alongside reusable topic knowledge.",
+  "System guide customized. Selecting another preset replaces it and keeps your custom guide.": "System guide customized. Selecting another preset replaces it and keeps your custom guide.",
+  "Custom guide (optional)": "Custom guide (optional)",
+  "Describe what matters in this memory: the people, projects, decisions or events to remember. The preset supplies the maintenance workflow.": "Describe what matters in this memory: the people, projects, decisions or events to remember. The preset supplies the maintenance workflow.",
+  "System guide customized": "System guide customized",
+  "Using preset": "Using preset",
+  "Memory time zone": "Memory time zone",
+  "Event dates use this time zone, including during background organization.": "Event dates use this time zone, including during background organization.",
+  "Enter a valid time zone, such as Asia/Taipei or UTC.": "Enter a valid time zone, such as Asia/Taipei or UTC.",
+  "System guide": "System guide",
+  "Controls how agents read, write and organize memory. Editing replaces the preset rules. Access and version checks still apply.": "Controls how agents read, write and organize memory. Editing replaces the preset rules. Access and version checks still apply.",
+  "Restore selected preset": "Restore selected preset",
+  "Changes apply to new runs. Existing memory files are not moved or deleted.": "Changes apply to new runs. Existing memory files are not moved or deleted.",
+  "Choose how to organize memory. Automatic organization can be configured later.": "Choose how to organize memory. Automatic organization can be configured later."
 }

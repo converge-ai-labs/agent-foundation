@@ -7,9 +7,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra import cursors
 from a13n_service.infra.db import Storage, assign, short_session, transaction
+from a13n_service.infra.errors import invalid
 from a13n_service.infra.http import require_match
 from a13n_service.infra.ids import new_object_id
 from a13n_service.infra.labels import label_filter
+from a13n_service.resources.memories.guidance import FileMemoryGuidance, validate_guidance
 from a13n_service.resources.memories.schemas import (
     MemoryCreate,
     MemorySpace,
@@ -18,7 +20,7 @@ from a13n_service.resources.memories.schemas import (
     MemorySpaceUpdate,
     OrganizationPolicy,
 )
-from a13n_service.resources.memories.service import _always_load, _guide, insert_memory
+from a13n_service.resources.memories.service import _always_load, insert_memory
 from a13n_service.resources.memories.tables import MemoryFileStoreRow, MemoryRow, MemorySpaceRow
 from a13n_service.resources.models.service import resolve_model
 from a13n_service.resources.rows import audit_row, find_row, given, record_update
@@ -62,7 +64,7 @@ async def views(session: AsyncSession, rows: Sequence[MemorySpaceRow]) -> list[M
                 enabled=row.enabled,
                 organization=OrganizationPolicy.model_validate(row.organization),
                 memory_id=row.memory_id,
-                guide=memory.guide,
+                guidance=FileMemoryGuidance.model_validate(memory.guidance),
                 always_load=memory.always_load,
                 file_count=store.file_count,
                 content_bytes=store.content_bytes,
@@ -89,7 +91,7 @@ async def create_space(
             scope,
             MemoryCreate(
                 name=body.name,
-                guide=body.guide,
+                guidance=body.guidance,
                 always_load=body.always_load,
             ),
             settings=settings,
@@ -172,8 +174,10 @@ async def update_space(
             values["authority"] = await _authority(session, actor, scope, body.organization)
         memory = await session.get_one(MemoryRow, row.memory_id)
         memory_values: dict[str, object] = {}
-        if "guide" in body.model_fields_set:
-            memory_values["guide"] = _guide(body.guide, settings)
+        if "guidance" in body.model_fields_set and body.guidance is None:
+            raise invalid("guidance", "use a guidance object")
+        if body.guidance is not None:
+            memory_values["guidance"] = validate_guidance(body.guidance, max_bytes=settings.guide_bytes)
         if body.always_load is not None:
             memory_values["always_load"] = _always_load("file", body.always_load, settings)
         changed = assign(row, values) + assign(memory, memory_values)

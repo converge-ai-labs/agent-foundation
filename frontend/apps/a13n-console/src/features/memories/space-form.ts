@@ -1,5 +1,5 @@
 import type { Schema } from "../../shared/api";
-import type { GuideDraft } from "./form";
+import { defaultGuidance, validGuidance } from "./guidance";
 
 export const defaultSessionMemory: Schema["SessionMemorySettings"] = {
   enabled: false,
@@ -19,15 +19,7 @@ export function spaceDraft(space: Schema["MemorySpace"]) {
     name: space.name,
     description: space.description ?? "",
     enabled: space.enabled,
-    guide: {
-      mode:
-        space.guide === null
-          ? "inherit"
-          : space.guide === ""
-            ? "none"
-            : "custom",
-      text: space.guide ?? "",
-    } as GuideDraft,
+    guidance: { ...defaultGuidance(), ...space.guidance },
     alwaysLoad: space.always_load,
     automatic: !!space.organization.enabled,
     model: space.organization.model ?? "",
@@ -46,17 +38,11 @@ export function spaceUpdate(
   base: Schema["MemorySpace"],
   draft: SpaceDraft,
 ): Schema["MemorySpaceUpdate"] {
-  const guide =
-    draft.guide.mode === "inherit"
-      ? null
-      : draft.guide.mode === "none"
-        ? ""
-        : draft.guide.text;
   const next: Schema["MemorySpaceUpdate"] = {
     name: draft.name.trim(),
     description: draft.description.trim() || null,
     enabled: draft.enabled,
-    guide,
+    guidance: draft.guidance,
     always_load: draft.alwaysLoad,
     organization: {
       enabled: draft.automatic,
@@ -94,6 +80,6 @@ export function validSpaceDraft(draft: SpaceDraft) {
     validInteger(draft.cooldown, 0, 604800) &&
     (draft.trigger !== "change_count" ||
       validInteger(draft.changeCount, 1, 1000000)) &&
-    (draft.guide.mode !== "custom" || !!draft.guide.text.trim())
+    validGuidance(draft.guidance)
   );
 }

@@ -11,7 +11,7 @@ memory call.
 import hashlib
 from collections.abc import Sequence
 
-from a13n_harness.capabilities import DEFAULT_FILE_GUIDE, DEFAULT_RECORD_GUIDE
+from a13n_harness.capabilities import DEFAULT_RECORD_GUIDE
 from a13n_harness.providers.memory import MemoryStoreError, validate_path
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,6 +23,7 @@ from a13n_service.infra.http import require_match
 from a13n_service.infra.ids import new_object_id
 from a13n_service.infra.labels import label_filter
 from a13n_service.infra.outbox import OutboxKind, OutboxRow, enqueue
+from a13n_service.resources.memories.guidance import FileMemoryGuidance, validate_guidance
 from a13n_service.resources.memories.schemas import POSTGRES, Memory, MemoryCreate, MemoryPage, MemoryUpdate
 from a13n_service.resources.memories.store import file_format
 from a13n_service.resources.memories.tables import MemoryFileStoreRow, MemoryKind, MemoryRow, MemorySpaceRow
@@ -36,10 +37,8 @@ from a13n_service.tenancy.authorize import ExecutionAuthority, Principal, Verb, 
 PURGE: OutboxKind = "memory_purge"
 
 
-def inherited_guide(settings: MemorySettings, kind: MemoryKind) -> str:
+def inherited_record_guide(settings: MemorySettings) -> str:
     """The guide of a memory without its own: the deployment's default for its kind, else the Harness's."""
-    if kind == "file":
-        return DEFAULT_FILE_GUIDE if settings.default_guide.file is None else settings.default_guide.file
     return DEFAULT_RECORD_GUIDE if settings.default_guide.record is None else settings.default_guide.record
 
 
@@ -66,7 +65,8 @@ def memory_view(row: MemoryRow, store: MemoryFileStoreRow | None, settings: Memo
         provider_id=row.provider_id,
         namespace=row.namespace,
         guide=row.guide,
-        inherited_guide=inherited_guide(settings, row.kind),
+        inherited_guide=inherited_record_guide(settings) if row.kind == "record" else None,
+        guidance=FileMemoryGuidance.model_validate(row.guidance) if row.kind == "file" else None,
         always_load=row.always_load,
         labels=row.labels,
         file_count=None if store is None else store.file_count,
@@ -177,6 +177,10 @@ async def insert_memory(
     """Create a memory and its store inside the caller's authorized transaction."""
     memory_id = new_object_id("mem")
     kind, provider_id, namespace = await _backend(session, actor, scope, memory_id, body)
+    if kind == "file" and "guide" in body.model_fields_set:
+        raise invalid("guide", "file memories use guidance")
+    if kind == "record" and body.guidance is not None:
+        raise invalid("guidance", "only file memories use guidance")
     row = MemoryRow(
         id=memory_id,
         organization_id=scope.organization_id,
@@ -187,7 +191,10 @@ async def insert_memory(
         type=body.type,
         provider_id=provider_id,
         namespace=namespace,
-        guide=_guide(body.guide, settings),
+        guide=_guide(body.guide, settings) if kind == "record" else None,
+        guidance=validate_guidance(body.guidance or FileMemoryGuidance(), max_bytes=settings.guide_bytes)
+        if kind == "file"
+        else None,
         always_load=_always_load(kind, body.always_load, settings),
         labels=body.labels,
         created_by_id=actor.id,
@@ -269,7 +276,13 @@ async def update_memory(
         if "description" in body.model_fields_set:
             values["description"] = body.description
         if "guide" in body.model_fields_set:
+            require_kind(row, "record")
             values["guide"] = _guide(body.guide, settings)
+        if "guidance" in body.model_fields_set:
+            require_kind(row, "file")
+            if body.guidance is None:
+                raise invalid("guidance", "use a guidance object")
+            values["guidance"] = validate_guidance(body.guidance, max_bytes=settings.guide_bytes)
         if body.always_load is not None:
             values["always_load"] = _always_load(row.kind, body.always_load, settings)
         if record_update(session, actor, row, assign(row, values)):

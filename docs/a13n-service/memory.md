@@ -25,6 +25,8 @@ A **Memory Space** keeps shared knowledge and session notes in one versioned fil
 
 Ordinary runs can access `global/` and their own `sessions/{session_id}/` folder. Put shared knowledge in `global/`; put conversation-specific notes in the session folder. Context includes `global/MEMORY.md` by default and the session's `MEMORY.md` when present. Workspace permissions govern Console and API management of all Space files.
 
+Choose **General** for reusable topic knowledge or **General with daily records** to also retain important events by date. Add business priorities in **Custom guide**. **Advanced settings** contains the time zone and editable **System guide**. Both ordinary agents and the organizer use these rules. Changes apply to new Runs and do not reorganize existing files automatically. Space creation and updates accept the same `guidance` object as [standalone file memories](standalone-memory.md#create-a-file-memory).
+
 ### Select Spaces
 
 Create a Space with `POST /memory-spaces` (`write`):

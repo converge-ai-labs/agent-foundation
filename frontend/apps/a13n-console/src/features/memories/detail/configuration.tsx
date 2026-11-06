@@ -21,7 +21,7 @@ import {
 } from "../api";
 import {
   AlwaysLoadField,
-  GuideField,
+  RecordGuideField,
   kindLabel,
   useMemoryTypeName,
 } from "../fields";
@@ -33,6 +33,9 @@ import {
   sameDraft,
   type MemoryDraft,
 } from "../form";
+
+import { FileGuidanceField } from "../guidance-field";
+import { validGuidance } from "../guidance";
 
 type Resource = { value: Schema["Memory"]; etag?: string };
 
@@ -135,14 +138,21 @@ export function MemoryConfiguration({ resource }: { resource: Resource }) {
             "Tell agents how to use this memory. Changes apply to future runs.",
           )}
         >
-          <GuideField
-            kind={memory.kind}
-            hideLabel
-            readOnly={readOnly}
-            value={draft.guide}
-            onChange={(guide) => change({ guide })}
-            inherited={memory.inherited_guide}
-          />
+          {file ? (
+            <FileGuidanceField
+              value={draft.guidance}
+              onChange={(guidance) => change({ guidance })}
+              readOnly={readOnly}
+            />
+          ) : (
+            <RecordGuideField
+              hideLabel
+              readOnly={readOnly}
+              value={draft.guide}
+              onChange={(guide) => change({ guide })}
+              inherited={memory.inherited_guide ?? undefined}
+            />
+          )}
         </FormSection>
         {file && (
           <FormSection
@@ -236,7 +246,11 @@ export function MemoryConfiguration({ resource }: { resource: Resource }) {
           }}
           saveLabel={t("Save changes")}
           pending={save.isPending}
-          disabled={!draft.name.trim() || isStale(save.error)}
+          disabled={
+            !draft.name.trim() ||
+            (file && !validGuidance(draft.guidance)) ||
+            isStale(save.error)
+          }
         />
       )}
     </form>

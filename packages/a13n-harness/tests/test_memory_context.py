@@ -385,9 +385,8 @@ def test_file_context_budget_includes_omissions_indexes_and_wrappers(budget: int
         assert f'kind="{kind}"' in opening
         assert block.count("<memory-context") == block.count("</memory-context>") == 1
         assert "Read omitted or truncated files with memory_file_view" in block
-        assert "Clean up redundant or outdated content" in block
-        assert "preserving important facts" in block
-        assert "read-only memories, ask the owner" in block
+        assert "Follow the memory guide for maintenance" in block
+        assert "omitted context does not mean stored content should be deleted" in block
         assert body.get("index") or body.get("changed") or "memory_file_view" in body["more"]
         for item in body["files"]:
             if "content" in item:
@@ -448,7 +447,7 @@ async def test_truncated_context_advances_all_cursors_and_does_not_repeat_on_the
 
 @pytest.mark.parametrize("since", [None, "1"])
 @pytest.mark.parametrize(("mount_count", "budget"), [(1, 1), (1, 256), (32, 1024), (128, 32768)])
-async def test_small_budgets_deliver_one_cleanup_hint_and_advance_without_interrupting(
+async def test_small_budgets_deliver_one_maintenance_hint_and_advance_without_interrupting(
     since: str | None, mount_count: int, budget: int
 ) -> None:
     mounts = []
@@ -474,9 +473,8 @@ async def test_small_budgets_deliver_one_cleanup_hint_and_advance_without_interr
     fallback_bytes = len(_FILE_CONTEXT_FALLBACK.encode())
     assert fallback_bytes <= max(budget, 512)  # The fixed hint never scales with mount or path count.
     assert "memory_file_view" in _FILE_CONTEXT_FALLBACK
-    assert "Clean up redundant or outdated content" in _FILE_CONTEXT_FALLBACK
-    assert "preserving important facts" in _FILE_CONTEXT_FALLBACK
-    assert "read-only memories, ask the owner" in _FILE_CONTEXT_FALLBACK
+    assert "Follow the memory guide for maintenance" in _FILE_CONTEXT_FALLBACK
+    assert "omitted context does not mean stored content should be deleted" in _FILE_CONTEXT_FALLBACK
     assert cursors.snapshot() == dict.fromkeys((mount.name for mount in mounts), "2")
     assert payloads == [
         {

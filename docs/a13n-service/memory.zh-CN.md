@@ -25,6 +25,8 @@ description: 保存知识，在另一段对话中复用，并检查 agent 做过
 
 普通运行可访问 `global/` 和自己的 `sessions/{session_id}/` 文件夹。共享知识放入 `global/`，对话专属笔记放入会话文件夹。上下文默认包含 `global/MEMORY.md`，以及会话的 `MEMORY.md`（如果存在）。通过 Console 和 API 管理空间中的所有文件时，使用工作空间权限。
 
+选择**通用**以维护可复用的主题知识，或选择**通用＋每日记录**，同时按日期保留重要事件。在**自定义指南（Custom guide）**中填写业务关注点。**高级设置**包含时区和可编辑的**系统规则（System guide）**。普通 Agent 和整理器使用同一套规则。修改只影响新 Run，不会自动重组已有文件。创建和更新空间时，可使用与[独立文件型记忆](standalone-memory.md#create-a-file-memory)相同的 `guidance` 对象。
+
 ### 选择空间
 
 使用 `POST /memory-spaces` 创建空间，需要 `write`：

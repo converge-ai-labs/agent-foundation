@@ -22,15 +22,17 @@ description: 创建文件型或记录型记忆，挂载到线程并检查保存�
 curl -X POST "$A13N_URL/api/v1/memories" \
   -H "Authorization: Bearer $A13N_API_KEY" -H "Content-Type: application/json" \
   -d '{"name": "Team conventions", "type": "postgres",
-       "guide": "Keep one file per topic. Record decisions with their reason.",
+       "guidance": {"system_preset": "general", "custom": "Record decisions with their reason.", "timezone": "UTC"},
        "always_load": ["README.md"]}'
 ```
 
 保存返回的 `id`（`mem_...`），然后[挂载到线程](standalone-memory.md#mount-a-memory-on-a-thread)。`postgres` 是默认类型；记忆使用 ID，而非 key。
 
-`guide` 告诉 agent 保存什么、如何组织。省略或设为 `null` 时继承部署为该记忆类别设置的指南；`""` 表示不提供指南。`inherited_guide` 展示继承的文本。`always_load` 最多选择 64 个路径，在线程首次看到记忆时，优先在上下文预算内加载。这些路径可以稍后创建。只有拥有 `write` 的主体能修改选择。
+`guidance.system_preset` 选择 `general`（通用）或 `journal`（通用＋每日记录）。两者均维护主题知识，后者还按日期记录重要事件。`custom` 补充业务说明。`system_override: null` 使用预设规则，填写文本则替换系统规则。`timezone` 使用 IANA 时区名称，默认 UTC。通过 `GET /memories/guidance-presets` 获取预设及完整规则。Console 可以直接选择预设，自定义指南（Custom guide）直接显示，系统规则（System guide）和时区在高级设置中。更改配置不会移动或删除已有文件。
 
-`PATCH /memories/{id}` 使用记忆的 `If-Match` 修改名称、描述、标签、指南和始终加载的路径。修改应用于后续尝试，包括已有运行的后续尝试。`GET /memories` 按 `label`、`kind` 和 `type` 筛选；文件型记忆提供文件数、内容量和历史量统计。
+`always_load` 最多选择 64 个路径，在上下文预算内优先加载。路径可以稍后创建，只有拥有 `write` 的主体能修改选择。
+
+`PATCH /memories/{id}` 使用记忆的 `If-Match` 修改名称、描述、标签、指导配置和始终加载的路径。文件指导在 Run 接受时冻结，修改只影响新 Run；始终加载路径的修改应用于后续尝试。`GET /memories` 按 `label`、`kind` 和 `type` 筛选；文件型记忆提供文件数、内容量和历史量统计。
 
 `DELETE /memories/{id}` 需要 `write` 和 `If-Match`，会删除文件、历史和线程挂载。正在使用该记忆的 agent 在下一次记忆工具调用时收到 `memory_deleted`。
 
@@ -122,7 +124,7 @@ curl -X POST "$A13N_URL/api/v1/threads/$THREAD/memories" \
 
 `memory` [工具集](tools.md#built-in-toolsets)默认启用。已挂载文件型记忆使用 Harness [文件工具](../a13n-harness/memory.md#what-the-model-gets)。记录型记忆使用 `memory_record_search`、`memory_record_list`、`memory_record_add`、`memory_record_update` 和 `memory_record_delete`。Tool key 使用 `file_*` 或 `record_*`；permission ID 使用 `memory.file.*` 或 `memory.record.*`。禁用一个工具会从所有挂载中移除它；禁用工具集后，自动上下文和召回仍然可用。
 
-文件型记忆首次提供始终加载的文件和文件索引。后续运行接收变化的文件，包括其他线程和人的编辑。压缩历史后，线程再次获得完整上下文。上下文受 `memory.context_bytes`（默认 32 KiB）和 `memory.always_load_bytes` 限制。被截断或省略的文件需要显式调用 `memory_file_view`。连最小块也放不下时，运行会收到读取与清理提示。这些有界结果仍推进上下文游标，因此未变化的省略内容不会自动重发。
+文件型记忆首次提供始终加载的文件和文件索引。后续运行接收变化的文件，包括其他线程和人的编辑。压缩历史后，线程再次获得完整上下文。上下文受 `memory.context_bytes`（默认 32 KiB）和 `memory.always_load_bytes` 限制。被截断或省略的文件需要显式调用 `memory_file_view`。连最小块也放不下时，运行会收到读取缺失内容并遵循记忆指导的提示。这些有界结果仍推进上下文游标，因此未变化的省略内容不会自动重发。
 
 每次工具调用检查当前工作空间权限：读取与搜索需要 `read`，修改需要 `run`。拒绝调用返回 `forbidden`；provider 已禁用时，记录工具返回 `unavailable`。失败的文件调用保持存储不变。Worker 在写入后、保存检查点前停止时，恢复的尝试可能报告结果未知。重复写入前先读取文件或搜索记录。
 

@@ -184,9 +184,10 @@ it("creates a memory identified by its ID", async () => {
     "Team Handbook",
   );
   expect(within(dialog).queryByRole("textbox", { name: "Key" })).toBeNull();
-  await user.click(within(dialog).getByRole("button", { name: "Custom" }));
   await user.type(
-    within(dialog).getByRole("textbox", { name: "Memory instructions" }),
+    within(dialog).getByRole("textbox", {
+      name: "Custom guide (optional)",
+    }),
     "One topic per file.",
   );
   await user.type(
@@ -201,7 +202,12 @@ it("creates a memory identified by its ID", async () => {
     type: "postgres",
     name: "Team Handbook",
     description: null,
-    guide: "One topic per file.",
+    guidance: {
+      system_preset: "general",
+      system_override: null,
+      custom: "One topic per file.",
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    },
     always_load: ["README.md"],
   });
 });

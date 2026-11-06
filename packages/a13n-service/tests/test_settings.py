@@ -47,7 +47,7 @@ def test_environment_variables_carry_lists_maps_and_sections_as_json(
         "A13N_ENCRYPTION__ACTIVE_KEY_ID": "k",
         "A13N_ENCRYPTION__KEYS": f'{{"k": "{key}"}}',
         "A13N_AUTH__MAIL": '{"smtp_host": "127.0.0.1", "sender": "a13n@example.com"}',
-        "A13N_MEMORY__DEFAULT_GUIDE": '{"file": "Keep one topic per file."}',
+        "A13N_MEMORY__DEFAULT_GUIDE": '{"record": "Keep one fact per record."}',
     }.items():
         monkeypatch.setenv(name, value)
     loaded = load_settings()
@@ -56,7 +56,7 @@ def test_environment_variables_carry_lists_maps_and_sections_as_json(
     assert [server.key for server in loaded.providers.mcp_servers] == ["docs"]
     assert loaded.encryption.keys["k"].get_secret_value() == key
     assert loaded.auth.mail.smtp_host == "127.0.0.1"
-    assert loaded.memory.default_guide.file == "Keep one topic per file."
+    assert loaded.memory.default_guide.record == "Keep one fact per record."
 
 
 def test_a_distribution_section_cannot_shadow_a_core_section() -> None:
@@ -78,8 +78,8 @@ def test_a_distribution_section_cannot_shadow_a_core_section() -> None:
         ({"memory": {"always_load_bytes": 40000}}, "memory.always_load_bytes"),
         ({"memory": {"max_file_bytes": 2048, "frontmatter_bytes": 2048}}, "memory.frontmatter_bytes"),
         ({"memory": {"max_file_bytes": 1048576, "max_total_bytes": 65536}}, "memory.max_file_bytes"),
-        ({"memory": {"default_guide": {"file": "x" * 4097}}}, "memory.default_guide.file"),
-        ({"memory": {"default_guide": {"record": "x" * 4097}}}, "memory.default_guide.record"),
+        ({"memory": {"default_guide": {"file": "old"}}}, "file"),
+        ({"memory": {"default_guide": {"record": "x" * 16385}}}, "memory.default_guide.record"),
         ({"memory": {"record_chars": 8001}}, "record_chars"),
         ({"providers": {"operation_seconds": 30}}, "providers.operation_seconds"),
         ({"memory": {"mounts_per_thread": 33}}, "mounts_per_thread"),

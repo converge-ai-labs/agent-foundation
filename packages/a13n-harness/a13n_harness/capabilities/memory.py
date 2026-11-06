@@ -81,8 +81,8 @@ _RECALL_LEAD = (
 # The longest input text a recall searches with.
 _RECALL_QUERY_CHARS = 2000
 _FILE_VIEW_HINT = (
-    "Read omitted or truncated files with memory_file_view. Clean up redundant or outdated content while "
-    "preserving important facts; for read-only memories, ask the owner."
+    "Read omitted or truncated files with memory_file_view. Follow the memory guide for maintenance; "
+    "omitted context does not mean stored content should be deleted."
 )
 _FILE_CONTEXT_FALLBACK = "File memory context was omitted to fit its budget. " + _FILE_VIEW_HINT
 _LEADS = {
