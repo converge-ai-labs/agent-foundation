@@ -41,9 +41,39 @@ async def test_workbench_deep_links_and_api_not_found_remain_distinct(tmp_path: 
             assert response.status_code == 200, (path, response.text)
             assert "Workbench test" in response.text
             assert response.headers["cache-control"] == "no-cache"
-            assert "script-src 'self'" in response.headers["content-security-policy"]
-            assert "img-src 'self' data: blob:;" in response.headers["content-security-policy"]
-            assert "media-src 'self' blob:;" in response.headers["content-security-policy"]
+            directives = {
+                parts[0]: set(parts[1:])
+                for directive in response.headers["content-security-policy"].split(";")
+                if (parts := directive.split())
+            }
+            assert directives == {
+                "default-src": {"'self'"},
+                "connect-src": {"'self'"},
+                "img-src": {
+                    "'self'",
+                    "data:",
+                    "blob:",
+                    "https://cdn.jsdelivr.net",
+                    "https://svgl.app",
+                    "https://cdn.simpleicons.org",
+                    "https://deepwiki.com",
+                    "https://composio.dev",
+                    "https://parallel.ai",
+                    "https://serpapi.com",
+                    "https://www.tinyfish.ai",
+                    "https://e2b.dev",
+                    "https://modal.com",
+                    "https://framerusercontent.com",
+                    "https://docs.runloop.ai",
+                    "https://fly.io",
+                },
+                "media-src": {"'self'", "blob:"},
+                "style-src": {"'self'", "'unsafe-inline'"},
+                "script-src": {"'self'"},
+                "frame-ancestors": {"'none'"},
+                "base-uri": {"'none'"},
+                "frame-src": {"'none'"},
+            }
         for path in (
             "/new/draft-demo",
             "/unknown",
