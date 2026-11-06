@@ -153,7 +153,12 @@ def test_tool_streams_are_correlated_bounded_and_do_not_override_root_cancellati
     assert "child-b" in result
     for index in range(256):
         renderer.ingest("TOOL_CALL_START", {"toolCallId": str(index), "toolCallName": "edit"})
+    assert all(("root", str(index)) in renderer._tools for index in range(256))
+    assert len(renderer._tools) <= 128 + len(renderer.transcript.blocks)
+    for index in range(256):
+        renderer.ingest("TOOL_CALL_RESULT", {"toolCallId": str(index), "content": "done"})
     assert len(renderer._tools) == 128
+    assert all("running" not in block.source for block in renderer.transcript.blocks.values())
     renderer.ingest("TEXT_MESSAGE_CONTENT", {"delta": "answer"})
     assert status.state == "responding"
     status.state = "cancelling"
