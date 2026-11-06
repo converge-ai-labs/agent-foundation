@@ -81,6 +81,7 @@ TEST_INPUTS: dict[str, tuple[str, ...]] = {
         ".github/workflows/images.yml",
         ".github/workflows/release-*.yml",
         ".github/workflows/ci-containers.yml",
+        ".github/workflows/sandbox-binary.yml",
         "deploy/docker/images/*",
         "Makefile",
         "scripts/sandbox_smoke.py",

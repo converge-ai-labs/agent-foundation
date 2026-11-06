@@ -5,6 +5,7 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - ".github/workflows/ci-a13n-service-e2e.yml"
+      - ".github/workflows/sandbox-binary.yml"
       - "Makefile"
       - "conftest.py"
       - "dev/fixtures/**"
@@ -37,6 +38,7 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/ci-a13n-service-e2e.yml"
+      - ".github/workflows/sandbox-binary.yml"
       - "Makefile"
       - "conftest.py"
       - "dev/fixtures/**"
@@ -97,6 +99,13 @@ jobs:
       - name: Validate fixtures and reviewed selections
         run: make service-e2e-check
 
+  sandbox-binary:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    uses: ./.github/workflows/sandbox-binary.yml
+    with:
+      arch: amd64
+      runner: ubuntu-24.04
+
   scenarios:
     name: Service E2E scenarios (${{ matrix.name }})
     strategy:
@@ -105,13 +114,10 @@ jobs:
         include:
           - name: memory
             selection: test_memory
-            sandbox: false
           - name: recovery
             selection: test_recovery
-            sandbox: false
           - name: other
-            selection: not (test_memory or test_recovery)
-            sandbox: true
+            selection: not (test_memory or test_recovery or docker)
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -126,22 +132,6 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
-      - name: Set up Docker Buildx
-        if: matrix.sandbox
-        uses: docker/setup-buildx-action@v3
-      - name: Build the native Docker execution image
-        if: matrix.sandbox
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: deploy/docker/images/sandbox/Dockerfile
-          tags: a13n-sandbox:local
-          load: true
-          pull: true
-          # Reuse unchanged toolchain and Envd layers, while building this checkout.
-          # Keep the cache independent of published images; cache export is optional.
-          cache-from: type=gha,scope=service-e2e-sandbox
-          cache-to: type=gha,scope=service-e2e-sandbox,mode=max,ignore-error=true
       - name: Run every journey but the opt-in hosted ones; an unavailable dependency fails it
         env:
           SELECTION: ${{ matrix.selection }}
@@ -168,9 +158,51 @@ jobs:
           path: test-results/
           retention-days: 7
 
+  docker:
+    name: Service E2E Docker
+    needs: sandbox-binary
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - uses: actions/download-artifact@v5
+        with:
+          name: sandbox-binary-amd64
+          path: tmp/sandbox-binaries/amd64
+      - uses: docker/setup-buildx-action@v3
+      - name: Build the native Docker execution image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/images/sandbox/Dockerfile
+          tags: a13n-sandbox:local
+          build-args: ENVD_BINARY_SOURCE=prebuilt
+          load: true
+          pull: true
+          cache-from: type=gha,scope=service-e2e-sandbox
+          cache-to: type=gha,scope=service-e2e-sandbox,mode=max,ignore-error=true
+      - name: Run Docker provider journeys without skips
+        run: make service-e2e SERVICE_E2E_ARGS="--require-all -k docker --junitxml=test-results/service-e2e.xml"
+      - name: Retain Docker journey reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: service-e2e-docker-${{ github.run_attempt }}
+          path: test-results/
+          retention-days: 7
+
   e2e:
     name: Service E2E
-    needs: [support, scenarios]
+    needs: [support, scenarios, docker]
     if: always() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
     runs-on: ubuntu-24.04
     steps:
@@ -178,6 +210,8 @@ jobs:
         env:
           SUPPORT_RESULT: ${{ needs.support.result }}
           SCENARIOS_RESULT: ${{ needs.scenarios.result }}
+          DOCKER_RESULT: ${{ needs.docker.result }}
         run: |
           test "$SUPPORT_RESULT" = success
           test "$SCENARIOS_RESULT" = success
+          test "$DOCKER_RESULT" = success

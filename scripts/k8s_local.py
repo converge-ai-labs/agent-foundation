@@ -196,9 +196,15 @@ def prepare_image(component: str, destination: str) -> str:
                 "--cache-from",
                 f"type=gha,version=2,scope={scope}",
             )
+        binary_args = (
+            ("--build-arg", "ENVD_BINARY_SOURCE=prebuilt")
+            if component == "sandbox" and os.environ.get("K8S_SANDBOX_BINARY_SOURCE") == "prebuilt"
+            else ()
+        )
         run(
             "docker",
             *build,
+            *binary_args,
             "--progress=plain",
             "-f",
             f"deploy/docker/images/{component}/Dockerfile",

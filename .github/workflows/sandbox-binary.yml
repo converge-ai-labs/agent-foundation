@@ -1,0 +1,62 @@
+name: Sandbox binary
+
+on:
+  workflow_call:
+    inputs:
+      arch:
+        required: true
+        type: string
+      runner:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  BOXLITE_DEPS_STUB: "2"
+  BOXLITE_EMBED_RUNTIME: "1"
+
+jobs:
+  build:
+    name: Build sandbox binary (${{ inputs.arch }})
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      # Exact source keys can reuse the executable across workflow runs. Cargo's
+      # separate dependency cache also accelerates revisions that change Envd.
+      - name: Restore checkout binary
+        id: binary
+        uses: actions/cache@v4
+        with:
+          path: tmp/sandbox-binaries/${{ inputs.arch }}/a13n-envd
+          key: sandbox-binary-${{ runner.os }}-${{ inputs.arch }}-${{ hashFiles('.github/workflows/sandbox-binary.yml', 'Cargo.toml', 'Cargo.lock', 'crates/a13n-envd/**') }}
+      - name: Set up Rust
+        if: steps.binary.outputs.cache-hit != 'true'
+        uses: dtolnay/rust-toolchain@1.96.0
+      - name: Cache Cargo dependencies
+        if: steps.binary.outputs.cache-hit != 'true'
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: sandbox-release-${{ inputs.arch }}
+      - name: Install SDK build dependencies
+        if: steps.binary.outputs.cache-hit != 'true'
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - name: Build checkout binary with embedded VM backends
+        if: steps.binary.outputs.cache-hit != 'true'
+        env:
+          ARCH: ${{ inputs.arch }}
+        run: |
+          cargo build --release --locked --package a13n-envd --features vm-boxlite,vm-microsandbox
+          install -D target/release/a13n-envd "tmp/sandbox-binaries/$ARCH/a13n-envd"
+      - name: Upload checkout binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: sandbox-binary-${{ inputs.arch }}
+          path: tmp/sandbox-binaries/${{ inputs.arch }}/a13n-envd
+          if-no-files-found: error
+          retention-days: 1

@@ -404,7 +404,14 @@ def test_container_ci_checks_all_variants_on_both_native_architectures(tmp_path,
     assert {image["runner"] for image in images} == {"ubuntu-24.04", "ubuntu-24.04-arm"}
     assert len(images) == 6
     assert len({image["cache_scope"] for image in images}) == 6
+    binaries = workflow["jobs"]["sandbox-binaries"]
+    assert binaries["uses"] == "./.github/workflows/sandbox-binary.yml"
+    assert {item["arch"] for item in binaries["strategy"]["matrix"]["include"]} == {"amd64", "arm64"}
+    assert workflow["jobs"]["containers"]["needs"] == ["changes", "sandbox-binaries"]
     build_steps = workflow["jobs"]["containers"]["steps"]
+    download = next(step for step in build_steps if step.get("uses", "").startswith("actions/download-artifact@"))
+    assert download["with"]["name"] == "sandbox-binary-${{ matrix.arch }}"
+    assert download["with"]["path"] == "tmp/sandbox-binaries/${{ matrix.arch }}"
     build = next(step for step in build_steps if step.get("uses", "").startswith("docker/build-push-action@"))
     assert "if" not in build
     assert build["with"]["load"] is True
@@ -417,9 +424,9 @@ def test_container_ci_checks_all_variants_on_both_native_architectures(tmp_path,
         selected = [image for image in images if image["runner"] == runner]
         assert {image["dockerfile"] for image in selected} == {"deploy/docker/images/sandbox/Dockerfile"}
         assert {(image["tag"], image["build_args"]) for image in selected} == {
-            ("a13n-sandbox:local", "SANDBOX_VARIANT=standard"),
-            ("a13n-sandbox:local-slim", "SANDBOX_VARIANT=slim"),
-            ("a13n-sandbox:local-desktop", "SANDBOX_VARIANT=desktop"),
+            ("a13n-sandbox:local", "SANDBOX_VARIANT=standard\nENVD_BINARY_SOURCE=prebuilt"),
+            ("a13n-sandbox:local-slim", "SANDBOX_VARIANT=slim\nENVD_BINARY_SOURCE=prebuilt"),
+            ("a13n-sandbox:local-desktop", "SANDBOX_VARIANT=desktop\nENVD_BINARY_SOURCE=prebuilt"),
         }
         assert {image["check_target"] for image in selected} == {
             "image-check-sandbox",
@@ -481,3 +488,33 @@ def test_sandbox_source_and_development_builds_include_embedded_vm_backends():
     assert "--features vm-boxlite,vm-microsandbox" in dockerfile
     assert "ENV BOXLITE_DEPS_STUB=2 BOXLITE_EMBED_RUNTIME=1" in dockerfile
     assert "protobuf-compiler" in dockerfile
+
+
+def test_shared_sandbox_binary_is_source_keyed_and_required_by_ci_consumers():
+    path = ".github/workflows/sandbox-binary.yml"
+    workflow = yaml.safe_load((ROOT / path).read_text())
+    steps = workflow["jobs"]["build"]["steps"]
+    cache = next(step for step in steps if step.get("id") == "binary")
+    assert "restore-keys" not in cache["with"]
+    for source in (path, "Cargo.toml", "Cargo.lock", "crates/a13n-envd/**"):
+        assert source in cache["with"]["key"]
+    build = next(step for step in steps if "cargo build" in step.get("run", ""))
+    assert "--release --locked" in build["run"]
+    assert "--features vm-boxlite,vm-microsandbox" in build["run"]
+    assert workflow["env"]["BOXLITE_DEPS_STUB"] == "2"
+    assert workflow["env"]["BOXLITE_EMBED_RUNTIME"] == "1"
+    assert build["if"] == "steps.binary.outputs.cache-hit != 'true'"
+    upload = next(step for step in steps if step.get("uses", "").startswith("actions/upload-artifact@"))
+    assert "if" not in upload and upload["with"]["if-no-files-found"] == "error"
+    assert upload["with"]["name"] == "sandbox-binary-${{ inputs.arch }}"
+    for name in ("ci-deploy.yml", "ci-a13n-service-e2e.yml", "ci-containers.yml"):
+        consumer = yaml.safe_load((ROOT / ".github/workflows" / name).read_text())
+        assert path in consumer[True]["pull_request"]["paths"]
+        assert any(job.get("uses") == "./" + path for job in consumer["jobs"].values())
+    deployment = yaml.safe_load((ROOT / ".github/workflows/ci-deploy.yml").read_text())
+    for name in ("helm", "journeys"):
+        job = deployment["jobs"][name]
+        assert job["needs"] == "sandbox-binary"
+        download = next(step for step in job["steps"] if step.get("uses", "").startswith("actions/download-artifact@"))
+        assert download["with"]["path"] == "tmp/sandbox-binaries/amd64"
+    assert deployment["jobs"]["helm"]["env"]["K8S_SANDBOX_BINARY_SOURCE"] == "prebuilt"

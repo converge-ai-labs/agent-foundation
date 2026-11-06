@@ -14,8 +14,9 @@ import pytest
 from dev.fixtures.process import fixture_process
 
 from .api import eventually, expect
-from .scripted import tool_results
+from .scripted import tool_results, user_texts
 from .stack import LEASE_SECONDS, read_rows
+from .test_recovery import attempt_rows, tool_committed
 
 pytestmark = pytest.mark.anyio
 
@@ -189,29 +190,56 @@ async def test_a_recovered_attempt_continues_from_the_committed_memory_cursors(s
     # The worker dies while this request is outstanding; its answer never comes.
     await model.say("Lost with the worker.", to="[crash]", hold="never")
     doomed, successor = stack.workers
-    receipt = await api.start(agent, "[crash] Log the first entry", memories=mounts)
+    receipt = await api.start(
+        agent,
+        "[crash] Log the first entry",
+        memories=mounts,
+        options={"execution": {"environment": {"MODE": "accepted"}}},
+    )
     run_id = receipt["run"]["id"]
     await model.arrived("[crash]", status="held")
     await stack.start_worker(successor)
 
-    async def committed() -> bool:
-        items = (await api.items(run_id))["items"]
-        return any(item["kind"] == "tool_call" and item["state"] == "completed" for item in items)
-
-    await eventually(committed)
+    await tool_committed(api, run_id)
     assert cursors(stack, run_id) == {memory["id"]: "1"}
+    thread_path = f"/api/v1/threads/{receipt['thread']['id']}"
+    thread = await api.client.get(thread_path)
+    expect(
+        await api.client.patch(
+            thread_path,
+            json={"execution": {"environment": {"MODE": "later"}}},
+            headers={"if-match": thread.headers["etag"]},
+        ),
+        200,
+    )
 
     doomed.signal(signal.SIGKILL)
     doomed.wait(5)
     await model.say("Recovered after the crash.", to="[crash]")
     run = await api.sealed(run_id, timeout=LEASE_SECONDS * 5)
     assert (run["status"], run["output"], run["attempts"]) == ("completed", "Recovered after the crash.", 2)
+    assert run["environment_mounts"] == []
+    assert run["options"]["execution"]["environment"] == {"MODE": "accepted"}
+    attempts = await api.attempts(run_id)
+    assert [(item["status"], item["start_reason"]) for item in attempts] == [
+        ("failed", "initial"),
+        ("succeeded", "recovery"),
+    ]
+    first, second = attempt_rows(stack, run_id)
+    assert first["worker_id"] != second["worker_id"]
+    assert second["created_at"] >= first["lease_expires_at"], "the replacement claimed a live lease"
+    entries = await api.inbox(receipt["thread"]["id"])
+    assert [(entry["status"], entry["assigned_run_id"]) for entry in entries] == [("consumed", run_id)]
     requests = await model.requests("[crash]")
     assert [request["status"] for request in requests] == ["answered", "abandoned", "answered"]
     lost, retried = requests[1], requests[2]
     # The replacement restored the history holding the context with its cursor: nothing is delivered or written twice.
     assert contexts(retried) == contexts(lost) and [kind for _, kind, _ in contexts(retried)] == ["full"]
-    assert len(tool_results(retried)) == 1
+    assert user_texts(retried) == user_texts(lost)
+    assert [text for text in user_texts(retried) if not text.startswith("<memory-context ")] == [
+        "[crash] Log the first entry"
+    ]
+    assert len(tool_results(retried)) == 1 and tool_results(retried) == tool_results(lost)
     assert await history(api, memory, "log.md") == [("create", run_id, "call_log")]
     assert cursors(stack, run_id) == {memory["id"]: "1"}
 

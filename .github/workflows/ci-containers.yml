@@ -6,6 +6,7 @@ on:
     paths:
       - ".dockerignore"
       - ".github/workflows/ci-containers.yml"
+      - ".github/workflows/sandbox-binary.yml"
       - ".github/workflows/browser-image.yml"
       - "Cargo.lock"
       - "Cargo.toml"
@@ -113,6 +114,7 @@ jobs:
               - 'uv.lock'
               - 'LICENSE'
             sandbox:
+              - '.github/workflows/sandbox-binary.yml'
               - '.dockerignore'
               - 'Makefile'
               - '.github/workflows/ci-containers.yml'
@@ -166,7 +168,8 @@ jobs:
                           "runner": runner,
                           "dockerfile": "deploy/docker/images/sandbox/Dockerfile",
                           "tag": f"a13n-sandbox:local{suffix}",
-                          "build_args": f"SANDBOX_VARIANT={variant}",
+                          "arch": arch,
+                          "build_args": f"SANDBOX_VARIANT={variant}\nENVD_BINARY_SOURCE=prebuilt",
                           "cache_scope": f"ci-sandbox-{variant}-{arch}",
                           "check_target": f"image-check-sandbox{suffix}",
                       })
@@ -174,10 +177,26 @@ jobs:
               output.write(f"images={json.dumps(images, separators=(',', ':'))}\n")
           PY
 
+  sandbox-binaries:
+    needs: changes
+    if: contains(needs.changes.outputs.images, 'a13n-sandbox-')
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    uses: ./.github/workflows/sandbox-binary.yml
+    with:
+      arch: ${{ matrix.arch }}
+      runner: ${{ matrix.runner }}
+
   containers:
     name: Container image (${{ matrix.name }})
-    needs: changes
-    if: needs.changes.outputs.images != '[]'
+    needs: [changes, sandbox-binaries]
+    if: ${{ !cancelled() && needs.changes.result == 'success' && needs.changes.outputs.images != '[]' }}
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -190,6 +209,19 @@ jobs:
         uses: actions/checkout@v6
         with:
           persist-credentials: false
+
+      - name: Require the selected sandbox binary
+        if: startsWith(matrix.name, 'a13n-sandbox-')
+        env:
+          BINARY_RESULT: ${{ needs.sandbox-binaries.result }}
+        run: test "$BINARY_RESULT" = success
+
+      - name: Download the shared checkout binary
+        if: startsWith(matrix.name, 'a13n-sandbox-')
+        uses: actions/download-artifact@v5
+        with:
+          name: sandbox-binary-${{ matrix.arch }}
+          path: tmp/sandbox-binaries/${{ matrix.arch }}
 
       - name: Set up Python for Browser integration checks
         if: startsWith(matrix.name, 'a13n-browser-')

@@ -34,59 +34,6 @@ async def tool_committed(api, run_id: str) -> None:  # type: ignore[no-untyped-d
     await eventually(check)
 
 
-@pytest.mark.isolated_service(start_workers=1)
-async def test_a_killed_worker_is_replaced_after_its_lease_expires(stack) -> None:  # type: ignore[no-untyped-def]
-    api, model = stack.api, stack.model
-    agent = await api.create_agent("Helper", await api.create_model(model.base_url), **LOOKUP)
-    await model.call("view", {"file_path": GUIDE}, call_id="call_view", to="[crash]")
-    # The worker dies while this request is outstanding; its answer never comes.
-    await model.say("Lost with the worker.", to="[crash]", hold="never")
-    doomed, successor = stack.workers
-    receipt = await api.start(
-        agent, "[crash] Read the platform guide", options={"execution": {"environment": {"MODE": "accepted"}}}
-    )
-    run_id = receipt["run"]["id"]
-    await model.arrived("[crash]", status="held")
-    await stack.start_worker(successor)
-    await tool_committed(api, run_id)
-
-    thread_path = f"/api/v1/threads/{receipt['thread']['id']}"
-    thread = await api.client.get(thread_path)
-    expect(
-        await api.client.patch(
-            thread_path,
-            json={"execution": {"environment": {"MODE": "later"}}},
-            headers={"if-match": thread.headers["etag"]},
-        ),
-        200,
-    )
-    doomed.signal(signal.SIGKILL)
-    doomed.wait(5)
-    await model.say("Recovered after the crash.", to="[crash]")
-    run = await api.sealed(run_id, timeout=LEASE_SECONDS * 5)
-    assert (run["status"], run["output"], run["attempts"]) == ("completed", "Recovered after the crash.", 2)
-    assert run["environment_mounts"] == []
-    assert run["options"]["execution"]["environment"] == {"MODE": "accepted"}
-    attempts = await api.attempts(run_id)
-    assert [(item["status"], item["start_reason"]) for item in attempts] == [
-        ("failed", "initial"),
-        ("succeeded", "recovery"),
-    ]
-    first, second = attempt_rows(stack, run_id)
-    assert first["worker_id"] != second["worker_id"]
-    assert second["created_at"] >= first["lease_expires_at"], "the replacement claimed a live lease"
-
-    # The replacement continued from the committed checkpoint: the tool ran once and nothing was asked twice.
-    requests = await model.requests("[crash]")
-    assert [request["status"] for request in requests] == ["answered", "abandoned", "answered"]
-    lost, retried = requests[1], requests[2]
-    assert user_texts(retried) == user_texts(lost) == ["[crash] Read the platform guide"]
-    assert len(tool_results(retried)) == 1 and tool_results(retried) == tool_results(lost)
-    assert "# Platform operations" in tool_results(retried)[0]
-    entries = await api.inbox(receipt["thread"]["id"])
-    assert [(entry["status"], entry["assigned_run_id"]) for entry in entries] == [("consumed", run_id)]
-
-
 async def test_heartbeats_keep_one_attempt_through_a_slow_model(stack) -> None:  # type: ignore[no-untyped-def]
     api, model = stack.api, stack.model
     agent = await api.create_agent("Helper", await api.create_model(model.base_url))

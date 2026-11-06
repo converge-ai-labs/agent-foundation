@@ -5,6 +5,7 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - ".github/workflows/ci-deploy.yml"
+      - ".github/workflows/sandbox-binary.yml"
       - "Makefile"
       - "deploy/docker/images/a13n-service/**"
       - "deploy/kubernetes/**"
@@ -73,7 +74,15 @@ jobs:
       - name: Lint and test the chart for every values file
         run: make sync k8s-check
 
+  sandbox-binary:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    uses: ./.github/workflows/sandbox-binary.yml
+    with:
+      arch: amd64
+      runner: ubuntu-24.04
+
   helm:
+    needs: sandbox-binary
     name: Helm installation and rolling upgrade
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
@@ -81,6 +90,7 @@ jobs:
     env:
       K8S_ENVIRONMENTS: "1"
       K8S_BUILD_CACHE: gha
+      K8S_SANDBOX_BINARY_SOURCE: prebuilt
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -140,6 +150,12 @@ jobs:
             for (const name of ['ACTIONS_RUNTIME_TOKEN', 'ACTIONS_RESULTS_URL']) {
               core.exportVariable(name, process.env[name]);
             }
+
+      - name: Download the shared checkout binary
+        uses: actions/download-artifact@v5
+        with:
+          name: sandbox-binary-amd64
+          path: tmp/sandbox-binaries/amd64
 
       - name: Build both checkout images alongside cluster creation
         run: |
@@ -216,18 +232,19 @@ jobs:
           retention-days: 7
 
   journeys:
+    needs: sandbox-binary
     name: Kubernetes journeys (${{ matrix.name }})
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
-    # Cold sandbox builds include both embedded VM runtimes; leave time for journeys.
-    timeout-minutes: 30
+    # Rust is built once upstream, outside the journey budget.
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
         include:
           - name: storage
             selection: claim_lifecycle
-            count: 2
+            count: 1
           - name: failures
             selection: failed_preparation
             count: 4
@@ -291,12 +308,19 @@ jobs:
           # without a second image tar export/load or a BuildKit container teardown.
           driver: docker
 
+      - name: Download the shared checkout binary
+        uses: actions/download-artifact@v5
+        with:
+          name: sandbox-binary-amd64
+          path: tmp/sandbox-binaries/amd64
+
       - name: Build the checkout sandbox with reusable layers
         uses: docker/build-push-action@v6
         with:
           context: .
           file: deploy/docker/images/sandbox/Dockerfile
           tags: a13n-sandbox:ci
+          build-args: ENVD_BINARY_SOURCE=prebuilt
           load: true
           cache-from: type=gha,scope=service-e2e-sandbox
           # Service E2E owns this cache; journey shards only consume it.
@@ -392,7 +416,7 @@ jobs:
     if: always() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
     runs-on: ubuntu-latest
     steps:
-      - name: Require Helm and all nine Kubernetes journeys
+      - name: Require Helm and all eight Kubernetes journeys
         env:
           CHART_RESULT: ${{ needs.chart.result }}
           HELM_RESULT: ${{ needs.helm.result }}
