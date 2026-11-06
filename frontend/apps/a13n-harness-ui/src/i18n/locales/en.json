@@ -417,6 +417,7 @@
   "Host computer sharing is unavailable.": "Host computer sharing is unavailable.",
   "Browser is disabled in settings.": "Browser is disabled in settings.",
   "Starting…": "Starting…",
+  "Ready": "Ready",
   "Runs continue when the browser is unavailable.": "Runs continue when the browser is unavailable.",
   "Retry browser startup": "Retry browser startup",
   "Active configuration": "Active configuration",
