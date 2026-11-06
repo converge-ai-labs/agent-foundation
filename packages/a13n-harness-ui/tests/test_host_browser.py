@@ -21,6 +21,7 @@ pytestmark = pytest.mark.anyio
 def browsers(tmp_path):
     host = HostBrowsers(root=tmp_path, available=True, authorize=AsyncMock())
     runtime = host.runtime = Chromium(Mock())
+    host.runtime_ready = True
     runtime.closed = host.page_closed
     runtime.opened = host.opened
 
@@ -682,6 +683,56 @@ async def test_chromium_launch_storage_and_sandbox_policy(tmp_path, monkeypatch,
     assert host.desktop is None and host.process is None
 
 
+@pytest.mark.parametrize("action", ["reset", "start"])
+async def test_explicit_recovery_clears_runtime_error(browsers, monkeypatch, action):
+    import a13n_harness_ui.browser as module
+    from a13n_harness_ui.browser_setup import BrowserExecutable, BrowserSetup
+
+    runtime = browsers.runtime
+    desktop = browsers.desktop
+    desktop.start = AsyncMock()
+    process = Mock(returncode=None, wait=AsyncMock(side_effect=asyncio.Event().wait))
+    preparation = BrowserSetup(
+        platform="linux",
+        supported=True,
+        ready=True,
+        browser=BrowserExecutable(name="Chromium", path="/prepared/chromium", source="custom"),
+        vnc=desktop.desktop,
+    )
+    monkeypatch.setattr(module, "require_browser", AsyncMock(return_value=preparation))
+    monkeypatch.setattr(module, "VncDesktop", Mock(return_value=desktop))
+
+    async def spawn(*args, **kwargs):
+        (browsers.root / "DevToolsActivePort").write_text("1234\n/devtools/browser/recovered\n")
+        return process
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", spawn)
+    monkeypatch.setattr(Chromium, "connect", AsyncMock(return_value=runtime))
+    runtime.configure_downloads = AsyncMock()
+    runtime.attach = AsyncMock(return_value=Page("keepalive", "keepalive-session"))
+    runtime.window = AsyncMock(return_value={"windowId": 1})
+    runtime.window_bounds = AsyncMock()
+    page = Page("recovered", "recovered-session")
+    runtime.pages[page.target] = page
+    runtime.create = AsyncMock(return_value=page)
+    identity = browsers.state("thread-a").session_id
+    browsers.failed("Browser or display exited.")
+    assert browsers.state("other-thread").status == "failed"
+    try:
+        if action == "reset":
+            state = await browsers.reset("thread-a", identity)
+        else:
+            state = await browsers.start("thread-a", identity, explicit=True)
+        assert state.status == "ready"
+        assert browsers.runtime_state().status == "ready"
+        assert browsers.runtime_state().error is None
+        assert browsers.state("other-thread").status == "enabled"
+        assert browsers.state("other-thread").error is None
+    finally:
+        process.returncode = 0
+        await browsers.close_runtime()
+
+
 async def test_start_retry_closes_failed_scope_before_replacing_binding(browsers):
     runtime = browsers.runtime
     browsers.bindings["new-thread"] = Binding()
@@ -1279,3 +1330,65 @@ async def test_expiry_notifies_only_blocked_threads_after_handback(browsers, mon
         await asyncio.wait_for(notice.wait(), 1)
         assert delivered == [("thread-b", HANDBACK)]
         browsers.handback.stop()
+
+
+async def test_runtime_teardown_revokes_admission_before_waiting(browsers):
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    async def settle():
+        entered.set()
+        await release.wait()
+
+    browsers.settle_viewers = settle
+    task = asyncio.create_task(browsers.close_runtime())
+    try:
+        await entered.wait()
+        assert browsers.runtime is not None
+        assert not browsers.runtime_ready
+        assert await browsers.admit("new-thread") is None
+        assert "new-thread" not in browsers.bindings
+    finally:
+        release.set()
+        await task
+
+
+@pytest.mark.parametrize("status,command", [("ready", "stop"), ("failed", "stop"), ("failed", "start")])
+async def test_admission_skips_binding_until_lifecycle_cleanup_finishes(browsers, status, command):
+    item = browsers.bindings["thread-a"]
+    item.status = status
+    entered, release = asyncio.Event(), asyncio.Event()
+    close = item.scope.close
+
+    async def delayed_close():
+        entered.set()
+        await release.wait()
+        await close()
+
+    item.scope.close = delayed_close
+    browsers.launch = AsyncMock()
+    page = Page("replacement", "replacement-session")
+    browsers.runtime.pages[page.target] = page
+    browsers.runtime.create = AsyncMock(return_value=page)
+    task = asyncio.create_task(
+        browsers.stop("thread-a", item.identity)
+        if command == "stop"
+        else browsers.start("thread-a", item.identity, explicit=True)
+    )
+    try:
+        await entered.wait()
+        assert await browsers.admit("thread-a") is None
+        assert browsers.bindings["thread-a"] is item
+        assert await browsers.admit("thread-b")
+    finally:
+        release.set()
+        await task
+    identity = await browsers.admit("thread-a")
+    assert identity and identity != item.identity
+    assert browsers.checked("thread-a", identity).status == "ready"
+
+
+async def test_admission_does_not_capture_binding_during_retirement(browsers):
+    item = browsers.bindings["thread-a"]
+    item.closed.set()
+    assert await browsers.admit("thread-a") is None
+    assert browsers.bindings["thread-a"] is item

@@ -1806,7 +1806,7 @@ it("synchronizes quick rename with the mounted clean Project editor before savin
   });
 });
 
-it("shares the root draft across General, execution, runtime and connection settings", async () => {
+it("shares the root draft across General, execution, runtime, browser and connection settings", async () => {
   window.history.replaceState(null, "", "/settings#live");
   const rootSource = {
     ...source,
@@ -1842,6 +1842,13 @@ it("shares the root draft across General, execution, runtime and connection sett
         cached_versions: [],
         computer_use: false,
       });
+    if (path === "/api/browser")
+      return json({
+        status: "disabled",
+        platform: "linux",
+        available: false,
+        configuration: { mode: "auto", executable: null, vnc_executable: null },
+      });
     expect(request.method).toBe("GET");
     return fixture(request);
   });
@@ -1859,6 +1866,11 @@ it("shares the root draft across General, execution, runtime and connection sett
   await user.click(
     await screen.findByRole("switch", { name: "Desktop capability" }),
   );
+  await user.click(screen.getByRole("link", { name: "Browser" }));
+  await user.click(
+    await screen.findByRole("combobox", { name: "Browser mode" }),
+  );
+  await user.click(await screen.findByRole("option", { name: /^Disabled/ }));
   await user.click(screen.getByRole("link", { name: "Connections" }));
   await user.click(await screen.findByText("Chat defaults", { exact: true }));
   expect(writes).toEqual([]);
@@ -1868,6 +1880,7 @@ it("shares the root draft across General, execution, runtime and connection sett
     live: { enabled: true },
     defaults: { environment_profile: "environment-envd" },
     envd: { computer_use: true },
+    browser: { mode: "disabled" },
   });
   expect(content).toContain("# Preserve me");
   await user.click(screen.getByRole("link", { name: "General" }));
@@ -1885,6 +1898,8 @@ it.each([
   ["/settings/catalog", "/settings/agents", ""],
   ["/settings/runtime", "/settings/environments", ""],
   ["/settings/envd", "/settings/environments", ""],
+  ["/settings#browser", "/settings/environments", ""],
+  ["/settings/resources#browser", "/settings/environments", ""],
 ])("redirects the legacy settings route %s", async (legacy, pathname, hash) => {
   window.history.replaceState(null, "", legacy);
   render(<BrowserApp />);
@@ -1892,6 +1907,8 @@ it.each([
   expect(window.location.hash).toBe(hash);
   if (legacy.endsWith("runtime") || legacy.endsWith("envd"))
     expect(window.location.search).toBe("?tab=runtime");
+  if (legacy.endsWith("#browser"))
+    expect(window.location.search).toBe("?tab=browser");
   if (hash)
     await waitFor(() =>
       expect(

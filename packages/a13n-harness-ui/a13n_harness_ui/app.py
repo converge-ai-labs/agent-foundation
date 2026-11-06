@@ -43,6 +43,7 @@ from a13n_harness_ui.browser import (
     BrowserCommand,
     BrowserControl,
     BrowserHandbackRequest,
+    BrowserRuntimeState,
     BrowserState,
     BrowserViewportRequest,
     HostBrowsers,
@@ -1889,6 +1890,18 @@ class HarnessUiApp:
         if self._browsers is None or not self._browsers.available:
             raise HarnessUiError("Enable WebUI Host computer sharing to use the browser.", code="browser_disabled")
         return self._browsers
+
+    async def browser_runtime(self) -> BrowserRuntimeState:
+        async with self._operation():
+            if self._browsers is None:
+                return BrowserRuntimeState(error="Host browser is unavailable.")
+            return self._browsers.runtime_state()
+
+    async def prepare_browser(self) -> BrowserRuntimeState:
+        async with self._operation():
+            browsers = self.browsers()
+            await browsers.prepare(retry=True)
+            return browsers.runtime_state()
 
     async def browser_state(self, thread_id: str) -> BrowserState:
         async with self._operation():

@@ -142,6 +142,7 @@ class RootRunAdmission:
     resume_usage: bool = False
     display: DisplayArchive | None = None
     browser_binding: str | None = None
+    browser_unavailable: str = ""
 
 
 class RootRunExecutor:
@@ -328,6 +329,14 @@ class RootRunExecutor:
             published = PublishedRunComposition(value=captured, reference=envelope.ref)
         if restart is not None:
             previous_state = await self._store.usage.restore(thread_id=thread_id, state=previous_state)
+        browser_binding = None
+        browser_unavailable = "Host browser is unavailable."
+        if published.value.environment_profile.profile_id != FULL_CONTROL_PROFILE_ID:
+            browser_unavailable = "Host browser requires this Run to use Full Control."
+        elif self._browsers is not None:
+            browser_binding = await self._browsers.admit(thread_id)
+            if browser_binding is None:
+                browser_unavailable = self._browsers.unavailable_reason()
         return RootRunAdmission(
             thread,
             source,
@@ -339,12 +348,8 @@ class RootRunExecutor:
             positions,
             resume_usage=restart is not None and UsageSnapshot.from_state(previous_state) is not None,
             display=archive,
-            browser_binding=(
-                await self._browsers.admit(thread_id)
-                if self._browsers is not None
-                and published.value.environment_profile.profile_id == FULL_CONTROL_PROFILE_ID
-                else None
-            ),
+            browser_binding=browser_binding,
+            browser_unavailable=browser_unavailable,
         )
 
     async def execute(
@@ -476,7 +481,18 @@ class RootRunExecutor:
                     _ToolPresentationCapability(retain_tool_presentation),
                     *(
                         (
-                            BrowserContextCapability(self._browsers.backend(thread_id, admission.browser_binding)),
+                            BrowserContextCapability(
+                                self._browsers.backend(thread_id, admission.browser_binding)
+                                if self._browsers is not None and admission.browser_binding is not None
+                                else None,
+                                unavailable=admission.browser_unavailable,
+                            ),
+                        )
+                        if admission.organization is None
+                        else ()
+                    ),
+                    *(
+                        (
                             BrowserUseCapability(
                                 self._browsers.backend(thread_id, admission.browser_binding),
                                 on_human_control=partial(self._browsers.handback.blocked, thread_id),

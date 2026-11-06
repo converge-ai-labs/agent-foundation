@@ -631,6 +631,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/browser": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Browser Runtime */
+        get: operations["browser_runtime_api_browser_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/browser/prepare": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Prepare Browser */
+        post: operations["prepare_browser_api_browser_prepare_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/browser/scan": {
         parameters: {
             query?: never;
@@ -3268,6 +3302,24 @@ export interface components {
             /** Password */
             password: string;
         };
+        /**
+         * BrowserConfiguration
+         * @description Host browser policy captured at App startup; never install dependencies.
+         */
+        BrowserConfiguration: {
+            /**
+             * Mode
+             * @default auto
+             * @enum {string}
+             */
+            mode?: "auto" | "disabled";
+            /** Executable */
+            executable?: string | null;
+            /** Vnc Executable */
+            vnc_executable?: string | null;
+        } & {
+            [key: string]: components["schemas"]["JsonValue"];
+        };
         /** BrowserControl */
         BrowserControl: {
             state: components["schemas"]["BrowserState"];
@@ -3320,6 +3372,24 @@ export interface components {
              * @default false
              */
             managed?: boolean;
+        };
+        /** BrowserRuntimeState */
+        BrowserRuntimeState: {
+            platform?: components["schemas"]["BrowserPlatform"];
+            /**
+             * Status
+             * @default disabled
+             * @enum {string}
+             */
+            status?: "disabled" | "starting" | "ready" | "failed";
+            configuration?: components["schemas"]["BrowserConfiguration"];
+            /**
+             * Available
+             * @default false
+             */
+            available?: boolean;
+            /** Error */
+            error?: string | null;
         };
         /** BrowserScan */
         BrowserScan: {
@@ -8958,24 +9028,6 @@ export interface components {
             /** Approve */
             approve: boolean;
         };
-        /**
-         * BrowserConfiguration
-         * @description Host browser policy captured at App startup; never install dependencies.
-         */
-        BrowserConfiguration: {
-            /**
-             * Mode
-             * @default auto
-             * @enum {string}
-             */
-            mode?: "auto" | "disabled";
-            /** Executable */
-            executable?: string | null;
-            /** Vnc Executable */
-            vnc_executable?: string | null;
-        } & {
-            [key: string]: components["schemas"]["JsonValue"];
-        };
         /** BrowserCommand */
         BrowserCommand: {
             /** Session Id */
@@ -10709,6 +10761,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DraftSummary"][];
+                };
+            };
+        };
+    };
+    browser_runtime_api_browser_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrowserRuntimeState"];
+                };
+            };
+        };
+    };
+    prepare_browser_api_browser_prepare_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrowserRuntimeState"];
                 };
             };
         };

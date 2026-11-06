@@ -390,7 +390,7 @@ it("localizes Browser settings without rescanning or replacing a custom path dra
   await act(async () => {
     await i18n.changeLanguage("zh-CN");
   });
-  expect(screen.getByText("高级浏览器设置")).toBeTruthy();
+  expect(screen.getByText("配置")).toBeTruthy();
   expect(
     (
       screen.getByRole("textbox", {

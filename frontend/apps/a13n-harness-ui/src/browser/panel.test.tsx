@@ -10,6 +10,7 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter } from "react-router";
 import { TransportContext } from "../transport/context";
 import { ApiError, type Transport } from "../transport/client";
 import { i18n } from "../i18n";
@@ -51,18 +52,6 @@ function show({
   pageCount = 1,
   threadId = "thread-a",
   fullControl = true,
-  setup = {
-    ready: true,
-    supported: true,
-    platform: "linux",
-    requirements: [] as {
-      name: string;
-      installed: boolean;
-      detail: string;
-      required: boolean;
-    }[],
-    message: "",
-  },
 } = {}) {
   let state = {
     platform,
@@ -81,9 +70,7 @@ function show({
     ],
   };
   const client = {
-    GET: vi.fn(async (url: string) => ({
-      data: url.endsWith("/setup") ? setup : state,
-    })),
+    GET: vi.fn(async (_url: string) => ({ data: state })),
     POST: vi.fn(async (url: string, options: { body?: { preset: string } }) => {
       if (url.endsWith("take-control")) {
         state = { ...state, control: "human" };
@@ -129,10 +116,12 @@ function show({
   const view = (threadId: string) => (
     <QueryClientProvider client={queries}>
       <TransportContext value={{ client } as unknown as Transport}>
-        <BrowserPanel
-          threadId={threadId || undefined}
-          fullControl={fullControl}
-        />
+        <MemoryRouter>
+          <BrowserPanel
+            threadId={threadId || undefined}
+            fullControl={fullControl}
+          />
+        </MemoryRouter>
       </TransportContext>
     </QueryClientProvider>
   );
@@ -163,6 +152,17 @@ it.each([true, false])(
     await act(() => i18n.changeLanguage("en"));
   },
 );
+
+it("reopens a failed Thread binding after runtime recovery without submitting a Run", async () => {
+  const { client } = show({ status: "failed" });
+  await screen.findByText("Browser needs attention");
+  expect(client.POST).not.toHaveBeenCalled();
+  await openBrowser();
+  await screen.findByTestId("stream");
+  expect(client.POST.mock.calls.map(([url]) => url)).toEqual([
+    "/api/threads/{thread_id}/browser/start",
+  ]);
+});
 
 it("opens and closes conversation tabs without an enable switch", async () => {
   const { client } = show({ status: "enabled" });
@@ -412,77 +412,30 @@ it("keeps the permission explanation for an existing non-Full-Control conversati
   expect(screen.getByText("Use a Full Control conversation.")).toBeTruthy();
   expect(client.GET).not.toHaveBeenCalled();
 });
-it("only checks components after a failed attempt and retries the full startup", async () => {
-  const { client } = show({
-    status: "enabled",
-    setup: {
-      ready: false,
-      supported: true,
-      platform: "linux",
-      message: "Resolve missing components.",
-      requirements: [
-        {
-          name: "Browser",
-          installed: true,
-          required: true,
-          detail: "/usr/bin/chromium",
-        },
-        {
-          name: "VNC server",
-          installed: false,
-          required: true,
-          detail: "Install TigerVNC.",
-        },
-        {
-          name: "Window management",
-          installed: false,
-          required: false,
-          detail: "Optional window manager",
-        },
-      ],
-    },
-  });
-  await waitFor(() => expect(client.GET).toHaveBeenCalledTimes(1));
-  expect(screen.queryByLabelText("Browser troubleshooting")).toBeNull();
-  client.POST.mockRejectedValueOnce(new Error("Missing VNC"));
-  await openBrowser();
-  await screen.findByText("Install TigerVNC.");
-  expect(screen.queryByText("/usr/bin/chromium")).toBeNull();
-  expect(screen.queryByText("Optional window manager")).toBeNull();
-  expect(screen.queryByRole("switch")).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Try again" }));
-  await screen.findByTestId("stream");
-  expect(screen.queryByLabelText("Browser troubleshooting")).toBeNull();
-});
-it("shows unsupported platforms without dependency installation or settings detours", async () => {
-  const { client } = show({
-    status: "enabled",
-    setup: {
-      ready: false,
-      supported: false,
-      platform: "windows",
-      requirements: [],
-      message: "The Host browser requires Linux or macOS.",
-    },
-  });
-  client.POST.mockRejectedValueOnce(new Error("Unsupported platform"));
-  await openBrowser();
-  await screen.findByText("Linux or macOS Host required");
-  expect(
-    screen.queryByRole("list", { name: "Browser requirements" }),
-  ).toBeNull();
-  expect(
-    screen.queryByRole("link", { name: "Advanced browser settings" }),
-  ).toBeNull();
-  expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
-});
-it("keeps runtime failures visible when component checks succeed", async () => {
-  const { client } = show({ status: "enabled" });
-  client.POST.mockRejectedValueOnce(new Error("Profile is in use"));
-  await openBrowser();
-  await screen.findByText("Profile is in use");
-  expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
-});
+it.each(["Missing VNC", "Unsupported platform", "Profile is in use"])(
+  "routes startup failure to environment settings without setup probes: %s",
+  async (message) => {
+    const { client } = show({ status: "enabled" });
+    client.POST.mockRejectedValueOnce(new Error(message));
+    await openBrowser();
+    expect((await screen.findByRole("alert")).textContent).toBe(message);
+    expect(
+      screen
+        .getByRole("link", { name: "Browser settings" })
+        .getAttribute("href"),
+    ).toBe("/settings/environments?tab=browser");
+    expect(
+      screen.queryByRole("list", { name: "Browser requirements" }),
+    ).toBeNull();
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+    expect(
+      client.GET.mock.calls.every(
+        ([url]) => url === "/api/threads/{thread_id}/browser",
+      ),
+    ).toBe(true);
+    expect(client.POST).toHaveBeenCalledTimes(1);
+  },
+);
 
 it("pauses Mac automation for local operation and resumes it without remote takeover", async () => {
   const { client } = show({ platform: "macos", resizeAvailable: false });

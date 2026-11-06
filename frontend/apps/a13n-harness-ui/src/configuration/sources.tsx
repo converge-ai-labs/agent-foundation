@@ -27,6 +27,7 @@ import { ConfirmAction } from "../shell/confirm-action";
 import { SourceEditor } from "./editor";
 import { McpTools } from "./mcp-tools";
 import { ResourceFields } from "./fields";
+import { BrowserConfigurationFields } from "./browser-runtime";
 import {
   readDocument,
   resourceKinds,
@@ -460,7 +461,7 @@ export function SourceDocument({
   title?: string | null;
   mediaOnly?: boolean;
   embedded?: boolean;
-  section?: "envd" | "execution" | "connections";
+  section?: "envd" | "execution" | "connections" | "browser";
 }) {
   const { t } = useTranslation();
   const { client } = useTransport();
@@ -722,7 +723,13 @@ export function SourceDocument({
       )}
       {canEdit && (
         <div className={styles.configurationForm}>
-          {section === "envd" ? (
+          {section === "browser" ? (
+            <BrowserConfigurationFields
+              source={draft!.content}
+              savedSource={source.data?.content ?? ""}
+              onChange={(content) => update({ ...draft!, content })}
+            />
+          ) : section === "envd" ? (
             <EnvdConfigurationFields
               source={draft!.content}
               onChange={(content) => update({ ...draft!, content })}

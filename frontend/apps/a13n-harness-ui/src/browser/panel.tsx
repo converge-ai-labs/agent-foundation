@@ -30,7 +30,7 @@ import {
 import { useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
 import { Desktop, type BrowserScale } from "./desktop";
-import { BrowserSetup } from "./setup";
+import { Link } from "react-router";
 import styles from "./panel.module.css";
 
 export function BrowserPanel({
@@ -79,22 +79,6 @@ export function BrowserPanel({
     authority.binding === session?.session_id
       ? authority.token
       : "";
-  const preparation = useQuery({
-    queryKey: ["browser-setup", threadId],
-    enabled:
-      !!threadId &&
-      fullControl &&
-      state.isSuccess &&
-      session?.status === "failed",
-    queryFn: () =>
-      result(
-        client.GET("/api/threads/{thread_id}/browser/setup", {
-          params: { path: { thread_id: threadId! } },
-        }),
-      ),
-    refetchOnWindowFocus: false,
-    retry: false,
-  });
   const refresh = () => queries.invalidateQueries({ queryKey: ["browser"] });
   const renewControl = () => {
     if (!threadId || !session?.session_id || !controlToken) return;
@@ -171,7 +155,6 @@ export function BrowserPanel({
       }
     } catch (cause) {
       setError({ cause });
-      if (kind === "start" || kind === "reset") void preparation.refetch();
       void refresh();
     } finally {
       setPending("");
@@ -471,17 +454,24 @@ export function BrowserPanel({
           </Button>
         </div>
       ) : needsHelp ? (
-        <BrowserSetup
-          setup={preparation.data}
-          loading={preparation.isFetching}
-          error={
-            error
-              ? errorMessage(error.cause, t)
-              : session?.error ||
-                (preparation.error ? errorMessage(preparation.error, t) : "")
-          }
-          retry={() => void command("start")}
-        />
+        <div className={styles.empty}>
+          <Monitor size={28} />
+          <strong>{t("Browser needs attention")}</strong>
+          <p role="alert">
+            {error ? errorMessage(error.cause, t) : session?.error}
+          </p>
+          <Button
+            variant="outline"
+            disabled={busy}
+            onClick={() => void command("start")}
+          >
+            <Monitor />
+            {t("Open browser")}
+          </Button>
+          <Link to="/settings/environments?tab=browser">
+            {t("Browser settings")}
+          </Link>
+        </div>
       ) : state.isError ? (
         <div className={styles.empty}>
           <Button variant="outline" onClick={() => void state.refetch()}>
@@ -508,7 +498,9 @@ export function BrowserPanel({
                   )}
           </p>
           {disabled ? (
-            <a href="/settings/resources#browser">{t("Browser settings")}</a>
+            <Link to="/settings/environments?tab=browser">
+              {t("Browser settings")}
+            </Link>
           ) : (
             !preparing && (
               <Button

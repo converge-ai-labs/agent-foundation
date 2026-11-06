@@ -45,6 +45,7 @@ from a13n_harness_ui.browser import (
     BrowserCommand,
     BrowserControl,
     BrowserHandbackRequest,
+    BrowserRuntimeState,
     BrowserState,
     BrowserViewportRequest,
 )
@@ -1125,6 +1126,14 @@ def create_webui(
             pass
         finally:
             draft.detach(participant)
+
+    @server.get("/api/browser", response_model=BrowserRuntimeState)
+    async def browser_runtime() -> BrowserRuntimeState:
+        return await app().browser_runtime()
+
+    @server.post("/api/browser/prepare", response_model=BrowserRuntimeState)
+    async def prepare_browser() -> BrowserRuntimeState:
+        return await app().prepare_browser()
 
     @server.post("/api/browser/scan", response_model=BrowserScan)
     async def scan_browser_executables() -> BrowserScan:

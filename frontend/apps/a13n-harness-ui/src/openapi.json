@@ -1636,6 +1636,42 @@
         }
       }
     },
+    "/api/browser": {
+      "get": {
+        "summary": "Browser Runtime",
+        "operationId": "browser_runtime_api_browser_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowserRuntimeState"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/browser/prepare": {
+      "post": {
+        "summary": "Prepare Browser",
+        "operationId": "prepare_browser_api_browser_prepare_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowserRuntimeState"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/browser/scan": {
       "post": {
         "summary": "Scan Browser Executables",
@@ -9819,6 +9855,51 @@
         ],
         "title": "BrowserAccess"
       },
+      "BrowserConfiguration": {
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "disabled"
+            ],
+            "title": "Mode",
+            "default": "auto"
+          },
+          "executable": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4096,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Executable"
+          },
+          "vnc_executable": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4096,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vnc Executable"
+          }
+        },
+        "additionalProperties": {
+          "$ref": "#/components/schemas/JsonValue"
+        },
+        "type": "object",
+        "title": "BrowserConfiguration",
+        "description": "Host browser policy captured at App startup; never install dependencies."
+      },
       "BrowserControl": {
         "properties": {
           "state": {
@@ -9943,6 +10024,46 @@
           "detail"
         ],
         "title": "BrowserRequirement"
+      },
+      "BrowserRuntimeState": {
+        "properties": {
+          "platform": {
+            "$ref": "#/components/schemas/BrowserPlatform"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "disabled",
+              "starting",
+              "ready",
+              "failed"
+            ],
+            "title": "Status",
+            "default": "disabled"
+          },
+          "configuration": {
+            "$ref": "#/components/schemas/BrowserConfiguration"
+          },
+          "available": {
+            "type": "boolean",
+            "title": "Available",
+            "default": false
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "BrowserRuntimeState"
       },
       "BrowserScan": {
         "properties": {
@@ -25238,51 +25359,6 @@
         ],
         "title": "AppDecision",
         "type": "object"
-      },
-      "BrowserConfiguration": {
-        "properties": {
-          "mode": {
-            "type": "string",
-            "enum": [
-              "auto",
-              "disabled"
-            ],
-            "title": "Mode",
-            "default": "auto"
-          },
-          "executable": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 4096,
-                "minLength": 1
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Executable"
-          },
-          "vnc_executable": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 4096,
-                "minLength": 1
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Vnc Executable"
-          }
-        },
-        "additionalProperties": {
-          "$ref": "#/components/schemas/JsonValue"
-        },
-        "type": "object",
-        "title": "BrowserConfiguration",
-        "description": "Host browser policy captured at App startup; never install dependencies."
       },
       "BrowserCommand": {
         "additionalProperties": false,

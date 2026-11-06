@@ -70,6 +70,8 @@ async def test_guest_cannot_read_other_threads_or_call_owner_apis(tmp_path):
         for path in ("/api/status", "/api/shares", "/api/configuration/sources", "/api/host/files", "/api/presence"):
             assert (await client.get(path, headers=headers)).status_code == 401
         for method, path in (
+            ("GET", "/api/browser"),
+            ("POST", "/api/browser/prepare"),
             ("POST", "/api/browser/scan"),
             ("POST", "/api/browser/check"),
             ("POST", "/api/browser/macos/settings"),
@@ -243,3 +245,47 @@ async def test_shared_browser_routes_serve_the_shell_without_instance_auth(tmp_p
             assert response.status_code == 200
             assert "Guest shell" in response.text
         assert (await client.get("/share/share-example/settings")).status_code == 404
+
+
+@pytest.mark.parametrize("sharing", [False, True])
+async def test_browser_runtime_status_and_explicit_retry(tmp_path, monkeypatch, sharing):
+    from unittest.mock import AsyncMock, Mock
+
+    from a13n_harness.capabilities.browser.cdp import Chromium
+    from a13n_harness_ui.browser import HostBrowsers
+
+    launch = AsyncMock(side_effect=RuntimeError("Missing display"))
+    monkeypatch.setattr(HostBrowsers, "launch", launch)
+    async with shared_server(tmp_path, share_computer=sharing) as (_, app, client):
+        headers = {"Authorization": "Bearer owner-test-key"}
+        assert (await client.get("/api/browser")).status_code == 401
+        assert (await client.post("/api/browser/prepare")).status_code == 401
+        if sharing:
+            await app.browsers().prepare()
+        calls = launch.await_count
+        response = await client.get("/api/browser", headers=headers)
+        assert response.status_code == 200
+        state = response.json()
+        assert state["status"] == ("failed" if sharing else "disabled")
+        assert state["available"] is sharing
+        assert state["configuration"]["mode"] == "auto"
+        assert launch.await_count == calls
+        if not sharing:
+            assert "sharing" in state["error"]
+            assert (await client.post("/api/browser/prepare", headers=headers)).status_code == 403
+            launch.assert_not_awaited()
+            return
+        assert state["error"] == "Missing display"
+        runtime = Chromium(Mock())
+        runtime.close = AsyncMock()
+
+        async def recover(host):
+            host.runtime = runtime
+            host.runtime_failed = False
+
+        monkeypatch.setattr(HostBrowsers, "launch", recover)
+        response = await client.post("/api/browser/prepare", headers=headers)
+        assert response.status_code == 200
+        assert response.json()["status"] == "ready"
+        assert response.json()["error"] is None
+        assert not app.browsers().bindings and not runtime.pages
