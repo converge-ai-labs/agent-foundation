@@ -21,7 +21,13 @@ const processor = unified()
     footnoteLabelProperties: { className: ["notes-head"] },
   });
 
-/** A post body as HTML, with its word count for the reading time. */
+export interface Heading {
+  id: string;
+  title: string;
+  depth: 2 | 3;
+}
+
+/** A post body, its navigation headings, and its word count for reading time. */
 export async function render(markdown: string, dir: string) {
   const mdast = processor.parse(markdown);
   let words = 0;
@@ -31,10 +37,10 @@ export async function render(markdown: string, dir: string) {
       .filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
   });
   const hast = (await processor.run(mdast)) as Root;
-  linkHeadings(hast);
+  const headings = linkHeadings(hast);
   wrapTables(hast);
   await Promise.all([highlightCode(hast), placeFigures(hast, dir)]);
-  return { html: toHtml(hast, { allowDangerousHtml: true }), words };
+  return { html: toHtml(hast, { allowDangerousHtml: true }), words, headings };
 }
 
 const el = (
@@ -62,9 +68,13 @@ function wrapTables(tree: Root) {
 /** Section headings get GitHub's IDs and a link to themselves. */
 function linkHeadings(tree: Root) {
   const slugger = new GithubSlugger();
+  const headings: Heading[] = [];
   visit(tree, "element", (node) => {
     if (!/^h[23]$/.test(node.tagName) || node.properties.id) return;
-    node.properties.id = slugger.slug(text(node));
+    const title = text(node);
+    const id = slugger.slug(title);
+    node.properties.id = id;
+    headings.push({ id, title, depth: node.tagName === "h2" ? 2 : 3 });
     node.children.push(
       el(
         "a",
@@ -77,6 +87,7 @@ function linkHeadings(tree: Root) {
       ),
     );
   });
+  return headings;
 }
 
 /** Fenced code in the shared code palette, under a bar with its file name or language and a copy button. */

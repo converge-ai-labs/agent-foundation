@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 406" role="img" aria-label="A schematic execution trace with a parent run, model requests, a tool call and a child agent. Each operation can be inspected with its inputs, outputs, errors and usage.">
+  <text class="fi" x="36" y="34" style="font:500 22px var(--display)">Follow an execution</text>
+  <text class="pt" x="562" y="66">elapsed time</text>
+  <path class="pf" d="M650 62H718m-6-4 6 4-6 4" />
+  <path class="pf dash" d="M246 86V326M364 86V326M482 86V326M600 86V326M718 86V326" />
+  <path class="pf" d="M36 126H724M36 178H724M36 230H724M36 282H724M36 334H724M50 113V309M50 153H67M50 205H67M50 257H67M50 309H67" />
+  <g class="fi" style="font:400 15px var(--text)">
+    <text x="36" y="105">Run</text>
+    <text x="78" y="158">Model request</text>
+    <text x="78" y="210">Tool call</text>
+    <text x="78" y="262">Model request</text>
+    <text x="78" y="314">Child agent</text>
+  </g>
+  <path class="pl" d="M246 94V106M246 100H718M718 94V106" />
+  <rect x="246" y="146" width="106" height="12" fill="#00bba6" />
+  <rect x="364" y="198" width="124" height="12" fill="#ff6801" />
+  <rect x="500" y="250" width="74" height="12" fill="#00bba6" />
+  <rect x="586" y="302" width="132" height="12" fill="#9259fe" />
+  <path class="pl" d="M246 146V158M364 198V210M500 250V262M586 302V314" />
+  <text class="pt" x="36" y="367">inspect an operation</text>
+  <text class="fi" x="246" y="367" style="font:400 14px var(--text)">Inputs / outputs</text>
+  <text class="fi" x="454" y="367" style="font:400 14px var(--text)">Errors</text>
+  <text class="fi" x="586" y="367" style="font:400 14px var(--text)">Tokens / cost</text>
+</svg>

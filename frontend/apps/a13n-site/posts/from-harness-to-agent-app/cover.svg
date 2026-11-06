@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 360" role="img" aria-label="A harness loop on its own, then the same loop within an application backend, connected to durable state, configuration and execution traces.">
+  <!-- The same loop appears alone and within the surrounding service. -->
+  <path class="pl" d="M82 154H138V210H82Z" />
+  <rect x="76" y="148" width="12" height="12" fill="#9259fe" />
+  <rect class="fi" x="132" y="148" width="12" height="12" />
+  <rect class="fi" x="132" y="204" width="12" height="12" />
+  <rect class="fi" x="76" y="204" width="12" height="12" />
+  <path class="pf dash" d="M158 182H256" />
+  <path class="pl" d="m248 177 8 5-8 5" />
+
+  <!-- Open corners and thin rails keep the drawing in the blog's plate style. -->
+  <path class="pf" d="M286 98V62H322M616 62H652V98M286 266V302H322M616 302H652V266" />
+  <path class="pf" d="M322 112H616M322 252H616M360 112V252M570 112V252" />
+  <path class="pl" d="M322 182H442M498 182H616M470 112V154M470 210V252" />
+  <path class="pl" d="M442 154H498V210H442Z" />
+  <rect x="436" y="148" width="12" height="12" fill="#9259fe" />
+  <rect class="fi" x="492" y="148" width="12" height="12" />
+  <rect class="fi" x="492" y="204" width="12" height="12" />
+  <rect class="fi" x="436" y="204" width="12" height="12" />
+
+  <!-- State and configuration sit on the upper rail. -->
+  <rect class="pl" x="344" y="96" width="32" height="32" />
+  <path class="pf" d="M351 105H369M351 112H369M351 119H363" />
+  <rect x="464" y="106" width="12" height="12" fill="#00bba6" />
+  <rect class="pl" x="554" y="96" width="32" height="32" />
+  <path class="pl" d="M563 103V121M577 103V121" />
+  <path class="pl" d="M559 109H567M573 116H581" />
+
+  <!-- The lower rail carries execution history and a second worker path. -->
+  <path class="pf dash" d="M360 198V236H414V252M498 198H526V252" />
+  <rect class="pl" x="348" y="240" width="24" height="24" />
+  <rect class="pf" x="390" y="240" width="24" height="24" />
+  <rect x="464" y="246" width="12" height="12" fill="#ff6801" />
+  <path class="pl" d="M546 238H594M546 247H560M565 256H579M583 265H594" />
+  <path d="M565 256H579" fill="none" stroke="#9259fe" stroke-width="3" />
+
+  <rect class="fi" x="316" y="176" width="12" height="12" />
+  <rect class="pl" x="610" y="176" width="12" height="12" />
+  <text class="pt ink" x="110" y="254" text-anchor="middle">harness</text>
+  <text class="pt ink" x="470" y="334" text-anchor="middle">application backend</text>
+</svg>

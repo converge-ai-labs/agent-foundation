@@ -3,6 +3,7 @@ import { $$ } from "./dom";
 import { mountMarks } from "./mark";
 import { mountStars } from "./stars";
 import { mountBenchmarkInspectors } from "./benchmark";
+import { mountContents } from "./contents";
 
 const LABEL = 12; // px, a plate label on screen
 const LABEL_MAX = 16; // drawing units; larger labels collide with the drawing
@@ -11,6 +12,7 @@ const CROP_PAD = 10; // drawing units around a cropped cover
 mountMarks();
 mountStars();
 mountBenchmarkInspectors();
+mountContents();
 
 /** Copies a value and confirms on success. */
 async function copy(value: string, done: () => void) {

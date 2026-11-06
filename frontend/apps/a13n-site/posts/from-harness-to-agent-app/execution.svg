@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 348" role="img" aria-label="A durable run record spans two workers. Worker A saves a checkpoint before stopping. Worker B loads saved progress and continues the same run.">
+  <text class="fi" x="36" y="34" style="font:500 22px var(--display)">One run, two execution attempts</text>
+  <path class="pf" d="M180 72V310M36 146H724M36 236H724" />
+  <g class="fi" style="font:400 15px var(--text)">
+    <text x="36" y="112">Run record</text>
+    <text x="36" y="202">Worker A</text>
+    <text x="36" y="292">Worker B</text>
+  </g>
+  <path class="pl" d="M204 106H704" />
+  <rect x="198" y="100" width="12" height="12" fill="#9259fe" />
+  <rect x="328" y="100" width="12" height="12" fill="#9259fe" />
+  <rect class="pl" x="698" y="100" width="12" height="12" />
+  <text class="pt" x="204" y="84">accepted</text>
+  <text class="pt" x="334" y="84">checkpoint</text>
+  <text class="pt" x="704" y="84" text-anchor="end">result</text>
+  <path class="pl" d="M204 196H410" />
+  <rect class="fi" x="200" y="192" width="8" height="8" />
+  <path class="pl" d="M334 190V118m-4 6 4-6 4 6" />
+  <text class="pt" x="347" y="171">save</text>
+  <rect x="404" y="190" width="12" height="12" fill="#ff6801" />
+  <text class="pt ink" x="410" y="221" text-anchor="end">interrupted</text>
+  <path class="pf dash" d="M492 112V276m-4-6 4 6 4-6" />
+  <text class="pt" x="506" y="259">load saved progress</text>
+  <path class="pl" d="M492 286H704V118m-4 6 4-6 4 6" />
+  <rect class="fi" x="488" y="282" width="8" height="8" />
+  <rect x="698" y="280" width="12" height="12" fill="#00bba6" />
+  <text class="pt ink" x="492" y="320">resumed</text>
+  <text class="pt ink" x="704" y="320" text-anchor="end">completed</text>
+</svg>
