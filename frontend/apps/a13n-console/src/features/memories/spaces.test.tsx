@@ -14,6 +14,8 @@ import {
   validSpaceSelection,
 } from "./space-form";
 
+import { defaultGuidance } from "./guidance";
+
 let client: Client;
 vi.mock("../../auth/context", () => ({ useClient: () => client }));
 vi.mock("../../layout/workspace", () => ({
@@ -36,7 +38,7 @@ const space: Schema["MemorySpace"] = {
   name: "Team knowledge",
   description: "Shared working knowledge",
   enabled: true,
-  guide: null,
+  guidance: defaultGuidance(),
   always_load: ["global/MEMORY.md"],
   organization: {
     enabled: false,
@@ -63,23 +65,34 @@ it("builds minimal patches and preserves explicit clearing semantics", () => {
   expect(
     spaceUpdate(space, {
       ...draft,
-      guide: { mode: "none", text: "" },
+      guidance: { ...draft.guidance, system_override: "" },
       description: "",
       model: "",
       alwaysLoad: [],
     }),
   ).toEqual({
-    guide: "",
+    guidance: { ...draft.guidance, system_override: "" },
     description: null,
     organization: { ...space.organization, model: null },
     always_load: [],
   });
-  expect(spaceUpdate({ ...space, guide: "Keep facts." }, draft)).toEqual({
-    guide: null,
+  expect(
+    spaceUpdate(
+      {
+        ...space,
+        guidance: { ...draft.guidance, system_override: "Keep facts." },
+      },
+      draft,
+    ),
+  ).toEqual({
+    guidance: draft.guidance,
   });
   expect(validSpaceDraft({ ...draft, automatic: true, model: "" })).toBe(false);
   expect(
-    validSpaceDraft({ ...draft, guide: { mode: "custom", text: " " } }),
+    validSpaceDraft({
+      ...draft,
+      guidance: { ...draft.guidance, timezone: "Invalid/Zone" },
+    }),
   ).toBe(false);
   expect(validSpaceSelection({ enabled: true, spaces: [] })).toBe(true);
   const binding = { name: "team", space_id: space.id, access: "read" as const };

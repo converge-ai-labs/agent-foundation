@@ -102,7 +102,7 @@
 }
 .historyFilters > :first-child {
   flex: 0 1 auto;
-  min-width: 160px;
+  min-width: 0;
   max-width: min(100%, 360px);
 }
 .runFilter {

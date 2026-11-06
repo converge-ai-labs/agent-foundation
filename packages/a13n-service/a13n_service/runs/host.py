@@ -15,6 +15,7 @@ from functools import partial
 from a13n_harness import AgentContext, EnvironmentMount, RequestContext, RunBindings, RunConfiguration
 from a13n_harness.capabilities import FileToolKey, MemoryCursors, RecordToolKey
 from a13n_harness.capabilities.browser import BrowserUseCapability
+from a13n_harness.capabilities.context import RuntimeContextCapability, RuntimeContextConfiguration
 from a13n_harness.capabilities.tool_execution import ToolExecutionCapability
 from a13n_harness.capabilities.web import WebBinding
 from a13n_harness.environment.advanced import EnvironmentRuntime, create_environment_runtime
@@ -312,7 +313,17 @@ async def open_host(
                 configuration=configuration,
             )
         )
-        memory = [capability for capability in (files, records) if capability is not None]
+        memory: list[AbstractCapability[AgentContext]] = [
+            capability for capability in (files, records) if capability is not None
+        ]
+        if files is not None:
+            memory.append(
+                RuntimeContextCapability(
+                    RuntimeContextConfiguration(
+                        include_elapsed_time=False, include_usage=False, include_latest_request_usage=False
+                    )
+                )
+            )
         if memory:
             tools[plan.root_definition_id]["memory"] = CombinedCapability(memory)
         yield Host(

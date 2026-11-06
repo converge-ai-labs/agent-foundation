@@ -248,7 +248,7 @@ description: Service 设置的每个字段，及其环境变量、类型、范�
 | `memory.revisions_per_file`   | `A13N_MEMORY__REVISIONS_PER_FILE`                 | 整数          | minimum=1; maximum=1000; default=10                 |
 | `memory.max_total_bytes`      | `A13N_MEMORY__MAX_TOTAL_BYTES`                    | 整数          | minimum=65536; maximum=1073741824; default=33554432 |
 | `memory.mounts_per_thread`    | `A13N_MEMORY__MOUNTS_PER_THREAD`                  | 整数          | minimum=1; maximum=32; default=8                    |
-| `memory.guide_bytes`          | `A13N_MEMORY__GUIDE_BYTES`                        | 整数          | minimum=256; maximum=65536; default=4096            |
+| `memory.guide_bytes`          | `A13N_MEMORY__GUIDE_BYTES`                        | 整数          | minimum=256; maximum=65536; default=16384           |
 | `memory.context_bytes`        | `A13N_MEMORY__CONTEXT_BYTES`                      | 整数          | minimum=1024; maximum=1048576; default=32768        |
 | `memory.always_load_bytes`    | `A13N_MEMORY__ALWAYS_LOAD_BYTES`                  | 整数          | minimum=0; maximum=1048576; default=8192            |
 | `memory.description_chars`    | `A13N_MEMORY__DESCRIPTION_CHARS`                  | 整数          | minimum=1; maximum=1000; default=200                |
@@ -259,8 +259,9 @@ description: Service 设置的每个字段，及其环境变量、类型、范�
 | `memory.recall_bytes`         | `A13N_MEMORY__RECALL_BYTES`                       | 整数          | minimum=512; maximum=65536; default=8192            |
 | `memory.recall_seconds`       | `A13N_MEMORY__RECALL_SECONDS`                     | 数值          | maximum=30; exclusiveMinimum=0; default=2           |
 | `memory.record_chars`         | `A13N_MEMORY__RECORD_CHARS`                       | 整数          | minimum=1; maximum=8000; default=8000               |
-| `memory.default_guide.file`   | `A13N_MEMORY__DEFAULT_GUIDE` (JSON 字段 `file`)   | 字符串或 null | maxLength=65536; default=null                       |
 | `memory.default_guide.record` | `A13N_MEMORY__DEFAULT_GUIDE` (JSON 字段 `record`) | 字符串或 null | maxLength=65536; default=null                       |
+
+对文件型记忆，`memory.guide_bytes` 限制用户编写的 System guide 覆盖文本与 Custom guide 的 UTF-8 总字节数。内置预设文本不占用此预算，因此较小预算仍可使用全部预设。
 
 ## `providers`
 

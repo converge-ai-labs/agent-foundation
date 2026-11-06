@@ -1738,58 +1738,6 @@
       "title": "FreshRunEnvironment",
       "type": "object"
     },
-    "FrozenMemoryMount": {
-      "additionalProperties": false,
-      "description": "Host-resolved Space identity and roots, never accepted from a mount request.",
-      "properties": {
-        "access": {
-          "$ref": "#/$defs/MemoryAccess"
-        },
-        "memory_id": {
-          "maxLength": 41,
-          "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
-          "title": "Memory Id",
-          "type": "string"
-        },
-        "name": {
-          "pattern": "^[a-z][a-z0-9-]{0,62}$",
-          "title": "Name",
-          "type": "string"
-        },
-        "recall": {
-          "default": true,
-          "title": "Recall",
-          "type": "boolean"
-        },
-        "roots": {
-          "default": [],
-          "items": {
-            "type": "string"
-          },
-          "title": "Roots",
-          "type": "array"
-        },
-        "space_id": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Space Id"
-        }
-      },
-      "required": [
-        "name",
-        "memory_id",
-        "access"
-      ],
-      "title": "FrozenMemoryMount",
-      "type": "object"
-    },
     "Gap": {
       "description": "Output of a followed run was lost: its deltas are held until an `items` frame repairs it.",
       "properties": {
@@ -3098,6 +3046,57 @@
         }
       ]
     },
+    "RunMemoryMount": {
+      "description": "Host-resolved Space identity and roots, never accepted from a mount request.",
+      "properties": {
+        "access": {
+          "$ref": "#/$defs/MemoryAccess"
+        },
+        "memory_id": {
+          "maxLength": 41,
+          "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+          "title": "Memory Id",
+          "type": "string"
+        },
+        "name": {
+          "pattern": "^[a-z][a-z0-9-]{0,62}$",
+          "title": "Name",
+          "type": "string"
+        },
+        "recall": {
+          "default": true,
+          "title": "Recall",
+          "type": "boolean"
+        },
+        "roots": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Roots",
+          "type": "array"
+        },
+        "space_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Space Id"
+        }
+      },
+      "required": [
+        "name",
+        "memory_id",
+        "access"
+      ],
+      "title": "RunMemoryMount",
+      "type": "object"
+    },
     "RunOptions": {
       "additionalProperties": false,
       "description": "What a message may choose for the run it starts. A steer joins a run with the defaults or equal options.",
@@ -3361,7 +3360,7 @@
                 "$ref": "#/$defs/MemoryMount"
               },
               {
-                "$ref": "#/$defs/FrozenMemoryMount"
+                "$ref": "#/$defs/RunMemoryMount"
               }
             ]
           },

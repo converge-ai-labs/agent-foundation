@@ -7,7 +7,7 @@ A memory is a workspace resource that agents read and write across conversations
 - A **file memory** (type `postgres`) is a small tree of text files whose content, history and change feed live in the Service's PostgreSQL. Every write is compare-and-swap at the moment of the call, so two conversations never overwrite each other silently: a stale write fails and returns the current content. Every change keeps the content it replaced as a revision, so people can see, diff and restore what agents wrote.
 - A **record memory** keeps short text records that later conversations recall by similarity. Its records live in the backend of a [Memory Provider](#memory-providers) under a namespace the memory owns, and its type is the provider's type, such as `mem0_platform` or `mem0_oss`. Records have no versions: the last writer wins, and a write the backend does not confirm fails as unconfirmed instead of being retried. The Service keeps no content copy or version history; it keeps lightweight [write attribution](#record-write-attribution).
 
-A thread mounts memories under names; each run freezes the thread's mount set at acceptance and reaches its memories only through the Harness memory tools, and a record memory also through recall at the run's first input. A memory is live, not revisioned: its content is data that runs change, and its configuration (guide, always-loaded paths) is read when an attempt starts. Nothing a run writes is rolled back when the run fails.
+A thread mounts memories under names; each run freezes the thread's mount set at acceptance and reaches its memories only through the Harness memory tools, and a record memory also through recall at the run's first input. A memory is live, not revisioned: its content is data that runs change, and file guidance and its time zone are frozen at Run acceptance; always-loaded paths and record guides are read when an attempt starts. Nothing a run writes is rolled back when the run fails.
 
 ## Boundaries
 
@@ -30,7 +30,7 @@ A thread mounts memories under names; each run freezes the thread's mount set at
 ```
 memories   (mem_)
   id  organization_id  workspace_id  name  description NULL  kind  type  provider_id NULL  namespace NULL
-  guide NULL  always_load  labels  version  created_by_id  updated_by_id  created_at  updated_at
+  guide NULL  guidance JSONB NULL  always_load  labels  version  created_by_id  updated_by_id  created_at  updated_at
   kind IN ('file', 'record')
   CHECK ((type = 'postgres') = (kind = 'file'))
   CHECK ((type = 'postgres') = (provider_id IS NULL) AND (provider_id IS NULL) = (namespace IS NULL))
@@ -69,7 +69,7 @@ thread_memories
   access IN ('read', 'write')
 ```
 
-- `memories.guide` is the memory's own guide; `NULL` inherits the deployment's (below), and `""` gives the memory none. `always_load` is the list of paths whose content leads a file memory's context. A memory's identity, scope, authorship, kind, type, provider and namespace never change.
+- `memories.guidance` owns file memory organization, as defined below, and is null for record memories. `memories.guide` belongs only to record memories; `NULL` inherits the deployment's record guide, and `""` gives the record memory none. `always_load` is the list of paths whose content leads a file memory's context. A memory's identity, scope, authorship, kind, type, provider and namespace never change.
 - A record memory names its Memory Provider and its `namespace` in that provider's backend; a file memory names neither. A namespace belongs to one memory, and the memory references its provider by `(workspace_id, provider_id)`, so the database refuses a provider of another workspace.
 - `memory_file_stores` is the memory's write lock and bookkeeping: `seq` numbers its changes, `pruned_through_seq` is the highest change whose revision was pruned, and the counters give the bytes of current content, the bytes of retained history and the number of files. It exists exactly as long as its memory.
 - A file's `version` is the `seq` of its last change, and its ETag is `"{id}:{version}"`. `description` is derived from the content by the [file format](../a13n-harness/21-file-memory.md#file-format). A file keeps its ID when it moves.
@@ -78,14 +78,22 @@ thread_memories
 
 ## Memories
 
-A memory is created (`write`) with `{name, description?, labels, type, provider_id?, namespace?, guide?, always_load}`. A guide is at most `memory.guide_bytes` UTF-8 bytes (`invalid_argument` at `guide`).
+A memory is created (`write`) with `{name, description?, labels, type, provider_id?, namespace?, guidance?, guide?, always_load}`. The owner-authored file system override plus custom guidance, or a record guide, is at most `memory.guide_bytes` UTF-8 bytes (default 16 KiB). Built-in file preset text does not consume this budget.
 
 - **File memory.** `type` is `postgres`, the default, and `provider_id` and `namespace` are left out (`invalid_argument`). Creation also creates the memory's store row. Each `always_load` path must be a valid [file path](../a13n-harness/21-file-memory.md#file-format) (`invalid_argument` at `always_load.{index}`) and the paths must be unique; at most 64, and a path need not exist.
 - **Record memory.** `provider_id` names a Memory Provider that is enabled and usable in the workspace ([04](04-resources.md#provider-resources)), and `type` must be its type (`invalid_argument` at `provider_id` or `type`). `always_load` must be empty. `namespace` is 1 to 256 printable characters with no whitespace and no `*`, which mem0 filters read as a wildcard; left out, the memory takes `a13n-` followed by the first 32 hex characters of the SHA-256 of its ID. An explicit namespace adopts whatever records the backend already holds under it. A namespace another memory of the provider owns is `already_exists` (kind `memory`, the namespace as `key`); one whose purge is still pending is 409 `conflict` with reason `namespace_purging` (kind `memory_provider`, details `namespace`). Claiming a namespace and staging its purge take a transaction-scoped advisory lock on the provider and namespace, so a claim never passes a purge being staged.
 
-Memory paths take the memory's ID. The view adds `inherited_guide`, what a null `guide` resolves to: `memory.default_guide.file` or `memory.default_guide.record` for the memory's kind, else the Harness's built-in default for that kind; and, for a file memory, `file_count`, `content_bytes` and `history_bytes` from the store row, which are null for a record memory. Lists filter by `label`, `kind` and `type`, ordered by ID.
+Memory paths take the memory's ID. File views expose `guidance`; their `guide` and `inherited_guide` are null. Record views expose `guide` and `inherited_guide` (the deployment's `memory.default_guide.record`, else the Harness default); their `guidance` is null. File views also expose storage counters; record counters are null. Lists filter by `label`, `kind` and `type`, ordered by ID.
 
-`PATCH` (`write`, `If-Match`) changes `name`, `description`, `labels`, `guide` and a file memory's `always_load`; `description: null` clears the description and `guide: null` returns to the inherited guide. A change applies to attempts that start afterwards.
+`PATCH` (`write`, `If-Match`) changes `name`, `description`, `labels`, and the kind's configuration: `guidance` and `always_load` for files, `guide` for records. A non-null guidance object replaces the complete file policy. File memories reject `guide`; record memories reject file guidance. Changes to file guidance apply to new Runs, including new organization rounds, never already accepted Runs. Other configuration applies to later attempts.
+
+### File guidance
+
+`guidance` is `{system_preset: "general" | "journal", system_override: string | null, custom: string, timezone: string}`. Defaults are `general`, null, empty business guidance and `UTC`. Time zones are validated IANA names. `system_override: null` follows the selected built-in preset; any string, including empty, replaces its entire system guide. `custom` supplies business scope, relevant information and permitted organization conventions. Presets define maintenance rules separately from directory defaults. Neither text grants access or replaces tool conditions. `GET /memories/guidance-presets` requires workspace read authority and returns preset IDs, names, descriptions and complete system guides; it is admitted to MCP.
+
+The `general` preset maintains a concise `MEMORY.md` navigation page and reusable topic knowledge. `journal` adds important events in `journal/YYYY-MM-DD.md` while retaining topic knowledge. Event chronology and current conclusions are distinct: a later decision may update a topic without erasing the previous event. Event time, recording time, plans, completion, scope, evidence and uncertainty remain distinguishable. No activity requires no daily file. Business guidance may override default categories and paths within the allowed roots. Neither preset starts scheduled execution, creates empty directories, nor automatically migrates existing files.
+
+A selected preset is a prompt choice, not a storage behavior flag. New Runs resolve and freeze the system text, business guidance and time zone with their mounts, including the installed preset text. The frozen guide stays internal and is omitted from public Run mounts and stream payloads. File-memory instructions contain only the stable time zone; the Runtime Context capability supplies current UTC time at input request boundaries for conversion into that zone. Missing frozen file guidance fails execution rather than silently omitting rules. Unmodified policies follow installed preset updates on new Runs; custom overrides remain unchanged. Foreground and organizer executions receive the same resolved memory policy, with role-specific task instructions. Space shared paths resolve beneath `global/`, while Session-only notes and events stay within visible Session roots.
 
 `DELETE` (`write`, `If-Match`) deletes the memory with its thread mounts in the same transaction, and a file memory's files and history with it; deleting a thread mount bumps that thread's version. A record memory's namespace, adopted or not, is emptied by a [purge](#namespace-purge) staged in the same transaction. A run that froze a mount of the memory finds it deleted at its next memory call ([execution](#execution)).
 
@@ -95,7 +103,7 @@ Every change is audited as `memory.{create | update | delete}`.
 
 A **Memory Space** is a reusable workspace resource with one managed PostgreSQL file Memory. Apps map their users, projects or other business scopes to Spaces and explicitly select them for Sessions. Standalone file and record Memories retain their existing lifecycle.
 
-A Space owns `{name, description, labels, enabled, organization: {enabled, model, check_interval_seconds, cooldown_seconds, trigger}, guide, always_load}`. The API exposes its managed `memory_id`, storage counters and configuration version. `always_load` defaults to `global/MEMORY.md`. `POST /memory-spaces` creates the Space and its backing store atomically (`write`). Reads and lists require `read`; lists support `label` and `enabled`. `PATCH /memory-spaces/{id}` requires `write` and the Space's `If-Match`. A backing-guide or always-load edit also advances that ETag. Organization requires a configured model; configuring it validates the model and captures the configuring actor's execution authority.
+A Space owns `{name, description, labels, enabled, organization: {enabled, model, check_interval_seconds, cooldown_seconds, trigger}, guidance, always_load}`. The API exposes its managed `memory_id`, storage counters and configuration version. `always_load` defaults to `global/MEMORY.md`. `POST /memory-spaces` creates the Space and its backing store atomically (`write`). Reads and lists require `read`; lists support `label` and `enabled`. `PATCH /memory-spaces/{id}` requires `write` and the Space's `If-Match`. A backing-guidance or always-load edit also advances that ETag. Organization requires a configured model; configuring it validates the model and captures the configuring actor's execution authority.
 
 The managed Memory stays out of standalone Memory lists and rejects raw mounts, generic configuration updates and generic deletion. File and revision management uses the existing `/memories/{memory_id}/files` and `/revisions` APIs, with their existing permissions and CAS semantics, even while the Space is disabled. Disabling preserves files, revisions, bindings, policy and organization history. Space deletion requires `write`, `If-Match`, no Session binding and no unsealed Run with a frozen Space mount; it removes the backing files and revisions atomically and retains ordinary organization Run history.
 
@@ -213,7 +221,7 @@ The attempt's plan session reads each frozen mount's memory, skipping memories d
 
 For its file memories, the attempt builds the Harness `FileMemoryCapability` with:
 
-- one `PostgresFileStore` per mount, bound to its memory, and a `FileMount` with the mount's name and access, the memory's `guide`, or its `inherited_guide` when null, its `always_load` paths and a cursor key identifying the memory and visible roots; standalone memories use the memory ID;
+- one `PostgresFileStore` per mount, bound to its memory, and a `FileMount` with the mount's name and access, the Run's frozen resolved file guidance and time zone, its `always_load` paths and a cursor key identifying the memory and visible roots; standalone memories use the memory ID;
 - limits from `memory.*`: the file format, `context_bytes`, `always_load_bytes` and `write_retries`;
 - the enabled file tools of the `memory` toolset, `file_view`, `file_grep`, `file_create`, `file_edit`, `file_append`, `file_move` and `file_delete`; tool permissions apply to their tool IDs `memory.file.*`. With the toolset disabled the run still receives its memories' context, with no tools;
 - `Origin(run_id, principal_id)`, to which each tool call adds its ID;
@@ -246,15 +254,15 @@ These are memories automatically loaded during this Run, not proof of which memo
 
 ## Settings
 
-| Setting                                                                          | Governs                                                                                  |
-| -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `memory.max_file_bytes`, `description_chars`, `frontmatter_bytes`, `path_bytes`  | the file format every store call and API edit applies                                    |
-| `memory.revisions_per_file`, `memory.max_total_bytes`                            | history retention and the per-memory byte total                                          |
-| `memory.mounts_per_thread`                                                       | mounts per thread, checked when mounts are added and at acceptance                       |
-| `memory.guide_bytes`, `memory.default_guide.file`, `memory.default_guide.record` | a guide's size, and the deployment's guide per kind for memories that inherit            |
-| `memory.context_bytes`, `memory.always_load_bytes`, `memory.write_retries`       | a run's memory context budget, its always-loaded share per memory, and tool CAS re-reads |
-| `memory.record_chars`                                                            | a record's length, through the API and the record tools, at most 8000                    |
-| `memory.recall_limit`, `memory.recall_bytes`, `memory.recall_seconds`            | records recalled per memory, a recall block's size, and the recall timeout               |
+| Setting                                                                         | Governs                                                                                  |
+| ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `memory.max_file_bytes`, `description_chars`, `frontmatter_bytes`, `path_bytes` | the file format every store call and API edit applies                                    |
+| `memory.revisions_per_file`, `memory.max_total_bytes`                           | history retention and the per-memory byte total                                          |
+| `memory.mounts_per_thread`                                                      | mounts per thread, checked when mounts are added and at acceptance                       |
+| `memory.guide_bytes`, `memory.default_guide.record`                             | a guide's size, and the deployment's inherited record guide                              |
+| `memory.context_bytes`, `memory.always_load_bytes`, `memory.write_retries`      | a run's memory context budget, its always-loaded share per memory, and tool CAS re-reads |
+| `memory.record_chars`                                                           | a record's length, through the API and the record tools, at most 8000                    |
+| `memory.recall_limit`, `memory.recall_bytes`, `memory.recall_seconds`           | records recalled per memory, a recall block's size, and the recall timeout               |
 
 Loading refuses `always_load_bytes` above `context_bytes`, `frontmatter_bytes` not below `max_file_bytes`, `max_file_bytes` above `max_total_bytes`, a default guide over `guide_bytes`, and twice `providers.operation_seconds` not below the `memory_purge` policy’s `lease_seconds` ([09](09-runtime.md#settings)).
 

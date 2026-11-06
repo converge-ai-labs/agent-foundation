@@ -1,5 +1,7 @@
 import type { Schema } from "../../shared/api";
 
+import { defaultGuidance, type FileGuidance } from "./guidance";
+
 type Memory = Schema["Memory"];
 
 /**
@@ -27,6 +29,7 @@ export interface MemoryDraft {
   name: string;
   description: string;
   guide: GuideDraft;
+  guidance: FileGuidance;
   alwaysLoad: string[];
 }
 
@@ -35,6 +38,9 @@ export function memoryDraft(memory?: Memory): MemoryDraft {
     name: memory?.name ?? "",
     description: memory?.description ?? "",
     guide: guideDraft(memory ? memory.guide : null),
+    guidance: memory?.guidance
+      ? { ...defaultGuidance(), ...memory.guidance }
+      : defaultGuidance(),
     alwaysLoad: memory?.always_load ?? [],
   };
 }
@@ -65,6 +71,7 @@ export function rebaseDraft(
       ? draft.description
       : current.description,
     guide: changed("guide") ? draft.guide : current.guide,
+    guidance: changed("guidance") ? draft.guidance : current.guidance,
     alwaysLoad: changed("alwaysLoad") ? draft.alwaysLoad : current.alwaysLoad,
   };
 }
@@ -73,7 +80,6 @@ function fields(draft: MemoryDraft) {
   return {
     name: draft.name.trim(),
     description: draft.description.trim() || null,
-    guide: guideValue(draft.guide),
     always_load: draft.alwaysLoad,
   };
 }
@@ -92,7 +98,8 @@ export function memoryCreate(
   draft: MemoryDraft,
   record?: RecordBackend,
 ): Schema["MemoryCreate"] {
-  if (!record) return { type: "postgres", ...fields(draft) };
+  if (!record)
+    return { type: "postgres", ...fields(draft), guidance: draft.guidance };
   const { always_load: _, ...rest } = fields(draft);
   const namespace = record.namespace.trim();
   return {
@@ -100,6 +107,7 @@ export function memoryCreate(
     provider_id: record.provider.id,
     ...(namespace && { namespace }),
     ...rest,
+    guide: guideValue(draft.guide),
   };
 }
 
@@ -116,7 +124,12 @@ export function memoryUpdate(
     ...(next.description !== saved.description && {
       description: next.description,
     }),
-    ...(next.guide !== saved.guide && { guide: next.guide }),
+    ...(saved.kind === "record" &&
+      guideValue(draft.guide) !== saved.guide && {
+        guide: guideValue(draft.guide),
+      }),
+    ...(saved.kind === "file" &&
+      !same(draft.guidance, saved.guidance) && { guidance: draft.guidance }),
     ...(!same(next.always_load, saved.always_load) && {
       always_load: next.always_load,
     }),

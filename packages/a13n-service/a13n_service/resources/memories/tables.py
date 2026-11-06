@@ -42,6 +42,7 @@ class MemoryRow(Stamped, Base):
             name="provider",
         ),
         CheckConstraint("kind = 'file' OR always_load = '[]'::jsonb", name="always_load"),
+        CheckConstraint("(kind = 'file') = (guidance IS NOT NULL)", name="guidance"),
         rules(identity_guarded("memories")),
     )
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
@@ -54,8 +55,9 @@ class MemoryRow(Stamped, Base):
     provider_id: Mapped[str | None] = mapped_column(String(72))
     # The record memory's namespace in its provider's backend, such as a mem0 `user_id`.
     namespace: Mapped[str | None]
-    # NULL inherits the default guide; "" means none.
+    # Record memory guide; file memories use guidance.
     guide: Mapped[str | None]
+    guidance: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
     # File paths whose content leads the memory's context, chosen by the owner, never the model.
     always_load: Mapped[list] = mapped_column(JSONB)
     labels: Mapped[dict] = mapped_column(JSONB)

@@ -456,7 +456,6 @@ class Provisioning(Section):
 
 class DefaultGuides(Section):
     # Unset keeps the guide built into the Harness; a memory's own guide overrides either.
-    file: str | None = Field(default=None, max_length=65536)
     record: str | None = Field(default=None, max_length=65536)
 
 
@@ -469,7 +468,8 @@ class MemorySettings(Section):
     # Current content plus history of one memory; history is pruned oldest first before a write fails.
     max_total_bytes: int = Field(default=33554432, ge=65536, le=1073741824)
     mounts_per_thread: int = Field(default=8, ge=1, le=32)
-    guide_bytes: int = Field(default=4096, ge=256, le=65536)
+    # Owner-authored text only; built-in file presets do not consume this budget.
+    guide_bytes: int = Field(default=16384, ge=256, le=65536)
     # All memory context of one run: always-loaded files, indexes and changes.
     context_bytes: int = Field(default=32768, ge=1024, le=1048576)
     # The always-loaded content of one memory, within `context_bytes`.
@@ -496,9 +496,8 @@ class MemorySettings(Section):
             raise ValueError("memory.frontmatter_bytes must stay below memory.max_file_bytes")
         if self.max_file_bytes > self.max_total_bytes:
             raise ValueError("memory.max_file_bytes must not exceed memory.max_total_bytes")
-        for kind, guide in (("file", self.default_guide.file), ("record", self.default_guide.record)):
-            if guide is not None and len(guide.encode()) > self.guide_bytes:
-                raise ValueError(f"memory.default_guide.{kind} must fit memory.guide_bytes")
+        if self.default_guide.record is not None and len(self.default_guide.record.encode()) > self.guide_bytes:
+            raise ValueError("memory.default_guide.record must fit memory.guide_bytes")
         return self
 
 

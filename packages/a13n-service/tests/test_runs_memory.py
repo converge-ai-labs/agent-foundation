@@ -325,7 +325,13 @@ async def test_store_calls_recheck_the_run_principal_under_its_authority(service
     agent = await runs_kit.create_agent(service, scripted_model)
     await runs_kit.start_thread(service, agent, "work")
     (lease,) = await claim(service.runtime, worker_id="memory-worker", worker_build="test", limit=1)
-    planned = (PlannedMemory(FrozenMemoryMount(name="team", memory_id=memory["id"], access="write"), None, ()),)
+    planned = (
+        PlannedMemory(
+            FrozenMemoryMount(name="team", memory_id=memory["id"], access="write", file_guide="Keep facts."),
+            "Keep facts.",
+            (),
+        ),
+    )
     capability = file_memory(
         service.runtime,
         planned,

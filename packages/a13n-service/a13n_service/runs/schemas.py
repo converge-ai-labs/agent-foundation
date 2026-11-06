@@ -35,7 +35,7 @@ from a13n_service.runs.browsers.schemas import BrowserBinding
 from a13n_service.runs.display import Item
 from a13n_service.runs.environments.schemas import DEFAULT_MOUNT_PERMISSIONS, MAX_MOUNTS, MountCreate, WorkingDirectory
 from a13n_service.runs.history import MessageHistory
-from a13n_service.runs.memories.schemas import FrozenMemoryMount
+from a13n_service.runs.memories.schemas import RunMemoryMount
 from a13n_service.tenancy.schemas import PrincipalSummary
 
 type RunStatus = Literal["accepted", "running", "waiting", "completed", "failed", "cancelled"]
@@ -644,7 +644,7 @@ class RunView(BaseModel):
     pending: Pending | HistoricalDesktopPending | None
     environment_mounts: list[EnvironmentMount]
     browser_binding: BrowserBinding | None = None
-    memory_mounts: list[MemoryMount | FrozenMemoryMount]
+    memory_mounts: list[MemoryMount | RunMemoryMount]
     # The options its message chose, frozen at acceptance; a resume or child result inherits its origin's.
     options: RunOptions
     current_attempt_id: str | None

@@ -9,6 +9,7 @@ from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstra
 
 from a13n_service.infra.ids import Key, ObjectId
 from a13n_service.infra.labels import Labels
+from a13n_service.resources.memories.guidance import FileMemoryGuidance
 from a13n_service.resources.memories.tables import MemoryKind
 
 # The Service-owned file store; other types belong to Memory Providers.
@@ -103,7 +104,7 @@ class MemorySpaceCreate(BaseModel):
     labels: Labels = Field(default_factory=dict)
     enabled: bool = True
     organization: OrganizationPolicy = Field(default_factory=OrganizationPolicy)
-    guide: Guide | None = None
+    guidance: FileMemoryGuidance = Field(default_factory=FileMemoryGuidance)
     always_load: AlwaysLoad = ("global/MEMORY.md",)
 
 
@@ -114,7 +115,7 @@ class MemorySpaceUpdate(BaseModel):
     labels: Labels | None = None
     enabled: bool | None = None
     organization: OrganizationPolicy | None = None
-    guide: Guide | None = None
+    guidance: FileMemoryGuidance | None = None
     always_load: AlwaysLoad | None = None
 
 
@@ -128,7 +129,7 @@ class MemorySpace(BaseModel):
     enabled: bool
     organization: OrganizationPolicy
     memory_id: str
-    guide: str | None
+    guidance: FileMemoryGuidance
     always_load: list[str]
     file_count: int
     content_bytes: int
@@ -156,8 +157,9 @@ class MemoryCreate(BaseModel):
     type: str = Field(default=POSTGRES, min_length=1, max_length=64)
     provider_id: ObjectId | None = None
     namespace: Namespace | None = None
-    # Null inherits the deployment's default guide; "" gives the memory none.
+    # Record memories only: null inherits the default; "" supplies no guide.
     guide: Guide | None = None
+    guidance: FileMemoryGuidance | None = None
     # File memories only.
     always_load: AlwaysLoad = ()
 
@@ -170,6 +172,7 @@ class MemoryUpdate(BaseModel):
     description: Description | None = None
     labels: Labels | None = None
     guide: Guide | None = None
+    guidance: FileMemoryGuidance | None = None
     always_load: AlwaysLoad | None = None
 
 
@@ -186,7 +189,8 @@ class Memory(BaseModel):
     namespace: str | None
     guide: str | None
     # What a null `guide` resolves to for the memory's kind, shown even while the memory has its own.
-    inherited_guide: str
+    inherited_guide: str | None
+    guidance: FileMemoryGuidance | None
     always_load: list[str]
     labels: dict[str, str]
     # A file memory's files, current content and retained history, which together stay within

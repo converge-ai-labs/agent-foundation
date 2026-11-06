@@ -20,7 +20,7 @@ import { FormSection } from "../../shared/forms";
 import { SaveBar } from "../../shared/page";
 import { workspaceModelsQuery } from "../models/api";
 import { isStale, memoryQueries } from "./api";
-import { AlwaysLoadField, GuideField } from "./fields";
+import { AlwaysLoadField } from "./fields";
 import {
   spaceDraft,
   spaceUpdate,
@@ -29,6 +29,8 @@ import {
 } from "./space-form";
 import { invalidateSpaces, spaceQueries } from "./spaces-api";
 import styles from "./space-selection.module.css";
+
+import { FileGuidanceField } from "./guidance-field";
 
 export type SpaceResource = { value: Schema["MemorySpace"]; etag?: string };
 export function SpaceConfiguration({ resource }: { resource: SpaceResource }) {
@@ -46,9 +48,6 @@ export function SpaceConfiguration({ resource }: { resource: SpaceResource }) {
     draft = edit?.draft ?? spaceDraft(space);
   const readOnly = !can("write");
   const models = useQuery(workspaceModelsQuery(client, workspace.id));
-  const backing = useQuery(
-    memoryQueries(client, workspace.id).memory(space.memory_id),
-  );
   const files = useQuery(
     memoryQueries(client, workspace.id).files(space.memory_id),
   );
@@ -287,13 +286,10 @@ export function SpaceConfiguration({ resource }: { resource: SpaceResource }) {
             "Tell agents what to keep in this space. Session folder boundaries are enforced separately.",
           )}
         >
-          <GuideField
-            kind="file"
-            hideLabel
-            value={draft.guide}
-            onChange={(guide) => change({ guide })}
+          <FileGuidanceField
+            value={draft.guidance}
+            onChange={(guidance) => change({ guidance })}
             readOnly={readOnly}
-            inherited={backing.data?.value.inherited_guide}
           />
         </FormSection>
         <FormSection

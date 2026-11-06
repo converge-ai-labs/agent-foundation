@@ -37,15 +37,13 @@ const MAX_ALWAYS_LOAD = 64;
  * Inherit follows the deployment's guide as it changes; None gives the memory
  * no guide; Custom is the memory's own.
  */
-export function GuideField({
-  kind,
+export function RecordGuideField({
   value,
   onChange,
   inherited,
   readOnly = false,
   hideLabel = false,
 }: {
-  kind: Kind;
   value: GuideDraft;
   onChange: (value: GuideDraft) => void;
   /** The deployment's guide, which a memory without its own receives. */
@@ -111,9 +109,7 @@ export function GuideField({
         <>
           <p className={styles.note}>
             {t(
-              kind === "file"
-                ? "Use the service's default instructions for file memories. Changes to the defaults apply to future runs."
-                : "Use the service's default instructions for record memories. Changes to the defaults apply to future runs.",
+              "Use the service's default instructions for record memories. Changes to the defaults apply to future runs.",
             )}
           </p>
           {inherited && (

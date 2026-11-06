@@ -138,7 +138,7 @@ The generated [configuration reference](../../docs/a13n-service/configuration-re
 | `memory.always_load_bytes`, inclusive                                   | `memory.context_bytes`                        | always-loaded files fit the run's memory context budget ([11](11-memory.md#settings))       |
 | `memory.frontmatter_bytes`                                              | `memory.max_file_bytes`                       | a file's frontmatter leaves room for its body                                               |
 | `memory.max_file_bytes`, inclusive                                      | `memory.max_total_bytes`                      | one file always fits its memory                                                             |
-| `memory.default_guide.file` and `.record`, inclusive                    | `memory.guide_bytes`                          | the deployment's guides obey the bound a memory's own guide does                            |
+| `memory.default_guide.record`, inclusive                                | `memory.guide_bytes`                          | the deployment's guides obey the bound a memory's own guide does                            |
 
 ### Operational limits
 

@@ -5,7 +5,6 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from a13n_harness.capabilities import DEFAULT_FILE_GUIDE
 from a13n_harness.providers.memory import Changes, FullResync, MemoryStoreError, Origin
 from a13n_service.infra.audit import AuditEventRow
 from a13n_service.infra.db import short_session
@@ -15,7 +14,6 @@ from a13n_service.resources.memories import service as memories
 from a13n_service.resources.memories.schemas import MemoryCreate, MemoryFileCreate, MemoryFileReplace, MemoryUpdate
 from a13n_service.resources.memories.store import PostgresFileStore
 from a13n_service.resources.memories.tables import MemoryFileRevisionRow, MemoryFileRow, MemoryFileStoreRow
-from a13n_service.settings import MemorySettings
 from a13n_service.tenancy.authorize import BUILT_IN_ROLES, Grant, Principal
 from sqlalchemy import event, select
 
@@ -71,25 +69,34 @@ async def test_memories_are_configured_with_preconditions_and_guides(service) ->
     base = f"{service.api}/memories"
     memory = await create_memory(service, always_load=["README.md"], labels={"team": "a"})
     assert (memory["kind"], memory["type"], memory["guide"]) == ("file", "postgres", None)
-    assert memory["inherited_guide"] == DEFAULT_FILE_GUIDE
+    assert memory["inherited_guide"] is None
+    assert memory["guidance"] == {"system_preset": "general", "system_override": None, "custom": "", "timezone": "UTC"}
     assert (memory["file_count"], memory["content_bytes"], memory["history_bytes"]) == (0, 0, 0)
     assert memory["always_load"] == ["README.md"]
     for always_load, field in ((["../x"], "always_load.0"), (["a.md", "a.md"], "always_load")):
         refused = await service.client.post(base, json={"name": "Bad", "always_load": always_load})
         assert refused.status_code == 400 and refused.json()["error"]["details"]["field"] == field
-    oversized = await service.client.post(base, json={"name": "Big", "guide": "x" * 4097})
-    assert oversized.status_code == 400 and oversized.json()["error"]["details"]["field"] == "guide"
+    oversized = await service.client.post(base, json={"name": "Big", "guidance": {"custom": "x" * 16385}})
+    assert oversized.status_code == 400 and oversized.json()["error"]["details"]["field"] == "guidance"
 
     item = f"{base}/{memory['id']}"
-    assert (await service.client.patch(item, json={"guide": "Keep it short."})).status_code == 428
-    guided = await service.client.patch(item, json={"guide": "Keep it short."}, headers={"if-match": etag(memory)})
+    rules = {
+        "system_preset": "journal",
+        "system_override": "Keep it short.",
+        "custom": "Team decisions",
+        "timezone": "Asia/Taipei",
+    }
+    assert (await service.client.patch(item, json={"guidance": rules})).status_code == 428
+    guided = await service.client.patch(item, json={"guidance": rules}, headers={"if-match": etag(memory)})
     assert guided.status_code == 200, guided.text
-    assert (guided.json()["guide"], guided.json()["inherited_guide"]) == ("Keep it short.", DEFAULT_FILE_GUIDE)
+    assert guided.json()["guidance"] == rules
     assert guided.headers["etag"] == etag(guided.json())
-    silenced = await service.client.patch(item, json={"guide": ""}, headers={"if-match": etag(guided.json())})
-    assert (silenced.json()["guide"], silenced.json()["inherited_guide"]) == ("", DEFAULT_FILE_GUIDE)
-    inherited = await service.client.patch(item, json={"guide": None}, headers={"if-match": etag(silenced.json())})
-    assert inherited.json()["guide"] is None
+    rules = {**rules, "system_override": ""}
+    silenced = await service.client.patch(item, json={"guidance": rules}, headers={"if-match": etag(guided.json())})
+    assert silenced.json()["guidance"]["system_override"] == ""
+    rules = {**rules, "system_override": None}
+    inherited = await service.client.patch(item, json={"guidance": rules}, headers={"if-match": etag(silenced.json())})
+    assert inherited.json()["guidance"] == rules
     unchanged = await service.client.patch(item, json={"name": "team"}, headers={"if-match": etag(inherited.json())})
     assert unchanged.json()["version"] == inherited.json()["version"]
 
@@ -109,11 +116,17 @@ async def test_memories_are_configured_with_preconditions_and_guides(service) ->
     ]
 
 
-async def test_the_default_guide_comes_from_startup_configuration(serve, settings) -> None:  # type: ignore[no-untyped-def]
-    configured = MemorySettings.model_validate({"default_guide": {"file": "One fact per file."}})
-    async with serve(settings=settings.model_copy(update={"memory": configured})) as service:
-        memory = await create_memory(service)
-        assert (memory["guide"], memory["inherited_guide"]) == (None, "One fact per file.")
+async def test_guidance_catalog_and_invalid_configuration(service) -> None:  # type: ignore[no-untyped-def]
+    result = await service.client.get(f"{service.api}/memories/guidance-presets")
+    assert result.status_code == 200
+    presets = result.json()["items"]
+    assert [preset["id"] for preset in presets] == ["general", "journal"]
+    assert "journal/YYYY-MM-DD.md" in presets[1]["system_guide"]
+    for guidance in ({"system_preset": "unknown"}, {"timezone": "Invalid/Zone"}):
+        response = await service.client.post(f"{service.api}/memories", json={"name": "Invalid", "guidance": guidance})
+        assert response.status_code == 400, response.text
+    old = await service.client.post(f"{service.api}/memories", json={"name": "Old", "guide": "Old file rules"})
+    assert old.status_code == 400
 
 
 async def test_files_change_under_their_etags_and_each_change_is_one_revision(service) -> None:  # type: ignore[no-untyped-def]
@@ -447,7 +460,7 @@ async def test_verbs_follow_the_memory_rules(service) -> None:  # type: ignore[n
                 actor,
                 workspace_id,
                 memory.id,
-                MemoryUpdate(guide="x"),
+                MemoryUpdate(guidance={"custom": "x"}),
                 if_match=f'"{memory.id}:{memory.version}"',
                 settings=settings,
             )

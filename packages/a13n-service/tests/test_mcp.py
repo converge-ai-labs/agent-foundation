@@ -34,7 +34,13 @@ async def test_management_fidelity_and_audit(service: SimpleNamespace) -> None:
         discovery = await rpc(http, "tools/list")
         assert discovery.status_code == 200, discovery.text
         assert discovery.json()["result"]["tools"]
-        created = await call(http, service, "POST", "/memories", request_body={"name": "notes", "guide": "custom"})
+        created = await call(
+            http,
+            service,
+            "POST",
+            "/memories",
+            request_body={"name": "notes", "guidance": {"custom": "Remember project decisions."}},
+        )
         assert created["status"] == 201
         memory_id = created["body"]["id"]
         assert created["headers"]["etag"]
@@ -52,7 +58,7 @@ async def test_management_fidelity_and_audit(service: SimpleNamespace) -> None:
             expected_version=created["headers"]["etag"],
             request_body={},
         )
-        assert unchanged["status"] == 200 and unchanged["body"]["guide"] == "custom"
+        assert unchanged["status"] == 200 and unchanged["body"]["guidance"]["custom"] == "Remember project decisions."
         cleared = await call(
             http,
             service,
@@ -60,9 +66,14 @@ async def test_management_fidelity_and_audit(service: SimpleNamespace) -> None:
             "/memories/{memory_id}",
             **args,
             expected_version=unchanged["headers"]["etag"],
-            request_body={"guide": None},
+            request_body={"guidance": {}},
         )
-        assert cleared["status"] == 200 and cleared["body"]["guide"] is None
+        assert cleared["status"] == 200 and cleared["body"]["guidance"] == {
+            "system_preset": "general",
+            "system_override": None,
+            "custom": "",
+            "timezone": "UTC",
+        }
         stale = await call(
             http,
             service,
@@ -70,7 +81,7 @@ async def test_management_fidelity_and_audit(service: SimpleNamespace) -> None:
             "/memories/{memory_id}",
             **args,
             expected_version=created["headers"]["etag"],
-            request_body={"guide": "stale"},
+            request_body={"guidance": {"custom": "stale"}},
         )
         assert stale["status"] == 412 and stale["body"]["error"]["code"] == "precondition_failed"
         assert stale["body"]["error"]["request_id"] == stale["headers"]["x-request-id"]

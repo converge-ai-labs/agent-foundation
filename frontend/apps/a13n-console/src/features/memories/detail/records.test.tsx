@@ -69,6 +69,7 @@ function setup({
     name: "Team facts",
     description: null,
     kind: "record",
+    guidance: null,
     type: "mem0",
     provider_id: "memprov_1",
     namespace: "user-42",

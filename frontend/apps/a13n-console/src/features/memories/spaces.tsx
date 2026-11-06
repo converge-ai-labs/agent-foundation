@@ -26,6 +26,9 @@ import { FormActions, TextAreaField } from "../../shared/forms";
 import { Page } from "../../shared/page";
 import { invalidateSpaces, spaceQueries } from "./spaces-api";
 
+import { FileGuidanceField } from "./guidance-field";
+import { defaultGuidance, validGuidance } from "./guidance";
+
 export function MemorySpacesPage() {
   const { workspace, can, basePath } = useWorkspace(),
     client = useClient(),
@@ -157,7 +160,7 @@ function CreateSpace({ onCreated }: { onCreated: (id: string) => void }) {
       onOpenChange={setOpen}
       title={t("Create memory space")}
       description={t(
-        "Start with a name. Add organization and memory instructions in configuration.",
+        "Choose how to organize memory. Automatic organization can be configured later.",
       )}
       closeLabel={t("Close")}
       trigger={
@@ -189,12 +192,17 @@ function CreateSpaceForm({
     cache = useQueryClient();
   const [name, setName] = useState(""),
     [description, setDescription] = useState("");
+  const [guidance, setGuidance] = useState(defaultGuidance);
   const create = useMutation({
     mutationFn: () =>
       client
         .workspace(workspace.id)
         .POST("/api/v1/memory-spaces", {
-          body: { name: name.trim(), description: description.trim() || null },
+          body: {
+            name: name.trim(),
+            description: description.trim() || null,
+            guidance,
+          },
         })
         .then(data),
     onSuccess: (space) => {
@@ -226,10 +234,15 @@ function CreateSpaceForm({
         rows={3}
         disabled={create.isPending}
       />
+      <FileGuidanceField
+        value={guidance}
+        onChange={setGuidance}
+        readOnly={create.isPending}
+      />
       <ErrorNotice error={create.error} />
       <FormActions
         pending={create.isPending}
-        disabled={!name.trim()}
+        disabled={!name.trim() || !validGuidance(guidance)}
         label={t("Create space")}
         onCancel={onCancel}
       />

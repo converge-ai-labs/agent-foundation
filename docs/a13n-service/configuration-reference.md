@@ -248,7 +248,7 @@ The tables are generated from `Settings`. Contributors updating those definition
 | `memory.revisions_per_file`   | `A13N_MEMORY__REVISIONS_PER_FILE`                  | integer        | minimum=1; maximum=1000; default=10                 |
 | `memory.max_total_bytes`      | `A13N_MEMORY__MAX_TOTAL_BYTES`                     | integer        | minimum=65536; maximum=1073741824; default=33554432 |
 | `memory.mounts_per_thread`    | `A13N_MEMORY__MOUNTS_PER_THREAD`                   | integer        | minimum=1; maximum=32; default=8                    |
-| `memory.guide_bytes`          | `A13N_MEMORY__GUIDE_BYTES`                         | integer        | minimum=256; maximum=65536; default=4096            |
+| `memory.guide_bytes`          | `A13N_MEMORY__GUIDE_BYTES`                         | integer        | minimum=256; maximum=65536; default=16384           |
 | `memory.context_bytes`        | `A13N_MEMORY__CONTEXT_BYTES`                       | integer        | minimum=1024; maximum=1048576; default=32768        |
 | `memory.always_load_bytes`    | `A13N_MEMORY__ALWAYS_LOAD_BYTES`                   | integer        | minimum=0; maximum=1048576; default=8192            |
 | `memory.description_chars`    | `A13N_MEMORY__DESCRIPTION_CHARS`                   | integer        | minimum=1; maximum=1000; default=200                |
@@ -259,8 +259,9 @@ The tables are generated from `Settings`. Contributors updating those definition
 | `memory.recall_bytes`         | `A13N_MEMORY__RECALL_BYTES`                        | integer        | minimum=512; maximum=65536; default=8192            |
 | `memory.recall_seconds`       | `A13N_MEMORY__RECALL_SECONDS`                      | number         | maximum=30; exclusiveMinimum=0; default=2           |
 | `memory.record_chars`         | `A13N_MEMORY__RECORD_CHARS`                        | integer        | minimum=1; maximum=8000; default=8000               |
-| `memory.default_guide.file`   | `A13N_MEMORY__DEFAULT_GUIDE` (JSON field `file`)   | string or null | maxLength=65536; default=null                       |
 | `memory.default_guide.record` | `A13N_MEMORY__DEFAULT_GUIDE` (JSON field `record`) | string or null | maxLength=65536; default=null                       |
+
+For file memory, `memory.guide_bytes` bounds the combined UTF-8 size of the owner-authored System guide override and Custom guide. Built-in preset text is excluded, so smaller budgets still support every preset.
 
 ## `providers`
 

@@ -28,6 +28,8 @@ vi.mock("react-i18next", () => ({
   }),
 }));
 
+import { defaultGuidance } from "../guidance";
+
 let permissions: string[];
 let client: ReturnType<typeof createClient>;
 let cache: QueryClient;
@@ -91,7 +93,8 @@ function setup(search = "", allowed = ["read", "run", "write"]) {
     provider_id: null,
     namespace: null,
     guide: null,
-    inherited_guide: "Keep one topic per file.",
+    inherited_guide: null,
+    guidance: defaultGuidance(),
     always_load: ["README.md"],
     labels: { team: "docs" },
     file_count: 3,
@@ -144,6 +147,23 @@ function setup(search = "", allowed = ["read", "run", "write"]) {
       body,
     });
     const route = `${request.method} ${path}`;
+    if (route === "GET /api/v1/memories/guidance-presets")
+      return Response.json({
+        items: [
+          {
+            id: "general",
+            name: "General",
+            description: "Topic knowledge",
+            system_guide: "Keep supported topic knowledge.",
+          },
+          {
+            id: "journal",
+            name: "General with daily records",
+            description: "Events and topics",
+            system_guide: "Keep important events by date.",
+          },
+        ],
+      });
     if (route === `GET ${base}`)
       return Response.json(memory, { headers: { ETag: tag(memory) } });
     if (route === `PATCH ${base}`) {
@@ -487,50 +507,52 @@ it("offers no purge to people who may only run agents", async () => {
   expect(screen.queryByRole("button", { name: "Delete history" })).toBeNull();
 });
 
-it("switches the guide between inherited, custom and none", async () => {
+it("edits custom guide and restores an advanced system override independently", async () => {
   const { user, sent } = setup("?tab=configuration");
-  expect(
-    (await screen.findByLabelText("Default memory instructions")).textContent,
-  ).toBe("Keep one topic per file.");
-  // Customizing starts from the guide the memory inherited.
-  await user.click(screen.getByRole("button", { name: "Custom" }));
-  const guide = screen.getByRole("textbox", { name: "Memory instructions" });
-  expect((guide as HTMLTextAreaElement).value).toBe("Keep one topic per file.");
-  await user.type(guide, " Link related files.");
+  const business = await screen.findByRole("textbox", {
+    name: "Custom guide (optional)",
+  });
+  expect(screen.queryByRole("textbox", { name: "System guide" })).toBeNull();
+  await user.type(business, "Remember project decisions.");
+  await user.click(screen.getByRole("button", { name: /Advanced settings/ }));
+  const system = await screen.findByRole("textbox", { name: "System guide" });
+  await waitFor(() =>
+    expect((system as HTMLTextAreaElement).value).toBe(
+      "Keep supported topic knowledge.",
+    ),
+  );
+  await user.clear(system);
+  await user.type(system, "Custom system rules");
   await user.click(screen.getByRole("button", { name: "Save changes" }));
   await waitFor(() => expect(sent("PATCH")).toHaveLength(1));
   expect(sent("PATCH")[0]).toMatchObject({
-    ifMatch: '"mem_1:3"',
-    body: { guide: "Keep one topic per file. Link related files." },
+    body: {
+      guidance: {
+        system_preset: "general",
+        system_override: "Custom system rules",
+        custom: "Remember project decisions.",
+      },
+    },
   });
   await waitFor(() =>
     expect(
       screen.queryByRole("region", { name: "Unsaved changes" }),
     ).toBeNull(),
   );
-
-  await user.click(screen.getByRole("button", { name: "None" }));
-  expect(
-    screen.getByText(
-      "No usage instructions are added for this memory. Agents can still use it according to their permissions.",
-    ),
-  ).toBeTruthy();
+  await user.click(
+    screen.getByRole("button", { name: "Restore selected preset" }),
+  );
   await user.click(screen.getByRole("button", { name: "Save changes" }));
   await waitFor(() => expect(sent("PATCH")).toHaveLength(2));
   expect(sent("PATCH")[1]).toMatchObject({
-    ifMatch: '"mem_1:4"',
-    body: { guide: "" },
+    body: {
+      guidance: {
+        system_preset: "general",
+        system_override: null,
+        custom: "Remember project decisions.",
+      },
+    },
   });
-
-  await waitFor(() =>
-    expect(
-      screen.queryByRole("region", { name: "Unsaved changes" }),
-    ).toBeNull(),
-  );
-  await user.click(screen.getByRole("button", { name: "Use default" }));
-  await user.click(screen.getByRole("button", { name: "Save changes" }));
-  await waitFor(() => expect(sent("PATCH")).toHaveLength(3));
-  expect(sent("PATCH")[2]?.body).toEqual({ guide: null });
 });
 
 it("edits always-loaded paths and keeps the draft through a conflict", async () => {

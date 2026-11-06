@@ -12,6 +12,6 @@ Memories persist across conversations and may be shared with other conversations
 - When a write's outcome is unknown after an interruption, view the file before writing again.
 </writes>
 <best-practices>
-- Keep one topic per file and start it with a line, or a frontmatter `description`, that says what it holds; the index shows that line.
+- Follow the mounted memory's guide for organization. Start each file with a line, or a frontmatter `description`, that says what it holds; the index shows that line.
 - `memory_file_grep` matches literal text line by line and ignores case unless asked. Try shorter or different keywords, or the index, when nothing matches.
 </best-practices>

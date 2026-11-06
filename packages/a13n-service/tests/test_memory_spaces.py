@@ -284,7 +284,7 @@ async def test_configuration_trigger_retries_after_model_is_reenabled(service, s
     await due(service, space)
     await organize(service.runtime)
     assert (await status(service, space))["processed_seq"] == 0
-    await patch(service, f"memory-spaces/{space['id']}", guide="Organize project knowledge.")
+    await patch(service, f"memory-spaces/{space['id']}", guidance={"custom": "Organize project knowledge."})
     await patch(service, f"models/{model}", enabled=False)
     await due(service, space)
     await organize(service.runtime)
@@ -317,7 +317,7 @@ async def test_space_etags_associations_and_coordinated_delete(service, scripted
     space = await create_space(service)
     path = f"{service.api}/memory-spaces/{space['id']}"
     original = await service.client.get(path)
-    changed = await patch(service, f"memory-spaces/{space['id']}", guide="Keep durable decisions.")
+    changed = await patch(service, f"memory-spaces/{space['id']}", guidance={"custom": "Keep durable decisions."})
     assert changed["version"] > space["version"]
     stale = await service.client.patch(path, json={"name": "Stale"}, headers={"if-match": original.headers["etag"]})
     assert stale.status_code == 412
