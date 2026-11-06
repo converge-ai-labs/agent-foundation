@@ -1,6 +1,5 @@
 """File memory guidance: built-in organization presets and owner-authored overrides."""
 
-from datetime import datetime
 from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -125,10 +124,6 @@ def resolve_guidance(guidance: FileMemoryGuidance) -> str:
 
 
 def validate_guidance(guidance: FileMemoryGuidance, *, max_bytes: int) -> dict:
-    if len(resolve_guidance(guidance).encode()) > max_bytes:
-        raise invalid("guidance", f"combined system and business guidance exceeds {max_bytes} bytes")
+    if len((guidance.system_override or "").encode()) + len(guidance.custom.encode()) > max_bytes:
+        raise invalid("guidance", f"owner-authored system override and custom guidance exceeds {max_bytes} bytes")
     return guidance.model_dump(mode="json")
-
-
-def time_context(timezone: str, now: datetime) -> str:
-    return f"Memory time zone: {timezone}. Current execution time: {now.astimezone(ZoneInfo(timezone)).isoformat()}."

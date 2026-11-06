@@ -261,6 +261,8 @@ The tables are generated from `Settings`. Contributors updating those definition
 | `memory.record_chars`         | `A13N_MEMORY__RECORD_CHARS`                        | integer        | minimum=1; maximum=8000; default=8000               |
 | `memory.default_guide.record` | `A13N_MEMORY__DEFAULT_GUIDE` (JSON field `record`) | string or null | maxLength=65536; default=null                       |
 
+For file memory, `memory.guide_bytes` bounds the combined UTF-8 size of the owner-authored System guide override and Custom guide. Built-in preset text is excluded, so smaller budgets still support every preset.
+
 ## `providers`
 
 | Setting                                   | Environment variable                            | Type / choices  | Constraints and default                                       |

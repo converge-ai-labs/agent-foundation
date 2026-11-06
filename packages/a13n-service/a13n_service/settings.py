@@ -468,6 +468,7 @@ class MemorySettings(Section):
     # Current content plus history of one memory; history is pruned oldest first before a write fails.
     max_total_bytes: int = Field(default=33554432, ge=65536, le=1073741824)
     mounts_per_thread: int = Field(default=8, ge=1, le=32)
+    # Owner-authored text only; built-in file presets do not consume this budget.
     guide_bytes: int = Field(default=16384, ge=256, le=65536)
     # All memory context of one run: always-loaded files, indexes and changes.
     context_bytes: int = Field(default=32768, ge=1024, le=1048576)

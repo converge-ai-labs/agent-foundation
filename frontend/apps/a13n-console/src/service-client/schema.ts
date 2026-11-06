@@ -8351,36 +8351,6 @@ export interface components {
       working_directory?: string | null;
     };
     /**
-     * FrozenMemoryMount
-     * @description Host-resolved Space identity and roots, never accepted from a mount request.
-     */
-    FrozenMemoryMount: {
-      access: components["schemas"]["MemoryAccess"];
-      /** File Guide */
-      file_guide?: string | null;
-      /** Memory Id */
-      memory_id: string;
-      /** Name */
-      name: string;
-      /**
-       * Recall
-       * @default true
-       */
-      recall?: boolean;
-      /**
-       * Roots
-       * @default []
-       */
-      roots?: string[];
-      /** Space Id */
-      space_id?: string | null;
-      /**
-       * Timezone
-       * @default UTC
-       */
-      timezone?: string;
-    };
-    /**
      * GitHubSource
      * @description A directory of a public GitHub repository.
      *
@@ -11614,6 +11584,29 @@ export interface components {
       /** Workspace Id */
       workspace_id: string;
     };
+    /**
+     * RunMemoryMount
+     * @description Host-resolved Space identity and roots, never accepted from a mount request.
+     */
+    RunMemoryMount: {
+      access: components["schemas"]["MemoryAccess"];
+      /** Memory Id */
+      memory_id: string;
+      /** Name */
+      name: string;
+      /**
+       * Recall
+       * @default true
+       */
+      recall?: boolean;
+      /**
+       * Roots
+       * @default []
+       */
+      roots?: string[];
+      /** Space Id */
+      space_id?: string | null;
+    };
     /** RunMetrics */
     RunMetrics: {
       /** Average Duration Seconds */
@@ -11805,7 +11798,7 @@ export interface components {
       /** Memory Mounts */
       memory_mounts: (
         | components["schemas"]["MemoryMount"]
-        | components["schemas"]["FrozenMemoryMount"]
+        | components["schemas"]["RunMemoryMount"]
       )[];
       options: components["schemas"]["RunOptions-Output"];
       output: components["schemas"]["JsonValue"] | null;

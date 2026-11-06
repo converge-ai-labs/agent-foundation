@@ -6,18 +6,25 @@ from pydantic import BaseModel, ConfigDict
 from a13n_service.resources.memories.schemas import MemoryMount
 
 
-class FrozenMemoryMount(MemoryMount):
+class RunMemoryMount(MemoryMount):
     """Host-resolved Space identity and roots, never accepted from a mount request."""
+
+    model_config = ConfigDict(extra="ignore")
 
     space_id: str | None = None
     roots: tuple[str, ...] = ()
-    # Resolved at acceptance, including the built-in preset text.
-    file_guide: str | None = None
-    timezone: str = "UTC"
 
     @property
     def cursor_key(self) -> str:
         return self.memory_id if self.space_id is None else f"{self.space_id}:{','.join(self.roots)}"
+
+
+class FrozenMemoryMount(RunMemoryMount):
+    """Internal acceptance snapshot; guidance is never part of the public Run mount."""
+
+    model_config = ConfigDict(extra="forbid")
+    file_guide: str | None = None
+    timezone: str = "UTC"
 
 
 class MemoryMountUpdate(BaseModel):

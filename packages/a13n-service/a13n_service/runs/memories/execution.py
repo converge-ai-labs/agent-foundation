@@ -36,7 +36,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from a13n_service.infra.db import Storage, short_session
 from a13n_service.infra.errors import ServiceError
 from a13n_service.resources.memories import provenance
-from a13n_service.resources.memories.guidance import time_context
 from a13n_service.resources.memories.records import RecordMemory, backend, open_record_store, record_memory
 from a13n_service.resources.memories.schemas import MemoryRecordSource
 from a13n_service.resources.memories.service import inherited_record_guide
@@ -122,15 +121,19 @@ def _gate(runtime: Runtime, lease: Lease, principal: Principal, authority: Execu
 
 
 def _guide(memory: PlannedMemory, settings: MemorySettings) -> str:
-    guide = (
-        memory.guide
-        if memory.guide is not None
-        else inherited_record_guide(settings)
-        if memory.record is not None
-        else ""
-    )
-    if memory.record is None:
-        guide += "\n" + time_context(memory.mount.timezone, datetime.now(UTC))
+    if memory.record is not None:
+        guide = memory.guide if memory.guide is not None else inherited_record_guide(settings)
+    else:
+        if memory.guide is None:
+            raise ServiceError(
+                "internal",
+                "File memory snapshot is missing frozen guidance",
+                {"memory_id": memory.mount.memory_id, "reason": "missing_memory_guidance"},
+            )
+        guide = memory.guide + (
+            f"\nMemory time zone: {memory.mount.timezone}. "
+            "Use current_time from runtime request context, converted to this zone, for the current date and time."
+        )
     if memory.mount.space_id is not None:
         guide += "\nThis Memory Space exposes: " + ", ".join(memory.mount.roots)
         guide += (
