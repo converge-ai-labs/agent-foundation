@@ -212,11 +212,17 @@ try {
     Test-Case 'checksum exact filename, markers, missing, malformed, duplicate, mismatch' {
         New-ZipFixture $Archive $validEntries
         $hash = (Get-FileHash -LiteralPath $Archive -Algorithm SHA256).Hash
-        Write-Checksums "$hash  $asset`n"
-        Assert-EnvdArchiveHash $Archive $Checksums $asset
-        Write-Checksums "$($hash.ToLowerInvariant()) *$asset`n"
-        Assert-EnvdArchiveHash $Archive $Checksums $asset
-        foreach ($text in @("$hash  other.zip", "$hash  ./$asset", "$hash  $asset.bak", "$hash  $($asset.ToUpperInvariant())")) {
+        foreach ($prefix in @(' ', '*', ' ./', '*./')) {
+            Write-Checksums "$($hash.ToLowerInvariant()) $prefix$asset`n"
+            Assert-EnvdArchiveHash $Archive $Checksums $asset
+            Write-Checksums "$hash  $asset`n$hash $prefix$asset"
+            Assert-Throws { Assert-EnvdArchiveHash $Archive $Checksums $asset } '*exactly one*'
+            Write-Checksums "$hash  $asset`nbad $prefix$asset"
+            Assert-Throws { Assert-EnvdArchiveHash $Archive $Checksums $asset } '*Malformed checksum*'
+            Write-Checksums "$('0' * 64) $prefix$asset"
+            Assert-Throws { Assert-EnvdArchiveHash $Archive $Checksums $asset } '*SHA256 mismatch*'
+        }
+        foreach ($text in @("$hash  other.zip", "$hash  ../$asset", "$hash  nested/$asset", "$hash  ././$asset", "$hash  $asset.bak", "$hash  $($asset.ToUpperInvariant())")) {
             Write-Checksums $text
             Assert-Throws { Assert-EnvdArchiveHash $Archive $Checksums $asset } '*exactly one*'
         }
@@ -301,7 +307,8 @@ try {
         if ($Uri.EndsWith('/SHA256SUMS')) {
             $name = [IO.Path]::GetFileName($script:DownloadUris[-2])
             $hash = (Get-FileHash -LiteralPath $script:Archive -Algorithm SHA256).Hash
-            [IO.File]::WriteAllText($Destination, "$hash  $name`n")
+            # Match release-a13n-envd.yml: find . ... | xargs -0 sha256sum.
+            [IO.File]::WriteAllText($Destination, "$hash  ./$name`n")
         } else {
             [IO.File]::Copy($script:Archive, $Destination)
         }

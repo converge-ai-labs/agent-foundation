@@ -98,7 +98,8 @@ def release(fixtures: Path, version: str = "0.0.6", target: str = "x86_64-unknow
                     data = b""
                 entry.size = len(data)
                 tar.addfile(entry, io.BytesIO(data))
-    (fixtures / "SHA256SUMS").write_text(f"{hashlib.sha256(archive.read_bytes()).hexdigest()}  {archive.name}\n")
+    # Match release-a13n-envd.yml: find . ... | xargs -0 sha256sum.
+    (fixtures / "SHA256SUMS").write_text(f"{hashlib.sha256(archive.read_bytes()).hexdigest()}  ./{archive.name}\n")
     return archive
 
 
@@ -200,19 +201,44 @@ def test_invalid_arguments(installer, args):
     assert not (fixtures / "requests").exists()
 
 
-@pytest.mark.parametrize("bad", ["missing", "duplicate", "mismatch", "invalid"])
-def test_checksum_failure_preserves_existing_binary(installer, bad):
+@pytest.mark.parametrize("prefix", ["", "*", "./", "*./"])
+def test_checksum_filename_markers(installer, prefix):
+    run, fixtures, destination, _, _ = installer
+    archive = release(fixtures)
+    digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+    (fixtures / "SHA256SUMS").write_text(f"{digest}  {prefix}{archive.name}\n")
+    result = run("--version", "0.0.6")
+    assert result.returncode == 0, result.stderr
+    assert (destination / "a13n-envd").read_bytes() == BINARY
+
+
+@pytest.mark.parametrize("prefix", ["../", "nested/", "././", "**", "./*", "*/"])
+def test_checksum_filename_requires_exact_asset(installer, prefix):
+    run, fixtures, destination, _, _ = installer
+    archive = release(fixtures)
+    digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+    (fixtures / "SHA256SUMS").write_text(f"{digest}  {prefix}{archive.name}\n")
+    assert_failed(run("--version", "0.0.6"), destination)
+    assert not (destination / "a13n-envd").exists()
+
+
+@pytest.mark.parametrize("prefix", ["", "*", "./", "*./"])
+@pytest.mark.parametrize("bad", ["missing", "duplicate", "mismatch", "invalid", "malformed"])
+def test_checksum_failure_preserves_existing_binary(installer, bad, prefix):
     run, fixtures, destination, _, _ = installer
     archive = release(fixtures)
     checksums = fixtures / "SHA256SUMS"
     if bad == "missing":
         checksums.write_text("0" * 64 + "  another-archive.tar.gz\n")
     elif bad == "duplicate":
-        checksums.write_text(checksums.read_text() * 2)
+        digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+        checksums.write_text(checksums.read_text() + f"{digest}  {prefix}{archive.name}\n")
     elif bad == "mismatch":
-        checksums.write_text("0" * 64 + f"  {archive.name}\n")
+        checksums.write_text("0" * 64 + f"  {prefix}{archive.name}\n")
+    elif bad == "malformed":
+        checksums.write_text(checksums.read_text() + f"invalid  {prefix}{archive.name} extra\n")
     else:
-        checksums.write_text(f"invalid  {archive.name}\n")
+        checksums.write_text(f"invalid  {prefix}{archive.name}\n")
     destination.mkdir()
     (destination / "a13n-envd").write_bytes(b"old")
     assert_failed(run("--version", "0.0.6"), destination)

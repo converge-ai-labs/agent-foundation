@@ -112,7 +112,12 @@ archive="a13n-envd-$version-$target.tar.gz"
 release="https://github.com/converge-ai-labs/agent-foundation/releases/download/release/a13n-envd-v$version"
 download "$release/$archive" "$stage/$archive"
 download "$release/SHA256SUMS" "$stage/SHA256SUMS"
-expected=$(awk -v name="$archive" '$2 == name || $2 == "*" name { if (NF != 2) exit 1; print $1; count++ } END { if (count != 1) exit 1 }' "$stage/SHA256SUMS") || fail 'missing or ambiguous archive checksum'
+# Accept sha256sum binary markers and the release workflow's single ./ prefix.
+expected=$(awk -v name="$archive" '
+    { filename = $2; sub(/^\*/, "", filename); sub(/^\.\//, "", filename) }
+    filename == name { if (NF != 2) exit 1; print $1; count++ }
+    END { if (count != 1) exit 1 }
+' "$stage/SHA256SUMS") || fail 'missing or ambiguous archive checksum'
 printf '%s\n' "$expected" | grep -Eq '^[0-9a-fA-F]{64}$' || fail 'invalid archive checksum'
 if [ "$checksum" = sha256sum ]; then actual=$(sha256sum "$stage/$archive")
 else actual=$(shasum -a 256 "$stage/$archive"); fi
