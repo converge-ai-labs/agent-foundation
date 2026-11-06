@@ -1,7 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse } from "yaml";
-import { render } from "./markdown.ts";
+import { render, type Heading } from "./markdown.ts";
 
 /** The site's posts/ directory: one folder per post, named by its slug. */
 export const POSTS_DIR = join(import.meta.dirname, "../posts");
@@ -29,6 +29,7 @@ export interface Post {
   report?: SourceReport;
   minutes: number;
   html: string;
+  headings: Heading[];
   /** The cover drawing's SVG markup, from cover.svg beside the post. */
   cover: string | null;
   /** Files beside the post that its pages serve, such as images. */
@@ -60,7 +61,10 @@ async function loadPost(dir: string, slug: string): Promise<Post> {
   const match = FRONT_MATTER.exec(text);
   if (!match) throw new Error(`${source}: missing front matter`);
   const meta = frontMatter(parse(match[1]), source);
-  const { html, words } = await render(text.slice(match[0].length), dir);
+  const { html, words, headings } = await render(
+    text.slice(match[0].length),
+    dir,
+  );
   const names = await readdir(dir);
   return {
     slug,
@@ -68,6 +72,7 @@ async function loadPost(dir: string, slug: string): Promise<Post> {
     // 230 words a minute, the usual pace for technical prose
     minutes: Math.max(1, Math.round(words / 230)),
     html,
+    headings,
     cover: names.includes("cover.svg")
       ? await readFile(join(dir, "cover.svg"), "utf8")
       : null,

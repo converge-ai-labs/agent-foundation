@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 352" role="img" aria-label="At acceptance a run records its selected configuration. At tool use it checks current authorization, so saved instructions do not preserve revoked access.">
+  <text class="fi" x="36" y="34" style="font:500 22px var(--display)">Configuration and access have different lifetimes</text>
+  <path class="pf" d="M60 92H700m-6-4 6 4-6 4" />
+  <rect x="54" y="86" width="12" height="12" fill="#9259fe" />
+  <rect x="422" y="86" width="12" height="12" fill="#00bba6" />
+  <text class="pt ink" x="60" y="74">run accepted</text>
+  <text class="pt ink" x="428" y="74">tool invoked</text>
+  <path class="pl" d="M60 106V142m-4-6 4 6 4-6M428 106V142m-4-6 4 6 4-6" />
+  <path class="pl" d="M36 162H356M404 162H724" />
+  <path class="pf" d="M36 318H356M404 318H724" />
+  <text class="fi" x="36" y="198" style="font:500 18px var(--display)">Selected configuration</text>
+  <text class="fi" x="404" y="198" style="font:500 18px var(--display)">Current authorization</text>
+  <g class="fi" style="font:400 15px var(--text)">
+    <text x="36" y="234">Agent revision</text>
+    <text x="36" y="261">Skills and model settings</text>
+    <text x="404" y="234">Connection grants</text>
+    <text x="404" y="261">Permission to invoke this tool</text>
+  </g>
+  <text class="pt" x="36" y="297">keep the chosen instructions</text>
+  <text class="pt" x="404" y="297">apply revocations to later calls</text>
+</svg>

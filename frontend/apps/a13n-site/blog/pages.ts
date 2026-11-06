@@ -1,4 +1,5 @@
 import type { AuthorProfile, Post } from "./posts.ts";
+import type { Heading } from "./markdown.ts";
 
 const ORIGIN = "https://a13n.dev";
 const GITHUB = "https://github.com/converge-ai-labs/agent-foundation";
@@ -55,7 +56,6 @@ function htmlPage(head: Head, body: string, current: "page" | "true") {
     <meta name="twitter:image" content="${SOCIAL_IMAGE}" />
     <link rel="icon" type="image/svg+xml" href="/node_modules/a13n-ui/src/brand/a13n-logo.svg" />
     <link rel="preload" as="font" type="font/woff2" crossorigin href="/node_modules/@fontsource-variable/space-grotesk/files/space-grotesk-latin-wght-normal.woff2" />
-    <link rel="preload" as="font" type="font/woff2" crossorigin href="/node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2" />
     <script type="module" src="/src/blog.ts"></script>
   </head>
   <body>
@@ -159,6 +159,29 @@ export function indexPage(posts: Post[]) {
   );
 }
 
+function contents(headings: Heading[]) {
+  if (!headings.length) return "";
+  const groups: { heading: Heading; children: Heading[] }[] = [];
+  for (const heading of headings) {
+    const parent = groups.at(-1);
+    if (heading.depth === 3 && parent?.heading.depth === 2)
+      parent.children.push(heading);
+    else groups.push({ heading, children: [] });
+  }
+  const link = (heading: Heading) =>
+    `<a href="#${esc(encodeURIComponent(heading.id))}">${esc(heading.title)}</a>`;
+  const list = `<ol class="toc-list">${groups.map(({ heading, children }) => `<li>${link(heading)}${children.length ? `<ol>${children.map((child) => `<li>${link(child)}</li>`).join("")}</ol>` : ""}</li>`).join("")}</ol>`;
+  return `<aside class="toc-desktop">
+            <nav class="toc-nav" aria-label="On this page" data-toc>
+              <p class="toc-label">On this page</p>${list}
+            </nav>
+          </aside>
+          <details class="toc-mobile">
+            <summary>On this page</summary>
+            <nav aria-label="On this page" data-toc>${list}</nav>
+          </details>`;
+}
+
 export function postPage(post: Post, posts: Post[]) {
   const others = posts.filter((other) => other !== post).slice(0, 3);
   const body = `    <span class="progress" aria-hidden="true"></span>
@@ -179,8 +202,11 @@ export function postPage(post: Post, posts: Post[]) {
         <div class="wrap cover"><div class="plate bare">${post.cover}</div></div>`
             : ""
         }
-        <div class="prose col">
+        <div class="article-layout">
+          ${contents(post.headings)}
+          <div class="prose col">
 ${post.html}
+          </div>
         </div>
       </article>${
         others.length

@@ -2,13 +2,16 @@
    other pages after a page's own, so shared rules imported from JS would
    override this page's rules of equal specificity. */
 @import "@fontsource-variable/space-grotesk";
-@import "@fontsource-variable/inter";
 @import "@fontsource-variable/jetbrains-mono";
 @import "./base.css";
 @import "./nav.css";
 @import "./foot.css";
 @import "./plate.css";
 @import "./prose.css";
+
+:root {
+  --text: "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
 
 /* ---- blog index: the newest post leads with its plate; the rest follow in a grid ---- */
 .head {
@@ -126,7 +129,8 @@
   transform-origin: 0 50%;
 }
 .ph {
-  padding-top: clamp(130px, 12vw, 168px);
+  max-width: calc(840px + 2 * var(--pad));
+  padding-top: clamp(112px, 10vw, 144px);
 }
 .back {
   font-size: 15px;
@@ -140,16 +144,16 @@
   transform: translateX(-3px);
 }
 .p-title {
-  max-width: 13em;
-  margin: clamp(40px, 5vw, 64px) 0 0;
-  font: 500 clamp(40px, 6vw, 88px) / 1 var(--display);
+  max-width: 16em;
+  margin: 32px 0 0;
+  font: 500 clamp(34px, 4.5vw, 60px) / 1.08 var(--display);
   letter-spacing: -0.045em;
   text-wrap: balance;
 }
 .p-dek {
-  max-width: 30em;
-  margin: 28px 0 0;
-  font: 400 clamp(19px, 1.6vw, 22px) / 1.5 var(--text);
+  max-width: 36em;
+  margin: 24px 0 0;
+  font: 400 18px/1.55 var(--text);
   color: var(--muted);
   text-wrap: pretty;
 }
@@ -158,7 +162,7 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 8px 0;
-  margin-top: clamp(48px, 5vw, 72px);
+  margin-top: 36px;
   padding: 14px 0;
   border-top: 1px solid var(--ink);
   border-bottom: 1px solid var(--rule);
@@ -206,6 +210,7 @@
   text-underline-offset: 3px;
 }
 .cover {
+  max-width: calc(960px + 2 * var(--pad));
   margin-top: 32px;
 }
 .cover .plate {
@@ -241,10 +246,81 @@
     display: initial;
   }
 }
-.col {
-  max-width: calc(680px + 2 * var(--pad));
-  margin: clamp(64px, 7vw, 96px) auto 0;
+.article-layout {
+  position: relative;
+  max-width: 1152px;
+  margin: 56px auto 0;
   padding: 0 var(--pad);
+}
+.col {
+  max-width: 672px;
+  margin: 0 auto;
+}
+.toc-desktop {
+  position: absolute;
+  top: 0;
+  /* Use the outer gutter while retaining room at the desktop breakpoint. */
+  left: max(-80px, calc(50% - 50vw + 32px));
+  width: 176px;
+  height: 100%;
+}
+.toc-nav {
+  position: sticky;
+  top: 96px;
+  max-height: calc(100vh - 128px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.toc-label {
+  margin: 0 0 14px;
+  font: 500 12px/1.5 var(--text);
+  color: var(--ink);
+}
+.toc-list,
+.toc-list ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font: 400 12px/1.5 var(--text);
+}
+.toc-list ol {
+  padding-left: 12px;
+}
+.toc-list a {
+  display: block;
+  padding: 6px 0;
+  color: var(--muted);
+  transition: color 0.2s;
+}
+.toc-list a:hover,
+.toc-list a[aria-current] {
+  color: var(--ink);
+}
+.toc-list a[aria-current] {
+  font-weight: 500;
+}
+.toc-list a:focus-visible {
+  outline-offset: -1px;
+}
+.toc-mobile {
+  display: none;
+  max-width: 672px;
+  margin: 0 auto 32px;
+  border-top: 1px solid var(--rule-2);
+  border-bottom: 1px solid var(--rule);
+}
+.toc-mobile summary {
+  padding: 16px 0;
+  font: 500 14px/1.5 var(--text);
+  cursor: pointer;
+}
+.toc-mobile nav {
+  max-height: 50vh;
+  overflow-y: auto;
+  padding-bottom: 16px;
+}
+.toc-mobile .toc-list {
+  font-size: 14px;
 }
 .keep {
   margin-top: clamp(120px, 12vw, 168px);
@@ -262,6 +338,15 @@
 }
 main + .foot {
   margin-top: clamp(120px, 12vw, 168px);
+}
+
+@media (max-width: 1279px) {
+  .toc-desktop {
+    display: none;
+  }
+  .toc-mobile {
+    display: block;
+  }
 }
 
 @media (max-width: 1000px) {

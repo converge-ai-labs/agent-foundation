@@ -170,6 +170,21 @@ describe("markdown", () => {
     expect(html).toContain('id="one-heartbeat-per-worker-1"');
   });
 
+  test("navigation uses plain heading text and the rendered IDs, excluding code and notes", async () => {
+    const { html, headings } = await render(
+      "## Work & **state**\n\n### A `run`\n\n## Work & **state**\n\n```text\n## Not a heading\n```\n\nA note.[^1]\n\n[^1]: Supporting text.",
+      "",
+    );
+    expect(headings).toEqual([
+      { id: "work--state", title: "Work & state", depth: 2 },
+      { id: "a-run", title: "A run", depth: 3 },
+      { id: "work--state-1", title: "Work & state", depth: 2 },
+    ]);
+    for (const heading of headings)
+      expect(html).toContain(`id="${heading.id}"`);
+    expect(html).toContain('id="footnote-label"');
+  });
+
   test("a lone SVG image becomes an inline figure with its caption", async () => {
     const dir = await mkdtemp(join(tmpdir(), "a13n-figure-"));
     await writeFile(
@@ -199,6 +214,29 @@ describe("markdown", () => {
 });
 
 describe("pages", () => {
+  test("section navigation nests subsections and safely links to repeated and Unicode headings", async () => {
+    const dir = await blogDir({
+      post: {
+        body: "### First\n\n## Work & state\n\n### Résumé\n\n## Work & state",
+      },
+    });
+    const posts = await loadPosts(dir);
+    const page = postPage(posts[0], posts);
+    expect(page.match(/aria-label="On this page"/g)).toHaveLength(2);
+    expect(page.match(/class="toc-list"/g)).toHaveLength(2);
+    expect(page).toContain(
+      '<li><a href="#first">First</a></li><li><a href="#work--state">Work &#38; state</a><ol><li><a href="#r%C3%A9sum%C3%A9">Résumé</a></li></ol></li><li><a href="#work--state-1">Work &#38; state</a></li>',
+    );
+    expect(page).toContain('<h3 id="résumé">');
+    expect(indexPage(posts)).not.toContain("data-toc");
+  });
+
+  test("posts without section headings have no empty navigation", async () => {
+    const dir = await blogDir({ post: {} });
+    const posts = await loadPosts(dir);
+    expect(postPage(posts[0], posts)).not.toContain("data-toc");
+  });
+
   test("render linked author profiles alongside plain names without a source report", async () => {
     const dir = await blogDir({
       post: {
