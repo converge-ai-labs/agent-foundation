@@ -238,7 +238,14 @@ async def bundled():
 model_catalog.fetch_directory = bundled
 HarnessUiModelResolver.__call__ = resolve
 configure_logging(logger_names=('a13n_harness_ui', 'uvicorn'), log_format=LogFormat.json)
-settings = HarnessUiSettings(storage=StorageSettings(data_root=root / 'data'), pricing_auto_update=False, shutdown_timeout_seconds=1)
+from a13n_harness_ui.shutdown import Shutdown
+original_enter = Shutdown.enter
+def enter(self, phase):
+    original_enter(self, phase)
+    if phase == 'saving restart boundaries':
+        (root / 'draining').touch()
+Shutdown.enter = enter
+settings = HarnessUiSettings(storage=StorageSettings(data_root=root / 'data'), pricing_auto_update=False, shutdown_timeout_seconds=float(sys.argv[3]))
 try:
     asyncio.run(run(
         lambda: open_harness_ui_app(settings, configuration_path=root / 'a13n-harness-ui.yaml', host_mode='webui', share_computer=True, instrumentation=None),
@@ -251,7 +258,10 @@ except KeyboardInterrupt:
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIX signals and native PTY")
 @pytest.mark.parametrize("stop_signal", [signal.SIGINT, signal.SIGTERM])
-def test_signal_closes_live_browser_streams_and_owned_run_and_pty(tmp_path: Path, stop_signal: signal.Signals) -> None:
+@pytest.mark.parametrize("repeat_signal", [False, True])
+def test_signal_closes_live_browser_streams_and_owned_run_and_pty(
+    tmp_path: Path, stop_signal: signal.Signals, repeat_signal: bool
+) -> None:
     configuration = _write_configuration(tmp_path)
     configuration.write_text(configuration.read_text() + "browser:\n  mode: disabled\n")
     # No personal shell startup files, provider traffic or browser dependency.
@@ -260,7 +270,7 @@ def test_signal_closes_live_browser_streams_and_owned_run_and_pty(tmp_path: Path
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]
     process = subprocess.Popen(
-        [sys.executable, "-u", "-c", _SERVER, str(tmp_path), str(port)],
+        [sys.executable, "-u", "-c", _SERVER, str(tmp_path), str(port), "60" if repeat_signal else "1"],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
@@ -346,6 +356,13 @@ def test_signal_closes_live_browser_streams_and_owned_run_and_pty(tmp_path: Path
                 assert time.monotonic() < deadline, "Run did not start"
                 time.sleep(0.02)
             process.send_signal(stop_signal)
+            if repeat_signal:
+                deadline = time.monotonic() + 5
+                while not (tmp_path / "draining").exists():
+                    assert process.poll() is None
+                    assert time.monotonic() < deadline, "App did not enter lifespan shutdown"
+                    time.sleep(0.01)
+                process.send_signal(signal.SIGINT)
             output, _ = process.communicate(timeout=8)
             for stream in (realtime, ws):
                 # Reading the unread backlog lets the client see the server's close instead
@@ -358,7 +375,10 @@ def test_signal_closes_live_browser_streams_and_owned_run_and_pty(tmp_path: Path
             record["message"]: datetime.fromisoformat(record["timestamp"])
             for record in (json.loads(line) for line in output.splitlines() if line.startswith("{"))
         }
-        assert (logged["WebUI stopped."] - logged["Stop requested."]).total_seconds() < 3, output
+        requested = next(timestamp for message, timestamp in logged.items() if message.startswith("Stop requested."))
+        assert (logged["WebUI stopped."] - requested).total_seconds() < 3, output
+        if repeat_signal:
+            assert "Stop requested again: ending App grace" in output
         assert (tmp_path / "run-stopped").exists(), output
         assert not psutil.pid_exists(terminal_pid), output
         for message in (
