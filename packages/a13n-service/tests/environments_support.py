@@ -71,6 +71,20 @@ class Backend:
             )
 
 
+# The initial admitted default binding, independent of view directory and permissions.
+DEFAULT_SESSION = {
+    "session_binding": "default",
+    "session_version": 1,
+    "session_configuration": {
+        "working_directory": None,
+        "sandbox": None,
+        "egress_mode": None,
+        "egress": None,
+        "lifecycle": None,
+        "commands": None,
+    },
+}
+
 BACKEND = Backend()
 DESCRIPTOR = EnvironmentDescriptor(
     generation="g1",

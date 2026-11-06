@@ -82,6 +82,47 @@ async def test_explicit_instance_selection_never_allocates_a_replacement(env) ->
     assert len((await env.client.get(f"{env.api}/environments?status=deleted")).json()["items"]) == 1
 
 
+async def test_run_only_selection_inherits_named_policy_and_refuses_conflicting_configuration(env, runs_kit):
+    selected = await reserve(env, env.template["id"])
+    first = await start(
+        env,
+        environments=[
+            {
+                "name": "data",
+                "environment_id": selected["id"],
+                "session_binding": "analysis",
+                "session_configuration": {"working_directory": "/analysis", "commands": False},
+            }
+        ],
+    )
+    thread_id = first["thread"]["id"]
+    desired = (await env.client.get(f"{env.api}/threads/{thread_id}/environments")).json()
+    await interrupt(env, first["run"]["id"])
+    selection = {"mode": "existing", "environment_id": selected["id"], "session_binding": "analysis"}
+    body = runs_kit.message(env.agent, "Use the named policy", options={"environment": selection})
+    response = await runs_kit.submit(env, thread_id, body)
+    assert response.status_code == 201, response.text
+    run = response.json()["run"]
+    assert run is not None, response.text
+    data, workspace = run["environment_mounts"]
+    assert data["name"] == "data" and workspace == {**data, "name": "workspace"}
+    assert workspace["session_binding"] == "analysis" and workspace["session_version"] == 1
+    assert workspace["session_configuration"]["working_directory"] == "/analysis"
+    assert workspace["session_configuration"]["commands"] is False
+    await interrupt(env, run["id"])
+    selection["session_configuration"] = {"working_directory": "/different"}
+    response = await runs_kit.submit(
+        env, thread_id, runs_kit.message(env.agent, "Conflicting policy", options={"environment": selection})
+    )
+    refused = response.json()
+    assert refused["run"] is None, refused
+    assert refused["entry"]["failure"]["code"] == "session_configuration_conflict"
+    assert (await env.client.get(f"{env.api}/threads/{thread_id}/environments")).json() == desired
+    assert (await env.client.get(f"{env.api}/runs/{run['id']}")).json()["environment_mounts"] == run[
+        "environment_mounts"
+    ]
+
+
 async def test_resume_reuses_the_run_only_primary(env, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
     review = {"name": "review", "description": "Review", "parameters_json_schema": {"type": "object"}}
     agent = await runs_kit.create_agent(env, scripted_model, client_tools=[review])

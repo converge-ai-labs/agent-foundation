@@ -12,6 +12,7 @@ from a13n_service.runs.environments.clients.tables import ClientSettingsRow
 from a13n_service.runs.environments.tables import EnvironmentRow
 from sqlalchemy import func, select
 
+from .environments_support import DEFAULT_SESSION
 from .test_metrics_queries import builder
 
 pytestmark = pytest.mark.anyio
@@ -138,6 +139,7 @@ async def test_acceptance_freezes_offline_directory_and_registration_permission_
         run = await session.get_one(RunRow, accepted["run"]["id"])
         assert run.environment_mounts == [
             {
+                **DEFAULT_SESSION,
                 "name": "workspace",
                 "environment_id": identity,
                 "working_directory": "/project",

@@ -265,7 +265,7 @@ async def freeze_mounts(
     thread: ThreadRow,
     *,
     principal: Principal,
-    primary: EnvironmentMount | None = None,
+    primary: EnvironmentMount | MountCreate | None = None,
     recreation_limit: int | None,
 ) -> list[dict]:
     """Freeze desired mounts with an optional Run-only primary; lock only the selected instances in ID order."""
@@ -283,7 +283,7 @@ async def freeze_mounts(
     if primary is not None:
         query = query.where(ThreadEnvironmentRow.name != PRIMARY)
     recovery_id = None
-    selected: list[ThreadEnvironmentRow | EnvironmentMount] = []
+    selected: list[ThreadEnvironmentRow | EnvironmentMount | MountCreate] = []
     for mount, can_recover in await session.execute(query):
         selected.append(mount)
         if can_recover and recreation_limit is not None and await _recovery_enabled(session, thread):
@@ -322,7 +322,19 @@ async def freeze_mounts(
             raise conflict("environment", environment_id, "client_configuration_missing")
     frozen = []
     for mount in sorted(selected, key=lambda mount: mount.name):
-        selection = await _selection(session, thread.id, mount) if isinstance(mount, ThreadEnvironmentRow) else mount
+        if isinstance(mount, ThreadEnvironmentRow):
+            selection = await _selection(session, thread.id, mount)
+        elif isinstance(mount, MountCreate):
+            # Resolve Run-only policy only after the complete instance set is locked and validated.
+            binding = await bindings.ensure(
+                session, thread, mount.environment_id, mount.session_binding, mount.session_configuration
+            )
+            selection = EnvironmentMount(
+                **mount.model_dump(exclude={"session_configuration"}),
+                session_configuration=SessionConfiguration.model_validate(binding.configuration),
+            )
+        else:
+            selection = mount
         directory = mount.working_directory
         permissions = EnvironmentPermissionSet.model_validate(mount.permission_ceiling)
         if config := configurations.get(mount.environment_id):
