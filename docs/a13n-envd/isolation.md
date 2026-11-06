@@ -114,7 +114,7 @@ Start with the failing Session's typed error, then check the relevant setting:
 - **Root HTTPS fails in a controlled Session**: check whether sudo removed the Session CA variables. Preserve them according to sudoers or configure the client's trust store; see [Session egress](egress.md).
 - **Invalid working directory**: use directory discovery to select an existing Device path. Discovery works before opening a Session.
 - **One Session fails while others work**: investigate that Session's error and native evidence while leaving the shared Device running.
-- **Carrier loss**: reconcile pending effects using the original operation evidence. Same-Session attachment requires the original generation and an unexpired grace period; it does not authorize mutation replay.
+- **Carrier loss**: reconcile pending effects using the original operation evidence. Same-Session attachment requires the original generation and a Session within its idle and maximum-lifetime deadlines; it does not authorize mutation replay.
 - **Files disappeared**: inspect the Host's lifecycle policy. Normal adapter close preserves cwd and workspace files.
 - **Runtime lock conflict**: allocate a different private runtime directory for each daemon launch.
 

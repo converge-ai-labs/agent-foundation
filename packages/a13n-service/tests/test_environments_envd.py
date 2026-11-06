@@ -625,7 +625,7 @@ async def test_thread_sessions_survive_attempt_and_run_replacement(
     assert (await saved_state()).descriptor.session_id == original.session_id
 
 
-@pytest.mark.parametrize("outcome", ["complete", "cancel", "revoked", "transient", "session_gone"])
+@pytest.mark.parametrize("outcome", ["complete", "cancel", "revoked", "transient", "transient_cancel", "session_gone"])
 async def test_retained_shell_recovers_original_process_after_run_seals(
     service, daemons, scripted_model, runs_kit, outcome, monkeypatch
 ):
@@ -750,7 +750,7 @@ async def test_retained_shell_recovers_original_process_after_run_seals(
     # A fresh Runtime has no in-memory invocation, Session or native process handle.
     successor = replace(service.runtime)
     try:
-        if outcome == "transient":
+        if outcome in {"transient", "transient_cancel"}:
 
             async def unavailable(*args, **kwargs):
                 raise EIPTransportError("Temporary carrier outage")
@@ -759,7 +759,11 @@ async def test_retained_shell_recovers_original_process_after_run_seals(
                 patch.setattr(EIPDeviceConnection, "attach_session", unavailable)
                 from a13n_service.infra.db import now
 
-                for _ in range(2):
+                for attempt in range(2):
+                    if outcome == "transient_cancel" and attempt == 1:
+                        async with transaction(service.runtime.storage) as session:
+                            row = await session.get_one(ToolExecutionRow, execution_id)
+                            row.cancel_requested_at = row.created_at
                     await successor.executions.recover("worker-successor")
                     await asyncio.wait_for(successor.executions.join(), 10)
                     # Repeated outages wait a lease interval, without losing native identity.
@@ -771,6 +775,7 @@ async def test_retained_shell_recovers_original_process_after_run_seals(
                         row.lease_expires_at = current
             pending = await successor.executions.store.get(thread_id, execution_id)
             assert pending is not None and not pending.record.terminal
+            assert pending.record.cancel_requested is (outcome == "transient_cancel")
             assert pending.shell is not None and pending.shell.process.identity is not None
             assert pending.shell.process.identity.model_dump(mode="json") == original_identity
             assert not released

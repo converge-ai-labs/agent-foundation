@@ -1057,6 +1057,7 @@ async def test_uncertain_takeover_keeps_checkpoint_and_advances_epoch_on_retry(
         "publication_cancel",
         "disclosure",
         "disclosure_handoff",
+        "large_output_handoff",
     ],
 )
 async def test_owned_shell_handoff_recovers_same_process_without_start_replay(
@@ -1077,8 +1078,10 @@ async def test_owned_shell_handoff_recovers_same_process_without_start_replay(
         identity=AgentIdentityRef(issuer="test", subject="agent"), agent_instance_id="agent-1"
     )
     store = MemoryToolExecutionStore()
-    disclosure = failure in {"disclosure", "disclosure_handoff"}
-    payload = "Bearer test-sensitive-value\n" + "x" * 40000 + "\nfinished"
+    disclosure = failure in {"disclosure", "disclosure_handoff", "large_output_handoff"}
+    payload = (
+        "Bearer test-sensitive-value\n" + "x" * (80000 if failure == "large_output_handoff" else 40000) + "\nfinished"
+    )
 
     async def assert_disclosed(result):
         from types import SimpleNamespace
@@ -1226,7 +1229,7 @@ async def test_owned_shell_handoff_recovers_same_process_without_start_replay(
                 await publication_started.wait()
                 await first.cancel("thread-a", record.execution_id)
                 fail_publication.set()
-            if failure in {"handoff", "lost_identity", "disclosure", "disclosure_handoff"}:
+            if failure in {"handoff", "lost_identity", "disclosure", "disclosure_handoff", "large_output_handoff"}:
                 async with asyncio.timeout(5):
                     while first.resource("thread-a", record.execution_id) is None:
                         assert not (await first.info("thread-a", record.execution_id)).terminal
@@ -1302,7 +1305,24 @@ async def test_owned_shell_handoff_recovers_same_process_without_start_replay(
             await successor.call_resource("thread-a", record.execution_id, {"operation": "input", "data": "finished\n"})
             result = await successor.wait("thread-a", record.execution_id, timeout_seconds=5)
             assert result.record.status == "succeeded", result
-            if disclosure:
+            if failure == "large_output_handoff":
+                from a13n_harness.tools._output import DEFAULT_TOOL_OUTPUT_CHARS
+                from a13n_harness.toolsets.output import tool_output_size
+
+                stdout = result.result["stdout"]
+                assert stdout["available_end"] == len("ready\n" + payload + "\n")
+                assert stdout["producer_complete"]
+                assert not stdout["content_complete"]
+                assert stdout["offload"]["reason"] == "write_unavailable"
+                assert stdout["offload"]["path"] is None
+                assert stdout["offload"]["bytes"] == 0
+                assert stdout["text"].startswith("ready\nBearer [REDACTED]\n")
+                assert "finished" not in stdout["text"]
+                assert tool_output_size(result.result) <= DEFAULT_TOOL_OUTPUT_CHARS
+                retained = await store.get("thread-a", record.execution_id)
+                assert retained.result == result.result
+                assert retained.artifacts == result.artifacts == ()
+            elif disclosure:
                 await assert_disclosed(result)
             else:
                 assert result.result["stdout"]["text"] == "ready\nfinished\n"

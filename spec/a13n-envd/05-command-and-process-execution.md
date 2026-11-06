@@ -311,7 +311,7 @@ Stdin writes are serialized with close, bounded, and backpressured. A result rep
 
 ## Lifetime and Concurrency
 
-A process belongs to exactly one Session. Explicit Session close begins cleanup immediately; carrier loss permits only the short same-Session reattachment grace. Idle/grace expiry invokes the same cleanup path with `termination_reason="session_expired"`; explicit close uses `session_closed`. Resources never move into a new Session.
+A process belongs to exactly one Session. Explicit Session close begins cleanup immediately; carrier loss preserves commands within the Session's existing idle and maximum-lifetime deadlines. Either deadline's expiry invokes the same cleanup path with `termination_reason="session_expired"`; explicit close uses `session_closed`. Resources never move into a new Session.
 
 Terminal records follow explicit release, finite inactivity retention and eligible pressure collection under [Resource Lifetime](09-resource-lifetime-and-reclamation.md). Generic Session keepalive does not retain all completed history. Quiet live commands with a current owner are not collection candidates. Uncertain cleanup remains charged.
 
@@ -347,5 +347,5 @@ Command shapes, executable selection, process phases, termination reasons, clean
 06. `process.start` returns no handle until requested-executable exec success is known.
 07. Initial-command status, wrapper status, backend cleanup, EIP delivery, and Host completion are separate facts.
 08. Every command has stable stdout and stderr references; complete output within the configured ceiling remains readable after completion through `output.read`.
-09. Session close/expiry or generation shutdown cleans owned commands without claiming to undo native effects; disconnect alone permits a short same-Session grace.
+09. Session close/expiry or generation shutdown cleans owned commands without claiming to undo native effects; disconnect preserves the Session's existing idle and maximum-lifetime deadlines.
 10. Explicit release and inactivity expiry reclaim process/output records with truthful accounting; references are never silently retargeted.

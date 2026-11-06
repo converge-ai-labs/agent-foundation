@@ -2475,6 +2475,10 @@ class HarnessUiApp:
                 receipt_id=operation.receipt.receipt_id, message=content, immediate=False, before_accept=before_accept
             )
             return result.accepted
+        # Repeated completion offers must not prepare a Run that is already
+        # ineligible. The fenced authorize callback rechecks after capture waits.
+        if detail.thread.last_execution is None or detail.thread.last_execution.status != "completed":
+            return False
         try:
             await self._root_runs.submit_prompt(
                 thread_id=thread_id, prompt=content, reject_deferred=True, authorize=authorize

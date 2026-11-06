@@ -28,7 +28,7 @@ export A13N_ENVD_CONFIG_JSON='{"default_working_directory":"/workspace","limits"
 a13n-envd
 ```
 
-标量设置覆盖身份、执行、发现、元数据和生命周期：`A13N_ENVD_ALLOW_SUDO`、`A13N_ENVD_EXECUTION_UID`、`A13N_ENVD_EXECUTION_GID`、`A13N_ENVD_EGRESS_MODE`、`A13N_ENVD_FULL_CONTROL`、`A13N_ENVD_COMPUTER_USE`、`A13N_ENVD_COMPUTER_USE_PERMISSION_TIMEOUT_MS`、`A13N_ENVD_DIRECTORY_DISCOVERY`、`A13N_ENVD_DEVICE_ID`、`A13N_ENVD_NAME`、`A13N_ENVD_DESCRIPTION`、`A13N_ENVD_DEFAULT_WORKING_DIRECTORY`、`A13N_ENVD_IDLE_TIMEOUT_MS` 和 `A13N_ENVD_DISCONNECT_GRACE_MS`。布尔值接受 `true`、`false`、`1` 和 `0`。
+标量设置覆盖身份、执行、发现、元数据和生命周期：`A13N_ENVD_ALLOW_SUDO`、`A13N_ENVD_EXECUTION_UID`、`A13N_ENVD_EXECUTION_GID`、`A13N_ENVD_EGRESS_MODE`、`A13N_ENVD_FULL_CONTROL`、`A13N_ENVD_COMPUTER_USE`、`A13N_ENVD_COMPUTER_USE_PERMISSION_TIMEOUT_MS`、`A13N_ENVD_DIRECTORY_DISCOVERY`、`A13N_ENVD_DEVICE_ID`、`A13N_ENVD_NAME`、`A13N_ENVD_DESCRIPTION`、`A13N_ENVD_DEFAULT_WORKING_DIRECTORY`、`A13N_ENVD_IDLE_TIMEOUT_MS` 和 `A13N_ENVD_MAX_LIFETIME_MS`。布尔值接受 `true`、`false`、`1` 和 `0`。
 
 ## 连接 Service
 
@@ -252,7 +252,7 @@ Python 客户端使用相同凭据和预期设备 ID，连接基础 origin `http
 
 先初始化设备连接，再为每个资源范围打开会话。一个守护进程代次服务多个会话，各会话记录 cwd 并管理自己的操作。`session.close` 关闭该范围。保活只续期调用者自己的所有权，因此发现流量不会保留已放弃的会话。
 
-消息帧传输断开后，所有者可在宽限期内、同一代次中显式重新附加。附加恢复对已有资源的访问，不重放命令或恢复传输。过期后应打开新会话并丢弃旧引用。
+消息帧传输断开后，所有者可在会话原有的空闲期限或最大生命周期到期前，于同一代次中显式重新附加。附加恢复对已有资源的访问，不重放命令或恢复传输。过期后应打开新会话并丢弃旧引用。
 
 关闭时，Host 关闭自己的连接，只终止由它管理生命周期的守护进程。会话清理回收进程及私有输出/暂存存储，同时保留工作目录文件。报告清理失败时，应视为回收未完成。
 

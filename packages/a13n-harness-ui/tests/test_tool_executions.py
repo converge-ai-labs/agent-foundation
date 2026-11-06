@@ -1692,6 +1692,7 @@ async def archive_child(store, child_id):
 @pytest.mark.parametrize("status", ["completed", "cancelled", "failed", "suspended", "unknown", "running", "preparing"])
 async def test_root_completion_after_restart_uses_execution_state(tmp_path, monkeypatch, status):
     from datetime import UTC, datetime
+    from unittest.mock import AsyncMock
 
     from a13n_harness_ui.storage.contracts import ThreadExecution
 
@@ -1717,6 +1718,8 @@ async def test_root_completion_after_restart_uses_execution_state(tmp_path, monk
 
     async with open_harness_ui_app(settings, configuration_path=path) as successor:
         successor._tool_executions.deliver = None
+        capture = AsyncMock(wraps=successor._root_runs._executor.capture)
+        monkeypatch.setattr(successor._root_runs._executor, "capture", capture)
         repo = successor._store.tool_executions
         await repo.save(execution(thread_id=thread.thread_id))
         accepted = await successor._deliver_tool_completion(thread.thread_id, "Completed", ("exec-a",))
@@ -1726,8 +1729,11 @@ async def test_root_completion_after_restart_uses_execution_state(tmp_path, monk
             if active is not None:
                 await successor.wait_root_operation(active.receipt.receipt_id)
         else:
+            assert not await successor._deliver_tool_completion(thread.thread_id, "Completed", ("exec-a",))
+            capture.assert_not_awaited()
             assert calls == []
             assert (await repo.get(thread.thread_id, "exec-a")).result == "same result"
             receipt = await successor.submit_thread(thread_id=thread.thread_id, prompt="Continue explicitly")
             assert (await successor.wait_root_operation(receipt.receipt_id)).status is RootOperationStatus.completed
+        capture.assert_awaited_once()
         assert len(calls) == 1

@@ -204,7 +204,7 @@ For recovery after an interrupted Host execution:
 3. Reconnect with current credentials and policy. Attachment checks target, Device identity/generation, cwd, and required methods. An unavailable or incompatible hint opens a fresh Session; a changed execution boundary is rejected. Authentication, transport, and compatibility failures propagate. Controlled-egress Sessions resolve current policy and open fresh.
 4. On normal execution close, synchronize the cleared in-memory hint with Host persistence. Close still closes the Session after attachment.
 
-A lost framed carrier leaves Sessions detached for disconnect grace. Recovery depends on the daemon retaining the Session within its lifetime; it neither extends expiry nor fences another authenticated client. Inspect uncertain outcomes before continuing. Never replay a possibly dispatched command or mutation because the connection dropped, and use a fresh execution attempt after failed preparation.
+A lost framed carrier detaches Sessions without extending their existing idle or maximum-lifetime deadlines. Recovery requires the daemon to retain the same Session and generation. Reattachment advances the owner epoch and fences requests from the previous owner; it does not create an authorization boundary between authenticated clients. Inspect uncertain outcomes before continuing. Never replay a possibly dispatched command or mutation because the connection dropped, and use a fresh execution attempt after failed preparation.
 
 Keep the WebSocket listener and execution in the same process, or explicitly route execution to the connection owner. The SDK's process-local registry supplies no cross-process relay.
 

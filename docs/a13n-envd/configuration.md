@@ -28,7 +28,7 @@ export A13N_ENVD_CONFIG_JSON='{"default_working_directory":"/workspace","limits"
 a13n-envd
 ```
 
-Scalar settings cover identity, execution, discovery, metadata and lifetimes: `A13N_ENVD_ALLOW_SUDO`, `A13N_ENVD_EXECUTION_UID`, `A13N_ENVD_EXECUTION_GID`, `A13N_ENVD_EGRESS_MODE`, `A13N_ENVD_FULL_CONTROL`, `A13N_ENVD_COMPUTER_USE`, `A13N_ENVD_COMPUTER_USE_PERMISSION_TIMEOUT_MS`, `A13N_ENVD_DIRECTORY_DISCOVERY`, `A13N_ENVD_DEVICE_ID`, `A13N_ENVD_NAME`, `A13N_ENVD_DESCRIPTION`, `A13N_ENVD_DEFAULT_WORKING_DIRECTORY`, `A13N_ENVD_IDLE_TIMEOUT_MS` and `A13N_ENVD_DISCONNECT_GRACE_MS`. Boolean values accept `true`, `false`, `1` and `0`.
+Scalar settings cover identity, execution, discovery, metadata and lifetimes: `A13N_ENVD_ALLOW_SUDO`, `A13N_ENVD_EXECUTION_UID`, `A13N_ENVD_EXECUTION_GID`, `A13N_ENVD_EGRESS_MODE`, `A13N_ENVD_FULL_CONTROL`, `A13N_ENVD_COMPUTER_USE`, `A13N_ENVD_COMPUTER_USE_PERMISSION_TIMEOUT_MS`, `A13N_ENVD_DIRECTORY_DISCOVERY`, `A13N_ENVD_DEVICE_ID`, `A13N_ENVD_NAME`, `A13N_ENVD_DESCRIPTION`, `A13N_ENVD_DEFAULT_WORKING_DIRECTORY`, `A13N_ENVD_IDLE_TIMEOUT_MS` and `A13N_ENVD_MAX_LIFETIME_MS`. Boolean values accept `true`, `false`, `1` and `0`.
 
 ## Connect to Service
 
@@ -252,7 +252,7 @@ Store credentials in protected files. Keep them out of argv, URLs, descriptors, 
 
 Initialize a Device connection, then open a Session for each resource scope. One daemon generation serves multiple Sessions; each captures its cwd and owns its operations. `session.close` closes that scope. Keepalive renews only the calling owner, so discovery traffic does not preserve abandoned Sessions.
 
-After a framed-carrier disconnect, the owner can explicitly reattach during the grace period within the same generation. Reattachment gives access to existing resources without replaying commands or resuming transfers. After expiry, open a fresh Session and discard old references.
+After a framed-carrier disconnect, the owner can explicitly reattach within the same generation before the Session's existing idle or maximum-lifetime deadline. Reattachment gives access to existing resources without replaying commands or resuming transfers. After expiry, open a fresh Session and discard old references.
 
 On shutdown, the Host closes its connections and terminates only daemons whose lifecycle it owns. Session cleanup reclaims processes and private output/staging storage while preserving workspace files. Treat a reported cleanup failure as incomplete reclamation.
 

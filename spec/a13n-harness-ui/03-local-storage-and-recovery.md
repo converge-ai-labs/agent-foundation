@@ -523,5 +523,5 @@ The terminal failure presentation identifies the report path and the repository'
 06. Root receipts, input, and active Runs are not durable work records.
 07. Deferred response authority is the exact selected suspended continuation.
 08. Compact display never becomes Harness continuation state.
-09. Process loss never triggers implicit replay, takeover, PID inspection, heartbeat, lease, or lock-file recovery. Only a completely finalized graceful restart handoff authorizes single-use automatic continuation.
+09. Process loss never replays model or Python invocations. Retained native Shell recovery acquires local ownership and reconnects the exact Provider process; completion hints require current execution eligibility. Automatic continuation of interrupted conversation work requires a completely finalized, single-use graceful restart handoff.
 10. Transactions remain short and outside file or external execution I/O.
