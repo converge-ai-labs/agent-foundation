@@ -64,6 +64,7 @@ class Request(BaseModel):
 
     id: str = Field(default_factory=lambda: uuid4().hex, pattern=r"^[a-f0-9]{32}$")
     environment_id: str = Field(min_length=1, max_length=72)
+    mount_name: str = Field(min_length=1, max_length=64)
     epoch: str = Field(pattern=r"^[a-f0-9]{32}$")
     scope_id: str = Field(pattern=r"^[a-f0-9]{32}$")
     thread_id: str = Field(min_length=1, max_length=72)

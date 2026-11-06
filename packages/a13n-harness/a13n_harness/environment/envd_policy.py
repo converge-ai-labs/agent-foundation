@@ -14,7 +14,10 @@ from a13n_envd_client.eip.v1 import (
     ExecutionBoundary,
     ExecutionIdentity,
     SandboxPolicy,
+    SessionConfiguration,
+    SessionLifecyclePolicy,
 )
+from a13n_envd_client.eip.v1.models import AbsoluteEIPPath
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 
@@ -44,8 +47,31 @@ class EnvdEgressConfiguration(BaseModel):
         return frozenset(binding.source.name for binding in self.secrets)
 
 
+class EnvdSessionConfiguration(BaseModel):
+    """Immutable Session selection; credential references are resolved at acquisition."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    working_directory: AbsoluteEIPPath | None = None
+    sandbox: SandboxPolicy | None = None
+    egress_mode: EgressMode | None = None
+    egress: EnvdEgressConfiguration | None = None
+    lifecycle: SessionLifecyclePolicy | None = None
+    commands: bool | None = None
+
+    async def resolve(self, resolver: EnvdCredentialResolver) -> SessionConfiguration:
+        return SessionConfiguration(
+            working_directory=self.working_directory,
+            sandbox=self.sandbox,
+            egress_mode=self.egress_mode,
+            egress=await resolve_egress(self.egress, resolver),
+            lifecycle=self.lifecycle,
+            commands=self.commands,
+        )
+
+
 class EnvdBoundaryRequirement(BaseModel):
-    """A selected remote boundary, not authority to change that Device."""
+    """An expected effective Session boundary."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -63,7 +89,7 @@ class EnvdBoundaryRequirement(BaseModel):
                 self.privilege_gain_blocked is not None and actual.privilege_gain_blocked != self.privilege_gain_blocked
             )
         ):
-            raise EIPSessionStateError("Device execution boundary does not match the selected requirement")
+            raise EIPSessionStateError("Session execution boundary does not match the selected requirement")
 
 
 class EnvdCredentialResolver(Protocol):

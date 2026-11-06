@@ -8,10 +8,8 @@ import sys
 from pathlib import Path
 
 import pytest
-from a13n_envd_client import EIPMethodError
 from a13n_envd_client.eip.v1 import DirectoryListParams, SessionConfiguration
 from a13n_harness.environment.commands import ArgvCommand, CommandRequest
-from a13n_harness.environment.errors import EnvironmentProviderError
 from a13n_harness.environment.models import EnvironmentError
 from a13n_harness.environment.retention import EnvironmentOutputPolicy
 from a13n_harness.providers.environment.local_envd.configuration import (
@@ -126,9 +124,9 @@ async def test_local_shared_device_owns_daemon_not_adapter(binary, tmp_path):
                 runtime=runtime,
                 environment_id="invalid",
             )
-            with pytest.raises(EnvironmentProviderError) as failure:
+            with pytest.raises(EnvironmentError) as failure:
                 await invalid.open()
-            assert isinstance(failure.value.__cause__, EIPMethodError)
+            assert failure.value.code == "environment_not_found"
             assert len(device._sessions) == 1
             assert (await files.read_text(device_path(first_root / "outside-cwd"))).text == "allowed"
         finally:
@@ -172,7 +170,7 @@ async def test_host_shutdown_closes_remaining_adapter_sessions(binary, tmp_path)
 
 @pytest.mark.parametrize("closed", [False, True])
 async def test_stdio_recovery_uses_common_session_source(binary, tmp_path, closed):
-    from a13n_harness.environment.session_recovery import EnvdSessionRecovery, EnvdSessionState
+    from a13n_harness.environment.session_recovery import EnvdSessionRecovery, EnvdSessionState, configuration_digest
 
     runtime = LocalEnvdProviderRuntime(
         executable=binary,
@@ -181,14 +179,12 @@ async def test_stdio_recovery_uses_common_session_source(binary, tmp_path, close
     )
     async with runtime:
         device = await runtime.acquire_device()
-        original = await device.open_session(
-            configuration=SessionConfiguration(working_directory=device_path(tmp_path))
-        )
+        original = await device.open_session(configuration=SessionConfiguration())
         recovery = EnvdSessionRecovery(
             EnvdSessionState(
                 target=device.descriptor.device_id,
                 descriptor=original.descriptor,
-                working_directory=device_path(tmp_path),
+                configuration_digest=configuration_digest(SessionConfiguration()),
             )
         )
         if closed:
@@ -267,3 +263,192 @@ async def test_stdio_eof_exits_daemon_and_new_generation_ignores_hint(binary, tm
                 await process.wait()
         previous = saved
         recovery.state = saved
+
+
+async def test_directory_views_share_session_but_own_cwd_and_processes(binary, tmp_path):
+    from a13n_harness.environment.session_recovery import EnvdSessionRecovery
+
+    roots = (tmp_path / "alpha", tmp_path / "beta")
+    for root in roots:
+        root.mkdir()
+    recovery = EnvdSessionRecovery()
+    async with LocalEnvdProviderRuntime(
+        executable=binary,
+        allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(parent=tmp_path),
+        configuration=LocalEnvdLaunchConfiguration(
+            default_working_directory=tmp_path,
+            trusted_executable_roots=(Path(sys.executable).resolve().parent,),
+        ),
+    ) as runtime:
+        device = await runtime.acquire_device()
+        first, second = await asyncio.gather(
+            *(
+                LOCAL_ENVD.execution_connector(
+                    LocalEnvdEnvironmentConfiguration(working_directory=device_path(root)),
+                    runtime=runtime,
+                    environment_id=f"view-{index}",
+                    session_recovery=recovery,
+                ).open()
+                for index, root in enumerate(roots)
+            )
+        )
+        try:
+            assert first is not second
+            assert first.descriptor.generation == second.descriptor.generation
+            assert len(device._sessions) == 1
+            assert recovery.state is not None
+            original = recovery.state.descriptor
+            for execution, root in zip((first, second), roots, strict=True):
+                assert execution.operations.files is not None
+                await execution.operations.files.write_text("relative.txt", root.name, mode="create")
+                assert (root / "relative.txt").read_text() == root.name
+            processes = second.operations.processes
+            assert processes is not None
+            started = await processes.start(
+                CommandRequest(
+                    command=ArgvCommand(
+                        executable=Path(sys.executable).resolve().name,
+                        arguments=(
+                            "-c",
+                            "from pathlib import Path; import time; time.sleep(0.2); Path('cwd.txt').write_text(str(Path.cwd()))",
+                        ),
+                    ),
+                    output_policy=EnvironmentOutputPolicy(
+                        max_inline_bytes=1024, max_output_bytes=4096, overflow="retain"
+                    ),
+                )
+            )
+            await first.close()
+            assert len(device._sessions) == 1
+            assert recovery._users == 1
+            result = await processes.wait(started.process.handle, condition="tree_cleaned", timeout_seconds=5)
+            assert result.status.exit_code == 0
+            assert (roots[1] / "cwd.txt").read_text() == str(roots[1])
+            assert not (roots[0] / "cwd.txt").exists()
+            await processes.release(started.process.handle)
+        finally:
+            await first.close()
+            await second.close()
+        assert recovery._users == 0
+        assert not device._sessions
+        resumed = await LOCAL_ENVD.execution_connector(
+            LocalEnvdEnvironmentConfiguration(working_directory=device_path(roots[1])),
+            runtime=runtime,
+            environment_id="renamed-view",
+            session_recovery=recovery,
+        ).open()
+        try:
+            assert recovery.state.descriptor.session_id == original.session_id
+            assert recovery.state.descriptor.owner_epoch > original.owner_epoch
+        finally:
+            await resumed.close()
+
+
+async def test_session_replacement_requires_retirement_and_never_resurrects(binary, tmp_path):
+    from a13n_envd_client import EIPSessionStateError
+    from a13n_harness.environment.attachments import DeviceEIPSessionSource
+    from a13n_harness.environment.models import EnvironmentError
+    from a13n_harness.environment.session_recovery import EnvdSessionRecovery
+
+    checkpoints = []
+
+    async def checkpoint(state):
+        checkpoints.append(state)
+
+    recovery = EnvdSessionRecovery(checkpoint=checkpoint)
+    async with LocalEnvdProviderRuntime(
+        executable=binary,
+        allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(parent=tmp_path),
+        configuration=LocalEnvdLaunchConfiguration(default_working_directory=tmp_path),
+    ) as runtime:
+        device = await runtime.acquire_device()
+        target = device.descriptor.device_id
+
+        def borrow(configuration=None):
+            return DeviceEIPSessionSource(device, session_recovery=recovery).open_session(
+                expected_device_id=target,
+                required_methods=frozenset(),
+                configuration=configuration,
+            )
+
+        async with borrow() as first:
+            first_id = first.session_id
+            with pytest.raises(EIPSessionStateError, match="busy"):
+                await recovery.retire(device, target=target)
+        with pytest.raises(EIPSessionStateError, match="retire"):
+            async with borrow(SessionConfiguration(commands=False)):
+                pytest.fail("configuration change must not open a sibling Session")
+        await recovery.retire(device, target=target)
+        assert checkpoints[-1].status == "retired"
+        assert any(state.status == "retiring" for state in checkpoints)
+        async with borrow(SessionConfiguration(commands=False)) as second:
+            assert second.session_id != first_id
+            second_id = second.session_id
+        await recovery.retire(device, target=target)
+        async with borrow() as third:
+            assert third.session_id not in {first_id, second_id}
+            original = recovery.state
+        await recovery.retire(device, target=target)
+        assert original is not None
+        exact = EnvdSessionRecovery(state=original).exact(original.descriptor.session_id)
+        with pytest.raises(EnvironmentError, match="original Session"):
+            async with DeviceEIPSessionSource(device, session_recovery=exact).open_session(
+                expected_device_id=target,
+                required_methods=frozenset(),
+                configuration=SessionConfiguration(),
+            ):
+                pytest.fail("retained work must never open a successor")
+        assert not device._sessions
+
+
+async def test_exact_restore_rejects_a_reloaded_successor_before_taking_ownership(binary, tmp_path):
+    from contextlib import asynccontextmanager
+
+    from a13n_harness.environment.attachments import DeviceEIPSessionSource
+    from a13n_harness.environment.models import EnvironmentError
+    from a13n_harness.environment.session_recovery import EnvdSessionRecovery
+
+    current = None
+    checkpoints = []
+
+    async def checkpoint(state):
+        nonlocal current
+        current = state
+        checkpoints.append(state)
+
+    @asynccontextmanager
+    async def ownership():
+        yield current
+
+    owner = EnvdSessionRecovery(checkpoint=checkpoint, ownership=ownership)
+    async with LocalEnvdProviderRuntime(
+        executable=binary,
+        allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(parent=tmp_path),
+        configuration=LocalEnvdLaunchConfiguration(default_working_directory=tmp_path),
+    ) as runtime:
+        device = await runtime.acquire_device()
+        target = device.descriptor.device_id
+
+        def borrow(recovery):
+            return DeviceEIPSessionSource(device, session_recovery=recovery).open_session(
+                expected_device_id=target, required_methods=frozenset()
+            )
+
+        async with borrow(owner):
+            original = current
+        assert original is not None
+        exact = EnvdSessionRecovery(state=original, checkpoint=checkpoint, ownership=ownership).exact(
+            original.descriptor.session_id
+        )
+        await owner.retire(device, target=target)
+        async with borrow(owner) as successor:
+            successor_id = successor.session_id
+        checkpoint_count = len(checkpoints)
+        with pytest.raises(EnvironmentError, match="original Session"):
+            async with borrow(exact):
+                pytest.fail("old work must not attach to the new Session")
+        assert len(checkpoints) == checkpoint_count
+        assert current.descriptor.session_id == successor_id
+        assert not device._sessions
+        async with borrow(owner) as still_current:
+            assert still_current.session_id == successor_id

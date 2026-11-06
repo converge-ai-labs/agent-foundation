@@ -52,6 +52,7 @@ async def checks(service, runs_kit, scripted_model):
         Check(
             Request(
                 environment_id=identity,
+                mount_name="pc",
                 epoch="a" * 32,
                 scope_id=uuid4().hex,
                 thread_id=lease.thread_id,
@@ -84,7 +85,7 @@ async def test_batch_authority_uses_set_reads_and_does_not_cache_revocation(serv
     assert all(isinstance(result, EnvironmentError) for result in await resolve_many(runtime, batch))
 
 
-@pytest.mark.parametrize("refusal", ["cancelled", "expired", "worker", "thread", "permissions"])
+@pytest.mark.parametrize("refusal", ["cancelled", "expired", "worker", "thread", "mount", "permissions"])
 async def test_refused_caller_does_not_revoke_its_sibling(service, checks, refusal):
     first, second = checks
     request = first.request
@@ -100,6 +101,8 @@ async def test_refused_caller_does_not_revoke_its_sibling(service, checks, refus
         request = request.model_copy(update={"caller": request.caller.model_copy(update={"worker_id": "wrong"})})
     elif refusal == "thread":
         request = request.model_copy(update={"thread_id": second.request.thread_id})
+    elif refusal == "mount":
+        request = request.model_copy(update={"mount_name": "other"})
     first = Check(
         request,
         first.attachment,
@@ -202,7 +205,7 @@ async def test_retained_cleanup_survives_revocation_without_admitting_new_work(s
 
 
 @pytest.mark.parametrize(
-    "refusal", ["handle", "start", "worker", "expiry", "credential", "device", "session", "permission"]
+    "refusal", ["handle", "start", "worker", "expiry", "credential", "device", "session", "mount", "permission"]
 )
 async def test_retained_cleanup_preserves_original_resource_and_owner_fences(service, retained_check, refusal):
     from a13n_envd_client.eip.v1 import SessionDescriptor
@@ -226,6 +229,8 @@ async def test_retained_cleanup_preserves_original_resource_and_owner_fences(ser
             else:
                 config = await session.get_one(ClientSettingsRow, request.environment_id)
                 config.credential_version += 1
+    elif refusal == "mount":
+        request = request.model_copy(update={"mount_name": "other"})
     elif refusal == "device":
         check = replace(check, attachment=Attachment(request.environment_id, "other-device", 1))
     elif refusal == "session":
@@ -237,3 +242,50 @@ async def test_retained_cleanup_preserves_original_resource_and_owner_fences(ser
         check = replace(check, actions=frozenset({"environment.computer.observe"}))
     (result,) = await resolve_many(service.runtime, [replace(check, request=request)])
     assert isinstance(result, EnvironmentError) and result.code == "environment_denied"
+
+
+async def test_same_device_views_never_union_permission_ceilings(service, checks):
+    check = checks[0]
+    read = EnvironmentAction.FILE_READ_TEXT
+    write = EnvironmentAction.FILE_WRITE_TEXT
+    from a13n_service.runs.attempts import LeaseLost
+    from a13n_service.runs.tool_executions.authority import ControlSnapshot
+
+    async with transaction(service.runtime.storage) as session:
+        snapshot = await ControlSnapshot.load(session, service.runtime, [check.request.caller])
+    run = snapshot.runs[check.request.caller.run_id]
+    original = next(mount for mount in run.environment_mounts if mount["name"] == "pc")
+    # Build the candidate frozen selection on the detached authorization snapshot.
+    # Accepted database rows remain immutable.
+    run.environment_mounts = [
+        {**original, "name": "reader", "permission_ceiling": {"operations": [read]}},
+        {**original, "name": "writer", "permission_ceiling": {"operations": [write]}},
+    ]
+    batch = [
+        replace(check, request=check.request.model_copy(update={"mount_name": name}), actions=frozenset(actions))
+        for name, actions in (
+            ("reader", [read]),
+            ("writer", [write]),
+            ("reader", [write]),
+            ("writer", [read]),
+            ("reader", [read, write]),
+            ("missing", []),
+        )
+    ]
+    results = []
+    for candidate in batch:
+        try:
+            grant = snapshot.authorize(
+                candidate.request.caller,
+                thread_id=candidate.request.thread_id,
+                environment_id=candidate.request.environment_id,
+                mount_name=candidate.request.mount_name,
+                actions=candidate.actions,
+            )
+        except LeaseLost:
+            results.append(None)
+        else:
+            results.append(grant.mount)
+    assert [result is None for result in results] == [False, False, True, True, True, True]
+    assert results[0].name == "reader"
+    assert results[1].name == "writer"

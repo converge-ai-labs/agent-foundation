@@ -254,7 +254,8 @@ async def test_device_browsing_and_independent_sessions_share_carrier(tmp_path, 
                     await app.current_configuration(), _selection(await app._threads.get(thread.thread_id))
                 )
                 service = executor._environments
-                plan = await service.prepare(captured.value)
+                admitted = await service.admit(captured.value)
+                plan = await service.prepare(admitted)
                 try:
                     assert plan.default_environment == "build"
                     async with plan.runtime.bind(
@@ -274,7 +275,7 @@ async def test_device_browsing_and_independent_sessions_share_carrier(tmp_path, 
                 assert publication.key.adapter_key == f"{carrier}_envd"
                 assert publication.key.normalized_root == device_path(root)
                 # Preparation is inert; the next acquisition restores the continuing Session.
-                restored = await service.prepare(captured.value)
+                restored = await service.prepare(admitted)
                 try:
                     assert len(set(opened)) == 4
                 finally:

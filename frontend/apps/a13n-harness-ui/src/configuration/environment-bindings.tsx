@@ -251,7 +251,8 @@ export function EnvironmentBindings({
                 {policy.permission_ceiling?.operations?.join(", ") ??
                   t("Files and execution")}
               </p>
-              {(policy.egress || policy.expected_boundary) && (
+              {(Object.keys(policy.session ?? {}).length > 0 ||
+                policy.expected_boundary) && (
                 <p>{t("Custom network and access rules are kept.")}</p>
               )}
               {group.directories.map((binding) => (

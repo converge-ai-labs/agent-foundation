@@ -90,6 +90,7 @@ async def authorize_control(
     *,
     thread_id: str,
     environment_id: str,
+    mount_name: str,
     actions: frozenset[EnvironmentAction],
     cleanup: bool = False,
 ) -> ControlGrant:
@@ -101,7 +102,12 @@ async def authorize_control(
     """
     snapshot = await ControlSnapshot.load(session, runtime, [caller])
     return snapshot.authorize(
-        caller, thread_id=thread_id, environment_id=environment_id, actions=actions, cleanup=cleanup
+        caller,
+        thread_id=thread_id,
+        environment_id=environment_id,
+        mount_name=mount_name,
+        actions=actions,
+        cleanup=cleanup,
     )
 
 
@@ -150,6 +156,7 @@ class ControlSnapshot:
         *,
         thread_id: str,
         environment_id: str,
+        mount_name: str,
         actions: frozenset[EnvironmentAction],
         cleanup: bool = False,
     ) -> ControlGrant:
@@ -158,7 +165,7 @@ class ControlSnapshot:
         if isinstance(principal, ServiceError):
             raise AuthorityRevoked() from principal
         for value in run.environment_mounts:
-            if value["environment_id"] == environment_id:
+            if value["environment_id"] == environment_id and value["name"] == mount_name:
                 mount = EnvironmentMount.model_validate(value)
                 if actions <= mount.permission_ceiling.operations:
                     return ControlGrant(

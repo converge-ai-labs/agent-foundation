@@ -12,7 +12,7 @@ from pydantic import BaseModel, JsonValue
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory, provider_error
 from a13n_harness.environment.execution import EnvironmentConnector
 from a13n_harness.environment.models import EnvironmentDescriptor, EnvironmentState
-from a13n_harness.environment.session_recovery import EnvdSessionRecovery
+from a13n_harness.environment.session_recovery import EnvdSessionBorrower
 from a13n_harness.providers.definition import ProviderDefinition
 
 
@@ -26,7 +26,7 @@ class ConnectorFactory[C: BaseModel, K: BaseModel, E: BaseModel, R](Protocol):
         environment_id: str,
         state: EnvironmentState | None,
         runtime: R | None,
-        session_recovery: EnvdSessionRecovery | None = None,
+        session_recovery: EnvdSessionBorrower | None = None,
     ) -> EnvironmentConnector: ...
 
 
@@ -95,7 +95,7 @@ class EnvironmentProviderDefinition[C: BaseModel, K: BaseModel, E: BaseModel, R]
         environment_id: str | None = None,
         state: EnvironmentState | None = None,
         runtime: R | None = None,
-        session_recovery: EnvdSessionRecovery | None = None,
+        session_recovery: EnvdSessionBorrower | None = None,
     ) -> EnvironmentConnector:
         """Validate inert inputs for one fixed target; acquire nothing until open()."""
         desired = self.validate_environment(environment)

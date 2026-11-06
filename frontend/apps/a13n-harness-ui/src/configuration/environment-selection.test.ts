@@ -127,7 +127,10 @@ it("groups only equal Device policies without mutating legacy selections", () =>
     {
       ...remote,
       alias: "network",
-      egress: { destinations: { mode: "allowlist", hosts: ["example.com"] } },
+      session: {
+        egress_mode: "controlled",
+        egress: { destinations: { mode: "allowlist", hosts: ["example.com"] } },
+      },
     },
     {
       ...remote,

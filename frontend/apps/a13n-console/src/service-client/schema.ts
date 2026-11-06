@@ -3841,6 +3841,24 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/threads/{thread_id}/session-bindings/{environment_id}/{name}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Session Binding */
+    get: operations["get_session_binding"];
+    /** Update Session Binding */
+    put: operations["update_session_binding"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/threads/{thread_id}/stream": {
     parameters: {
       query?: never;
@@ -5353,6 +5371,19 @@ export interface components {
       /** Agent Id */
       agent_id?: string | null;
       config: components["schemas"]["AgentConfig-Input"];
+    };
+    /** AllowlistDestinations */
+    AllowlistDestinations: {
+      /**
+       * Hosts
+       * @default []
+       */
+      hosts?: string[];
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      mode: "allowlist";
     };
     /** Analysis */
     Analysis: {
@@ -7195,6 +7226,14 @@ export interface components {
       /** Stage */
       stage: string;
     };
+    /** DisabledSandbox */
+    DisabledSandbox: {
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      mode: "disabled";
+    };
     /** DiscoverySource */
     DiscoverySource: {
       /** Description */
@@ -7280,6 +7319,14 @@ export interface components {
        */
       enabled?: boolean;
     };
+    EgressDestinations:
+      | components["schemas"]["PublicDestinations"]
+      | components["schemas"]["AllowlistDestinations"];
+    /**
+     * EgressMode
+     * @enum {string}
+     */
+    EgressMode: "inherit" | "deny" | "controlled";
     /** EmailChangeConfirm */
     EmailChangeConfirm: {
       /** Token */
@@ -7422,6 +7469,23 @@ export interface components {
       /** Thread Id */
       thread_id: string;
     };
+    /** EnvdEgressConfiguration */
+    EnvdEgressConfiguration: {
+      destinations: components["schemas"]["EgressDestinations"];
+      /**
+       * Secrets
+       * @default []
+       */
+      secrets?: components["schemas"]["EnvdSecretReference"][];
+    };
+    /** EnvdSecretReference */
+    EnvdSecretReference: {
+      /** Env */
+      env: string;
+      /** Inject Hosts */
+      inject_hosts: string[];
+      source: components["schemas"]["EnvironmentCredentialSource"];
+    };
     /**
      * EnvironmentAction
      * @description Exact authorization values in the locked first-party catalog.
@@ -7470,6 +7534,16 @@ export interface components {
       | "environment.computer.press_keys"
       | "environment.computer.read_clipboard"
       | "environment.computer.write_clipboard";
+    /** EnvironmentCredentialSource */
+    EnvironmentCredentialSource: {
+      /**
+       * Kind
+       * @constant
+       */
+      kind: "environment";
+      /** Name */
+      name: string;
+    };
     /**
      * EnvironmentFailure
      * @description The last error of the outstanding operation or, on a ready instance, of its last renewal.
@@ -7538,6 +7612,17 @@ export interface components {
        *     }
        */
       permission_ceiling?: components["schemas"]["EnvironmentPermissionSet-Output"];
+      /**
+       * Session Binding
+       * @default default
+       */
+      session_binding?: string;
+      session_configuration?: components["schemas"]["SessionConfiguration"];
+      /**
+       * Session Version
+       * @default 0
+       */
+      session_version?: number;
       /** Working Directory */
       working_directory?: string | null;
     };
@@ -7932,6 +8017,13 @@ export interface components {
        *     }
        */
       permission_ceiling?: components["schemas"]["EnvironmentPermissionSet-Input"];
+      /**
+       * Session Binding
+       * @default default
+       */
+      session_binding?: string;
+      session_configuration?:
+        components["schemas"]["SessionConfiguration"] | null;
       /** Working Directory */
       working_directory?: string | null;
     };
@@ -7985,6 +8077,13 @@ export interface components {
        *     }
        */
       permission_ceiling?: components["schemas"]["EnvironmentPermissionSet-Output"];
+      /**
+       * Session Binding
+       * @default default
+       */
+      session_binding?: string;
+      session_configuration?:
+        components["schemas"]["SessionConfiguration"] | null;
       /** Working Directory */
       working_directory?: string | null;
     };
@@ -8292,6 +8391,13 @@ export interface components {
        *     }
        */
       permission_ceiling?: components["schemas"]["EnvironmentPermissionSet-Input"];
+      /**
+       * Session Binding
+       * @default default
+       */
+      session_binding?: string;
+      session_configuration?:
+        components["schemas"]["SessionConfiguration"] | null;
       /** Template Id */
       template_id: string;
       /** Working Directory */
@@ -8345,6 +8451,13 @@ export interface components {
        *     }
        */
       permission_ceiling?: components["schemas"]["EnvironmentPermissionSet-Output"];
+      /**
+       * Session Binding
+       * @default default
+       */
+      session_binding?: string;
+      session_configuration?:
+        components["schemas"]["SessionConfiguration"] | null;
       /** Template Id */
       template_id: string;
       /** Working Directory */
@@ -8375,6 +8488,11 @@ export interface components {
       /** Repository */
       repository: string;
     };
+    /**
+     * GrantAccess
+     * @enum {string}
+     */
+    GrantAccess: "read_only" | "read_write";
     /** GrantCreate */
     GrantCreate: {
       /** Principal Id */
@@ -10025,6 +10143,13 @@ export interface components {
        *     }
        */
       permission_ceiling?: components["schemas"]["EnvironmentPermissionSet-Input"];
+      /**
+       * Session Binding
+       * @default default
+       */
+      session_binding?: string;
+      session_configuration?:
+        components["schemas"]["SessionConfiguration"] | null;
       /** Working Directory */
       working_directory?: string | null;
     };
@@ -10088,6 +10213,8 @@ export interface components {
        *     }
        */
       permission_ceiling?: components["schemas"]["EnvironmentPermissionSet-Output"];
+      /** Session Binding */
+      session_binding: string;
       /** Working Directory */
       working_directory: string | null;
     };
@@ -11050,6 +11177,14 @@ export interface components {
       /** Name */
       name?: string | null;
     };
+    /** PublicDestinations */
+    PublicDestinations: {
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      mode: "public";
+    };
     /** Query */
     Query: {
       /** Endpoint */
@@ -11256,6 +11391,24 @@ export interface components {
       status?: {
         [key: string]: components["schemas"]["JsonValue"];
       };
+    };
+    /** RestrictedSandbox */
+    RestrictedSandbox: {
+      /**
+       * Full Disk Read
+       * @default false
+       */
+      full_disk_read?: boolean;
+      /**
+       * Grants
+       * @default []
+       */
+      grants?: components["schemas"]["SandboxGrant"][];
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      mode: "restricted";
     };
     /**
      * Resume
@@ -11847,6 +12000,18 @@ export interface components {
       /** Workspace Id */
       workspace_id: string;
     };
+    /** SandboxGrant */
+    SandboxGrant: {
+      access: components["schemas"]["GrantAccess"];
+      /**
+       * Path
+       * Format: eip-absolute-path
+       */
+      path: string;
+    };
+    SandboxPolicy:
+      | components["schemas"]["DisabledSandbox"]
+      | components["schemas"]["RestrictedSandbox"];
     /** Schedule */
     Schedule: {
       /** Archived At */
@@ -12157,6 +12322,34 @@ export interface components {
       /** Status */
       status?: ("active" | "disabled") | null;
     };
+    /** SessionBindingUpdate */
+    SessionBindingUpdate: {
+      configuration: components["schemas"]["SessionConfiguration"];
+    };
+    /** SessionBindingView */
+    SessionBindingView: {
+      configuration: components["schemas"]["SessionConfiguration"];
+      /** Environment Id */
+      environment_id: string;
+      /** Name */
+      name: string;
+      /** Version */
+      version: number;
+    };
+    /**
+     * SessionConfiguration
+     * @description Tenant-authored Session policy; Service credentials are not process-environment references.
+     */
+    SessionConfiguration: {
+      /** Commands */
+      commands?: boolean | null;
+      egress?: components["schemas"]["EnvdEgressConfiguration"] | null;
+      egress_mode?: components["schemas"]["EgressMode"] | null;
+      lifecycle?: components["schemas"]["SessionLifecyclePolicy"] | null;
+      sandbox?: components["schemas"]["SandboxPolicy"] | null;
+      /** Working Directory */
+      working_directory?: string | null;
+    };
     /** SessionCreate */
     SessionCreate: {
       /**
@@ -12172,6 +12365,13 @@ export interface components {
       origin?: components["schemas"]["SessionOrigin"] | null;
       /** Title */
       title?: string | null;
+    };
+    /** SessionLifecyclePolicy */
+    SessionLifecyclePolicy: {
+      /** Idle Timeout Ms */
+      idle_timeout_ms: number;
+      /** Max Lifetime Ms */
+      max_lifetime_ms?: number | null;
     };
     /**
      * SessionMemorySettings
@@ -22976,6 +23176,70 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["ThreadRunPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_session_binding: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        thread_id: string;
+        environment_id: string;
+        name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SessionBindingView"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  update_session_binding: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        thread_id: string;
+        environment_id: string;
+        name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["SessionBindingUpdate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SessionBindingView"];
         };
       };
       400: components["responses"]["Error"];

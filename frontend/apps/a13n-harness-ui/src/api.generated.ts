@@ -4475,7 +4475,7 @@ export interface components {
         EgressMode: "inherit" | "deny" | "controlled";
         /**
          * EnvdBoundaryRequirement
-         * @description A selected remote boundary, not authority to change that Device.
+         * @description An expected effective Session boundary.
          */
         EnvdBoundaryRequirement: {
             sandbox: components["schemas"]["SandboxPolicy"];
@@ -4513,6 +4513,20 @@ export interface components {
             source: components["schemas"]["EnvironmentCredentialSource"];
             /** Inject Hosts */
             inject_hosts: string[];
+        };
+        /**
+         * EnvdSessionConfiguration
+         * @description Immutable Session selection; credential references are resolved at acquisition.
+         */
+        EnvdSessionConfiguration: {
+            /** Working Directory */
+            working_directory?: string | null;
+            sandbox?: components["schemas"]["SandboxPolicy"] | null;
+            egress_mode?: components["schemas"]["EgressMode"] | null;
+            egress?: components["schemas"]["EnvdEgressConfiguration"] | null;
+            lifecycle?: components["schemas"]["SessionLifecyclePolicy"] | null;
+            /** Commands */
+            commands?: boolean | null;
         };
         /** EnvdStatus */
         EnvdStatus: {
@@ -4602,7 +4616,7 @@ export interface components {
              * Format: eip-absolute-path
              */
             working_directory: string;
-            egress?: components["schemas"]["EnvdEgressConfiguration"] | null;
+            session?: components["schemas"]["EnvdSessionConfiguration"];
             expected_boundary?: components["schemas"]["EnvdBoundaryRequirement"] | null;
             /** Alias */
             alias: string;
@@ -6581,6 +6595,13 @@ export interface components {
             header: string;
             /** Description */
             description: string;
+        };
+        /** SessionLifecyclePolicy */
+        SessionLifecyclePolicy: {
+            /** Idle Timeout Ms */
+            idle_timeout_ms: number;
+            /** Max Lifetime Ms */
+            max_lifetime_ms?: number | null;
         };
         /** SetupPreview */
         SetupPreview: {

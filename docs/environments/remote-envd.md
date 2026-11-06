@@ -87,20 +87,23 @@ Use HTTPS for public endpoints. Plain HTTP is supported on loopback, or on a tru
 
 ## Session egress and credential references
 
-Match the Session recipe to the Device's launch policy. A `controlled` Device requires explicit destinations for every Session; `inherit` and `deny` Devices reject Session policy. Local, HTTP, and WebSocket Envd use the same reference-only recipe.
+Select immutable startup policy under `session`, within the Device's deployment ceiling. A controlled Session requires explicit destinations; inherit and deny Sessions reject destination policy. Local, HTTP, and WebSocket Envd use the same reference-only recipe.
 
 For a Device launched with disabled Sandbox and controlled egress, this recipe allows GitHub API traffic and names a Host-side credential source:
 
 ```python
 recipe = {
     "working_directory": "/work/project",
-    "egress": {
-        "destinations": {"mode": "allowlist", "hosts": ["api.github.com"]},
-        "secrets": [{
-            "env": "GH_TOKEN",
-            "source": {"kind": "environment", "name": "HOST_GITHUB_TOKEN"},
-            "inject_hosts": ["api.github.com"],
-        }],
+    "session": {
+        "egress_mode": "controlled",
+        "egress": {
+            "destinations": {"mode": "allowlist", "hosts": ["api.github.com"]},
+            "secrets": [{
+                "env": "GH_TOKEN",
+                "source": {"kind": "environment", "name": "HOST_GITHUB_TOKEN"},
+                "inject_hosts": ["api.github.com"],
+            }],
+        },
     },
     "expected_boundary": {
         "sandbox": {"mode": "disabled"},
@@ -111,7 +114,7 @@ recipe = {
 
 Set `HOST_GITHUB_TOKEN` in the Host environment, then pass `recipe` as the first argument to `execution_connector`. The runtime resolves the source before opening each Session; missing or empty values fail preparation. Saved recipes contain references, while commands receive sentinels instead of real credentials.
 
-Set `expected_boundary` to the Device settings you intend to use. For a restricted Device, specify its exact grants. Continue to [controlled egress](../a13n-envd/egress.md) for credential injection and policy updates.
+Set `expected_boundary` to the effective Session boundary you require. For a restricted Session, specify its exact grants. Continue to [controlled egress](../a13n-envd/egress.md) for credential injection and policy updates.
 
 ## Integrate your own WebSocket Host
 
@@ -156,7 +159,7 @@ environment = websocket_envd.execution_connector(
 )
 ```
 
-Open the returned connector as `async with await environment.open() as execution`, or supply it through a Host source. Each execution owns an independent Session on the shared Device connection. Completion or cancellation closes that Session, leaving the shared connection available to other executions.
+Open the returned connector as `async with await environment.open() as execution`, or supply it through a Host source. Without a Host Session owner, each execution owns and closes an independent Session on the shared Device connection. To share a Session across directory views and Runs, supply the same `EnvdSessionRecovery` owner as described below.
 
 Close the registry at Host shutdown. Its capacity is finite, duplicate active Device connections are rejected, and connection acquisition has a finite timeout. A WebSocket Provider without a supplied connection runtime fails explicitly.
 
@@ -201,8 +204,9 @@ For recovery after an interrupted Host execution:
 
 1. Create `EnvdSessionRecovery` from `a13n_harness.environment.session_recovery`. Restore an optional `EnvdSessionState` only for the original logical scope.
 2. Pass `session_recovery=recovery` to `execution_connector(...)`. While active, save the observed `recovery.state` separately from `EnvironmentState` and Harness state.
-3. Reconnect with current credentials and policy. Attachment checks target, Device identity/generation, cwd, and required methods. An unavailable or incompatible hint opens a fresh Session; a changed execution boundary is rejected. Authentication, transport, and compatibility failures propagate. Controlled-egress Sessions resolve current policy and open fresh.
-4. On normal execution close, synchronize the cleared in-memory hint with Host persistence. Close still closes the Session after attachment.
+3. Reconnect with current credentials. Attachment verifies the logical target, Device generation, selected Session configuration and effective descriptor. Ordinary new work may open a new Session after confirmed loss; authentication, transport and protocol errors propagate. Changed startup configuration requires explicit retirement before a successor opens. Persist retirement before closing the old Session, and retain its descriptor if close is uncertain.
+4. Pass the same owner to all directory views of that binding. Closing the final execution detaches the connection and preserves the checkpoint for the next Run. The view's working directory does not partition Session identity.
+5. For retained native work, use `recovery.exact(original_session_id)`. This borrower requires that exact original Session and never opens a replacement. Retire a binding only after its admitted work has settled; a previously retired configuration is never resurrected.
 
 A lost framed carrier detaches Sessions without extending their existing idle or maximum-lifetime deadlines. Recovery requires the daemon to retain the same Session and generation. Reattachment advances the owner epoch and fences requests from the previous owner; it does not create an authorization boundary between authenticated clients. Inspect uncertain outcomes before continuing. Never replay a possibly dispatched command or mutation because the connection dropped, and use a fresh execution attempt after failed preparation.
 

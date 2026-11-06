@@ -15,7 +15,7 @@ import anyio
 from a13n_harness.environment.attachments import EIPSessionBinding
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
 from a13n_harness.environment.errors import provider_error
-from a13n_harness.environment.session_recovery import EnvdSessionRecovery
+from a13n_harness.environment.session_recovery import EnvdSessionBorrower
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_harness.providers.environment.remote_envd.configuration import (
     HttpEnvdConnectionConfiguration,
@@ -151,7 +151,7 @@ async def session(
     state: KubernetesState,
     config: KubernetesEnvironmentConfiguration,
     *,
-    session_recovery: EnvdSessionRecovery | None = None,
+    session_recovery: EnvdSessionBorrower | None = None,
 ) -> AsyncGenerator[EIPSessionBinding]:
     async with http_runtime(runtime, state, config) as carrier:
         async with carrier.open_session(
@@ -171,7 +171,7 @@ def execution(
     config: KubernetesEnvironmentConfiguration,
     environment_id: str,
     *,
-    session_recovery: EnvdSessionRecovery | None = None,
+    session_recovery: EnvdSessionBorrower | None = None,
 ) -> RemoteEnvdExecution:
     return RemoteEnvdExecution(
         environment=config.environment,

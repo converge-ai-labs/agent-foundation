@@ -7,7 +7,7 @@ from pydantic import SecretStr
 
 from a13n_harness.environment.attachments import EIPSessionBinding
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
-from a13n_harness.environment.session_recovery import EnvdSessionRecovery
+from a13n_harness.environment.session_recovery import EnvdSessionBorrower
 from a13n_harness.providers.environment.e2b.connection import close_sandbox, open_sandbox
 from a13n_harness.providers.environment.e2b.errors import provider_error, sdk_errors
 from a13n_harness.providers.environment.e2b.shared import E2BReference
@@ -70,7 +70,7 @@ async def http_runtime(
 
 @asynccontextmanager
 async def http_session(
-    reference: E2BReference, *, session_recovery: EnvdSessionRecovery | None = None
+    reference: E2BReference, *, session_recovery: EnvdSessionBorrower | None = None
 ) -> AsyncGenerator[EIPSessionBinding]:
     async with http_runtime(reference) as runtime:
         async with runtime.open_session(
@@ -88,7 +88,7 @@ async def http_session(
 
 
 def http_execution(
-    reference: E2BReference, *, session_recovery: EnvdSessionRecovery | None = None
+    reference: E2BReference, *, session_recovery: EnvdSessionBorrower | None = None
 ) -> RemoteEnvdExecution:
     if reference.state is None:
         raise provider_error("provider_state_required", Category.INVALID)

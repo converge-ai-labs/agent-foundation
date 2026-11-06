@@ -33,7 +33,14 @@ from a13n_service.resources.connections.headers import normalize_headers
 from a13n_service.resources.memories.schemas import MemoryMount, MemoryMounts, SessionMemorySettings
 from a13n_service.runs.browsers.schemas import BrowserBinding
 from a13n_service.runs.display import Item
-from a13n_service.runs.environments.schemas import DEFAULT_MOUNT_PERMISSIONS, MAX_MOUNTS, MountCreate, WorkingDirectory
+from a13n_service.runs.environments.schemas import (
+    DEFAULT_MOUNT_PERMISSIONS,
+    MAX_MOUNTS,
+    MountCreate,
+    MountName,
+    SessionConfiguration,
+    WorkingDirectory,
+)
 from a13n_service.runs.history import MessageHistory
 from a13n_service.runs.memories.schemas import RunMemoryMount
 from a13n_service.tenancy.schemas import PrincipalSummary
@@ -160,6 +167,8 @@ class RequestContext(_Frozen):
 
 
 class _RunEnvironment(_Frozen):
+    session_binding: MountName = "default"
+    session_configuration: SessionConfiguration | None = None
     working_directory: WorkingDirectory | None = None
     permission_ceiling: EnvironmentPermissionSet = DEFAULT_MOUNT_PERMISSIONS
 
@@ -447,6 +456,9 @@ class Outcome(_Frozen):
 class EnvironmentMount(_Frozen):
     name: str
     environment_id: str
+    session_binding: str = "default"
+    session_version: int = 0
+    session_configuration: SessionConfiguration = Field(default_factory=SessionConfiguration)
     working_directory: str | None = None
     permission_ceiling: EnvironmentPermissionSet = DEFAULT_MOUNT_PERMISSIONS
 

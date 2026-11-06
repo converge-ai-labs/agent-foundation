@@ -16,10 +16,22 @@ from a13n_harness_ui.storage import ThreadConfigurationMutation, ThreadConfigura
 from a13n_harness_ui.storage.continuations import read_continuation
 from a13n_harness_ui.surfaces import ExternalToolResult, NewThreadDefaults, RootOperationStatus, ThreadDeferredResponse
 
-from .test_app import _CompletedReconstructor, _DeferredReconstructor, _settings, _write_configuration
+from .test_app import _CompletedReconstructor, _DeferredReconstructor, _settings
+from .test_app import _write_configuration as _write_app_configuration
 from .test_device_runtime import requires_envd
 
 pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
+
+
+def _write_configuration(tmp_path):
+    configuration = tmp_path / "configuration"
+    configuration.mkdir()
+    path = _write_app_configuration(configuration)
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    project = configuration / "projects" / "main.yaml"
+    project.write_text(project.read_text().replace(str(configuration / "workspace"), str(workspace)))
+    return path
 
 
 async def _stub_sandbox_runtime(app, thread_id, monkeypatch):
@@ -34,7 +46,11 @@ async def _stub_sandbox_runtime(app, thread_id, monkeypatch):
         captures.append(composition)
         # Exercise real admission, capture, checkpointing and resumption without
         # requiring an envd binary. Only runtime entry uses the native fixture.
-        return await prepare(composition.model_copy(update={"environment_profile": native.value.environment_profile}))
+        return await prepare(
+            composition.model_copy(
+                update={"environment_profile": native.value.environment_profile, "session_versions": {}}
+            )
+        )
 
     monkeypatch.setattr(executor._environments, "prepare", prepare_without_isolation)
     return captures
@@ -394,18 +410,34 @@ async def test_recovery_prepares_only_captured_target_without_unrelated_roots(tm
         (target / "evidence.txt").write_text("original target")
         thread_root = await executor._environments._thread_files.touch(thread.thread_id)
         (thread_root / "evidence.txt").write_text("original target")
-        composition = published.value.model_copy(
-            update={"project_roots": (str(tmp_path / "removed-root"), str(target))}
+        removed = tmp_path / "removed-root"
+        removed.mkdir()
+        service = executor._environments
+        composition = await service.admit(
+            published.value.model_copy(update={"project_roots": (str(removed), str(target))})
         )
+        instance = AgentInstanceContext(
+            identity=AgentIdentityRef(issuer="test", subject=thread.thread_id), agent_instance_id="agent-recovery"
+        )
+        original_session_id = "native"
+        if profile == "environment-envd":
+            plan = await service.prepare(composition)
+            async with plan.runtime.bind(
+                thread_id=thread.thread_id, run_id="run-original", instance=instance, host_refs={}
+            ) as bound:
+                await bound.files.read_text(str(target / "evidence.txt"))
+            head = await app._store.envd_sessions.get(thread.thread_id, "local")
+            assert head is not None and head.session is not None
+            original_session_id = head.session.descriptor.session_id
+        removed.rmdir()
 
         async def unrelated(*args, **kwargs):
             pytest.fail("Recovery must not prepare unrelated mounts or Run extensions")
 
         monkeypatch.setattr(executor._environments._reconstructor, "create_extensions", unrelated)
         monkeypatch.setattr(executor._environments, "_prepare_host_files_mount", unrelated)
-        runtime = await executor._environments.prepare_recovery(composition, alias)
-        instance = AgentInstanceContext(
-            identity=AgentIdentityRef(issuer="test", subject=thread.thread_id), agent_instance_id="agent-recovery"
+        runtime = await executor._environments.prepare_recovery(
+            composition, alias, original_session_id=original_session_id
         )
         async with runtime.bind(
             thread_id=thread.thread_id, run_id="run-recovery", instance=instance, host_refs={}
@@ -417,12 +449,10 @@ async def test_recovery_prepares_only_captured_target_without_unrelated_roots(tm
 
 
 @pytest.mark.parametrize("remove_management", [False, True])
-async def test_management_publication_preserves_session_and_rejects_stale_head(tmp_path, remove_management):
+async def test_management_publication_is_independent_from_sessions_and_rejects_stale_head(tmp_path, remove_management):
     from datetime import UTC, datetime
 
-    from a13n_envd_client.eip.v1 import EIPLimits, ExecutionFeatures, SessionDescriptor
     from a13n_harness.environment.models import EnvironmentState
-    from a13n_harness.environment.session_recovery import EnvdSessionState
     from a13n_harness_ui.errors import StoreConflictError
     from a13n_harness_ui.storage import EnvironmentBindingKey, StoredEnvironmentState
     from a13n_harness_ui.storage.objects import ObjectKind
@@ -439,63 +469,29 @@ async def test_management_publication_preserves_session_and_rejects_stale_head(t
             adapter_key="native",
             normalized_root=str(tmp_path),
         )
-        session = EnvdSessionState(
-            target="fixture",
-            descriptor=SessionDescriptor.model_validate(
-                {
-                    "device_id": "fixture-device",
-                    "generation": 1,
-                    "session_id": "fixture-session",
-                    "path_style": "posix",
-                    "system_info": {"os": "linux"},
-                    "working_directory": "/work",
-                    "owner_epoch": 7,
-                    "limits": dict.fromkeys(EIPLimits.model_fields, 1024),
-                    "execution_features": dict.fromkeys(ExecutionFeatures.model_fields, False),
-                    "lifecycle": {"idle_timeout_ms": 3600000},
-                    "boundary": {
-                        "sandbox": {"mode": "disabled"},
-                        "egress": "inherit",
-                        "privilege_gain_blocked": False,
-                        "backend": "native",
-                        "policy_digest": "b" * 64,
-                    },
-                }
-            ),
-        )
+        from a13n_harness_ui.storage.envd_sessions import SessionBindingHead
+
+        session_head = SessionBindingHead(version=1, configuration_digest="b" * 64)
+        await app._store.envd_sessions.select(thread.thread_id, "local", expected=None, replacement=session_head)
         original = EnvironmentState(provider_key="direct_local", state_version="1", state={"version": 1})
         initial = (
             await app._store.objects.publish_model(
                 object_kind=ObjectKind.environment_state,
-                value=StoredEnvironmentState(
-                    binding=key, state=original, envd_session=session, created_at=datetime.now(UTC)
-                ),
+                value=StoredEnvironmentState(binding=key, state=original, created_at=datetime.now(UTC)),
             )
         ).ref
         await app._store.environment_states.select(key=key, expected=None, replacement=initial)
         observed = None if remove_management else original.model_copy(update={"state": {"version": 2}})
         publication = await environments._publish_state(key, initial, original, observed)
-        saved = await app._store.objects.read_model(publication.replacement, StoredEnvironmentState)
-        assert saved.envd_session == session
-        assert saved.state == observed
+        if remove_management:
+            assert publication.replacement is None
+        else:
+            saved = await app._store.objects.read_model(publication.replacement, StoredEnvironmentState)
+            assert saved.state == observed
+        assert await app._store.envd_sessions.get(thread.thread_id, "local") == session_head
         with pytest.raises(StoreConflictError):
             await environments._publish_state(key, initial, original, observed)
         assert (await app._store.environment_states.get(key)).state == publication.replacement
-        recovered = await environments._session_context(key)
-        assert recovered.ownership is not None
-        async with recovered.ownership() as saved:
-            assert saved == session
-        import gc
-        import weakref
-
-        reference = weakref.ref(recovered)
-        del recovered
-        gc.collect()
-        assert reference() is None
-        assert not environments._sessions and not environments._owners._held
-        recovered = await environments._session_context(key)
-        async with recovered.ownership() as saved:
-            assert saved == session
 
 
 @pytest.mark.parametrize("blocked", ["startup", "control_lock", "lifecycle"])

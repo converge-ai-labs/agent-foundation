@@ -9,9 +9,15 @@ from pathlib import Path
 from typing import Literal
 
 from a13n_envd_client import EIPDeviceConnection
+from a13n_envd_client.eip.v1 import RestrictedSandbox
 from a13n_harness.environment.errors import EnvironmentProviderError
 from a13n_harness.environment.models import EnvironmentError
-from a13n_harness.providers.environment.local_envd.runtime import LocalEnvdProviderRuntime, resolve_a13n_envd_executable
+from a13n_harness.providers.environment.local_envd.configuration import LocalEnvdLaunchConfiguration, local_envd_path
+from a13n_harness.providers.environment.local_envd.runtime import (
+    LocalEnvdProviderRuntime,
+    TemporaryLocalEnvdRuntimeAllocator,
+    resolve_a13n_envd_executable,
+)
 from anyio import CancelScope, Lock, fail_after, to_thread
 from pydantic import BaseModel, ConfigDict
 
@@ -22,7 +28,7 @@ from a13n_harness_ui.environment_profiles import LocalProfileId, built_in_enviro
 from a13n_harness_ui.errors import EnvironmentLifecycleError, HarnessUiError
 from a13n_harness_ui.extensions.environment_adapters import LocalEnvdProfileConfiguration, LocalEnvdProjectConfiguration
 from a13n_harness_ui.managed_runtime import EnvdRuntimeStatus, ManagedEnvdRuntime
-from a13n_harness_ui.sandbox import create_sandbox_runtime, probe_local_envd_runtime
+from a13n_harness_ui.sandbox import probe_local_envd_runtime, project_sandbox
 from a13n_harness_ui.settings import EnvdRuntimeSettings
 from a13n_harness_ui.setup import EnvironmentReadiness
 
@@ -47,7 +53,7 @@ class EnvdStatus(EnvdRuntimeStatus):
 
 
 class EnvdRuntimeManager:
-    """One Host owner; incompatible immutable boundaries use separate daemons."""
+    """Cache launch authority independently of Thread Session policy and directory views."""
 
     def __init__(
         self,
@@ -73,7 +79,7 @@ class EnvdRuntimeManager:
         self.computer_use = configuration is not None and configuration.computer_use
         self._parent = runtime_parent
         self._protected_roots = protected_roots
-        self._runtimes: dict[tuple[tuple[Path, ...], str], LocalEnvdProviderRuntime] = {}
+        self._runtimes: dict[str, LocalEnvdProviderRuntime] = {}
         self._lock = Lock()
         self._actions = Lock()
         self._preparing = False
@@ -104,15 +110,12 @@ class EnvdRuntimeManager:
 
     async def runtime(
         self,
-        roots: tuple[Path, ...],
         *,
-        thread_files_root: Path | None = None,
         profile: ResolvedEnvironmentProfile | None = None,
     ) -> LocalEnvdProviderRuntime:
         selected = LocalEnvdProfileConfiguration.model_validate(
             {} if profile is None else profile.provider_configuration
         )
-        adapter = LocalEnvdProjectConfiguration.model_validate({} if profile is None else profile.adapter_configuration)
         if profile is None or profile.profile_id in {"environment-sandbox", "environment-envd", "environment-desktop"}:
             monitoring = selected.launch.monitoring
             if monitoring is not None:
@@ -131,36 +134,50 @@ class EnvdRuntimeManager:
                 )
         if selected.launch.computer_use:
             self.require_computer_use()
-        # Unrestricted native execution shares a stable Host-owned daemon. Session cwd
-        # still comes from each connector; restricted grants never merge across roots.
-        if selected.launch.full_control and selected.launch.sandbox.mode == "disabled" and self._parent is not None:
-            shared = self._parent / "host"
-            await to_thread.run_sync(partial(shared.mkdir, parents=True, exist_ok=True))
-            roots = (shared.resolve(),)
-        else:
-            roots = tuple(root.resolve(strict=True) for root in roots)
-        key = (
-            roots,
-            canonical_digest(
-                {"launch": selected.launch.model_dump(mode="json"), "adapter": adapter.model_dump(mode="json")}
-            ),
-        )
+        key = canonical_digest(selected.launch.model_dump(mode="json"))
         async with self._lock:
             if key not in self._runtimes:
                 executable = await self.resolve_executable()
-                self._runtimes[key] = await to_thread.run_sync(
-                    partial(
-                        create_sandbox_runtime,
-                        executable,
-                        roots=roots,
-                        runtime_parent=self._parent,
-                        protected_roots=self._protected_roots,
-                        thread_files_root=thread_files_root,
-                        launch=selected.launch,
-                        project_access=adapter.project_access,
-                    )
+                if self._parent is not None:
+                    await to_thread.run_sync(partial(self._parent.mkdir, parents=True, exist_ok=True))
+                self._runtimes[key] = LocalEnvdProviderRuntime(
+                    executable=executable,
+                    allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(parent=self._parent),
+                    configuration=selected.launch,
                 )
             return self._runtimes[key]
+
+    def running_device(self, launch: LocalEnvdLaunchConfiguration) -> EIPDeviceConnection | None:
+        runtime = self._runtimes.get(canonical_digest(launch.model_dump(mode="json")))
+        return None if runtime is None else runtime.running_device()
+
+    async def session_profile(
+        self, profile: ResolvedEnvironmentProfile, roots: tuple[Path, ...], *, thread_files_root: Path
+    ) -> ResolvedEnvironmentProfile:
+        """Resolve the one Session configuration shared by all captured directory views."""
+        selected = LocalEnvdProfileConfiguration.model_validate(profile.provider_configuration)
+        adapter = LocalEnvdProjectConfiguration.model_validate(profile.adapter_configuration)
+        session = selected.session.session
+        sandbox = session.sandbox
+        if isinstance(sandbox, RestrictedSandbox):
+            sandbox = await to_thread.run_sync(
+                partial(
+                    project_sandbox,
+                    sandbox,
+                    roots=(*roots, thread_files_root),
+                    protected_roots=self._protected_roots,
+                    thread_files_root=thread_files_root,
+                    project_access=adapter.project_access,
+                )
+            )
+        session = session.model_copy(
+            update={
+                "sandbox": sandbox,
+                "working_directory": local_envd_path(thread_files_root / "tmp"),
+            }
+        )
+        selected = selected.model_copy(update={"session": selected.session.model_copy(update={"session": session})})
+        return profile.model_copy(update={"provider_configuration": selected.model_dump(mode="json")})
 
     def record_readiness(self, result: EnvironmentReadiness) -> None:
         self._readiness[result.profile_id] = result
@@ -198,7 +215,7 @@ class EnvdRuntimeManager:
                         adapter_key=builtin.adapter_key,
                         provider_configuration=builtin.provider_configuration,
                     )
-                    runtime = await self.runtime((probe_root,), profile=profile)
+                    runtime = await self.runtime(profile=profile)
                     # Explicit start can replace a disconnected owner. Acquiring first
                     # distinguishes a never-launched lazy runtime from a dead carrier.
                     if (await runtime.acquire_device()).is_closed:
@@ -208,7 +225,7 @@ class EnvdRuntimeManager:
                                 for key, owner in tuple(self._runtimes.items()):
                                     if owner is runtime:
                                         del self._runtimes[key]
-                        runtime = await self.runtime((probe_root,), profile=profile)
+                        runtime = await self.runtime(profile=profile)
                     desktop = await probe_local_envd_runtime(
                         runtime, probe_root, computer_use=profile_id == "environment-desktop"
                     )
@@ -253,9 +270,11 @@ class EnvdRuntimeManager:
                 sandbox=runtime.configuration.sandbox.mode == "restricted",
                 computer_use=runtime.configuration.computer_use,
                 running=runtime.running_device() is not None,
-                roots=tuple(str(root) for root in roots) if runtime.configuration.sandbox.mode == "restricted" else (),
+                roots=tuple(grant.path for grant in runtime.configuration.sandbox.grants)
+                if isinstance(runtime.configuration.sandbox, RestrictedSandbox)
+                else (),
             )
-            for (roots, _), runtime in self._runtimes.items()
+            for runtime in self._runtimes.values()
         )
         return EnvdStatus(
             **{**installation.model_dump(), "running_devices": sum(item.running for item in instances)},
@@ -267,13 +286,13 @@ class EnvdRuntimeManager:
         )
 
     def monitoring_sources(self) -> Iterable[MonitoringSource]:
-        for (roots, revision), runtime in self._runtimes.items():
+        for revision, runtime in self._runtimes.items():
             yield MonitoringSource(
                 id="local-" + runtime.device_id,
                 name="Local envd",
                 transport="stdio",
                 revision=revision,
-                roots=tuple(str(root) for root in roots[:16]),
+                roots=(),
                 acquire=partial(_running_device, runtime),
             )
 

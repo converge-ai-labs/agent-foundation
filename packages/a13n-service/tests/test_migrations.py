@@ -1047,8 +1047,75 @@ async def test_execution_context_revision_preserves_pending_run(service, scripte
         command.downgrade(config, "ba66b54e3c14")
     upgrade(database, OSS)
     check(database, OSS)
-    assert rows(
-        database, "SELECT thread_id, worker_id, generation::text, sessions::text FROM thread_execution_contexts"
-    ) == [(submitted["thread"]["id"], None, "0", "{}")]
+    assert rows(database, "SELECT thread_id, worker_id, generation::text FROM thread_execution_contexts") == [
+        (submitted["thread"]["id"], None, "1")
+    ]
     (lease,) = await claim(service.runtime, worker_id="worker-new", worker_build="test", limit=1)
     assert lease.run_id == submitted["run"]["id"]
+
+
+@pytest.mark.anyio
+async def test_session_binding_cutover_preserves_views_and_history(service, scripted_model, runs_kit):
+    from .environments_support import reserve, with_fake_providers
+
+    await pause_sweeps(service)
+    env = await with_fake_providers(service)
+    environment_id = (await reserve(env, env.template["id"]))["id"]
+    agent = await runs_kit.create_agent(service, scripted_model)
+    scripted_model.say("History survives the cutover.")
+    submitted = await runs_kit.start_thread(
+        service,
+        agent,
+        "Keep history",
+        environments=[{"name": "workspace", "environment_id": environment_id}],
+    )
+    await (await runs_kit.attempt(service))
+    initial = await runs_kit.get_run(service, submitted["run"]["id"])
+    assert initial["status"] == "completed", str(initial)
+    database = service.runtime.settings.database
+    with migration_connection(database, OSS) as config:
+        command.downgrade(config, "f6f3e4930b08")
+        connection = config.attributes["connection"]
+        connection.execute(
+            text('UPDATE thread_execution_contexts SET sessions = \'{"old-view-hash": {"session_id": "old"}}\'::jsonb')
+        )
+        connection.commit()
+    thread_id = submitted["thread"]["id"]
+    history_query = f"SELECT message_history::text, version::text, updated_at::text FROM threads WHERE id='{thread_id}'"
+    runs_query = f"SELECT to_jsonb(runs)::text FROM runs WHERE thread_id='{thread_id}' ORDER BY id"
+    mounts_query = "SELECT thread_id, environment_id, name, working_directory, permission_ceiling::text, created_at::text FROM thread_environments"
+    before = [rows(database, query) for query in (history_query, runs_query, mounts_query)]
+    upgrade(database, OSS)
+    assert [rows(database, query) for query in (history_query, runs_query, mounts_query)] == before
+    assert rows(database, "SELECT name, configuration::text, version::text, head FROM thread_session_bindings") == [
+        ("default", "{}", "1", None)
+    ]
+    assert rows(database, "SELECT worker_id FROM thread_execution_contexts") == [(None,)]
+    check(database, OSS)
+    # Re-running the upgrade neither edits history nor resurrects old Session hints.
+    upgrade(database, OSS)
+    assert rows(database, history_query) == before[0]
+    scripted_model.say("A fresh admission works.")
+    response = await runs_kit.submit(service, thread_id, runs_kit.message(agent, "Continue"))
+    assert response.status_code == 201, response.text
+    await (await runs_kit.attempt(service))
+    assert (await runs_kit.get_run(service, response.json()["run"]["id"]))["status"] == "completed"
+
+
+@pytest.mark.anyio
+async def test_session_binding_cutover_refuses_admitted_environment_work(service, scripted_model, runs_kit):
+    from .environments_support import reserve, with_fake_providers
+
+    await pause_sweeps(service)
+    env = await with_fake_providers(service)
+    environment_id = (await reserve(env, env.template["id"]))["id"]
+    agent = await runs_kit.create_agent(service, scripted_model)
+    submitted = await runs_kit.start_thread(
+        service, agent, "Still admitted", environments=[{"name": "workspace", "environment_id": environment_id}]
+    )
+    database = service.runtime.settings.database
+    with pytest.raises(RuntimeError, match="Settle all admitted environment work"):
+        with migration_connection(database, OSS) as config:
+            command.downgrade(config, "f6f3e4930b08")
+    check(database, OSS)
+    assert (await runs_kit.get_run(service, submitted["run"]["id"]))["status"] == "accepted"

@@ -63,7 +63,11 @@ async def test_concurrent_opens_wait_for_previous_native_owner_retirement(monkey
         native.requester.wait_transfer_retired.side_effect = wait_reset
     sessions.scopes[original.scope_id] = previous
     monkeypatch.setattr(sessions, "connection", AsyncMock(return_value=connection))
-    monkeypatch.setattr(sessions, "_resolve", AsyncMock(return_value=SimpleNamespace(working_directory="/work")))
+    monkeypatch.setattr(
+        sessions,
+        "_resolve",
+        AsyncMock(return_value=SimpleNamespace(working_directory="/work", session_binding="default")),
+    )
     first = original.model_copy(
         update={"scope_id": "1" * 32, "caller": original.caller.model_copy(update={"worker_id": "successor"})}
     )
@@ -351,3 +355,18 @@ async def test_unconfirmed_transfer_retirement_closes_carrier_before_detach(monk
         assert all(isinstance(item.args[0], bytes) for item in carrier.send.await_args_list)
     finally:
         await coordinator.close()
+
+
+async def test_scope_cannot_be_readdressed_to_another_view(monkeypatch):
+    sessions = Sessions(SimpleNamespace())
+    call = request()
+    connection = SimpleNamespace(attachment=None)
+    scope = Scope(call, connection, AsyncMock(), None)
+    sessions.scopes[call.scope_id] = scope
+    monkeypatch.setattr(sessions, "connection", AsyncMock(return_value=connection))
+    resolve = AsyncMock()
+    monkeypatch.setattr(authority, "resolve", resolve)
+    with pytest.raises(EnvironmentError) as failed:
+        await sessions.authorize(call.model_copy(update={"mount_name": "other"}), frozenset())
+    assert failed.value.code == "environment_denied"
+    resolve.assert_not_awaited()

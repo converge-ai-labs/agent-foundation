@@ -21,7 +21,7 @@ from a13n_harness.environment.models import (
     EnvironmentState,
 )
 from a13n_harness.environment.operations import EnvironmentOperations
-from a13n_harness.environment.session_recovery import EnvdSessionRecovery
+from a13n_harness.environment.session_recovery import EnvdSessionBorrower
 from a13n_harness.errors import EnvironmentActivationError
 from a13n_harness.providers.environment.remote_envd.http import HTTP_ENVD
 from a13n_harness.providers.environment.remote_envd.websocket import WEBSOCKET_ENVD
@@ -82,7 +82,7 @@ class Source:
     configuration: RunConfiguration | None = None
     activated: bool = False
     skill_cache: Cache | None = None
-    session_recovery: EnvdSessionRecovery | None = None
+    session_recovery: EnvdSessionBorrower | None = None
     client: Incarnation | None = None
 
     @property
@@ -318,9 +318,21 @@ async def open_mounts(
                 else:
                     handle = Handle.model_validate(environment.handle)
                     recipe, state = handle.recipe, handle.state
-            from a13n_harness.providers.environment.execution_mode import capabilities
+            from a13n_harness.providers.environment.execution_mode import ExecutionMode, capabilities, execution_mode
+
+            from a13n_service.runs.environments.schemas import SessionConfiguration
 
             validated = definition.validate_environment(recipe)
+            if (
+                environment.kind == "managed"
+                and execution_mode(validated) == ExecutionMode.NATIVE
+                and mount.session_configuration != SessionConfiguration()
+            ):
+                raise ServiceError(
+                    "conflict",
+                    "Session configuration requires an Envd execution transport",
+                    {"kind": "environment", "id": environment.id, "reason": "session_configuration_unsupported"},
+                )
             transport = capabilities(validated)
             descriptor = definition.describe_environment(validated)
             # Service Local uses the shared Direct Local execution provider key.
@@ -357,9 +369,7 @@ async def open_mounts(
                 )
             )
     for source in sources:
-        source.session_recovery = await runtime.environment_contexts.get(
-            lease, source.mount, configuration or RunConfiguration()
-        )
+        source.session_recovery = await runtime.environment_contexts.get(lease, source.mount)
     try:
         yield {
             source.mount.name: HarnessMount(

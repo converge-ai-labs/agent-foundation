@@ -41,11 +41,11 @@ Provider 的资源限制控制文件值、并发进程、命令墙钟时间和�
 分两层配置 Local Envd：
 
 1. **启动 Device。** 为 Host 运行时提供 `LocalEnvdLaunchConfiguration`：执行身份、文件系统沙箱、网络模式、默认目录、可执行文件根目录、shell profile 和资源限制。可执行文件根目录和 shell profile 初始为空。[Host 边界](../a13n-envd/isolation.md)决定可用的隔离能力。
-2. **选择每个 Session。** 设置 `LocalEnvdEnvironmentConfiguration.working_directory`、`required_methods`，以及可选的 `egress` 和 `expected_boundary`。每个 execution 打开独立 Session。工作目录选择操作的起点，文件系统策略决定可访问的范围。
+2. **选择 Session 和目录视图。** 将启动策略放在 `LocalEnvdEnvironmentConfiguration.session`：工作目录、sandbox、`egress_mode`、`egress`、生命周期和命令选择。外层 `working_directory` 选择目录视图；`required_methods` 和 `expected_boundary` 验证实际执行环境。共享 Host Session 所有者可让多个视图借用同一 Session。文件系统策略决定 worker 可访问的范围，视图 cwd 只选择操作起点。
 
 省略工作目录时使用 Device 默认值。持久保存 Run 选择的 Host 应在接纳工作前解析出显式目录。输出限制需要相互匹配：预览不超过单流上限，每个 Session 为两条流预留空间，Session spool 总量符合 Device 配额。
 
-保持共享的 `LocalEnvdProviderRuntime` 存活，直到所有借用它的 execution 关闭，再单独关闭运行时或退出其异步上下文。execution 关闭会释放其 Session。库调用方和 Harness UI 可使用 Local Envd；Service 不提供该 provider。
+保持共享的 `LocalEnvdProviderRuntime` 存活，直到所有借用它的 execution 关闭，再单独关闭运行时或退出其异步上下文。execution 关闭会释放其借用；共享 Session 所有者在最后一次释放时分离连接并保留恢复状态。库调用方和 Harness UI 可使用 Local Envd；Service 不提供该 provider。
 
 ## Docker
 
@@ -82,7 +82,7 @@ Docker 目标配置、镜像要求和共享 Engine 客户端集中在 [Docker �
 ## 远程 HTTP / WebSocket Envd
 
 1. 注册或选择由外部管理的 Device。`RemoteEnvdStateData.device_id` 标识该设备。
-2. 在 `RemoteEnvdEnvironmentConfiguration` 中设置 Session 工作目录、必需方法、可选 `egress` 和可选 `expected_boundary`。守护进程挂载在其运行位置配置。
+2. 在 `RemoteEnvdEnvironmentConfiguration.session` 下设置启动策略，包括可选 `egress_mode` 和只含引用的 `egress`。外层 `working_directory` 选择目录视图，另设 `required_methods` 和可选 `expected_boundary`。Session 授权必须符合 daemon 部署上限。
 3. 提供传输设置。HTTP 使用 `endpoint` 和单独的 `HttpEnvdCredential`；WebSocket 使用 Host 经过认证的 connector/runtime。
 4. 打开 execution 获取 Session，使用后关闭。目标供应、停止、销毁和 keepalive 仍由外部所有者负责。
 

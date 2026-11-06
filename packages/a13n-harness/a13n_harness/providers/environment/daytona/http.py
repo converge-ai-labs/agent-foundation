@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field, SecretStr
 
 from a13n_harness.environment.attachments import EIPSessionBinding
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
-from a13n_harness.environment.session_recovery import EnvdSessionRecovery
+from a13n_harness.environment.session_recovery import EnvdSessionBorrower
 from a13n_harness.providers.environment.daytona.shared import DaytonaReference, Execution
 from a13n_harness.providers.environment.native.configuration import TargetState
 from a13n_harness.providers.environment.native.errors import failure
@@ -37,7 +37,7 @@ class HttpReference(DaytonaReference):
 
 @asynccontextmanager
 async def http_session(
-    reference: DaytonaReference, *, session_recovery: EnvdSessionRecovery | None = None
+    reference: DaytonaReference, *, session_recovery: EnvdSessionBorrower | None = None
 ) -> AsyncGenerator[EIPSessionBinding]:
     try:
         reference.require_target()
@@ -112,7 +112,7 @@ async def http_session(
 
 
 def http_execution(
-    reference: DaytonaReference, *, session_recovery: EnvdSessionRecovery | None = None
+    reference: DaytonaReference, *, session_recovery: EnvdSessionBorrower | None = None
 ) -> RemoteEnvdExecution:
     reference.require_target()
     assert reference.state is not None

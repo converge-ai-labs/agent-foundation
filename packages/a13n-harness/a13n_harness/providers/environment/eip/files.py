@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import posixpath
 from collections.abc import AsyncIterable, AsyncIterator, Sequence
 
 from a13n_envd_client import EIPSession
@@ -49,8 +50,10 @@ class EIPFileOperator:
         environment_id: str,
         execution_id: str,
         generation: str,
+        working_directory: str | None = None,
     ) -> None:
         self._session = session
+        self.working_directory = working_directory or session.descriptor.working_directory
         self._environment_id = environment_id
         self._execution_id = execution_id
         self._generation = generation
@@ -61,7 +64,7 @@ class EIPFileOperator:
 
     def to_eip_path(self, path: str) -> eip.EIPPath:
         try:
-            return eip.EIPPath(path=path)
+            return eip.EIPPath(path=posixpath.join(self.working_directory, path))
         except ValidationError:
             raise EnvironmentError("Environment path is invalid", code="environment_request_invalid") from None
 

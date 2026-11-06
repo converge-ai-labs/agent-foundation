@@ -12,11 +12,11 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
-from a13n_envd_client.eip.v1 import GrantAccess, RestrictedSandbox
-from a13n_harness.environment.envd_policy import EnvdNetworkConfiguration
+from a13n_envd_client.eip.v1 import EgressMode, GrantAccess, RestrictedSandbox
+from a13n_harness.environment.envd_policy import EnvdSessionConfiguration
 from a13n_harness.environment.execution import EnvironmentConnector
 from a13n_harness.environment.models import EnvironmentState
-from a13n_harness.environment.session_recovery import EnvdSessionRecovery
+from a13n_harness.environment.session_recovery import EnvdSessionBorrower
 from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
 from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
 from a13n_harness.providers.environment.local_envd.configuration import (
@@ -105,7 +105,7 @@ class EnvironmentProjectAdapter(ABC):
         state: EnvironmentState | None,
         provider: EnvironmentProviderDefinition,
         runtime: object | None,
-        session_recovery: EnvdSessionRecovery | None = None,
+        session_recovery: EnvdSessionBorrower | None = None,
     ) -> EnvironmentConnector:
         """Prepare the Host-selected target and return its inert execution connector.
 
@@ -137,7 +137,7 @@ class NativeProjectAdapter(EnvironmentProjectAdapter):
         state: EnvironmentState | None,
         provider: EnvironmentProviderDefinition,
         runtime: object | None,
-        session_recovery: EnvdSessionRecovery | None = None,
+        session_recovery: EnvdSessionBorrower | None = None,
     ) -> EnvironmentConnector:
         _require_provider(provider, DIRECT_LOCAL)
         shell = _host_shell()
@@ -176,16 +176,23 @@ class LocalEnvdProfileConfiguration(BaseModel):
 
     launch: LocalEnvdLaunchConfiguration = Field(
         default_factory=lambda: LocalEnvdLaunchConfiguration(
-            sandbox=RestrictedSandbox(mode="restricted", grants=(), full_disk_read=sys.platform == "win32"),
-            egress=EnvdNetworkConfiguration(mode="inherit"),
+            full_control=True,
             monitoring=LocalEnvdMonitoringConfiguration(sample_interval_ms=60_000),
         )
     )
-    session: LocalEnvdEnvironmentConfiguration = Field(default_factory=LocalEnvdEnvironmentConfiguration)
+    session: LocalEnvdEnvironmentConfiguration = Field(
+        default_factory=lambda: LocalEnvdEnvironmentConfiguration(
+            session=EnvdSessionConfiguration(
+                sandbox=RestrictedSandbox(mode="restricted", grants=(), full_disk_read=sys.platform == "win32"),
+                egress_mode=EgressMode.INHERIT,
+            )
+        )
+    )
 
     @model_validator(mode="after")
     def _consistent_policy(self) -> LocalEnvdProfileConfiguration:
-        if (self.launch.egress.mode == "controlled") != (self.session.egress is not None):
+        mode = self.session.session.egress_mode or self.launch.egress.mode
+        if (mode == "controlled") != (self.session.session.egress is not None):
             raise ValueError("controlled egress requires an explicit Session policy; other modes reject it")
         if self.session.working_directory is not None:
             raise ValueError("The Project adapter selects the Session working directory")
@@ -224,7 +231,7 @@ class LocalEnvdProjectAdapter(EnvironmentProjectAdapter):
         state: EnvironmentState | None,
         provider: EnvironmentProviderDefinition,
         runtime: object | None,
-        session_recovery: EnvdSessionRecovery | None = None,
+        session_recovery: EnvdSessionBorrower | None = None,
     ) -> EnvironmentConnector:
         _require_provider(provider, LOCAL_ENVD)
         selected = LocalEnvdProfileConfiguration.model_validate(profile.provider_configuration)

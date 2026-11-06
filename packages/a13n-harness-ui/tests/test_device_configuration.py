@@ -166,9 +166,29 @@ async def test_remote_binding_state_identity_tracks_behavior_not_presentation(tm
         selected = ResolvedEnvironmentBinding(device=device(), selection=binding())
 
         thread = await app.create_thread()
+        loaded = await source(tmp_path)
+        composition = AgentCompositionResolver().resolve_run(
+            loaded,
+            ThreadCompositionSelection(
+                thread_id=thread.thread_id,
+                version=1,
+                project_id=None,
+                agent_source_kind="agent",
+                agent_source_id="agent-main",
+                environment_profile_id="environment-native",
+                harness_plugin_ids=(),
+                environment_run_extension_ids=(),
+                mcp_server_ids=(),
+            ),
+        )
 
         async def key(value):
-            _mount, publication = await service._prepare_device_mount(thread.thread_id, value)
+            captured = await service.admit(
+                composition.model_copy(
+                    update={"environment_bindings": (value,), "default_environment": value.selection.alias}
+                )
+            )
+            _mount, publication = await service._prepare_device_mount(captured, value)
             return publication.key
 
         original = await key(selected)
@@ -217,7 +237,9 @@ async def test_receipt_freezes_device_recipe_and_thread_binding_before_preparati
             await release.wait()
             # Admission is tested without connecting to the fictional Device.
             return await prepare(
-                composition.model_copy(update={"environment_bindings": (), "default_environment": None})
+                composition.model_copy(
+                    update={"environment_bindings": (), "default_environment": None, "session_versions": {}}
+                )
             )
 
         monkeypatch.setattr(executor._environments, "prepare", delayed)
@@ -273,7 +295,9 @@ async def test_deferred_response_retains_captured_bindings_unless_explicitly_pat
         async def without_remote_entry(composition):
             captures.append(composition)
             return await prepare(
-                composition.model_copy(update={"environment_bindings": (), "default_environment": None})
+                composition.model_copy(
+                    update={"environment_bindings": (), "default_environment": None, "session_versions": {}}
+                )
             )
 
         monkeypatch.setattr(executor._environments, "prepare", without_remote_entry)
@@ -325,6 +349,10 @@ async def test_run_authorizes_device_before_transport_or_credentials(tmp_path, m
     )
     composition = AgentCompositionResolver().resolve_run(loaded, selected)
     async with open_local_store(StorageSettings(data_root=tmp_path / "data")) as store:
+        accepted = CompositionAcceptanceService(store, AgentCompositionResolver())
+        await accepted.accept(loaded, expected_current_digest=None)
+        thread = await ThreadService(store=store, configurations=accepted).create(defaults=RootThreadDefaults())
+        composition = composition.model_copy(update={"thread_id": thread.thread_id})
         service = EnvironmentRunService(store, EnvironmentSnapshotReconstructor(catalog=HarnessUiExtensionCatalog()))
         reached = []
 
@@ -333,6 +361,7 @@ async def test_run_authorizes_device_before_transport_or_credentials(tmp_path, m
             raise RuntimeError("binding reached")
 
         monkeypatch.setattr(service, "_prepare_device_mount", binding_reached)
+        composition = await service.admit(composition)
         restricted = composition.model_copy(update={"run_configuration": RunConfiguration(allowed_hosts=[])})
         with pytest.raises(HostNotAllowedError):
             await service.prepare(restricted)

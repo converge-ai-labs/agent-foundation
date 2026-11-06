@@ -41,11 +41,11 @@ The Provider's resource limits govern file values, concurrent processes, command
 Configure Local Envd at two levels:
 
 1. **Launch the Device.** Give the Host runtime a `LocalEnvdLaunchConfiguration`: execution identity, filesystem sandbox, network mode, default directory, executable roots, shell profiles, and resource limits. Executable roots and shell profiles start empty. The [Host boundary](../a13n-envd/isolation.md) determines which isolation features are available.
-2. **Select each Session.** Set `LocalEnvdEnvironmentConfiguration.working_directory`, `required_methods`, and optional `egress` and `expected_boundary`. Each execution opens an independent Session. The working directory selects where work begins; filesystem policy selects what it may access.
+2. **Select each Session and directory view.** Put startup policy in `LocalEnvdEnvironmentConfiguration.session`: working directory, sandbox, `egress_mode`, `egress`, lifecycle and command selection. The outer `working_directory` selects the directory view; `required_methods` and `expected_boundary` validate the resulting execution. A shared Host Session owner lets multiple views borrow one Session. Filesystem policy selects what the worker may access; view cwd only selects where work begins.
 
 Omitting the working directory uses the Device default. A Host that persists Run selections resolves an explicit directory before accepting work. Output limits must fit together: previews fit within each stream, each Session reserves both streams, and Session spools fit within the Device quota.
 
-Keep the shared `LocalEnvdProviderRuntime` alive until all borrowing executions close, then close it separately or leave its async context. Execution close releases its Session. Local Envd is available to library callers and Harness UI; Service does not offer this provider.
+Keep the shared `LocalEnvdProviderRuntime` alive until all borrowing executions close, then close it separately or leave its async context. Execution close releases its borrower; a shared Session owner detaches on final release and retains recovery state. Local Envd is available to library callers and Harness UI; Service does not offer this provider.
 
 ## Docker
 
@@ -82,7 +82,7 @@ For setup and backend limits, see [Runloop](cloud-providers.md#runloop).
 ## Remote HTTP / WebSocket Envd
 
 1. Register or select the externally managed Device. `RemoteEnvdStateData.device_id` identifies it.
-2. Set the Session working directory, required methods, optional `egress`, and optional `expected_boundary` in `RemoteEnvdEnvironmentConfiguration`. Configure daemon mounts where the daemon runs.
+2. Set startup policy under `RemoteEnvdEnvironmentConfiguration.session`, including optional `egress_mode` and reference-only `egress`. Set outer `working_directory` for the directory view, plus `required_methods` and optional `expected_boundary`. Session grants must fit the daemon's deployment ceiling.
 3. Supply transport settings. HTTP uses an `endpoint` and separate `HttpEnvdCredential`; WebSocket uses the Host's authenticated connector/runtime.
 4. Open an execution to acquire the Session, and close it after use. Target provisioning, stop, destruction, and keepalive remain with the external owner.
 

@@ -902,7 +902,7 @@ async def test_handback_delivers_once_across_retake(service, desktop, runs_kit, 
         assert registrations[1].entry_id is None and registrations[1].expires_at is None
 
 
-@pytest.mark.parametrize("change", ["binding", "authority", "stop", "archive", "target", "expiry"])
+@pytest.mark.parametrize("change", ["binding", "session_version", "authority", "stop", "archive", "target", "expiry"])
 async def test_obsolete_handback_is_suppressed_before_delivery(service, desktop, runs_kit, change):
     from a13n_service.runs.environments.desktop.delivery import handbacks
     from a13n_service.runs.environments.desktop.tables import DesktopBlockedRow
@@ -915,6 +915,12 @@ async def test_obsolete_handback_is_suppressed_before_delivery(service, desktop,
         if change == "binding":
             binding = await session.get_one(ThreadEnvironmentRow, (lease.thread_id, "workspace"))
             binding.working_directory = "/changed"
+        elif change == "session_version":
+            # Returning to the same configuration cannot revive the old handback.
+            from a13n_service.runs.environments.tables import ThreadSessionBindingRow
+
+            binding = await session.get_one(ThreadSessionBindingRow, (lease.thread_id, desktop[1], "default"))
+            binding.head = {**binding.head, "version": binding.head["version"] + 2}
         elif change == "authority":
             from .test_platform_tools import set_role
 
@@ -1093,7 +1099,9 @@ async def test_rebinding_away_and_back_does_not_revive_notice(service, desktop, 
     removed = await service.client.delete(path + "/workspace", headers=runs_kit.if_match(thread))
     assert removed.status_code == 204, removed.text
     thread = await runs_kit.get_thread(service, lease.thread_id)
-    added = await service.client.post(path, json=mount.model_dump(mode="json"), headers=runs_kit.if_match(thread))
+    added = await service.client.post(
+        path, json=mount.model_dump(mode="json", exclude={"session_version"}), headers=runs_kit.if_match(thread)
+    )
     assert added.status_code == 201, added.text
     await handbacks(service.runtime)(notice)
     async with transaction(service.runtime.storage) as session:

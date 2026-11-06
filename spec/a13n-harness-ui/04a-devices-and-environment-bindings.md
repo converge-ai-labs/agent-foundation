@@ -2,7 +2,7 @@
 
 ## Design Position
 
-Harness UI stores Device connections and Project/Thread working-directory selections. Each Run captures its bindings and supplies Host-owned Environment sources implementing `ensure_ready()`, which return fixed-target connectors for fresh execution scopes. EIP Sessions are internal execution resources, not user-managed Project or Thread resources.
+Harness UI stores Device connections and Project/Thread Environment selections. Each Thread has one current Session binding per selected Device; its directory views share that Session. Each Run captures the selected binding versions and supplies Host-owned Environment sources implementing `ensure_ready()`, which return fixed-target connectors for fresh execution scopes. The App owns concrete EIP Session identities and replacement.
 
 [Projects and Threads](04-projects-threads-and-environments.md) owns local roots, sticky configuration and admission. [EIP](../a13n-envd/README.md) owns Device discovery, Sessions and resource cleanup.
 
@@ -30,13 +30,13 @@ The accepted Project/Thread selection stores an explicit Device and working dire
 
 ## Bindings and Defaults
 
-A Thread retains `environment_profile_id` for local Project roots and Thread files. Its ordered `environment_bindings` collection contains `device_id`, `working_directory`, a unique Run-local alias, an action ceiling, optional reference-only Session `egress`, and an optional `expected_boundary` requirement. Selecting a Device and path requires no separate Environment-definition resource.
+A Thread retains `environment_profile_id` for local Project roots and Thread files. Its ordered `environment_bindings` collection contains `device_id`, view `working_directory`, a unique Run-local alias, an action ceiling, a `session` configuration and an optional `expected_boundary` requirement. Session configuration selects its base working directory, sandbox grants, egress policy, lifecycle limits and command enablement. Shell profiles and inherited environment keys remain deployment inputs. Egress credentials remain source references. All views selecting one Device must agree on Session configuration and expected boundary; conflicting selections fail admission. Selecting a Device and path requires no separate Environment-definition resource.
 
 `default_environment` names one alias in the complete mount set. Local-only selections retain their workspace or projectless Thread-files default. Remote-only and mixed sets record the default explicitly. Local workspace and Host auxiliary aliases are reserved against collision. An explicit empty collection removes added bindings; a Run-only local-profile override preserves them.
 
 Project creation defaults and Thread patches use existing precedence and expected-version rules. Deferred-response admission retains the selected continuation's bindings and default unless explicitly patched. A Project may have no local roots when it selects remote bindings; CLI cwd matching considers only actual local roots. Projectless Threads may also use a remote default while retaining Host-managed Thread files.
 
-A working directory supplies relative-path and omitted-cwd defaults. File operations may address other paths on the same Device under the action ceiling, native permissions and Device Sandbox grants. Selecting a working directory creates no filesystem sandbox.
+A working directory supplies relative-path and omitted-cwd defaults. File operations may address other paths in the same Session under the action ceiling, native permissions and Session sandbox grants. Selecting a working directory creates no filesystem sandbox.
 
 ## Admission and Execution
 
@@ -46,18 +46,24 @@ Before returning an admission receipt or scheduling preparation, the App capture
 - Project roots and local profile;
 - selected Device identities and connection configurations without credential bytes;
 - explicit working directories, aliases, effective action ceilings and default;
-- Session destinations, credential source references and expected Device boundaries, never resolved secret values;
+- Session configuration, credential source references, expected Session boundaries and admitted binding versions, never resolved secret values;
 - selected Run Extensions.
 
-Preparation uses only captured selections. Current credentials resolve through captured credential references at use time. Each envd binding verifies the captured boundary requirement and resolves current egress credentials. Compatible Runs of one Thread borrow its continuing Session, including while retained work still uses it. Context identity includes the Thread, target, profile behavior, working directory and binding policy. Independent Threads and children retain separate contexts; identical paths alone do not imply shared ownership.
+Admission resolves local roots and Thread file grants without connecting to a Device. It validates all selected and removed Device bindings and publishes their versions in one short transaction. A conflict leaves every binding unchanged. Compatibility includes the Device connection recipe, Session configuration and expected boundary. View aliases, view working directories, action ceilings, models and prompts do not partition Sessions. Independent Threads and children retain separate bindings.
 
-The App persists Session restoration metadata in the binding state head, separate from portable provider state. Successive Runs and application restarts attach the saved Session when its daemon and generation survive. Proven Session loss permits a checkpointed replacement. Transient failures propagate without opening duplicates, and uncertain commands are never replayed. The final borrower detaches and stops keepalive; an idle saved Thread does not keep its Session alive.
+Preparation uses only captured selections. Every borrow checks the captured version, including same-process live clients; a stale capture cannot select an older configuration. Current credentials resolve through captured source references at use time, and each Session verifies its captured boundary requirement. Compatible Runs borrow the continuing Session, including while retained work still uses it.
+
+The App persists Session restoration metadata in a Thread/Device binding head, separate from portable provider state. Successive Runs and application restarts attach the saved Session when its daemon and generation survive. Proven Session loss permits a checkpointed replacement for ordinary acquisition. Retained work attaches its exact original Session and never opens a successor. Transient failures propagate without opening duplicates, and uncertain commands are never replayed. The final borrower detaches and stops keepalive; an idle saved Thread does not keep its Session alive.
+
+Changing Session configuration requires all live borrowers and nonterminal retained tools of the Thread to finish. Admission advances a monotonic selection version while retaining the old Session and its connection recipe. Before opening a successor, acquisition durably records retirement, closes the old Session through that original recipe, and records completed retirement. An unavailable Device or uncertain close preserves the retiring reference for retry, including after App restart. Returning from configuration A to B and then A creates a new incarnation; it never resurrects A's retired Session. Removing a Device fences its old captures immediately and retains retirement evidence; re-selection closes any surviving old Session before opening a new one.
 
 New children inherit the parent's captured selections; existing child Threads resume from their own selections. Remote adapters use virtual aggregate routes, not Host-path-preserving routing. Skills and file guidance use the selected Environment. Configuration and user-Skill mounts stay Host-only. Remote shell execution does not implicitly receive Thread files; cross-mount copying uses Environment file operations.
 
 ## State and Connection Ownership
 
 Environment-state lookup/publication uses the Thread, alias, normalized Provider configuration, Device identity/backend and working directory. Presentation-only changes do not affect binding identity. Local roots retain their existing equivalent key.
+
+Local launcher configuration identifies an App-owned Device runtime, shared across Threads. Project roots and Thread files become per-Session grants rather than launcher inputs; sharing a Device does not share grants. Session ownership is held until the last borrower exits, with OS ownership fencing between Apps. Attachment epochs fence transport owners independently from configuration selection versions.
 
 Device connections and keepalive tasks are App-owned process-local resources. Session selectors and daemon generations are Host-private binding checkpoints rather than Agent continuation data. Run cleanup releases its use without destroying the shared Session. The App owns local daemon shutdown; externally managed daemons retain their independent lifetime.
 

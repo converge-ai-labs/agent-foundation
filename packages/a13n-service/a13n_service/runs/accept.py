@@ -369,9 +369,17 @@ async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, 
             environment_id = instance.id
         else:
             environment_id = selection.environment_id
+        from a13n_service.runs.environments import bindings
+        from a13n_service.runs.environments.schemas import SessionConfiguration
+
+        binding = await bindings.ensure(
+            session, thread, environment_id, selection.session_binding, selection.session_configuration
+        )
         primary_override = EnvironmentMount(
             name=PRIMARY,
             environment_id=environment_id,
+            session_binding=binding.name,
+            session_configuration=SessionConfiguration.model_validate(binding.configuration),
             working_directory=selection.working_directory,
             permission_ceiling=selection.permission_ceiling,
         )

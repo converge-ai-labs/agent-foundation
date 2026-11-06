@@ -42,7 +42,8 @@ class BuiltInEnvironmentProfile:
                     "full_control": True,
                     "computer_use": self.profile_id == "environment-desktop",
                     "monitoring": {"sample_interval_ms": 60_000},
-                }
+                },
+                "session": {"session": {"sandbox": {"mode": "disabled"}, "egress_mode": "inherit"}},
             }
         return {}
 

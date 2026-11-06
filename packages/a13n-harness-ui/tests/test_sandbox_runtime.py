@@ -60,9 +60,11 @@ def test_protected_host_state_is_not_granted_by_a_broad_project_root(tmp_path):
 
 def test_sandbox_profile_defaults_to_restricted_with_inherited_networking():
     selected = LocalEnvdProfileConfiguration()
-    assert selected.launch.sandbox.mode == "restricted"
-    assert selected.launch.egress.mode == "inherit"
-    assert selected.session.egress is None
+    assert selected.launch.sandbox.mode == "disabled"
+    assert selected.launch.full_control
+    assert selected.session.session.sandbox.mode == "restricted"
+    assert selected.session.session.egress_mode == "inherit"
+    assert selected.session.session.egress is None
 
 
 async def test_production_sandbox_preflight_probes_real_boundaries(binary, tmp_path):
@@ -76,8 +78,11 @@ async def test_production_sandbox_preflight_rejects_blocked_host_localhost(binar
     from a13n_harness.environment.envd_policy import EnvdNetworkConfiguration
 
     def denied_runtime(*args, **kwargs):
-        launch = LocalEnvdProfileConfiguration().launch.model_copy(
-            update={"egress": EnvdNetworkConfiguration(mode="deny")}
+        from a13n_envd_client.eip.v1 import RestrictedSandbox
+        from a13n_harness.providers.environment.local_envd.configuration import LocalEnvdLaunchConfiguration
+
+        launch = LocalEnvdLaunchConfiguration(
+            sandbox=RestrictedSandbox(mode="restricted", grants=()), egress=EnvdNetworkConfiguration(mode="deny")
         )
         return create_sandbox_runtime(*args, **kwargs, launch=launch)
 
@@ -106,16 +111,22 @@ async def test_sandbox_profile_host_localhost_access(binary, tmp_path, monkeypat
         behavior_digest="a" * 64,
         provider_key="local_envd",
         adapter_key="local_envd_project",
-        provider_configuration={}
-        if mode is None
-        else {"launch": {"sandbox": {"mode": "restricted", "grants": []}, "egress": {"mode": mode}}},
+        provider_configuration={
+            "session": {"session": {"sandbox": {"mode": "restricted", "grants": []}, "egress_mode": mode or "inherit"}}
+        },
     )
     server = await asyncio.start_server(lambda reader, writer: writer.close(), "127.0.0.1", 0)
     port = server.sockets[0].getsockname()[1]
     try:
-        owner = await reconstructor.sandbox_runtime((root,), profile=profile)
+        thread_files = tmp_path / "thread-files"
+        thread_files.mkdir()
+        profile = await reconstructor.envd.session_profile(profile, (root,), thread_files_root=thread_files)
+        selected = LocalEnvdProfileConfiguration.model_validate(profile.provider_configuration)
+        owner = await reconstructor.sandbox_runtime(profile=profile)
         connector = LOCAL_ENVD.execution_connector(
-            LocalEnvdEnvironmentConfiguration(working_directory=root.as_posix()),
+            LocalEnvdEnvironmentConfiguration(
+                working_directory=root.as_posix(), **selected.session.model_dump(exclude={"working_directory"})
+            ),
             runtime=owner,
             environment_id="network-test",
         )
@@ -126,7 +137,9 @@ async def test_sandbox_profile_host_localhost_access(binary, tmp_path, monkeypat
             assert processes is not None
             started = await processes.start(
                 CommandRequest(
-                    command=ShellCommand(profile_id="default", script=f"echo probe > /dev/tcp/127.0.0.1/{port}"),
+                    command=ShellCommand(
+                        profile_id="default", script=f"bash -c 'echo probe > /dev/tcp/127.0.0.1/{port}'"
+                    ),
                     output_policy=EnvironmentOutputPolicy(
                         max_inline_bytes=1024, max_output_bytes=4096, overflow="retain"
                     ),
@@ -207,7 +220,7 @@ async def test_shared_sandbox_sessions_preserve_host_paths_and_hide_unrelated_fi
     assert secret.read_text() == "not granted"
 
 
-async def test_root_runs_use_captured_sandbox_with_fresh_sessions(binary, tmp_path, monkeypatch):
+async def test_root_runs_share_captured_sandbox_across_directory_views(binary, tmp_path, monkeypatch):
     """Exercise admission through actual model-issued tools, not a replaced Run plan."""
     import asyncio
     import json
@@ -299,15 +312,94 @@ async def test_root_runs_use_captured_sandbox_with_fresh_sessions(binary, tmp_pa
             assert result.status is RootOperationStatus.completed, result
             capture = await app.inspect_operation_configuration(receipt.receipt_id)
             assert capture is not None and capture.environment_profile_id == "environment-sandbox"
-            assert len(opened) == 2 * (index + 1)
-            assert len({device for device, _ in opened}) == 1
-            assert len({session for _, session in opened}) == len(opened)
+            assert len(opened) == 1
+            head = await app._store.envd_sessions.get(thread.thread_id, "local")
+            assert head is not None and head.session is not None
+            assert head.session.descriptor.session_id == opened[0][1]
+            assert head.session.descriptor.owner_epoch >= index + 1
         assert (project / "result.txt").read_text() == "Sandbox model result"
         assert (scratch / "tmp/result.txt").read_text() == "Sandbox thread files"
         assert (
             await app.get_thread(thread.thread_id)
         ).thread.configuration.environment_profile_id == "environment-native"
     assert secret.read_text() == "Host-only fixture"
+
+
+async def test_thread_sessions_share_device_without_sharing_grants(binary, tmp_path, monkeypatch):
+    import shlex
+
+    from a13n_harness_ui.composition.models import ResolvedEnvironmentProfile
+    from a13n_harness_ui.environment_runtime import EnvironmentSnapshotReconstructor
+    from a13n_harness_ui.settings import EnvdRuntimeSettings
+
+    monkeypatch.setenv("PRIVATE_HOST_TOKEN", "must-not-enter-session")
+    reconstructor = EnvironmentSnapshotReconstructor(envd_settings=EnvdRuntimeSettings(executable=binary))
+    profile = ResolvedEnvironmentProfile(
+        profile_id="environment-sandbox",
+        behavior_digest="a" * 64,
+        provider_key="local_envd",
+        adapter_key="local_envd_project",
+    )
+    projects = [tmp_path / name for name in ("first", "second")]
+    threads = [tmp_path / name for name in ("thread-first", "thread-second")]
+    environments = []
+    try:
+        owners = []
+        for index, (project, thread) in enumerate(zip(projects, threads, strict=True)):
+            project.mkdir()
+            thread.mkdir()
+            (project / "private").write_text(str(index))
+            selected = await reconstructor.envd.session_profile(profile, (project,), thread_files_root=thread)
+            (thread / "attachments/input").write_text("submitted input")
+            configuration = LocalEnvdProfileConfiguration.model_validate(selected.provider_configuration)
+            owner = await reconstructor.sandbox_runtime(profile=selected)
+            owners.append(owner)
+            connector = LOCAL_ENVD.execution_connector(
+                LocalEnvdEnvironmentConfiguration(
+                    working_directory=project.as_posix(),
+                    **configuration.session.model_dump(exclude={"working_directory"}),
+                ),
+                runtime=owner,
+                environment_id=f"thread-{index}",
+            )
+            environments.append(await connector.open())
+        assert owners[0] is owners[1]
+        assert len((await owners[0].acquire_device())._sessions) == 2
+        assert environments[0].descriptor.generation != environments[1].descriptor.generation
+        for index, environment in enumerate(environments):
+            files, processes = environment.operations.files, environment.operations.processes
+            assert files is not None and processes is not None
+            assert (await files.read_text("private")).text == str(index)
+            with pytest.raises(EnvironmentError):
+                await files.read_text((projects[1 - index] / "private").as_posix())
+            with pytest.raises(EnvironmentError):
+                await files.read_text((threads[1 - index] / "attachments/input").as_posix())
+            attachment = threads[index] / "attachments/input"
+            assert (await files.read_text(attachment.as_posix())).text == "submitted input"
+            with pytest.raises(EnvironmentError):
+                await files.write_text(attachment.as_posix(), "changed", mode="replace")
+            await files.write_text((threads[index] / "tmp/output").as_posix(), "kept", mode="create")
+            started = await processes.start(
+                CommandRequest(
+                    command=ShellCommand(
+                        profile_id="default",
+                        script=(
+                            'test -z "$PRIVATE_HOST_TOKEN" && '
+                            f"test ! -r {shlex.quote(str(projects[1 - index] / 'private'))}"
+                        ),
+                    ),
+                    output_policy=EnvironmentOutputPolicy(
+                        max_inline_bytes=1024, max_output_bytes=4096, overflow="retain"
+                    ),
+                )
+            )
+            result = await processes.wait(started.process.handle, condition="tree_cleaned", timeout_seconds=10)
+            assert result.status.exit_code == 0
+            await processes.release(started.process.handle)
+    finally:
+        for environment in environments:
+            await environment.close()
+        await reconstructor.close()
 
 
 async def test_runtime_cache_separates_launch_policy_but_not_session_destinations(tmp_path, monkeypatch):
@@ -331,24 +423,27 @@ async def test_runtime_cache_separates_launch_policy_but_not_session_destination
             adapter_key="local_envd_project",
             provider_configuration={
                 "launch": {"sandbox": {"mode": "restricted", "grants": []}, "egress": {"mode": mode}},
-                "session": {"egress": {"destinations": {"mode": "allowlist", "hosts": list(hosts)}}}
+                "session": {
+                    "session": {
+                        "egress_mode": "controlled",
+                        "egress": {"destinations": {"mode": "allowlist", "hosts": list(hosts)}},
+                    }
+                }
                 if mode == "controlled"
                 else {},
             },
         )
 
     try:
-        denied = await reconstructor.sandbox_runtime((root,), profile=profile("deny"))
-        inherited = await reconstructor.sandbox_runtime((root,), profile=profile("inherit"))
-        controlled = await reconstructor.sandbox_runtime((root,), profile=profile("controlled", ("a.example.com",)))
+        denied = await reconstructor.sandbox_runtime(profile=profile("deny"))
+        inherited = await reconstructor.sandbox_runtime(profile=profile("inherit"))
+        controlled = await reconstructor.sandbox_runtime(profile=profile("controlled", ("a.example.com",)))
         assert denied is not inherited and controlled not in (denied, inherited)
         assert denied.configuration.egress.mode == "deny"
         assert inherited.configuration.egress.mode == "inherit"
         assert controlled.configuration.egress.mode == "controlled"
-        assert controlled is await reconstructor.sandbox_runtime(
-            (root,), profile=profile("controlled", ("b.example.com",))
-        )
-        assert denied is await reconstructor.sandbox_runtime((root,), profile=profile("deny"))
+        assert controlled is await reconstructor.sandbox_runtime(profile=profile("controlled", ("b.example.com",)))
+        assert denied is await reconstructor.sandbox_runtime(profile=profile("deny"))
     finally:
         await reconstructor.close()
 

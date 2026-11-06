@@ -7,7 +7,6 @@ from typing import Annotated, Literal, Self
 
 from a13n_harness import DeferredToolRequests, DeferredToolResume, HarnessState, SafeFailure
 from a13n_harness.environment.models import EnvironmentState
-from a13n_harness.environment.session_recovery import EnvdSessionState
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 from pydantic_ai.tools import DeferredToolResults
 
@@ -440,7 +439,6 @@ class StoredEnvironmentState(StoredContract):
     schema_version: Literal["1"] = "1"
     binding: EnvironmentBindingKey
     state: EnvironmentState | None = None
-    envd_session: EnvdSessionState | None = None
     created_at: datetime
 
     @field_validator("created_at")

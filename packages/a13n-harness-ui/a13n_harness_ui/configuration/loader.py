@@ -46,7 +46,8 @@ _MAX_YAML_NODES = 100_000
 _MAX_YAML_DEPTH = 64
 _STABLE_READ_ATTEMPTS = 3
 # Version normalized snapshots independently of user-owned source byte digests.
-_NORMALIZATION_VERSION = "1"
+# Session configuration changes normalized Device bindings even for unchanged YAML.
+_NORMALIZATION_VERSION = "2"
 logger = logging.getLogger(__name__)
 _YAML_DIRECTORIES = ("models", "extensions", "mcp", "agents", "projects", "devices", "subscription_groups")
 _RESOURCE_TYPES: dict[str, type[Any]] = {

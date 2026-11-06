@@ -152,7 +152,9 @@ class ToolExecutions:
                         try:
                             composition = await self.store.objects.read_model(reference, ResolvedRunComposition)
                             environment = await self._environments.prepare_recovery(
-                                composition, execution.shell.mount_name
+                                composition,
+                                execution.shell.mount_name,
+                                original_session_id=execution.shell.process.session_id,
                             )
                         except (ConfigurationError, EnvironmentLifecycleError, StoreIntegrityError) as exc:
                             if isinstance(exc, EnvironmentLifecycleError) and exc.code in {

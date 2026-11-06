@@ -5,7 +5,7 @@ from __future__ import annotations
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
 from a13n_harness.environment.errors import provider_error
 from a13n_harness.environment.models import EnvironmentDescriptor, EnvironmentState
-from a13n_harness.environment.session_recovery import EnvdSessionRecovery
+from a13n_harness.environment.session_recovery import EnvdSessionBorrower
 from a13n_harness.providers.environment._backend_factory import BackendFactory
 from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
 from a13n_harness.providers.environment.eip.binding import configured_descriptor
@@ -32,7 +32,7 @@ def construct(
     environment_id: str,
     state: EnvironmentState | None,
     runtime: KubernetesRuntime | None,
-    session_recovery: EnvdSessionRecovery | None = None,
+    session_recovery: EnvdSessionBorrower | None = None,
 ):
     target = decode(configuration, state)
     if target is None or runtime is None:

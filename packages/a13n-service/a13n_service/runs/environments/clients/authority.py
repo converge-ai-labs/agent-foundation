@@ -90,6 +90,7 @@ async def resolve_many(runtime: Runtime, checks: Sequence[Check]) -> list[Enviro
                         request.caller,
                         thread_id=request.thread_id,
                         environment_id=request.environment_id,
+                        mount_name=request.mount_name,
                         actions=actions,
                         cleanup=check.renewing or request.allows_cancelled_owner,
                     )
@@ -185,7 +186,7 @@ def retained_mount(snapshot: ControlSnapshot, check: Check) -> tuple[RunRow, Env
             raise LeaseLost()
     for value in execution.environment_mounts:
         mount = EnvironmentMount.model_validate(value)
-        if mount.name == shell.mount_name and mount.environment_id == request.environment_id:
+        if mount.name == shell.mount_name == request.mount_name and mount.environment_id == request.environment_id:
             if check.actions <= mount.permission_ceiling.operations:
                 return run, mount
     raise LeaseLost()

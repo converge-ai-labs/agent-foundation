@@ -2,7 +2,7 @@
 
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
 from a13n_harness.environment.models import EnvironmentDescriptor, EnvironmentState, decode_target_state
-from a13n_harness.environment.session_recovery import EnvdSessionRecovery
+from a13n_harness.environment.session_recovery import EnvdSessionBorrower
 from a13n_harness.providers.environment._backend_factory import BackendFactory
 from a13n_harness.providers.environment.daytona.http import HttpReference, http_execution
 from a13n_harness.providers.environment.daytona.shared import (
@@ -43,7 +43,7 @@ def construct(
     environment_id: str,
     state: EnvironmentState | None,
     runtime: NativeRuntime | None,
-    session_recovery: EnvdSessionRecovery | None = None,
+    session_recovery: EnvdSessionBorrower | None = None,
 ) -> RemoteEnvdExecution:
     if runtime is None:
         raise TypeError("Daytona requires a runtime")

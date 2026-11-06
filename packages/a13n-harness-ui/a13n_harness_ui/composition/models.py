@@ -202,6 +202,7 @@ class ResolvedRunComposition(CompositionModel):
     environment_profile: ResolvedEnvironmentProfile
     environment_bindings: tuple[ResolvedEnvironmentBinding, ...] = Field(default=(), max_length=64)
     default_environment: str | None = Field(default=None, min_length=1, max_length=63)
+    session_versions: dict[str, int] = Field(default_factory=dict)
     environment_run_extensions: tuple[ResolvedRunExtensionRecipe, ...] = Field(default=(), max_length=128)
     dependencies: tuple[DependencyProvenance, ...] = ()
 

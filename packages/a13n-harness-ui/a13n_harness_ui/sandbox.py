@@ -51,29 +51,18 @@ def create_sandbox_runtime(
     canonical = tuple(dict.fromkeys(root.resolve(strict=True) for root in roots))
     if not canonical or any(not root.is_dir() for root in canonical):
         raise _unavailable("Sandbox roots must be existing directories.")
-    grants = []
-    thread_root = None if thread_files_root is None else thread_files_root.resolve(strict=True)
     if isinstance(launch.sandbox, RestrictedSandbox):
-        # Only the adapter's own Thread directories bypass the protected-state
-        # check. Explicit grants cannot authorize arbitrary application state.
-        for root in (*canonical, *(local_envd_native_path(grant.path) for grant in launch.sandbox.grants)):
-            root = root.resolve(strict=True)
-            if root == thread_root and root in canonical:
-                continue
-            if any(
-                root.is_relative_to(path.resolve()) or path.resolve().is_relative_to(root) for path in protected_roots
-            ):
-                raise _unavailable("A Sandbox grant overlaps Host configuration or application state.")
-        grants.extend(launch.sandbox.grants)
-        for root in canonical:
-            if root == thread_root:
-                for name, access in (("attachments", GrantAccess.READ_ONLY), ("tmp", GrantAccess.READ_WRITE)):
-                    child = root / name
-                    child.mkdir(exist_ok=True)
-                    grants.append(SandboxGrant(path=local_envd_path(child), access=access))
-            else:
-                grants.append(SandboxGrant(path=local_envd_path(root), access=project_access))
-        launch = launch.model_copy(update={"sandbox": launch.sandbox.model_copy(update={"grants": tuple(grants)})})
+        launch = launch.model_copy(
+            update={
+                "sandbox": project_sandbox(
+                    launch.sandbox,
+                    roots=canonical,
+                    protected_roots=protected_roots,
+                    thread_files_root=thread_files_root,
+                    project_access=project_access,
+                )
+            }
+        )
     launch = launch.model_copy(update={"default_working_directory": launch.default_working_directory or canonical[0]})
     if not launch.full_control:
         from a13n_harness_ui.extensions.environment_adapters import _host_shell
@@ -96,6 +85,43 @@ def create_sandbox_runtime(
         executable=executable,
         allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(parent=runtime_parent),
         configuration=launch,
+    )
+
+
+def project_sandbox(
+    policy: RestrictedSandbox,
+    *,
+    roots: tuple[Path, ...],
+    protected_roots: tuple[Path, ...] = (),
+    thread_files_root: Path | None = None,
+    project_access: GrantAccess = GrantAccess.READ_WRITE,
+) -> RestrictedSandbox:
+    """Select Session grants without changing the Device's launch authority."""
+    if sys.platform not in {"linux", "darwin", "win32"}:
+        raise _unavailable("Local Sandbox is not available on this platform.")
+    canonical = tuple(dict.fromkeys(root.resolve(strict=True) for root in roots))
+    thread_root = None if thread_files_root is None else thread_files_root.resolve(strict=True)
+    protected = tuple(path.resolve() for path in protected_roots)
+    # Explicit grants never receive the internal Thread-files exemption.
+    for root in (
+        *[root for root in canonical if root != thread_root],
+        *(local_envd_native_path(grant.path).resolve(strict=True) for grant in policy.grants),
+    ):
+        if not root.is_dir():
+            raise _unavailable("Sandbox grants must be existing directories.")
+        if any(root.is_relative_to(path) or path.is_relative_to(root) for path in protected):
+            raise _unavailable("A Sandbox grant overlaps Host configuration or application state.")
+    grants = list(policy.grants)
+    for root in canonical:
+        if root == thread_root:
+            for name, access in (("attachments", GrantAccess.READ_ONLY), ("tmp", GrantAccess.READ_WRITE)):
+                child = root / name
+                child.mkdir(exist_ok=True)
+                grants.append(SandboxGrant(path=local_envd_path(child), access=access))
+        else:
+            grants.append(SandboxGrant(path=local_envd_path(root), access=project_access))
+    return policy.model_copy(
+        update={"grants": tuple(sorted(set(grants), key=lambda grant: (grant.path, grant.access)))}
     )
 
 

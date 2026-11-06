@@ -7,7 +7,7 @@ from fastapi import APIRouter, Query, Response
 from a13n_service.infra.http import IfMatch, PageLimit, etag, tagged
 from a13n_service.providers.environment.kubernetes import LogQuery, Logs
 from a13n_service.providers.metrics import QueryResult
-from a13n_service.runs.environments import desktop_preview, e2b_creation, kubernetes, mounts, service
+from a13n_service.runs.environments import bindings, desktop_preview, e2b_creation, kubernetes, mounts, service
 from a13n_service.runs.environments.monitoring.bindings import Selection
 from a13n_service.runs.environments.monitoring.proxy import LocalResult
 from a13n_service.runs.environments.monitoring.query import (
@@ -28,6 +28,8 @@ from a13n_service.runs.environments.schemas import (
     MountPage,
     MountUpdate,
     MountView,
+    SessionBindingUpdate,
+    SessionBindingView,
 )
 from a13n_service.runs.environments.tables import STATUSES
 from a13n_service.runs.requests import CurrentRuntime
@@ -285,6 +287,55 @@ async def update_environment_mount(
     )
     response.headers["ETag"] = etag(thread_id, version)
     return mount
+
+
+@router.get(
+    "/threads/{thread_id}/session-bindings/{environment_id}/{name}",
+    response_model=SessionBindingView,
+    openapi_extra={"x-a13n-mcp": True},
+)
+async def get_session_binding(
+    runtime: CurrentRuntime,
+    response: Response,
+    workspace_id: WorkspaceId,
+    thread_id: str,
+    environment_id: str,
+    name: str,
+    actor: Actor,
+) -> SessionBindingView:
+    binding, version = await bindings.get_binding(runtime.storage, actor, workspace_id, thread_id, environment_id, name)
+    response.headers["ETag"] = etag(thread_id, version)
+    return binding
+
+
+@router.put(
+    "/threads/{thread_id}/session-bindings/{environment_id}/{name}",
+    response_model=SessionBindingView,
+    openapi_extra={"x-a13n-mcp": True},
+)
+async def update_session_binding(
+    runtime: CurrentRuntime,
+    response: Response,
+    workspace_id: WorkspaceId,
+    thread_id: str,
+    environment_id: str,
+    name: str,
+    body: SessionBindingUpdate,
+    actor: Actor,
+    if_match: IfMatch = None,
+) -> SessionBindingView:
+    binding, version = await bindings.update_binding(
+        runtime.storage,
+        actor,
+        workspace_id,
+        thread_id,
+        environment_id,
+        name,
+        body.configuration,
+        if_match=if_match,
+    )
+    response.headers["ETag"] = etag(thread_id, version)
+    return binding
 
 
 @router.post(

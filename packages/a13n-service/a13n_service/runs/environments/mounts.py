@@ -21,6 +21,7 @@ from a13n_service.resources.agents.schemas import ChildEnvironmentPolicy
 from a13n_service.resources.agents.service import load_revision
 from a13n_service.resources.environment_instances.access import lock_environment_rows, lock_environments
 from a13n_service.resources.environment_instances.access import require_usable as require_usable
+from a13n_service.runs.environments import bindings
 from a13n_service.runs.environments.clients.tables import ClientSettingsRow
 from a13n_service.runs.environments.lifecycle import (
     LOST,
@@ -36,6 +37,7 @@ from a13n_service.runs.environments.schemas import (
     MountPage,
     MountUpdate,
     MountView,
+    SessionConfiguration,
 )
 from a13n_service.runs.environments.tables import EnvironmentRow, ThreadEnvironmentRow
 from a13n_service.runs.schemas import EnvironmentMount, RunOptions
@@ -61,7 +63,7 @@ async def thread_has_primary(session: AsyncSession, thread: ThreadRow) -> bool:
 async def primary_mount(session: AsyncSession, thread_id: str) -> EnvironmentMount | None:
     """The thread's desired mount of its primary sandbox."""
     row = await session.get(ThreadEnvironmentRow, (thread_id, PRIMARY))
-    return None if row is None else EnvironmentMount.model_validate(row, from_attributes=True)
+    return None if row is None else await _selection(session, thread_id, row)
 
 
 async def desired_mounts(session: AsyncSession, thread_id: str) -> list[ThreadEnvironmentRow]:
@@ -82,9 +84,7 @@ async def interactive_mounts(session: AsyncSession, thread: ThreadRow) -> list[E
     A newer Run supersedes the temporary selection. Desired mounts remain live for
     all other names and for Threads without an explicit Run selection.
     """
-    mounts = [
-        EnvironmentMount.model_validate(row, from_attributes=True) for row in await desired_mounts(session, thread.id)
-    ]
+    mounts = [await _selection(session, thread.id, row) for row in await desired_mounts(session, thread.id)]
     run_id = thread.current_run_id or thread.last_run_id
     run = await session.scalar(select(RunRow).where(RunRow.id == run_id)) if run_id else None
     if run is not None and RunOptions.model_validate(run.options).environment is not None:
@@ -102,6 +102,7 @@ def _mount(
     name: str,
     working_directory: str | None,
     permission_ceiling: EnvironmentPermissionSet = DEFAULT_MOUNT_PERMISSIONS,
+    session_binding: str = "default",
 ) -> ThreadEnvironmentRow:
     return ThreadEnvironmentRow(
         thread_id=thread.id,
@@ -109,6 +110,7 @@ def _mount(
         organization_id=thread.organization_id,
         workspace_id=thread.workspace_id,
         name=name,
+        session_binding=session_binding,
         working_directory=working_directory,
         permission_ceiling=permission_ceiling.model_dump(mode="json"),
     )
@@ -118,7 +120,10 @@ async def shared_mounts(session: AsyncSession, origin: ThreadRow) -> list[MountC
     """The origin's desired mounts, which a fork shares unless it asks for fresh environments; the caller holds
     the origin thread lock."""
     return [
-        MountCreate.model_validate(mount, from_attributes=True) for mount in await desired_mounts(session, origin.id)
+        MountCreate.model_validate(
+            (await _selection(session, origin.id, mount)).model_dump(exclude={"session_version"})
+        )
+        for mount in await desired_mounts(session, origin.id)
     ]
 
 
@@ -126,7 +131,17 @@ async def adopt_mounts(session: AsyncSession, thread: ThreadRow, mounts: Sequenc
     """A child thread mounts its parent's: what the parent run froze when it was spawned, or later the parent thread's
     primary. The run that starts it locks and checks them."""
     for mount in mounts:
-        session.add(_mount(thread, mount.environment_id, mount.name, mount.working_directory, mount.permission_ceiling))
+        await bindings.ensure(session, thread, mount.environment_id, mount.session_binding, mount.session_configuration)
+        session.add(
+            _mount(
+                thread,
+                mount.environment_id,
+                mount.name,
+                mount.working_directory,
+                mount.permission_ceiling,
+                mount.session_binding,
+            )
+        )
     await session.flush()
 
 
@@ -140,21 +155,27 @@ async def mount_environments(
     taken = await desired_mounts(session, thread.id)
     if len(taken) + len(mounts) > MAX_MOUNTS:
         raise conflict("thread", thread.id, "mount_limit", limit=MAX_MOUNTS)
-    names, environment_ids = {mount.name for mount in taken}, {mount.environment_id for mount in taken}
+    names = {mount.name for mount in taken}
     for mount in mounts:
         if mount.name in names:
             raise ServiceError(
                 "already_exists", "The thread already has this mount", {"kind": "mount", "key": mount.name}
             )
-        if mount.environment_id in environment_ids:
-            raise conflict("environment", mount.environment_id, "already_mounted")
         names.add(mount.name)
-        environment_ids.add(mount.environment_id)
     await lock_environments(
         session, thread.workspace_id, [mount.environment_id for mount in mounts], principal_id=principal_id
     )
+    for mount in mounts:
+        await bindings.ensure(session, thread, mount.environment_id, mount.session_binding, mount.session_configuration)
     rows = [
-        _mount(thread, mount.environment_id, mount.name, mount.working_directory, mount.permission_ceiling)
+        _mount(
+            thread,
+            mount.environment_id,
+            mount.name,
+            mount.working_directory,
+            mount.permission_ceiling,
+            mount.session_binding,
+        )
         for mount in mounts
     ]
     session.add_all(rows)
@@ -173,6 +194,7 @@ async def reserve_primary(
     """Reserve the primary under the Thread lock."""
     scope = WorkspaceScope(thread.organization_id, thread.workspace_id)
     environment = await reserve(session, principal, scope, template_id, limit=limit)
+    await bindings.ensure(session, thread, environment.id, "default")
     session.add(_mount(thread, environment.id, PRIMARY, None))
     await session.flush()
     return environment
@@ -231,6 +253,10 @@ async def _recover_primary(
         target_id=thread.id,
         details={"name": mount.name, "previous_environment_id": mount.environment_id, "environment_id": latest.id},
     )
+    previous = await bindings.ensure(session, thread, mount.environment_id, mount.session_binding)
+    await bindings.ensure(
+        session, thread, latest.id, mount.session_binding, SessionConfiguration.model_validate(previous.configuration)
+    )
     mount.environment_id = latest.id
 
 
@@ -263,8 +289,6 @@ async def freeze_mounts(
         if can_recover and recreation_limit is not None and await _recovery_enabled(session, thread):
             recovery_id = await latest_replacement(session, thread.workspace_id, mount.environment_id)
     if primary is not None:
-        if any(mount.environment_id == primary.environment_id for mount in selected):
-            raise conflict("environment", primary.environment_id, "already_mounted")
         selected.append(primary)
     ids = [mount.environment_id for mount in selected]
     if recovery_id is not None:
@@ -278,8 +302,6 @@ async def freeze_mounts(
             and (confirmed_loss(environment) or _idle_retired_replacement(environment))
         ):
             assert isinstance(mount, ThreadEnvironmentRow) and recreation_limit is not None
-            if any(other.name != PRIMARY and other.environment_id == recovery_id for other in selected):
-                raise conflict("environment", recovery_id, "already_mounted")
             await _recover_primary(session, principal, thread, mount, locked[recovery_id], recreation_limit)
         else:
             require_usable(environment, principal.id)
@@ -300,6 +322,7 @@ async def freeze_mounts(
             raise conflict("environment", environment_id, "client_configuration_missing")
     frozen = []
     for mount in sorted(selected, key=lambda mount: mount.name):
+        selection = await _selection(session, thread.id, mount) if isinstance(mount, ThreadEnvironmentRow) else mount
         directory = mount.working_directory
         permissions = EnvironmentPermissionSet.model_validate(mount.permission_ceiling)
         if config := configurations.get(mount.environment_id):
@@ -310,21 +333,30 @@ async def freeze_mounts(
             if config.declared_capabilities is not None:
                 operations &= EnvironmentPermissionSet.model_validate(config.declared_capabilities).operations
             permissions = EnvironmentPermissionSet(operations=operations)
-        frozen.append(
-            EnvironmentMount(
-                name=mount.name,
-                environment_id=mount.environment_id,
-                working_directory=directory,
-                permission_ceiling=permissions,
-            ).model_dump(mode="json")
-        )
-    return frozen
+        frozen.append(selection.model_copy(update={"working_directory": directory, "permission_ceiling": permissions}))
+    return [mount.model_dump(mode="json") for mount in await bindings.admit(session, thread, frozen)]
+
+
+async def _selection(session: AsyncSession, thread_id: str, mount: ThreadEnvironmentRow) -> EnvironmentMount:
+    from a13n_service.runs.environments.tables import ThreadSessionBindingRow
+
+    binding = await session.get(ThreadSessionBindingRow, (thread_id, mount.environment_id, mount.session_binding))
+    assert binding is not None
+    return EnvironmentMount(
+        name=mount.name,
+        environment_id=mount.environment_id,
+        session_binding=mount.session_binding,
+        session_configuration=SessionConfiguration.model_validate(binding.configuration),
+        working_directory=mount.working_directory,
+        permission_ceiling=EnvironmentPermissionSet.model_validate(mount.permission_ceiling),
+    )
 
 
 def _view(mount: ThreadEnvironmentRow, environment: EnvironmentRow) -> MountView:
     return MountView(
         name=mount.name,
         environment_id=mount.environment_id,
+        session_binding=mount.session_binding,
         working_directory=mount.working_directory,
         permission_ceiling=EnvironmentPermissionSet.model_validate(mount.permission_ceiling),
         desktop_enabled=Handle.model_validate(environment.handle).desktop_enabled if environment.handle else False,

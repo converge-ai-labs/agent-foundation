@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Annotated, Self
 
 from a13n_envd_client.eip.v1.models import AbsoluteEIPPath
-from a13n_harness.environment.envd_policy import EnvdBoundaryRequirement, EnvdEgressConfiguration
+from a13n_harness.environment.envd_policy import EnvdBoundaryRequirement, EnvdSessionConfiguration
 from a13n_harness.environment.models import FILE_EXECUTION_ACTIONS, EnvironmentPermissionSet
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -33,7 +33,7 @@ class EnvironmentBindingSelection(BaseModel):
 
     device_id: str = Field(min_length=3, max_length=128, pattern=r"^device-[a-z0-9]+(?:-[a-z0-9]+)*$")
     working_directory: AbsoluteEIPPath
-    egress: EnvdEgressConfiguration | None = None
+    session: EnvdSessionConfiguration = Field(default_factory=EnvdSessionConfiguration)
     expected_boundary: EnvdBoundaryRequirement | None = None
     alias: str = Field(min_length=1, max_length=63, pattern=r"^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*$")
     permission_ceiling: EnvironmentPermissionSet = Field(

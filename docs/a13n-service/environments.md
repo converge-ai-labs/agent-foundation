@@ -226,7 +226,13 @@ Service verifies the device, stores the token encrypted, and returns a `ready` i
 
 To rotate the token or move the endpoint, `PATCH /api/v1/environments/{id}` with the environment's ETag. Include the token when changing the endpoint. Service verifies that the new connection reaches the same device; another device is refused with `provider_device_mismatch`. Deleting the registration forgets its token and leaves the computer running.
 
-Worker recovery makes a best-effort attempt to reuse a checkpointed Envd Session. A closed or expired Session requires a fresh one. Recovery does not restore run-local process references or output observations; inspect current state before retrying an uncertain command. Normal cleanup closes the Session, and later runs use separate Sessions.
+Each Thread owns a named Session binding on an Environment. Directory mounts using the same binding share its Session across Runs; different binding names select independent Sessions on the same Device. Final cleanup detaches the connection and keeps the recovery descriptor. Ordinary new work can open a fresh Session after confirmed loss. Retained Shell work requires its exact original Session and process; recovery never substitutes or replays the command. Endpoint and token rotation preserve the logical binding.
+
+Set `session_binding` on a mount (default `default`) and use `session_configuration` to initialize its startup policy. Inspect or replace desired policy through `GET` or `PUT /api/v1/threads/{thread_id}/session-bindings/{environment_id}/{name}?workspace_id=…`; PUT uses the Thread ETag and a `configuration` object. Changing startup policy replaces the Session at admission only when no admitted Run or unfinished retained tool uses it; otherwise admission returns `environment_busy`. Directory selection remains mount-local.
+
+### Upgrade to Session bindings
+
+Before this schema cutover, finish or cancel and settle every admitted Run using environment mounts, including waiting Runs, and all retained environment or Shell tools. Worker drain or handoff alone is insufficient. Stop all old Controls and Workers, migrate, then start only the new version. The migration preserves registrations, provider state, files and historical Run captures, but does not import old Session recovery hints into the new binding heads. New work opens fresh Sessions. Do not mix old and new processes during this upgrade.
 
 ### Connect a client computer
 

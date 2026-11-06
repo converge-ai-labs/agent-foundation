@@ -6,7 +6,7 @@ from typing import Any
 
 from a13n_harness import AgentContext, EnvironmentMount
 from a13n_harness.environment.providers import EnvironmentRuntime
-from a13n_harness.environment.session_recovery import EnvdSessionRecovery
+from a13n_harness.environment.session_recovery import EnvdSessionBorrower
 from a13n_harness.model_context import (
     AbstractModelContextCapability,
     ModelContextBlock,
@@ -58,7 +58,7 @@ class Recovery(AbstractModelContextCapability):
         lease: Lease,
         environment: EnvironmentRuntime,
         mounts: dict[str, EnvironmentMount],
-        sessions: dict[str, EnvdSessionRecovery],
+        sessions: dict[str, EnvdSessionBorrower],
     ):
         self.runtime, self.lease, self.environment = runtime, lease, environment
         self.sessions = sessions

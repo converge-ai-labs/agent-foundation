@@ -340,6 +340,7 @@ class Executions(ToolExecutionRuntime):
                         caller,
                         thread_id=request.thread_id,
                         environment_id=observation.target.identity.environment_id,
+                        mount_name=observation.target.mount_name,
                         actions=actions,
                     )
         except (LeaseLost, AuthorityRevoked):
@@ -370,6 +371,7 @@ class Executions(ToolExecutionRuntime):
                     request.caller,
                     thread_id=request.thread_id,
                     environment_id=target.identity.environment_id,
+                    mount_name=target.mount_name,
                     actions=request.control.actions,
                 )
         except (LeaseLost, AuthorityRevoked):

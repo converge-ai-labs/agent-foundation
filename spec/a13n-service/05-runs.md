@@ -458,7 +458,7 @@ tool_executions
 
 thread_execution_contexts
   thread_id PRIMARY KEY  organization_id  workspace_id
-  worker_id NULL  generation  sessions
+  worker_id NULL  generation
 
 thread_codeact
   thread_id PRIMARY KEY  values

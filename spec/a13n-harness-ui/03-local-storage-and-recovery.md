@@ -55,7 +55,7 @@ Saved display-history Run errors remain inspectable alongside their surrounding 
 
 Device definitions remain desired files in the accepted generation. Thread configuration stores binding selections and the normalized default; immutable Run compositions retain the exact captured Devices and working directories used for that admission. [Devices and Environment Bindings](04a-devices-and-environment-bindings.md) owns their semantics and binding-state identity.
 
-Online Device connections, EIP Sessions/generations, keepalive tasks and native process/output references remain process-local. Local-only selections have an empty added-binding collection and their local default. Storage upgrades preserve captured history and existing user data.
+Online Device connections and keepalive tasks remain process-local. Thread-owned Session binding heads persist the admitted configuration version, concrete Session descriptor and retirement state. Retained native Shell records persist exact Session/process identity separately from live handles. Local-only selections have an empty added-binding collection and their local default. Storage upgrades preserve captured history and existing user data.
 
 ## Child Inspection Results
 
@@ -127,6 +127,10 @@ Resource lookup rows are rebuildable projections of the accepted file generation
 One App serializes root admission per Thread and state changes per child execution. Separate local App processes can open the same store, but they do not share root receipts, active tasks, or control and do not take over one another's executions. Thread metadata and Thread configuration updates compare their independent expected integer versions; continuation, child checkpoint, accepted generation, and Environment state selection compare expected references. A mismatch fails explicitly and never overwrites the newer head.
 
 Harness UI does not use PID inspection, heartbeats, or time-based leases to infer whether another App is alive. Current execution ownership is process-local. Hard OS locks used for Thread file cleanup protect resource use only; they neither establish execution ownership nor authorize takeover.
+
+## Session-binding schema cutover
+
+The Session-as-Environment cutover requires all admitted environment work to settle, including retained Shell supervision, before every old App process stops. Migration clears legacy Session recovery hints instead of importing them into current binding heads. It preserves provider state, Thread files, immutable configuration/composition objects and history. The new normalization version accepts unchanged desired files as a new generation with nested Session configuration, leaving historical objects unchanged. Only new-version processes resume execution after migration; this cutover is outside the additive-upgrade behavior below.
 
 ## Compatible Upgrades Across App Versions
 

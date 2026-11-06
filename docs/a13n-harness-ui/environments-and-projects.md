@@ -297,6 +297,12 @@ Built-in local Sandbox, Envd, and Desktop enable sampling when started. For remo
 
 History lives in App memory and clears on restart, Device changes, or revocation. Waiting, disabled, stale, offline, and collection-limit states are explicit. Counter resets break rate baselines; missing/stalled samples leave gaps or show the previous value with its age.
 
+## Upgrade to Session-owned environments
+
+Finish or cancel and settle admitted environment work, including retained Shell tools, then stop every old App using the data root before upgrading. Start only the new version after migration. Provider state, Thread files and immutable history are preserved; old Session recovery hints are discarded rather than imported as new binding heads. New admissions use fresh Sessions and normalized configuration. Do not run mixed versions across this cutover.
+
+Within a Thread, directory bindings on the same Device share one Session and must select the same startup configuration. Their directories and allowed actions remain independent. Later Runs reuse the binding until its startup configuration changes or its Session is confirmed lost. An unfinished retained Shell must recover its original Session; it cannot move to a replacement.
+
 ## Custom Environment profiles
 
 Create a custom profile only when the built-in modes do not fit. Built-in IDs are reserved. A profile selects an installed Provider and a compatible Project adapter; it does not create a vendor resource or prove isolation.
@@ -329,18 +335,18 @@ id: environment-restricted-network
 name: Restricted files with native networking
 provider_key: local_envd
 provider_configuration:
-  launch:
-    sandbox: {mode: restricted, grants: []}
-    egress: {mode: inherit}
-  session: {}
+  session:
+    session:
+      sandbox: {mode: restricted, grants: []}
+      egress_mode: inherit
 adapter_key: a13n.local-envd-project-root
 adapter_configuration:
   project_access: read_write
 ```
 
-Select `environment-restricted-network` using the same validate/select/test steps. The adapter grants each captured Project root according to `project_access`; extra grants belong in `launch.sandbox.grants`.
+Select `environment-restricted-network` using the same validate/select/test steps. Under `provider_configuration`, the outer `session` contains the Environment configuration and the inner `session` contains Session startup policy. The adapter combines the captured Project grants and Thread file grants into one Session; extra grants belong in `session.session.sandbox.grants`.
 
-An explicit `launch` that omits `sandbox.full_disk_read` uses Envd's false default. On Windows, set it to true for the built-in broad-read policy; a profile omitting `launch` uses that Windows UI default. Linux and macOS reject true. To block networking, set `launch.egress.mode: deny` while keeping `sandbox.mode: restricted`. Controlled egress requires the privileged Linux backend plus `session.egress` destination/credential references. Compatible Session-policy changes reuse the daemon; launch-boundary changes prepare a different one.
+The explicit sandbox above defaults `full_disk_read` to false. On Windows, set it to true for broad reads; omitting the entire outer `session` selects the platform Sandbox default, including Windows broad reads. Linux and macOS reject true. To block networking, set `session.session.egress_mode: deny`. Controlled egress requires a privileged Linux launcher configured for controlled networking, plus `session.session.egress_mode: controlled` and `session.session.egress` destination/credential references. Session-policy changes replace the Thread's Session and reuse the daemon; deployment changes select a different daemon. Replacement requires admitted environment work to finish and otherwise reports a busy conflict.
 
 For adapter authors, `EnvironmentProjectAdapter.bind()` returns a Harness execution connector. If preparation observes new state before failing, raise `EnvironmentBindingError(message, state)` or `EnvironmentBindingCancelled(state)` from `a13n_harness_ui.extensions`; the Host publishes that state before propagating failure. Target management belongs to the adapter, not to lifecycle methods on the Harness execution definition.
 

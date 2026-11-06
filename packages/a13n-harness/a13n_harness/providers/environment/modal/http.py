@@ -8,7 +8,7 @@ from pydantic import SecretStr
 
 from a13n_harness.environment.attachments import EIPSessionBinding
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
-from a13n_harness.environment.session_recovery import EnvdSessionRecovery
+from a13n_harness.environment.session_recovery import EnvdSessionBorrower
 from a13n_harness.providers.environment.modal.shared import ModalReference, ModalState, execute_command, sdk_errors
 from a13n_harness.providers.environment.native.errors import failure
 from a13n_harness.providers.environment.remote_envd.configuration import (
@@ -51,7 +51,7 @@ class HttpReference(ModalReference):
 
 @asynccontextmanager
 async def http_session(
-    reference: ModalReference, *, session_recovery: EnvdSessionRecovery | None = None
+    reference: ModalReference, *, session_recovery: EnvdSessionBorrower | None = None
 ) -> AsyncGenerator[EIPSessionBinding]:
     try:
         reference.require_target()
@@ -110,7 +110,7 @@ async def http_session(
 
 
 def http_execution(
-    reference: ModalReference, *, session_recovery: EnvdSessionRecovery | None = None
+    reference: ModalReference, *, session_recovery: EnvdSessionBorrower | None = None
 ) -> RemoteEnvdExecution:
     reference.require_target()
     assert reference.state is not None

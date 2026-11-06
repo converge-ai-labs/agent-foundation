@@ -81,18 +81,16 @@ async def open_eip_environment(
     session_source: EIPSessionSource,
     execution_id: str,
     device_id: str,
-    path_style: eip.PathStyle,
     working_directory: str | None = None,
     required_methods: frozenset[str] = frozenset(),
-    egress: eip.EgressPolicy | None = None,
+    configuration: eip.SessionConfiguration | None = None,
     expected_boundary: EnvdBoundaryRequirement | None = None,
 ) -> AsyncGenerator[EIPEnvironmentSession]:
     """Open one provider-owned EIP session and expose semantic operation facets."""
     async with session_source.open_session(
         expected_device_id=device_id,
-        egress=egress,
+        configuration=configuration,
         expected_boundary=expected_boundary,
-        working_directory=working_directory,
         required_methods=required_methods
         | frozenset({"environment.describe", "environment.readiness", "session.close"}),
     ) as session:
@@ -103,7 +101,7 @@ async def open_eip_environment(
             )
         environment = EIPEnvironmentSession(
             session=session,
-            path_style=path_style,
+            working_directory=working_directory,
             provider_key=provider_key,
             environment_id=environment_id,
             execution_id=execution_id,
@@ -121,17 +119,17 @@ class EIPEnvironmentSession:
         self,
         *,
         session: EIPSession,
-        path_style: eip.PathStyle,
         provider_key: str,
         environment_id: str,
         execution_id: str,
         environment: dict[str, str] | None = None,
+        working_directory: str | None = None,
     ) -> None:
         self._session = session
         self._provider_key = provider_key
         self._environment_id = environment_id
         self._descriptor = _convert_descriptor(session.descriptor).model_copy(
-            update={"environment_case_sensitive": path_style != eip.PathStyle.WINDOWS}
+            update={"working_directory": working_directory or session.descriptor.working_directory}
         )
         self._generation = self._descriptor.generation
         methods = set(session.descriptor.available_methods)
@@ -140,6 +138,7 @@ class EIPEnvironmentSession:
             environment_id=environment_id,
             execution_id=execution_id,
             generation=self._generation,
+            working_directory=self._descriptor.working_directory,
         )
         outputs = EIPOutputRegistry(
             session=session,
@@ -254,6 +253,7 @@ def _convert_descriptor(descriptor: eip.SessionDescriptor) -> EnvironmentDescrip
     return EnvironmentDescriptor(
         generation=f"{descriptor.generation}:{descriptor.session_id}",
         execution_boundary=descriptor.boundary.model_dump(mode="json"),
+        environment_case_sensitive=descriptor.path_style != eip.PathStyle.WINDOWS,
         working_directory=descriptor.working_directory,
         operation_families=frozenset(families),
         permissions=EnvironmentPermissionSet(operations=frozenset(actions)),

@@ -59,9 +59,14 @@ client_environment_settings
   token_hash NULL  credential_version > 0  default_working_directory  permission_ceiling JSONB  description NULL
 
 thread_environments
-  thread_id  environment_id  organization_id  workspace_id  name  working_directory NULL  permission_ceiling JSONB  created_at
+  thread_id  environment_id  organization_id  workspace_id  name  session_binding
+  working_directory NULL  permission_ceiling JSONB  created_at
   PRIMARY KEY (thread_id, name)
-  UNIQUE (thread_id, environment_id)
+
+thread_session_bindings
+  thread_id  environment_id  name  organization_id  workspace_id
+  configuration JSONB  version  head JSONB NULL
+  PRIMARY KEY (thread_id, environment_id, name)
 ```
 
 A `reserved` managed instance has a durable identity and selected template/provider but no native target, operation, claim, failure, or renewal schedule. Reservation is not a queued create. A **managed** instance has a template and its provider. An **external HTTP target** has neither, nor a handle or provider identity, and holds the `device_id`, `endpoint` and `token` of the envd daemon it reaches ([external targets](#external-targets)). A **client environment** also has no provider or template; its registered device connects outbound to Control and its separate settings hold a connection-token hash ([client environments](#client-environments)). A target belongs to the principal that registered it (`owner_principal_id`); managed instances have no owner. The instance references its provider by `(workspace_id, provider_id)`, so the database refuses a provider of another workspace ([04](04-resources.md#provider-resources)), and identity columns never change.
@@ -262,11 +267,21 @@ Service includes Harness `FileContextCapability` for every agent, including inli
 
 Harness opens and closes Environment execution scopes, including on binding failure, cancellation, and replacement. Service marks activated instances used on completion; merely registering an unused mount does not update `last_used_at`. Frozen mounts retain active-use protection even before activation. Closing an Environment execution preserves the backing instance while applying the provider's declared Session/process cleanup; it does not select stop or delete.
 
-For Envd-backed execution, each Thread retains private Session recovery state independently of Run checkpoints. The binding identity includes the frozen mount and Run configuration, including endpoint policy. Matching successor Runs share that logical context; changed bindings, forks and async child Threads have independent contexts. External HTTP, client reverse-WebSocket and managed Envd routes use the same recovery contract. Native execution produces no Session state. Each Session-state publication discards bindings no longer referenced by the publishing Run, the Thread's continuation head, unfinished Runs, or unfinished retained tools. Idle history therefore remains bounded by those execution scopes rather than accumulating every configuration ever used by the Thread.
+For Envd-backed execution, a logical Session binding is identified by Thread, Environment instance and binding name. Directory views selecting the same binding share one Session; separate binding names select independent Sessions on the same Device. Model, prompt, route name and view working directory do not partition Session identity. Forks and async child Threads have independent bindings. External HTTP, client reverse-WebSocket and managed Envd routes use the same recovery contract. Native execution produces no Session state.
+
+Each binding owns its desired startup configuration and one private admitted Session head, independently of Run checkpoints. A desired edit changes the binding configuration and Thread ETag; admission freezes the selected configuration and Session version into every directory view atomically. Changed startup configuration advances the Session version only when no admitted Run or unfinished retained tool uses that binding. Busy replacement fails with `environment_busy`. A captured positive version must still be current; it cannot roll the head backward. Returning from configuration A through B to A advances the version again and never revives the retired A Session.
+
+The binding retains its monotonic version and exact Session recovery descriptor when its last directory view is removed. Its head is stored and updated independently: admission and Session checkpoints read only the selected bindings, without loading or rewriting the Thread's historical binding collection. The first borrower of a new version durably retires the previous Session before opening its successor. An uncertain close preserves that retiring descriptor for retry. Endpoint and credential edits keep the registered Device identity and do not create a new logical binding.
 
 The Thread execution context's worker ownership generation fences state publication. Existing attempt and retained-tool leases keep overlapping work colocated; idle contexts need no heartbeat. A live source or borrower owns the process-local shared connection. Releasing the final borrower detaches that connection while preserving the recoverable Session. A replacement worker attaches with the durable Session descriptor and advances the Envd owner epoch; stale owners cannot perform operations or close it. Context state remains outside portable `EnvironmentState` and Harness checkpoints.
 
-Ordinary new work may open a fresh Session when the saved Session is definitively unavailable; authentication, transport and protocol failures remain failures. Recovery of an already admitted [native Shell](05-runs.md#native-shell-recovery) requires its exact original Session and process and never substitutes fresh work. Session attachment alone does not restore standalone Run-local process references. Providers use the shared [transport-neutral Session acquisition contract](../a13n-harness/08b-environment-providers.md#envd-session-recovery). Client environments use EIP Sessions through the Control-owned carrier and Service routing described below.
+Ordinary new work may open a fresh Session when the saved Session is definitively unavailable; authentication, transport and protocol failures remain failures. Recovery of an already admitted [native Shell](05-runs.md#native-shell-recovery) requires its exact original Session and process and never substitutes fresh work. Session attachment alone does not restore standalone Run-local process references. Providers use the shared [transport-neutral Session acquisition contract](../a13n-harness/08b-environment-providers.md#envd-session-continuity). Client environments use EIP Sessions through the Control-owned carrier and Service routing described below.
+
+### Session-binding schema cutover
+
+The Session-binding migration requires a coordinated stop. All admitted environment work must settle before migration: Runs with environment mounts must leave `accepted`, `running` and `waiting`, and retained environment or Shell tool executions must finish. Worker drain or handoff alone does not satisfy this condition. Old Controls and Workers stop before migration, and only the new version restarts afterward.
+
+Migration creates named binding configuration without importing legacy Session hints as admitted heads, clears obsolete recovery hints and advances context ownership generation. Environment registrations, provider state, files, historical Run captures and completed results remain intact. The first new admission creates a fresh Session. Mixed-version execution across this cutover is unsupported.
 
 ## External targets
 

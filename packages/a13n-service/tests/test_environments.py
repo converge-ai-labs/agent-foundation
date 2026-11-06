@@ -231,6 +231,8 @@ async def test_a_fork_shares_its_origins_mounts_and_adds_its_own(env, scripted_m
         json={
             "name": "data",
             "environment_id": first,
+            "session_binding": "analysis",
+            "session_configuration": {"working_directory": "/analysis"},
             "permission_ceiling": {"operations": ["environment.computer.observe"]},
         },
         headers=runs_kit.if_match(thread),
@@ -254,6 +256,18 @@ async def test_a_fork_shares_its_origins_mounts_and_adds_its_own(env, scripted_m
     assert shared.json()["run"]["environment_mounts"][0]["permission_ceiling"] == {
         "operations": ["environment.computer.observe"]
     }
+    shared_mount = shared.json()["run"]["environment_mounts"][0]
+    assert shared_mount["session_binding"] == "analysis"
+    assert shared_mount["session_configuration"]["working_directory"] == "/analysis"
+    assert shared_mount["session_version"] == 1
+    from a13n_service.runs.environments.tables import ThreadSessionBindingRow
+
+    async with transaction(env.runtime.storage) as db:
+        original = await db.get_one(ThreadSessionBindingRow, (thread["id"], first, "analysis"))
+        copied = await db.get_one(ThreadSessionBindingRow, (shared.json()["thread"]["id"], first, "analysis"))
+        assert original.head is None
+        assert copied.configuration == original.configuration
+        assert copied.head["session"] is None
     primary = [{"name": "workspace", "environment_id": second}]
     assert mounted(await fork("fresh", fresh_environments=True, environments=primary)) == [("workspace", second)]
     clash = await fork("clash", environments=[{"name": "data", "environment_id": second}])
@@ -2034,3 +2048,20 @@ async def test_retained_failure_does_not_starve_the_maintenance_batch(env):
     await maintain_environments(limited, owner="delete-next")
     assert (await environment(env, other["id"]))["status"] == "deleted"
     assert (await environment(env, failed["id"]))["status"] == "creating"
+
+
+async def test_native_transport_rejects_session_configuration(env):
+    from a13n_service.infra.errors import ServiceError
+    from a13n_service.runs.environments.schemas import SessionConfiguration
+
+    await start(env)
+    [lease] = await claim_run(env.runtime, worker_id="worker-native-session", worker_build="test", limit=1)
+    # The fake provider uses the ordinary native execution mode. Defaults remain valid.
+    async with _open(env, lease) as opened:
+        mount = opened["workspace"].source.mount
+    configured = mount.model_copy(update={"session_configuration": SessionConfiguration(working_directory="/work")})
+    with pytest.raises(ServiceError) as refused:
+        async with _open(env, lease, [configured]):
+            pytest.fail("Native transport silently ignored Session configuration")
+    assert refused.value.code == "conflict"
+    assert refused.value.details["reason"] == "session_configuration_unsupported"
