@@ -15,6 +15,10 @@ from a13n_harness.codeact.config import CodeActConfig
 from a13n_harness.codeact.executor import AdmitFn, DispatchFn, MontyExecutor, ReleaseFn
 
 
+class InlineSessionBusyError(RuntimeError):
+    """An overlapping caller was rejected without changing the active session."""
+
+
 @dataclass
 class CodeActExecution:
     """Raw result from one sandbox feed."""
@@ -83,7 +87,7 @@ class CodeActRunState:
         finish: Callable[[CodeActExecution], Awaitable[Any]],
     ) -> Any:
         if self._inline_lock.locked():
-            raise RuntimeError("Another run_code call already owns the inline session")
+            raise InlineSessionBusyError("Another run_code call already owns the inline session")
         async with self._inline_lock:
             try:
                 if restart:

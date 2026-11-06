@@ -36,10 +36,11 @@ from a13n_harness._review_context import record_approval_denials
 from a13n_harness.codeact.config import CodeActConfig
 from a13n_harness.codeact.executor import is_sandbox_panic
 from a13n_harness.codeact.programs import (
+    ProgramValidationError,
     load_program_source,
     program_inputs,
 )
-from a13n_harness.codeact.runtime import CodeActExecution, CodeActRunState
+from a13n_harness.codeact.runtime import CodeActExecution, CodeActRunState, InlineSessionBusyError
 from a13n_harness.codeact.values import bounded_json_size
 from a13n_harness.context import AgentContext
 from a13n_harness.environment import EnvironmentError
@@ -213,6 +214,20 @@ class _ExecutionBudget:
     cumulative_bytes: int = 0
     records: list[_CallRecord] = field(default_factory=list)
     supplemental: list[tuple[int, list[UserContent]]] = field(default_factory=list)
+    nested_errors: list[dict[str, Any]] = field(default_factory=list)
+
+    def note_error(self, ordinal: int, boundary: str, exc: Exception | ToolDenied, message: str) -> None:
+        # These are observations, including errors caught by sandbox code, not an
+        # inferred causal chain. Keep only a small bounded prefix per execution.
+        if len(self.nested_errors) < 4:
+            self.nested_errors.append(
+                {
+                    "ordinal": ordinal,
+                    "boundary": boundary,
+                    "type": _truncate_utf8(type(exc).__name__, 128),
+                    "message": _truncate_utf8(message, 256),
+                }
+            )
 
     async def admit(self) -> int:
         async with self.lock:
@@ -364,6 +379,12 @@ class CodeActToolset(WrapperToolset[AgentContext]):
         try:
             bounded_json_size(inputs or {}, self.config.max_output_bytes)
             program = await load_program_source(ctx, path, max_source_bytes=self.config.max_source_bytes)
+        except ProgramValidationError as exc:
+            error: dict[str, Any] = {"type": type(exc).__name__, "message": str(exc), "boundary": "source"}
+            if exc.line is not None:
+                error["line"] = exc.line
+                error["column"] = exc.column
+            raise ToolFailed(json.dumps({"error": error})) from None
         except EnvironmentError as exc:
             raise ToolFailed(
                 f"CodeAct program could not be read ({exc.code}); choose a readable .codeact.py file "
@@ -422,6 +443,14 @@ class CodeActToolset(WrapperToolset[AgentContext]):
             return await budget.admit()
 
         async def dispatch(sandbox_name: str, kwargs: dict[str, Any], ordinal: int) -> Any:
+            try:
+                return await dispatch_tool(sandbox_name, kwargs, ordinal)
+            except Exception as exc:
+                if not any(item["ordinal"] == ordinal for item in budget.nested_errors):
+                    budget.note_error(ordinal, "arguments", exc, "Nested call rejected before dispatch")
+                raise
+
+        async def dispatch_tool(sandbox_name: str, kwargs: dict[str, Any], ordinal: int) -> Any:
             canonical_name = catalog.sandbox_to_canonical.get(sandbox_name, sandbox_name)
             prepared = catalog.prepared_tools[canonical_name]
             if proxy_control(prepared.tool_def) == "call":
@@ -468,6 +497,7 @@ class CodeActToolset(WrapperToolset[AgentContext]):
             from a13n_harness.tools._output import _NESTED_TOOL_EXECUTION
 
             denial: ToolDenied | None = None
+            nested_boundary = "tool_execution"
             nested_token = _NESTED_TOOL_EXECUTION.set(True)
             try:
                 result = await manager.handle_call(
@@ -481,6 +511,7 @@ class CodeActToolset(WrapperToolset[AgentContext]):
                     record.outcome = "deferred"
                     record.error_type = type(result).__name__
                 else:
+                    nested_boundary = "tool_output"
                     result = await _unwrap_tool_return(result, ordinal=ordinal, budget=budget)
                     result_bytes = bounded_json_size(result, self.config.max_output_bytes)
                     await budget.add_bytes(result_bytes, label="nested result")
@@ -489,11 +520,15 @@ class CodeActToolset(WrapperToolset[AgentContext]):
                     return result
             except ValidationError as exc:
                 if nested_started is None:
-                    raise TypeError(_format_validation_error(exc)) from None
+                    message = _format_validation_error(exc)
+                    budget.note_error(ordinal, "arguments", exc, message)
+                    raise TypeError(message) from None
+                budget.note_error(ordinal, nested_boundary, exc, "Nested tool execution failed")
                 record.outcome = "failed"
                 record.error_type = type(exc).__name__
                 raise RuntimeError(f"Nested tool {canonical_name!r} failed with ValidationError") from None
             except (ApprovalRequired, CallDeferred) as exc:
+                budget.note_error(ordinal, nested_boundary, exc, "Nested call requires deferred host interaction")
                 record.outcome = "deferred"
                 record.error_type = type(exc).__name__
                 raise RuntimeError(f"Tool {canonical_name!r} requires unresolved deferred host interaction") from None
@@ -502,6 +537,7 @@ class CodeActToolset(WrapperToolset[AgentContext]):
                 record.error_type = type(exc).__name__
                 raise
             except Exception as exc:
+                budget.note_error(ordinal, nested_boundary, exc, "Nested tool execution or output validation failed")
                 record.outcome = "failed"
                 record.error_type = type(exc).__name__
                 raise RuntimeError(f"Nested tool {canonical_name!r} failed with {type(exc).__name__}") from None
@@ -522,8 +558,29 @@ class CodeActToolset(WrapperToolset[AgentContext]):
                         ),
                     )
             if denial is not None:
+                budget.note_error(ordinal, nested_boundary, denial, "Nested call was denied")
                 raise RuntimeError(f"Tool {canonical_name!r} was denied: {denial.message}")
             raise AssertionError("CodeAct nested dispatch produced no result")
+
+        boundary = "inputs" if inputs is not None else "sandbox"
+
+        async def finish(execution: CodeActExecution) -> ToolReturn:
+            nonlocal boundary
+            boundary = "final_output"
+            return await self._success_result(execution, budget=budget)
+
+        def fail(exc: BaseException, message: str) -> Any:
+            inline_state = (
+                "unchanged" if source_path is not None or isinstance(exc, InlineSessionBusyError) else "reset"
+            )
+            return self._fail_execution(
+                exc,
+                message,
+                execution_id,
+                budget,
+                boundary="source" if isinstance(exc, MontySyntaxError) else boundary,
+                inline_state=inline_state,
+            )
 
         sequential_names = {name for name, definition in catalog.definitions.items() if definition.sequential}
         global_sequential = manager.get_parallel_execution_mode() == "sequential"
@@ -531,6 +588,7 @@ class CodeActToolset(WrapperToolset[AgentContext]):
             if inputs is not None:
                 input_size = bounded_json_size(inputs, self.config.max_output_bytes)
                 await budget.add_bytes(input_size, label="program inputs")
+            boundary = "sandbox"
             async with asyncio.timeout(self.config.timeout_seconds):
                 if source_path is None:
                     result = await self.state.execute_inline(
@@ -542,7 +600,7 @@ class CodeActToolset(WrapperToolset[AgentContext]):
                         sequential_names=sequential_names,
                         global_sequential=global_sequential,
                         restart=restart,
-                        finish=partial(self._success_result, budget=budget),
+                        finish=finish,
                     )
                 else:
                     execution = await self.state.execute_program(
@@ -556,7 +614,7 @@ class CodeActToolset(WrapperToolset[AgentContext]):
                         sequential_names=sequential_names,
                         global_sequential=global_sequential,
                     )
-                    result = await self._success_result(execution, budget=budget)
+                    result = await finish(execution)
             status = "completed"
             return result
         except asyncio.CancelledError as exc:
@@ -566,28 +624,24 @@ class CodeActToolset(WrapperToolset[AgentContext]):
         except TimeoutError as exc:
             status = "timed_out"
             error_type = type(exc).__name__
-            return self._fail_execution(exc, "CodeAct execution exceeded its timeout", execution_id, budget)
+            return fail(exc, "CodeAct execution exceeded its timeout")
         except (MontySyntaxError, MontyTypingError) as exc:
             error_type = type(exc).__name__
-            return self._fail_execution(
-                exc, "CodeAct source was rejected by the restricted sandbox", execution_id, budget
-            )
+            return fail(exc, "CodeAct source was rejected by the restricted sandbox")
         except (MontyCrashedError, MontyConversionError) as exc:
             error_type = type(exc).__name__
-            return self._fail_execution(exc, "CodeAct sandbox failed and inline state was reset", execution_id, budget)
+            return fail(exc, "CodeAct sandbox failed")
         except MontyRuntimeError as exc:
             error_type = type(exc).__name__
-            return self._fail_execution(exc, "CodeAct source failed in the restricted sandbox", execution_id, budget)
+            return fail(exc, "CodeAct source failed in the restricted sandbox")
         except Exception as exc:
             error_type = type(exc).__name__
-            return self._fail_execution(
-                exc, f"CodeAct execution failed with {type(exc).__name__}", execution_id, budget
-            )
+            return fail(exc, f"CodeAct execution failed with {type(exc).__name__}")
         except BaseException as exc:
             error_type = type(exc).__name__
             if not is_sandbox_panic(exc):
                 raise
-            return self._fail_execution(exc, "CodeAct sandbox aborted and inline state was reset", execution_id, budget)
+            return fail(exc, "CodeAct sandbox aborted")
         finally:
             await _emit(
                 ctx,
@@ -615,7 +669,15 @@ class CodeActToolset(WrapperToolset[AgentContext]):
         return ToolReturn(return_value=value, content=budget.ordered_supplemental() or None)
 
     @staticmethod
-    def _fail_execution(exc: BaseException, message: str, execution_id: str, budget: _ExecutionBudget) -> Any:
+    def _fail_execution(
+        exc: BaseException,
+        message: str,
+        execution_id: str,
+        budget: _ExecutionBudget,
+        *,
+        boundary: str = "sandbox",
+        inline_state: str | None = None,
+    ) -> Any:
         calls: list[dict[str, Any]] = []
         metadata: dict[str, Any] = {
             "contract_version": _CODEACT_CONTRACT_VERSION,
@@ -635,7 +697,32 @@ class CodeActToolset(WrapperToolset[AgentContext]):
                 "message": _truncate_utf8(message, 256),
             },
         }
+        details: dict[str, Any] = {"boundary": boundary}
+        if inline_state is not None:
+            details["inline_state"] = inline_state
+        if isinstance(exc, (MontySyntaxError, MontyRuntimeError)):
+            details["exception_type"] = _truncate_utf8(type(exc.exception()).__name__, 128)
+            frames = exc.traceback()
+            if frames:
+                frame = frames[-1]
+                details["location"] = {"line": frame.line, "column": frame.column}
         encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+        for key, value in details.items():
+            payload["error"][key] = value
+            candidate = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+            if len(candidate.encode("utf-8")) > 3072:
+                del payload["error"][key]
+            else:
+                encoded = candidate
+        observed: list[dict[str, Any]] = []
+        for item in sorted(budget.nested_errors, key=lambda item: item["ordinal"]):
+            observed.append(item)
+            payload["error"]["nested_errors"] = observed
+            candidate = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+            if len(candidate.encode("utf-8")) > 3072:
+                observed.pop()
+                break
+            encoded = candidate
         for record in sorted(budget.records, key=lambda record: record.ordinal):
             calls.append(
                 {
@@ -831,13 +918,17 @@ def _format_validation_error(exc: ValidationError) -> str:
     lines = ["Nested tool argument validation failed:"]
     for error in exc.errors(include_url=False, include_context=False, include_input=False):
         location = ".".join(str(part) for part in error.get("loc", ())) or "arguments"
-        lines.append(f"- {location}: [{error.get('type', 'validation_error')}]")
-    return "\n".join(lines)
+        lines.append(
+            f"- {_truncate_utf8(location, 128)}: [{_truncate_utf8(error.get('type', 'validation_error'), 64)}]"
+        )
+        if len(lines) >= 5:
+            break
+    return _truncate_utf8("\n".join(lines), 256)
 
 
 def _truncate_utf8(value: str, limit: int) -> str:
-    raw = value.encode("utf-8")
-    return value if len(raw) <= limit else raw[:limit].decode("utf-8", errors="ignore")
+    raw = value[:limit].encode("utf-8", errors="replace")
+    return raw[:limit].decode("utf-8", errors="ignore")
 
 
 async def _emit(ctx: RunContext[AgentContext], payload: Any) -> None:

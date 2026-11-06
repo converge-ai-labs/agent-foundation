@@ -297,6 +297,8 @@ A nested call goes through the current final `ToolManager`, preserving argument 
 
 Source-validation errors, unavailable functions, sandbox errors, and resource-limit failures return failed tool results so the Agent can revise its code. They do not consume the runner's Model-retry budget. Outer argument-schema validation and runner-isolation violations use their normal retry policy.
 
+Failure feedback includes the underlying sandbox exception type and line/column when available. Nested argument failures retain bounded field paths and validation codes, without input values. The 4 KiB diagnostic envelope also distinguishes argument, tool-execution, and output failures and reports whether inline state was reset. Nested error observations may include errors caught by the program; they are not an automatic causal explanation of the final failure.
+
 Treat a failed program as potentially partial work. Monty resolves names as it executes, so a later unavailable call can fail after an earlier tool succeeded. Failure metadata records side-effect uncertainty after a nested call starts. Completed effects and explicit stored writes are not rolled back or automatically replayed; reconcile them before rerunning the program.
 
 ### Large Tool Collections with ToolSearch
@@ -334,7 +336,7 @@ With that file at `/workspace/double.codeact.py`, the Model can call `run_progra
 
 The result is `12`, also saved under `math.result`. The Host must bind the readable Environment source; use [Environments](environments.md) for that setup. This file access uses the Host's Environment interface and does not require exposing file tools to the Model.
 
-Every program invocation reads the source again and starts a fresh interpreter. The file must end in `.codeact.py` and define exactly one undecorated `async def main(inputs)`. Module scope permits supported imports, declarations, docstrings, and side-effect-free constants. Put execution inside `main`. Inputs are JSON data, and the path grants no additional tool eligibility.
+Every program invocation reads the source again and starts a fresh interpreter. The file must end in `.codeact.py` and define exactly one undecorated `async def main(inputs)`. Monty-supported module initialization, dataclasses, helper declarations, and annotations are allowed. Initialization runs before `main` on every invocation, under the same tool policy and execution limits. Keep the primary workflow in `main`; module-level tool effects are not rolled back if it later fails. Inputs are JSON data, and the path grants no additional tool eligibility.
 
 To lower the execution budget, replace `CodeActCapability()` in the builder with a configured instance:
 
