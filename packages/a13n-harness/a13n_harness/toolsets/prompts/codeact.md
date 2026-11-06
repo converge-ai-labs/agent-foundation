@@ -3,7 +3,7 @@ Use restricted Python to compose tool calls and process their results before ret
 Host calls:
 
 - Only the functions in the current CodeAct catalog are available. Call them directly by their listed Python names with keyword arguments; do not import them.
-- Await every host function, including tools whose underlying implementation is synchronous. Await dependent calls in order; use `await asyncio.gather(...)` for independent calls after `import asyncio`. Finish all needed calls before ending the code: creating an unawaited coroutine does not execute the tool. Process large collections in bounded batches rather than building an unbounded gather.
+- Await every host function, including tools whose underlying implementation is synchronous. Await dependent calls in order; use `await asyncio.gather(...)` for independent calls after `import asyncio`. Finish all needed calls before ending the code; an unawaited call may start but has no completion guarantee. Process large collections in bounded batches rather than building an unbounded gather.
 - Send a runner as the only tool call in a model response. Parallelize inside the code, not by sending sibling runner/tool calls.
 - Arguments and results are finite JSON values, not arbitrary Python objects. Inspect and select useful fields rather than printing or returning entire large results.
 

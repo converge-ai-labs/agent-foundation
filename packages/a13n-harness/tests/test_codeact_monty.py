@@ -196,7 +196,7 @@ async def test_nested_failure_diagnostics_separate_arguments_execution_and_outpu
     failures = [json.loads(part.content) for part in seen]
     arguments, execution, output = [payload["error"]["nested_errors"][0] for payload in failures]
     assert arguments["boundary"] == "arguments"
-    assert "values.0" in arguments["message"]
+    assert "values:" in arguments["message"]
     assert "int_parsing" in arguments["message"]
     assert failures[0]["codeact"]["tool_call_count"] == 0
     assert execution["boundary"] == "tool_execution"
@@ -206,22 +206,50 @@ async def test_nested_failure_diagnostics_separate_arguments_execution_and_outpu
     assert all("private-" not in part.content for part in seen)
 
 
+@pytest.mark.parametrize("catch_error", [False, True])
+@pytest.mark.parametrize(
+    "call",
+    [
+        'await checked(values={"private-key-secret": "private-value"})',
+        'await checked(values={}, **{"private-argument": 1})',
+    ],
+)
+async def test_validation_diagnostics_omit_caller_controlled_locations(call: str, catch_error: bool) -> None:
+    invoked = []
+
+    def checked(values: dict[str, int]) -> dict[str, int]:
+        invoked.append(True)
+        return values
+
+    source = f"try:\n    {call}\nexcept TypeError:\n    pass\n1 / 0" if catch_error else call
+    _, seen, _ = await _run([_code(source)], capabilities=(_codeact_tools(checked, allowed=("checked",)),))
+    payload = json.loads(seen[0].content)
+    error = payload["error"]["nested_errors"][0]
+    assert error["boundary"] == "arguments"
+    assert "validation failed" in error["message"]
+    assert "private-" not in seen[0].content
+    assert payload["codeact"]["tool_call_count"] == 0
+    assert invoked == []
+    if catch_error:
+        assert payload["error"]["exception_type"] == "ZeroDivisionError"
+
+
 async def test_final_output_failure_is_labeled_and_resets_bindings() -> None:
     _, seen, _ = await _run([_code('from decimal import Decimal\nvalue = 3\nDecimal("0.1")'), _code("value")])
     assert json.loads(seen[0].content)["error"]["boundary"] == "final_output"
     assert json.loads(seen[1].content)["error"]["exception_type"] == "NameError"
 
 
-async def test_unawaited_host_coroutine_does_not_execute() -> None:
+async def test_awaited_host_call_returns_its_completed_result() -> None:
     invoked = []
 
     async def record() -> int:
         invoked.append(True)
         return 7
 
-    _, seen, _ = await _run([_code("record()\n42")], capabilities=(_codeact_tools(record, allowed=("record",)),))
-    assert seen[0].content == 42
-    assert invoked == []
+    _, seen, _ = await _run([_code("await record()")], capabilities=(_codeact_tools(record, allowed=("record",)),))
+    assert seen[0].content == 7
+    assert invoked == [True]
 
 
 async def test_inplace_list_and_deque_operations_preserve_aliases_across_feeds() -> None:

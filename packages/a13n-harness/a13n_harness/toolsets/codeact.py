@@ -520,7 +520,7 @@ class CodeActToolset(WrapperToolset[AgentContext]):
                     return result
             except ValidationError as exc:
                 if nested_started is None:
-                    message = _format_validation_error(exc)
+                    message = _format_validation_error(exc, prepared.tool_def.parameters_json_schema)
                     budget.note_error(ordinal, "arguments", exc, message)
                     raise TypeError(message) from None
                 budget.note_error(ordinal, nested_boundary, exc, "Nested tool execution failed")
@@ -914,10 +914,15 @@ def _bounded_content_size(value: Sequence[UserContent], limit: int) -> int:
     return bounded_json_size(projected, limit, allow_binary=True)
 
 
-def _format_validation_error(exc: ValidationError) -> str:
+def _format_validation_error(exc: ValidationError, schema: dict[str, Any]) -> str:
     lines = ["Nested tool argument validation failed:"]
+    argument_names = schema.get("properties", {})
     for error in exc.errors(include_url=False, include_context=False, include_input=False):
-        location = ".".join(str(part) for part in error.get("loc", ())) or "arguments"
+        # Deeper locations can contain caller-controlled dictionary keys or union tags.
+        # Only retain argument names declared by the prepared tool schema.
+        path = error.get("loc", ())
+        root = path[0] if path else None
+        location = root if isinstance(root, str) and root in argument_names else "arguments"
         lines.append(
             f"- {_truncate_utf8(location, 128)}: [{_truncate_utf8(error.get('type', 'validation_error'), 64)}]"
         )
