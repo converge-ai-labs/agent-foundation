@@ -117,6 +117,9 @@ async def test_state_owner_rejected_and_concurrent_updates_preserve_previous_val
         "async def main(inputs): pass\nasync def main(inputs): pass",
         "__a13n_codeact_inputs__ = {}\nasync def main(inputs): pass",
         "class __a13n_codeact_result__: pass\nasync def main(inputs): pass",
+        "match 1:\n    case __a13n_codeact_inputs__: pass\nasync def main(inputs): pass",
+        "match []:\n    case [*__a13n_codeact_result__]: pass\nasync def main(inputs): pass",
+        "match {}:\n    case {**__a13n_codeact_inputs__}: pass\nasync def main(inputs): pass",
     ],
 )
 def test_program_entrypoint_and_runtime_names_remain_checked(source: str) -> None:

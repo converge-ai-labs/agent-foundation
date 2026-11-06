@@ -109,6 +109,10 @@ def validate_program_source(source: str) -> None:
             names = (node.name,)
         elif isinstance(node, (ast.Global, ast.Nonlocal)):
             names = tuple(node.names)
+        elif isinstance(node, (ast.MatchAs, ast.MatchStar)) and node.name is not None:
+            names = (node.name,)
+        elif isinstance(node, ast.MatchMapping) and node.rest is not None:
+            names = (node.rest,)
         if _RESERVED_NAMES.intersection(names):
             raise ProgramValidationError("Program uses a reserved CodeAct runtime name")
 
