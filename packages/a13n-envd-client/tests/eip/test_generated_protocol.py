@@ -160,7 +160,7 @@ def test_monitoring_inventory_bounds_apply_to_models_and_wire(model, field, maxi
 def test_shared_golden_values_round_trip_canonically() -> None:
     fixture = json.loads(GOLDEN_PATH.read_text(encoding="utf-8"))
     initialize = next(case for case in fixture["cases"] if case["type"] == "InitializeParams")
-    assert initialize["value"]["supported_protocol_versions"] == ["0.4"]
+    assert "supported_protocol_versions" not in initialize["value"]
     for case in fixture["cases"]:
         model_type = MODEL_TYPES[case["type"]]
         encoded_fixture = json.dumps(case["value"], separators=(",", ":"), sort_keys=True)

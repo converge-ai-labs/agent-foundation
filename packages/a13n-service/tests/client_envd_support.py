@@ -239,7 +239,6 @@ async def check_wrong_device(service, origin, identity):
                     "jsonrpc": "2.0",
                     "id": request["id"],
                     "result": {
-                        "protocol_version": request["params"]["supported_protocol_versions"][0],
                         "server": {"name": "a13n-envd", "version": "0.0.0"},
                         "descriptor": descriptor.model_dump(mode="json"),
                     },

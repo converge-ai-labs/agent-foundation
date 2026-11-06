@@ -18,7 +18,6 @@ These conceptual shapes are realized by the IDL:
 
 ```python
 class InitializeParams(BaseModel):
-    supported_protocol_versions: tuple[str, ...]
     client: EIPClientInfo
     expected_device_id: str | None
 
@@ -39,7 +38,6 @@ class DeviceDescriptor(BaseModel):
 
 
 class InitializeResult(BaseModel):
-    protocol_version: str
     server: EIPServerInfo
     descriptor: DeviceDescriptor
 
@@ -47,7 +45,6 @@ class InitializeResult(BaseModel):
 class SessionOpenParams(BaseModel):
     expected_device_id: str
     expected_generation: int
-    protocol_version: str
     working_directory: str | None = None
     required_methods: tuple[str, ...]
     egress: EgressPolicy | None = None
@@ -73,9 +70,9 @@ class SessionOpenResult(BaseModel):
     descriptor: SessionDescriptor
 ```
 
-`initialize` verifies the Device and negotiates protocol without creating a Session. A null expected identity is for explicit trusted registration only. An unexpected Device ID returns `protocol_incompatible` (-32003) with `data.safe_detail` set to `device_id_mismatch` and the message `Check the environment and use its registered Device ID with --device-id.` `device.describe` returns the current Device descriptor, including basic system information. Optional `device.metrics` reads a cached Device sample as defined by [resource monitoring](11-resource-monitoring.md). `directory.list` provides optional [directory discovery](04-resource-operations.md#directory-discovery) without a Session.
+`initialize` verifies the Device and returns its descriptor without creating a Session. Initialization and Session open carry no protocol version or version negotiation. A null expected identity is for explicit trusted registration only. An unexpected Device ID returns `protocol_incompatible` (-32003) with `data.safe_detail` set to `device_id_mismatch` and the message `Check the environment and use its registered Device ID with --device-id.` `device.describe` returns the current Device descriptor, including basic system information. Optional `device.metrics` reads a cached Device sample as defined by [resource monitoring](11-resource-monitoring.md). `directory.list` provides optional [directory discovery](04-resource-operations.md#directory-discovery) without a Session.
 
-`session.open` checks the observed identity/generation/version and required methods, resolves its working directory and reserves one Session. Omitted/null `working_directory` selects the advertised Device default; an explicit path overrides it. Missing or inaccessible directories fail without creation or fallback. The result contains the exact resolved working directory, immutable for that Session. A working directory is not a filesystem access boundary.
+`session.open` checks the observed identity/generation and required methods, resolves its working directory and reserves one Session. Omitted/null `working_directory` selects the advertised Device default; an explicit path overrides it. Missing or inaccessible directories fail without creation or fallback. The result contains the exact resolved working directory, immutable for that Session. A working directory is not a filesystem access boundary.
 
 The Host selects folders within the Device's immutable execution boundary. Cwd validation, directory discovery, commands and file operations use the same grants and identity. Device and Session descriptors expose `boundary`; Session publication follows successful worker preparation. Controlled Devices require explicit `egress.destinations` on Session open; inherit and deny reject Session policy. The [execution contract](07-execution-isolation.md) owns the tagged policies and descriptor digest. `required_methods` is a compatibility assertion, not a grant. Host/Harness tool policy controls what the model may invoke. Limits describe actual finite operation capacity, not a separate security policy.
 
@@ -202,6 +199,6 @@ Expired/collected selectors return invalid/not-found or Session-expired errors; 
 
 The client never automatically replays possibly dispatched work after carrier loss, recreates it in another Session or chooses another operation ID to hide ambiguity. Exact retained same-Session replay is the only replay facility. Process inspect/wait, receipt lookup and output reads provide explicit bounded observation.
 
-EIP 0.4 requires binary profile 1, Session addressing and owner epochs. Other protocol versions and profiles fail negotiation.
+EIP uses binary profile 1, Session addressing and owner epochs. Peers do not negotiate or compare EIP versions. Cross-release interoperability is best effort through the actual schemas and advertised methods; there are no legacy protocol branches or downgrade retries. Invalid fields, unavailable required methods and unsupported binary frame profiles fail at their ordinary decoding or admission boundary.
 
 `egress.update` is the ledger-external Session control for atomic policy and secret updates. The [egress contract](07-execution-isolation.md#controlled-session-egress) owns revision, injection and isolation semantics; generated IDL owns its wire fields.

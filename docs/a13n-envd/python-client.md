@@ -17,7 +17,7 @@ uv add a13n-envd-client
 
 The client and native daemon share an Envd release version. Upgrade them together, including the daemon in custom images and remote endpoints. Recreate environments that still retain an older image. For source examples, use the repository lockfile and matching source daemon.
 
-Protocol negotiation uses a separate wire identity. This source uses EIP `0.4`; peers offering only older protocol versions fail negotiation. The generated Python namespace remains `eip.v1`, and the binary data-frame profile remains `1`. Harness, Harness UI and Service require client `>=0.6.0,<0.7.0` for publication.
+Initialization does not negotiate or compare protocol versions. Cross-release interoperability is best effort through the actual schemas and advertised methods, without legacy protocol branches. The generated Python namespace remains `eip.v1`, and the binary data-frame profile remains `1`. Harness, Harness UI and Service require client `>=0.6.0,<0.7.0` for publication.
 
 ## Connect to an existing HTTP daemon
 
@@ -53,7 +53,7 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-The example initializes the Device, describes its default directory, and opens a Session there. Initialization negotiates the protocol and checks identity without opening a Session. `open_session()` creates an independent fixed-cwd scope and checks readiness before returning.
+The example initializes the Device, describes its default directory, and opens a Session there. Initialization checks identity and reads the Device descriptor without opening a Session. `open_session()` creates an independent fixed-cwd scope and checks readiness before returning.
 
 Exiting the inner context closes that Session. Exiting the Device context closes its owned Sessions and transport. The external daemon and Device files remain available to their Host owner.
 

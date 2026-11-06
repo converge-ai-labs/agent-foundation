@@ -29,7 +29,6 @@ description: 为每个会话设置目标策略，通过 broker 注入 HTTPS 凭�
 {
   "expected_device_id": "device-example",
   "expected_generation": 123,
-  "protocol_version": "0.4",
   "working_directory": "/workspace",
   "egress": {
     "destinations": {"mode": "allowlist", "hosts": ["api.github.com"]},

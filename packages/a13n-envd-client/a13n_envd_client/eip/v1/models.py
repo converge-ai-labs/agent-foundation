@@ -105,7 +105,6 @@ Base64Unpadded = Annotated[
     Field(json_schema_extra={"format": "eip-base64-unpadded"}),
     AfterValidator(_validate_base64_unpadded),
 ]
-ProtocolVersion = Annotated[StrictStr, Field(pattern=r"^(?:0\.[1-9][0-9]*|[1-9][0-9]*\.[0-9]+)$")]
 Sha256Digest = Annotated[StrictStr, Field(pattern=r"^[0-9a-f]{64}$")]
 EIPTimestamp = Annotated[
     StrictStr,
@@ -824,7 +823,6 @@ class FilesystemObservation(EIPModel):
 
 
 class InitializeParams(EIPModel):
-    supported_protocol_versions: Annotated[tuple[StrictStr, ...], Field(min_length=1)]
     client: EIPClientInfo
     expected_device_id: Identifier | None = None
 
@@ -1373,7 +1371,6 @@ type SandboxPolicy = Annotated[
 class SessionOpenParams(EIPModel):
     expected_device_id: Identifier
     expected_generation: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)]
-    protocol_version: ProtocolVersion
     working_directory: AbsoluteEIPPath | None = None
     required_methods: tuple[StrictStr, ...] = ()
     egress: EgressPolicy | None = None
@@ -1570,7 +1567,6 @@ class EnvironmentDescribeResult(EIPModel):
 
 
 class InitializeResult(EIPModel):
-    protocol_version: ProtocolVersion
     server: EIPServerInfo
     descriptor: DeviceDescriptor
 

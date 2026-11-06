@@ -1,6 +1,6 @@
 """Pinned E2B desktop build recipe and bounded control API calls (no business storage).
 
-The cloud builder fetches only checksum-pinned public artifacts. Account credentials
+The cloud builder fetches only release- and checksum-verified public artifacts. Account credentials
 remain on the control API and are never included in build steps or guest files.
 """
 
@@ -13,11 +13,10 @@ from a13n_harness.providers.environment.native.http import NativeHTTP, decode_re
 from pydantic import BaseModel, Field, JsonValue
 
 from a13n_service.providers.environment.e2b_build import Build, BuildStatus, Template
+from a13n_service.providers.environment.envd_release import installation_command
 
 BASE_IMAGE = "debian:trixie-slim@sha256:4876fdea29cac1a33a3195f1eb1952feb1fca7dd6dd00be3e2f1879cf20d34d2"
 SOURCE_REVISION = "1da9b5c08f1ed0a6095906583bef9555863eeb6a"
-RELEASE_URL = "https://github.com/converge-ai-labs/agent-foundation/releases/download/release/a13n-envd-v0.6.0/a13n-envd-0.6.0-x86_64-unknown-linux-gnu.tar.gz"
-RELEASE_SHA256 = "f2fd6eace212c2e59d2b4d6a2dc69ec010235005ad332ac1ddd1932f7bca258c"
 FILES = (
     (
         "deploy/docker/images/sandbox/entrypoint.sh",
@@ -54,7 +53,7 @@ def specification() -> dict[str, JsonValue]:
     )
     commands = [
         install,
-        f"curl -fL --retry 2 --max-time 120 '{RELEASE_URL}' -o /tmp/envd.tar.gz && echo '{RELEASE_SHA256}  /tmp/envd.tar.gz' | sha256sum -c - && tar -xOzf /tmp/envd.tar.gz a13n-envd > /usr/local/bin/a13n-envd && chmod 0755 /usr/local/bin/a13n-envd && rm /tmp/envd.tar.gz",
+        installation_command(),
     ]
     for source, destination, digest in FILES:
         url = f"https://raw.githubusercontent.com/converge-ai-labs/agent-foundation/{SOURCE_REVISION}/{source}"

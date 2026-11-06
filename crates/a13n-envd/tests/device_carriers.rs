@@ -108,11 +108,11 @@ fn request(session: Option<&str>, method: &str, params: Value) -> Value {
 }
 
 fn initialize() -> Value {
-    json!({"supported_protocol_versions":["0.4"], "expected_device_id":"device-test", "client":{"name":"carrier-test", "version":"0"}})
+    json!({"expected_device_id":"device-test", "client":{"name":"carrier-test", "version":"0"}})
 }
 
 fn open_params(descriptor: &Value, path: &str) -> Value {
-    json!({"expected_device_id":"device-test", "expected_generation":descriptor["generation"], "protocol_version":"0.4", "working_directory":path, "required_methods":[]})
+    json!({"expected_device_id":"device-test", "expected_generation":descriptor["generation"], "working_directory":path, "required_methods":[]})
 }
 
 fn context(operation: &str) -> Value {

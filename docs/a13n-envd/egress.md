@@ -29,7 +29,6 @@ Sessions use native accounts. With no execution UID/GID configured, they retain 
 {
   "expected_device_id": "device-example",
   "expected_generation": 123,
-  "protocol_version": "0.4",
   "working_directory": "/workspace",
   "egress": {
     "destinations": {"mode": "allowlist", "hosts": ["api.github.com"]},
