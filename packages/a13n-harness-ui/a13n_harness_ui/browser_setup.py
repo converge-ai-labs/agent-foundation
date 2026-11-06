@@ -204,7 +204,9 @@ async def probe(path: str, argument: str) -> str:
                 process.kill()
             except ProcessLookupError:
                 pass
-            await process.wait()
+            # A paused stdout pipe can keep wait() pending even after kill.
+            # Drain the killed child's remaining output while reaping it.
+            await process.communicate()
 
 
 async def inspect_browser(
