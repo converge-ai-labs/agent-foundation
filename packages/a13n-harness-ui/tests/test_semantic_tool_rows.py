@@ -474,6 +474,54 @@ def test_completed_tool_correlation_is_bounded_and_releases_argument_budget(rend
     )
 
 
+@pytest.mark.parametrize("later_completed", [False, True])
+def test_active_tool_correlation_survives_many_starts_and_paired_results(renderer, later_completed):
+    for index in range(129):
+        call(
+            renderer,
+            "edit",
+            {"file_path": f"{index}.py"},
+            call_id=str(index),
+            result={"ok": True} if later_completed and index else None,
+        )
+    first_block = next(iter(renderer.transcript.blocks))
+    finish(renderer, "0", {"ok": True})
+    custom(
+        renderer,
+        "a13n.pydantic_ai.function_tool_result",
+        {"part": {"tool_call_id": "0", "tool_name": "edit", "part_kind": "tool-return", "content": {"ok": True}}},
+        run_id="root",
+    )
+    assert len(renderer.transcript.blocks) == 129
+    assert "running" not in renderer.transcript.blocks[first_block].source
+    assert renderer._tools[("root", "0")].native_result_seen
+    assert renderer._tools[("root", "0")].protocol_result_seen
+
+
+@pytest.mark.parametrize("hidden", [False, True])
+def test_active_tool_correlation_is_bounded_by_retained_rows_and_argument_budget(renderer, hidden):
+    renderer.transcript.max_blocks = 16
+    renderer._limit = 4096
+    for index in range(200):
+        renderer.ingest(
+            "TOOL_CALL_START",
+            {"toolCallId": str(index), "toolCallName": "edit"},
+            run_id="child" if hidden else "root",
+            child=hidden,
+        )
+        renderer.ingest(
+            "TOOL_CALL_ARGS",
+            {"toolCallId": str(index), "delta": "x" * 1000},
+            run_id="child" if hidden else "root",
+            child=hidden,
+        )
+    assert len(renderer._tools) <= 128 + len(renderer.transcript.blocks)
+    assert sum(tool.size for tool in renderer._tools.values()) <= 4096
+    assert ("child" if hidden else "root", "0") not in renderer._tools
+    if not hidden:
+        assert renderer.transcript.evicted
+
+
 def test_execution_waits_group_without_claiming_completion_or_hiding_errors(renderer):
     observed = {"execution_id": "exec-one", "run_id": "run-one", "tool_name": "shell_exec", "status": "running"}
     for index in range(3):
@@ -516,3 +564,32 @@ def test_execution_groups_keep_message_and_run_boundaries(renderer):
     assert concise.count("Tool executions ·") == 1
     assert concise.index("Still working") < concise.index("Retrieve result") < concise.index("unavailable")
     assert "at last check" not in concise
+
+
+def test_compact_snapshot_completes_original_row_after_many_active_calls(renderer):
+    from a13n_stream_protocol.display import DisplayFold
+
+    fold = DisplayFold("root", full_content=True)
+    fold.fold([{"type": "TOOL_CALL_START", "toolCallId": str(index), "toolCallName": "edit"} for index in range(129)])
+
+    def snapshot():
+        renderer.begin_display_snapshot()
+        renderer.ingest(
+            "CUSTOM",
+            {
+                "name": "a13n.display.snapshot",
+                "value": {
+                    "items": [item.model_dump(mode="json") for item in fold.items.values()],
+                    "continuation": fold.export_continuation().model_dump(mode="json"),
+                },
+            },
+            run_id="root",
+        )
+
+    snapshot()
+    first_block = next(iter(renderer.transcript.blocks))
+    fold.fold([{"type": "TOOL_CALL_RESULT", "toolCallId": "0", "messageId": "result", "content": "done"}])
+    snapshot()
+    snapshot()
+    assert len(renderer.transcript.blocks) == 129
+    assert "running" not in renderer.transcript.blocks[first_block].source

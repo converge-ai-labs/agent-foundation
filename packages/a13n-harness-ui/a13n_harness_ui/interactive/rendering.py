@@ -1283,6 +1283,10 @@ class StreamRenderer:
                     # Retain bounded correlation and semantics after releasing arguments.
                     preview.native_result_seen |= native_state is not None
                     preview.protocol_result_seen |= native_state is None
+                    # Recency follows completion, not the start of a long call,
+                    # so its paired result can still update this same row.
+                    self._tools.pop(key)
+                    self._tools[key] = preview
                     preview.arguments = ""
                     preview.parts = None
                     preview.size = 0
@@ -1338,9 +1342,16 @@ class StreamRenderer:
                             preview.member.read_path = preview.read_path
                             preview.group.refresh(self.transcript)
                 self.boundary = True
-            # START-only and malformed streams obey the same bound as ARGS.
-            while len(self._tools) > 128:
-                self._tools.pop(next(iter(self._tools)))
+            # Active rows need their identity until a result replaces them.
+            # Their count is bounded by transcript retention; completed, hidden,
+            # and evicted rows share the small recent-correlation cache.
+            expendable = [
+                key
+                for key, tool in self._tools.items()
+                if tool.block_id not in self.transcript.blocks or tool.native_result_seen or tool.protocol_result_seen
+            ]
+            for key in expendable[:-128]:
+                self._tools.pop(key)
             return
         if event_type in {"RUN_FINISHED", "RUN_ERROR"}:
             self._activity = None
