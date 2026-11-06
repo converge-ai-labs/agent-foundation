@@ -1639,13 +1639,6 @@
       "paramStructure": "by-name",
       "params": [
         {
-          "name": "supported_protocol_versions",
-          "required": true,
-          "schema": {
-            "$ref": "schema.json#/$defs/InitializeParams/properties/supported_protocol_versions"
-          }
-        },
-        {
           "name": "client",
           "required": true,
           "schema": {
@@ -2346,13 +2339,6 @@
           "required": true,
           "schema": {
             "$ref": "schema.json#/$defs/SessionOpenParams/properties/expected_generation"
-          }
-        },
-        {
-          "name": "protocol_version",
-          "required": true,
-          "schema": {
-            "$ref": "schema.json#/$defs/SessionOpenParams/properties/protocol_version"
           }
         },
         {

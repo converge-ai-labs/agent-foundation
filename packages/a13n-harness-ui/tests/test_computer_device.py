@@ -130,7 +130,6 @@ async def desktop_peer(ws, image):
                 match method:
                     case "initialize":
                         result = {
-                            "protocol_version": eip.EIP_PROTOCOL_VERSION,
                             "server": {"name": "a13n-envd", "version": "scripted-test"},
                             "descriptor": device,
                         }

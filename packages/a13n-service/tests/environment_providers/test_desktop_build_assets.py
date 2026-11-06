@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 
 import pytest
-from a13n_service.providers.environment import desktop_guest
+from a13n_service.providers.environment import desktop_guest, envd_release
 from a13n_service.providers.environments.daytona import desktop_build as daytona
 from a13n_service.providers.environments.e2b import desktop_build as e2b
 from a13n_service.providers.environments.modal import desktop_build as modal
@@ -55,3 +55,31 @@ def test_guest_update_changes_recipe_revision(builder, render, monkeypatch, chan
             ),
         )
     assert builder.revision() != original
+
+
+def test_recipe_freezes_shared_release_installer(builder, render):
+    manifest = render()
+    command = envd_release.installation_command()
+    if builder is daytona:
+        assert f"RUN {command}\n" in manifest["dockerfile"]
+    elif builder is e2b:
+        assert {"type": "RUN", "args": [command, "root"]} in manifest["steps"]
+    elif builder is modal:
+        assert command in manifest["commands"]
+    elif builder is vercel:
+        assert command in manifest["script"].splitlines()
+    else:
+        assert command in manifest.splitlines()
+    assert "SHA256SUMS" in command
+    assert command.endswith(f"{envd_release.VERSION} {envd_release.TARGET} /usr/local/bin/a13n-envd")
+    assert "latest" not in command
+    assert render() == manifest
+
+
+@pytest.mark.parametrize("field", ["VERSION", "TARGET", "_INSTALL"])
+def test_release_update_changes_every_recipe_revision(builder, render, monkeypatch, field):
+    original = builder.revision()
+    manifest = render()
+    monkeypatch.setattr(envd_release, field, "changed")
+    assert builder.revision() != original
+    assert render() != manifest

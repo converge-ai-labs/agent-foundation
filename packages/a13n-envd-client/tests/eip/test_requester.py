@@ -169,14 +169,13 @@ async def initialized(transport: FakeTransport, *, monitoring: bool = False) -> 
     task = asyncio.create_task(EIPDeviceConnection.initialize(transport, expected_device_id="device-test"))
     request = await transport.request()
     assert request.method == "initialize" and request.eip_session is None
-    assert request.params["supported_protocol_versions"] == ["0.4"]
+    assert "supported_protocol_versions" not in request.params
     advertised = device_descriptor().model_dump(mode="json", exclude_none=True)
     if monitoring:
         advertised["available_methods"].append("device.metrics")
     transport.reply(
         request,
         {
-            "protocol_version": "0.4",
             "server": {"name": "a13n-envd", "version": "0"},
             "descriptor": advertised,
         },

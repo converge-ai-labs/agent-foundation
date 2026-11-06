@@ -961,16 +961,6 @@ impl Daemon {
 
 impl EipDeviceHandler for DeviceRequest<'_> {
     async fn initialize(&self, params: InitializeParams) -> Result<InitializeResult, EIPError> {
-        if !params
-            .supported_protocol_versions
-            .iter()
-            .any(|version| version == eip::EIP_PROTOCOL_VERSION)
-        {
-            return Err(protocol_error(
-                ErrorType::ProtocolIncompatible,
-                "Unsupported EIP protocol version",
-            ));
-        }
         if let Some(expected) = &params.expected_device_id
             && expected != &self.daemon.descriptor.device_id
         {
@@ -997,7 +987,6 @@ impl EipDeviceHandler for DeviceRequest<'_> {
             ));
         }
         Ok(InitializeResult {
-            protocol_version: eip::EIP_PROTOCOL_VERSION.to_owned(),
             server: EIPServerInfo {
                 name: "a13n-envd".to_owned(),
                 version: env!("CARGO_PKG_VERSION").to_owned(),
@@ -1074,12 +1063,6 @@ impl EipDeviceHandler for DeviceRequest<'_> {
     ) -> Result<eip::SessionOpenResult, EIPError> {
         self.daemon
             .check_device(&params.expected_device_id, params.expected_generation)?;
-        if params.protocol_version != eip::EIP_PROTOCOL_VERSION {
-            return Err(protocol_error(
-                ErrorType::ProtocolIncompatible,
-                "session protocol does not match",
-            ));
-        }
         if params.egress.is_some() != self.daemon.config.egress.controlled() {
             return Err(protocol_error(
                 ErrorType::InvalidParams,
@@ -3869,7 +3852,6 @@ mod tests {
         fn open_params(&self, required_methods: Value) -> Value {
             json!({"expected_device_id": self.device.descriptor.device_id,
                 "expected_generation": self.device.descriptor.generation,
-                "protocol_version": "0.4",
                 "working_directory": self.device.descriptor.default_working_directory,
                 "required_methods": required_methods})
         }
@@ -3926,7 +3908,6 @@ mod tests {
 
     fn initialize_params() -> Value {
         json!({
-            "supported_protocol_versions": ["0.4"],
             "client": {"name": "test", "version": "1"},
             "expected_device_id": "env-test"
         })
@@ -3971,19 +3952,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn old_protocol_is_rejected_before_returning_a_device_descriptor() {
+    async fn initialize_and_open_session_need_no_protocol_version() {
         let config = Config::for_test("env-test");
-        for version in ["0.1", "0.2"] {
-            let fixture = Fixture::new(&config, 7);
-            let mut params = initialize_params();
-            params["supported_protocol_versions"] = json!([version]);
-            let response = fixture.call("initialize", params).await;
-            assert_eq!(
-                response["error"]["data"]["error_type"],
-                "protocol_incompatible"
-            );
-            assert!(response.get("result").is_none());
-        }
+        let fixture = Fixture::new(&config, 7);
+        let response = initialize_protocol(&fixture).await;
+        assert!(response.get("error").is_none());
+        assert!(response["result"].get("protocol_version").is_none());
+        let ready = readiness(&fixture, 2, "readiness-unversioned").await;
+        assert_eq!(ready["result"]["ready"], true);
     }
 
     #[tokio::test]
@@ -4012,7 +3988,6 @@ mod tests {
         config.description = Some("Build artifacts".into());
         let fixture = Fixture::new(&config, 7);
         let initialized = initialize(&fixture).await;
-        assert_eq!(initialized["result"]["protocol_version"], "0.4");
         let device = fixture.call("device.describe", json!({})).await;
         assert_eq!(
             device["result"]["descriptor"],

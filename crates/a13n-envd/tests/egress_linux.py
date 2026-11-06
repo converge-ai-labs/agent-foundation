@@ -84,7 +84,7 @@ class Device:
         self.sequence = 0
         self.descriptor = self.call(
             "initialize",
-            {"supported_protocol_versions": ["0.4"], "client": {"name": "egress-integration", "version": "1"}},
+            {"client": {"name": "egress-integration", "version": "1"}},
         )["descriptor"]
 
     def call(self, method, params, error=None, *, device_scope=False):
@@ -128,7 +128,6 @@ class Device:
             {
                 "expected_device_id": self.descriptor["device_id"],
                 "expected_generation": self.descriptor["generation"],
-                "protocol_version": "0.4",
                 "working_directory": str(self.workspace),
                 **({"egress": policy} if policy is not None else {}),
             },

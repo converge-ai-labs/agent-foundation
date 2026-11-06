@@ -70,7 +70,7 @@ uv run --locked pytest packages/a13n-envd-client/tests
 
 ## Versioning and generation
 
-The client and native daemon share one Envd stable `X.Y.Z` or RC `X.Y.Z-rc.N` release identity. Python metadata uses PEP 440 `X.Y.ZrcN`; native artifacts retain SemVer spelling. EIP's negotiated major/minor is independent of the package release.
+The client and native daemon share one Envd stable `X.Y.Z` or RC `X.Y.Z-rc.N` release identity. Python metadata uses PEP 440 `X.Y.ZrcN`; native artifacts retain SemVer spelling. EIP's source version is independent of the package release. Peers do not negotiate or compare protocol versions; interoperability depends on the actual schemas and advertised methods.
 
 The IDL and repository generator own the wire artifacts. Do not hand-edit generated Python models or methods. See [protocol source and generation](../../spec/a13n-envd/08-protocol-source-client-and-generation.md).
 

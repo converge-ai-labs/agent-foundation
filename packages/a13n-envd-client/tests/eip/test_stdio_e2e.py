@@ -149,7 +149,6 @@ async def initialize_direct(process: asyncio.subprocess.Process) -> tuple[Reques
     client = EIPClient(requester)
     result = await client.initialize(
         InitializeParams(
-            supported_protocol_versions=("0.4",),
             client=EIPClientInfo(name="e2e", version="1"),
             expected_device_id="env-e2e",
         )
@@ -1107,20 +1106,19 @@ def test_initialization_identity_failure_is_typed_and_terminal() -> None:
     asyncio.run(scenario())
 
 
-def test_incompatible_protocol_version_is_typed_and_terminal() -> None:
+def test_initialize_without_protocol_version() -> None:
     async def scenario() -> None:
         process = await start_daemon(a13n_envd_binary())
         requester = RequestCoordinator(StdioTransport.from_process(process), request_timeout=2)
         client = EIPClient(requester)
-        with pytest.raises(EIPMethodError) as captured:
-            await client.initialize(
-                InitializeParams(
-                    supported_protocol_versions=("2.0",),
-                    client=EIPClientInfo(name="e2e", version="1"),
-                    expected_device_id="env-e2e",
-                )
+        result = await client.initialize(
+            InitializeParams(
+                client=EIPClientInfo(name="e2e", version="1"),
+                expected_device_id="env-e2e",
             )
-        assert captured.value.error.code == -32003
+        )
+        assert result.descriptor.device_id == "env-e2e"
+        assert "protocol_version" not in result.model_dump()
         await requester.close()
         await wait_for_exit(process)
 
@@ -1144,7 +1142,6 @@ def test_preinitialize_and_repeated_initialize_errors() -> None:
         with pytest.raises(EIPMethodError) as captured:
             await client.initialize(
                 InitializeParams(
-                    supported_protocol_versions=("0.4",),
                     client=EIPClientInfo(name="e2e", version="1"),
                     expected_device_id="env-e2e",
                 )
@@ -1380,7 +1377,6 @@ def test_sigterm_remains_bounded_when_stdout_is_backpressured() -> None:
                     "id": 1,
                     "method": "initialize",
                     "params": {
-                        "supported_protocol_versions": ["0.4"],
                         "client": {"name": "backpressure", "version": "1"},
                         "expected_device_id": "env-e2e",
                     },

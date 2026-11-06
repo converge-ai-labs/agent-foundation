@@ -7,9 +7,9 @@ import json
 from a13n_harness.providers.environment.sprites.commands import command
 from a13n_harness.providers.environment.sprites.shared import SpritesReference
 
+from a13n_service.providers.environment.envd_release import installation_command
+
 SOURCE_REVISION = "1da9b5c08f1ed0a6095906583bef9555863eeb6a"
-RELEASE_URL = "https://github.com/converge-ai-labs/agent-foundation/releases/download/release/a13n-envd-v0.6.0/a13n-envd-0.6.0-x86_64-unknown-linux-gnu.tar.gz"
-RELEASE_SHA256 = "f2fd6eace212c2e59d2b4d6a2dc69ec010235005ad332ac1ddd1932f7bca258c"
 FILES = (
     (
         "deploy/docker/images/sandbox/entrypoint.sh",
@@ -46,7 +46,7 @@ def installation_script() -> str:
         "&& install -d -o sandbox -g sandbox /workspace "
         "&& install -d -m 0700 /var/lib/a13n-envd /run/a13n-envd-state "
         "&& rm -rf /var/lib/apt/lists/*",
-        f"curl -fL --retry 2 --max-time 120 '{RELEASE_URL}' -o /tmp/envd.tar.gz && echo '{RELEASE_SHA256}  /tmp/envd.tar.gz' | sha256sum -c - && tar -xOzf /tmp/envd.tar.gz a13n-envd > /usr/local/bin/a13n-envd && chmod 0755 /usr/local/bin/a13n-envd && rm /tmp/envd.tar.gz",
+        installation_command(),
     ]
     for source, destination, digest in FILES:
         url = f"https://raw.githubusercontent.com/converge-ai-labs/agent-foundation/{SOURCE_REVISION}/{source}"

@@ -4071,18 +4071,9 @@
           ],
           "default": null,
           "title": "Expected Device Id"
-        },
-        "supported_protocol_versions": {
-          "items": {
-            "type": "string"
-          },
-          "minItems": 1,
-          "title": "Supported Protocol Versions",
-          "type": "array"
         }
       },
       "required": [
-        "supported_protocol_versions",
         "client"
       ],
       "title": "InitializeParams",
@@ -4094,17 +4085,11 @@
         "descriptor": {
           "$ref": "#/$defs/DeviceDescriptor"
         },
-        "protocol_version": {
-          "pattern": "^(?:0\\.[1-9][0-9]*|[1-9][0-9]*\\.[0-9]+)$",
-          "title": "Protocol Version",
-          "type": "string"
-        },
         "server": {
           "$ref": "#/$defs/EIPServerInfo"
         }
       },
       "required": [
-        "protocol_version",
         "server",
         "descriptor"
       ],
@@ -5922,11 +5907,6 @@
           ],
           "default": null
         },
-        "protocol_version": {
-          "pattern": "^(?:0\\.[1-9][0-9]*|[1-9][0-9]*\\.[0-9]+)$",
-          "title": "Protocol Version",
-          "type": "string"
-        },
         "required_methods": {
           "default": [],
           "items": {
@@ -5951,8 +5931,7 @@
       },
       "required": [
         "expected_device_id",
-        "expected_generation",
-        "protocol_version"
+        "expected_generation"
       ],
       "title": "SessionOpenParams",
       "type": "object"

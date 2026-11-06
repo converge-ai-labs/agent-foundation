@@ -6,7 +6,7 @@ EIP has one language-neutral protocol source that generates the daemon wire surf
 
 The dedicated `a13n-envd-client` Python package contains the generated EIP models, method and transfer metadata, control/data codecs, typed request stubs, high-level async file readers and writers, and a small handwritten transport/session runtime. It has no Harness, provider, product, executable-discovery, artifact-download, installation, or daemon-process authority. It communicates over a session source supplied by an owning provider or Host and never searches `PATH`, selects a release, installs a binary, or launches `a13n-envd`. Envd-backed execution Providers in Harness implement Environment connector and provider-neutral Environment execution over this EIP client; Harness opens those Environment executions and adds Run-local mounts, routing, tools, and context.
 
-The client and `a13n-envd` daemon belong to one a13n-envd release group. Their package version is release identity, while the negotiated EIP `<major>.<minor>` version remains the independent wire-compatibility identity defined by [EIP Protocol](02-eip-protocol.md).
+The client and `a13n-envd` daemon belong to one a13n-envd release group. Their package version is release identity. The EIP source version identifies the schema revision; peers do not negotiate or compare it, as defined by [EIP Protocol](02-eip-protocol.md).
 
 ## Boundaries
 
@@ -47,7 +47,7 @@ The client package is lower-level than Harness and Service and is reusable by pr
 
 ## Canonical IDL Profile
 
-Every canonical IDL file uses the Protobuf package `a13n.agent_envd.eip.v1`. Each request-response method is one Protobuf service method with named request and result messages. Descriptor-interpreted file options also declare the fixed data-frame magic, profile version, header widths, and numeric frame/reset enums owned by the transport specification; generators consume those options rather than maintaining language-local constants. EIP 0.4 selects data-frame profile 1, including explicit Session routing. Device handshake selects the protocol; binary attachments require a ready logical Session. The major-1 IDL namespace is canonical. Generated clients and servers reject unsupported protocol versions and frame profiles. EIP-specific method options declare at least:
+Every canonical IDL file uses the Protobuf package `a13n.agent_envd.eip.v1`. Each request-response method is one Protobuf service method with named request and result messages. Descriptor-interpreted file options also declare the fixed data-frame magic, profile version, header widths, and numeric frame/reset enums owned by the transport specification; generators consume those options rather than maintaining language-local constants. EIP 0.4 selects data-frame profile 1, including explicit Session routing. Device initialization returns the descriptor; binary attachments require a ready logical Session. The major-1 IDL namespace is canonical. Generated clients and servers validate the current schemas and reject unsupported frame profiles. EIP-specific method options declare at least:
 
 - exact JSON-RPC method name;
 - whether the method opens, closes, commits, or aborts a typed file transfer and the permitted direction;
@@ -66,8 +66,8 @@ The EIP JSON profile, not a language runtime's defaults, controls JSON-RPC `para
 - absent optional values are omitted by generated senders; `null` is accepted only where the selected EIP schema explicitly permits it;
 - a bare repeated or map field with no non-empty constraint treats absence and an empty collection as the same wire value and is canonically omitted when empty; a presence-sensitive collection uses an explicit wrapper or presence field instead;
 - integer, timestamp, base64, enum/string taxonomy, discriminated-union, and unknown-field behavior match the owning EIP schema and golden fixtures exactly;
-- generated request decoders reject unknown or duplicate authority-bearing fields unless the negotiated minor explicitly defines them;
-- generated response decoders can ignore only additive fields allowed by the selected minor-version compatibility rules;
+- generated request decoders reject unknown or duplicate authority-bearing fields unless the current schema explicitly defines them;
+- generated response decoders can ignore only additive fields allowed by the current schema's extension rules;
 - bounded binary values that belong to JSON control remain the explicit EIP `EncodedBytes` shape rather than an implementation-dependent Python or Rust byte serialization;
 - native file content is excluded from JSON and `EncodedBytes` and uses the fixed raw data-frame/body profile;
 - JSON-RPC envelopes remain JSON and never contain an encoded protobuf blob.
@@ -189,15 +189,15 @@ Product-managed runtime selection remains Host-owned. Harness UI selects the nat
 
 ## Compatibility and Release
 
-EIP compatibility is negotiated by protocol major/minor and exact required/available methods, not inferred from Python or Rust package versions. The generated client can communicate with any daemon whose selected protocol and required methods are compatible, subject to explicit package-supported ranges.
+EIP interoperability depends on the actual wire schemas and exact required/available methods. Client and daemon do not compare protocol or package versions at connection time. Cross-release interoperability is best effort, with no legacy protocol branches or downgrade retries.
 
-One canonical stable `X.Y.Z` or RC `X.Y.Z-rc.N` release identity covers `a13n-envd-client`, the `a13n-envd` crate/binaries, and the sandbox image from the same source and descriptor digest. The release tag selects a commit that passed the required CI generation and conformance gates; release automation validates the versioned artifacts rather than repeating the full CI suites. Published artifacts must have embedded package versions, supported protocol ranges, and descriptor digests matching the release inputs.
+One canonical stable `X.Y.Z` or RC `X.Y.Z-rc.N` release identity covers `a13n-envd-client`, the `a13n-envd` crate/binaries, and the sandbox image from the same source and descriptor digest. The release tag selects a commit that passed the required CI generation and conformance gates; release automation validates the versioned artifacts rather than repeating the full CI suites. Published artifacts must have embedded package versions, EIP source versions, and descriptor digests matching the release inputs.
 
 The Python distributions, native archives, and `SHA256SUMS` are attached to a GitHub Release before client publication. Native archives and checksums must be publicly accessible before the matching client reaches PyPI, so an installed client can select an available daemon. Crate and client registry publication are independent paths; the sandbox image waits for both to succeed. The overall workflow succeeds only after all publication channels succeed. GitHub Release visibility alone is native-asset availability evidence, not all-channel completion.
 
 Client and native artifact builds and validation complete before registry publication. Package registries are not transactionally atomic. Release retries identify existing releases by version and do not compare rebuilt native or crate bytes. Archive SHA verification belongs to native installation and updating, not release selection. A client-package publish failure never causes the workflow to publish an unverified daemon image as if the release set were complete. Python package metadata uses the PEP 440-normalized `X.Y.ZrcN` spelling for the same canonical RC identity. The shared [repository release contract](../repository-model.md#release-automation) governs GitHub prerelease status and ensures an RC sandbox image does not advance `latest`.
 
-A protocol-only compatible addition can ship in a later package release without changing EIP major. Breaking wire meaning requires a new EIP major even if package semantic-version policy also uses a major release. The package version and EIP version never substitute for each other.
+The EIP source version tracks schema evolution independently of package release identity. It does not establish a runtime compatibility range; deployments use the schemas and methods required by their consumers.
 
 ## Conformance
 
@@ -217,15 +217,15 @@ A separate low-level client gives non-Harness consumers a reusable EIP connectio
 
 ### Co-released client and daemon
 
-One release group makes source, generated descriptor, conformance fixtures, and native artifacts auditable as one unit. Protocol negotiation still permits independent deployment and rolling compatibility; co-release does not require exact package-version equality at connection time.
+One release group makes source, generated descriptor, conformance fixtures, and native artifacts auditable as one unit. Co-release does not require package-version equality at connection time. Independently deployed peers interoperate when their actual schemas and required methods match.
 
 ## Invariants
 
 01. One canonical Protobuf descriptor defines every generated EIP method and payload surface; no language keeps a second editable method list.
 02. EIP control remains JSON-RPC JSON over trusted stdio, Host-dialed HTTP, and outbound reverse WebSocket; raw file content uses correlated binary frames or HTTP streaming bodies, and Protobuf is IDL rather than a mandatory transport or content wrapper.
 03. Generated codecs implement the accepted EIP JSON profile exactly and never inherit a language runtime's incompatible defaults silently. Sender canonicalization recursively omits absent values, schema-default values, and empty non-presence-sensitive collections even when a caller explicitly constructed them.
-04. Request decoding fails closed for unknown authority-bearing input; response evolution follows the negotiated EIP minor compatibility rules.
-05. Python typed method stubs, transfer metadata/codecs, and Rust dispatch entries are generated from one descriptor/profile bound to the negotiated EIP major and fail drift checks together.
+04. Request decoding fails closed for unknown authority-bearing input; responses follow the current schema's extension rules.
+05. Python typed method stubs, transfer metadata/codecs, and Rust dispatch entries are generated from one descriptor/profile bound to the EIP source version and fail drift checks together.
 06. Carrier, attachment authentication, correlation, backpressure, fair multiplexing, session, retry, and cleanup behavior remains handwritten, bounded, and shared beneath generated surfaces.
 07. Compiler and generator tools are locked build dependencies rather than accidental client runtime dependencies.
 08. `a13n-envd-client` imports no Harness or Host lifecycle type, grants no provider authority, and never discovers, downloads, installs, selects, or launches an envd executable.

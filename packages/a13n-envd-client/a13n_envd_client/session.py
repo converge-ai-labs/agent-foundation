@@ -9,7 +9,6 @@ from importlib.metadata import PackageNotFoundError, version
 from types import TracebackType
 
 from a13n_envd_client.eip.v1 import (
-    EIP_PROTOCOL_VERSION,
     METHODS,
     ComputerRegion,
     DeviceDescribeParams,
@@ -86,13 +85,10 @@ class EIPDeviceConnection:
             async with asyncio.timeout(initialization_timeout):
                 result = await EIPClient(requester).initialize(
                     InitializeParams(
-                        supported_protocol_versions=(EIP_PROTOCOL_VERSION,),
                         client=EIPClientInfo(name=client_name, version=client_version or _distribution_version()),
                         expected_device_id=expected_device_id,
                     )
                 )
-                if result.protocol_version != EIP_PROTOCOL_VERSION:
-                    raise EIPProtocolError("server selected an unoffered EIP protocol version")
                 descriptor = result.descriptor
                 _validate_methods(descriptor.available_methods)
                 if expected_device_id is not None and descriptor.device_id != expected_device_id:
@@ -106,10 +102,6 @@ class EIPDeviceConnection:
     @property
     def descriptor(self) -> DeviceDescriptor:
         return self._descriptor
-
-    @property
-    def protocol_version(self) -> str:
-        return EIP_PROTOCOL_VERSION
 
     @property
     def is_closed(self) -> bool:
@@ -174,7 +166,6 @@ class EIPDeviceConnection:
                 SessionOpenParams(
                     expected_device_id=self._descriptor.device_id,
                     expected_generation=self._descriptor.generation,
-                    protocol_version=EIP_PROTOCOL_VERSION,
                     working_directory=working_directory,
                     egress=egress,
                     required_methods=required,
@@ -386,10 +377,6 @@ class EIPSession:
     def device_descriptor(self) -> DeviceDescriptor:
         """The connected target's metadata, without issuing another request."""
         return self._device.descriptor
-
-    @property
-    def protocol_version(self) -> str:
-        return self._device.protocol_version
 
     @property
     def generation(self) -> int:

@@ -13,7 +13,8 @@ message EIPClientInfo {
 }
 
 message InitializeParams {
-  repeated string supported_protocol_versions = 1 [(eip_field).min_length = 1];
+  reserved 1;
+  reserved "supported_protocol_versions";
   EIPClientInfo client = 2;
   optional string expected_device_id = 3 [(eip_field).string_format = EIP_STRING_FORMAT_IDENTIFIER];
 }
@@ -149,7 +150,8 @@ message SessionDescriptor {
 }
 
 message InitializeResult {
-  string protocol_version = 1 [(eip_field).string_format = EIP_STRING_FORMAT_PROTOCOL_VERSION];
+  reserved 1;
+  reserved "protocol_version";
   EIPServerInfo server = 2;
   DeviceDescriptor descriptor = 3;
 }
@@ -163,7 +165,8 @@ message DeviceDescribeResult {
 message SessionOpenParams {
   string expected_device_id = 1 [(eip_field).string_format = EIP_STRING_FORMAT_IDENTIFIER];
   uint64 expected_generation = 2 [(eip_field).minimum = 1];
-  string protocol_version = 3 [(eip_field).string_format = EIP_STRING_FORMAT_PROTOCOL_VERSION];
+  reserved 3;
+  reserved "protocol_version";
   optional string working_directory = 4 [(eip_field).string_format = EIP_STRING_FORMAT_PATH];
   repeated string required_methods = 5;
   optional EgressPolicy egress = 6;

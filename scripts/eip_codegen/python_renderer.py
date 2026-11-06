@@ -106,8 +106,6 @@ def _base_field_type(
                 return "AbsoluteEIPPath"
             if format_name == "EIP_STRING_FORMAT_BASE64_UNPADDED":
                 return "Base64Unpadded"
-            if format_name == "EIP_STRING_FORMAT_PROTOCOL_VERSION":
-                return "ProtocolVersion"
             if format_name == "EIP_STRING_FORMAT_SHA256":
                 return "Sha256Digest"
         return "StrictStr"
@@ -325,7 +323,6 @@ def render_models(index: SchemaIndex, options: OptionReader) -> str:
         "    Field(json_schema_extra={'format': 'eip-base64-unpadded'}),",
         "    AfterValidator(_validate_base64_unpadded),",
         "]",
-        "ProtocolVersion = Annotated[StrictStr, Field(pattern=r'^(?:0\\.[1-9][0-9]*|[1-9][0-9]*\\.[0-9]+)$')]",
         "Sha256Digest = Annotated[StrictStr, Field(pattern=r'^[0-9a-f]{64}$')]",
         "EIPTimestamp = Annotated[",
         "    StrictStr,",

@@ -18,7 +18,7 @@ HTTP, reverse WebSocket and stdio use the same generated request and result type
 
 Canonical messages live in `proto/a13n-envd/eip/v1/monitoring.proto`; the normal descriptor generation produces Rust/Python models, dispatch, typed client stubs and inspection artifacts. `EIPDeviceConnection.metrics()` checks advertised availability, supplies its Device identity/generation and validates returned identity. `describe()` exposes system information through its existing descriptor result. The client owns no polling loop or monitoring history. `device.describe` and `device.metrics` share one bounded observation admission slot, separate from Session creation. A timed-out or cancelled observation retains its slot until the reply or carrier teardown; subsequent observation waits can expire before dispatch without adding pending requests. Late replies release the slot normally. Observation timeout never closes a borrowed carrier or its Sessions.
 
-EIP 0.4 carries the Device observation contracts. Client and daemon negotiate exactly 0.4; peers offering only older protocols fail negotiation before descriptor decoding. Deployments upgrade client and daemon together. The canonical `eip.v1` namespace, carrier subprotocol and binary data-frame profile 1 remain unchanged. No independent monitoring schema version or dual-version runtime is introduced.
+The current EIP schema carries the Device observation contracts. Clients use the optional system information and advertised `device.metrics` method; initialization performs no protocol-version comparison. The canonical `eip.v1` namespace, carrier subprotocol and binary data-frame profile 1 remain unchanged. No independent monitoring schema version or dual-version runtime is introduced.
 
 ## Configuration
 

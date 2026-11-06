@@ -110,15 +110,6 @@ pub fn render(pool: &DescriptorPool) -> Result<String, String> {
          \x20           (!value.ends_with('/') || drive_root || unc_root) && parts.iter().all(|part| !matches!(*part, \"\" | \".\" | \"..\"))\n\
          \x20       })\n\
          }\n\n\
-         fn validate_protocol_version(value: &str) -> bool {\n\
-         \x20   let Some((major, minor)) = value.split_once('.') else { return false; };\n\
-         \x20   let Ok(minor) = minor.parse::<u64>() else { return false; };\n\
-         \x20   if major == \"0\" {\n\
-         \x20       minor > 0\n\
-         \x20   } else {\n\
-         \x20       !major.starts_with('0') && major.parse::<u64>().is_ok()\n\
-         \x20   }\n\
-         }\n\n\
          fn validate_base64_unpadded(value: &str) -> bool {\n\
          \x20   use base64::Engine as _;\n\
          \x20   !value.contains('=')\n\
@@ -1141,9 +1132,6 @@ fn render_field_checks(
             "EIP_STRING_FORMAT_PATH" => Some(format!("!validate_absolute_path({string_target})")),
             "EIP_STRING_FORMAT_BASE64_UNPADDED" => {
                 Some(format!("!validate_base64_unpadded({string_target})"))
-            }
-            "EIP_STRING_FORMAT_PROTOCOL_VERSION" => {
-                Some(format!("!validate_protocol_version({string_target})"))
             }
             "EIP_STRING_FORMAT_SHA256" => Some(format!("!validate_sha256({string_target})")),
             _ => None,

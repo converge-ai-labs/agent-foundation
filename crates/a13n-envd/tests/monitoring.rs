@@ -57,7 +57,12 @@ impl Peer {
             generation: Value::Null,
             id: 0,
         };
-        let initialized = peer.call("initialize", json!({"supported_protocol_versions":["0.4"], "client":{"name":"metrics-test", "version":"1"}})).await;
+        let initialized = peer
+            .call(
+                "initialize",
+                json!({"client":{"name":"metrics-test", "version":"1"}}),
+            )
+            .await;
         peer.generation = initialized["descriptor"]["generation"].clone();
         peer
     }
