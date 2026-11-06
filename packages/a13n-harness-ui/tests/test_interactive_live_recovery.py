@@ -21,7 +21,9 @@ from .test_interactive_experience import _text, _usage_totals
 pytestmark = pytest.mark.anyio
 
 
-@pytest.mark.parametrize("loss", ["reset", "sequence", "terminal"])
+@pytest.mark.parametrize(
+    "loss", ["reset", "sequence", "terminal", "overflow", "overflow-terminal", "overflow-initial", "overflow-child"]
+)
 async def test_root_display_recovers_tool_results_and_keeps_streaming_before_completion(tmp_path, loss):
     hub = HarnessUiLiveHub()
     fold = DisplayFold("run-one", full_content=True)
@@ -50,6 +52,11 @@ async def test_root_display_recovers_tool_results_and_keeps_streaming_before_com
                 {"type": "TOOL_CALL_START", "toolCallId": "edit-one", "toolCallName": "edit"},
                 {"type": "TOOL_CALL_ARGS", "toolCallId": "edit-one", "delta": '{"file_path":"example.py"}'},
                 {"type": "TOOL_CALL_END", "toolCallId": "edit-one"},
+                *(
+                    [{"type": "TOOL_CALL_ARGS", "toolCallId": "edit-one", "delta": " "} for _ in range(80)]
+                    if loss == "overflow-initial"
+                    else []
+                ),
             ]
         )
         return SimpleNamespace(receipt_id="receipt-one")
@@ -107,27 +114,49 @@ async def test_root_display_recovers_tool_results_and_keeps_streaming_before_com
         )
         async with asyncio.timeout(2):
             await paused.wait()
+        if loss.startswith("overflow"):
+            await hub.publish(
+                run_kind="child",
+                root_thread_id="thread-one",
+                parent_thread_id="thread-one",
+                thread_id="child-one",
+                run_id="child-run",
+                execution_id="child-exec",
+                events=[ToolCallResultEvent(tool_call_id="child-tool", message_id="child-result", content="done")],
+            )
+            await publish([{"type": "TOOL_CALL_ARGS", "toolCallId": "edit-one", "delta": " "} for _ in range(80)])
         await publish(
             [
                 {"type": "TOOL_CALL_RESULT", "toolCallId": "edit-one", "messageId": "tool-result", "content": "done"},
                 {"type": "TEXT_MESSAGE_START", "messageId": "answer", "role": "assistant"},
                 {"type": "TEXT_MESSAGE_CONTENT", "messageId": "answer", "delta": "Recovered answer"},
             ],
-            reset=loss != "sequence",
+            reset=loss in {"reset", "terminal"},
             drop=loss == "sequence",
         )
         if loss == "sequence":
             await publish([{"type": "TEXT_MESSAGE_CONTENT", "messageId": "answer", "delta": ""}])
-        await hub.publish(
-            run_kind="child",
-            root_thread_id="thread-one",
-            parent_thread_id="thread-one",
-            thread_id="child-one",
-            run_id="child-run",
-            execution_id="child-exec",
-            events=[ToolCallResultEvent(tool_call_id="child-tool", message_id="child-result", content="done")],
-        )
-        if loss == "terminal":
+        if not loss.startswith("overflow"):
+            await hub.publish(
+                run_kind="child",
+                root_thread_id="thread-one",
+                parent_thread_id="thread-one",
+                thread_id="child-one",
+                run_id="child-run",
+                execution_id="child-exec",
+                events=[ToolCallResultEvent(tool_call_id="child-tool", message_id="child-result", content="done")],
+            )
+        if loss == "overflow-child":
+            await hub.publish(
+                run_kind="child",
+                root_thread_id="thread-one",
+                parent_thread_id="thread-one",
+                thread_id="child-one",
+                run_id="child-run",
+                execution_id="child-exec",
+                events=[CustomEvent(name="missed-child-event", value={})],
+            )
+        if loss.endswith("terminal"):
             await publish(
                 [
                     {"type": "TEXT_MESSAGE_CONTENT", "messageId": "answer", "delta": ", still live."},
@@ -139,9 +168,9 @@ async def test_root_display_recovers_tool_results_and_keeps_streaming_before_com
             finish.set()
         resume.set()
         await until(lambda: "Recovered answer" in _text(renderer) and "running" not in _text(renderer))
-        assert not renderer.gap
+        assert renderer.gap == (loss == "overflow-child")
         assert "child_edit" in _text(renderer)
-        if loss == "terminal":
+        if loss.endswith("terminal"):
             await task
             assert _text(renderer).count("Recovered answer, still live.") == 1
             assert "Recovered final answer" not in _text(renderer)
@@ -161,8 +190,8 @@ async def test_root_display_recovers_tool_results_and_keeps_streaming_before_com
         await until(lambda: "Recovered answer, still live." in _text(renderer))
         finish.set()
         assert await task == ""
-        assert _text(renderer).count("Recovered answer, still live.") == 1
-        assert "Recovered final answer" not in _text(renderer)
+        assert _text(renderer).count("Recovered answer, still live.") == (2 if loss == "overflow-child" else 1)
+        assert ("Recovered final answer" in _text(renderer)) == (loss == "overflow-child")
         app.submit_thread.assert_awaited_once()
         assert not hub._subscribers
     finally:
@@ -310,3 +339,59 @@ async def test_root_snapshot_preserves_unrelated_gaps_and_partial_child_frames()
         assert "running" not in _text(renderer)
     finally:
         renderer.transcript.close()
+
+
+@pytest.mark.parametrize("waiting", [False, True])
+async def test_overflow_recovery_preserves_inflight_receive_and_rearms_at_snapshot_cut(waiting):
+    from a13n_harness_ui.errors import LivePresentationError
+
+    hub = HarnessUiLiveHub(subscriber_buffer_size=2)
+    fold = DisplayFold("run-one", full_content=True)
+
+    async def publish(count):
+        observations = fold.fold(
+            [{"type": "TEXT_MESSAGE_CONTENT", "messageId": "answer", "delta": "x"} for _ in range(count)]
+        )
+        await hub.publish(
+            run_kind="root",
+            root_thread_id="thread-one",
+            parent_thread_id=None,
+            thread_id="thread-one",
+            run_id="run-one",
+            events=(),
+            display=DisplayPublication(tuple(observations), tuple(fold.items.values()), fold.export_continuation()),
+        )
+
+    async with hub.subscribe(root_thread_id="thread-one") as subscription:
+        receiver = None
+        if waiting:
+            receiver = asyncio.create_task(subscription.receive())
+            async with asyncio.timeout(2):
+                while subscription._subscriber.receive.statistics().tasks_waiting_receive != 1:
+                    await asyncio.sleep(0)
+        await publish(5)
+        with pytest.raises(LivePresentationError):
+            await (receiver if receiver is not None else subscription.receive())
+        assert subscription.recover_root_stream("other-run") is None
+        recovery = subscription.recover_root_stream("run-one")
+        assert recovery is not None and not recovery.incomplete
+        assert len(recovery.pending) == (3 if waiting else 2)
+        assert recovery.pending[0].sequence == 1
+        assert subscription.drain_pending() == ()
+        assert subscription.recover_root_stream("run-one") is None
+        await publish(1)
+        assert (await subscription.receive()).sequence == 6
+        # A subsequent overflow is independently recoverable, but child loss
+        # cannot be repaired by this root's compact display.
+        await publish(5)
+        await hub.publish(
+            run_kind="child",
+            root_thread_id="thread-one",
+            parent_thread_id="thread-one",
+            thread_id="child-one",
+            run_id="child-run",
+            events=[CustomEvent(name="lost", value={})],
+        )
+        recovery = subscription.recover_root_stream("run-one")
+        assert recovery is not None and recovery.incomplete
+    await hub.close()

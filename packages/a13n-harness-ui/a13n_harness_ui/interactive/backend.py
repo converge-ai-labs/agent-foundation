@@ -27,7 +27,7 @@ from a13n_harness_ui.environment_profiles import (
 )
 from a13n_harness_ui.errors import HarnessUiError, ThreadError
 from a13n_harness_ui.goal import GoalMode
-from a13n_harness_ui.live import LiveEvent, model_usage, root_context_samples
+from a13n_harness_ui.live import LiveEvent, RootStreamReplay, model_usage, root_context_samples
 from a13n_harness_ui.media_understanding import environment_media_kinds
 from a13n_harness_ui.model_adapters import service_tier_setting
 from a13n_harness_ui.model_controls import describe_model_controls
@@ -894,14 +894,7 @@ class SessionBackend:
         self.status.restore_usage(totals.combined)
         async with self.app.live_events(root_thread_id=thread_id) as subscription:
 
-            async def restore_display(*, refresh: bool = False) -> bool:
-                replay = (
-                    subscription.capture_root_stream(observed_run_id)
-                    if refresh and observed_run_id is not None
-                    else subscription.take_root_stream()
-                )
-                if replay is None or replay.summary.run_id != observed_run_id:
-                    return False
+            def apply_display(replay: RootStreamReplay) -> bool:
                 renderer.begin_display_snapshot()
                 snapshot_events = CustomEventAssembler()
                 for batch in replay.batches():
@@ -910,11 +903,22 @@ class SessionBackend:
                             payload = snapshot_events.accept(event.payload)
                             if payload is not None:
                                 renderer.ingest(event.event_type, payload, run_id=replay.summary.run_id)
-                if flush is not None:
-                    await flush()
                 return not renderer.display_gap
 
-            async def ingest(event: LiveEvent) -> bool:
+            async def restore_display(*, refresh: bool = False) -> bool:
+                replay = (
+                    subscription.capture_root_stream(observed_run_id)
+                    if refresh and observed_run_id is not None
+                    else subscription.take_root_stream()
+                )
+                if replay is None or replay.summary.run_id != observed_run_id:
+                    return False
+                restored = apply_display(replay)
+                if flush is not None:
+                    await flush()
+                return restored
+
+            def ingest(event: LiveEvent) -> bool:
                 nonlocal last_ordinal, observed_run_id
                 if event.run_kind == "root":
                     if observed_run_id is None:
@@ -938,27 +942,56 @@ class SessionBackend:
                         return False
                     event = event.model_copy(update={"payload": payload})
                 records = model_usage(event)
-                if records:
-                    # Observation commits before publication. Replace from the
-                    # ledger so child replay cannot overlap the saved baseline.
-                    totals = await self.app.thread_usage(thread_id=thread_id)
-                    self.status.restore_usage(totals.combined)
                 for sample in root_context_samples(event):
                     if sample.response_ordinal >= last_ordinal:
                         self.status.context_tokens = sample.tokens
                         last_ordinal = sample.response_ordinal
                 return bool(records)
 
+            async def flush_updates(usage_changed: bool) -> None:
+                if usage_changed:
+                    # Observation commits before publication. Replace from the
+                    # ledger so child replay cannot overlap the saved baseline.
+                    totals = await self.app.thread_usage(thread_id=thread_id)
+                    self.status.restore_usage(totals.combined)
+                if flush is not None and (usage_changed or renderer.should_flush):
+                    await flush()
+
+            def recover_delivery(error: HarnessUiError) -> bool:
+                nonlocal observed_run_id
+                recovery = (
+                    subscription.recover_root_stream(observed_run_id) if error.code == "live_cursor_expired" else None
+                )
+                if recovery is None:
+                    renderer.gap = True
+                    return False
+                observed_run_id = recovery.root_stream.summary.run_id
+                # Reconcile the drained prefix and cut without an await: terminal
+                # pump cancellation must not discard transferred child events.
+                for event in recovery.pending:
+                    ingest(event)
+                if recovery.incomplete:
+                    renderer.gap = True
+                return apply_display(recovery.root_stream)
+
             async def consume() -> None:
                 try:
                     if attached is not None:
                         await restore_display()
-                    async for event in subscription:
-                        usage_changed = await ingest(event)
+                    while True:
+                        try:
+                            event = await anext(subscription)
+                        except StopAsyncIteration:
+                            return
+                        except HarnessUiError as error:
+                            if not recover_delivery(error):
+                                return
+                            await flush_updates(True)
+                            continue
+                        usage_changed = ingest(event)
                         if renderer.display_gap:
                             await restore_display(refresh=True)
-                        if flush is not None and (usage_changed or renderer.should_flush):
-                            await flush()
+                        await flush_updates(usage_changed)
                 except HarnessUiError:
                     renderer.gap = True
 
@@ -1007,13 +1040,13 @@ class SessionBackend:
                 self.receipt_id = None
                 try:
                     for event in subscription.drain_pending():
-                        usage_changed = await ingest(event)
-                        if flush is not None and (usage_changed or renderer.should_flush):
-                            await flush()
+                        usage_changed = ingest(event)
+                        await flush_updates(usage_changed)
                     if renderer.display_gap:
                         await restore_display(refresh=True)
-                except HarnessUiError:
-                    renderer.gap = True
+                except HarnessUiError as error:
+                    if recover_delivery(error):
+                        await flush_updates(True)
                 finally:
                     # Children can outlive this root subscription. Without live
                     # observation, a running snapshot is no longer current.

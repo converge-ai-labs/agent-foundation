@@ -104,6 +104,13 @@ class RootStreamReplay:
             )
 
 
+@dataclass(frozen=True, slots=True)
+class LiveRecovery:
+    root_stream: RootStreamReplay
+    pending: tuple[LiveEvent, ...]
+    incomplete: bool
+
+
 @dataclass(slots=True)
 class _RootStream:
     thread_id: str
@@ -256,6 +263,7 @@ class _LiveSubscriber:
         self.root_thread_id = root_thread_id
         self.root_stream: _RootStream | None = None
         self.gap = False
+        self.uncovered_gap = False
 
     def accepts(self, event: LiveEvent) -> bool:
         return self.root_thread_id is None or self.root_thread_id == event.root_thread_id
@@ -270,6 +278,7 @@ class LiveSubscription:
         self._subscriber = subscriber
         self._cursor = cursor
         self.root_stream = root_stream
+        self._interrupted_event: LiveEvent | None = None
 
     @property
     def cursor(self) -> LiveCursor:
@@ -290,6 +299,23 @@ class LiveSubscription:
         stream = self._subscriber.root_stream
         return stream.capture() if stream is not None and stream.run_id == run_id else None
 
+    def recover_root_stream(self, run_id: str | None) -> LiveRecovery | None:
+        """Resume overflowed delivery at a compact cut, preserving queued events.
+
+        Capture, drain, and rearm are synchronous on the publication event loop.
+        The caller must reconcile the returned prefix before awaiting again.
+        Missing child or non-display events remain explicitly incomplete.
+        """
+        subscriber = self._subscriber
+        stream = subscriber.root_stream
+        if not subscriber.gap or stream is None or (run_id is not None and stream.run_id != run_id):
+            return None
+        replay = stream.capture()
+        incomplete = subscriber.uncovered_gap
+        subscriber.gap = False
+        subscriber.uncovered_gap = False
+        return LiveRecovery(replay, self.drain_pending(), incomplete)
+
     def __aiter__(self) -> AsyncIterator[LiveEvent]:
         return self
 
@@ -307,6 +333,7 @@ class LiveSubscription:
             )
         event = await self._subscriber.receive.receive()
         if self._subscriber.gap:
+            self._interrupted_event = event
             raise LivePresentationError(
                 "The detailed live subscriber fell behind its bounded buffer.",
                 code="live_cursor_expired",
@@ -318,6 +345,9 @@ class LiveSubscription:
         if self._subscriber.gap:
             raise LivePresentationError("Detailed events were dropped.", code="live_cursor_expired")
         events: list[LiveEvent] = []
+        if self._interrupted_event is not None:
+            events.append(self._interrupted_event.model_copy(deep=True))
+            self._interrupted_event = None
         while True:
             try:
                 events.append(self._subscriber.receive.receive_nowait().model_copy(deep=True))
@@ -411,6 +441,8 @@ class HarnessUiLiveHub:
                     current.continuation = display.continuation
                     for subscriber in self._subscribers:
                         if subscriber.root_thread_id == thread_id:
+                            if subscriber.gap and subscriber.root_stream is not current:
+                                subscriber.uncovered_gap = True
                             subscriber.root_stream = current
                     for item in display.items:
                         apps = item.content.get("mcp_apps")
@@ -449,15 +481,20 @@ class HarnessUiLiveHub:
                     self._root_rings.move_to_end(root_thread_id)
                     self._trim_root_rings()
                     for subscriber in self._subscribers:
-                        if not subscriber.accepts(event) or subscriber.gap:
+                        if not subscriber.accepts(event):
                             continue
-                        try:
-                            # Queues share the hub-owned event; receive/drain detach it.
-                            subscriber.send.send_nowait(event)
-                        except WouldBlock:
-                            subscriber.gap = True
-                        except (BrokenResourceError, ClosedResourceError):
-                            stale.append(subscriber)
+                        if not subscriber.gap:
+                            try:
+                                # Queues share the hub-owned event; receive/drain detach it.
+                                subscriber.send.send_nowait(event)
+                                continue
+                            except WouldBlock:
+                                subscriber.gap = True
+                            except (BrokenResourceError, ClosedResourceError):
+                                stale.append(subscriber)
+                                continue
+                        # Only compact root publications are covered by a root snapshot.
+                        subscriber.uncovered_gap |= display is None
                     for subscriber in stale:
                         self._discard_subscriber(subscriber)
             await checkpoint()
