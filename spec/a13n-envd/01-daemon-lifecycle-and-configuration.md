@@ -27,7 +27,7 @@ Bootstrap contains only what the daemon needs to run:
 - tagged `sandbox` (`disabled` or `restricted` with directory grants) and `egress` (`inherit`, `deny` or `controlled`);
 - explicit Full Control or shell profiles and executable search configuration;
 - generous finite per-Session and aggregate resource limits;
-- inactivity, short disconnect grace, completed-history retention and collection settings.
+- inactivity, optional maximum lifetime, completed-history retention and collection settings.
 
 An omitted default working directory uses the daemon's startup cwd. An explicit value is an absolute native path. Envd resolves it to an absolute Device path and returns it in Device info. The default is a working starting point, not an access boundary. Restricted Sandbox supplies a fixed grant list, independent of the default directory; disabled Sandbox adds no filesystem ceiling. Unavailable defaults remain visible but fail Session opening; they do not prevent clients from selecting another path.
 

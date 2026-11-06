@@ -7,11 +7,11 @@ from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr, model_v
 
 from .models import EIPError, Identifier
 
-EIP_PROTOCOL_VERSION: Final = "0.3"
+EIP_PROTOCOL_VERSION: Final = "0.4"
 EIP_PROTOCOL_MAJOR: Final = 0
 EIP_PROTOCOL_MINOR: Final = 2
 EIP_PROTO_PACKAGE: Final = "a13n.agent_envd.eip.v1"
-EIP_DESCRIPTOR_SHA256: Final = "3aa017274a1d8656be2e68d6a6db5f4db98bc1c897c9ccc331b30b4a74e77d8a"
+EIP_DESCRIPTOR_SHA256: Final = "73c6b917f19232000d354f0d3761db9663b1013bac44d10efdfd4640581f4b1a"
 
 type JsonRpcId = StrictStr | Annotated[StrictInt, Field(ge=-(2**63), le=2**63 - 1)]
 
@@ -32,6 +32,7 @@ class JsonRpcEnvelope(BaseModel):
 
 
 class JsonRpcRequest(JsonRpcEnvelope):
+    eip_owner_epoch: Annotated[StrictInt, Field(ge=1, le=2**64 - 1)] | None = None
     jsonrpc: Literal["2.0"]
     id: JsonRpcId
     method: StrictStr

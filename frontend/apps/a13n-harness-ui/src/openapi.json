@@ -17059,6 +17059,7 @@
           "live-transcript",
           "child-checkpoint",
           "environment-state",
+          "tool-execution",
           "mcp-app-resource",
           "mcp-app-snapshot"
         ],

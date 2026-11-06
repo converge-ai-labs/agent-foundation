@@ -630,3 +630,29 @@ def test_rejected_input_is_removed_from_merged_history_and_replay_only(pending):
     assert corrected.agent_context_state.get("child") == state.agent_context_state.get("child")
     assert corrected.refs == (ref,) and corrected.model_extra == state.model_extra
     assert without_input(corrected, input_id="notice", source_id="notice") == corrected
+
+
+@pytest.mark.parametrize("immediate", [False, True])
+async def test_cancellation_rejects_steering_waiting_for_native_queue_lock(immediate):
+    entered, finish = asyncio.Event(), asyncio.Event()
+
+    async def model(messages, info):
+        entered.set()
+        await finish.wait()
+        yield "done"
+
+    executable = build(model, [])
+    async with asyncio.timeout(5), executable.stream("start") as stream:
+        consumer = asyncio.create_task(consume(stream))
+        await entered.wait()
+        bridge = stream.context._steering
+        async with bridge._lock:
+            pending = asyncio.create_task(stream.steer("late", immediate=immediate, best_effort=True))
+            await asyncio.sleep(0)
+            stream.cancel()
+        with pytest.raises(RunError) as caught:
+            await pending
+        assert caught.value.code == "run_not_active"
+        assert not bridge._pending_requests
+        finish.set()
+        await consumer

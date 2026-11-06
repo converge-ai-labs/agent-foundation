@@ -102,7 +102,7 @@ A spool write failure after payload start follows the same safe drain and cleanu
 
 ## Lifetime and Release
 
-Output belongs to its command's Session. Carrier loss preserves it only during the same-Session grace; Session close/expiry cleans it along with other owned resources. It cannot be imported into another Session. Completed output is finite history, eligible for inactivity or pressure collection.
+Output belongs to its command's Session. Carrier loss preserves it within the Session's existing idle and maximum-lifetime deadlines; Session close/expiry cleans it along with other owned resources. It cannot be imported into another Session. Completed output is finite history, eligible for inactivity or pressure collection.
 
 A reference remains valid until one of these boundaries:
 
@@ -151,5 +151,5 @@ Raw-byte counting, separate stdout/stderr references, append-only range semantic
 4. Each output has one readable range `[0, retained_bytes)` and explicit client-owned offsets; there are no rings, gaps, or output cursor objects.
 5. Crossing the hard output ceiling terminates the command and reports incompleteness rather than returning a false complete result.
 6. Active command output is not pressure-evicted; unused completed history is reclaimable.
-7. Output survives disconnect only within its Session's finite grace; same-Session reattachment does not restore collected bytes.
+7. Output survives disconnect within its Session's existing lifetime and retention bounds; same-Session reattachment does not restore collected bytes.
 8. Spool paths and content never enter EIP selectors, normal observability or portable Harness state.

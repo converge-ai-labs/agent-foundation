@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
 from uuid import uuid4
+from weakref import WeakValueDictionary
 
 import anyio
 from a13n_envd_client import EIPSession
@@ -22,13 +24,16 @@ from a13n_envd_client.eip.v1 import (
     FileWriterAbortParams,
     FileWriterCommitParams,
     FileWriterOpenResult,
+    ProcessInfo,
+    ProcessInspectResult,
+    ProcessStartResult,
+    SessionDescriptor,
 )
 from a13n_envd_client.eip.v1.methods import MethodSpec
 from a13n_envd_client.errors import EIPSessionStateError
 from a13n_envd_client.requester import TransferChannel
 from a13n_envd_client.transport import TransferDirection
 from a13n_harness.environment.models import EnvironmentAction, EnvironmentError
-from a13n_harness.environment.session_recovery import EnvdSessionRecovery, EnvdSessionState
 from a13n_harness.providers.environment.eip.binding import EIP_METHOD_ACTIONS
 from a13n_logging import exception_details, get_logger
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError
@@ -68,7 +73,6 @@ class Open(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     working_directory: str
     required_methods: tuple[str, ...] = Field(default=(), max_length=128)
-    recovery: EnvdSessionState | None = None
 
 
 @dataclass(slots=True)
@@ -89,8 +93,10 @@ class Scope:
     session: EIPSession
     # A lost scope.open response must not keep an unclaimed Session alive for an entire run.
     first_use_until: float | None
+    lifetime: AsyncExitStack = field(default_factory=AsyncExitStack, repr=False)
     transfers: dict[str, Transfer] = field(default_factory=dict)
     callers: dict[tuple[str, str, str | None], Caller] = field(default_factory=dict)
+    processes: dict[str, ProcessInfo] = field(default_factory=dict)
 
     @property
     def active(self) -> bool:
@@ -106,23 +112,12 @@ class Scope:
         self.callers[(caller.attempt_id, caller.worker_id, caller.execution_id)] = caller
 
 
-def binding_key(environment: str, generation: int, session: str) -> str:
-    return f"a13n:client-session:{environment}:{generation}:{session}"
-
-
-_REMEMBER = """
-local current = redis.call('GET', KEYS[1])
-if current and current ~= ARGV[1] then return 0 end
-redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[2])
-return 1
-"""
-
-
 class Sessions:
     def __init__(self, runtime: Runtime) -> None:
         self.runtime = runtime
         self.scopes: dict[str, Scope] = {}
         self.opening: set[str] = set()
+        self.acquisitions: WeakValueDictionary[tuple[str, str], asyncio.Lock] = WeakValueDictionary()
         self.closed = False
         self.authority_slots = asyncio.Semaphore(_AUTHORITY_CONCURRENCY)
 
@@ -168,7 +163,20 @@ class Sessions:
             )
         return connection
 
+    def _acquisition(self, request: Request) -> asyncio.Lock:
+        key = (request.thread_id, request.environment_id)
+        lock = self.acquisitions.get(key)
+        if lock is None:
+            lock = self.acquisitions[key] = asyncio.Lock()
+        return lock
+
     async def open(self, request: Request) -> dict[str, JsonValue]:
+        # Retirement and borrowing share one boundary, including concurrent
+        # recovery of several executions from the same Thread.
+        async with self._acquisition(request):
+            return await self._open(request)
+
+    async def _open(self, request: Request) -> dict[str, JsonValue]:
         try:
             body = Open.model_validate(request.params)
         except ValidationError as error:
@@ -198,54 +206,53 @@ class Sessions:
                 details={"dispatch_stage": "pre_dispatch"},
             )
         self.opening.add(request.scope_id)
-        session = None
+        lifetime = AsyncExitStack()
         try:
             assert connection.device is not None
-            hint = body.recovery
-            controlled = connection.device.descriptor.boundary.egress == EgressMode.CONTROLLED
-            if hint is not None and not controlled:
-                key = binding_key(request.environment_id, hint.descriptor.generation, hint.descriptor.session_id)
-                occupied = any(
-                    scope.connection is connection and scope.session.session_id == hint.descriptor.session_id
-                    for scope in self.scopes.values()
-                )
+            recovery = await self.runtime.environment_contexts.for_control(
+                request.thread_id, request.caller.run_id, request.caller.worker_id, request.environment_id
+            )
+            # A new Thread owner fences the old Worker's logical scopes before
+            # attaching the same native Session on this still-connected carrier.
+            for identity, previous in tuple(self.scopes.items()):
                 if (
-                    not occupied
-                    and await self.runtime.redis.get(key)
-                    == f"{request.caller.run_id}:{connection.attachment.credential_version}"
+                    previous.request.thread_id == request.thread_id
+                    and previous.request.environment_id == request.environment_id
+                    and previous.request.caller.worker_id != request.caller.worker_id
                 ):
-                    session = await EnvdSessionRecovery(hint).attach(
-                        connection.device,
-                        target=request.environment_id,
-                        expected_device_id=connection.attachment.device_id,
-                        working_directory=body.working_directory,
-                        required_methods=frozenset(body.required_methods),
-                        expected_boundary=None,
-                    )
-            if session is None:
-                session = await connection.device.open_session(
+                    await self._retire(identity, previous)
+            await self.connection(request)
+            assert connection.device is not None
+            controlled = connection.device.descriptor.boundary.egress == EgressMode.CONTROLLED
+            # Control owns the native borrower; Worker scopes remain independently authorized.
+            session = await lifetime.enter_async_context(
+                recovery.borrow(
+                    connection.device,
+                    target=request.environment_id,
+                    expected_device_id=connection.attachment.device_id,
                     working_directory=body.working_directory,
-                    # Registration does not grant network destinations or inject secrets.
+                    required_methods=frozenset(body.required_methods),
+                    expected_boundary=None,
                     egress=EgressPolicy(destinations=AllowlistDestinations(mode="allowlist")) if controlled else None,
-                    required_methods=body.required_methods,
-                    readiness_timeout=self.runtime.settings.client_environments.initialization_seconds,
                 )
+            )
             # Recheck after native preparation, before publishing access to it.
             if session.descriptor.working_directory != mount.working_directory:
                 raise EnvironmentError(
                     "Client Session did not open the frozen working directory.", code="environment_stale_mount"
                 )
             await self.connection(request)
-            await self._resolve(request, connection, frozenset())
+            await self._resolve(request, connection, frozenset(), descriptor=session.descriptor)
             scope = Scope(
                 request,
                 connection,
                 session,
                 asyncio.get_running_loop().time() + self.runtime.settings.client_environments.request_seconds,
+                lifetime=lifetime,
             )
-            await self.remember_binding(scope)
             await self.connection(request)
-            scope.remember(request.caller.model_copy(update={"execution_id": None}))
+            if not request.retained_cleanup:
+                scope.remember(request.caller.model_copy(update={"execution_id": None}))
             scope.remember(request.caller)
             self.scopes[request.scope_id] = scope
             return {
@@ -253,16 +260,30 @@ class Sessions:
                 "device_descriptor": connection.device.descriptor.model_dump(mode="json"),
             }
         except BaseException:
-            if session is not None:
-                with anyio.move_on_after(5, shield=True):
-                    await session.abort()
+            with anyio.move_on_after(5, shield=True):
+                await lifetime.aclose()
             raise
         finally:
             self.opening.discard(request.scope_id)
 
-    async def _resolve(self, request: Request, connection: Connection, actions: frozenset[EnvironmentAction]):
+    async def _resolve(
+        self,
+        request: Request,
+        connection: Connection,
+        actions: frozenset[EnvironmentAction],
+        *,
+        descriptor: SessionDescriptor | None = None,
+    ):
+        scope = self.scopes.get(request.scope_id)
         async with self.authority_slots:
-            return await authority.resolve(self.runtime, request, connection.attachment, actions)
+            return await authority.resolve(
+                self.runtime,
+                request,
+                connection.attachment,
+                actions,
+                descriptor=scope.session.descriptor if scope is not None else descriptor,
+                process=scope.processes.get(request.caller.execution_id or "") if scope is not None else None,
+            )
 
     @staticmethod
     def _session_lost() -> EnvironmentError:
@@ -301,14 +322,21 @@ class Sessions:
             return await self.open(request)
         if request.method == "transfer.attach":
             return await self.attach_transfer(request)
-        if request.method == "scope.close":
+        if request.method in {"scope.close", "scope.detach"}:
             scope = await self.authorize(request, frozenset())
-            del self.scopes[request.scope_id]
-            try:
-                await self.stop_transfers(scope)
-            finally:
-                await scope.session.close()
-            return {"closed": True}
+            async with self._acquisition(request):
+                if self.scopes.get(request.scope_id) is not scope:
+                    raise self._session_lost()
+                del self.scopes[request.scope_id]
+                try:
+                    await self.stop_transfers(scope)
+                finally:
+                    try:
+                        if request.method == "scope.close":
+                            await scope.session.close()
+                    finally:
+                        await scope.lifetime.aclose()
+            return {"closed": True} if request.method == "scope.close" else {"detached": True}
         if request.method not in EIP_METHOD_ACTIONS and request.method not in _SCOPE_METHODS:
             raise EnvironmentError(
                 "Unsupported client operation.",
@@ -366,6 +394,8 @@ class Sessions:
             )
             params = method.params_type.model_validate(values)
         result = await scope.session.requester.request(method, params)
+        if request.caller.execution_id is not None and isinstance(result, (ProcessInspectResult, ProcessStartResult)):
+            scope.processes[request.caller.execution_id] = result.process
         if isinstance(result, (FileReaderOpenResult, ComputerObserveResult, ComputerZoomResult)):
             self._transfer(scope, result.reader.root, "read", actions, request.caller)
         elif isinstance(result, FileWriterOpenResult):
@@ -435,7 +465,28 @@ class Sessions:
 
     @staticmethod
     async def stop_transfers(scope: Scope) -> None:
-        await asyncio.gather(*(streaming.stop(transfer) for transfer in tuple(scope.transfers.values())))
+        transfers = tuple(scope.transfers.values())
+        try:
+            await asyncio.gather(*(streaming.stop(transfer) for transfer in transfers))
+            for transfer in transfers:
+                streaming.retire(scope, transfer)
+            if transfers and not scope.active:
+                raise Sessions._session_lost()
+            await asyncio.gather(
+                *(
+                    scope.session.requester.wait_transfer_retired(transfer.channel)
+                    for transfer in transfers
+                    if not transfer.channel.peer_reset_received
+                )
+            )
+        except BaseException:
+            # Unacknowledged frames must not reach a successor on this carrier.
+            # Fence admission before yielding to the carrier's bounded cleanup.
+            with anyio.move_on_after(5, shield=True):
+                await scope.connection.disconnect()
+            raise
+        finally:
+            scope.transfers.clear()
 
     def _transfer(
         self,
@@ -449,6 +500,10 @@ class Sessions:
         scope.transfers[handle] = Transfer(channel, direction, actions, caller)
 
     async def retire(self, identity: str, scope: Scope) -> None:
+        async with self._acquisition(scope.request):
+            await self._retire(identity, scope)
+
+    async def _retire(self, identity: str, scope: Scope) -> None:
         if self.scopes.get(identity) is not scope:
             return
         del self.scopes[identity]
@@ -457,7 +512,7 @@ class Sessions:
                 try:
                     await self.stop_transfers(scope)
                 finally:
-                    await scope.session.abort()
+                    await scope.lifetime.aclose()
         except Exception as error:
             logger.warning(
                 "Client Session cleanup failed",
@@ -505,10 +560,21 @@ class Sessions:
                     for caller in examined[identity].values():
                         checks.append(
                             authority.Check(
-                                scope.request.model_copy(update={"caller": caller}),
+                                scope.request.model_copy(
+                                    update={
+                                        "caller": caller,
+                                        **(
+                                            {"method": "scope.detach", "cleanup": True}
+                                            if caller.execution_id in scope.processes
+                                            else {}
+                                        ),
+                                    }
+                                ),
                                 scope.connection.attachment,
                                 frozenset(),
                                 True,
+                                scope.session.descriptor,
+                                scope.processes.get(caller.execution_id or ""),
                             )
                         )
                         owners.append((identity, caller, None))
@@ -545,8 +611,6 @@ class Sessions:
                         live[identity].update(
                             {key: caller for key, caller in scope.callers.items() if key not in examined[identity]}
                         )
-                    if live[identity]:
-                        await self.remember_binding(scope)
         except Exception as error:
             # Fail closed on unavailable evidence without labeling it a revocation.
             live = {identity: {} for identity, _ in scopes}
@@ -558,22 +622,6 @@ class Sessions:
                 scope.callers = live[identity]
                 if not scope.callers:
                     await self.retire(identity, scope)
-
-    async def remember_binding(self, scope: Scope) -> None:
-        # Discovery and Session reconnect have separate lifetimes. Losing this
-        # non-secret proof disables reattachment, never authorizes another run.
-        descriptor = scope.session.descriptor
-        ttl = min(
-            86400, max(1, (descriptor.lifecycle.idle_timeout_ms + descriptor.lifecycle.disconnect_grace_ms) // 1000 + 1)
-        )
-        if not await self.runtime.redis.eval(
-            _REMEMBER,
-            1,
-            binding_key(scope.request.environment_id, descriptor.generation, descriptor.session_id),
-            f"{scope.request.caller.run_id}:{scope.connection.attachment.credential_version}",
-            ttl,
-        ):
-            raise EnvironmentError("Client Session binding belongs to another run.", code="environment_denied")
 
     async def close(self) -> None:
         self.closed = True

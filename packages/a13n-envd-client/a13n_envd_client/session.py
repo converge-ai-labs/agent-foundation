@@ -3,7 +3,8 @@ from __future__ import annotations
 import asyncio
 import math
 import secrets
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager, suppress
 from importlib.metadata import PackageNotFoundError, version
 from types import TracebackType
 
@@ -35,7 +36,9 @@ from a13n_envd_client.eip.v1 import (
     SessionAttachParams,
     SessionCloseParams,
     SessionDescriptor,
+    SessionDetachParams,
     SessionKeepaliveParams,
+    SessionLifecyclePolicy,
     SessionOpenParams,
 )
 from a13n_envd_client.errors import EIPClientError, EIPMethodError, EIPProtocolError, EIPSessionStateError
@@ -154,6 +157,7 @@ class EIPDeviceConnection:
         egress: EgressPolicy | None = None,
         required_methods: tuple[str, ...] = (),
         readiness_timeout: float = 10.0,
+        lifecycle: SessionLifecyclePolicy | None = None,
     ) -> EIPSession:
         self._ensure_open()
         _finite_timeout_ms(readiness_timeout, name="readiness_timeout")
@@ -174,6 +178,7 @@ class EIPDeviceConnection:
                     working_directory=working_directory,
                     egress=egress,
                     required_methods=required,
+                    lifecycle=lifecycle,
                 ),
                 self._bind,
             )
@@ -194,13 +199,20 @@ class EIPDeviceConnection:
             await session.abort()
             raise
 
-    async def attach_session(self, descriptor: SessionDescriptor, *, readiness_timeout: float = 10.0) -> EIPSession:
+    async def attach_session(
+        self, descriptor: SessionDescriptor, *, owner_epoch: int | None = None, readiness_timeout: float = 10.0
+    ) -> EIPSession:
         """Explicit same-Session/generation attachment; never creates or replays work."""
         self._ensure_open()
-        session = self._bind(descriptor)
+        epoch = descriptor.owner_epoch + 1 if owner_epoch is None else owner_epoch
+        if epoch <= descriptor.owner_epoch:
+            raise ValueError("attachment requires a newer Session owner epoch")
+        _finite_timeout_ms(readiness_timeout, name="readiness_timeout")
+        await self._requester.wait_session_released(descriptor.session_id, owner_epoch=epoch, timeout=readiness_timeout)
+        session = self._bind(descriptor.model_copy(update={"owner_epoch": epoch}))
         try:
             result = await session._client.session_attach(SessionAttachParams())
-            _validate_descriptor_refresh(descriptor, result.descriptor)
+            _validate_descriptor_refresh(session.descriptor, result.descriptor)
             self._validate_session_boundary(result.descriptor)
             session._descriptor = result.descriptor
             await session._become_ready(readiness_timeout)
@@ -229,7 +241,7 @@ class EIPDeviceConnection:
         session._owner_current = owner_current
         try:
             # The authenticated owner already maintains native Session liveness.
-            await session._become_ready(readiness_timeout, keepalive=False)
+            await session._become_ready(readiness_timeout)
             return session
         except BaseException:
             await session.abort()
@@ -248,7 +260,10 @@ class EIPDeviceConnection:
             raise EIPProtocolError("Session does not belong to this Device generation")
         _validate_descriptor_structure(descriptor)
         requester = self._requester.session(
-            descriptor.session_id, limits=descriptor.limits, max_in_flight=self._max_in_flight
+            descriptor.session_id,
+            limits=descriptor.limits,
+            max_in_flight=self._max_in_flight,
+            owner_epoch=descriptor.owner_epoch,
         )
         session = EIPSession(self, requester, descriptor)
         self._sessions[descriptor.session_id] = session
@@ -298,6 +313,12 @@ class EIPSession:
         self._error: BaseException | None = None
         self._close_task: asyncio.Task[None] | None = None
         self._keepalive_task: asyncio.Task[None] | None = None
+        self._users = 0
+
+    @property
+    def is_closed(self) -> bool:
+        """Whether this client incarnation or its carrier has finished."""
+        return self._closed or self._device.is_closed
 
     @property
     def client(self) -> EIPClient:
@@ -378,13 +399,34 @@ class EIPSession:
     def session_id(self) -> str:
         return self._descriptor.session_id
 
-    async def _become_ready(self, timeout: float, *, keepalive: bool = True) -> None:
+    async def _become_ready(self, timeout: float) -> None:
         result = await self.readiness(timeout=timeout)
         if not result.ready:
             raise EIPSessionStateError("Session is not ready")
         self._ready = True
-        if keepalive:
+
+    @asynccontextmanager
+    async def use(self) -> AsyncIterator[EIPSession]:
+        """Keep the Session live only while a Run or retained execution uses it."""
+        self._acquire()
+        try:
+            yield self
+        finally:
+            self._users -= 1
+            if self._users == 0:
+                self._stop_keepalive()
+                if not self.is_closed and not self._host_binding:
+                    # A final touch only extends the idle window; transport failure
+                    # must not replace the caller's result or exception.
+                    with suppress(EIPClientError, TimeoutError):
+                        async with asyncio.timeout(5.0):
+                            await self._client.session_keepalive(SessionKeepaliveParams())
+
+    def _acquire(self) -> None:
+        self._ensure_open()
+        if self._users == 0 and not self._host_binding:
             self._keepalive_task = asyncio.create_task(self._keepalive(), name="eip-session-keepalive")
+        self._users += 1
 
     async def _keepalive(self) -> None:
         interval = self._descriptor.lifecycle.idle_timeout_ms / 3000
@@ -403,8 +445,7 @@ class EIPSession:
         except asyncio.CancelledError:
             return
         except (EIPClientError, TimeoutError) as error:
-            self._error = error
-            await self.abort()
+            self._finish(error)
 
     async def readiness(self, *, timeout: float = 10.0) -> EnvironmentReadinessResult:
         if self._closed:
@@ -501,6 +542,28 @@ class EIPSession:
             observed=observed,
         )
 
+    async def detach(self) -> None:
+        """Release this client without destroying native Session resources."""
+        if not await self.prepare_close():
+            return
+        if self._close_task is None:
+            if self._closed:
+                return
+            self._closed = True
+            self._requester.begin_close()
+            self._stop_keepalive()
+            self._close_task = asyncio.create_task(self._detach(), name="eip-session-detach")
+        await asyncio.shield(self._close_task)
+
+    async def _detach(self) -> None:
+        try:
+            async with asyncio.timeout(5.0):
+                await self._client.session_detach(SessionDetachParams())
+        except BaseException as error:
+            self._finish(error)
+            raise
+        self._finish()
+
     async def close(self) -> None:
         if not await self.prepare_close():
             return
@@ -553,7 +616,7 @@ class EIPSession:
             raise EIPSessionStateError(f"EIP method is not available: {method}")
 
     async def __aenter__(self) -> EIPSession:
-        self._ensure_open()
+        self._acquire()
         return self
 
     async def __aexit__(
@@ -562,6 +625,7 @@ class EIPSession:
         exception: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
+        self._users -= 1
         if exception_type is None:
             await self.close()
         else:
@@ -605,6 +669,7 @@ def _validate_descriptor_refresh(previous: SessionDescriptor, observed: SessionD
         "device_id",
         "generation",
         "session_id",
+        "owner_epoch",
         "working_directory",
         "boundary",
         "shell_profiles",

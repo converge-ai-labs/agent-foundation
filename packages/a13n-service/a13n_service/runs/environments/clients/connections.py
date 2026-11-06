@@ -77,6 +77,12 @@ class Connection:
     device: EIPDeviceConnection | None = None
     carrier: WebSocketConnection | None = None
 
+    async def disconnect(self) -> None:
+        """Fence local admission and drop the carrier without closing native Sessions."""
+        self.device = None
+        if self.carrier is not None:
+            await self.carrier.close()
+
 
 class Connections:
     def __init__(self, runtime: Runtime) -> None:

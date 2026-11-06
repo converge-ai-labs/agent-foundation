@@ -16,6 +16,7 @@ from a13n_envd_client.eip.v1 import GrantAccess, RestrictedSandbox
 from a13n_harness.environment.envd_policy import EnvdNetworkConfiguration
 from a13n_harness.environment.execution import EnvironmentConnector
 from a13n_harness.environment.models import EnvironmentState
+from a13n_harness.environment.session_recovery import EnvdSessionRecovery
 from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
 from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
 from a13n_harness.providers.environment.local_envd.configuration import (
@@ -104,6 +105,7 @@ class EnvironmentProjectAdapter(ABC):
         state: EnvironmentState | None,
         provider: EnvironmentProviderDefinition,
         runtime: object | None,
+        session_recovery: EnvdSessionRecovery | None = None,
     ) -> EnvironmentConnector:
         """Prepare the Host-selected target and return its inert execution connector.
 
@@ -135,6 +137,7 @@ class NativeProjectAdapter(EnvironmentProjectAdapter):
         state: EnvironmentState | None,
         provider: EnvironmentProviderDefinition,
         runtime: object | None,
+        session_recovery: EnvdSessionRecovery | None = None,
     ) -> EnvironmentConnector:
         _require_provider(provider, DIRECT_LOCAL)
         shell = _host_shell()
@@ -164,6 +167,7 @@ class NativeProjectAdapter(EnvironmentProjectAdapter):
             environment_id=_environment_id(self.key, root),
             state=state,
             runtime=runtime,
+            session_recovery=session_recovery,
         )
 
 
@@ -220,6 +224,7 @@ class LocalEnvdProjectAdapter(EnvironmentProjectAdapter):
         state: EnvironmentState | None,
         provider: EnvironmentProviderDefinition,
         runtime: object | None,
+        session_recovery: EnvdSessionRecovery | None = None,
     ) -> EnvironmentConnector:
         _require_provider(provider, LOCAL_ENVD)
         selected = LocalEnvdProfileConfiguration.model_validate(profile.provider_configuration)
@@ -229,6 +234,7 @@ class LocalEnvdProjectAdapter(EnvironmentProjectAdapter):
             environment_id=_environment_id(self.key, root),
             state=state,
             runtime=runtime,
+            session_recovery=session_recovery,
         )
 
 

@@ -7,9 +7,11 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from contextvars import ContextVar
 from datetime import UTC, datetime, timedelta
-from functools import cached_property
+from functools import cached_property, partial
 from typing import Any
 
+from a13n_harness import AgentIdentityRef, AgentInstanceContext
+from a13n_harness.environment.errors import EnvironmentProviderError, EnvironmentProviderErrorCategory
 from a13n_harness.environment.models import EnvironmentError
 from a13n_harness.tool_execution import (
     RetainedScope,
@@ -18,16 +20,20 @@ from a13n_harness.tool_execution import (
     ToolExecutionRuntime,
     current_execution,
 )
+from a13n_harness.toolsets.process_manager import recover_shell
 from a13n_harness.toolsets.shell_control import ShellControl, ShellTarget
 from a13n_harness.toolsets.shell_observation import ShellObservation
 from pydantic import JsonValue
 from sqlalchemy import select
 
-from a13n_service.infra.db import lock, now, short_session, transaction
+from a13n_service.infra.db import now, short_session, transaction
+from a13n_service.infra.errors import ServiceError
 from a13n_service.runs.attempts import AuthorityRevoked, Lease, LeaseLost, authorize_execution
+from a13n_service.runs.environments.recovery import prepare as prepare_recovery
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.tables import AttemptRow, ToolExecutionRow
 from a13n_service.runs.tool_executions.authority import authorize_control, lock_execution, prove
+from a13n_service.runs.tool_executions.claims import ShellClaim, claim_shells, relinquish_shell
 from a13n_service.runs.tool_executions.output import Output, Snapshot
 from a13n_service.runs.tool_executions.routing import Caller, Request, Routing
 from a13n_service.runs.tool_executions.store import ORIGIN, SEQUENTIAL, Store
@@ -59,10 +65,91 @@ class Executions(ToolExecutionRuntime):
         self.runtime = runtime
         self._origins: dict[str, Lease] = {}
         self.lease_deadlines: dict[str, float] = {}
+        self._recovering: set[str] = set()
+        self._recovery_lock = asyncio.Lock()
 
     def _completed(self, record: ToolExecutionRecord) -> None:
-        self._origins.pop(record.execution_id, None)
-        self.lease_deadlines.pop(record.execution_id, None)
+        self._forget_owner(record.execution_id)
+
+    def _forget_owner(self, execution_id: str) -> None:
+        self._origins.pop(execution_id, None)
+        self.lease_deadlines.pop(execution_id, None)
+        self._recovering.discard(execution_id)
+        self.output.forget(execution_id)
+
+    async def recover(self, worker_id: str) -> None:
+        async with self._recovery_lock:
+            capacity = self.runtime.settings.tool_executions.max_active - len(self.active)
+            if not self.accepting or capacity <= 0:
+                return
+            claims = await claim_shells(self.runtime, worker_id=worker_id, limit=capacity)
+            for claim in claims:
+                if not self.accepting:
+                    await relinquish_shell(self.runtime, claim.lease, claim.execution.record.execution_id)
+                    continue
+                record = claim.execution.record
+                origin = ORIGIN.set(claim.lease)
+                try:
+                    self._origins[record.execution_id] = claim.lease
+                    self.lease_deadlines[record.execution_id] = (
+                        asyncio.get_running_loop().time() + self.runtime.settings.worker.lease_seconds
+                    )
+                    self._recovering.add(record.execution_id)
+                    self.resume_shell(
+                        claim.execution,
+                        partial(self._supervise_shell, claim),
+                        release_ownership=partial(self._release_recovered, claim),
+                    )
+                except BaseException:
+                    await self._release_recovered(claim)
+                    raise
+                finally:
+                    ORIGIN.reset(origin)
+
+    async def _release_recovered(self, claim: ShellClaim) -> None:
+        execution_id = claim.execution.record.execution_id
+        try:
+            await relinquish_shell(
+                self.runtime,
+                claim.lease,
+                execution_id,
+                retry_after_seconds=self.runtime.settings.worker.lease_seconds if self.accepting else 0,
+            )
+        finally:
+            self._forget_owner(execution_id)
+
+    async def _supervise_shell(self, claim: ShellClaim) -> object:
+        execution = claim.execution
+        record = execution.record
+        assert execution.shell is not None
+        try:
+            environment = await prepare_recovery(
+                self.runtime, claim.lease, record.execution_id, execution.shell.mount_name
+            )
+            instance = AgentInstanceContext(
+                identity=AgentIdentityRef(issuer="a13n-service", subject=record.thread_id),
+                agent_instance_id=record.execution_id,
+            )
+            async with environment.bind(
+                thread_id=record.thread_id, run_id=record.run_id, instance=instance, host_refs={}
+            ) as bound:
+                await environment._activate()
+                return await recover_shell(bound, execution.shell, runtime=self, execution_id=record.execution_id)
+        except EnvironmentError as exc:
+            if exc.code in {"environment_unavailable", "environment_timeout", "environment_busy"}:
+                self.suspend_shell(record.execution_id)
+            raise
+        except EnvironmentProviderError as exc:
+            if exc.category in {EnvironmentProviderErrorCategory.UNAVAILABLE, EnvironmentProviderErrorCategory.TIMEOUT}:
+                self.suspend_shell(record.execution_id)
+            raise
+        except ServiceError as exc:
+            if exc.code == "unavailable":
+                self.suspend_shell(record.execution_id)
+            raise
+        except LeaseLost:
+            self.suspend_shell(record.execution_id)
+            raise
 
     @cached_property
     def routing(self) -> Routing:
@@ -107,6 +194,11 @@ class Executions(ToolExecutionRuntime):
                 self.output.forget(record.execution_id)
                 if host_release is not None:
                     await host_release()
+                if self.preserving_shell(record.execution_id):
+                    try:
+                        await relinquish_shell(self.runtime, origin, record.execution_id)
+                    finally:
+                        self._forget_owner(record.execution_id)
 
         token = SEQUENTIAL.set(sequential)
         try:
@@ -132,6 +224,19 @@ class Executions(ToolExecutionRuntime):
             SEQUENTIAL.reset(token)
 
     async def before_dispatch(self, record: ToolExecutionRecord, *, sequential: bool) -> None:
+        if record.execution_id in self._recovering:
+            async with transaction(self.runtime.storage) as session:
+                run, row, current = await lock_execution(session, ORIGIN.get(), record.execution_id, cleanup=True)
+                try:
+                    await authorize_execution(session, self.runtime.access, run)
+                except AuthorityRevoked:
+                    row.cancel_requested_at = row.cancel_requested_at or current
+                if run.cancel_requested_at is not None:
+                    row.cancel_requested_at = row.cancel_requested_at or current
+                cancelled = row.cancel_requested_at is not None
+            if cancelled:
+                self.request_cancellation(record.thread_id, record.execution_id)
+            return
         await self._predecessors(record.thread_id, sequential=sequential)
         await prove(self.runtime, ORIGIN.get())
 
@@ -278,13 +383,6 @@ class Executions(ToolExecutionRuntime):
         return await super().call_resource(
             request.thread_id, request.execution_id, request.control.model_dump(mode="json")
         )
-
-    async def cancel(self, thread_id: str, execution_id: str) -> ToolExecutionRecord | None:
-        async with transaction(self.runtime.storage) as session:
-            row = await lock(session, ToolExecutionRow, execution_id)
-            if row is not None and row.thread_id == thread_id and row.completed_at is None:
-                row.cancel_requested_at = row.cancel_requested_at or await now(session)
-        return await super().cancel(thread_id, execution_id)
 
     async def wait(
         self, thread_id: str, execution_id: str, *, timeout_seconds: float | None = None

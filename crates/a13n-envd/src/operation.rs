@@ -350,6 +350,41 @@ impl OperationLedger {
             .map(|(outcome, _)| outcome)
     }
 
+    /// Read existing evidence without admitting or replaying the original effect.
+    pub(crate) fn resolve(
+        &self,
+        method: &str,
+        operation_id: &str,
+    ) -> Result<Result<serde_json::Value, EIPError>, LedgerError> {
+        let mut state = self
+            .inner
+            .state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        let now = Instant::now();
+        state.prune(now, self.inner.terminal_ttl);
+        let record = state
+            .records
+            .get_mut(operation_id)
+            .ok_or(LedgerError::TerminalFailure)?;
+        if record.method != method {
+            return Err(LedgerError::Collision);
+        }
+        record.last_access = now;
+        match record.status {
+            RecordStatus::Active | RecordStatus::Completing => Err(LedgerError::InProgress),
+            RecordStatus::Terminal { .. } => {
+                if let Some(result) = &record.result {
+                    Ok(Ok(result.clone()))
+                } else if let Some(failure) = &record.failure {
+                    Ok(Err(failure.clone()))
+                } else {
+                    Err(LedgerError::TerminalFailure)
+                }
+            }
+        }
+    }
+
     pub(crate) fn begin_readiness<P: Serialize>(
         &self,
         context: &EIPCallContext,
@@ -1226,6 +1261,78 @@ mod tests {
             canonical_request_digest("file.stat", &first).expect("digest"),
             canonical_request_digest("file.stat", &second).expect("digest")
         );
+    }
+
+    #[test]
+    fn resolve_start_observes_evidence_without_dispatch() {
+        let ledger = OperationLedger::new(
+            "env".to_owned(),
+            7,
+            "session-test".to_owned(),
+            4,
+            std::time::Duration::from_secs(60),
+            std::time::Duration::from_secs(60),
+            std::sync::Arc::new(tokio::sync::Semaphore::new(4096)),
+        );
+        assert!(matches!(
+            ledger.resolve("process.start", "missing"),
+            Err(LedgerError::TerminalFailure)
+        ));
+        for failed in [false, true] {
+            let id = if failed { "failed" } else { "succeeded" };
+            let context = EIPCallContext {
+                operation_id: id.to_owned(),
+                timeout_ms: None,
+            };
+            let params = serde_json::json!({"context": {"operation_id": id}});
+            let BeginOutcome::New(lease) = ledger
+                .begin("process.start", &context, &params)
+                .expect("accepted")
+            else {
+                panic!("new operation expected")
+            };
+            assert!(matches!(
+                ledger.resolve("process.start", id),
+                Err(LedgerError::InProgress)
+            ));
+            assert!(matches!(
+                ledger.resolve("file.write_text", id),
+                Err(LedgerError::Collision)
+            ));
+            if failed {
+                drop(lease);
+                assert!(matches!(
+                    ledger.resolve("process.start", id),
+                    Err(LedgerError::InProgress)
+                ));
+                let failure = serde_json::from_value::<EIPError>(serde_json::json!({
+                    "code": -32053,
+                    "message": "start failed",
+                    "data": {
+                        "error_type": "command_start_failed",
+                        "retry_hint": "never",
+                        "dispatch_stage": "completed"
+                    }
+                }))
+                .expect("typed failure");
+                ledger.finish_dispatched_failure("process.start", &params, failure.clone());
+                let resolved = ledger.resolve("process.start", id).expect("retained");
+                assert_eq!(
+                    serde_json::to_value(resolved.expect_err("original failure")).unwrap(),
+                    serde_json::to_value(failure).unwrap()
+                );
+            } else {
+                let result = serde_json::json!({"process": {"handle": "original"}});
+                lease.finish(&result, None).expect("finished");
+                assert_eq!(
+                    ledger
+                        .resolve("process.start", id)
+                        .expect("retained")
+                        .expect("success"),
+                    result
+                );
+            }
+        }
     }
 
     #[test]

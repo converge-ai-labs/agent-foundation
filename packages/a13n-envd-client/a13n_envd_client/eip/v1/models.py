@@ -951,6 +951,11 @@ class ProcessReleaseResult(EIPModel):
     receipt: OperationReceipt
 
 
+class ProcessResolveStartParams(EIPModel):
+    context: EIPCallContext
+    target_operation_id: Annotated[Identifier, Field(max_length=128)]
+
+
 class ProcessSignalParams(EIPModel):
     context: EIPCallContext
     handle: ProcessHandle
@@ -1016,6 +1021,14 @@ class SessionCloseResult(EIPModel):
     closed: Literal[True]
 
 
+class SessionDetachParams(EIPModel):
+    pass
+
+
+class SessionDetachResult(EIPModel):
+    detached: Literal[True]
+
+
 class SessionKeepaliveParams(EIPModel):
     pass
 
@@ -1026,7 +1039,7 @@ class SessionKeepaliveResult(EIPModel):
 
 class SessionLifecyclePolicy(EIPModel):
     idle_timeout_ms: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)]
-    disconnect_grace_ms: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)]
+    max_lifetime_ms: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)] | None = None
 
 
 class ShellCommand(EIPModel):
@@ -1364,6 +1377,7 @@ class SessionOpenParams(EIPModel):
     working_directory: AbsoluteEIPPath | None = None
     required_methods: tuple[StrictStr, ...] = ()
     egress: EgressPolicy | None = None
+    lifecycle: SessionLifecyclePolicy | None = None
 
 
 class ShellExecResult(EIPModel):
@@ -1497,6 +1511,7 @@ class SessionDescriptor(EIPModel):
     lifecycle: SessionLifecyclePolicy
     egress: EgressStatus | None = None
     boundary: ExecutionBoundary
+    owner_epoch: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)]
 
 
 class SessionOpenResult(EIPModel):
@@ -1660,6 +1675,7 @@ ProcessInspectParams.model_rebuild()
 ProcessKillParams.model_rebuild()
 ProcessReleaseParams.model_rebuild()
 ProcessReleaseResult.model_rebuild()
+ProcessResolveStartParams.model_rebuild()
 ProcessSignalParams.model_rebuild()
 ProcessStatus.model_rebuild()
 ProcessWaitParams.model_rebuild()
@@ -1672,6 +1688,8 @@ SandboxGrant.model_rebuild()
 SessionAttachParams.model_rebuild()
 SessionCloseParams.model_rebuild()
 SessionCloseResult.model_rebuild()
+SessionDetachParams.model_rebuild()
+SessionDetachResult.model_rebuild()
 SessionKeepaliveParams.model_rebuild()
 SessionKeepaliveResult.model_rebuild()
 SessionLifecyclePolicy.model_rebuild()
@@ -1921,6 +1939,7 @@ __all__ = [
     "ProcessPhase",
     "ProcessReleaseParams",
     "ProcessReleaseResult",
+    "ProcessResolveStartParams",
     "ProcessSignal",
     "ProcessSignalParams",
     "ProcessSignalResult",
@@ -1947,6 +1966,8 @@ __all__ = [
     "SessionCloseParams",
     "SessionCloseResult",
     "SessionDescriptor",
+    "SessionDetachParams",
+    "SessionDetachResult",
     "SessionKeepaliveParams",
     "SessionKeepaliveResult",
     "SessionLifecyclePolicy",

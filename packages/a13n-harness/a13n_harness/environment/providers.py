@@ -49,6 +49,7 @@ from a13n_harness.environment.mounts import (
     EnvironmentReadinessRequirement,
     EnvironmentSnapshot,
 )
+from a13n_harness.environment.process_recovery import EnvdProcessState
 from a13n_harness.environment.retention import (
     BoundOutputCursor,
     BoundOutputReference,
@@ -142,6 +143,10 @@ class BoundProcessOperations(Protocol):
         *,
         output_policy: EnvironmentOutputPolicy,
     ) -> ProcessInfo: ...
+
+    async def recover(self, state: EnvdProcessState, *, alias: str) -> ProcessInfo: ...
+
+    def detach(self, handle: BoundProcessHandle) -> None: ...
 
     async def inspect(self, handle: BoundProcessHandle) -> ProcessInfo: ...
 

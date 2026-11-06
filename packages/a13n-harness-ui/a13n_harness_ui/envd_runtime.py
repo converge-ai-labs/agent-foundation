@@ -131,13 +131,14 @@ class EnvdRuntimeManager:
                 )
         if selected.launch.computer_use:
             self.require_computer_use()
-        roots = tuple(root.resolve(strict=True) for root in roots)
         # Unrestricted native execution shares a stable Host-owned daemon. Session cwd
         # still comes from each connector; restricted grants never merge across roots.
         if selected.launch.full_control and selected.launch.sandbox.mode == "disabled" and self._parent is not None:
             shared = self._parent / "host"
             await to_thread.run_sync(partial(shared.mkdir, parents=True, exist_ok=True))
             roots = (shared.resolve(),)
+        else:
+            roots = tuple(root.resolve(strict=True) for root in roots)
         key = (
             roots,
             canonical_digest(

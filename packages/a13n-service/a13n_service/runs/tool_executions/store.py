@@ -9,7 +9,9 @@ import hmac
 from dataclasses import asdict
 from datetime import datetime, timedelta
 
+from a13n_harness.environment.process_recovery import ShellExecutionState
 from a13n_harness.tool_execution import StoredToolExecution, ToolExecutionAdmissionRejected, ToolExecutionRecord
+from a13n_harness.tool_execution_payload import ToolExecutionPayload as Payload
 from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,7 +22,6 @@ from a13n_service.infra.outbox import OutboxRow, enqueue
 from a13n_service.runs.attempts import Lease, LeaseLost, lock_thread_lease
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.tables import ToolExecutionRow
-from a13n_service.runs.tool_executions.payload import Payload
 
 # Set by the worker's resource scope. The original Harness task inherits it; later readers need no origin.
 ORIGIN: contextvars.ContextVar[Lease] = contextvars.ContextVar("service_tool_origin")
@@ -33,7 +34,10 @@ def available():
 
 def observation(row: ToolExecutionRow) -> ToolExecutionRecord:
     return ToolExecutionRecord.model_validate(row.record).model_copy(
-        update={"delivery_acknowledged": row.first_delivered_at is not None}
+        update={
+            "delivery_acknowledged": row.first_delivered_at is not None,
+            "cancel_requested": row.cancel_requested_at is not None,
+        }
     )
 
 
@@ -107,7 +111,7 @@ class Store:
                         f"tool-executions/{lease.workspace_id}/{record.execution_id}/{hashlib.sha256(data).hexdigest()}"
                     )
                     ref = await self.runtime.objects.put(key, data, content_type="application/json")
-            await self._commit(record, lease, ref)
+            await self._commit(record, lease, ref, execution.shell)
         finally:
             if key is not None:
                 # Reconcile uncertain publication before removing bytes. A live owner may retry this key;
@@ -120,7 +124,13 @@ class Store:
                 if discard:
                     await self.runtime.objects.delete(key)
 
-    async def _commit(self, record: ToolExecutionRecord, lease: Lease, ref: ObjectRef | None) -> None:
+    async def _commit(
+        self,
+        record: ToolExecutionRecord,
+        lease: Lease,
+        ref: ObjectRef | None,
+        shell: ShellExecutionState | None,
+    ) -> None:
         async with transaction(self.runtime.storage) as session:
             row = await lock(session, ToolExecutionRow, record.execution_id)
             current = await now(session)
@@ -172,6 +182,8 @@ class Store:
             if observation(row).foreground_released:
                 record = record.model_copy(update={"foreground_released": True})
             row.status, row.record = record.status, record.model_dump(mode="json")
+            if shell is not None:
+                row.shell = shell.model_dump(mode="json")
             if record.terminal:
                 assert record.completed_at is not None
                 row.completed_at = record.completed_at
@@ -192,8 +204,9 @@ class Store:
             if row is None:
                 return None
             record, ref = observation(row), ObjectRef(**row.result_ref) if row.result_ref is not None else None
+            shell = ShellExecutionState.model_validate(row.shell) if row.shell is not None else None
         if ref is None:
-            return StoredToolExecution(record)
+            return StoredToolExecution(record, shell=shell)
         data = await read(self.runtime.objects, ref)
         return Payload.model_validate_json(data).execution(record)
 
@@ -213,6 +226,30 @@ class Store:
                 .limit(limit)
             )
             return tuple(observation(row) for row in rows)
+
+    async def request_cancellation(self, thread_id: str, execution_id: str) -> None:
+        async with transaction(self.runtime.storage) as session:
+            row = await lock(session, ToolExecutionRow, execution_id)
+            if row is not None and row.thread_id == thread_id and row.completed_at is None:
+                row.cancel_requested_at = row.cancel_requested_at or await now(session)
+
+    async def release_foreground(self, thread_id: str, execution_id: str) -> None:
+        lease = ORIGIN.get()
+        async with transaction(self.runtime.storage) as session:
+            row = await lock(session, ToolExecutionRow, execution_id)
+            current = await now(session)
+            if (
+                row is None
+                or row.thread_id != thread_id
+                or row.worker_id != lease.worker_id
+                or not hmac.compare_digest(row.lease_token_hash, secret_hash(lease.token))
+                or row.lease_expires_at <= current
+            ):
+                raise LeaseLost()
+            record = observation(row)
+            row.record = record.model_copy(update={"foreground_released": True}).model_dump(mode="json")
+            if row.completed_at is not None and row.first_delivered_at is None:
+                await notify(session, row)
 
     async def acknowledge_delivery(self, thread_id: str, execution_id: str) -> None:
         async with transaction(self.runtime.storage) as session:

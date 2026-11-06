@@ -181,15 +181,33 @@ class RequestCoordinator(EIPRequester):
         """Transfer the open result to its owner before releasing admission."""
         return cast(T, await self._request(SESSION_OPEN, params, None, consume=lambda result: bind(result.descriptor)))
 
-    def session(self, session_id: str, *, limits: EIPLimits, max_in_flight: int = 32) -> SessionRequester:
+    def session(
+        self, session_id: str, *, limits: EIPLimits, max_in_flight: int = 32, owner_epoch: int = 1
+    ) -> SessionRequester:
         self._ensure_open()
         if not session_id or session_id in self._sessions:
             raise EIPSessionStateError("Session is empty or already attached locally")
         if len(self._sessions) >= self._max_sessions:
             raise EIPSessionStateError("local Device Session capacity exhausted")
-        requester = SessionRequester(self, session_id, limits, max_in_flight)
+        requester = SessionRequester(self, session_id, limits, max_in_flight, owner_epoch=owner_epoch)
         self._sessions[session_id] = requester
         return requester
+
+    async def wait_session_released(self, session_id: str, *, owner_epoch: int, timeout: float) -> None:
+        """Drain a detached local owner's replies before reusing its selector."""
+        try:
+            async with asyncio.timeout(timeout):
+                while True:
+                    self._ensure_open()
+                    owner = self._sessions.get(session_id)
+                    if owner is None:
+                        return
+                    if not owner._finished or owner_epoch <= owner.owner_epoch:
+                        raise EIPSessionStateError("Session is already attached locally")
+                    self._pending_changed.clear()
+                    await self._pending_changed.wait()
+        except TimeoutError as error:
+            raise EIPRequestTimeoutError("Previous Session replies did not drain", dispatched=False) from error
 
     def configure_limits(self, limits: EIPLimits) -> None:
         self._transport.set_limits(
@@ -253,6 +271,7 @@ class RequestCoordinator(EIPRequester):
             method=method.name,
             params=payload,
             eip_session=None if owner is None else owner.session_id,
+            eip_owner_epoch=None if owner is None else owner.owner_epoch,
         )
         self._ensure_reader()
         send_timeout = (
@@ -443,13 +462,20 @@ class RequestCoordinator(EIPRequester):
         # no unbounded background tasks, Session slots, or tombstones are needed.
         del self._pending[request_id]
         pending.method = SESSION_CLOSE
-        pending.owner = SessionRequester(self, descriptor.session_id, descriptor.limits, 1)
+        pending.owner = SessionRequester(
+            self, descriptor.session_id, descriptor.limits, 1, owner_epoch=descriptor.owner_epoch
+        )
         pending.open_result = None
         pending.future.cancel()
         cleanup_id = self._allocate_id()
         self._pending[cleanup_id] = pending
         envelope = JsonRpcRequest(
-            jsonrpc="2.0", id=cleanup_id, method="session.close", params={}, eip_session=descriptor.session_id
+            jsonrpc="2.0",
+            id=cleanup_id,
+            method="session.close",
+            params={},
+            eip_session=descriptor.session_id,
+            eip_owner_epoch=descriptor.owner_epoch,
         )
         pending.send_task = asyncio.create_task(
             self._send(cleanup_id, pending, ControlFrame(encode_model(envelope)), _SEND_TIMEOUT),
@@ -503,14 +529,24 @@ class RequestCoordinator(EIPRequester):
 class SessionRequester(EIPRequester):
     """Session-local admission and transfers over a Device-owned connection."""
 
-    def __init__(self, device: RequestCoordinator, session_id: str, limits: EIPLimits, max_in_flight: int) -> None:
+    def __init__(
+        self,
+        device: RequestCoordinator,
+        session_id: str,
+        limits: EIPLimits,
+        max_in_flight: int,
+        *,
+        owner_epoch: int = 1,
+    ) -> None:
         _validate_positive_integer("max_in_flight", max_in_flight)
         self._device = device
         self.session_id = session_id
+        self.owner_epoch = owner_epoch
         self._admission = _AdmissionLimiter(min(max_in_flight, limits.max_concurrent_operations))
         self._release_admission = _AdmissionLimiter(4)
         self._lifecycle = {
-            name: _AdmissionLimiter(1) for name in ("session.attach", "session.keepalive", "session.close")
+            name: _AdmissionLimiter(1)
+            for name in ("session.attach", "session.keepalive", "session.close", "session.detach")
         }
         self._max_transfers = limits.max_concurrent_file_transfers
         self._transfers: dict[str, TransferChannel] = {}
@@ -532,7 +568,7 @@ class SessionRequester(EIPRequester):
     def ensure_method(self, method: MethodSpec[Any, Any]) -> None:
         if method.device_scoped:
             raise EIPSessionStateError("Device methods require the Device requester")
-        if (self._error is not None or self._closing) and method.name != "session.close":
+        if (self._error is not None or self._closing) and method.name not in {"session.close", "session.detach"}:
             raise EIPSessionStateError("Session requester is closed") from self._error
 
     async def request[P, R](self, method: MethodSpec[P, R], params: P) -> R:
@@ -548,7 +584,7 @@ class SessionRequester(EIPRequester):
         self._admission.fail(error)
         self._release_admission.fail(error)
         for name, admission in self._lifecycle.items():
-            if name != "session.close":
+            if name not in {"session.close", "session.detach"}:
                 admission.fail(error)
 
     async def wait_finished(self) -> BaseException | None:
@@ -561,6 +597,7 @@ class SessionRequester(EIPRequester):
         self._error = error or EIPSessionStateError("Session closed")
         self.begin_close()
         self._lifecycle["session.close"].fail(self._error)
+        self._lifecycle["session.detach"].fail(self._error)
         self._finished = True
         self._finished_event.set()
         self._device._drop_finished_session(self)

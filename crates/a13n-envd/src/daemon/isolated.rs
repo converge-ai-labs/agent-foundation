@@ -14,19 +14,26 @@ impl Daemon {
     ) -> Result<(Arc<Self>, Arc<Carrier>), DaemonInitError> {
         let mut daemon = Self::with_generation(config, generation)?;
         daemon.ids = ShortIdAllocator::for_session(&session_id);
-        // The outer Session owns idle/grace expiry. Policy-only calls never cross
-        // this pipe, so a second independent timer would expire a live Session.
-        daemon.config.session_idle_timeout = Duration::MAX;
-        daemon.config.disconnect_grace = Duration::MAX;
         let daemon = Arc::new(daemon);
-        let carrier = daemon.carrier(outbound.clone());
+        let mut carrier = daemon.carrier(outbound.clone());
+        Arc::get_mut(&mut carrier)
+            .expect("new private carrier")
+            .authority = CarrierAuthority::Delegated;
         carrier.initialized.store(true, Ordering::Release);
         let session = Arc::new(Session::new(
             &daemon,
             carrier.id,
             session_id.clone(),
             config.default_working_directory.clone(),
+            daemon.descriptor.lifecycle.clone(),
         )?);
+        // Only the outer Session enforces lifetime. Policy-only activity need
+        // not cross the worker pipe, and attach never resets the outer clock.
+        {
+            let mut state = session.session.state();
+            state.idle_timeout = Duration::MAX;
+            state.max_lifetime = None;
+        }
         session
             .transfers
             .attach(outbound)
@@ -47,9 +54,8 @@ impl Daemon {
         let session = self.lookup(session_id)?;
         let _cleanup = session.cleanup.lock().await;
         session.transfers.detach().await;
-        let mut state = session.session.state();
-        state.owner = None;
-        state.detached_at = Some(Instant::now());
+        // The outer Session owns public attachment. This private carrier remains
+        // authorized for already-admitted work while its transfer route is absent.
         Ok(())
     }
 }

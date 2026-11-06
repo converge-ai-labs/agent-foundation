@@ -223,9 +223,10 @@ async def test_root_coordinator_cancels_the_operation_scope_after_stream_creatio
         await executor.started.wait()
 
         assert (await coordinator.cancel(receipt.receipt_id)).accepted
-        operation = await coordinator.wait(receipt.receipt_id)
+        with fail_after(1):
+            operation = await coordinator.wait(receipt.receipt_id)
 
-        assert executor.stream.cancelled
+        assert not executor.stream.cancelled
         assert operation.status is RootOperationStatus.cancelled
     finally:
         await coordinator.close(timeout_seconds=1)
@@ -760,4 +761,41 @@ async def test_caller_cancellation_during_capture_still_admits_and_drains(monkey
         assert coordinator._thread_fences == {}
     finally:
         release.set()
+        await coordinator.close(timeout_seconds=1)
+
+
+async def test_root_steering_rechecks_cancellation_after_enqueue_wait(monkeypatch):
+    from anyio import create_task_group
+
+    entered, release = Event(), Event()
+    accepted = []
+    executor = _RunningExecutor()
+
+    async def delayed_steer(message, *, before_accept, **kwargs):
+        entered.set()
+        await release.wait()
+        before_accept()
+        accepted.append(message)
+        return "enqueue-test"
+
+    monkeypatch.setattr(executor.stream, "steer", delayed_steer, raising=False)
+    coordinator = RootRunCoordinator(cast(Any, executor))
+    await coordinator.start()
+    try:
+        receipt = await coordinator.submit_prompt(thread_id="thread-1", prompt="run")
+        await executor.started.wait()
+        results = []
+
+        async def steer():
+            results.append(await coordinator.steer(receipt_id=receipt.receipt_id, message="late completion"))
+
+        async with create_task_group() as group:
+            group.start_soon(steer)
+            await entered.wait()
+            assert (await coordinator.cancel(receipt.receipt_id)).accepted
+            assert (await coordinator.wait(receipt.receipt_id)).status is RootOperationStatus.cancelled
+            release.set()
+        assert not results[0].accepted
+        assert accepted == []
+    finally:
         await coordinator.close(timeout_seconds=1)

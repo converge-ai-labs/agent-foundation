@@ -42,7 +42,7 @@ impl Fixture {
 
     fn initialize(&self, mut command: Command) -> Value {
         let payload = json!({"jsonrpc":"2.0", "id":1, "method":"initialize", "params":{
-            "supported_protocol_versions":["0.3"], "client":{"name":"startup-test","version":"1"}
+            "supported_protocol_versions":["0.4"], "client":{"name":"startup-test","version":"1"}
         }})
         .to_string();
         let mut child = command
@@ -156,7 +156,7 @@ fn environment_overrides_file_and_cli_overrides_environment() {
         &config,
         json!({
             "device_id":"device-file", "name":"File", "description":"Retained file description",
-            "directory_discovery":false, "idle_timeout_ms":60000, "disconnect_grace_ms":1000
+            "directory_discovery":false, "idle_timeout_ms":60000, "max_lifetime_ms":120000
         })
         .to_string(),
     )
@@ -208,7 +208,7 @@ fn malformed_environment_configuration_is_not_silently_ignored() {
             "A13N_ENVD_CONFIG_JSON",
             r#"{"computer_use_permission_timeout_ms":0}"#,
         ),
-        ("A13N_ENVD_DISCONNECT_GRACE_MS", "not-a-number"),
+        ("A13N_ENVD_MAX_LIFETIME_MS", "not-a-number"),
     ] {
         let mut command = fixture.command();
         command.env(name, value);

@@ -82,7 +82,7 @@ def page(data, offset, total, *, complete=True):
     )
 
 
-@pytest.mark.parametrize("outcome", ["complete", "limit", "provider", "read", "empty", "write", "cancel"])
+@pytest.mark.parametrize("outcome", ["complete", "limit", "provider", "read", "empty", "write", "absent", "cancel"])
 async def test_stream_offload_reports_actual_coverage(monkeypatch, outcome):
     monkeypatch.setattr(shell_output, "SHELL_OUTPUT_BYTES", 24 if outcome == "limit" else 100)
     data = b"a" * 20 + b"TAIL"
@@ -110,7 +110,7 @@ async def test_stream_offload_reports_actual_coverage(monkeypatch, outcome):
         )
 
     initial = page(data[:10], 0, len(data) + (1 if outcome == "limit" else 0))
-    context = SimpleNamespace(_spill_shell_output=write)
+    context = None if outcome == "absent" else SimpleNamespace(_spill_shell_output=write)
     if outcome == "cancel":
         with pytest.raises(asyncio.CancelledError):
             await offload_stream(context, initial, read)
@@ -123,11 +123,14 @@ async def test_stream_offload_reports_actual_coverage(monkeypatch, outcome):
         "read": "read_failed",
         "empty": "source_gap",
         "write": "write_unavailable",
+        "absent": "write_unavailable",
     }
     assert saved["reason"] == expected[outcome]
     assert saved["content_complete"] is (outcome == "complete")
-    if outcome == "write":
+    if outcome in {"write", "absent"}:
         assert saved["path"] is None and saved["bytes"] == 0
+        if outcome == "absent":
+            assert written == b"" and offsets == []
     else:
         assert saved["path"] == "/tmp/log.txt"
         assert saved["bytes"] == len(written)

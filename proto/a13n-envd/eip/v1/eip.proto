@@ -83,6 +83,9 @@ service EnvironmentInteractionProtocol {
   rpc SessionAttach(SessionAttachParams) returns (SessionOpenResult) {
     option (eip_method) = { jsonrpc_method: "session.attach" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_LEDGER_EXTERNAL introduced_major: 0 introduced_minor: 1 error_family: ERROR_FAMILY_SESSION };
   }
+  rpc SessionDetach(SessionDetachParams) returns (SessionDetachResult) {
+    option (eip_method) = { jsonrpc_method: "session.detach" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_LEDGER_EXTERNAL introduced_major: 0 introduced_minor: 4 error_family: ERROR_FAMILY_SESSION };
+  }
   rpc SessionKeepalive(SessionKeepaliveParams) returns (SessionKeepaliveResult) {
     option (eip_method) = { jsonrpc_method: "session.keepalive" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_LEDGER_EXTERNAL introduced_major: 0 introduced_minor: 1 error_family: ERROR_FAMILY_SESSION };
   }
@@ -145,6 +148,9 @@ service EnvironmentInteractionProtocol {
   }
   rpc ProcessStart(ProcessStartParams) returns (ProcessStartResult) {
     option (eip_method) = { jsonrpc_method: "process.start" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 1 error_family: ERROR_FAMILY_PROCESS };
+  }
+  rpc ProcessResolveStart(ProcessResolveStartParams) returns (ProcessStartResult) {
+    option (eip_method) = { jsonrpc_method: "process.resolve_start" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_ACTIVE_ONLY introduced_major: 0 introduced_minor: 4 error_family: ERROR_FAMILY_PROCESS };
   }
   rpc ProcessInspect(ProcessInspectParams) returns (ProcessInspectResult) {
     option (eip_method) = { jsonrpc_method: "process.inspect" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_ACTIVE_ONLY introduced_major: 0 introduced_minor: 1 error_family: ERROR_FAMILY_PROCESS };

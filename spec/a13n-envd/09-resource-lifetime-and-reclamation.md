@@ -8,22 +8,29 @@ A long-lived daemon collects abandoned Sessions and completed history periodical
 
 ## Session Liveness
 
-A Session has one owning Host scope. Accepted requests update its last owner activity. The client sends `session.keepalive` while that scope exists, independently of command waits and output traffic. A shared Device connection must not keep every historical Session alive automatically.
+A Session has one owning Host execution context, which can span Runs. Active Runs and retained background work borrow that context under current Host authorization. Accepted requests update its last owner activity. The client sends `session.keepalive` while a borrower uses the Session, independently of command waits and output traffic. A saved context, cached client or shared Device connection does not keep historical Sessions alive. Final release touches the Session and stops keepalive, starting its idle window at the end of use.
 
-The daemon advertises a finite `idle_timeout_ms` and a shorter `disconnect_grace_ms`. The client sends keepalive comfortably before idle expiry. Envd uses a monotonic clock. Browser presence, output production, CPU usage, sibling traffic and WebSocket ping/pong are not Session owner activity.
+`session.open` accepts an immutable lifecycle policy with a positive `idle_timeout_ms` and optional positive `max_lifetime_ms`. The Device advertises its default policy: one hour idle and unlimited maximum lifetime. The Session descriptor returns the effective policy. Envd uses monotonic clocks for last activity and creation time. Attach and keepalive never reset creation time. A finite maximum lifetime is a hard deadline, including during active work. Browser presence, output production, CPU usage, sibling traffic and WebSocket ping/pong are not Session owner activity.
 
 - An owned Session with current keepalive remains live even when its command is quiet for hours.
 - A Session without owner activity expires at its idle deadline, even if an abandoned process continues producing output.
-- Loss of a framed carrier detaches its Sessions and starts a short grace window, capped by their existing idle deadlines. It immediately aborts that carrier's incomplete transfers but does not immediately kill commands.
-- The same authenticated Host may reattach an existing Session in the same generation before its deadline. Reattachment retains its original working directory and resources and cancels the detach deadline. It does not create a second owner or restore transfers.
+- Loss of a framed carrier detaches its Sessions without extending their existing idle/max deadlines. It immediately aborts that carrier's incomplete transfers while preserving commands.
+- `session.detach` releases attachment and touches the idle clock without destroying commands, output or history. It aborts incomplete transfers.
+- The authenticated Host can reattach an existing Session in the same generation before its deadline. Reattachment retains its original working directory, policy and resources. It replaces the previous owner and does not restore transfers.
 - HTTP connection loss alone is not Session detachment because TCP connections are not Session owners. The same selector remains usable until close or idle expiry.
 - Explicit close has no grace period. It starts cleanup immediately.
 
-The client stops keepalive and closes its Session when its owning adapter ends. A lost open response leaves an unclaimed Session that idle expiry collects. Reattachment is an explicit connection-runtime action, never automatic operation replay or a promise to recover Host state after restart.
+The Host persists Session identity and recovery metadata separately from live clients and transport credentials. Normal Run completion and human-input pauses release use rather than destroy the shared context. Explicit close destroys the Session. A lost open response leaves an unclaimed Session that idle expiry collects. The Host may replace a proven expired Session or lost daemon generation for new work; temporary transport loss is not proof of expiry. Replacement cannot restore old native resources or justify replaying a command with an uncertain start outcome.
+
+### Ownership Transfer
+
+A new Session starts at `owner_epoch = 1`. Every Session control request carries `eip_owner_epoch`; Device requests omit it. `session.attach` requires a strictly newer epoch and returns it in the descriptor. Other requests must match the installed epoch and attachment. Stale requests fail with `conflict` without refreshing activity or changing resources. The authenticated Host allocates and persists takeover epochs under its own execution ownership; the epoch fences obsolete owners, not authorization between independent principals.
+
+Takeover serializes with request admission and attachment cleanup at the outer Session boundary, aborts old incomplete transfers, installs the new attachment and fences delayed old-carrier cleanup. It rejects subsequent admissions from the old owner; already-admitted native operations settle under their original identity without blocking takeover. The private isolated-worker carrier executes outer-admitted requests without a second public ownership fence. The Host fences result publication separately in its durable store. Lost attachment responses do not authorize command replay. Native operation identity and evidence remain unchanged across attachment.
 
 ## Session Cleanup
 
-Open/attached, detached, closing and closed are sufficient lifecycle distinctions. Initial readiness gates ordinary operations. Close, idle expiry and grace expiry atomically move the Session to closing; later keepalive or attach cannot resurrect it.
+Open/attached, detached, closing and closed are sufficient lifecycle distinctions. Initial readiness gates ordinary operations. Close, idle expiry and maximum-lifetime expiry atomically move the Session to closing; later keepalive or attach cannot resurrect it.
 
 One cleanup path:
 

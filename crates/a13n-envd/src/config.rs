@@ -16,7 +16,7 @@ const DEFAULT_MAX_RESPONSE_BYTES: u64 = 16 * 1024 * 1024;
 const DEFAULT_MAX_CONCURRENT_OPERATIONS: u64 = 128;
 const DEFAULT_MAX_TRANSFER_FRAME_BYTES: u64 = 4 * 1024 * 1024;
 const DEFAULT_MAX_CONCURRENT_FILE_TRANSFERS: u64 = 64;
-const DEFAULT_SESSION_IDLE_TTL_MS: u64 = 30 * 60 * 1000;
+const DEFAULT_SESSION_IDLE_TTL_MS: u64 = 60 * 60 * 1000;
 const INITIALIZATION_TIMEOUT: Duration = Duration::from_secs(30);
 const DEFAULT_MAX_COMMAND_ARGUMENTS: usize = 1024;
 const DEFAULT_MAX_COMMAND_ARGUMENT_BYTES: usize = 1024 * 1024;
@@ -32,7 +32,7 @@ const KNOWN_ENVIRONMENT_VARIABLES: &[&str] = &[
     "A13N_ENVD_NAME",
     "A13N_ENVD_DESCRIPTION",
     "A13N_ENVD_IDLE_TIMEOUT_MS",
-    "A13N_ENVD_DISCONNECT_GRACE_MS",
+    "A13N_ENVD_MAX_LIFETIME_MS",
     "A13N_ENVD_TRANSPORT",
     "A13N_ENVD_HTTP_BIND",
     "A13N_ENVD_HTTP_CREDENTIAL_FILE",
@@ -118,7 +118,7 @@ struct FileConfig {
     computer_use: Option<bool>,
     computer_use_permission_timeout_ms: Option<u64>,
     idle_timeout_ms: Option<u64>,
-    disconnect_grace_ms: Option<u64>,
+    max_lifetime_ms: Option<u64>,
     #[serde(default)]
     limits: DaemonLimits,
     #[serde(default)]
@@ -249,7 +249,7 @@ pub(crate) struct Config {
     pub(crate) limits: DaemonLimits,
     pub(crate) initialization_timeout: Duration,
     pub(crate) session_idle_timeout: Duration,
-    pub(crate) disconnect_grace: Duration,
+    pub(crate) session_max_lifetime: Option<Duration>,
     pub(crate) command: Option<CommandConfig>,
     #[serde(skip)]
     pub(crate) runtime: Option<RuntimeState>,
@@ -368,13 +368,9 @@ impl Config {
         validate_presentation(file.description.as_deref(), "description", 4096)?;
 
         let idle_timeout_ms = file.idle_timeout_ms.unwrap_or(DEFAULT_SESSION_IDLE_TTL_MS);
-        let disconnect_grace_ms = file.disconnect_grace_ms.unwrap_or(30_000);
-        if idle_timeout_ms == 0
-            || disconnect_grace_ms == 0
-            || disconnect_grace_ms >= idle_timeout_ms
-        {
+        if idle_timeout_ms == 0 || file.max_lifetime_ms == Some(0) {
             return Err(ConfigError::new(
-                "Session lifecycle durations must be positive and disconnect grace shorter than idle timeout",
+                "Session lifecycle durations must be positive",
             ));
         }
         let execution =
@@ -471,7 +467,7 @@ impl Config {
             transport,
             initialization_timeout: INITIALIZATION_TIMEOUT,
             session_idle_timeout: Duration::from_millis(idle_timeout_ms),
-            disconnect_grace: Duration::from_millis(disconnect_grace_ms),
+            session_max_lifetime: file.max_lifetime_ms.map(Duration::from_millis),
             command,
             runtime,
             limits,
@@ -504,7 +500,7 @@ impl Config {
             limits: default_limits(),
             initialization_timeout: Duration::from_millis(20),
             session_idle_timeout: Duration::from_secs(1),
-            disconnect_grace: Duration::from_millis(100),
+            session_max_lifetime: None,
             command: None,
             runtime: None,
         }
@@ -1199,10 +1195,7 @@ fn apply_environment(value: &mut serde_json::Value) -> Result<(), ConfigError> {
             "A13N_ENVD_COMPUTER_USE_PERMISSION_TIMEOUT_MS",
             &["computer_use_permission_timeout_ms"][..],
         ),
-        (
-            "A13N_ENVD_DISCONNECT_GRACE_MS",
-            &["disconnect_grace_ms"][..],
-        ),
+        ("A13N_ENVD_MAX_LIFETIME_MS", &["max_lifetime_ms"][..]),
     ] {
         if let Some(text) = optional_unicode(name)? {
             let number: u64 = text

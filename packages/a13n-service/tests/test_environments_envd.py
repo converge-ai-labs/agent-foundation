@@ -535,12 +535,13 @@ async def test_reverse_device_real_envd_export_cross_replica_query_and_revocatio
 
 @pytest.mark.parametrize("lost_cleanup", [False, True])
 @pytest.mark.parametrize("successor", [False, True])
-async def test_checkpointed_sessions_are_recovered_only_within_the_same_run(
+async def test_thread_sessions_survive_attempt_and_run_replacement(
     service, daemons, scripted_model, runs_kit, monkeypatch, lost_cleanup, successor
 ):
     from a13n_envd_client import EIPSession
+    from a13n_harness.environment.session_recovery import EnvdSessionState
     from a13n_service.infra.db import transaction
-    from a13n_service.runs import checkpoints
+    from a13n_service.runs.environments.tables import ThreadExecutionContextRow
     from a13n_service.runs.seal import LeaseExpirer
     from a13n_service.runs.tables import AttemptRow, RunRow
     from sqlalchemy import update
@@ -564,19 +565,15 @@ async def test_checkpointed_sessions_are_recovered_only_within_the_same_run(
 
     async def saved_state():
         async with transaction(service.runtime.storage) as session:
-            row = await session.get_one(RunRow, run_id)
-            pointer = checkpoints.StatePointer.model_validate(row.checkpoint)
-        result = await checkpoints.load_state(service.runtime.objects, pointer)
-        assert result is not None
-        return result
+            row = await session.get_one(ThreadExecutionContextRow, submitted["thread"]["id"])
+            assert len(row.sessions) == 1
+            return EnvdSessionState.model_validate(next(iter(row.sessions.values())))
 
     first = await runs_kit.attempt(service)
     await scripted_model.request()
     await scripted_model.request()
     saved = await saved_state()
-    assert saved.format == checkpoints.FORMAT
-    assert set(saved.envd_sessions) == {"workspace"}
-    original = saved.envd_sessions["workspace"].descriptor
+    original = saved.descriptor
     assert TOKEN not in saved.model_dump_json()
 
     async def lose_remote_cleanup(session):
@@ -586,7 +583,7 @@ async def test_checkpointed_sessions_are_recovered_only_within_the_same_run(
 
     with monkeypatch.context() as patch:
         if lost_cleanup:
-            patch.setattr(EIPSession, "close", lose_remote_cleanup)
+            patch.setattr(EIPSession, "detach", lose_remote_cleanup)
         first.cancel()
         with pytest.raises(asyncio.CancelledError):
             await first
@@ -600,11 +597,11 @@ async def test_checkpointed_sessions_are_recovered_only_within_the_same_run(
         await session.execute(update(RunRow).where(RunRow.id == run_id).values(available_at=RunRow.created_at))
 
     if successor:
-        # Interrupt keeps the last checkpoint, including hints from the previous
-        # attempt. A new user turn inherits history but must not attach its Session.
+        # A new user turn inherits the Thread's continuing context independently
+        # of the Run checkpoint and old worker's transport cleanup.
         response = await service.client.post(f"{service.api}/runs/{run_id}/interrupt")
         assert response.status_code == 200, response.text
-        assert (await saved_state()).envd_sessions
+        assert (await saved_state()).descriptor.session_id == original.session_id
         response = await runs_kit.submit(service, submitted["thread"]["id"], runs_kit.message(agent, "Continue"))
         assert response.status_code == 201, response.text
         run_id = response.json()["run"]["id"]
@@ -617,15 +614,503 @@ async def test_checkpointed_sessions_are_recovered_only_within_the_same_run(
         await scripted_model.request()
         await scripted_model.request()
         restored = await saved_state()
-        current = restored.envd_sessions["workspace"].descriptor
-        assert (current.session_id == original.session_id) is (lost_cleanup and not successor)
+        current = restored.descriptor
+        assert current.session_id == original.session_id
         assert current.generation == original.generation
         assert (laptop.workspace / "proof.txt").read_text() == "first\nsecond\n"
     finally:
         gate.set()
         await second
     assert (await runs_kit.get_run(service, run_id))["status"] == "completed"
-    assert (await saved_state()).envd_sessions == {}
+    assert (await saved_state()).descriptor.session_id == original.session_id
+
+
+@pytest.mark.parametrize("outcome", ["complete", "cancel", "revoked", "transient", "transient_cancel", "session_gone"])
+async def test_retained_shell_recovers_original_process_after_run_seals(
+    service, daemons, scripted_model, runs_kit, outcome, monkeypatch
+):
+    from dataclasses import replace
+
+    from a13n_envd_client import EIPDeviceConnection, EIPTransportError
+    from a13n_envd_client.eip.v1.client import EIPClient
+    from a13n_service.infra import outbox
+    from a13n_service.infra.db import transaction
+    from a13n_service.runs.tables import ToolExecutionRow
+    from a13n_service.runs.tool_executions.claims import claim_shells
+    from a13n_service.runs.tool_executions.delivery import tool_results
+    from sqlalchemy import select
+
+    released = []
+    release = EIPClient.process_release
+
+    async def observed_release(client, params):
+        result = await release(client, params)
+        released.append(params.handle)
+        return result
+
+    monkeypatch.setattr(EIPClient, "process_release", observed_release)
+    await runs_kit.pause_sweeps(service)
+    daemon = await daemons.start("device-retained")
+    environment_id = (await register(service, daemon.endpoint)).json()["id"]
+    agent = await runs_kit.create_agent(service, scripted_model)
+    scripted_model.call(
+        "shell_exec",
+        {"command": "echo admitted >> admissions; while [ ! -f finish ]; do sleep 0.05; done; echo original-result"},
+        call_id="call-retained",
+    )
+    scripted_model.say("The command is still running.")
+    submitted = await runs_kit.start_thread(
+        service,
+        agent,
+        "Start a retained command",
+        environments=[
+            {"name": "workspace", "environment_id": environment_id, "working_directory": str(daemon.workspace)}
+        ],
+        options={"execution": {"tools": {"mode": "auto", "foreground_wait_seconds": 0.1}}},
+    )
+    await (await runs_kit.attempt(service))
+    thread_id, run_id = submitted["thread"]["id"], submitted["run"]["id"]
+    assert (await runs_kit.get_run(service, run_id))["status"] == "completed"
+
+    async def original():
+        async with transaction(service.runtime.storage) as session:
+            row = await session.scalar(select(ToolExecutionRow).where(ToolExecutionRow.run_id == run_id))
+            assert row is not None
+            return row.id, row.shell
+
+    async with asyncio.timeout(10):
+        while True:
+            execution_id, shell = await original()
+            if shell is not None and shell["process"]["identity"] is not None:
+                break
+            await asyncio.sleep(0.02)
+    original_identity = shell["process"]["identity"]
+    if outcome == "complete":
+        from a13n_service.runs.claim import claim
+        from a13n_service.runs.environments.tables import ThreadExecutionContextRow
+
+        async with transaction(service.runtime.storage) as session:
+            context = await session.get_one(ThreadExecutionContextRow, thread_id)
+            original_sessions = context.sessions
+        scripted_model.say("The original command is still running.")
+        following = await runs_kit.submit(
+            service,
+            thread_id,
+            runs_kit.message(
+                agent,
+                "Continue while it runs",
+                options={"configuration": {"extensions": {"test.partition": "successor"}}},
+            ),
+        )
+        assert following.status_code == 201, following.text
+        assert await claim(service.runtime, worker_id="worker-other", worker_build="test", limit=1) == []
+        unrelated = await runs_kit.start_thread(service, agent, "Unrelated work")
+        (other,) = await claim(service.runtime, worker_id="worker-other", worker_build="test", limit=1)
+        assert other.thread_id == unrelated["thread"]["id"]
+        await (await runs_kit.attempt(service))
+        assert (await runs_kit.get_run(service, following.json()["run"]["id"]))["status"] == "completed"
+        assert any(record.execution_id == execution_id for record in service.runtime.executions.active)
+        async with transaction(service.runtime.storage) as session:
+            context = await session.get_one(ThreadExecutionContextRow, thread_id)
+            assert original_sessions.items() <= context.sessions.items()
+            assert len(context.sessions) == len(original_sessions) + 1
+
+    # A scanner must not rotate the lease of its own still-detaching supervisor.
+    async with transaction(service.runtime.storage) as session:
+        row = await session.get_one(ToolExecutionRow, execution_id)
+        row.lease_expires_at = row.created_at
+    assert await claim_shells(service.runtime, worker_id="worker-test", limit=10) == []
+    assert service.runtime.executions.yield_shell(execution_id)
+    await service.runtime.executions.join()
+    if outcome == "cancel":
+        async with transaction(service.runtime.storage) as session:
+            row = await session.get_one(ToolExecutionRow, execution_id)
+            row.cancel_requested_at = row.created_at
+    elif outcome == "revoked":
+        from .test_platform_tools import set_role
+
+        async with transaction(service.runtime.storage) as session:
+            await set_role(session, service, "viewer")
+
+    if outcome == "session_gone":
+        from a13n_envd_client import HttpTransport
+        from a13n_harness.environment.session_recovery import EnvdSessionState
+        from a13n_service.runs.environments.tables import ThreadExecutionContextRow
+
+        async with transaction(service.runtime.storage) as session:
+            context = await session.get_one(ThreadExecutionContextRow, thread_id)
+            saved = EnvdSessionState.model_validate(next(iter(context.sessions.values())))
+        async with await EIPDeviceConnection.initialize(
+            HttpTransport(daemon.endpoint, TOKEN), expected_device_id=daemon.device_id
+        ) as device:
+            native = await device.attach_session(saved.descriptor)
+            await native.close()
+        assert daemon.process.returncode is None
+
+    # A fresh Runtime has no in-memory invocation, Session or native process handle.
+    successor = replace(service.runtime)
+    try:
+        if outcome in {"transient", "transient_cancel"}:
+
+            async def unavailable(*args, **kwargs):
+                raise EIPTransportError("Temporary carrier outage")
+
+            with monkeypatch.context() as patch:
+                patch.setattr(EIPDeviceConnection, "attach_session", unavailable)
+                from a13n_service.infra.db import now
+
+                for attempt in range(2):
+                    if outcome == "transient_cancel" and attempt == 1:
+                        async with transaction(service.runtime.storage) as session:
+                            row = await session.get_one(ToolExecutionRow, execution_id)
+                            row.cancel_requested_at = row.created_at
+                    await successor.executions.recover("worker-successor")
+                    await asyncio.wait_for(successor.executions.join(), 10)
+                    # Repeated outages wait a lease interval, without losing native identity.
+                    assert await claim_shells(successor, worker_id="worker-successor", limit=1) == []
+                    async with transaction(service.runtime.storage) as session:
+                        row = await session.get_one(ToolExecutionRow, execution_id)
+                        current = await now(session)
+                        assert (row.lease_expires_at - current).total_seconds() > 0
+                        row.lease_expires_at = current
+            pending = await successor.executions.store.get(thread_id, execution_id)
+            assert pending is not None and not pending.record.terminal
+            assert pending.record.cancel_requested is (outcome == "transient_cancel")
+            assert pending.shell is not None and pending.shell.process.identity is not None
+            assert pending.shell.process.identity.model_dump(mode="json") == original_identity
+            assert not released
+        await successor.executions.recover("worker-successor")
+        assert [record.execution_id for record in successor.executions.active] == [execution_id]
+        if outcome in {"complete", "transient"}:
+            (daemon.workspace / "finish").touch()
+        await asyncio.wait_for(successor.executions.join(), 15)
+        result = await successor.executions.result(thread_id, execution_id)
+        assert result is not None
+        expected = (
+            "lost"
+            if outcome == "session_gone"
+            else "succeeded"
+            if outcome in {"complete", "transient"}
+            else "cancelled"
+        )
+        assert result.record.status == expected, result
+        if outcome in {"complete", "transient"}:
+            assert "original-result" in json.dumps(result.result)
+        assert (await original())[1]["process"]["identity"] == original_identity
+        assert len(released) == (0 if outcome == "session_gone" else 1)
+        assert (daemon.workspace / "admissions").read_text() == "admitted\n"
+        deliveries = await outbox.claim(
+            successor.storage, "tool_result", owner="control", limit=10, lease_seconds=60, max_attempts=12
+        )
+        assert len(deliveries) == 1
+        await tool_results(service.runtime)(deliveries[0])
+    finally:
+        (daemon.workspace / "finish").touch()
+        await successor.executions.close()
+
+
+@pytest.mark.parametrize("lose_response,graceful", [(False, False), (True, False), (False, True)])
+async def test_retained_shell_survives_worker_replacement(
+    service, daemons, scripted_model, runs_kit, tmp_path, lose_response, graceful
+):
+    """Two real workers share stores; native work survives drain or death and wakes the Agent."""
+    import signal
+    import sys
+    from contextlib import asynccontextmanager
+
+    import httpx2
+    from a13n_service.infra import outbox
+    from a13n_service.infra.db import transaction
+    from a13n_service.runs.tables import RunRow, ToolExecutionRow
+    from a13n_service.runs.tool_executions.delivery import tool_results
+    from sqlalchemy import select
+
+    await runs_kit.pause_sweeps(service)
+    settings = service.runtime.settings
+    environment = {key: value for key, value in os.environ.items() if not key.startswith("A13N_")}
+    environment.update(
+        A13N_DATABASE__URL=settings.database.url.get_secret_value(),
+        A13N_DATABASE__AUTO_MIGRATE="false",
+        A13N_REDIS__URL=settings.redis.url.get_secret_value(),
+        A13N_OBJECTS__ROOT=str(settings.objects.root.resolve()),
+        A13N_OBJECTS__TIMEOUT="0.5",
+        A13N_ENCRYPTION__ACTIVE_KEY_ID=settings.encryption.active_key_id,
+        A13N_ENCRYPTION__KEYS=json.dumps(
+            {key: value.get_secret_value() for key, value in settings.encryption.keys.items()}
+        ),
+        A13N_PROVIDERS__REQUIRE_HTTPS="false",
+        A13N_SERVER__HOST="127.0.0.1",
+        A13N_SERVER__READINESS_TIMEOUT="30",
+        A13N_WORKER__LEASE_SECONDS="3",
+        A13N_WORKER__SCAN_SECONDS="0.05",
+        A13N_WORKER__AUTHORITY_SECONDS="0.05",
+    )
+    admitted = tmp_path / "native.json"
+    # Stop between native admission and persistence of its response. The successor
+    # must resolve the durable start correlation instead of running the command again.
+    fault = f"""
+import asyncio
+from pathlib import Path
+from a13n_service.runs.tool_executions.store import Store
+save = Store.save
+async def hold_response(self, execution):
+    if execution.shell is not None and execution.shell.process.identity is not None:
+        Path({str(admitted)!r}).write_text(execution.shell.process.model_dump_json())
+        await asyncio.Event().wait()
+    await save(self, execution)
+Store.save = hold_response
+"""
+
+    @asynccontextmanager
+    async def worker(name, *, lose=False):
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            port = probe.getsockname()[1]
+        log = tmp_path / f"{name}.log"
+        with log.open("wb") as output:
+            process = await asyncio.create_subprocess_exec(
+                sys.executable,
+                "-c",
+                (fault if lose else "") + "\nfrom a13n_service.cli import main; main()",
+                "run",
+                "--role",
+                "worker",
+                env={**environment, "A13N_SERVER__PORT": str(port)},
+                stdout=output,
+                stderr=output,
+            )
+            try:
+                async with httpx2.AsyncClient() as client, asyncio.timeout(30):
+                    while True:
+                        assert process.returncode is None, log.read_text()
+                        try:
+                            response = await client.get(f"http://127.0.0.1:{port}/readyz")
+                            if response.status_code == 200:
+                                break
+                        except httpx2.TransportError:
+                            pass
+                        await asyncio.sleep(0.05)
+                yield process
+            finally:
+                if process.returncode is None:
+                    process.kill()
+                await asyncio.wait_for(process.wait(), 5)
+
+    daemon = await daemons.start("device-worker-crash")
+    environment_id = (await register(service, daemon.endpoint)).json()["id"]
+    agent = await runs_kit.create_agent(service, scripted_model)
+    scripted_model.call(
+        "shell_exec",
+        {"command": "echo admitted >> admissions; while [ ! -f finish ]; do sleep 0.05; done; echo original-result"},
+        call_id="call-worker-crash",
+    )
+    scripted_model.say("The command is still running.")
+    async with worker("first", lose=lose_response) as first:
+        submitted = await runs_kit.start_thread(
+            service,
+            agent,
+            "Start a retained command",
+            environments=[
+                {"name": "workspace", "environment_id": environment_id, "working_directory": str(daemon.workspace)}
+            ],
+            options={"execution": {"tools": {"mode": "auto", "foreground_wait_seconds": 0.1}}},
+        )
+        thread_id, run_id = submitted["thread"]["id"], submitted["run"]["id"]
+
+        async def saved():
+            async with transaction(service.runtime.storage) as session:
+                row = await session.scalar(select(ToolExecutionRow).where(ToolExecutionRow.run_id == run_id))
+                return None if row is None else (row.id, row.worker_id, row.shell)
+
+        async with asyncio.timeout(30):
+            while True:
+                original = await saved()
+                if original is not None and original[2] is not None:
+                    if admitted.exists() if lose_response else original[2]["process"]["identity"] is not None:
+                        break
+                assert first.returncode is None
+                await asyncio.sleep(0.05)
+            while (await runs_kit.get_run(service, run_id))["status"] != "completed":
+                await asyncio.sleep(0.05)
+        execution_id, owner, shell = original
+        identity = json.loads(admitted.read_text())["identity"] if lose_response else shell["process"]["identity"]
+        if lose_response:
+            assert shell["process"]["identity"] is None
+        async with worker("successor") as successor:
+            assert (await saved())[1] == owner
+            if graceful:
+                first.terminate()
+            else:
+                first.kill()
+            await asyncio.wait_for(first.wait(), 15)
+            if graceful:
+                # Uvicorn re-raises the captured signal after lifespan shutdown.
+                assert first.returncode == -signal.SIGTERM, (tmp_path / "first.log").read_text()
+            async with asyncio.timeout(30):
+                while (await saved())[1] == owner:
+                    assert successor.returncode is None
+                    await asyncio.sleep(0.05)
+                (daemon.workspace / "finish").touch()
+                while True:
+                    result = await service.runtime.executions.result(thread_id, execution_id)
+                    if result is not None and result.record.terminal:
+                        break
+                    await asyncio.sleep(0.05)
+            assert result.record.status == "succeeded", result.record.model_dump()
+            assert "original-result" in json.dumps(result.result)
+            assert (await saved())[2]["process"]["identity"] == identity
+            assert (daemon.workspace / "admissions").read_text() == "admitted\n"
+            deliveries = await outbox.claim(
+                service.runtime.storage, "tool_result", owner="control", limit=10, lease_seconds=60, max_attempts=12
+            )
+            assert len(deliveries) == 1
+            scripted_model.say("The original command completed after worker replacement.")
+            await tool_results(service.runtime)(deliveries[0])
+            await tool_results(service.runtime)(deliveries[0])
+            async with asyncio.timeout(30):
+                while True:
+                    async with transaction(service.runtime.storage) as session:
+                        runs = list(await session.scalars(select(RunRow).where(RunRow.thread_id == thread_id)))
+                        assert len(runs) == 2
+                        continuation = next(run for run in runs if run.id != run_id)
+                        if continuation.status == "completed":
+                            row = await session.get_one(ToolExecutionRow, execution_id)
+                            assert row.first_delivered_at is not None
+                            break
+                        assert continuation.status in {"accepted", "running"}, continuation.status
+                    assert successor.returncode is None
+                    await asyncio.sleep(0.05)
+
+
+async def test_thread_context_cache_restores_bindings_and_fences_checkpoints(
+    service, daemons, scripted_model, runs_kit
+):
+    import gc
+    import weakref
+
+    from a13n_envd_client import EIPDeviceConnection, HttpTransport
+    from a13n_harness import RunConfiguration
+    from a13n_harness.environment.session_recovery import EnvdSessionState
+    from a13n_service.infra.db import transaction
+    from a13n_service.runs.attempts import LeaseLost
+    from a13n_service.runs.claim import claim
+    from a13n_service.runs.environments.contexts import Contexts
+    from a13n_service.runs.environments.tables import ThreadExecutionContextRow
+    from a13n_service.runs.schemas import EnvironmentMount
+    from a13n_service.runs.tables import AttemptRow
+
+    await runs_kit.pause_sweeps(service)
+    daemon = await daemons.start("device-context-cache")
+    environment_id = (await register(service, daemon.endpoint)).json()["id"]
+    agent = await runs_kit.create_agent(service, scripted_model)
+    submitted = await runs_kit.start_thread(service, agent, "Claim a context")
+    (lease,) = await claim(service.runtime, worker_id="worker-context", worker_build="test", limit=1)
+    assert lease.thread_id == submitted["thread"]["id"]
+    mount = EnvironmentMount(name="workspace", environment_id=environment_id, working_directory=str(daemon.workspace))
+    configuration = RunConfiguration()
+    contexts = Contexts(service.runtime)
+    recovery = await contexts.get(lease, mount, configuration)
+    assert await contexts.get(lease, mount, configuration) is recovery
+    changed_mount = await contexts.get(lease, mount.model_copy(update={"name": "other"}), configuration)
+    changed_policy = await contexts.get(lease, mount, RunConfiguration(allowed_hosts=frozenset({"example.com"})))
+    assert changed_mount is not recovery and changed_mount.state is None
+    assert changed_policy is not recovery and changed_policy.state is None
+    async with await EIPDeviceConnection.initialize(
+        HttpTransport(daemon.endpoint, TOKEN), expected_device_id=daemon.device_id
+    ) as device:
+        native = await device.open_session(working_directory=str(daemon.workspace))
+        saved = EnvdSessionState(
+            target=daemon.endpoint, descriptor=native.descriptor, working_directory=str(daemon.workspace)
+        )
+        assert recovery.checkpoint is not None
+        async with transaction(service.runtime.storage) as session:
+            row = await session.get_one(ThreadExecutionContextRow, lease.thread_id)
+            row.sessions = {f"obsolete-{index}": saved.model_dump(mode="json") for index in range(20)}
+        await recovery.checkpoint(saved)
+        async with transaction(service.runtime.storage) as session:
+            row = await session.get_one(ThreadExecutionContextRow, lease.thread_id)
+            assert len(row.sessions) == 1
+            assert list(row.sessions.values()) == [saved.model_dump(mode="json")]
+        await native.close()
+    reference = weakref.ref(recovery)
+    del recovery
+    gc.collect()
+    assert reference() is None
+    restored = await contexts.get(lease, mount, configuration)
+    assert restored.state == saved
+    assert restored.checkpoint is not None
+    async with transaction(service.runtime.storage) as session:
+        row = await session.get_one(ThreadExecutionContextRow, lease.thread_id)
+        row.generation += 1
+    with pytest.raises(LeaseLost):
+        await restored.checkpoint(saved)
+    current = await contexts.get(lease, mount, configuration)
+    assert current is not restored and current.state == saved
+    assert current.checkpoint is not None
+    async with transaction(service.runtime.storage) as session:
+        attempt = await session.get_one(AttemptRow, lease.attempt_id)
+        attempt.lease_expires_at = attempt.created_at
+    with pytest.raises(LeaseLost):
+        await current.checkpoint(saved)
+    async with transaction(service.runtime.storage) as session:
+        row = await session.get_one(ThreadExecutionContextRow, lease.thread_id)
+        row.worker_id = "worker-replacement"
+    with pytest.raises(LeaseLost):
+        await contexts.get(lease, mount, configuration)
+
+
+async def test_thread_context_refreshes_on_control_takeover_and_rejects_stale_publication(
+    service, daemons, scripted_model, runs_kit
+):
+    from a13n_envd_client import EIPDeviceConnection, HttpTransport
+    from a13n_harness import RunConfiguration
+    from a13n_service.infra.db import transaction
+    from a13n_service.runs.attempts import LeaseLost
+    from a13n_service.runs.claim import claim
+    from a13n_service.runs.environments.contexts import Contexts, binding_key
+    from a13n_service.runs.environments.tables import ThreadExecutionContextRow
+    from a13n_service.runs.schemas import EnvironmentMount
+
+    await runs_kit.pause_sweeps(service)
+    daemon = await daemons.start("device-control-takeover")
+    environment_id = (await register(service, daemon.endpoint)).json()["id"]
+    agent = await runs_kit.create_agent(service, scripted_model)
+    mounts = [{"name": "workspace", "environment_id": environment_id, "working_directory": str(daemon.workspace)}]
+    await runs_kit.start_thread(service, agent, "Claim a context", environments=mounts)
+    (lease,) = await claim(service.runtime, worker_id="worker-context", worker_build="test", limit=1)
+    mount = EnvironmentMount.model_validate(mounts[0])
+    configuration = RunConfiguration()
+    first_control = Contexts(service.runtime)
+    cached = await first_control.get(lease, mount, configuration)
+    second_control = Contexts(service.runtime)
+    original = await second_control.for_control(lease.thread_id, lease.run_id, lease.worker_id, environment_id)
+    async with await EIPDeviceConnection.initialize(
+        HttpTransport(daemon.endpoint, TOKEN), expected_device_id=daemon.device_id
+    ) as device:
+        options = dict(
+            target=environment_id,
+            expected_device_id=daemon.device_id,
+            working_directory=str(daemon.workspace),
+            required_methods=frozenset(),
+            expected_boundary=None,
+        )
+        async with original.borrow(device, **options) as session:
+            session_id = session.session_id
+        assert cached.state is None
+        restored = await first_control.for_control(lease.thread_id, lease.run_id, lease.worker_id, environment_id)
+        assert restored is cached
+        async with restored.borrow(device, **options) as current:
+            assert current.session_id == session_id
+            assert original.state is not None
+            assert current.descriptor.owner_epoch > original.state.descriptor.owner_epoch
+            assert original.checkpoint is not None
+            with pytest.raises(LeaseLost):
+                await original.checkpoint(original.state)
+            async with transaction(service.runtime.storage) as db:
+                row = await db.get_one(ThreadExecutionContextRow, lease.thread_id)
+                saved = row.sessions[binding_key(mount, configuration)]
+                assert saved["descriptor"]["owner_epoch"] == current.descriptor.owner_epoch
+            await current.close()
 
 
 @pytest.mark.parametrize("reconnect", ["resume", "expired", "restart", "session"])
@@ -716,7 +1201,7 @@ async def test_client_environment_runs_on_reverse_daemon_and_streams_files(
                         {
                             "default_working_directory": str(workspace),
                             "full_control": True,
-                            "disconnect_grace_ms": 80 if reconnect == "expired" else 30000,
+                            "idle_timeout_ms": 1000 if reconnect == "expired" else 30000,
                         }
                     ),
                 },
@@ -771,8 +1256,8 @@ async def test_client_environment_runs_on_reverse_daemon_and_streams_files(
                         break
                     await asyncio.sleep(0.02)
             if reconnect == "expired":
-                # Deliberately exceed the configured native disconnect grace period.
-                await asyncio.sleep(0.12)
+                # No borrower keeps the detached native Session alive.
+                await asyncio.sleep(1.2)
             next_decision.set()
             again = await scripted_model.request()
             expected_notice = (
@@ -783,7 +1268,7 @@ async def test_client_environment_runs_on_reverse_daemon_and_streams_files(
             assert expected_notice not in following_tool_results(next_result)
             (reopened,) = service.runtime.client_sessions.scopes.values()
             after_session = (reopened.session.generation, reopened.session.session_id)
-            assert (after_session == before) == (reconnect == "resume")
+            assert (after_session == before) == (reconnect in {"resume", "session"})
             assert (after_session[0] != before[0]) == (reconnect == "restart")
             finish.set()
             await asyncio.wait_for(running, 30)
@@ -812,6 +1297,28 @@ async def test_client_environment_runs_on_reverse_daemon_and_streams_files(
                     yield payload[offset : offset + 65536]
 
             async with await connector.open() as execution:
+                from uuid import uuid4
+
+                sessions = service.runtime.client_sessions
+                (original_scope,) = sessions.scopes.values()
+                native = original_scope.session
+                overlapping_connector = Target(identity, "device-client", str(workspace), "workspace").connector(
+                    worker, lease, None
+                )
+                async with await overlapping_connector.open() as overlap:
+                    assert len(sessions.scopes) == 2
+                    assert all(scope.session is native for scope in sessions.scopes.values())
+                    assert overlap.operations.files is not None
+                assert len(sessions.scopes) == 1 and not native.is_closed
+                # Simulate scope.open succeeding while its response is lost.
+                unclaimed = original_scope.request.model_copy(update={"scope_id": uuid4().hex})
+                await sessions.open(unclaimed)
+                orphan = sessions.scopes[unclaimed.scope_id]
+                assert orphan.session is native
+                orphan.first_use_until = 0
+                await sessions._renew_scope(unclaimed.scope_id, orphan)
+                assert unclaimed.scope_id not in sessions.scopes
+                assert not native.is_closed
                 files = execution.operations.files
                 assert files is not None
                 path = str(workspace / "binary.dat")
@@ -827,7 +1334,9 @@ async def test_client_environment_runs_on_reverse_daemon_and_streams_files(
                 await check_stale_client_request(service, worker, workspace)
             assert not service.runtime.client_sessions.scopes
             assert (workspace / "binary.dat").read_bytes() == payload
-            await check_retained_client_process(service, worker, runs_kit, scripted_model, agent, mount, workspace)
+            await check_retained_client_process(
+                service, worker, runs_kit, scripted_model, agent, mount, workspace, recover=reconnect == "resume"
+            )
             await check_wrong_device(service, origin, identity)
             await check_client_revocation(service, worker, origin, created, identity)
         finally:

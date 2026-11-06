@@ -10,28 +10,30 @@ Harness UI keeps execution persistence continuation-oriented:
 4. immutable content-addressed files own normalized configuration generations, resolved Run compositions, and complete continuation checkpoints;
 5. shared browser drafts, live runtime objects, presence, and native terminal sessions remain in process memory.
 
-The store supports local restart and inspection, not durable work scheduling. Harness UI does not persist a root input queue, Run-attempt ledger, renewable execution claim, worker assignment, effect journal, shell-process record, or delivery ledger.
+The store supports local restart, inspection and native Shell supervision recovery. It persists retained tool records, frozen execution composition, native start correlation, cancellation intent and completion delivery state. Root input queues, active model invocations and arbitrary Python call stacks remain process-local. Harness UI uses local OS ownership locks rather than distributed worker leases.
 
 ## Persisted Values
 
-| Value                                                                                             | Storage                       | Authority                                                                |
-| ------------------------------------------------------------------------------------------------- | ----------------------------- | ------------------------------------------------------------------------ |
-| Desired resource definitions and global defaults                                                  | YAML and local Markdown files | Human-editable desired behavior                                          |
-| Installed Content Plugin directories                                                              | Data-root files               | Current optional plugin availability and editable files                  |
-| Thread scratch and submitted attachments                                                          | Data-root Thread directories  | Disposable working files and retained input files                        |
-| Accepted configuration generation and resource indexes                                            | SQLite plus immutable object  | Current complete validated file and plugin generation                    |
-| Thread metadata head, sticky configuration head, and initial-state reference                      | SQLite                        | Identity, mutable presentation, defaults, and first-Run bootstrap        |
-| Empty initial `HarnessState`                                                                      | Immutable object              | Harness-generated Thread identity before any selected Run                |
-| Resolved Run composition                                                                          | Immutable object              | Exact behavior and dependency provenance captured for one Run            |
-| Root or child continuation bundle                                                                 | Immutable object              | Exact selected `HarnessState` resume authority                           |
-| Child execution heads                                                                             | SQLite                        | Segment correlation, saved status, and selected checkpoint               |
-| Compact child display                                                                             | Immutable child checkpoint    | Inspection history only                                                  |
-| Environment-state references                                                                      | SQLite plus immutable files   | Current Host-authoritative state                                         |
-| Browser push subscriptions and VAPID identity                                                     | SQLite                        | Device opt-in delivery destinations; never execution or delivery history |
-| Shared browser drafts                                                                             | Process memory                | Synchronized editing state only; not execution or continuation authority |
-| Participant presence and native Host terminal sessions                                            | Process memory                | Current shared instance only                                             |
-| Root receipts, active tasks, Models, credentials, clients, adapters, streams, and shell processes | Process memory                | Current App only                                                         |
-| Logs and OpenTelemetry                                                                            | Configured process outputs    | Diagnostics only                                                         |
+| Value                                                                           | Storage                               | Authority                                                                |
+| ------------------------------------------------------------------------------- | ------------------------------------- | ------------------------------------------------------------------------ |
+| Desired resource definitions and global defaults                                | YAML and local Markdown files         | Human-editable desired behavior                                          |
+| Installed Content Plugin directories                                            | Data-root files                       | Current optional plugin availability and editable files                  |
+| Thread scratch and submitted attachments                                        | Data-root Thread directories          | Disposable working files and retained input files                        |
+| Accepted configuration generation and resource indexes                          | SQLite plus immutable object          | Current complete validated file and plugin generation                    |
+| Thread metadata head, sticky configuration head, and initial-state reference    | SQLite                                | Identity, mutable presentation, defaults, and first-Run bootstrap        |
+| Empty initial `HarnessState`                                                    | Immutable object                      | Harness-generated Thread identity before any selected Run                |
+| Resolved Run composition                                                        | Immutable object                      | Exact behavior and dependency provenance captured for one Run            |
+| Root or child continuation bundle                                               | Immutable object                      | Exact selected `HarnessState` resume authority                           |
+| Child execution heads                                                           | SQLite                                | Segment correlation, saved status, and selected checkpoint               |
+| Compact child display                                                           | Immutable child checkpoint            | Inspection history only                                                  |
+| Environment-state references                                                    | SQLite plus immutable files           | Current Host-authoritative state                                         |
+| Browser push subscriptions and VAPID identity                                   | SQLite                                | Device opt-in delivery destinations; never execution or delivery history |
+| Shared browser drafts                                                           | Process memory                        | Synchronized editing state only; not execution or continuation authority |
+| Participant presence and native Host terminal sessions                          | Process memory                        | Current shared instance only                                             |
+| Retained tool records, cancellation and completion delivery                     | SQLite plus immutable payloads        | Execution identity, retained results and pending notification            |
+| Envd Session descriptors and native Shell start/process identity                | SQLite plus immutable execution state | Exact native attachment under local ownership                            |
+| Root receipts, active tasks, Models, credentials, clients, adapters and streams | Process memory                        | Current App only                                                         |
+| Logs and OpenTelemetry                                                          | Configured process outputs            | Diagnostics only                                                         |
 
 [File Memory](08-file-memory.md) has separate mutable plain files under the selected configuration root. Root and child checkpoint bundles carry optional memory cursor positions, not memory file snapshots. Its maintenance manifest and per-scope lock do not change SQLite head coordination or authorize Thread continuation. Each scope's observation-only Memory Thread uses ordinary continuation, transcript and usage storage with a nullable unique `memory_scope`; null preserves existing ordinary Threads. Each automatic round preserves display history while starting fresh model context. The scope lock serializes organizer admission, not arbitrary foreground file writes.
 
@@ -442,9 +444,19 @@ Thread ID
 
 The profile digest reuses the accepted generation's canonical normalized content for Provider and Host-adapter behavior and excludes source formatting and display-only fields. Switching Project, Provider, or behavior configuration cannot retarget another state entry. Removing a root or changing the selected Environment profile leaves its prior state dormant; selecting the same compatible profile identity, behavior, and root later can reuse it. Changed state uses expected-reference selection and never silently overwrites a concurrent newer value.
 
+## Retained Tool Executions
+
+Retained execution identity, result availability, cancellation request and delivery acknowledgement survive App restart. Immutable payloads retain native results, retry outcomes and spill content under the originating Thread and execution. A result expires at the earlier of one day after completion and one hour after its first acknowledged consumption. Repeated reads do not renew retention. Garbage collection removes expired, superseded, orphaned and deleted-Thread payloads while file-use ownership serializes reads and publication with deletion. Terminal metadata remains for one further day after result expiry to reject late publication, then the existing bounded maintenance sweep removes it. Collected executions cannot be recreated by late saves; active executions do not expire.
+
+Recoverable native Shells retain their original resolved composition, mount and start correlation before dispatch, followed by exact Device generation, Session and process identity. Recovery reconstructs only the captured Environment route and fresh credentials needed to supervise that process. Current desired configuration does not retarget the old invocation. A missing native resource becomes `lost`; transient unavailability remains retryable. Recovery never runs the original command again. App-owned daemon shutdown may destroy the native state and therefore cannot promise process survival; an independently running daemon can retain it.
+
+Local OS locks exclude competing Apps from the same execution and Session binding. Multiple borrowers in one App share a matching Session. Releasing the last borrower detaches its connection; a successor takes over using the durable descriptor and Envd owner epoch. Binding changes use independent contexts. Locks end with their owning process; saved records alone grant no live control authority.
+
+Pending completion hints survive restart until result expiry; expired hints no longer trigger delivery and are collected with the retained execution. Delivery ownership remains held through settlement. Active execution admission rejects input once cancellation is requested. Idle automatic continuation requires the latest root execution to be `completed`, or the latest child execution to be `succeeded` with a resumable checkpoint and unchanged configuration/generation authority. Cancelled, failed, suspended or unknown executions await explicit input; saved active status after process loss does not authorize automatic execution. New explicitly admitted input can use retained results from earlier executions. Native recovery, result retention and automatic conversation continuation are separate boundaries.
+
 ## Recovery
 
-Startup validates retained values lazily and reloads the file configuration together with current Content Plugin directories. Ordinary startup does not restore root receipts, replay root input, restart a child segment, reconnect shell processes, infer process liveness, or manufacture a checkpoint from display. The completely finalized, single-use [graceful restart handoff](#graceful-restart-handoff) is the only automatic task-continuation path.
+Startup validates retained values lazily and reloads the file configuration together with current Content Plugin directories. It recovers eligible native Shell supervision and pending completion hints from their durable records. It does not restore root receipts, replay root input, restart an interrupted model or child segment, infer process liveness from saved display, or manufacture a checkpoint from display. A finalized, single-use [graceful restart handoff](#graceful-restart-handoff) separately permits continuation of interrupted Agent work.
 
 An ordinary Thread admission resumes from its selected continuation using its current sticky configuration unless the next admission applies a patch. A Thread with no selected continuation starts its first Run from the immutable empty `HarnessState` created with `HarnessState.new()` when the Thread was inserted. The generated Harness `thread_id` is the Harness UI Thread ID. If selected resources are missing from the current accepted generation or cannot reconstruct against installed dependencies, the Run fails before dispatch; recovery does not fall back to the composition that produced the prior continuation.
 
@@ -511,5 +523,5 @@ The terminal failure presentation identifies the report path and the repository'
 06. Root receipts, input, and active Runs are not durable work records.
 07. Deferred response authority is the exact selected suspended continuation.
 08. Compact display never becomes Harness continuation state.
-09. Process loss never triggers implicit replay, takeover, PID inspection, heartbeat, lease, or lock-file recovery. Only a completely finalized graceful restart handoff authorizes single-use automatic continuation.
+09. Process loss never replays model or Python invocations. Retained native Shell recovery acquires local ownership and reconnects the exact Provider process; completion hints require current execution eligibility. Automatic continuation of interrupted conversation work requires a completely finalized, single-use graceful restart handoff.
 10. Transactions remain short and outside file or external execution I/O.

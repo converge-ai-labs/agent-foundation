@@ -7,6 +7,7 @@ from typing import Annotated, Literal, Self
 
 from a13n_harness import DeferredToolRequests, DeferredToolResume, HarnessState, SafeFailure
 from a13n_harness.environment.models import EnvironmentState
+from a13n_harness.environment.session_recovery import EnvdSessionState
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 from pydantic_ai.tools import DeferredToolResults
 
@@ -346,6 +347,23 @@ class CompactChildDisplay(StoredContract):
     final_answer: str | None = None
 
 
+class StoredPrincipal(StoredContract):
+    issuer: str
+    subject: str
+    claims: dict[str, str]
+
+
+class StoredChildAuthority(StoredContract):
+    """Admitted delegation authority retained with the child checkpoint."""
+
+    parent_composition: ObjectRef
+    parent_run_id: str
+    parent_identity: StoredPrincipal
+    identity: StoredPrincipal
+    usage_limits: dict[str, int | float | bool | None] | None
+    configuration_version: int
+
+
 class StoredChildCheckpoint(StoredContract):
     schema_version: Literal["1"] = "1"
     harness_release: str = Field(min_length=1, max_length=128)
@@ -354,6 +372,7 @@ class StoredChildCheckpoint(StoredContract):
     child_run_id: str = Field(min_length=1, max_length=80)
     segment_index: int = Field(ge=0)
     run_composition: ObjectRef
+    authority: StoredChildAuthority | None = None
     harness_state: HarnessState
     deferred_requests: DeferredToolRequests | None = None
     accepted_input: StoredDeferredInput | None = None
@@ -420,7 +439,8 @@ class EnvironmentBindingKey(StoredContract):
 class StoredEnvironmentState(StoredContract):
     schema_version: Literal["1"] = "1"
     binding: EnvironmentBindingKey
-    state: EnvironmentState
+    state: EnvironmentState | None = None
+    envd_session: EnvdSessionState | None = None
     created_at: datetime
 
     @field_validator("created_at")

@@ -299,6 +299,8 @@ class ToolExecutionRow(Base):
     record: Mapped[dict] = mapped_column(JSONB)
     result_ref: Mapped[dict | None] = mapped_column(JSONB)
     payload_pruned: Mapped[bool] = mapped_column(default=False)
+    # Native start evidence is committed before dispatch, independently of result objects.
+    shell: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
     environment_mounts: Mapped[list] = mapped_column(JSONB)
 
 

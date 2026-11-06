@@ -228,7 +228,7 @@ Agent 命令的默认变量。它们是可读取的普通配置，不用于存�
 | 字段                          | 必填  | 类型 / 可选值                             | 约束与默认值                                                                     |
 | ----------------------------- | ----- | ----------------------------------------- | -------------------------------------------------------------------------------- |
 | `image`                       | false | string                                    | minLength=1; maxLength=1024; default="ghcr.io/converge-ai-labs/a13n-sandbox:dev" |
-| `execution`                   | false | "native" 或 "envd_http"                   | default="native"                                                                 |
+| `execution`                   | false | "native" 或 "envd_http" 或 "envd_ws"      | default="native"                                                                 |
 | `desktop`                     | false | boolean                                   | default=false                                                                    |
 | `mounts`                      | false | 数组，元素类型为 DockerMountConfiguration | default=[]                                                                       |
 | `environment`                 | false | EnvironmentVariables                      | —; 默认值由模型工厂计算                                                          |
@@ -259,172 +259,176 @@ Agent 命令的默认变量。它们是可读取的普通配置，不用于存�
 
 ## `DockerRecipe`
 
-| 字段                          | 必填  | 类型 / 可选值                  | 约束与默认值                                                                     |
-| ----------------------------- | ----- | ------------------------------ | -------------------------------------------------------------------------------- |
-| `image`                       | false | string                         | minLength=1; maxLength=1024; default="ghcr.io/converge-ai-labs/a13n-sandbox:dev" |
-| `execution`                   | false | "native", "envd_http"          | default="native"                                                                 |
-| `desktop`                     | false | boolean                        | default=false                                                                    |
-| `mounts`                      | false | 数组：DockerMountConfiguration | default=[]                                                                       |
-| `environment`                 | false | EnvironmentVariables           | —; 默认值由模型工厂计算                                                          |
-| `init_script`                 | false | string 或 null                 | maxLength=1048576; format="multiline"; default=null                              |
-| `disable_network`             | false | boolean                        | default=false                                                                    |
-| `user`                        | false | string 或 null                 | minLength=1; maxLength=128; default=null                                         |
-| `shell`                       | false | string                         | default="/bin/sh"                                                                |
-| `python`                      | false | string                         | default="python3"                                                                |
-| `cpus`                        | false | number 或 null                 | minimum=0.001; default=null                                                      |
-| `memory_gb`                   | false | number 或 null                 | minimum=0.006291456; default=null                                                |
-| `pids_limit`                  | false | integer 或 null                | exclusiveMinimum=0; default=null                                                 |
-| `stop_grace_seconds`          | false | integer                        | minimum=0; maximum=300; default=10                                               |
-| `request_timeout_seconds`     | false | integer                        | maximum=3600; exclusiveMinimum=0; default=60                                     |
-| `max_file_bytes`              | false | integer                        | exclusiveMinimum=0; default=16777216                                             |
-| `max_query_entries`           | false | integer                        | exclusiveMinimum=0; default=100000                                               |
-| `max_output_preview_bytes`    | false | integer                        | exclusiveMinimum=0; default=65536                                                |
-| `max_output_bytes_per_stream` | false | integer                        | exclusiveMinimum=0; default=16777216                                             |
-| `max_spool_bytes`             | false | integer                        | exclusiveMinimum=0; default=67108864                                             |
-| `max_concurrent_processes`    | false | integer                        | exclusiveMinimum=0; default=128                                                  |
-| `desktop_assistance`          | false | boolean                        | default=false                                                                    |
-| `desktop_viewer_url`          | false | string 或 null                 | maxLength=2048; default=null                                                     |
-| `pull_policy`                 | false | "never", "if_missing"          | default="if_missing"                                                             |
+| 字段                          | 必填  | 类型 / 可选值                    | 约束与默认值                                                                     |
+| ----------------------------- | ----- | -------------------------------- | -------------------------------------------------------------------------------- |
+| `image`                       | false | string                           | minLength=1; maxLength=1024; default="ghcr.io/converge-ai-labs/a13n-sandbox:dev" |
+| `execution`                   | false | "native", "envd_http", "envd_ws" | default="native"                                                                 |
+| `desktop`                     | false | boolean                          | default=false                                                                    |
+| `mounts`                      | false | 数组：DockerMountConfiguration   | default=[]                                                                       |
+| `environment`                 | false | EnvironmentVariables             | —; 默认值由模型工厂计算                                                          |
+| `init_script`                 | false | string 或 null                   | maxLength=1048576; format="multiline"; default=null                              |
+| `disable_network`             | false | boolean                          | default=false                                                                    |
+| `user`                        | false | string 或 null                   | minLength=1; maxLength=128; default=null                                         |
+| `shell`                       | false | string                           | default="/bin/sh"                                                                |
+| `python`                      | false | string                           | default="python3"                                                                |
+| `cpus`                        | false | number 或 null                   | minimum=0.001; default=null                                                      |
+| `memory_gb`                   | false | number 或 null                   | minimum=0.006291456; default=null                                                |
+| `pids_limit`                  | false | integer 或 null                  | exclusiveMinimum=0; default=null                                                 |
+| `stop_grace_seconds`          | false | integer                          | minimum=0; maximum=300; default=10                                               |
+| `request_timeout_seconds`     | false | integer                          | maximum=3600; exclusiveMinimum=0; default=60                                     |
+| `max_file_bytes`              | false | integer                          | exclusiveMinimum=0; default=16777216                                             |
+| `max_query_entries`           | false | integer                          | exclusiveMinimum=0; default=100000                                               |
+| `max_output_preview_bytes`    | false | integer                          | exclusiveMinimum=0; default=65536                                                |
+| `max_output_bytes_per_stream` | false | integer                          | exclusiveMinimum=0; default=16777216                                             |
+| `max_spool_bytes`             | false | integer                          | exclusiveMinimum=0; default=67108864                                             |
+| `max_concurrent_processes`    | false | integer                          | exclusiveMinimum=0; default=128                                                  |
+| `desktop_assistance`          | false | boolean                          | default=false                                                                    |
+| `desktop_viewer_url`          | false | string 或 null                   | maxLength=2048; default=null                                                     |
+| `pull_policy`                 | false | "never", "if_missing"            | default="if_missing"                                                             |
 
 ## `E2BEnvironmentConfiguration`
 
-| 字段                        | 必填  | 类型 / 可选值         | 约束与默认值                                              |
-| --------------------------- | ----- | --------------------- | --------------------------------------------------------- |
-| `template`                  | false | string                | minLength=1; maxLength=256; default="base"                |
-| `execution`                 | false | "native", "envd_http" | default="native"                                          |
-| `desktop`                   | false | boolean               | default=false                                             |
-| `environment`               | false | EnvironmentVariables  | —; 默认值由模型工厂计算                                   |
-| `root`                      | false | string                | default="/home/user"                                      |
-| `user`                      | false | string                | `pattern="^[a-z_][a-z0-9_-]{0,63}$"`; default="user"      |
-| `python`                    | false | string                | default="/usr/bin/python3"                                |
-| `request_timeout_seconds`   | false | number                | maximum=300; exclusiveMinimum=0; default=30               |
-| `allow_internet_access`     | false | boolean               | default=true                                              |
-| `max_file_bytes`            | false | integer               | maximum=1073741824; exclusiveMinimum=0; default=104857600 |
-| `max_observation_bytes`     | false | integer               | maximum=16777216; exclusiveMinimum=0; default=1048576     |
-| `max_active_observations`   | false | integer               | maximum=1024; exclusiveMinimum=0; default=128             |
-| `max_retained_output_bytes` | false | integer               | maximum=1073741824; exclusiveMinimum=0; default=134217728 |
-| `max_query_entries`         | false | integer               | maximum=100000; exclusiveMinimum=0; default=10000         |
+| 字段                        | 必填  | 类型 / 可选值                    | 约束与默认值                                              |
+| --------------------------- | ----- | -------------------------------- | --------------------------------------------------------- |
+| `template`                  | false | string                           | minLength=1; maxLength=256; default="base"                |
+| `execution`                 | false | "native", "envd_http", "envd_ws" | default="native"                                          |
+| `desktop`                   | false | boolean                          | default=false                                             |
+| `environment`               | false | EnvironmentVariables             | —; 默认值由模型工厂计算                                   |
+| `root`                      | false | string                           | default="/home/user"                                      |
+| `user`                      | false | string                           | `pattern="^[a-z_][a-z0-9_-]{0,63}$"`; default="user"      |
+| `python`                    | false | string                           | default="/usr/bin/python3"                                |
+| `request_timeout_seconds`   | false | number                           | maximum=300; exclusiveMinimum=0; default=30               |
+| `allow_internet_access`     | false | boolean                          | default=true                                              |
+| `max_file_bytes`            | false | integer                          | maximum=1073741824; exclusiveMinimum=0; default=104857600 |
+| `max_observation_bytes`     | false | integer                          | maximum=16777216; exclusiveMinimum=0; default=1048576     |
+| `max_active_observations`   | false | integer                          | maximum=1024; exclusiveMinimum=0; default=128             |
+| `max_retained_output_bytes` | false | integer                          | maximum=1073741824; exclusiveMinimum=0; default=134217728 |
+| `max_query_entries`         | false | integer                          | maximum=100000; exclusiveMinimum=0; default=10000         |
 
 ## `E2BRecipe`
 
-| 字段                        | 必填  | 类型 / 可选值         | 约束与默认值                                              |
-| --------------------------- | ----- | --------------------- | --------------------------------------------------------- |
-| `template`                  | false | string                | minLength=1; maxLength=256; default="base"                |
-| `execution`                 | false | "native", "envd_http" | default="native"                                          |
-| `desktop`                   | false | boolean               | default=false                                             |
-| `environment`               | false | EnvironmentVariables  | —; 默认值由模型工厂计算                                   |
-| `root`                      | false | string                | default="/home/user"                                      |
-| `user`                      | false | string                | `pattern="^[a-z_][a-z0-9_-]{0,63}$"`; default="user"      |
-| `python`                    | false | string                | default="/usr/bin/python3"                                |
-| `request_timeout_seconds`   | false | number                | maximum=300; exclusiveMinimum=0; default=30               |
-| `allow_internet_access`     | false | boolean               | default=true                                              |
-| `max_file_bytes`            | false | integer               | maximum=1073741824; exclusiveMinimum=0; default=104857600 |
-| `max_observation_bytes`     | false | integer               | maximum=16777216; exclusiveMinimum=0; default=1048576     |
-| `max_active_observations`   | false | integer               | maximum=1024; exclusiveMinimum=0; default=128             |
-| `max_retained_output_bytes` | false | integer               | maximum=1073741824; exclusiveMinimum=0; default=134217728 |
-| `max_query_entries`         | false | integer               | maximum=100000; exclusiveMinimum=0; default=10000         |
-| `desktop_assistance`        | false | boolean               | default=false                                             |
-| `timeout_seconds`           | false | integer               | minimum=30; maximum=86400; default=3600                   |
+| 字段                        | 必填  | 类型 / 可选值                    | 约束与默认值                                              |
+| --------------------------- | ----- | -------------------------------- | --------------------------------------------------------- |
+| `template`                  | false | string                           | minLength=1; maxLength=256; default="base"                |
+| `execution`                 | false | "native", "envd_http", "envd_ws" | default="native"                                          |
+| `desktop`                   | false | boolean                          | default=false                                             |
+| `environment`               | false | EnvironmentVariables             | —; 默认值由模型工厂计算                                   |
+| `root`                      | false | string                           | default="/home/user"                                      |
+| `user`                      | false | string                           | `pattern="^[a-z_][a-z0-9_-]{0,63}$"`; default="user"      |
+| `python`                    | false | string                           | default="/usr/bin/python3"                                |
+| `request_timeout_seconds`   | false | number                           | maximum=300; exclusiveMinimum=0; default=30               |
+| `allow_internet_access`     | false | boolean                          | default=true                                              |
+| `max_file_bytes`            | false | integer                          | maximum=1073741824; exclusiveMinimum=0; default=104857600 |
+| `max_observation_bytes`     | false | integer                          | maximum=16777216; exclusiveMinimum=0; default=1048576     |
+| `max_active_observations`   | false | integer                          | maximum=1024; exclusiveMinimum=0; default=128             |
+| `max_retained_output_bytes` | false | integer                          | maximum=1073741824; exclusiveMinimum=0; default=134217728 |
+| `max_query_entries`         | false | integer                          | maximum=100000; exclusiveMinimum=0; default=10000         |
+| `desktop_assistance`        | false | boolean                          | default=false                                             |
+| `timeout_seconds`           | false | integer                          | minimum=30; maximum=86400; default=3600                   |
 
 ## `DaytonaRecipe`
 
-| 字段                      | 必填  | 类型 / 可选值        | 约束与默认值                                 |
-| ------------------------- | ----- | -------------------- | -------------------------------------------- |
-| `snapshot`                | false | string               | minLength=1; maxLength=256; default="auto"   |
-| `desktop`                 | false | boolean              | default=false                                |
-| `environment`             | false | EnvironmentVariables | —; 默认值由模型工厂计算                      |
-| `request_timeout_seconds` | false | number               | maximum=600; exclusiveMinimum=0; default=120 |
-| `desktop_assistance`      | false | boolean              | default=false                                |
+| 字段                      | 必填  | 类型 / 可选值          | 约束与默认值                                 |
+| ------------------------- | ----- | ---------------------- | -------------------------------------------- |
+| `snapshot`                | false | string                 | minLength=1; maxLength=256; default="auto"   |
+| `desktop`                 | false | boolean                | default=false                                |
+| `execution`               | false | "envd_http", "envd_ws" | default="envd_http"                          |
+| `environment`             | false | EnvironmentVariables   | —; 默认值由模型工厂计算                      |
+| `request_timeout_seconds` | false | number                 | maximum=600; exclusiveMinimum=0; default=120 |
+| `desktop_assistance`      | false | boolean                | default=false                                |
 
 ## `ModalRecipe`
 
-| 字段                      | 必填  | 类型 / 可选值        | 约束与默认值                                 |
-| ------------------------- | ----- | -------------------- | -------------------------------------------- |
-| `image`                   | false | string               | minLength=1; maxLength=256; default="auto"   |
-| `desktop`                 | false | boolean              | default=false                                |
-| `environment`             | false | EnvironmentVariables | —; 默认值由模型工厂计算                      |
-| `request_timeout_seconds` | false | number               | maximum=600; exclusiveMinimum=0; default=120 |
-| `timeout_seconds`         | false | integer              | minimum=300; maximum=86400; default=86400    |
-| `cpu`                     | false | number               | maximum=64; exclusiveMinimum=0; default=1    |
-| `memory`                  | false | integer              | minimum=128; maximum=262144; default=1024    |
-| `desktop_assistance`      | false | boolean              | default=false                                |
+| 字段                      | 必填  | 类型 / 可选值          | 约束与默认值                                 |
+| ------------------------- | ----- | ---------------------- | -------------------------------------------- |
+| `image`                   | false | string                 | minLength=1; maxLength=256; default="auto"   |
+| `desktop`                 | false | boolean                | default=false                                |
+| `execution`               | false | "envd_http", "envd_ws" | default="envd_http"                          |
+| `environment`             | false | EnvironmentVariables   | —; 默认值由模型工厂计算                      |
+| `request_timeout_seconds` | false | number                 | maximum=600; exclusiveMinimum=0; default=120 |
+| `timeout_seconds`         | false | integer                | minimum=300; maximum=86400; default=86400    |
+| `cpu`                     | false | number                 | maximum=64; exclusiveMinimum=0; default=1    |
+| `memory`                  | false | integer                | minimum=128; maximum=262144; default=1024    |
+| `desktop_assistance`      | false | boolean                | default=false                                |
 
 ## `VercelRecipe`
 
-| 字段                      | 必填  | 类型 / 可选值         | 约束与默认值                                                                        |
-| ------------------------- | ----- | --------------------- | ----------------------------------------------------------------------------------- |
-| `environment`             | false | EnvironmentVariables  | —; 默认值由模型工厂计算                                                             |
-| `root`                    | false | string                | default="/vercel/sandbox"                                                           |
-| `python`                  | false | string                | default="/vercel/runtimes/python/bin/python3"                                       |
-| `shell`                   | false | string                | default="/bin/bash"                                                                 |
-| `request_timeout_seconds` | false | number                | maximum=600; exclusiveMinimum=0; default=120                                        |
-| `max_file_bytes`          | false | integer               | maximum=67108864; exclusiveMinimum=0; default=16777216                              |
-| `max_query_entries`       | false | integer               | maximum=100000; exclusiveMinimum=0; default=10000                                   |
-| `max_output_bytes`        | false | integer               | maximum=16777216; exclusiveMinimum=0; default=1048576                               |
-| `execution`               | false | "native", "envd_http" | default="native"                                                                    |
-| `snapshot`                | false | string 或 null        | minLength=1; maxLength=256; `pattern="^(auto\|snap_[A-Za-z0-9_-]+)$"`; default=null |
-| `desktop`                 | false | boolean               | default=false                                                                       |
-| `runtime`                 | false | string                | minLength=1; maxLength=128; default="python3.13"                                    |
-| `timeout_seconds`         | false | integer               | minimum=300; maximum=18000; default=3600                                            |
-| `vcpus`                   | false | integer               | minimum=2; maximum=8; default=2                                                     |
-| `desktop_assistance`      | false | boolean               | default=false                                                                       |
+| 字段                      | 必填  | 类型 / 可选值                    | 约束与默认值                                                                        |
+| ------------------------- | ----- | -------------------------------- | ----------------------------------------------------------------------------------- |
+| `environment`             | false | EnvironmentVariables             | —; 默认值由模型工厂计算                                                             |
+| `root`                    | false | string                           | default="/vercel/sandbox"                                                           |
+| `python`                  | false | string                           | default="/vercel/runtimes/python/bin/python3"                                       |
+| `shell`                   | false | string                           | default="/bin/bash"                                                                 |
+| `request_timeout_seconds` | false | number                           | maximum=600; exclusiveMinimum=0; default=120                                        |
+| `max_file_bytes`          | false | integer                          | maximum=67108864; exclusiveMinimum=0; default=16777216                              |
+| `max_query_entries`       | false | integer                          | maximum=100000; exclusiveMinimum=0; default=10000                                   |
+| `max_output_bytes`        | false | integer                          | maximum=16777216; exclusiveMinimum=0; default=1048576                               |
+| `execution`               | false | "native", "envd_http", "envd_ws" | default="native"                                                                    |
+| `snapshot`                | false | string 或 null                   | minLength=1; maxLength=256; `pattern="^(auto\|snap_[A-Za-z0-9_-]+)$"`; default=null |
+| `desktop`                 | false | boolean                          | default=false                                                                       |
+| `runtime`                 | false | string                           | minLength=1; maxLength=128; default="python3.13"                                    |
+| `timeout_seconds`         | false | integer                          | minimum=300; maximum=18000; default=3600                                            |
+| `vcpus`                   | false | integer                          | minimum=2; maximum=8; default=2                                                     |
+| `desktop_assistance`      | false | boolean                          | default=false                                                                       |
 
 ## `SpritesRecipe`
 
-| 字段                      | 必填  | 类型 / 可选值         | 约束与默认值                                           |
-| ------------------------- | ----- | --------------------- | ------------------------------------------------------ |
-| `environment`             | false | EnvironmentVariables  | —; 默认值由模型工厂计算                                |
-| `root`                    | false | string                | default="/home/sprite"                                 |
-| `python`                  | false | string                | default="python3"                                      |
-| `shell`                   | false | string                | default="/bin/bash"                                    |
-| `request_timeout_seconds` | false | number                | maximum=600; exclusiveMinimum=0; default=120           |
-| `max_file_bytes`          | false | integer               | maximum=67108864; exclusiveMinimum=0; default=16777216 |
-| `max_query_entries`       | false | integer               | maximum=100000; exclusiveMinimum=0; default=10000      |
-| `max_output_bytes`        | false | integer               | maximum=16777216; exclusiveMinimum=0; default=1048576  |
-| `region`                  | false | string 或 null        | maxLength=64; default=null                             |
-| `execution`               | false | "native", "envd_http" | default="native"                                       |
-| `desktop`                 | false | boolean               | default=false                                          |
-| `desktop_assistance`      | false | boolean               | default=false                                          |
+| 字段                      | 必填  | 类型 / 可选值                    | 约束与默认值                                           |
+| ------------------------- | ----- | -------------------------------- | ------------------------------------------------------ |
+| `environment`             | false | EnvironmentVariables             | —; 默认值由模型工厂计算                                |
+| `root`                    | false | string                           | default="/home/sprite"                                 |
+| `python`                  | false | string                           | default="python3"                                      |
+| `shell`                   | false | string                           | default="/bin/bash"                                    |
+| `request_timeout_seconds` | false | number                           | maximum=600; exclusiveMinimum=0; default=120           |
+| `max_file_bytes`          | false | integer                          | maximum=67108864; exclusiveMinimum=0; default=16777216 |
+| `max_query_entries`       | false | integer                          | maximum=100000; exclusiveMinimum=0; default=10000      |
+| `max_output_bytes`        | false | integer                          | maximum=16777216; exclusiveMinimum=0; default=1048576  |
+| `region`                  | false | string 或 null                   | maxLength=64; default=null                             |
+| `execution`               | false | "native", "envd_http", "envd_ws" | default="native"                                       |
+| `desktop`                 | false | boolean                          | default=false                                          |
+| `desktop_assistance`      | false | boolean                          | default=false                                          |
 
 ## `DaytonaEnvironmentConfiguration`
 
-| 字段                      | 必填  | 类型 / 可选值        | 约束与默认值                                 |
-| ------------------------- | ----- | -------------------- | -------------------------------------------- |
-| `snapshot`                | true  | string               | minLength=1; maxLength=256                   |
-| `desktop`                 | false | boolean              | default=false                                |
-| `environment`             | false | EnvironmentVariables | —; 默认值由模型工厂计算                      |
-| `request_timeout_seconds` | false | number               | maximum=600; exclusiveMinimum=0; default=120 |
+| 字段                      | 必填  | 类型 / 可选值          | 约束与默认值                                 |
+| ------------------------- | ----- | ---------------------- | -------------------------------------------- |
+| `snapshot`                | true  | string                 | minLength=1; maxLength=256                   |
+| `desktop`                 | false | boolean                | default=false                                |
+| `execution`               | false | "envd_http", "envd_ws" | default="envd_http"                          |
+| `environment`             | false | EnvironmentVariables   | —; 默认值由模型工厂计算                      |
+| `request_timeout_seconds` | false | number                 | maximum=600; exclusiveMinimum=0; default=120 |
 
 ## `ModalEnvironmentConfiguration`
 
-| 字段                      | 必填  | 类型 / 可选值        | 约束与默认值                                 |
-| ------------------------- | ----- | -------------------- | -------------------------------------------- |
-| `image`                   | true  | string               | minLength=1; maxLength=256                   |
-| `desktop`                 | false | boolean              | default=false                                |
-| `environment`             | false | EnvironmentVariables | —; 默认值由模型工厂计算                      |
-| `request_timeout_seconds` | false | number               | maximum=600; exclusiveMinimum=0; default=120 |
-| `timeout_seconds`         | false | integer              | minimum=300; maximum=86400; default=86400    |
-| `cpu`                     | false | number               | maximum=64; exclusiveMinimum=0; default=1    |
-| `memory`                  | false | integer              | minimum=128; maximum=262144; default=1024    |
+| 字段                      | 必填  | 类型 / 可选值          | 约束与默认值                                 |
+| ------------------------- | ----- | ---------------------- | -------------------------------------------- |
+| `image`                   | true  | string                 | minLength=1; maxLength=256                   |
+| `desktop`                 | false | boolean                | default=false                                |
+| `execution`               | false | "envd_http", "envd_ws" | default="envd_http"                          |
+| `environment`             | false | EnvironmentVariables   | —; 默认值由模型工厂计算                      |
+| `request_timeout_seconds` | false | number                 | maximum=600; exclusiveMinimum=0; default=120 |
+| `timeout_seconds`         | false | integer                | minimum=300; maximum=86400; default=86400    |
+| `cpu`                     | false | number                 | maximum=64; exclusiveMinimum=0; default=1    |
+| `memory`                  | false | integer                | minimum=128; maximum=262144; default=1024    |
 
 ## `VercelEnvironmentConfiguration`
 
-| 字段                      | 必填  | 类型 / 可选值         | 约束与默认值                                                                        |
-| ------------------------- | ----- | --------------------- | ----------------------------------------------------------------------------------- |
-| `environment`             | false | EnvironmentVariables  | —; 默认值由模型工厂计算                                                             |
-| `root`                    | false | string                | default="/vercel/sandbox"                                                           |
-| `python`                  | false | string                | default="/vercel/runtimes/python/bin/python3"                                       |
-| `shell`                   | false | string                | default="/bin/bash"                                                                 |
-| `request_timeout_seconds` | false | number                | maximum=600; exclusiveMinimum=0; default=120                                        |
-| `max_file_bytes`          | false | integer               | maximum=67108864; exclusiveMinimum=0; default=16777216                              |
-| `max_query_entries`       | false | integer               | maximum=100000; exclusiveMinimum=0; default=10000                                   |
-| `max_output_bytes`        | false | integer               | maximum=16777216; exclusiveMinimum=0; default=1048576                               |
-| `execution`               | false | "native", "envd_http" | default="native"                                                                    |
-| `snapshot`                | false | string 或 null        | minLength=1; maxLength=256; `pattern="^(auto\|snap_[A-Za-z0-9_-]+)$"`; default=null |
-| `desktop`                 | false | boolean               | default=false                                                                       |
-| `runtime`                 | false | string                | minLength=1; maxLength=128; default="python3.13"                                    |
-| `timeout_seconds`         | false | integer               | minimum=300; maximum=18000; default=3600                                            |
-| `vcpus`                   | false | integer               | minimum=2; maximum=8; default=2                                                     |
+| 字段                      | 必填  | 类型 / 可选值                    | 约束与默认值                                                                        |
+| ------------------------- | ----- | -------------------------------- | ----------------------------------------------------------------------------------- |
+| `environment`             | false | EnvironmentVariables             | —; 默认值由模型工厂计算                                                             |
+| `root`                    | false | string                           | default="/vercel/sandbox"                                                           |
+| `python`                  | false | string                           | default="/vercel/runtimes/python/bin/python3"                                       |
+| `shell`                   | false | string                           | default="/bin/bash"                                                                 |
+| `request_timeout_seconds` | false | number                           | maximum=600; exclusiveMinimum=0; default=120                                        |
+| `max_file_bytes`          | false | integer                          | maximum=67108864; exclusiveMinimum=0; default=16777216                              |
+| `max_query_entries`       | false | integer                          | maximum=100000; exclusiveMinimum=0; default=10000                                   |
+| `max_output_bytes`        | false | integer                          | maximum=16777216; exclusiveMinimum=0; default=1048576                               |
+| `execution`               | false | "native", "envd_http", "envd_ws" | default="native"                                                                    |
+| `snapshot`                | false | string 或 null                   | minLength=1; maxLength=256; `pattern="^(auto\|snap_[A-Za-z0-9_-]+)$"`; default=null |
+| `desktop`                 | false | boolean                          | default=false                                                                       |
+| `runtime`                 | false | string                           | minLength=1; maxLength=128; default="python3.13"                                    |
+| `timeout_seconds`         | false | integer                          | minimum=300; maximum=18000; default=3600                                            |
+| `vcpus`                   | false | integer                          | minimum=2; maximum=8; default=2                                                     |
 
 ## `SpritesEnvironmentConfiguration`
 

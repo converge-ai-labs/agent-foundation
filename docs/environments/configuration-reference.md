@@ -225,29 +225,29 @@ Optional outer-daemon sampling; independent of Session execution policy.
 
 ## `DockerEnvironmentConfiguration`
 
-| Field                         | Required | Type / choices                    | Constraints and default                                                          |
-| ----------------------------- | -------- | --------------------------------- | -------------------------------------------------------------------------------- |
-| `image`                       | false    | string                            | minLength=1; maxLength=1024; default="ghcr.io/converge-ai-labs/a13n-sandbox:dev" |
-| `execution`                   | false    | "native" or "envd_http"           | default="native"                                                                 |
-| `desktop`                     | false    | boolean                           | default=false                                                                    |
-| `mounts`                      | false    | array of DockerMountConfiguration | default=[]                                                                       |
-| `environment`                 | false    | EnvironmentVariables              | —; default from model factory                                                    |
-| `init_script`                 | false    | string or null                    | maxLength=1048576; format="multiline"; default=null                              |
-| `disable_network`             | false    | boolean                           | default=false                                                                    |
-| `user`                        | false    | string or null                    | minLength=1; maxLength=128; default=null                                         |
-| `shell`                       | false    | string                            | default="/bin/sh"                                                                |
-| `python`                      | false    | string                            | default="python3"                                                                |
-| `cpus`                        | false    | number or null                    | minimum=0.001; default=null                                                      |
-| `memory_gb`                   | false    | number or null                    | minimum=0.006291456; default=null                                                |
-| `pids_limit`                  | false    | integer or null                   | exclusiveMinimum=0; default=null                                                 |
-| `stop_grace_seconds`          | false    | integer                           | minimum=0; maximum=300; default=10                                               |
-| `request_timeout_seconds`     | false    | integer                           | maximum=3600; exclusiveMinimum=0; default=60                                     |
-| `max_file_bytes`              | false    | integer                           | exclusiveMinimum=0; default=16777216                                             |
-| `max_query_entries`           | false    | integer                           | exclusiveMinimum=0; default=100000                                               |
-| `max_output_preview_bytes`    | false    | integer                           | exclusiveMinimum=0; default=65536                                                |
-| `max_output_bytes_per_stream` | false    | integer                           | exclusiveMinimum=0; default=16777216                                             |
-| `max_spool_bytes`             | false    | integer                           | exclusiveMinimum=0; default=67108864                                             |
-| `max_concurrent_processes`    | false    | integer                           | exclusiveMinimum=0; default=128                                                  |
+| Field                         | Required | Type / choices                       | Constraints and default                                                          |
+| ----------------------------- | -------- | ------------------------------------ | -------------------------------------------------------------------------------- |
+| `image`                       | false    | string                               | minLength=1; maxLength=1024; default="ghcr.io/converge-ai-labs/a13n-sandbox:dev" |
+| `execution`                   | false    | "native" or "envd_http" or "envd_ws" | default="native"                                                                 |
+| `desktop`                     | false    | boolean                              | default=false                                                                    |
+| `mounts`                      | false    | array of DockerMountConfiguration    | default=[]                                                                       |
+| `environment`                 | false    | EnvironmentVariables                 | —; default from model factory                                                    |
+| `init_script`                 | false    | string or null                       | maxLength=1048576; format="multiline"; default=null                              |
+| `disable_network`             | false    | boolean                              | default=false                                                                    |
+| `user`                        | false    | string or null                       | minLength=1; maxLength=128; default=null                                         |
+| `shell`                       | false    | string                               | default="/bin/sh"                                                                |
+| `python`                      | false    | string                               | default="python3"                                                                |
+| `cpus`                        | false    | number or null                       | minimum=0.001; default=null                                                      |
+| `memory_gb`                   | false    | number or null                       | minimum=0.006291456; default=null                                                |
+| `pids_limit`                  | false    | integer or null                      | exclusiveMinimum=0; default=null                                                 |
+| `stop_grace_seconds`          | false    | integer                              | minimum=0; maximum=300; default=10                                               |
+| `request_timeout_seconds`     | false    | integer                              | maximum=3600; exclusiveMinimum=0; default=60                                     |
+| `max_file_bytes`              | false    | integer                              | exclusiveMinimum=0; default=16777216                                             |
+| `max_query_entries`           | false    | integer                              | exclusiveMinimum=0; default=100000                                               |
+| `max_output_preview_bytes`    | false    | integer                              | exclusiveMinimum=0; default=65536                                                |
+| `max_output_bytes_per_stream` | false    | integer                              | exclusiveMinimum=0; default=16777216                                             |
+| `max_spool_bytes`             | false    | integer                              | exclusiveMinimum=0; default=67108864                                             |
+| `max_concurrent_processes`    | false    | integer                              | exclusiveMinimum=0; default=128                                                  |
 
 ## `DockerMountConfiguration`
 
@@ -259,188 +259,192 @@ Optional outer-daemon sampling; independent of Session execution policy.
 
 ## `DockerRecipe`
 
-| Field                         | Required | Type / choices                    | Constraints and default                                                          |
-| ----------------------------- | -------- | --------------------------------- | -------------------------------------------------------------------------------- |
-| `image`                       | false    | string                            | minLength=1; maxLength=1024; default="ghcr.io/converge-ai-labs/a13n-sandbox:dev" |
-| `execution`                   | false    | "native" or "envd_http"           | default="native"                                                                 |
-| `desktop`                     | false    | boolean                           | default=false                                                                    |
-| `mounts`                      | false    | array of DockerMountConfiguration | default=[]                                                                       |
-| `environment`                 | false    | EnvironmentVariables              | —; default from model factory                                                    |
-| `init_script`                 | false    | string or null                    | maxLength=1048576; format="multiline"; default=null                              |
-| `disable_network`             | false    | boolean                           | default=false                                                                    |
-| `user`                        | false    | string or null                    | minLength=1; maxLength=128; default=null                                         |
-| `shell`                       | false    | string                            | default="/bin/sh"                                                                |
-| `python`                      | false    | string                            | default="python3"                                                                |
-| `cpus`                        | false    | number or null                    | minimum=0.001; default=null                                                      |
-| `memory_gb`                   | false    | number or null                    | minimum=0.006291456; default=null                                                |
-| `pids_limit`                  | false    | integer or null                   | exclusiveMinimum=0; default=null                                                 |
-| `stop_grace_seconds`          | false    | integer                           | minimum=0; maximum=300; default=10                                               |
-| `request_timeout_seconds`     | false    | integer                           | maximum=3600; exclusiveMinimum=0; default=60                                     |
-| `max_file_bytes`              | false    | integer                           | exclusiveMinimum=0; default=16777216                                             |
-| `max_query_entries`           | false    | integer                           | exclusiveMinimum=0; default=100000                                               |
-| `max_output_preview_bytes`    | false    | integer                           | exclusiveMinimum=0; default=65536                                                |
-| `max_output_bytes_per_stream` | false    | integer                           | exclusiveMinimum=0; default=16777216                                             |
-| `max_spool_bytes`             | false    | integer                           | exclusiveMinimum=0; default=67108864                                             |
-| `max_concurrent_processes`    | false    | integer                           | exclusiveMinimum=0; default=128                                                  |
-| `desktop_assistance`          | false    | boolean                           | default=false                                                                    |
-| `desktop_viewer_url`          | false    | string or null                    | maxLength=2048; default=null                                                     |
-| `pull_policy`                 | false    | "never", "if_missing"             | default="if_missing"                                                             |
+| Field                         | Required | Type / choices                       | Constraints and default                                                          |
+| ----------------------------- | -------- | ------------------------------------ | -------------------------------------------------------------------------------- |
+| `image`                       | false    | string                               | minLength=1; maxLength=1024; default="ghcr.io/converge-ai-labs/a13n-sandbox:dev" |
+| `execution`                   | false    | "native" or "envd_http" or "envd_ws" | default="native"                                                                 |
+| `desktop`                     | false    | boolean                              | default=false                                                                    |
+| `mounts`                      | false    | array of DockerMountConfiguration    | default=[]                                                                       |
+| `environment`                 | false    | EnvironmentVariables                 | —; default from model factory                                                    |
+| `init_script`                 | false    | string or null                       | maxLength=1048576; format="multiline"; default=null                              |
+| `disable_network`             | false    | boolean                              | default=false                                                                    |
+| `user`                        | false    | string or null                       | minLength=1; maxLength=128; default=null                                         |
+| `shell`                       | false    | string                               | default="/bin/sh"                                                                |
+| `python`                      | false    | string                               | default="python3"                                                                |
+| `cpus`                        | false    | number or null                       | minimum=0.001; default=null                                                      |
+| `memory_gb`                   | false    | number or null                       | minimum=0.006291456; default=null                                                |
+| `pids_limit`                  | false    | integer or null                      | exclusiveMinimum=0; default=null                                                 |
+| `stop_grace_seconds`          | false    | integer                              | minimum=0; maximum=300; default=10                                               |
+| `request_timeout_seconds`     | false    | integer                              | maximum=3600; exclusiveMinimum=0; default=60                                     |
+| `max_file_bytes`              | false    | integer                              | exclusiveMinimum=0; default=16777216                                             |
+| `max_query_entries`           | false    | integer                              | exclusiveMinimum=0; default=100000                                               |
+| `max_output_preview_bytes`    | false    | integer                              | exclusiveMinimum=0; default=65536                                                |
+| `max_output_bytes_per_stream` | false    | integer                              | exclusiveMinimum=0; default=16777216                                             |
+| `max_spool_bytes`             | false    | integer                              | exclusiveMinimum=0; default=67108864                                             |
+| `max_concurrent_processes`    | false    | integer                              | exclusiveMinimum=0; default=128                                                  |
+| `desktop_assistance`          | false    | boolean                              | default=false                                                                    |
+| `desktop_viewer_url`          | false    | string or null                       | maxLength=2048; default=null                                                     |
+| `pull_policy`                 | false    | "never", "if_missing"                | default="if_missing"                                                             |
 
 ## `E2BEnvironmentConfiguration`
 
-| Field                       | Required | Type / choices        | Constraints and default                                   |
-| --------------------------- | -------- | --------------------- | --------------------------------------------------------- |
-| `template`                  | false    | string                | minLength=1; maxLength=256; default="base"                |
-| `execution`                 | false    | "native", "envd_http" | default="native"                                          |
-| `desktop`                   | false    | boolean               | default=false                                             |
-| `environment`               | false    | EnvironmentVariables  | —; default from model factory                             |
-| `root`                      | false    | string                | default="/home/user"                                      |
-| `user`                      | false    | string                | `pattern="^[a-z_][a-z0-9_-]{0,63}$"`; default="user"      |
-| `python`                    | false    | string                | default="/usr/bin/python3"                                |
-| `request_timeout_seconds`   | false    | number                | maximum=300; exclusiveMinimum=0; default=30               |
-| `allow_internet_access`     | false    | boolean               | default=true                                              |
-| `max_file_bytes`            | false    | integer               | maximum=1073741824; exclusiveMinimum=0; default=104857600 |
-| `max_observation_bytes`     | false    | integer               | maximum=16777216; exclusiveMinimum=0; default=1048576     |
-| `max_active_observations`   | false    | integer               | maximum=1024; exclusiveMinimum=0; default=128             |
-| `max_retained_output_bytes` | false    | integer               | maximum=1073741824; exclusiveMinimum=0; default=134217728 |
-| `max_query_entries`         | false    | integer               | maximum=100000; exclusiveMinimum=0; default=10000         |
+| Field                       | Required | Type / choices                   | Constraints and default                                   |
+| --------------------------- | -------- | -------------------------------- | --------------------------------------------------------- |
+| `template`                  | false    | string                           | minLength=1; maxLength=256; default="base"                |
+| `execution`                 | false    | "native", "envd_http", "envd_ws" | default="native"                                          |
+| `desktop`                   | false    | boolean                          | default=false                                             |
+| `environment`               | false    | EnvironmentVariables             | —; default from model factory                             |
+| `root`                      | false    | string                           | default="/home/user"                                      |
+| `user`                      | false    | string                           | `pattern="^[a-z_][a-z0-9_-]{0,63}$"`; default="user"      |
+| `python`                    | false    | string                           | default="/usr/bin/python3"                                |
+| `request_timeout_seconds`   | false    | number                           | maximum=300; exclusiveMinimum=0; default=30               |
+| `allow_internet_access`     | false    | boolean                          | default=true                                              |
+| `max_file_bytes`            | false    | integer                          | maximum=1073741824; exclusiveMinimum=0; default=104857600 |
+| `max_observation_bytes`     | false    | integer                          | maximum=16777216; exclusiveMinimum=0; default=1048576     |
+| `max_active_observations`   | false    | integer                          | maximum=1024; exclusiveMinimum=0; default=128             |
+| `max_retained_output_bytes` | false    | integer                          | maximum=1073741824; exclusiveMinimum=0; default=134217728 |
+| `max_query_entries`         | false    | integer                          | maximum=100000; exclusiveMinimum=0; default=10000         |
 
 ## `E2BRecipe`
 
-| Field                       | Required | Type / choices        | Constraints and default                                   |
-| --------------------------- | -------- | --------------------- | --------------------------------------------------------- |
-| `template`                  | false    | string                | minLength=1; maxLength=256; default="base"                |
-| `execution`                 | false    | "native", "envd_http" | default="native"                                          |
-| `desktop`                   | false    | boolean               | default=false                                             |
-| `environment`               | false    | EnvironmentVariables  | —; default from model factory                             |
-| `root`                      | false    | string                | default="/home/user"                                      |
-| `user`                      | false    | string                | `pattern="^[a-z_][a-z0-9_-]{0,63}$"`; default="user"      |
-| `python`                    | false    | string                | default="/usr/bin/python3"                                |
-| `request_timeout_seconds`   | false    | number                | maximum=300; exclusiveMinimum=0; default=30               |
-| `allow_internet_access`     | false    | boolean               | default=true                                              |
-| `max_file_bytes`            | false    | integer               | maximum=1073741824; exclusiveMinimum=0; default=104857600 |
-| `max_observation_bytes`     | false    | integer               | maximum=16777216; exclusiveMinimum=0; default=1048576     |
-| `max_active_observations`   | false    | integer               | maximum=1024; exclusiveMinimum=0; default=128             |
-| `max_retained_output_bytes` | false    | integer               | maximum=1073741824; exclusiveMinimum=0; default=134217728 |
-| `max_query_entries`         | false    | integer               | maximum=100000; exclusiveMinimum=0; default=10000         |
-| `desktop_assistance`        | false    | boolean               | default=false                                             |
-| `timeout_seconds`           | false    | integer               | minimum=30; maximum=86400; default=3600                   |
+| Field                       | Required | Type / choices                   | Constraints and default                                   |
+| --------------------------- | -------- | -------------------------------- | --------------------------------------------------------- |
+| `template`                  | false    | string                           | minLength=1; maxLength=256; default="base"                |
+| `execution`                 | false    | "native", "envd_http", "envd_ws" | default="native"                                          |
+| `desktop`                   | false    | boolean                          | default=false                                             |
+| `environment`               | false    | EnvironmentVariables             | —; default from model factory                             |
+| `root`                      | false    | string                           | default="/home/user"                                      |
+| `user`                      | false    | string                           | `pattern="^[a-z_][a-z0-9_-]{0,63}$"`; default="user"      |
+| `python`                    | false    | string                           | default="/usr/bin/python3"                                |
+| `request_timeout_seconds`   | false    | number                           | maximum=300; exclusiveMinimum=0; default=30               |
+| `allow_internet_access`     | false    | boolean                          | default=true                                              |
+| `max_file_bytes`            | false    | integer                          | maximum=1073741824; exclusiveMinimum=0; default=104857600 |
+| `max_observation_bytes`     | false    | integer                          | maximum=16777216; exclusiveMinimum=0; default=1048576     |
+| `max_active_observations`   | false    | integer                          | maximum=1024; exclusiveMinimum=0; default=128             |
+| `max_retained_output_bytes` | false    | integer                          | maximum=1073741824; exclusiveMinimum=0; default=134217728 |
+| `max_query_entries`         | false    | integer                          | maximum=100000; exclusiveMinimum=0; default=10000         |
+| `desktop_assistance`        | false    | boolean                          | default=false                                             |
+| `timeout_seconds`           | false    | integer                          | minimum=30; maximum=86400; default=3600                   |
 
 ## `DaytonaRecipe`
 
-| Field                     | Required | Type / choices       | Constraints and default                      |
-| ------------------------- | -------- | -------------------- | -------------------------------------------- |
-| `snapshot`                | false    | string               | minLength=1; maxLength=256; default="auto"   |
-| `desktop`                 | false    | boolean              | default=false                                |
-| `environment`             | false    | EnvironmentVariables | —; default from model factory                |
-| `request_timeout_seconds` | false    | number               | maximum=600; exclusiveMinimum=0; default=120 |
-| `desktop_assistance`      | false    | boolean              | default=false                                |
+| Field                     | Required | Type / choices         | Constraints and default                      |
+| ------------------------- | -------- | ---------------------- | -------------------------------------------- |
+| `snapshot`                | false    | string                 | minLength=1; maxLength=256; default="auto"   |
+| `desktop`                 | false    | boolean                | default=false                                |
+| `execution`               | false    | "envd_http", "envd_ws" | default="envd_http"                          |
+| `environment`             | false    | EnvironmentVariables   | —; default from model factory                |
+| `request_timeout_seconds` | false    | number                 | maximum=600; exclusiveMinimum=0; default=120 |
+| `desktop_assistance`      | false    | boolean                | default=false                                |
 
 ## `ModalRecipe`
 
-| Field                     | Required | Type / choices       | Constraints and default                      |
-| ------------------------- | -------- | -------------------- | -------------------------------------------- |
-| `image`                   | false    | string               | minLength=1; maxLength=256; default="auto"   |
-| `desktop`                 | false    | boolean              | default=false                                |
-| `environment`             | false    | EnvironmentVariables | —; default from model factory                |
-| `request_timeout_seconds` | false    | number               | maximum=600; exclusiveMinimum=0; default=120 |
-| `timeout_seconds`         | false    | integer              | minimum=300; maximum=86400; default=86400    |
-| `cpu`                     | false    | number               | maximum=64; exclusiveMinimum=0; default=1    |
-| `memory`                  | false    | integer              | minimum=128; maximum=262144; default=1024    |
-| `desktop_assistance`      | false    | boolean              | default=false                                |
+| Field                     | Required | Type / choices         | Constraints and default                      |
+| ------------------------- | -------- | ---------------------- | -------------------------------------------- |
+| `image`                   | false    | string                 | minLength=1; maxLength=256; default="auto"   |
+| `desktop`                 | false    | boolean                | default=false                                |
+| `execution`               | false    | "envd_http", "envd_ws" | default="envd_http"                          |
+| `environment`             | false    | EnvironmentVariables   | —; default from model factory                |
+| `request_timeout_seconds` | false    | number                 | maximum=600; exclusiveMinimum=0; default=120 |
+| `timeout_seconds`         | false    | integer                | minimum=300; maximum=86400; default=86400    |
+| `cpu`                     | false    | number                 | maximum=64; exclusiveMinimum=0; default=1    |
+| `memory`                  | false    | integer                | minimum=128; maximum=262144; default=1024    |
+| `desktop_assistance`      | false    | boolean                | default=false                                |
 
 ## `VercelRecipe`
 
-| Field                     | Required | Type / choices        | Constraints and default                                                             |
-| ------------------------- | -------- | --------------------- | ----------------------------------------------------------------------------------- |
-| `environment`             | false    | EnvironmentVariables  | —; default from model factory                                                       |
-| `root`                    | false    | string                | default="/vercel/sandbox"                                                           |
-| `python`                  | false    | string                | default="/vercel/runtimes/python/bin/python3"                                       |
-| `shell`                   | false    | string                | default="/bin/bash"                                                                 |
-| `request_timeout_seconds` | false    | number                | maximum=600; exclusiveMinimum=0; default=120                                        |
-| `max_file_bytes`          | false    | integer               | maximum=67108864; exclusiveMinimum=0; default=16777216                              |
-| `max_query_entries`       | false    | integer               | maximum=100000; exclusiveMinimum=0; default=10000                                   |
-| `max_output_bytes`        | false    | integer               | maximum=16777216; exclusiveMinimum=0; default=1048576                               |
-| `execution`               | false    | "native", "envd_http" | default="native"                                                                    |
-| `snapshot`                | false    | string or null        | minLength=1; maxLength=256; `pattern="^(auto\|snap_[A-Za-z0-9_-]+)$"`; default=null |
-| `desktop`                 | false    | boolean               | default=false                                                                       |
-| `runtime`                 | false    | string                | minLength=1; maxLength=128; default="python3.13"                                    |
-| `timeout_seconds`         | false    | integer               | minimum=300; maximum=18000; default=3600                                            |
-| `vcpus`                   | false    | integer               | minimum=2; maximum=8; default=2                                                     |
-| `desktop_assistance`      | false    | boolean               | default=false                                                                       |
+| Field                     | Required | Type / choices                   | Constraints and default                                                             |
+| ------------------------- | -------- | -------------------------------- | ----------------------------------------------------------------------------------- |
+| `environment`             | false    | EnvironmentVariables             | —; default from model factory                                                       |
+| `root`                    | false    | string                           | default="/vercel/sandbox"                                                           |
+| `python`                  | false    | string                           | default="/vercel/runtimes/python/bin/python3"                                       |
+| `shell`                   | false    | string                           | default="/bin/bash"                                                                 |
+| `request_timeout_seconds` | false    | number                           | maximum=600; exclusiveMinimum=0; default=120                                        |
+| `max_file_bytes`          | false    | integer                          | maximum=67108864; exclusiveMinimum=0; default=16777216                              |
+| `max_query_entries`       | false    | integer                          | maximum=100000; exclusiveMinimum=0; default=10000                                   |
+| `max_output_bytes`        | false    | integer                          | maximum=16777216; exclusiveMinimum=0; default=1048576                               |
+| `execution`               | false    | "native", "envd_http", "envd_ws" | default="native"                                                                    |
+| `snapshot`                | false    | string or null                   | minLength=1; maxLength=256; `pattern="^(auto\|snap_[A-Za-z0-9_-]+)$"`; default=null |
+| `desktop`                 | false    | boolean                          | default=false                                                                       |
+| `runtime`                 | false    | string                           | minLength=1; maxLength=128; default="python3.13"                                    |
+| `timeout_seconds`         | false    | integer                          | minimum=300; maximum=18000; default=3600                                            |
+| `vcpus`                   | false    | integer                          | minimum=2; maximum=8; default=2                                                     |
+| `desktop_assistance`      | false    | boolean                          | default=false                                                                       |
 
 ## `SpritesRecipe`
 
-| Field                     | Required | Type / choices        | Constraints and default                                |
-| ------------------------- | -------- | --------------------- | ------------------------------------------------------ |
-| `environment`             | false    | EnvironmentVariables  | —; default from model factory                          |
-| `root`                    | false    | string                | default="/home/sprite"                                 |
-| `python`                  | false    | string                | default="python3"                                      |
-| `shell`                   | false    | string                | default="/bin/bash"                                    |
-| `request_timeout_seconds` | false    | number                | maximum=600; exclusiveMinimum=0; default=120           |
-| `max_file_bytes`          | false    | integer               | maximum=67108864; exclusiveMinimum=0; default=16777216 |
-| `max_query_entries`       | false    | integer               | maximum=100000; exclusiveMinimum=0; default=10000      |
-| `max_output_bytes`        | false    | integer               | maximum=16777216; exclusiveMinimum=0; default=1048576  |
-| `region`                  | false    | string or null        | maxLength=64; default=null                             |
-| `execution`               | false    | "native", "envd_http" | default="native"                                       |
-| `desktop`                 | false    | boolean               | default=false                                          |
-| `desktop_assistance`      | false    | boolean               | default=false                                          |
+| Field                     | Required | Type / choices                   | Constraints and default                                |
+| ------------------------- | -------- | -------------------------------- | ------------------------------------------------------ |
+| `environment`             | false    | EnvironmentVariables             | —; default from model factory                          |
+| `root`                    | false    | string                           | default="/home/sprite"                                 |
+| `python`                  | false    | string                           | default="python3"                                      |
+| `shell`                   | false    | string                           | default="/bin/bash"                                    |
+| `request_timeout_seconds` | false    | number                           | maximum=600; exclusiveMinimum=0; default=120           |
+| `max_file_bytes`          | false    | integer                          | maximum=67108864; exclusiveMinimum=0; default=16777216 |
+| `max_query_entries`       | false    | integer                          | maximum=100000; exclusiveMinimum=0; default=10000      |
+| `max_output_bytes`        | false    | integer                          | maximum=16777216; exclusiveMinimum=0; default=1048576  |
+| `region`                  | false    | string or null                   | maxLength=64; default=null                             |
+| `execution`               | false    | "native", "envd_http", "envd_ws" | default="native"                                       |
+| `desktop`                 | false    | boolean                          | default=false                                          |
+| `desktop_assistance`      | false    | boolean                          | default=false                                          |
 
 ## `DaytonaEnvironmentConfiguration`
 
-| Field                     | Required | Type / choices       | Constraints and default                      |
-| ------------------------- | -------- | -------------------- | -------------------------------------------- |
-| `snapshot`                | true     | string               | minLength=1; maxLength=256                   |
-| `desktop`                 | false    | boolean              | default=false                                |
-| `environment`             | false    | EnvironmentVariables | —; default from model factory                |
-| `request_timeout_seconds` | false    | number               | maximum=600; exclusiveMinimum=0; default=120 |
+| Field                     | Required | Type / choices         | Constraints and default                      |
+| ------------------------- | -------- | ---------------------- | -------------------------------------------- |
+| `snapshot`                | true     | string                 | minLength=1; maxLength=256                   |
+| `desktop`                 | false    | boolean                | default=false                                |
+| `execution`               | false    | "envd_http", "envd_ws" | default="envd_http"                          |
+| `environment`             | false    | EnvironmentVariables   | —; default from model factory                |
+| `request_timeout_seconds` | false    | number                 | maximum=600; exclusiveMinimum=0; default=120 |
 
 ## `ModalEnvironmentConfiguration`
 
-| Field                     | Required | Type / choices       | Constraints and default                      |
-| ------------------------- | -------- | -------------------- | -------------------------------------------- |
-| `image`                   | true     | string               | minLength=1; maxLength=256                   |
-| `desktop`                 | false    | boolean              | default=false                                |
-| `environment`             | false    | EnvironmentVariables | —; default from model factory                |
-| `request_timeout_seconds` | false    | number               | maximum=600; exclusiveMinimum=0; default=120 |
-| `timeout_seconds`         | false    | integer              | minimum=300; maximum=86400; default=86400    |
-| `cpu`                     | false    | number               | maximum=64; exclusiveMinimum=0; default=1    |
-| `memory`                  | false    | integer              | minimum=128; maximum=262144; default=1024    |
+| Field                     | Required | Type / choices         | Constraints and default                      |
+| ------------------------- | -------- | ---------------------- | -------------------------------------------- |
+| `image`                   | true     | string                 | minLength=1; maxLength=256                   |
+| `desktop`                 | false    | boolean                | default=false                                |
+| `execution`               | false    | "envd_http", "envd_ws" | default="envd_http"                          |
+| `environment`             | false    | EnvironmentVariables   | —; default from model factory                |
+| `request_timeout_seconds` | false    | number                 | maximum=600; exclusiveMinimum=0; default=120 |
+| `timeout_seconds`         | false    | integer                | minimum=300; maximum=86400; default=86400    |
+| `cpu`                     | false    | number                 | maximum=64; exclusiveMinimum=0; default=1    |
+| `memory`                  | false    | integer                | minimum=128; maximum=262144; default=1024    |
 
 ## `VercelEnvironmentConfiguration`
 
-| Field                     | Required | Type / choices        | Constraints and default                                                             |
-| ------------------------- | -------- | --------------------- | ----------------------------------------------------------------------------------- |
-| `environment`             | false    | EnvironmentVariables  | —; default from model factory                                                       |
-| `root`                    | false    | string                | default="/vercel/sandbox"                                                           |
-| `python`                  | false    | string                | default="/vercel/runtimes/python/bin/python3"                                       |
-| `shell`                   | false    | string                | default="/bin/bash"                                                                 |
-| `request_timeout_seconds` | false    | number                | maximum=600; exclusiveMinimum=0; default=120                                        |
-| `max_file_bytes`          | false    | integer               | maximum=67108864; exclusiveMinimum=0; default=16777216                              |
-| `max_query_entries`       | false    | integer               | maximum=100000; exclusiveMinimum=0; default=10000                                   |
-| `max_output_bytes`        | false    | integer               | maximum=16777216; exclusiveMinimum=0; default=1048576                               |
-| `execution`               | false    | "native", "envd_http" | default="native"                                                                    |
-| `snapshot`                | false    | string or null        | minLength=1; maxLength=256; `pattern="^(auto\|snap_[A-Za-z0-9_-]+)$"`; default=null |
-| `desktop`                 | false    | boolean               | default=false                                                                       |
-| `runtime`                 | false    | string                | minLength=1; maxLength=128; default="python3.13"                                    |
-| `timeout_seconds`         | false    | integer               | minimum=300; maximum=18000; default=3600                                            |
-| `vcpus`                   | false    | integer               | minimum=2; maximum=8; default=2                                                     |
+| Field                     | Required | Type / choices                   | Constraints and default                                                             |
+| ------------------------- | -------- | -------------------------------- | ----------------------------------------------------------------------------------- |
+| `environment`             | false    | EnvironmentVariables             | —; default from model factory                                                       |
+| `root`                    | false    | string                           | default="/vercel/sandbox"                                                           |
+| `python`                  | false    | string                           | default="/vercel/runtimes/python/bin/python3"                                       |
+| `shell`                   | false    | string                           | default="/bin/bash"                                                                 |
+| `request_timeout_seconds` | false    | number                           | maximum=600; exclusiveMinimum=0; default=120                                        |
+| `max_file_bytes`          | false    | integer                          | maximum=67108864; exclusiveMinimum=0; default=16777216                              |
+| `max_query_entries`       | false    | integer                          | maximum=100000; exclusiveMinimum=0; default=10000                                   |
+| `max_output_bytes`        | false    | integer                          | maximum=16777216; exclusiveMinimum=0; default=1048576                               |
+| `execution`               | false    | "native", "envd_http", "envd_ws" | default="native"                                                                    |
+| `snapshot`                | false    | string or null                   | minLength=1; maxLength=256; `pattern="^(auto\|snap_[A-Za-z0-9_-]+)$"`; default=null |
+| `desktop`                 | false    | boolean                          | default=false                                                                       |
+| `runtime`                 | false    | string                           | minLength=1; maxLength=128; default="python3.13"                                    |
+| `timeout_seconds`         | false    | integer                          | minimum=300; maximum=18000; default=3600                                            |
+| `vcpus`                   | false    | integer                          | minimum=2; maximum=8; default=2                                                     |
 
 ## `SpritesEnvironmentConfiguration`
 
-| Field                     | Required | Type / choices        | Constraints and default                                |
-| ------------------------- | -------- | --------------------- | ------------------------------------------------------ |
-| `environment`             | false    | EnvironmentVariables  | —; default from model factory                          |
-| `root`                    | false    | string                | default="/home/sprite"                                 |
-| `python`                  | false    | string                | default="python3"                                      |
-| `shell`                   | false    | string                | default="/bin/bash"                                    |
-| `request_timeout_seconds` | false    | number                | maximum=600; exclusiveMinimum=0; default=120           |
-| `max_file_bytes`          | false    | integer               | maximum=67108864; exclusiveMinimum=0; default=16777216 |
-| `max_query_entries`       | false    | integer               | maximum=100000; exclusiveMinimum=0; default=10000      |
-| `max_output_bytes`        | false    | integer               | maximum=16777216; exclusiveMinimum=0; default=1048576  |
-| `region`                  | false    | string or null        | maxLength=64; default=null                             |
-| `execution`               | false    | "native", "envd_http" | default="native"                                       |
-| `desktop`                 | false    | boolean               | default=false                                          |
+| Field                     | Required | Type / choices                   | Constraints and default                                |
+| ------------------------- | -------- | -------------------------------- | ------------------------------------------------------ |
+| `environment`             | false    | EnvironmentVariables             | —; default from model factory                          |
+| `root`                    | false    | string                           | default="/home/sprite"                                 |
+| `python`                  | false    | string                           | default="python3"                                      |
+| `shell`                   | false    | string                           | default="/bin/bash"                                    |
+| `request_timeout_seconds` | false    | number                           | maximum=600; exclusiveMinimum=0; default=120           |
+| `max_file_bytes`          | false    | integer                          | maximum=67108864; exclusiveMinimum=0; default=16777216 |
+| `max_query_entries`       | false    | integer                          | maximum=100000; exclusiveMinimum=0; default=10000      |
+| `max_output_bytes`        | false    | integer                          | maximum=16777216; exclusiveMinimum=0; default=1048576  |
+| `region`                  | false    | string or null                   | maxLength=64; default=null                             |
+| `execution`               | false    | "native", "envd_http", "envd_ws" | default="native"                                       |
+| `desktop`                 | false    | boolean                          | default=false                                          |
 
 ## `RunloopEnvironmentConfiguration`
 

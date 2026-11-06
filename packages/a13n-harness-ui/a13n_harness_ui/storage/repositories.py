@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Literal, cast
 
@@ -47,8 +48,16 @@ from .models import (
     ShareGrantRecord,
     ThreadConfigurationRecord,
     ThreadRecord,
+    ToolExecutionHeadRecord,
 )
 from .objects import ObjectKind, ObjectRef
+
+
+@dataclass(frozen=True, slots=True)
+class ChildCompletionGuard:
+    generation_digest: str
+    parent_configuration_version: int
+    child_configuration_version: int
 
 
 class ProjectModelPreferenceRepository:
@@ -462,8 +471,18 @@ class ThreadRepository:
                     .order_by(ChildExecutionRecord.segment_index.desc())
                 )
             )
-            if busy_thread_ids.intersection(thread_ids) or any(
-                execution.execution_id in active_execution_ids for execution in executions
+            retained_work = await session.scalar(
+                select(ToolExecutionHeadRecord.execution_id)
+                .where(
+                    ToolExecutionHeadRecord.thread_id.in_(thread_ids),
+                    ToolExecutionHeadRecord.terminal.is_(False),
+                )
+                .limit(1)
+            )
+            if (
+                retained_work is not None
+                or busy_thread_ids.intersection(thread_ids)
+                or any(execution.execution_id in active_execution_ids for execution in executions)
             ):
                 raise StoreConflictError(
                     "Wait for this chat's subagents and tools to finish before deleting it.",
@@ -476,6 +495,9 @@ class ThreadRepository:
                     delete(ChildExecutionRecord).where(ChildExecutionRecord.execution_id == execution.execution_id)
                 )
             await session.execute(delete(CompactionRecord).where(CompactionRecord.thread_id.in_(thread_ids)))
+            await session.execute(
+                delete(ToolExecutionHeadRecord).where(ToolExecutionHeadRecord.thread_id.in_(thread_ids))
+            )
             await session.execute(
                 delete(ShareGrantRecord).where(
                     ShareGrantRecord.scope == "thread", ShareGrantRecord.target_id.in_(thread_ids)
@@ -769,6 +791,7 @@ class ThreadRepository:
         updated_at: datetime | None = None,
         clear_compaction: bool = False,
         compaction_settlement: CompactionSettlement | None = None,
+        tool_completions: tuple[str, ...] = (),
     ) -> Thread:
         _require_kind(replacement, ObjectKind.continuation)
         serialized = read_model.model_dump_json()
@@ -786,6 +809,9 @@ class ThreadRepository:
                     None if actual is None else actual.logical_digest,
                 )
             await settle_compaction(session, thread_id, settlement=compaction_settlement, clear=clear_compaction)
+            from .tool_executions import consume_completions
+
+            await consume_completions(session, thread_id, tool_completions)
             record.continuation_schema_version = replacement.object_schema_version
             record.continuation_digest = replacement.logical_digest
             record.read_model_digest = replacement.logical_digest
@@ -861,6 +887,7 @@ class ChildExecutionRepository:
         child_run_id: str,
         run_composition: ObjectRef,
         restart_batch_id: str | None = None,
+        automatic_completion: ChildCompletionGuard | None = None,
         created_at: datetime | None = None,
     ) -> ChildExecutionHead:
         _require_kind(run_composition, ObjectKind.run_composition)
@@ -869,6 +896,28 @@ class ChildExecutionRepository:
             previous = await session.get(ChildExecutionRecord, previous_execution_id)
             if previous is None:
                 raise StoreIntegrityError("Previous child execution does not exist.", code="child_execution_missing")
+            if automatic_completion is not None:
+                child = await session.get(ThreadRecord, previous.child_thread_id)
+                if child is None or child.archived:
+                    raise StoreIntegrityError("The child Thread is unavailable.", code="child_execution_not_resumable")
+                parent = await session.get(ThreadRecord, previous.parent_thread_id)
+                parent_config = await session.get(ThreadConfigurationRecord, previous.parent_thread_id)
+                child_config = await session.get(ThreadConfigurationRecord, previous.child_thread_id)
+                source = await session.get(CurrentConfigurationRecord, 1)
+                if (
+                    parent is None
+                    or parent.archived
+                    or parent_config is None
+                    or parent_config.version != automatic_completion.parent_configuration_version
+                    or child_config is None
+                    or child_config.version != automatic_completion.child_configuration_version
+                    or source is None
+                    or source.generation_digest != automatic_completion.generation_digest
+                ):
+                    raise StoreConflictError(
+                        "Child completion authority changed during preparation.",
+                        code="tool_completion_authority_changed",
+                    )
             planned = False
             if restart_batch_id is not None:
                 from a13n_harness_ui.restart_models import RestartBatch
@@ -1054,6 +1103,16 @@ class ChildExecutionRepository:
             running[root_thread_id].append(execution_id)
         return counts, {key: tuple(value) for key, value in running.items()}
 
+    async def latest_for_child(self, child_thread_id: str) -> ChildExecutionHead | None:
+        async with short_session(self._sessions) as session:
+            record = await session.scalar(
+                select(ChildExecutionRecord)
+                .where(ChildExecutionRecord.child_thread_id == child_thread_id)
+                .order_by(ChildExecutionRecord.segment_index.desc())
+                .limit(1)
+            )
+            return None if record is None else _child_value(record)
+
     async def first_for_child(self, child_thread_id: str) -> ChildExecutionHead | None:
         async with short_session(self._sessions) as session:
             record = (
@@ -1074,6 +1133,7 @@ class ChildExecutionRepository:
         checkpoint: ObjectRef,
         child_run_id: str,
         updated_at: datetime | None = None,
+        tool_completions: tuple[str, ...] = (),
     ) -> ChildExecutionHead:
         _require_kind(checkpoint, ObjectKind.child_checkpoint)
         now = _utc(updated_at)
@@ -1086,6 +1146,9 @@ class ChildExecutionRepository:
             actual = _child_checkpoint_ref(record)
             if actual != expected:
                 _conflict("child_checkpoint_conflict", _digest(expected), _digest(actual))
+            from .tool_executions import consume_completions
+
+            await consume_completions(session, record.child_thread_id, tool_completions)
             record.child_run_id = child_run_id
             record.selected_checkpoint_schema_version = checkpoint.object_schema_version
             record.selected_checkpoint_digest = checkpoint.logical_digest
@@ -1103,6 +1166,7 @@ class ChildExecutionRepository:
         child_run_id: str | None = None,
         failure: SafeFailure | None = None,
         completed_at: datetime | None = None,
+        tool_completions: tuple[str, ...] = (),
     ) -> ChildExecutionHead:
         if status not in {"succeeded", "failed", "cancelled", "lost"}:
             raise ValueError("child terminal status is invalid")
@@ -1120,6 +1184,9 @@ class ChildExecutionRepository:
             actual = _child_checkpoint_ref(record)
             if actual != expected_checkpoint:
                 _conflict("child_checkpoint_conflict", _digest(expected_checkpoint), _digest(actual))
+            from .tool_executions import consume_completions
+
+            await consume_completions(session, record.child_thread_id, tool_completions)
             record.status = status
             if child_run_id is not None:
                 record.child_run_id = child_run_id

@@ -24,7 +24,6 @@ from typing import TYPE_CHECKING, Literal
 import anyio
 import zstandard
 from a13n_harness import HarnessState, StateStore, StoredRef
-from a13n_harness.environment.session_recovery import EnvdSessionState
 from a13n_harness.state import StoredKind
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from sqlalchemy import ColumnElement, and_, exists, or_, select, update
@@ -126,8 +125,6 @@ class RunState(_Frozen):
     # A model request in this checkpoint carried the run's initial input: a resume's optional ordinary input and any
     # turn reminder. Every other run's input reaches its first request before its first checkpoint.
     resume_input_consumed: bool = False
-    # Private same-Run attachment hints, never inherited by a successor Run.
-    envd_sessions: dict[str, EnvdSessionState] = Field(default_factory=dict, repr=False)
 
     def to_json_bytes(self) -> bytes:
         """Serialize the complete checkpoint, reusing the Harness's encoded history."""
@@ -468,6 +465,7 @@ async def commit(
     display: DisplayWrite,
     memory_cursors: dict[str, str | None],
     consumed: Sequence[str],
+    result_retention_seconds: int,
     usage: Sequence[UsageReport],
     at: datetime,
 ) -> Committed:
@@ -486,7 +484,9 @@ async def commit(
     run.checkpoint = state.model_dump(mode="json")
     record_display(session, run, display)
     run.memory_cursors = memory_cursors
-    await inbox.consume(session, run.id, consumed, checkpoint_seq=state.seq, at=at)
+    await inbox.consume(
+        session, run.id, consumed, checkpoint_seq=state.seq, at=at, result_retention_seconds=result_retention_seconds
+    )
     await ingest(session, run, attempt, usage)
     return Committed(state=state, tail=display.tail)
 

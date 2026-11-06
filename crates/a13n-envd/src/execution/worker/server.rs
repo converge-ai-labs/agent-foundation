@@ -211,7 +211,7 @@ mod tests {
         frame(Command::Request {
             ticket,
             environment: Default::default(),
-            payload: json!({"jsonrpc":"2.0", "id":ticket, "eip_session":"session-framing-1", "method":method, "params":params}),
+            payload: json!({"jsonrpc":"2.0", "id":ticket, "eip_session":"session-framing-1", "eip_owner_epoch":1, "method":method, "params":params}),
         })
     }
     async fn received(reader: &mut (impl AsyncRead + Unpin)) -> Reply {
@@ -353,6 +353,96 @@ mod tests {
         let closed = received(&mut reader).await;
         assert_eq!(closed.ticket, 2);
         assert_eq!(closed.payload, json!({"closed": true}));
+        drop(writer);
+        drop(reader);
+        tokio::time::timeout(Duration::from_secs(5), task)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn takeover_during_worker_operation_uses_outer_admission_authority() {
+        let config = Config::for_test("device-framing");
+        let (client, server) = tokio::io::duplex(65536);
+        let (reader, writer) = tokio::io::split(server);
+        let task = tokio::spawn(serve(reader, writer, config, 1, "session-framing-1".into()));
+        let (mut reader, mut writer) = tokio::io::split(client);
+        assert_eq!(received(&mut reader).await.ticket, 0);
+        writer
+            .write_all(&request(
+                1,
+                "environment.readiness",
+                json!({"context":{"operation_id":"ready"}}),
+            ))
+            .await
+            .unwrap();
+        assert!(received(&mut reader).await.payload.get("result").is_some());
+        writer
+            .write_all(&frame(Command::Finish {
+                ticket: 1,
+                delivered: true,
+            }))
+            .await
+            .unwrap();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        writer.write_all(&request(2, "port.wait", json!({
+            "context":{"operation_id":"waiting", "timeout_ms":10000},
+            "target":{"protocol":"tcp", "address":"loopback", "port":listener.local_addr().unwrap().port()},
+            "desired_status":"not_listening"
+        }))).await.unwrap();
+        writer
+            .write_all(&request(3, "session.keepalive", json!({})))
+            .await
+            .unwrap();
+        assert_eq!(received(&mut reader).await.ticket, 3);
+        writer
+            .write_all(&frame(Command::Finish {
+                ticket: 2,
+                delivered: false,
+            }))
+            .await
+            .unwrap();
+        writer
+            .write_all(&frame(Command::Detach { ticket: 4 }))
+            .await
+            .unwrap();
+        assert_eq!(received(&mut reader).await.ticket, 4);
+        writer
+            .write_all(&frame(Command::Request {
+                ticket: 5,
+                environment: Default::default(),
+                payload: json!({"jsonrpc":"2.0", "id":5, "eip_session":"session-framing-1",
+                "eip_owner_epoch":2, "method":"session.attach", "params":{}}),
+            }))
+            .await
+            .unwrap();
+        let attached = received(&mut reader).await;
+        assert_eq!(attached.ticket, 5);
+        assert!(
+            attached.payload.get("result").is_some(),
+            "{:?}",
+            attached.payload
+        );
+        // The private pipe trusts outer admission, including an old-epoch
+        // operation already admitted before takeover. It owns no public fence.
+        writer
+            .write_all(&request(
+                6,
+                "operation.cancel",
+                json!({
+                    "context":{"operation_id":"cancel"}, "target_operation_id":"waiting"
+                }),
+            ))
+            .await
+            .unwrap();
+        let cancelled = received(&mut reader).await;
+        assert_eq!(cancelled.ticket, 6);
+        assert_eq!(
+            cancelled.payload["result"]["status"],
+            "cancellation_requested"
+        );
         drop(writer);
         drop(reader);
         tokio::time::timeout(Duration::from_secs(5), task)

@@ -454,6 +454,9 @@ async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, 
     memories = await freeze_memories(
         session, thread, revision.config.memory_mounts, limit=runtime.settings.memory.mounts_per_thread
     )
+    from a13n_service.runs.environments.contexts import prepare as prepare_context
+
+    await prepare_context(session, thread)
     current = await now(session)
     run = RunRow(
         id=run_id,

@@ -207,16 +207,18 @@ async def test_stdio_recovery_uses_common_session_source(binary, tmp_path, close
             await execution.operations.files.write_text(device_path(tmp_path / "restored"), "once", mode="create")
         finally:
             await execution.close()
-        assert recovery.state is None
+        assert recovery.state is not None
         assert (tmp_path / "restored").read_text() == "once"
-        with pytest.raises(EIPMethodError):
-            await device.attach_session(original.descriptor)
+        resumed = await device.attach_session(recovery.state.descriptor)
+        assert (await resumed.readiness()).ready
+        await resumed.close()
 
 
 async def test_stdio_eof_exits_daemon_and_new_generation_ignores_hint(binary, tmp_path):
     import json
+    from contextlib import suppress
 
-    from a13n_envd_client import EIPDeviceConnection, EIPSessionStateError, EIPTransportClosedError, StdioTransport
+    from a13n_envd_client import EIPDeviceConnection, EIPTransportClosedError, StdioTransport
     from a13n_harness.environment.attachments import DeviceEIPSessionSource
     from a13n_harness.environment.session_recovery import EnvdSessionRecovery
 
@@ -243,12 +245,7 @@ async def test_stdio_eof_exits_daemon_and_new_generation_ignores_hint(binary, tm
         transport = StdioTransport.from_process(process)
         device = await EIPDeviceConnection.initialize(transport, expected_device_id="stdio-recovery")
         try:
-            # Cleanup can observe either the finished Session or the closed Device,
-            # depending on when the reader propagates the carrier failure.
-            with pytest.raises(
-                (EIPSessionStateError, EIPTransportClosedError),
-                match=r"Session did not close cleanly|Device connection is closed",
-            ):
+            with suppress(EIPTransportClosedError):
                 async with DeviceEIPSessionSource(device, session_recovery=recovery).open_session(
                     expected_device_id="stdio-recovery", required_methods=frozenset()
                 ) as session:
@@ -257,10 +254,10 @@ async def test_stdio_eof_exits_daemon_and_new_generation_ignores_hint(binary, tm
                     if previous is not None:
                         assert session.descriptor.generation != previous.descriptor.generation
                         assert session.session_id != previous.descriptor.session_id
-                    # End the actual carrier without sending session.close first.
                     await transport.close()
                     await asyncio.wait_for(process.wait(), 10)
                     assert process.returncode == 0
+            assert recovery.state == saved
         finally:
             await device.close()
             if process.returncode is None:

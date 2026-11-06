@@ -182,8 +182,7 @@ class Recovery(AbstractModelContextCapability):
             ):
                 # The old execution may still be retiring. Its close must not erase
                 # the new mount's hint or replay work against the new connection.
-                previous = self.sessions[name]
-                recovery = EnvdSessionRecovery(None if pending.failed_scope is not None else previous.state)
+                recovery = self.sessions[name]
                 if client.session is not None:
                     client.session.detach_host_binding()
                 incarnation = Incarnation(client.device_id)
@@ -196,7 +195,6 @@ class Recovery(AbstractModelContextCapability):
                     computer_guard=replacement.computer_guard,
                 )
                 await self.environment.replace(name, fresh)
-                self.sessions[name] = recovery
                 self.mounts[name] = fresh, replacement
             if pending is not None and pending.notified_epoch != online.epoch:
                 pending.notified_epoch = online.epoch

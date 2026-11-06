@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 import pytest
 from a13n_harness.capabilities.browser import BrowserUseCapability
 from a13n_harness_ui.app import open_harness_ui_app
@@ -15,6 +17,7 @@ from a13n_harness_ui.storage.continuations import read_continuation
 from a13n_harness_ui.surfaces import ExternalToolResult, NewThreadDefaults, RootOperationStatus, ThreadDeferredResponse
 
 from .test_app import _CompletedReconstructor, _DeferredReconstructor, _settings, _write_configuration
+from .test_device_runtime import requires_envd
 
 pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
@@ -264,7 +267,7 @@ async def test_management_state_is_published_before_execution_and_after_partial_
             adapter_key=profile.adapter_key,
             normalized_root=str(composition.project_roots[0]),
         )
-        reconstructed = SimpleNamespace(adapter=SimpleNamespace(preserves_host_paths=False))
+        reconstructed = SimpleNamespace(profile=profile, adapter=SimpleNamespace(preserves_host_paths=False))
         monkeypatch.setattr(service._reconstructor, "reconstruct", lambda profile: reconstructed)
         connector = Mock(
             spec=EnvironmentConnector,
@@ -368,3 +371,125 @@ async def test_captured_full_control_browser_survives_next_run_default_changes(
             proceed.set()
         assert (await app.wait_root_operation(receipt.receipt_id)).status is RootOperationStatus.completed
         assert len(used) == 2 and used[0][0].target == used[1][0].target == "tab"
+
+
+@pytest.mark.parametrize("alias", ["workspace-2", "thread-files"])
+@pytest.mark.parametrize("profile", ["environment-native", pytest.param("environment-envd", marks=requires_envd)])
+async def test_recovery_prepares_only_captured_target_without_unrelated_roots(tmp_path, monkeypatch, alias, profile):
+    from a13n_harness import AgentIdentityRef, AgentInstanceContext
+    from a13n_harness.environment.models import EnvironmentAction
+
+    path = _write_configuration(tmp_path)
+    if profile == "environment-envd":
+        path.write_text(path.read_text() + f"envd:\n  executable: {os.environ['A13N_ENVD_TEST_BINARY']}\n")
+    async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=path) as app:
+        thread = await app.create_thread(defaults=NewThreadDefaults(environment_profile_id=profile))
+        executor = app._root_runs._executor
+        published = await executor._compositions.publish(
+            await app.current_configuration(), _selection(await app._threads.get(thread.thread_id))
+        )
+        target = tmp_path / "retained"
+        target.mkdir()
+        (target / "evidence.txt").write_text("original target")
+        thread_root = await executor._environments._thread_files.touch(thread.thread_id)
+        (thread_root / "evidence.txt").write_text("original target")
+        composition = published.value.model_copy(
+            update={"project_roots": (str(tmp_path / "removed-root"), str(target))}
+        )
+
+        async def unrelated(*args, **kwargs):
+            pytest.fail("Recovery must not prepare unrelated mounts or Run extensions")
+
+        monkeypatch.setattr(executor._environments._reconstructor, "create_extensions", unrelated)
+        monkeypatch.setattr(executor._environments, "_prepare_host_files_mount", unrelated)
+        runtime = await executor._environments.prepare_recovery(composition, alias)
+        instance = AgentInstanceContext(
+            identity=AgentIdentityRef(issuer="test", subject=thread.thread_id), agent_instance_id="agent-recovery"
+        )
+        async with runtime.bind(
+            thread_id=thread.thread_id, run_id="run-recovery", instance=instance, host_refs={}
+        ) as bound:
+            await runtime._activate()
+            assert tuple(item.name for item in bound.snapshot.mounts) == (alias,)
+            assert EnvironmentAction.SHELL_EXEC in bound.snapshot.mounts[0].permission_ceiling.operations
+            assert (await bound.files.read_text("evidence.txt")).text == "original target"
+
+
+@pytest.mark.parametrize("remove_management", [False, True])
+async def test_management_publication_preserves_session_and_rejects_stale_head(tmp_path, remove_management):
+    from datetime import UTC, datetime
+
+    from a13n_envd_client.eip.v1 import EIPLimits, ExecutionFeatures, SessionDescriptor
+    from a13n_harness.environment.models import EnvironmentState
+    from a13n_harness.environment.session_recovery import EnvdSessionState
+    from a13n_harness_ui.errors import StoreConflictError
+    from a13n_harness_ui.storage import EnvironmentBindingKey, StoredEnvironmentState
+    from a13n_harness_ui.storage.objects import ObjectKind
+
+    async with open_harness_ui_app(
+        _settings(tmp_path / "state"), configuration_path=_write_configuration(tmp_path)
+    ) as app:
+        thread = await app.create_thread()
+        environments = app._root_runs._executor._environments
+        key = EnvironmentBindingKey(
+            thread_id=thread.thread_id,
+            environment_profile_id="environment-native",
+            profile_digest="a" * 64,
+            adapter_key="native",
+            normalized_root=str(tmp_path),
+        )
+        session = EnvdSessionState(
+            target="fixture",
+            descriptor=SessionDescriptor.model_validate(
+                {
+                    "device_id": "fixture-device",
+                    "generation": 1,
+                    "session_id": "fixture-session",
+                    "working_directory": "/work",
+                    "owner_epoch": 7,
+                    "limits": dict.fromkeys(EIPLimits.model_fields, 1024),
+                    "execution_features": dict.fromkeys(ExecutionFeatures.model_fields, False),
+                    "lifecycle": {"idle_timeout_ms": 3600000},
+                    "boundary": {
+                        "sandbox": {"mode": "disabled"},
+                        "egress": "inherit",
+                        "privilege_gain_blocked": False,
+                        "backend": "native",
+                        "policy_digest": "b" * 64,
+                    },
+                }
+            ),
+        )
+        original = EnvironmentState(provider_key="direct_local", state_version="1", state={"version": 1})
+        initial = (
+            await app._store.objects.publish_model(
+                object_kind=ObjectKind.environment_state,
+                value=StoredEnvironmentState(
+                    binding=key, state=original, envd_session=session, created_at=datetime.now(UTC)
+                ),
+            )
+        ).ref
+        await app._store.environment_states.select(key=key, expected=None, replacement=initial)
+        observed = None if remove_management else original.model_copy(update={"state": {"version": 2}})
+        publication = await environments._publish_state(key, initial, original, observed)
+        saved = await app._store.objects.read_model(publication.replacement, StoredEnvironmentState)
+        assert saved.envd_session == session
+        assert saved.state == observed
+        with pytest.raises(StoreConflictError):
+            await environments._publish_state(key, initial, original, observed)
+        assert (await app._store.environment_states.get(key)).state == publication.replacement
+        recovered = await environments._session_context(key)
+        assert recovered.ownership is not None
+        async with recovered.ownership() as saved:
+            assert saved == session
+        import gc
+        import weakref
+
+        reference = weakref.ref(recovered)
+        del recovered
+        gc.collect()
+        assert reference() is None
+        assert not environments._sessions and not environments._owners._held
+        recovered = await environments._session_context(key)
+        async with recovered.ownership() as saved:
+            assert saved == session

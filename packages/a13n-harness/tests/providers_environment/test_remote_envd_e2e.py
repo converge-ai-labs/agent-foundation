@@ -512,7 +512,6 @@ async def test_websocket_host_sdk_real_daemon_operations_and_reconnection(binary
 
 @pytest.mark.parametrize("closed", [False, True])
 async def test_http_checkpoint_attaches_live_session_or_opens_after_close(binary, tmp_path, http_runtime, closed):
-    from a13n_envd_client import EIPClientError
     from a13n_harness.environment.session_recovery import EnvdSessionRecovery, EnvdSessionState
 
     address = f"127.0.0.1:{free_port()}"
@@ -535,10 +534,11 @@ async def test_http_checkpoint_attaches_live_session_or_opens_after_close(binary
             assert (await session.readiness()).ready
             assert recovery.state is not None and recovery.state.descriptor == session.descriptor
             descriptor = session.descriptor
-        assert recovery.state is None
+        assert recovery.state is not None
         verifier = await http_runtime(endpoint).acquire_device(expected_device_id=NATIVE_ID)
-        with pytest.raises(EIPClientError):
-            await verifier.attach_session(descriptor)
+        resumed = await verifier.attach_session(descriptor)
+        assert (await resumed.readiness()).ready
+        await resumed.close()
 
 
 async def test_http_recovery_late_close_fails_without_reopening_or_replaying(binary, tmp_path, http_runtime):
@@ -564,7 +564,7 @@ async def test_http_recovery_late_close_fails_without_reopening_or_replaying(bin
                 ) as writer:
                     await writer.write(b"not replayed")
         assert not (workspace / "must-not-exist").exists()
-        assert recovery.state is None
+        assert recovery.state is not None
 
 
 async def test_http_recovery_after_daemon_restart_opens_new_generation(binary, tmp_path, http_runtime):
@@ -618,7 +618,7 @@ async def test_http_recovery_does_not_open_fresh_session_after_uncertain_attach(
             ):
                 pytest.fail("An uncertain attach must fail")
         opened.assert_not_awaited()
-        assert recovery.state is None
+        assert recovery.state is not None
         assert (await original.readiness()).ready
 
 
@@ -642,7 +642,6 @@ async def test_http_recovery_uses_current_credentials(binary, tmp_path, http_run
 
 @pytest.mark.parametrize("closed", [False, True])
 async def test_reverse_websocket_recovers_session_after_carrier_reconnect(binary, tmp_path, closed):
-    from a13n_envd_client import EIPMethodError
     from a13n_harness.environment.session_recovery import EnvdSessionRecovery, EnvdSessionState
 
     async with WebSocketEnvdConnections() as hub:
@@ -685,10 +684,11 @@ async def test_reverse_websocket_recovers_session_after_carrier_reconnect(binary
                     await execution.operations.files.write_text(str(tmp_path / "once"), "once", mode="create")
                 finally:
                     await execution.close()
-                assert recovery.state is None
+                assert recovery.state is not None
                 assert (tmp_path / "once").read_text() == "once"
-                with pytest.raises(EIPMethodError):
-                    await device.attach_session(descriptor)
+                resumed = await device.attach_session(descriptor)
+                assert (await resumed.readiness()).ready
+                await resumed.close()
 
 
 @pytest.mark.parametrize("changed", ["target", "device", "generation", "directory", "methods", "boundary"])
@@ -738,13 +738,11 @@ async def test_session_recovery_checks_current_binding_before_attach(
                 assert session.session_id != original.session_id
             opened.assert_awaited_once()
         attach.assert_not_awaited()
-        assert recovery.state is None
+        assert recovery.state is not None
         assert (await original.readiness()).ready
 
 
-async def test_session_recovery_unavailable_carrier_leaves_old_session_alone(
-    binary, tmp_path, http_runtime, monkeypatch
-):
+async def test_session_recovery_busy_takeover_never_opens_a_duplicate(binary, tmp_path, http_runtime, monkeypatch):
     from unittest.mock import AsyncMock
 
     from a13n_envd_client import EIPMethodError
@@ -758,22 +756,25 @@ async def test_session_recovery_unavailable_carrier_leaves_old_session_alone(
         recovery = EnvdSessionRecovery(EnvdSessionState(target=endpoint, descriptor=original.descriptor))
         runtime = http_runtime(endpoint)
         device = await runtime.acquire_device(expected_device_id=NATIVE_ID)
-        # The framed-carrier gate uses this typed refusal while another carrier
-        # still owns the Session. It does not imply the old Session is dead.
         error = EIPMethodError(
             EIPError(
-                code=-32001,
-                message="session is not attached to this carrier",
-                data=EIPErrorData(error_type="not_initialized", retry_hint="never", dispatch_stage="pre_dispatch"),
+                code=-32030,
+                message="Session has in-flight operations",
+                data=EIPErrorData(error_type="busy", retry_hint="never", dispatch_stage="pre_dispatch"),
             )
         )
         monkeypatch.setattr(device, "attach_session", AsyncMock(side_effect=error))
-        async with runtime.open_session(
-            expected_device_id=NATIVE_ID, required_methods=frozenset(), session_recovery=recovery
-        ) as fresh:
-            assert fresh.session.session_id != original.session_id
+        opened = AsyncMock(wraps=device.open_session)
+        monkeypatch.setattr(device, "open_session", opened)
+        with pytest.raises(EIPMethodError):
+            async with runtime.open_session(
+                expected_device_id=NATIVE_ID, required_methods=frozenset(), session_recovery=recovery
+            ):
+                pytest.fail("Busy takeover must not allocate a Session")
+        opened.assert_not_awaited()
         assert (await original.readiness()).ready
-        assert recovery.state is None
+        assert recovery.state is not None
+        assert recovery.state.descriptor.owner_epoch == original.descriptor.owner_epoch + 1
 
 
 @pytest.mark.parametrize("provider", ["docker", "e2b", "daytona", "modal", "vercel"])
@@ -844,3 +845,526 @@ async def test_managed_defaults_reach_real_envd_commands_and_children(
             finally:
                 await execution.close()
         assert defaults == {"APP_MODE": "default ' $HOME 中文"}
+
+
+async def test_session_context_shares_live_borrowers_and_restores_after_final_release(binary, tmp_path, http_runtime):
+    from a13n_harness.environment.session_recovery import EnvdSessionRecovery
+
+    endpoint = f"http://127.0.0.1:{free_port()}"
+    checkpoints = []
+
+    async def checkpoint(state):
+        checkpoints.append(state)
+
+    context = EnvdSessionRecovery(checkpoint=checkpoint)
+    async with daemon(binary, tmp_path, "http", endpoint.removeprefix("http://")):
+        runtime = http_runtime(endpoint)
+
+        def borrow(recovery=context):
+            return runtime.open_session(
+                expected_device_id=NATIVE_ID,
+                required_methods=frozenset(),
+                session_recovery=recovery,
+            )
+
+        first_scope, second_scope = borrow(), borrow()
+        first = await first_scope.__aenter__()
+        second = await second_scope.__aenter__()
+        assert first.session is second.session
+        descriptor = first.session.descriptor
+        assert checkpoints[-1].descriptor == descriptor
+        await first_scope.__aexit__(None, None, None)
+        assert (await second.session.readiness()).ready
+        await second_scope.__aexit__(None, None, None)
+        assert context.state is not None
+        async with borrow() as successor:
+            assert successor.session.session_id == descriptor.session_id
+            assert successor.session.descriptor.owner_epoch > descriptor.owner_epoch
+            async with borrow(EnvdSessionRecovery()) as unrelated:
+                assert unrelated.session.session_id != descriptor.session_id
+        assert len(checkpoints) == 3  # Open, epoch reservation, attached descriptor.
+
+
+@pytest.mark.parametrize("failure", ["open", "checkpoint", "cancel_checkpoint", "attach"])
+async def test_session_ownership_unwinds_failed_acquisition(binary, tmp_path, http_runtime, monkeypatch, failure):
+    from a13n_envd_client import EIPSession, EIPTransportError
+    from a13n_harness.environment.session_recovery import EnvdSessionRecovery
+    from anyio import create_task_group, sleep_forever
+
+    endpoint = f"http://127.0.0.1:{free_port()}"
+    events = []
+    durable = None
+    failing = False
+    checkpoint_entered = asyncio.Event()
+
+    @asynccontextmanager
+    async def ownership():
+        events.append("acquire")
+        try:
+            yield durable
+        finally:
+            events.append("release")
+
+    async def checkpoint(state):
+        nonlocal durable
+        if failing and failure in {"checkpoint", "cancel_checkpoint"}:
+            if failure == "cancel_checkpoint":
+                checkpoint_entered.set()
+                await sleep_forever()
+            raise OSError("checkpoint failed")
+        durable = state
+
+    detach = EIPSession.detach
+
+    async def tracked_detach(self):
+        events.append("detach")
+        await detach(self)
+
+    monkeypatch.setattr(EIPSession, "detach", tracked_detach)
+    context = EnvdSessionRecovery(checkpoint=checkpoint, ownership=ownership)
+    async with daemon(binary, tmp_path, "http", endpoint.removeprefix("http://")):
+        runtime = http_runtime(endpoint)
+        device = await runtime.acquire_device(expected_device_id=NATIVE_ID)
+
+        async def acquire():
+            async with runtime.open_session(
+                expected_device_id=NATIVE_ID, required_methods=frozenset(), session_recovery=context
+            ):
+                assert not failing
+
+        if failure == "attach":
+            await acquire()
+            events.clear()
+        method = "attach_session" if failure == "attach" else "open_session"
+        original = getattr(device, method)
+
+        async def fail(*args, **kwargs):
+            raise EIPTransportError("acquisition failed")
+
+        failing = True
+        if failure in {"open", "attach"}:
+            monkeypatch.setattr(device, method, fail)
+        if failure == "cancel_checkpoint":
+            async with create_task_group() as group:
+                group.start_soon(acquire)
+                async with asyncio.timeout(5):
+                    await checkpoint_entered.wait()
+                group.cancel_scope.cancel()
+        else:
+            with pytest.raises((EIPTransportError, OSError)):
+                await acquire()
+        expected = ["acquire", "release"]
+        if failure in {"checkpoint", "cancel_checkpoint"}:
+            expected.insert(1, "detach")
+        assert events == expected
+        assert context._scope is None and context._session is None and context._users == 0
+        failing = False
+        monkeypatch.setattr(device, method, original)
+        await acquire()
+        assert events[len(expected) :] == ["acquire", "detach", "release"]
+
+
+async def test_dead_session_late_borrower_does_not_release_successor_owner(binary, tmp_path, http_runtime):
+    from a13n_harness.environment.session_recovery import EnvdSessionRecovery
+
+    endpoint = f"http://127.0.0.1:{free_port()}"
+    durable = None
+    events = []
+
+    @asynccontextmanager
+    async def ownership():
+        events.append("acquire")
+        try:
+            yield durable
+        finally:
+            events.append("release")
+
+    async def checkpoint(state):
+        nonlocal durable
+        durable = state
+
+    context = EnvdSessionRecovery(checkpoint=checkpoint, ownership=ownership)
+    async with daemon(binary, tmp_path, "http", endpoint.removeprefix("http://")):
+        runtime = http_runtime(endpoint)
+
+        def borrow():
+            return runtime.open_session(
+                expected_device_id=NATIVE_ID, required_methods=frozenset(), session_recovery=context
+            )
+
+        old_scope = borrow()
+        old = await old_scope.__aenter__()
+        old.session._finish()
+        async with borrow() as successor:
+            assert successor.session.session_id == old.session.session_id
+            assert successor.session.descriptor.owner_epoch > old.session.descriptor.owner_epoch
+            assert events == ["acquire", "release", "acquire"]
+            await old_scope.__aexit__(None, None, None)
+            assert events == ["acquire", "release", "acquire"]
+            assert (await successor.session.readiness()).ready
+        assert events == ["acquire", "release", "acquire", "release"]
+
+
+async def test_uncertain_takeover_keeps_checkpoint_and_advances_epoch_on_retry(
+    binary, tmp_path, http_runtime, monkeypatch
+):
+    from a13n_envd_client import EIPTransportError
+    from a13n_harness.environment.session_recovery import EnvdSessionRecovery
+
+    endpoint = f"http://127.0.0.1:{free_port()}"
+    context = EnvdSessionRecovery()
+    async with daemon(binary, tmp_path, "http", endpoint.removeprefix("http://")):
+        runtime = http_runtime(endpoint)
+
+        def borrow():
+            return runtime.open_session(
+                expected_device_id=NATIVE_ID,
+                required_methods=frozenset(),
+                session_recovery=context,
+            )
+
+        async with borrow() as first:
+            original_id = first.session.session_id
+        device = await runtime.acquire_device(expected_device_id=NATIVE_ID)
+        attach = device.attach_session
+
+        async def lose_reply(descriptor, **kwargs):
+            session = await attach(descriptor, **kwargs)
+            session._finish()  # Lose the local wrapper after native takeover succeeded.
+            raise EIPTransportError("lost takeover response")
+
+        monkeypatch.setattr(device, "attach_session", lose_reply)
+        with pytest.raises(EIPTransportError, match="lost takeover"):
+            async with borrow():
+                pytest.fail("Lost response must not expose a Session")
+        assert context.state is not None
+        reserved = context.state.descriptor.owner_epoch
+        monkeypatch.setattr(device, "attach_session", attach)
+        async with borrow() as recovered:
+            assert recovered.session.session_id == original_id
+            assert recovered.session.descriptor.owner_epoch == reserved + 1
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        "handoff",
+        "lost_identity",
+        "lost_reply",
+        "checkpoint",
+        "observation",
+        "cancelled_start",
+        "publication_cancel",
+        "disclosure",
+        "disclosure_handoff",
+        "large_output_handoff",
+    ],
+)
+async def test_owned_shell_handoff_recovers_same_process_without_start_replay(
+    binary, tmp_path, http_runtime, monkeypatch, failure
+):
+    from dataclasses import replace
+
+    from a13n_harness import AgentIdentityRef, AgentInstanceContext
+    from a13n_harness.environment.coordinator import create_environment_runtime
+    from a13n_harness.environment.session_recovery import EnvdSessionRecovery, EnvdSessionState
+    from a13n_harness.tool_execution import MemoryToolExecutionStore, ToolExecutionRuntime
+    from a13n_harness.toolsets.process_manager import _ProcessController
+
+    from ..environment_helpers import Source
+
+    endpoint = f"http://127.0.0.1:{free_port()}"
+    instance = AgentInstanceContext(
+        identity=AgentIdentityRef(issuer="test", subject="agent"), agent_instance_id="agent-1"
+    )
+    store = MemoryToolExecutionStore()
+    disclosure = failure in {"disclosure", "disclosure_handoff", "large_output_handoff"}
+    payload = (
+        "Bearer test-sensitive-value\n" + "x" * (80000 if failure == "large_output_handoff" else 40000) + "\nfinished"
+    )
+
+    async def assert_disclosed(result):
+        from types import SimpleNamespace
+
+        from a13n_harness.capabilities.tool_execution import _result
+        from a13n_harness.tools._output import DEFAULT_TOOL_OUTPUT_CHARS
+        from a13n_harness.toolsets.output import tool_output_size
+
+        assert result.record.status == "succeeded", result
+        assert "test-sensitive-value" not in json.dumps(result.result)
+        assert tool_output_size(result.result) <= DEFAULT_TOOL_OUTPUT_CHARS
+        assert result.result["disclosure"]["content_complete"]
+        retained = await store.get("thread-a", record.execution_id)
+        assert retained.artifacts == result.artifacts
+        assert len(retained.artifacts) == 2
+        for artifact in retained.artifacts:
+            assert b"test-sensitive-value" not in artifact.data
+            assert b"Bearer [REDACTED]" in artifact.data
+            assert b"x" * 40000 in artifact.data
+
+        async def spill(data, *, suffix):
+            path = tmp_path / ("materialized" + suffix)
+            path.write_bytes(data)
+            return str(path)
+
+        deps = SimpleNamespace(
+            _spill_tool_result=spill,
+            _tool_executions=SimpleNamespace(delivered_result=lambda call, record, value: value),
+        )
+        materialized = await _result(SimpleNamespace(deps=deps, tool_call_id="retrieve"), retained)
+        assert "tool-execution-artifact://" not in json.dumps(materialized)
+        assert Path(materialized["disclosure"]["text_file_paths"]["/stdout/text"]).read_text() == (
+            "ready\n" + payload.replace("test-sensitive-value", "[REDACTED]") + "\n"
+        )
+
+    original_process_id = None
+    start_returned, lose_start_reply = asyncio.Event(), asyncio.Event()
+    publication_started, fail_publication = asyncio.Event(), asyncio.Event()
+    if failure in {"lost_reply", "cancelled_start"}:
+        from a13n_envd_client.eip.v1 import EIPClient
+        from a13n_envd_client.errors import EIPTransportError
+
+        original_start = EIPClient.process_start
+
+        async def lose_reply(client, params):
+            nonlocal original_process_id
+            result = await original_start(client, params)
+            original_process_id = result.process.handle.root
+            if failure == "cancelled_start":
+                start_returned.set()
+                await lose_start_reply.wait()
+            raise EIPTransportError("injected lost start response")
+
+        monkeypatch.setattr(EIPClient, "process_start", lose_reply)
+    elif failure == "checkpoint":
+        original_save = store.save
+
+        async def fail_identity_checkpoint(execution):
+            if execution.shell is not None and execution.shell.process.identity is not None:
+                monkeypatch.setattr(store, "save", original_save)
+                raise OSError("injected checkpoint failure")
+            await original_save(execution)
+
+        monkeypatch.setattr(store, "save", fail_identity_checkpoint)
+    elif failure == "publication_cancel":
+        original_save = store.save
+
+        async def fail_result_publication(execution):
+            if execution.record.result_available:
+                publication_started.set()
+                await fail_publication.wait()
+                monkeypatch.setattr(store, "save", original_save)
+                raise OSError("injected result publication failure")
+            await original_save(execution)
+
+        monkeypatch.setattr(store, "save", fail_result_publication)
+    completions = []
+    first = ToolExecutionRuntime(store=store, on_completed=completions.append)
+    context = EnvdSessionRecovery()
+    async with daemon(binary, tmp_path, "http", endpoint.removeprefix("http://")) as (_, workspace):
+
+        def environment(provider_runtime, recovery):
+            connection = HTTP_ENVD.execution_connector(
+                RemoteEnvdEnvironmentConfiguration(working_directory=str(workspace)),
+                configuration=provider_runtime.configuration,
+                environment_id=LOGICAL_ID,
+                state=state(HTTP_ENVD),
+                runtime=provider_runtime,
+                session_recovery=recovery,
+            )
+            return create_environment_runtime(mounts={"workspace": Source(connection)}, default_mount="workspace")
+
+        owner_connection = http_runtime(endpoint)
+        scope = environment(owner_connection, context)
+        async with scope.bind(thread_id="thread-a", run_id="run-a", instance=instance, host_refs={}) as bound:
+            await scope._activate()
+            controller = _ProcessController(bound)
+            if failure == "observation":
+
+                async def lose_observation(*args, **kwargs):
+                    raise EnvironmentError("injected disconnect", code="environment_unavailable")
+
+                monkeypatch.setattr(controller, "_observe_owned", lose_observation)
+            mount_id = bound.resolve_path(".").mount_id
+            request = CommandRequest(
+                command=ArgvCommand(
+                    executable=Path(sys.executable).resolve().name,
+                    arguments=(
+                        "-u",
+                        "-c",
+                        "import sys; open('admissions','a').write('1'); print('ready'); "
+                        + (
+                            "print('finished')"
+                            if failure == "publication_cancel"
+                            else f"sys.stdin.readline(); print({payload!r})"
+                            if disclosure
+                            else "print(sys.stdin.readline().strip())"
+                        ),
+                    ),
+                ),
+                keep_stdin_open=True,
+                output_policy=EnvironmentOutputPolicy(
+                    max_inline_bytes=4096, max_output_bytes=131072 if disclosure else 4096, overflow="truncate"
+                ),
+            )
+
+            async def start():
+                return await controller.run_owned(
+                    request,
+                    alias="workspace",
+                    expected_mount_id=mount_id,
+                    runtime=first,
+                    execution_id=record.execution_id,
+                )
+
+            record = first.admit(
+                start, thread_id="thread-a", run_id="run-a", tool_call_id="call-a", tool_name="shell_exec"
+            )
+            original_identity = None
+            if failure == "cancelled_start":
+                await start_returned.wait()
+                await first.cancel("thread-a", record.execution_id)
+                lose_start_reply.set()
+            elif failure == "publication_cancel":
+                await publication_started.wait()
+                await first.cancel("thread-a", record.execution_id)
+                fail_publication.set()
+            if failure in {"handoff", "lost_identity", "disclosure", "disclosure_handoff", "large_output_handoff"}:
+                async with asyncio.timeout(5):
+                    while first.resource("thread-a", record.execution_id) is None:
+                        assert not (await first.info("thread-a", record.execution_id)).terminal
+                        await asyncio.sleep(0.01)
+                original_identity = first.resource("thread-a", record.execution_id).identity
+                if failure == "disclosure":
+                    await first.call_resource(
+                        "thread-a", record.execution_id, {"operation": "input", "data": "finish\n"}
+                    )
+                    await assert_disclosed(await first.wait("thread-a", record.execution_id, timeout_seconds=5))
+                    assert (workspace / "admissions").read_text() == "1"
+                    assert [item.execution_id for item in completions] == [record.execution_id]
+                    await controller.close()
+                    assert await first.close() == ()
+                    return
+                # Release after the identity checkpoint, with no later native
+                # checkpoint to accidentally make the receipt durable.
+                await first.release_foreground("thread-a", record.execution_id)
+                first.stop_admission()
+                first.yield_recoverable()
+            else:
+                await first.release_foreground("thread-a", record.execution_id)
+            async with asyncio.timeout(5):
+                await first.join()
+            await controller.close()
+        await owner_connection.close()
+        saved = await store.get("thread-a", record.execution_id)
+        assert saved is not None and not saved.record.terminal and saved.shell is not None
+        assert saved.record.foreground_released
+        assert saved.record.cancel_requested == (failure in {"cancelled_start", "publication_cancel"})
+        assert completions == []
+        if failure == "lost_identity":
+            saved = replace(
+                saved,
+                shell=saved.shell.model_copy(
+                    update={"process": saved.shell.process.model_copy(update={"identity": None})}
+                ),
+            )
+        assert context.state is not None
+        restored = EnvdSessionRecovery(EnvdSessionState.model_validate_json(context.state.model_dump_json()))
+        successor = ToolExecutionRuntime(store=store, on_completed=completions.append)
+        scope = environment(http_runtime(endpoint), restored)
+        async with scope.bind(thread_id="thread-a", run_id="recovery", instance=instance, host_refs={}) as bound:
+            await scope._activate()
+
+            async def recover():
+                from a13n_harness.toolsets.process_manager import recover_shell
+
+                return await recover_shell(bound, saved.shell, runtime=successor, execution_id=record.execution_id)
+
+            if failure == "publication_cancel":
+                # Failed publication must leave the only native output intact,
+                # even though cancellation arrived during the store write.
+                native = await bound.processes.recover(saved.shell.process, alias="workspace")
+                assert native.output.stdout.inline == b"ready\nfinished\n"
+                bound.processes.detach(native.handle)
+            successor.resume_shell(saved, recover)
+            if saved.record.cancel_requested:
+                result = await successor.wait("thread-a", record.execution_id, timeout_seconds=5)
+                assert result.record.status == "cancelled", result
+                assert (workspace / "admissions").read_text() == "1"
+                assert [item.execution_id for item in completions] == [record.execution_id]
+                return
+            async with asyncio.timeout(5):
+                while successor.resource("thread-a", record.execution_id) is None:
+                    assert not (await successor.info("thread-a", record.execution_id)).terminal
+                    await asyncio.sleep(0.01)
+            recovered_identity = successor.resource("thread-a", record.execution_id).identity
+            if original_identity is not None:
+                assert recovered_identity == original_identity
+            if original_process_id is not None:
+                assert recovered_identity.process_id == str(original_process_id)
+            await successor.call_resource("thread-a", record.execution_id, {"operation": "input", "data": "finished\n"})
+            result = await successor.wait("thread-a", record.execution_id, timeout_seconds=5)
+            assert result.record.status == "succeeded", result
+            if failure == "large_output_handoff":
+                from a13n_harness.tools._output import DEFAULT_TOOL_OUTPUT_CHARS
+                from a13n_harness.toolsets.output import tool_output_size
+
+                stdout = result.result["stdout"]
+                assert stdout["available_end"] == len("ready\n" + payload + "\n")
+                assert stdout["producer_complete"]
+                assert not stdout["content_complete"]
+                assert stdout["offload"]["reason"] == "write_unavailable"
+                assert stdout["offload"]["path"] is None
+                assert stdout["offload"]["bytes"] == 0
+                assert stdout["text"].startswith("ready\nBearer [REDACTED]\n")
+                assert "finished" not in stdout["text"]
+                assert tool_output_size(result.result) <= DEFAULT_TOOL_OUTPUT_CHARS
+                retained = await store.get("thread-a", record.execution_id)
+                assert retained.result == result.result
+                assert retained.artifacts == result.artifacts == ()
+            elif disclosure:
+                await assert_disclosed(result)
+            else:
+                assert result.result["stdout"]["text"] == "ready\nfinished\n"
+        assert (workspace / "admissions").read_text() == "1"
+        assert [item.execution_id for item in completions] == [record.execution_id]
+        assert await first.close() == ()
+        assert await successor.close() == ()
+
+
+async def test_dead_session_borrower_cannot_pin_or_detach_replacement(binary, tmp_path, http_runtime):
+    from a13n_harness.environment.session_recovery import EnvdSessionRecovery
+
+    endpoint = f"http://127.0.0.1:{free_port()}"
+    recovery = EnvdSessionRecovery()
+    async with daemon(binary, tmp_path, "http", endpoint.removeprefix("http://")):
+        old_runtime, new_runtime = http_runtime(endpoint), http_runtime(endpoint)
+
+        def borrow(runtime):
+            return runtime.open_session(
+                expected_device_id=NATIVE_ID, required_methods=frozenset(), session_recovery=recovery
+            )
+
+        old_scope = borrow(old_runtime)
+        old = await old_scope.__aenter__()
+        original = old.session.descriptor
+        # A heartbeat failure closes the client without destroying the native Session.
+        old.session._finish()
+        await old_runtime.close()
+        assert old.session.is_closed
+        new_scope, shared_scope = borrow(new_runtime), borrow(new_runtime)
+        new, shared = await asyncio.gather(new_scope.__aenter__(), shared_scope.__aenter__())
+        try:
+            assert new.session is shared.session
+            assert new.session.session_id == original.session_id
+            assert new.session.descriptor.owner_epoch == original.owner_epoch + 1
+            await old_scope.__aexit__(None, None, None)
+            assert (await new.session.readiness()).ready
+            await shared_scope.__aexit__(None, None, None)
+            assert (await new.session.readiness()).ready
+        finally:
+            await new_scope.__aexit__(None, None, None)
+        assert new.session.is_closed
+        async with borrow(new_runtime) as final:
+            assert final.session.session_id == original.session_id
+            assert final.session.descriptor.owner_epoch == original.owner_epoch + 2

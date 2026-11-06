@@ -30,6 +30,7 @@ from a13n_harness.environment.commands import (
     ShellExecResult,
 )
 from a13n_harness.environment.models import EnvironmentError, EnvironmentOperationReceipt
+from a13n_harness.environment.process_recovery import EnvdProcessState, current_process_checkpoint
 from a13n_harness.environment.retention import (
     BoundOutputCursor,
     EnvironmentOutputPolicy,
@@ -384,16 +385,26 @@ class EIPProcessOperations:
         raise EnvironmentError("EIP discovery is unsupported.", code="environment_unsupported")
 
     async def start(self, request: CommandRequest) -> ProcessStartResult:
+        params = eip.ProcessStartParams(
+            context=new_context(),
+            request=convert_command_request(
+                with_defaults(request, self._conversions._environment, windows=self._conversions._windows),
+                files=self._conversions._files,
+            ),
+        )
+        checkpoint = current_process_checkpoint()
+        descriptor = self._conversions._session.descriptor
+        state = EnvdProcessState(
+            device_id=descriptor.device_id,
+            session_id=descriptor.session_id,
+            generation=descriptor.generation,
+            start_operation_id=params.context.operation_id,
+            output_policy=request.output_policy,
+        )
+        if checkpoint is not None:
+            await checkpoint(state)
         try:
-            result = await session_client(self._conversions._session).process_start(
-                eip.ProcessStartParams(
-                    context=new_context(),
-                    request=convert_command_request(
-                        with_defaults(request, self._conversions._environment, windows=self._conversions._windows),
-                        files=self._conversions._files,
-                    ),
-                )
-            )
+            result = await session_client(self._conversions._session).process_start(params)
         except EIPMethodError as error:
             await self._conversions.adopt_command_failure(error, request.output_policy)
             raise_converted(error)
@@ -405,7 +416,38 @@ class EIPProcessOperations:
         except BaseException:
             await self._conversions.cleanup_unreturned_process(result.process, request.output_policy)
             raise
+        if checkpoint is not None:
+            try:
+                await checkpoint(state.model_copy(update={"identity": process.handle.identity}))
+            except BaseException:
+                # The pre-effect correlation remains durable. Forget only this
+                # adapter's handle; the next owner resolves the original start.
+                self.detach(process.handle)
+                raise
         return ProcessStartResult(process=process, receipt=receipt)
+
+    def detach(self, handle: BoundProcessHandle) -> None:
+        token, record = self._conversions.resolve(handle)
+        self._conversions._records.pop(token)
+        self._conversions._raw_tokens.pop(record.handle)
+
+    async def recover(self, state: EnvdProcessState) -> ProcessInfo:
+        descriptor = self._conversions._session.descriptor
+        if (state.device_id, state.session_id, state.generation) != (
+            descriptor.device_id,
+            descriptor.session_id,
+            descriptor.generation,
+        ):
+            raise EnvironmentError("The original Envd Session is gone.", code="environment_stale_mount")
+        if state.identity is not None:
+            return await self.rebind(state.identity, output_policy=state.output_policy)
+        result = await invoke(
+            session_client(self._conversions._session).process_resolve_start(
+                eip.ProcessResolveStartParams(context=new_context(), target_operation_id=state.start_operation_id)
+            )
+        )
+        self._conversions.receipt(result.receipt)
+        return self._conversions.register(result.process, state.output_policy)
 
     async def rebind(
         self,

@@ -41,7 +41,7 @@ HTTP, reverse WebSocket and stdio implement the same Session semantics. HTTP req
 | Output bytes, offsets and release                                  | [Output](06-output-retention.md)                               |
 | Device execution boundary and native cleanup limits                | [Execution Boundary](07-execution-isolation.md)                |
 | IDL, generation and shared client                                  | [Protocol Source](08-protocol-source-client-and-generation.md) |
-| Session inactivity, disconnect grace and resource collection       | [Resource Lifetime](09-resource-lifetime-and-reclamation.md)   |
+| Session inactivity, maximum lifetime and resource collection       | [Resource Lifetime](09-resource-lifetime-and-reclamation.md)   |
 
 ## Main Flow
 
@@ -50,7 +50,7 @@ HTTP, reverse WebSocket and stdio implement the same Session semantics. HTTP req
 3. Each Environment connector opens an EIP Session with its captured working directory and verifies readiness.
 4. Requests and binary transfers route to that Session. Its client maintains liveness while the owning scope exists, including during quiet long-running commands.
 5. Scope close cleans that Session, not the daemon, shared carrier or sibling Sessions.
-6. Lost owners expire; a short disconnect grace permits same-Session reattachment. Periodic and high-water collection remove abandoned Sessions and eligible completed history.
+6. Lost owners expire; same-Session reattachment with a newer owner epoch is permitted before expiry. Periodic and high-water collection remove abandoned Sessions and eligible completed history.
 
 The Host owns a shared local stdio daemon's lifetime. A standalone owner can instead own a dedicated daemon. Neither model changes Session ownership.
 

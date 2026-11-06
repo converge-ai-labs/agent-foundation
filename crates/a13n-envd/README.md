@@ -4,13 +4,13 @@
 
 ## Device and Session runtime
 
-The daemon implements EIP 0.3 over trusted stdio, authenticated HTTP(S), and outbound reverse WebSocket. One daemon owns a Device generation. Multiple independent Sessions share its account and filesystem while keeping separate operations, process handles, transfers, receipts, and retained output.
+The daemon implements EIP 0.4 over trusted stdio, authenticated HTTP(S), and outbound reverse WebSocket. One daemon owns a Device generation. Multiple independent Sessions share its account and filesystem while keeping separate operations, process handles, transfers, receipts, and retained output.
 
 - `initialize` negotiates the Device connection without creating a Session.
 - `device.describe` and bounded `directory.list` work without a Session.
 - `session.open` captures an existing Device-absolute working directory and checks required methods.
 - Session control and data frames carry the exact Session selector. Closing a Session cleans up only its resources, not its siblings or the Device.
-- Explicit same-Session attachment can resume an existing owner within disconnect grace; opening a new Session never replays work or inherits process handles.
+- Explicit same-Session attachment can resume an existing owner before Session expiry with a newer owner epoch; opening a new Session never replays work or inherits process handles.
 
 Paths address the Device filesystem, not exported mounts. POSIX uses native absolute paths. Windows uses `/C:/...` and `/UNC/server/share/...`; directory discovery at `/` lists available volume roots. The fixed working directory is a default for commands and relative Host routing, not a filesystem access boundary.
 

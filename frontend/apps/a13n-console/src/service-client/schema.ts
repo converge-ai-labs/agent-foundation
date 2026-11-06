@@ -7810,6 +7810,11 @@ export interface components {
     ExecutionView: {
       /** Attempt Id */
       attempt_id: string;
+      /**
+       * Cancel Requested
+       * @default false
+       */
+      cancel_requested?: boolean;
       /** Cancel Requested At */
       cancel_requested_at: string | null;
       /** Completed At */

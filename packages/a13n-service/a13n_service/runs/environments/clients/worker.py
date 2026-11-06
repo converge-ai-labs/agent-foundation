@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator, Mapping
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
@@ -29,14 +29,15 @@ from pydantic import BaseModel, JsonValue, TypeAdapter
 from redis.exceptions import RedisError
 from sqlalchemy.exc import SQLAlchemyError
 
+from a13n_service.infra.db import transaction
 from a13n_service.runs.attempts import AuthorityRevoked, Lease, LeaseLost
 from a13n_service.runs.environments.clients.connections import Presence, owner_key
 from a13n_service.runs.environments.clients.observations import Incarnation
 from a13n_service.runs.environments.clients.observations import current as tool_observation
-from a13n_service.runs.environments.clients.routing import Failure, NativeFailure, Request
+from a13n_service.runs.environments.clients.routing import RECOVERY_DISCOVERY, Failure, NativeFailure, Request
 from a13n_service.runs.environments.clients.streaming import WorkerStreams
 from a13n_service.runs.runtime import Runtime
-from a13n_service.runs.tool_executions.authority import prove
+from a13n_service.runs.tool_executions.authority import lock_execution, prove
 from a13n_service.runs.tool_executions.routing import Caller
 
 _PARAMS = TypeAdapter(dict[str, JsonValue])
@@ -55,6 +56,7 @@ class Target:
     directory: str
     mount_name: str
     managed_state: EnvironmentState | None = None
+    recovery_execution_id: str | None = None
 
     @property
     def state(self) -> EnvironmentState:
@@ -105,14 +107,16 @@ class Calls:
                 run_id=self.lease.run_id,
                 attempt_id=self.lease.attempt_id,
                 worker_id=self.lease.worker_id,
-                execution_id=execution.execution_id if execution is not None else None,
+                execution_id=self.target.recovery_execution_id
+                or (execution.execution_id if execution is not None else None),
             ),
             method=method,
-            cleanup=execution_cleanup_active(),
+            cleanup=execution_cleanup_active()
+            or (self.target.recovery_execution_id is not None and method in RECOVERY_DISCOVERY),
             params=_PARAMS.validate_python(params),
             expires_at=datetime.now(UTC) + timedelta(seconds=self.runtime.settings.client_environments.request_seconds),
         )
-        await prove(self.runtime, self.lease, cleanup=request.allows_cancelled_owner)
+        await self.prove(request.caller.execution_id, cleanup=request.retained_cleanup)
         observed = tool_observation.get()
         try:
             # The environment channel survives reconnects, but this Session does
@@ -169,6 +173,13 @@ class Calls:
                 }:
                     observed.successes.add(self.target.mount_name)
                 return success.value
+
+    async def prove(self, execution_id: str | None, *, cleanup: bool) -> None:
+        if cleanup and execution_id is not None:
+            async with transaction(self.runtime.storage) as session:
+                await lock_execution(session, self.lease, execution_id, cleanup=True)
+        else:
+            await prove(self.runtime, self.lease)
 
 
 class Client:
@@ -235,9 +246,6 @@ class Client:
                         {
                             "working_directory": working_directory,
                             "required_methods": sorted(required_methods),
-                            "recovery": session_recovery.state.model_dump(mode="json")
-                            if session_recovery is not None and session_recovery.state
-                            else None,
                         },
                     )
                 )
@@ -261,7 +269,11 @@ class Client:
 
             async def owner_current() -> bool:
                 try:
-                    await prove(self.runtime, self.lease, cleanup=execution_cleanup_active())
+                    execution = current_execution()
+                    await calls.prove(
+                        self.target.recovery_execution_id or (execution.execution_id if execution else None),
+                        cleanup=self.target.recovery_execution_id is not None or execution_cleanup_active(),
+                    )
                     return await self.runtime.redis.get(owner_key(self.target.environment_id)) == online.epoch
                 except (AuthorityRevoked, LeaseLost, RedisError):
                     # No proof of ownership permits dispatch on this logical binding.
@@ -271,18 +283,16 @@ class Client:
                 session = await device.bind_open_session(
                     result.descriptor, readiness_timeout=timeout, owner_current=owner_current
                 )
-                async with session:
+                async with AsyncExitStack() as lifetime:
+                    lifetime.push_async_callback(session.detach)
+                    await lifetime.enter_async_context(session.use())
                     self.incarnation.epoch = online.epoch
                     self.incarnation.scope_id = calls.scope_id
                     self.incarnation.session = session
-                    if session_recovery is not None:
-                        session_recovery.observe(self.target.environment_id, working_directory, session)
                     try:
                         yield EIPSessionBinding(session, result.device_descriptor)
                     finally:
                         self.incarnation.session = None
-                        if session_recovery is not None:
-                            session_recovery.closed(session)
 
 
 class SessionTransport:
@@ -338,7 +348,7 @@ class SessionTransport:
         task.add_done_callback(self.pending.discard)
 
     async def _exchange(self, request: eip.JsonRpcRequest) -> None:
-        method = "scope.close" if request.method == "session.close" else request.method
+        method = {"session.close": "scope.close", "session.detach": "scope.detach"}.get(request.method, request.method)
         try:
             value = await self.calls.call(method, request.params)
             response = eip.JsonRpcSuccessResponse(

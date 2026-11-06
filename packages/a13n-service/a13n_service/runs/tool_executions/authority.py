@@ -47,7 +47,7 @@ async def lock_execution(
         or row.thread_id != lease.thread_id
         or row.worker_id != lease.worker_id
         or not hmac.compare_digest(row.lease_token_hash, secret_hash(lease.token))
-        or row.completed_at is not None
+        or (row.completed_at is not None and not cleanup)
         or row.lease_expires_at <= current
         or (not cleanup and (row.cancel_requested_at is not None or run.cancel_requested_at is not None))
     ):
@@ -153,6 +153,21 @@ class ControlSnapshot:
         actions: frozenset[EnvironmentAction],
         cleanup: bool = False,
     ) -> ControlGrant:
+        run = self.owner(caller, thread_id=thread_id, cleanup=cleanup)
+        principal = self.principals[run.id]
+        if isinstance(principal, ServiceError):
+            raise AuthorityRevoked() from principal
+        for value in run.environment_mounts:
+            if value["environment_id"] == environment_id:
+                mount = EnvironmentMount.model_validate(value)
+                if actions <= mount.permission_ceiling.operations:
+                    return ControlGrant(
+                        principal, run.workspace_id, mount, ExecutionAuthority.model_validate(run.authority)
+                    )
+        raise LeaseLost()
+
+    def owner(self, caller: Caller, *, thread_id: str, cleanup: bool = False) -> RunRow:
+        """Check durable ownership separately from permission to admit new work."""
         run = self.runs.get(caller.run_id)
         current = self.current
         if run is None or run.thread_id != thread_id:
@@ -178,22 +193,12 @@ class ControlSnapshot:
                 or execution.run_id != run.id
                 or execution.attempt_id != caller.attempt_id
                 or execution.worker_id != caller.worker_id
-                or execution.completed_at is not None
+                or (execution.completed_at is not None and not cleanup)
                 or (execution.cancel_requested_at is not None and not cleanup)
                 or execution.lease_expires_at <= current
             ):
                 raise LeaseLost()
-        principal = self.principals[run.id]
-        if isinstance(principal, ServiceError):
-            raise AuthorityRevoked() from principal
-        for value in run.environment_mounts:
-            if value["environment_id"] == environment_id:
-                mount = EnvironmentMount.model_validate(value)
-                if actions <= mount.permission_ceiling.operations:
-                    return ControlGrant(
-                        principal, run.workspace_id, mount, ExecutionAuthority.model_validate(run.authority)
-                    )
-        raise LeaseLost()
+        return run
 
 
 async def heartbeat(runtime: Runtime, worker_id: str) -> tuple[tuple[tuple[str, str], ...], set[str]]:
@@ -228,7 +233,8 @@ async def heartbeat(runtime: Runtime, worker_id: str) -> tuple[tuple[tuple[str, 
         for row in rows:
             run = runs[row.run_id]
             if row.lease_expires_at <= current:
-                cancel.append((row.thread_id, row.id))
+                # Missing renewal is owner loss, not an explicit native cancellation.
+                # The worker yields recoverable Shells and cancels only other tools.
                 continue
             if run.cancel_requested_at is not None or isinstance(principals[run.id], ServiceError):
                 row.cancel_requested_at = row.cancel_requested_at or current

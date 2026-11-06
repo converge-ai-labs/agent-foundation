@@ -25,7 +25,9 @@ async def interrupt_control_subscription(service, owner, monkeypatch):
         await asyncio.wait_for(owner.carrier.wait_closed(), 5)
 
 
-async def check_retained_client_process(service, worker, runs_kit, model, agent, mount, workspace):
+async def check_retained_client_process(service, worker, runs_kit, model, agent, mount, workspace, *, recover=False):
+    from dataclasses import replace
+
     from a13n_service.infra.db import now, transaction
     from a13n_service.runs.tables import ToolExecutionRow
 
@@ -39,10 +41,29 @@ async def check_retained_client_process(service, worker, runs_kit, model, agent,
     assert record.status == "running"
     pid = int((workspace / "retained.pid").read_text())
     os.kill(pid, 0)
+    if recover:
+        assert worker.executions.yield_shell(record.execution_id)
+        await asyncio.wait_for(worker.executions.join(), 10)
     async with transaction(worker.storage) as session:
         row = await session.get_one(ToolExecutionRow, record.execution_id)
         row.cancel_requested_at = await now(session)
-    result = await worker.executions.wait(thread, record.execution_id, timeout_seconds=10)
+        if recover:
+            row.lease_expires_at = row.created_at
+            # The start was admitted but its response/identity checkpoint was lost.
+            row.shell = {**row.shell, "process": {**row.shell["process"], "identity": None}}
+    if recover:
+        successor = replace(worker)
+        try:
+            await successor.executions.recover("client-successor")
+            assert any(item.execution_id == record.execution_id for item in successor.executions.active)
+            await asyncio.wait_for(successor.executions.join(), 15)
+            result = await successor.executions.result(thread, record.execution_id)
+            assert result is not None
+        finally:
+            await successor.executions.close()
+            await successor.client_routing.close()
+    else:
+        result = await worker.executions.wait(thread, record.execution_id, timeout_seconds=10)
     assert result.record.status == "cancelled", result
     with pytest.raises(ProcessLookupError):
         os.kill(pid, 0)

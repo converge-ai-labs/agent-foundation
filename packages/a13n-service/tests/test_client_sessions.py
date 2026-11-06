@@ -2,7 +2,7 @@
 
 import asyncio
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from a13n_harness.environment.models import EnvironmentError
@@ -12,6 +12,82 @@ from a13n_service.runs.environments.clients.sessions import Scope, Sessions
 from .test_client_routing import request
 
 pytestmark = pytest.mark.anyio
+
+
+@pytest.mark.parametrize("retirement", ["takeover", "renewal", "detach"])
+@pytest.mark.parametrize("pending", ["borrower", "transfer"])
+async def test_concurrent_opens_wait_for_previous_native_owner_retirement(monkeypatch, retirement, pending):
+    from contextlib import asynccontextmanager
+
+    from a13n_envd_client.eip.v1 import EgressMode
+
+    retiring, release = asyncio.Event(), asyncio.Event()
+    native = AsyncMock()
+    native.descriptor.working_directory = "/work"
+    native.descriptor.model_dump = Mock(return_value={})
+    device = SimpleNamespace(descriptor=SimpleNamespace(boundary=SimpleNamespace(egress=EgressMode.INHERIT)))
+    device.descriptor.model_dump = Mock(return_value={})
+    connection = SimpleNamespace(device=device, attachment=SimpleNamespace(device_id="device"))
+    calls = []
+
+    @asynccontextmanager
+    async def borrow(*args, **kwargs):
+        assert release.is_set()
+        calls.append(kwargs)
+        yield native
+
+    runtime = SimpleNamespace(
+        environment_contexts=SimpleNamespace(for_control=AsyncMock(return_value=SimpleNamespace(borrow=borrow))),
+        settings=SimpleNamespace(client_environments=SimpleNamespace(max_sessions=10, request_seconds=5)),
+    )
+    sessions = Sessions(runtime)
+    original = request("scope.open").model_copy(update={"params": {"working_directory": "/work"}})
+    previous = Scope(original, connection, native, None)
+
+    async def detach():
+        retiring.set()
+        await release.wait()
+
+    if pending == "borrower":
+        previous.lifetime.push_async_callback(detach)
+    else:
+        from a13n_service.runs.environments.clients.sessions import Transfer
+
+        channel = SimpleNamespace(handle="old-reader", peer_reset_received=False)
+        previous.transfers[channel.handle] = Transfer(channel, "read", frozenset(), original.caller)
+        native.requester.retire_transfer = Mock()
+
+        async def wait_reset(channel):
+            await detach()
+
+        native.requester.wait_transfer_retired.side_effect = wait_reset
+    sessions.scopes[original.scope_id] = previous
+    monkeypatch.setattr(sessions, "connection", AsyncMock(return_value=connection))
+    monkeypatch.setattr(sessions, "_resolve", AsyncMock(return_value=SimpleNamespace(working_directory="/work")))
+    first = original.model_copy(
+        update={"scope_id": "1" * 32, "caller": original.caller.model_copy(update={"worker_id": "successor"})}
+    )
+    second = first.model_copy(update={"scope_id": "2" * 32})
+    tasks = []
+    try:
+        if retirement == "renewal":
+            tasks.append(asyncio.create_task(sessions.retire(original.scope_id, previous)))
+        elif retirement == "detach":
+            tasks.append(asyncio.create_task(sessions.dispatch(original.model_copy(update={"method": "scope.detach"}))))
+        tasks.append(asyncio.create_task(sessions.open(first)))
+        await asyncio.wait_for(retiring.wait(), 2)
+        tasks.append(asyncio.create_task(sessions.open(second)))
+        await asyncio.sleep(0)
+        assert not calls
+        release.set()
+        await asyncio.wait_for(asyncio.gather(*tasks), 2)
+        assert len(calls) == 2
+        assert set(sessions.scopes) == {first.scope_id, second.scope_id}
+        assert not sessions.acquisitions
+    finally:
+        release.set()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        await sessions.close()
 
 
 @pytest.mark.parametrize("replace", [False, True])
@@ -28,7 +104,7 @@ async def test_retired_scope_cannot_dispatch_or_delete_its_replacement(monkeypat
     monkeypatch.setattr(sessions, "connection", AsyncMock(return_value=connection))
     checking, release = asyncio.Event(), asyncio.Event()
 
-    async def resolve(*args):
+    async def resolve(*args, **kwargs):
         checking.set()
         await release.wait()
 
@@ -154,7 +230,6 @@ async def test_renewal_batches_transfers_and_keeps_independent_valid_owners(monk
     scope.transfers["handle"] = transfer
     sessions.scopes[call.scope_id] = scope
     monkeypatch.setattr(sessions, "connection", AsyncMock(return_value=connection))
-    monkeypatch.setattr(sessions, "remember_binding", AsyncMock())
     denied = EnvironmentError("Revoked", code="environment_denied")
     resolve = AsyncMock(return_value=[None, denied, denied])
     stop = AsyncMock()
@@ -175,7 +250,7 @@ async def test_session_authorization_bounds_database_concurrency(monkeypatch):
     connection = SimpleNamespace(attachment=None)
     active = maximum = 0
 
-    async def resolve(*args):
+    async def resolve(*args, **kwargs):
         nonlocal active, maximum
         active += 1
         maximum = max(active, maximum)
@@ -187,3 +262,92 @@ async def test_session_authorization_bounds_database_concurrency(monkeypatch):
     monkeypatch.setattr(authority, "resolve", resolve)
     await asyncio.gather(*(sessions._resolve(call, connection, frozenset()) for _ in range(12)))
     assert maximum == 4 and active == 0
+
+
+@pytest.mark.parametrize("attached", [False, True])
+@pytest.mark.parametrize("finished", [False, True])
+async def test_retiring_scope_releases_its_transfers_without_closing_shared_session(attached, finished):
+    from a13n_envd_client.eip.v1 import DataFrameKind
+    from a13n_service.runs.environments.clients.sessions import Transfer
+
+    sessions = Sessions(SimpleNamespace())
+    call = request()
+    native = SimpleNamespace(session_id="session", requester=Mock(), close=AsyncMock(), abort=AsyncMock())
+    scope = Scope(call, SimpleNamespace(), native, None)
+    sibling = Scope(call.model_copy(update={"scope_id": "f" * 32}), scope.connection, native, None)
+    channel = SimpleNamespace(handle="transfer", peer_reset_received=False)
+    transfer = Transfer(channel, "read", frozenset(), call.caller, attached=attached, finished=finished)
+    if attached:
+        transfer.task = asyncio.create_task(asyncio.sleep(60))
+    scope.transfers[channel.handle] = transfer
+    release = AsyncMock()
+    scope.lifetime.push_async_callback(release)
+    sessions.scopes[call.scope_id] = scope
+    sessions.scopes[sibling.request.scope_id] = sibling
+    await sessions.retire(call.scope_id, scope)
+    assert sessions.scopes == {sibling.request.scope_id: sibling}
+    assert not scope.transfers
+    native.requester.retire_transfer.assert_called_once()
+    assert native.requester.retire_transfer.call_args.kwargs["reset"].kind is DataFrameKind.RESET
+    if attached:
+        assert transfer.task.done()
+    release.assert_awaited_once()
+    native.close.assert_not_awaited()
+    native.abort.assert_not_awaited()
+
+
+@pytest.mark.parametrize("failure", [TimeoutError, asyncio.CancelledError])
+async def test_unconfirmed_transfer_retirement_closes_carrier_before_detach(monkeypatch, failure):
+    from a13n_envd_client import AcceptedWebSocketTransport, EIPDeviceConnection, RequestCoordinator
+    from a13n_envd_client.eip.v1 import DeviceDescriptor, EIPLimits, SessionDescriptor
+    from a13n_envd_client.session import EIPSession
+    from a13n_service.runs.environments.clients.connections import Connection
+    from a13n_service.runs.environments.clients.sessions import Transfer
+
+    closed = asyncio.Event()
+    carrier = SimpleNamespace(subprotocol="eip.v1", send=AsyncMock())
+    call = request("scope.detach")
+    transport = AcceptedWebSocketTransport(carrier)
+    coordinator = RequestCoordinator(transport)
+    device = EIPDeviceConnection(coordinator, DeviceDescriptor.model_construct(), max_in_flight=4)
+    connection = Connection(SimpleNamespace(environment_id=call.environment_id), call.epoch, device, carrier)
+    sessions = Sessions(
+        SimpleNamespace(client_connections=SimpleNamespace(entries={call.environment_id: connection}, recovering=False))
+    )
+
+    async def disconnect(**kwargs):
+        # Local admission is fenced even before asynchronous carrier closure finishes.
+        with pytest.raises(EnvironmentError):
+            await sessions.connection(call)
+        closed.set()
+
+    async def receive():
+        await closed.wait()
+        raise EOFError
+
+    carrier.close = AsyncMock(side_effect=disconnect)
+    carrier.recv = receive
+    limits = EIPLimits.model_construct(max_concurrent_operations=4, max_concurrent_file_transfers=2)
+    native_sessions = []
+    for identity in ("ses-a", "ses-b"):
+        requester = coordinator.session(identity, limits=limits)
+        native = EIPSession(device, requester, SessionDescriptor.model_construct(session_id=identity))
+        native._ready = True
+        device._sessions[identity] = native
+        native_sessions.append(native)
+    native, sibling = native_sessions
+    channel = native.requester.register_transfer("reader", direction="read")
+    scope = Scope(call, connection, native, None)
+    scope.transfers[channel.handle] = Transfer(channel, "read", frozenset(), call.caller)
+    monkeypatch.setattr(native.requester, "wait_transfer_retired", AsyncMock(side_effect=failure))
+    try:
+        with pytest.raises(failure):
+            await sessions.stop_transfers(scope)
+        await asyncio.wait_for(sibling.requester.wait_finished(), 1)
+        assert connection.device is None
+        assert closed.is_set()
+        assert not scope.transfers
+        # Real SDK Device.close() would emit session.close for both bound Sessions.
+        assert all(isinstance(item.args[0], bytes) for item in carrier.send.await_args_list)
+    finally:
+        await coordinator.close()

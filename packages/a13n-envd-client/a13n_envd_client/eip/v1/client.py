@@ -48,6 +48,7 @@ from .methods import (
     PROCESS_INSPECT,
     PROCESS_KILL,
     PROCESS_RELEASE,
+    PROCESS_RESOLVE_START,
     PROCESS_SIGNAL,
     PROCESS_START,
     PROCESS_WAIT,
@@ -55,6 +56,7 @@ from .methods import (
     RECEIPT_GET,
     SESSION_ATTACH,
     SESSION_CLOSE,
+    SESSION_DETACH,
     SESSION_KEEPALIVE,
     SESSION_OPEN,
     SHELL_EXEC,
@@ -142,6 +144,7 @@ from .models import (
     ProcessKillResult,
     ProcessReleaseParams,
     ProcessReleaseResult,
+    ProcessResolveStartParams,
     ProcessSignalParams,
     ProcessSignalResult,
     ProcessStartParams,
@@ -155,6 +158,8 @@ from .models import (
     SessionAttachParams,
     SessionCloseParams,
     SessionCloseResult,
+    SessionDetachParams,
+    SessionDetachResult,
     SessionKeepaliveParams,
     SessionKeepaliveResult,
     SessionOpenParams,
@@ -304,6 +309,9 @@ class EIPClient:
     async def process_release(self, params: ProcessReleaseParams) -> ProcessReleaseResult:
         return await self._requester.request(PROCESS_RELEASE, params)
 
+    async def process_resolve_start(self, params: ProcessResolveStartParams) -> ProcessStartResult:
+        return await self._requester.request(PROCESS_RESOLVE_START, params)
+
     async def process_signal(self, params: ProcessSignalParams) -> ProcessSignalResult:
         return await self._requester.request(PROCESS_SIGNAL, params)
 
@@ -324,6 +332,9 @@ class EIPClient:
 
     async def session_close(self, params: SessionCloseParams) -> SessionCloseResult:
         return await self._requester.request(SESSION_CLOSE, params)
+
+    async def session_detach(self, params: SessionDetachParams) -> SessionDetachResult:
+        return await self._requester.request(SESSION_DETACH, params)
 
     async def session_keepalive(self, params: SessionKeepaliveParams) -> SessionKeepaliveResult:
         return await self._requester.request(SESSION_KEEPALIVE, params)

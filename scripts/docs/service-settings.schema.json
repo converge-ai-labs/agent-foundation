@@ -101,6 +101,81 @@
       "title": "Browsers",
       "type": "object"
     },
+    "ClientEnvironments": {
+      "additionalProperties": false,
+      "properties": {
+        "transfer_seconds": {
+          "default": 120,
+          "exclusiveMinimum": 0,
+          "maximum": 1800,
+          "title": "Transfer Seconds",
+          "type": "number"
+        },
+        "max_connections": {
+          "default": 128,
+          "maximum": 10000,
+          "minimum": 1,
+          "title": "Max Connections",
+          "type": "integer"
+        },
+        "max_sessions": {
+          "default": 256,
+          "maximum": 10000,
+          "minimum": 1,
+          "title": "Max Sessions",
+          "type": "integer"
+        },
+        "initialization_seconds": {
+          "default": 10,
+          "exclusiveMinimum": 0,
+          "maximum": 60,
+          "title": "Initialization Seconds",
+          "type": "number"
+        },
+        "heartbeat_seconds": {
+          "default": 5,
+          "exclusiveMinimum": 0,
+          "maximum": 60,
+          "title": "Heartbeat Seconds",
+          "type": "number"
+        },
+        "allow_loopback_ws": {
+          "default": false,
+          "title": "Allow Loopback Ws",
+          "type": "boolean"
+        },
+        "max_requests": {
+          "default": 128,
+          "maximum": 10000,
+          "minimum": 1,
+          "title": "Max Requests",
+          "type": "integer"
+        },
+        "message_bytes": {
+          "default": 4194304,
+          "maximum": 33554432,
+          "minimum": 1024,
+          "title": "Message Bytes",
+          "type": "integer"
+        },
+        "request_seconds": {
+          "default": 60,
+          "exclusiveMinimum": 5,
+          "maximum": 3600,
+          "title": "Request Seconds",
+          "type": "number"
+        },
+        "response_margin_seconds": {
+          "default": 2,
+          "exclusiveMinimum": 0,
+          "maximum": 30,
+          "title": "Response Margin Seconds",
+          "type": "number"
+        }
+      },
+      "title": "ClientEnvironments",
+      "type": "object"
+    },
     "ClusterProfile": {
       "additionalProperties": false,
       "description": "Trusted process configuration; never accepted as a tenant Provider credential.\n\nKubeconfig may invoke operator-installed authentication plugins. Both the path\nand context are explicit; in-cluster authentication uses the projected token.",
@@ -2153,6 +2228,9 @@
     },
     "environments": {
       "$ref": "#/$defs/Environments"
+    },
+    "client_environments": {
+      "$ref": "#/$defs/ClientEnvironments"
     },
     "browsers": {
       "$ref": "#/$defs/Browsers"

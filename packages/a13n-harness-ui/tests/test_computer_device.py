@@ -41,7 +41,7 @@ def descriptors():
             "backend": "native",
             "policy_digest": "a" * 64,
         },
-        "lifecycle": {"idle_timeout_ms": 30000, "disconnect_grace_ms": 1000},
+        "lifecycle": {"idle_timeout_ms": 30000},
         "limits": {
             "max_request_bytes": 1048576,
             "max_response_bytes": 1048576,
@@ -63,6 +63,7 @@ def descriptors():
         {
             **common,
             "session_id": "ses-desktop",
+            "owner_epoch": 1,
             "working_directory": "/",
             "available_methods": [
                 "environment.describe",
@@ -148,6 +149,8 @@ async def desktop_peer(ws, image):
                         result = {"alive": True}
                     case "session.close":
                         result = {"closed": True}
+                    case "session.detach":
+                        result = {"detached": True}
                     case "computer.observe":
                         result = {
                             "observation": {
@@ -303,4 +306,5 @@ async def test_reverse_desktop_image_reaches_model_live_history_and_browser(tmp_
                 assert response.status_code == 200 and response.content == image
             assert [method for method, _ in calls].count("computer.click") == 1
             assert [method for method, _ in calls].count("computer.close_observation") == 1
-            assert [method for method, _ in calls].count("session.close") == 1
+            assert [method for method, _ in calls].count("session.detach") == 1
+            assert "session.close" not in [method for method, _ in calls]

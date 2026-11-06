@@ -28,11 +28,18 @@ from a13n_harness.environment.commands import (
     ProcessStreamRead,
 )
 from a13n_harness.environment.models import EnvironmentAction, EnvironmentError, EnvironmentInvocationError
+from a13n_harness.environment.process_recovery import EnvdProcessState, ShellExecutionState, process_checkpoint
 from a13n_harness.environment.providers import BoundEnvironment, BoundProcessOperations
 from a13n_harness.environment.retention import EnvironmentOutputCapture, EnvironmentOutputPolicy
-from a13n_harness.tool_execution import _OWNED_TOOL_EXECUTION, ToolExecutionRuntime, execution_cleanup
+from a13n_harness.tool_execution import (
+    _OWNED_TOOL_EXECUTION,
+    ToolExecutionLost,
+    ToolExecutionRuntime,
+    execution_cleanup,
+)
 
 from .events import ShellStatusEvent
+from .output import disclose_text_paths
 from .shell_control import ShellControl, ShellTarget
 from .shell_observation import (
     ShellObservation,
@@ -90,6 +97,26 @@ _PROCESS_OBSERVATION_ACTIONS = frozenset(
         EnvironmentAction.PROCESS_RELEASE,
     }
 )
+
+
+async def recover_shell(
+    environment: BoundEnvironment,
+    state: ShellExecutionState,
+    *,
+    runtime: ToolExecutionRuntime,
+    execution_id: str,
+) -> ShellExecSuccess:
+    """Supervise a claimed native execution in a Host-reconstructed Environment.
+
+    The Host retains the entered Environment until this operation settles. This
+    entry point only resolves the original process; it cannot start a command.
+    """
+    controller = _ProcessController(environment)
+    try:
+        return await controller.recover_owned(state, runtime=runtime, execution_id=execution_id)
+    finally:
+        with execution_cleanup():
+            await _await_cleanup_shielded(controller.close())
 
 
 @dataclass(slots=True)
@@ -163,11 +190,16 @@ class _OwnedProcess:
                 self._readers -= 1
                 self._condition.notify_all()
 
-    async def close(self) -> None:
+    async def close(self, *, detach: bool = False) -> None:
         async with self._condition:
             self._closed = True
             await self._condition.wait_for(lambda: self._readers == 0)
-        await self.controller._retire(self.controller._entry(self.process_id))
+        entry = self.controller._entry(self.process_id)
+        if detach:
+            self.controller._environment.processes.detach(entry.handle)
+            self.controller._entries.pop(self.process_id, None)
+        else:
+            await self.controller._retire(entry)
 
 
 class _ProcessController:
@@ -291,20 +323,84 @@ class _ProcessController:
         """Keep the admitted command and observation alive until final capture."""
         self._guard_execution()
         request = _retain_shell_output(request)
-        admission = asyncio.create_task(
-            self._admit(request, alias=alias, expected_mount_id=expected_mount_id, watch=False)
+        mount_name = next(
+            mount.name
+            for mount in self._environment.snapshot.mounts
+            if self._environment.resolve_path(".", alias=mount.name).mount_id == expected_mount_id
         )
+
+        async def checkpoint(state: EnvdProcessState) -> None:
+            await runtime.checkpoint_shell(ShellExecutionState(mount_name=mount_name, process=state))
+
+        with process_checkpoint(checkpoint):
+            admission = asyncio.create_task(
+                self._admit(request, alias=alias, expected_mount_id=expected_mount_id, watch=False)
+            )
         cancelled = False
         while not admission.done():
             try:
                 await asyncio.shield(admission)
             except asyncio.CancelledError:
                 cancelled = True
-        entry = admission.result()
+            except EnvironmentError:
+                break
+        try:
+            entry = admission.result()
+        except EnvironmentError as exc:
+            if exc.code in {"environment_unavailable", "environment_timeout", "environment_unknown_outcome"}:
+                runtime.suspend_shell(execution_id)
+            raise
+        return await self._supervise_owned(
+            entry, runtime=runtime, execution_id=execution_id, cancelled=cancelled, context=context
+        )
+
+    async def recover_owned(
+        self, state: ShellExecutionState, *, runtime: ToolExecutionRuntime, execution_id: str
+    ) -> ShellExecSuccess:
+        """Observe the original native job; this path cannot submit a command."""
+        self._guard_execution()
+        recovery = asyncio.create_task(self._environment.processes.recover(state.process, alias=state.mount_name))
+        cancelled = False
+        while not recovery.done():
+            try:
+                await asyncio.shield(recovery)
+            except asyncio.CancelledError:
+                cancelled = True
+            except EnvironmentError:
+                break
+        try:
+            process = recovery.result()
+        except EnvironmentError as exc:
+            if exc.code in {"environment_unavailable", "environment_timeout", "environment_busy"}:
+                runtime.suspend_shell(execution_id)
+            raise ToolExecutionLost("The original Shell process is unavailable; do not replay its command.") from exc
+        entry = _ProcessEntry(process_id=self._reserve_reference(), handle=process.handle, latest=process)
+        self._entries[entry.process_id] = entry
+        try:
+            await runtime.checkpoint_shell(
+                state.model_copy(
+                    update={"process": state.process.model_copy(update={"identity": process.handle.identity})}
+                )
+            )
+        except BaseException:
+            self._environment.processes.detach(entry.handle)
+            self._entries.pop(entry.process_id)
+            raise
+        return await self._supervise_owned(entry, runtime=runtime, execution_id=execution_id, cancelled=cancelled)
+
+    async def _supervise_owned(
+        self,
+        entry: _ProcessEntry,
+        *,
+        runtime: ToolExecutionRuntime,
+        execution_id: str,
+        cancelled: bool = False,
+        context: AgentContext | None = None,
+    ) -> ShellExecSuccess:
         resource = _OwnedProcess(self, entry.process_id, execution_id)
         runtime.attach_resource(resource)
         try:
-            if cancelled:
+            if cancelled or runtime.cancellation_requested(execution_id):
                 raise asyncio.CancelledError
             stdout_offset = stderr_offset = 0
             while True:
@@ -334,7 +430,7 @@ class _ProcessController:
                 )
                 info, output = observation
                 if info.status.phase in {"unknown", "missing"}:
-                    raise ToolFailed(
+                    raise ToolExecutionLost(
                         "Shell process observation was lost; command outcome is unknown. Do not replay it."
                     )
                 if (
@@ -342,13 +438,33 @@ class _ProcessController:
                     and output.stdout.capture.observation_closed
                     and output.stderr.capture.observation_closed
                 ):
-                    return await self._final_result(entry, observation, context=context)
+                    native_result = await self._final_result(entry, observation, context=context)
+                    result = cast(
+                        ShellExecSuccess,
+                        await disclose_text_paths(
+                            context if context is not None else runtime,
+                            cast(dict[str, JsonValue], native_result),
+                            text_paths=(("stdout", "text"), ("stderr", "text")),
+                            content_complete=(
+                                native_result["stdout"]["content_complete"]
+                                and native_result["stderr"]["content_complete"]
+                            ),
+                            noun="command result",
+                            preserve_tail=True,
+                        ),
+                    )
+                    await runtime.publish_shell_result(result)
+                    return result
                 if _is_final(info):
                     # Native exit can precede output producer closure.
                     await asyncio.sleep(0.05)
         except EnvironmentError as exc:
+            if exc.code in {"environment_unavailable", "environment_timeout"}:
+                runtime.suspend_shell(execution_id)
             raise _observation_failed_after_start(exc) from exc
         except asyncio.CancelledError:
+            if runtime.yielding(execution_id):
+                raise
             try:
                 with execution_cleanup():
                     # Environment operations own their deadlines. A shorter Shell
@@ -362,7 +478,7 @@ class _ProcessController:
             raise
         finally:
             with execution_cleanup():
-                await _await_cleanup_shielded(resource.close())
+                await _await_cleanup_shielded(resource.close(detach=runtime.preserving_shell(execution_id)))
 
     async def _final_result(
         self,

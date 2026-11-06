@@ -79,6 +79,7 @@ class ObjectKind(StrEnum):
     live_transcript = "live-transcript"
     child_checkpoint = "child-checkpoint"
     environment_state = "environment-state"
+    tool_execution = "tool-execution"
     mcp_app_resource = "mcp-app-resource"
     mcp_app_snapshot = "mcp-app-snapshot"
 

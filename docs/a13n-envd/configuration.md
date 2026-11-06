@@ -28,7 +28,7 @@ export A13N_ENVD_CONFIG_JSON='{"default_working_directory":"/workspace","limits"
 a13n-envd
 ```
 
-Scalar settings cover identity, execution, discovery, metadata and lifetimes: `A13N_ENVD_ALLOW_SUDO`, `A13N_ENVD_EXECUTION_UID`, `A13N_ENVD_EXECUTION_GID`, `A13N_ENVD_EGRESS_MODE`, `A13N_ENVD_FULL_CONTROL`, `A13N_ENVD_COMPUTER_USE`, `A13N_ENVD_COMPUTER_USE_PERMISSION_TIMEOUT_MS`, `A13N_ENVD_DIRECTORY_DISCOVERY`, `A13N_ENVD_DEVICE_ID`, `A13N_ENVD_NAME`, `A13N_ENVD_DESCRIPTION`, `A13N_ENVD_DEFAULT_WORKING_DIRECTORY`, `A13N_ENVD_IDLE_TIMEOUT_MS` and `A13N_ENVD_DISCONNECT_GRACE_MS`. Boolean values accept `true`, `false`, `1` and `0`.
+Scalar settings cover identity, execution, discovery, metadata and lifetimes: `A13N_ENVD_ALLOW_SUDO`, `A13N_ENVD_EXECUTION_UID`, `A13N_ENVD_EXECUTION_GID`, `A13N_ENVD_EGRESS_MODE`, `A13N_ENVD_FULL_CONTROL`, `A13N_ENVD_COMPUTER_USE`, `A13N_ENVD_COMPUTER_USE_PERMISSION_TIMEOUT_MS`, `A13N_ENVD_DIRECTORY_DISCOVERY`, `A13N_ENVD_DEVICE_ID`, `A13N_ENVD_NAME`, `A13N_ENVD_DESCRIPTION`, `A13N_ENVD_DEFAULT_WORKING_DIRECTORY`, `A13N_ENVD_IDLE_TIMEOUT_MS` and `A13N_ENVD_MAX_LIFETIME_MS`. Boolean values accept `true`, `false`, `1` and `0`.
 
 ## Connect to Service
 
@@ -252,7 +252,7 @@ Store credentials in protected files. Keep them out of argv, URLs, descriptors, 
 
 Initialize a Device connection, then open a Session for each resource scope. One daemon generation serves multiple Sessions; each captures its cwd and owns its operations. `session.close` closes that scope. Keepalive renews only the calling owner, so discovery traffic does not preserve abandoned Sessions.
 
-After a framed-carrier disconnect, the owner can explicitly reattach during the grace period within the same generation. Reattachment gives access to existing resources without replaying commands or resuming transfers. After expiry, open a fresh Session and discard old references.
+After a framed-carrier disconnect, the owner can explicitly reattach within the same generation before the Session's existing idle or maximum-lifetime deadline. Reattachment gives access to existing resources without replaying commands or resuming transfers. After expiry, open a fresh Session and discard old references.
 
 On shutdown, the Host closes its connections and terminates only daemons whose lifecycle it owns. Session cleanup reclaims processes and private output/staging storage while preserving workspace files. Treat a reported cleanup failure as incomplete reclamation.
 
@@ -280,8 +280,8 @@ Use these fields in daemon JSON:
 | `name`, `description`                        | Optional display metadata                                                                                                                  |
 | `default_working_directory`                  | Startup cwd if unset                                                                                                                       |
 | `directory_discovery`                        | `true`                                                                                                                                     |
-| `idle_timeout_ms`                            | Session idle lifetime                                                                                                                      |
-| `disconnect_grace_ms`                        | Detached Session attachment grace                                                                                                          |
+| `idle_timeout_ms`                            | Default Session idle lifetime: `3600000` (one hour)                                                                                        |
+| `max_lifetime_ms`                            | Default maximum Session lifetime; positive when set, otherwise unlimited                                                                   |
 | `execution.uid`, `execution.gid`             | Optional paired Linux native IDs; omitted retains the launcher, including root                                                             |
 | `execution.allow_sudo`                       | `true`; native sudoers still controls authorization                                                                                        |
 | `sandbox`                                    | `{"mode":"disabled"}`; or `restricted` with directory `grants`                                                                             |
@@ -291,6 +291,8 @@ Use these fields in daemon JSON:
 | `computer_use_permission_timeout_ms`         | `120000`; positive startup deadline for macOS permissions or X11/Windows desktop readiness before any EIP transport starts                 |
 | `trusted_executable_roots`, `shell_profiles` | Empty; command methods disabled unless Full Control is enabled                                                                             |
 | `limits`                                     | Device aggregates and per-Session limits                                                                                                   |
+
+`idle_timeout_ms` and `max_lifetime_ms` are defaults used when `session.open` omits `lifecycle`. An explicit Session lifecycle overrides these defaults and remains immutable for that Session.
 
 Default capacity is 128 Sessions, 256 concurrent Device operations, 128 concurrent operations per Session, 4 GiB Device spool, 1 GiB Session spool, 256 MiB per output stream and 2 MiB previews. Keep Session capacities within Device aggregates, previews within stream capacity, and enough spool capacity reserved for both streams.
 

@@ -81,36 +81,25 @@ class DeviceEIPSessionSource(EIPSessionSource):
             raise EIPSessionStateError("Session source belongs to another Device")
         if expected_boundary is not None:
             expected_boundary.check(self._device.descriptor.boundary)
-        recovery = self._recovery
-        if recovery is not None and egress is not None:
-            recovery.state = None
-            recovery = None
-        session = (
-            await recovery.attach(
+        if self._recovery is not None:
+            async with self._recovery.borrow(
                 self._device,
                 target=self._target,
                 expected_device_id=expected_device_id,
                 working_directory=working_directory,
                 required_methods=required_methods,
                 expected_boundary=expected_boundary,
-            )
-            if recovery is not None
-            else None
-        )
-        if session is None:
+                egress=egress,
+            ) as session:
+                yield session
+        else:
             session = await self._device.open_session(
                 working_directory=working_directory,
                 required_methods=tuple(sorted(required_methods)),
                 egress=egress,
             )
-        async with session:
-            if recovery is not None:
-                recovery.observe(self._target, working_directory, session)
-            try:
+            async with session:
                 yield session
-            finally:
-                if recovery is not None:
-                    recovery.closed(session)
 
     async def discard(self) -> None:
         self._claimed = True

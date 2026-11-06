@@ -40,7 +40,7 @@ if report.sample is not None:
     print(sample.sample_age_ms, sample.sequence)
 ```
 
-`device.metrics` 复用现有认证传输，并在采样开启时声明。Envd 和 `a13n-envd-client` 使用 EIP 0.3；迁移 0.1 或 0.2 部署时一起升级。传输帧和 `eip.v1` 命名空间保持不变。
+`device.metrics` 复用现有认证传输，并在采样开启时声明。Envd 和 `a13n-envd-client` 使用 EIP 0.4；迁移旧协议部署时一起升级。传输帧和 `eip.v1` 命名空间保持不变。
 
 资源字段的含义如下：
 

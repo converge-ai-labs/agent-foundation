@@ -40,9 +40,9 @@ mod tests {
 
     #[test]
     fn generated_registry_has_complete_v1_surface() {
-        assert_eq!(EIP_PROTOCOL_VERSION, "0.3");
+        assert_eq!(EIP_PROTOCOL_VERSION, "0.4");
         assert_eq!(EIP_PROTO_PACKAGE, "a13n.agent_envd.eip.v1");
-        assert_eq!(METHODS.len(), 54);
+        assert_eq!(METHODS.len(), 56);
         assert!(
             METHODS
                 .iter()
@@ -54,7 +54,7 @@ mod tests {
                 .iter()
                 .filter(|method| method.replay_class == "active_only")
                 .count(),
-            23
+            24
         );
         assert_eq!(
             METHODS
@@ -77,6 +77,7 @@ mod tests {
                 "initialize",
                 "session.attach",
                 "session.close",
+                "session.detach",
                 "session.keepalive",
                 "session.open"
             ]

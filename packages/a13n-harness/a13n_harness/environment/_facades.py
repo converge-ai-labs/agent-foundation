@@ -45,6 +45,7 @@ from a13n_harness.environment.models import (
     EnvironmentError,
     EnvironmentOperationReceipt,
 )
+from a13n_harness.environment.process_recovery import EnvdProcessState, RecoverableProcessOperations
 from a13n_harness.environment.retention import (
     BoundOutputCursor,
     BoundOutputReference,
@@ -396,6 +397,27 @@ class _ProcessFacade:
                 )
             self._environment._track_process_handle(result.handle, added=True)
             return result
+
+    async def recover(self, state: EnvdProcessState, *, alias: str) -> ProcessInfo:
+        entered = self._environment._select_entered(alias)
+        async with self._environment._operation_lease(
+            entered, EnvironmentAction.PROCESS_INSPECT, "processes"
+        ) as entered:
+            processes = entered.operations.processes
+            if not isinstance(processes, RecoverableProcessOperations):
+                raise EnvironmentError("Provider cannot recover process supervision.", code="environment_unsupported")
+            result = await processes.recover(state)
+            _validate_provider_artifacts(entered, result)
+            self._environment._track_process_handle(result.handle, added=True)
+            return result
+
+    def detach(self, handle: BoundProcessHandle) -> None:
+        entered = self._environment._entered_for_handle(handle)
+        processes = entered.operations.processes
+        if not isinstance(processes, RecoverableProcessOperations):
+            raise EnvironmentError("Provider cannot detach process supervision.", code="environment_unsupported")
+        processes.detach(handle)
+        self._environment._track_process_handle(handle, added=False)
 
     async def inspect(self, handle: BoundProcessHandle) -> ProcessInfo:
         return await self._call(handle, EnvironmentAction.PROCESS_INSPECT, "inspect")

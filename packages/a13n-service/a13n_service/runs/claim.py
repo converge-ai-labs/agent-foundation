@@ -19,6 +19,7 @@ from a13n_service.infra.telemetry import meter
 from a13n_service.resources.subscriptions.delivery import Transition, prepare_webhooks
 from a13n_service.runs import checkpoints
 from a13n_service.runs.attempts import Lease, lock_lease
+from a13n_service.runs.environments import contexts
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schedules.tables import OccurrenceRow
 from a13n_service.runs.schemas import ScheduleOrigin
@@ -46,13 +47,19 @@ async def claim(runtime: Runtime, *, worker_id: str, worker_build: str, limit: i
                 select(RunRow, OccurrenceRow.schedule_id, OccurrenceRow.id)
                 .outerjoin(InboxEntryRow, InboxEntryRow.id == RunRow.occurrence_trigger_entry_id)
                 .outerjoin(OccurrenceRow, OccurrenceRow.id == InboxEntryRow.schedule_occurrence_id)
-                .where(RunRow.status == "accepted", RunRow.available_at <= current, checkpoints.claimable())
+                .where(
+                    RunRow.status == "accepted",
+                    RunRow.available_at <= current,
+                    checkpoints.claimable(),
+                    contexts.claimable(RunRow.thread_id, worker_id),
+                )
                 .order_by(RunRow.available_at, RunRow.id)
                 .limit(limit)
                 .with_for_update(of=RunRow, skip_locked=True)
             )
         ).all()
-        runs = [run for run, _, _ in candidates]
+        owned = await contexts.claim(session, {run.thread_id for run, _, _ in candidates}, worker_id)
+        runs = [run for run, _, _ in candidates if run.thread_id in owned]
         schedule_origins = {
             run.id: ScheduleOrigin(schedule_id=schedule_id, occurrence_id=occurrence_id)
             for run, schedule_id, occurrence_id in candidates

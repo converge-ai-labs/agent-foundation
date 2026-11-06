@@ -47,19 +47,29 @@ async def relay(runtime: Runtime, scope: Scope, transfer: Transfer, carrier: Str
         pass  # Closing the streams fails the peer; never replay the native operation.
     finally:
         try:
-            if scope.transfers.get(transfer.channel.handle) is transfer and not transfer.channel.peer_reset_received:
-                if not transfer.finished:
-                    scope.session.requester.retire_transfer(
-                        transfer.channel,
-                        reset=DataFrame(
-                            kind=DataFrameKind.RESET,
-                            session_id=scope.session.session_id,
-                            handle=transfer.channel.handle,
-                            reset_status=DataResetStatus.CANCELLED,
-                        ),
-                    )
+            if scope.transfers.get(transfer.channel.handle) is transfer:
+                retire(scope, transfer)
         finally:
             await carrier.close()
+
+
+def retire(scope: Scope, transfer: Transfer) -> None:
+    """Release this scope's handle without closing a Session shared by other Runs."""
+    if not scope.active:
+        return
+    requester = scope.session.requester
+    if transfer.channel.peer_reset_received:
+        requester.unregister_transfer(transfer.channel)
+    else:
+        requester.retire_transfer(
+            transfer.channel,
+            reset=DataFrame(
+                kind=DataFrameKind.RESET,
+                session_id=scope.session.session_id,
+                handle=transfer.channel.handle,
+                reset_status=DataResetStatus.CANCELLED,
+            ),
+        )
 
 
 async def stop(transfer: Transfer) -> None:

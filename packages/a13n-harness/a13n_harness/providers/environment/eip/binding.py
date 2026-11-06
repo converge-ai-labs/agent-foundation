@@ -58,6 +58,7 @@ EIP_METHOD_ACTIONS = MappingProxyType(
         "shell.exec": (EnvironmentAction.SHELL_EXEC,),
         "process.start": (EnvironmentAction.PROCESS_START,),
         "process.inspect": (EnvironmentAction.PROCESS_INSPECT,),
+        "process.resolve_start": (EnvironmentAction.PROCESS_INSPECT,),
         "process.write_stdin": (EnvironmentAction.PROCESS_WRITE_STDIN,),
         "process.close_stdin": (EnvironmentAction.PROCESS_CLOSE_STDIN,),
         "process.signal": (EnvironmentAction.PROCESS_SIGNAL,),

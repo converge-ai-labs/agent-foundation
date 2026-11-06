@@ -29,6 +29,7 @@ _RESERVED_METHODS = frozenset(
     {
         "session.close",
         "scope.close",
+        "scope.detach",
         "session.keepalive",
         "operation.cancel",
         "process.kill",
@@ -42,7 +43,10 @@ _RESERVED_METHODS = frozenset(
 
 
 # Only native cleanup of an existing retained process may outlive cancellation.
-RETAINED_CLEANUP = frozenset(
+RECOVERY_DISCOVERY = frozenset(
+    {"scope.open", "environment.readiness", "process.inspect", "process.resolve_start", "scope.detach"}
+)
+RETAINED_CLEANUP = RECOVERY_DISCOVERY | frozenset(
     {
         "environment.readiness",
         "process.inspect",
@@ -50,7 +54,7 @@ RETAINED_CLEANUP = frozenset(
         "process.wait",
         "process.release",
         "output.release",
-        "scope.close",
+        "scope.detach",
     }
 )
 

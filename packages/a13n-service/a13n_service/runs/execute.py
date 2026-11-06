@@ -42,7 +42,6 @@ from a13n_harness.capabilities.steering import steering_input_ids, without_input
 from a13n_harness.compaction import CompactionResult
 from a13n_harness.environment.errors import EnvironmentProviderError, EnvironmentProviderErrorCategory
 from a13n_harness.environment.providers import BoundEnvironment
-from a13n_harness.environment.session_recovery import EnvdSessionRecovery, EnvdSessionState
 from a13n_harness.identity import AgentIdentityRef, AgentInstanceContext
 from a13n_harness.providers.endpoint_policy import EndpointPolicyError
 from a13n_harness.usage import without_usage
@@ -79,7 +78,7 @@ from a13n_service.runs.contents import Contents
 from a13n_service.runs.display import DisplayFold, Snapshot, Tail, open_tool_calls
 from a13n_service.runs.dynamic_subagents import SpawnCapability
 from a13n_service.runs.environments.clients.recovery import Recovery as ClientRecovery
-from a13n_service.runs.environments.execution import EnvironmentUnavailable, open_mounts, prepare
+from a13n_service.runs.environments.execution import EnvironmentUnavailable, Source, open_mounts, prepare
 from a13n_service.runs.environments.lifecycle import public_message
 from a13n_service.runs.environments.mounts import PRIMARY
 from a13n_service.runs.history import HISTORY, MessageHistory, initial
@@ -139,7 +138,6 @@ class _Plan:
     # Entries assigned to the run and not yet consumed, in position order: this attempt's input.
     assigned: list[Offered]
     state: HarnessState
-    envd_sessions: dict[str, EnvdSessionState]
     resume: DeferredToolResume | None
     resume_input: Offered | None
     # What changed since the run whose history this one continues; it precedes the input, or is the input of a resume
@@ -377,7 +375,6 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
         limit=options.max_usage.requests if options.max_usage is not None else None,
         assigned=assigned,
         state=state,
-        envd_sessions=dict(own.envd_sessions) if own is not None else {},
         resume=resume,
         resume_input=resume_input,
         reminder=reminder,
@@ -453,7 +450,6 @@ class _Attempt:
         self.runtime, self.lease, self.control, self.plan = runtime, lease, control, plan
         self.committed, self.seq = plan.committed, plan.seq
         self.last_committed_tail_bytes: bytes | None = None
-        self.envd_sessions = {name: EnvdSessionRecovery(state) for name, state in plan.envd_sessions.items()}
         self.contents = Contents(plan.tail.items, plan.tail.refs)
         assert plan.tail.search is not None
         self.search = Index(plan.tail.search, runtime.settings.run_search)
@@ -564,7 +560,6 @@ class _Attempt:
                     self.plan.mounts,
                     configuration=self.plan.configuration,
                     skill_cache=skill_cache,
-                    envd_sessions=self.envd_sessions,
                 )
             )
             models = await agent.open_models(
@@ -587,7 +582,17 @@ class _Attempt:
                     app_captures=self.app_captures,
                 )
             )
-            recovery = ClientRecovery(runtime, lease, host.environment, environments, self.envd_sessions)
+            recovery = ClientRecovery(
+                runtime,
+                lease,
+                host.environment,
+                environments,
+                {
+                    name: mount.source.session_recovery
+                    for name, mount in environments.items()
+                    if isinstance(mount.source, Source) and mount.source.session_recovery is not None
+                },
+            )
             self.client_recovery = recovery if recovery.mounts else None
             yield host
 
@@ -826,11 +831,6 @@ class _Attempt:
                 seq=self.seq + 1,
                 attempt=self.lease.number,
                 deferred=deferred,
-                envd_sessions={
-                    name: recovery.state for name, recovery in self.envd_sessions.items() if recovery.state is not None
-                }
-                if outcome is None
-                else {},
                 resume_input_consumed=(self.plan.resume_input is None and self.plan.reminder is None)
                 or self.offers.requested,
             ),
@@ -869,6 +869,7 @@ class _Attempt:
                     display=display,
                     memory_cursors=cursors,
                     consumed=consumed,
+                    result_retention_seconds=self.runtime.settings.tool_executions.delivered_retention_seconds,
                     usage=usage,
                     at=current,
                 )

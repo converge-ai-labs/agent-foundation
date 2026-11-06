@@ -17,7 +17,7 @@ uv add a13n-envd-client
 
 The client and native daemon share an Envd release version. Upgrade them together, including the daemon in custom images and remote endpoints. Recreate environments that still retain an older image. For source examples, use the repository lockfile and matching source daemon.
 
-Protocol negotiation uses a separate wire identity. This source uses EIP `0.3`; peers offering only `0.1` or `0.2` fail negotiation. The generated Python namespace remains `eip.v1`, and the binary data-frame profile remains `1`. Repository release-dependency settings require client `>=0.5.0,<0.6.0` for Harness and `>=0.5.1,<0.6.0` for Harness UI.
+Protocol negotiation uses a separate wire identity. This source uses EIP `0.4`; peers offering only older protocol versions fail negotiation. The generated Python namespace remains `eip.v1`, and the binary data-frame profile remains `1`. Harness, Harness UI and Service require client `>=0.6.0,<0.7.0` for publication.
 
 ## Connect to an existing HTTP daemon
 
@@ -94,13 +94,17 @@ Initialization also accepts a client name/version, `initialization_timeout=10.0`
 - `descriptor` reads cached Device information; `describe()` fetches a fresh view. Both expose system information, path style, default directory and directory-discovery availability.
 - `metrics()` reads the latest cached sample when `device.metrics` is advertised. It opens no Session and starts no collection; `sample` remains `None` until the first collection completes. See [monitoring and sample semantics](monitoring.md#system-information-and-resource-monitoring).
 - `list_directories(DirectoryListParams(...))` lists one directory level with an absolute path, offset, limit, expected Device ID and generation. It opens no Session.
-- `open_session(working_directory=None, egress=None, required_methods=(), readiness_timeout=10.0)` creates a fresh Session. Omitted cwd selects the Device default. Supply `egress` for controlled Devices; other modes reject it. `required_methods` checks compatibility rather than granting permissions.
-- `attach_session(descriptor)` explicitly attaches to the exact existing Session in the same Device generation during disconnect grace. Operations and transfers are not replayed or resumed.
+- `open_session(working_directory=None, egress=None, lifecycle=None, required_methods=(), readiness_timeout=10.0)` creates a fresh Session. Omitted cwd selects the Device default. Supply `egress` for controlled Devices; other modes reject it. `required_methods` checks compatibility rather than granting permissions.
+- `attach_session(descriptor, owner_epoch=None)` takes over the exact existing Session before expiry in the same Device generation. The default epoch is the saved descriptor's epoch plus one. Hosts with concurrent recovery owners must allocate and persist a newer epoch under their execution lock. Operations and transfers are not replayed or resumed.
 - `close()` closes locally owned Sessions, then the physical connection.
 
 A Session owns its generated `client`, transfers, commands, output and receipt namespace. Its identity, generation and working directory stay fixed. Sessions can run concurrently on every carrier; the same operation ID in different Sessions refers to separate evidence.
 
 Use `EIPSession.describe()` and `readiness(timeout=10.0)` to inspect the Session, and `open_reader()`, `open_writer()`, `open_output()` or `observe_computer()` for resource helpers. The client maintains keepalive while the Session is open. `close()` and `abort()` leave sibling Sessions and the borrowed carrier intact. `abort()` attempts a bounded close; uncertain operations still need reconciliation.
+
+Pass `SessionLifecyclePolicy(idle_timeout_ms=3600000, max_lifetime_ms=None)` through `lifecycle` to select the Session's immutable retention policy. The Device default is one hour idle with no maximum lifetime. `EIPSession.detach()` stops keepalive, releases the attachment and refreshes the idle deadline while retaining native commands, output and evidence. Save the descriptor before detach for later attachment. Explicit close destroys those resources. A daemon restart or Session expiry makes the old resources unavailable.
+
+For an uncertain `process.start` response, use the generated `process_resolve_start` method with `ProcessResolveStartParams(context=..., target_operation_id=...)`. It observes the original start without executing the command again. A successful query returns the original handle and receipt with current process status. Missing evidence remains an unknown outcome.
 
 Descriptor refresh can narrow methods and limits. A not-ready response or Session-local protocol failure fences that Session; carrier corruption or loss terminates every local scope on the connection.
 
@@ -236,6 +240,7 @@ Check the initialized descriptor before calling a method. Generated Python avail
 | `process.inspect`            | `process_inspect`            | `ProcessInspectParams`         | `ProcessInspectResult`         | `active_only`       |
 | `process.kill`               | `process_kill`               | `ProcessKillParams`            | `ProcessKillResult`            | `terminal_evidence` |
 | `process.release`            | `process_release`            | `ProcessReleaseParams`         | `ProcessReleaseResult`         | `terminal_evidence` |
+| `process.resolve_start`      | `process_resolve_start`      | `ProcessResolveStartParams`    | `ProcessStartResult`           | `active_only`       |
 | `process.signal`             | `process_signal`             | `ProcessSignalParams`          | `ProcessSignalResult`          | `terminal_evidence` |
 | `process.start`              | `process_start`              | `ProcessStartParams`           | `ProcessStartResult`           | `terminal_evidence` |
 | `process.wait`               | `process_wait`               | `ProcessWaitParams`            | `ProcessWaitResult`            | `active_only`       |
@@ -243,6 +248,7 @@ Check the initialized descriptor before calling a method. Generated Python avail
 | `receipt.get`                | `receipt_get`                | `ReceiptGetParams`             | `ReceiptGetResult`             | `active_only`       |
 | `session.attach`             | `session_attach`             | `SessionAttachParams`          | `SessionOpenResult`            | `ledger_external`   |
 | `session.close`              | `session_close`              | `SessionCloseParams`           | `SessionCloseResult`           | `ledger_external`   |
+| `session.detach`             | `session_detach`             | `SessionDetachParams`          | `SessionDetachResult`          | `ledger_external`   |
 | `session.keepalive`          | `session_keepalive`          | `SessionKeepaliveParams`       | `SessionKeepaliveResult`       | `ledger_external`   |
 | `session.open`               | `session_open`               | `SessionOpenParams`            | `SessionOpenResult`            | `ledger_external`   |
 | `shell.exec`                 | `shell_exec`                 | `ShellExecParams`              | `ShellExecResult`              | `terminal_evidence` |

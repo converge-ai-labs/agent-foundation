@@ -1556,9 +1556,8 @@ async def test_root_history_worker_is_joined_before_cancellation_settles(
             with fail_after(10):
                 operation = await app.wait_root_operation(receipt.receipt_id)
         assert finished.is_set()
-        assert operation.status is (
-            RootOperationStatus.completed if stage == "terminal" else RootOperationStatus.cancelled
-        )
+        # Accepted Stop remains authoritative while shielded history persistence finishes.
+        assert operation.status is RootOperationStatus.cancelled
         assert len(model_calls) == (1 if stage == "terminal" else 0)
         assert len(selections) == (0 if stage == "prepare" else 2)
         if selections:

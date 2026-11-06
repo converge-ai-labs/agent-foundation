@@ -40,7 +40,7 @@ if report.sample is not None:
     print(sample.sample_age_ms, sample.sequence)
 ```
 
-`device.metrics` uses the existing authenticated carrier and is advertised when sampling is enabled. Envd and `a13n-envd-client` use EIP 0.3; upgrade both when migrating a 0.1 or 0.2 deployment. Carrier framing and the `eip.v1` namespace stay unchanged.
+`device.metrics` uses the existing authenticated carrier and is advertised when sampling is enabled. Envd and `a13n-envd-client` use EIP 0.4; upgrade both when migrating an older protocol deployment. Carrier framing and the `eip.v1` namespace stay unchanged.
 
 Interpret the resource fields as follows:
 

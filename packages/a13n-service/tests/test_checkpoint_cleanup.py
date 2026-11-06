@@ -225,12 +225,11 @@ async def test_a_failed_publication_cannot_leave_another_write_behind_seal(runti
 
 
 @pytest.mark.parametrize("format", [1, 2])
-def test_legacy_checkpoint_defaults_to_no_session_hints(format):
+def test_legacy_checkpoint_without_session_hints_remains_readable(format):
     legacy = RunState(harness=HarnessState.new(thread_id="thr_legacy"), seq=1, attempt=1).model_dump(mode="json")
     legacy["format"] = format
-    del legacy["envd_sessions"]
     restored = RunState.model_validate(legacy)
-    assert restored.envd_sessions == {}
+    assert "envd_sessions" not in restored.model_dump()
     pointer = StatePointer(key="legacy", digest="0" * 64, size=1, format=format, seq=1, attempt=1)
     assert checkpoints.require_compatible(RunRow(id="run_legacy", checkpoint=pointer.model_dump())) == pointer
     upgraded = RunState(harness=restored.harness, seq=2, attempt=2)
@@ -248,9 +247,7 @@ def test_checkpoint_preserves_unknown_fields_in_model_round_trip(format):
     assert RunState.model_validate_json(restored.to_json_bytes()) == restored
 
 
-@pytest.mark.parametrize(
-    "changes", [{"seq": 0}, {"attempt": 0}, {"format": checkpoints.FORMAT + 1}, {"envd_sessions": []}]
-)
+@pytest.mark.parametrize("changes", [{"seq": 0}, {"attempt": 0}, {"format": checkpoints.FORMAT + 1}, {"harness": []}])
 def test_checkpoint_extensions_do_not_relax_known_fields(changes):
     from pydantic import ValidationError
 

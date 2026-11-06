@@ -172,6 +172,11 @@ message ProcessStartResult {
   OperationReceipt receipt = 2;
 }
 
+message ProcessResolveStartParams {
+  EIPCallContext context = 1;
+  string target_operation_id = 2 [(eip_field).string_format = EIP_STRING_FORMAT_IDENTIFIER, (eip_field).max_length = 128];
+}
+
 message ProcessInspectParams {
   EIPCallContext context = 1;
   ProcessHandle handle = 2;

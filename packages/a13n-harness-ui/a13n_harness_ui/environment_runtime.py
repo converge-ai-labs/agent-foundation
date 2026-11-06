@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import inspect
 import os
 import stat
-from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Mapping, Sequence
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from types import MappingProxyType
 from typing import Literal
+from weakref import WeakValueDictionary
 
 from a13n_harness.environment import (
     FILE_ACTIONS,
@@ -28,9 +31,11 @@ from a13n_harness.environment.models import (
     COMPUTER_ACTIONS,
     FILE_EXECUTION_ACTIONS,
     EnvironmentDescriptor,
+    EnvironmentError,
     EnvironmentState,
 )
 from a13n_harness.environment.providers import EnvironmentRuntime
+from a13n_harness.environment.session_recovery import EnvdSessionRecovery, EnvdSessionState
 from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
 from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
 from a13n_harness.providers.environment.local_envd.configuration import local_envd_path
@@ -60,6 +65,7 @@ from a13n_harness_ui.extensions.environment_adapters import (
 from a13n_harness_ui.settings import EnvdRuntimeSettings
 from a13n_harness_ui.storage import EnvironmentBindingKey, LocalStore, ObjectRef, StoredEnvironmentState
 from a13n_harness_ui.storage.objects import ObjectKind
+from a13n_harness_ui.storage.ownership import OwnershipLocks
 from a13n_harness_ui.thread_files import ThreadFiles
 
 type ProviderRuntimeFactory = Callable[[EnvironmentProviderDefinition], object | Awaitable[object | None] | None]
@@ -156,6 +162,7 @@ class EnvironmentSnapshotReconstructor:
         root: Path,
         state: EnvironmentState | None,
         local_runtime: LocalEnvdProviderRuntime | None = None,
+        session_recovery: EnvdSessionRecovery | None = None,
     ) -> EnvironmentConnector:
         collaborator = (
             local_runtime or await self.sandbox_runtime((root,), profile=reconstructed.profile)
@@ -169,6 +176,7 @@ class EnvironmentSnapshotReconstructor:
                 state=state,
                 provider=reconstructed.provider,
                 runtime=collaborator,
+                session_recovery=session_recovery,
             )
         except CompositionError:
             raise
@@ -296,6 +304,14 @@ class EnvironmentRunService:
         self._thread_files = thread_files or ThreadFiles(store.layout.root)
         self._configuration_root = configuration_root
         self._devices = devices
+        self._sessions: WeakValueDictionary[str, EnvdSessionRecovery] = WeakValueDictionary()
+        self._session_lock = asyncio.Lock()
+        self._owners = OwnershipLocks(store.layout.root / "envd-session-locks")
+
+    async def close(self) -> None:
+        """Release binding ownership after all Run and retained scopes have joined."""
+        self._sessions.clear()
+        await self._owners.close()
 
     async def prepare(self, composition: ResolvedRunComposition) -> EnvironmentRunPlan:
         live = composition.root.source_kind == "live"
@@ -321,48 +337,16 @@ class EnvironmentRunService:
         mounts: list[_PreparedMount] = []
         publications: list[EnvironmentStatePublication] = []
         for index, root in enumerate(roots, start=1):
-            key = EnvironmentBindingKey(
-                thread_id=composition.thread_id,
-                environment_profile_id=profile.profile_id,
-                profile_digest=profile.behavior_digest,
-                adapter_key=profile.adapter_key,
-                normalized_root=os.fspath(root),
+            mount, publication = await self._prepare_project_mount(
+                composition,
+                reconstructed,
+                root=root,
+                alias="workspace" if index == 1 else f"workspace-{index}",
+                mount_path=path_layout.project_mounts[index - 1] if canonical_host_paths else None,
+                local_runtime=local_runtime,
             )
-            head = await self._store.environment_states.get(key)
-            expected = None if head is None else head.state
-            state = await self._load_state(
-                key=key,
-                reference=expected,
-                provider_key=profile.provider_key,
-            )
-            try:
-                environment = await self._reconstructor.bind(
-                    reconstructed,
-                    root=root,
-                    state=state,
-                    local_runtime=local_runtime,
-                )
-            except BaseException as error:
-                with CancelScope(shield=True):
-                    try:
-                        await self._publish_state(key, expected, state, observed_binding_state(error, state))
-                    except Exception as publication_error:
-                        error.add_note(f"Environment state publication also failed: {publication_error!r}")
-                raise
-            publications.append(await self._publish_state(key, expected, state, environment.state))
-            mounts.append(
-                _PreparedMount(
-                    alias="workspace" if index == 1 else f"workspace-{index}",
-                    environment=environment,
-                    permission_ceiling=EnvironmentPermissionSet(
-                        operations=FILE_ACTIONS if live else _local_actions(profile)
-                    ),
-                    mount_path=(path_layout.project_mounts[index - 1] if canonical_host_paths else None),
-                    provider_root=local_envd_path(root)
-                    if isinstance(reconstructed.adapter, LocalEnvdProjectAdapter)
-                    else "/",
-                )
-            )
+            mounts.append(mount)
+            publications.append(publication)
         for binding in composition.environment_bindings:
             if isinstance(binding.device.transport, HttpDeviceTransport):
                 composition.run_configuration.authorize_url(binding.device.transport.configuration.endpoint)
@@ -410,7 +394,21 @@ class EnvironmentRunService:
                         mount_path=root.as_posix() if canonical_host_paths else None,
                     )
                 )
-        thread_mount = await self._prepare_thread_files_mount(reconstructed, thread_root, local_runtime=local_runtime)
+        thread_mount = await self._prepare_thread_files_mount(
+            reconstructed,
+            thread_root,
+            local_runtime=local_runtime,
+            session_recovery=await self._session_context(
+                EnvironmentBindingKey(
+                    thread_id=composition.thread_id,
+                    environment_profile_id=profile.profile_id,
+                    profile_digest=profile.behavior_digest,
+                    adapter_key=profile.adapter_key,
+                    normalized_root=os.fspath(thread_root),
+                ),
+                exclusive=isinstance(reconstructed.adapter, LocalEnvdProjectAdapter),
+            ),
+        )
         if live:
             thread_mount.permission_ceiling = EnvironmentPermissionSet(operations=FILE_ACTIONS)
         if roots:
@@ -446,6 +444,123 @@ class EnvironmentRunService:
             ),
         )
 
+    async def prepare_recovery(self, composition: ResolvedRunComposition, alias: str) -> EnvironmentRuntime:
+        """Reconstruct only a retained Shell's captured mount, without admitting a Run."""
+        binding = next((item for item in composition.environment_bindings if item.selection.alias == alias), None)
+        if binding is not None:
+            if isinstance(binding.device.transport, HttpDeviceTransport):
+                composition.run_configuration.authorize_url(binding.device.transport.configuration.endpoint)
+            mount, _ = await self._prepare_device_mount(composition.thread_id, binding)
+        else:
+            roots = {
+                "workspace" if index == 1 else f"workspace-{index}": Path(root)
+                for index, root in enumerate(composition.project_roots, start=1)
+            }
+            thread_root = self._thread_files.directory(composition.thread_id)
+            roots["thread-files"] = thread_root
+            if alias not in roots:
+                raise EnvironmentLifecycleError("The captured Shell mount is unavailable.", code="shell_mount_missing")
+            root = (await normalize_project_roots((roots[alias],)))[0]
+            reconstructed = self._reconstructor.reconstruct(composition.environment_profile)
+            local_runtime = (
+                await self._reconstructor.sandbox_runtime(
+                    (*(Path(item) for item in composition.project_roots), thread_root),
+                    thread_files_root=thread_root,
+                    profile=composition.environment_profile,
+                )
+                if isinstance(reconstructed.adapter, LocalEnvdProjectAdapter)
+                else None
+            )
+            if alias == "thread-files":
+                profile = composition.environment_profile
+                mount = await self._prepare_thread_files_mount(
+                    reconstructed,
+                    root,
+                    local_runtime=local_runtime,
+                    session_recovery=await self._session_context(
+                        EnvironmentBindingKey(
+                            thread_id=composition.thread_id,
+                            environment_profile_id=profile.profile_id,
+                            profile_digest=profile.behavior_digest,
+                            adapter_key=profile.adapter_key,
+                            normalized_root=os.fspath(root),
+                        ),
+                        exclusive=isinstance(reconstructed.adapter, LocalEnvdProjectAdapter),
+                    ),
+                )
+                if composition.root.source_kind == "live":
+                    mount.permission_ceiling = EnvironmentPermissionSet(operations=FILE_ACTIONS)
+            else:
+                mount, _ = await self._prepare_project_mount(
+                    composition,
+                    reconstructed,
+                    root=root,
+                    alias=alias,
+                    mount_path=root.as_posix() if reconstructed.adapter.preserves_host_paths else None,
+                    local_runtime=local_runtime,
+                )
+        return create_environment_runtime(
+            mounts={
+                alias: EnvironmentMount(
+                    source=mount,
+                    permission_ceiling=mount.permission_ceiling,
+                    mount_path=mount.mount_path,
+                    provider_root=mount.provider_root,
+                )
+            },
+            default_mount=alias,
+        )
+
+    async def _prepare_project_mount(
+        self,
+        composition: ResolvedRunComposition,
+        reconstructed: ReconstructedEnvironmentProfile,
+        *,
+        root: Path,
+        alias: str,
+        mount_path: str | None,
+        local_runtime: LocalEnvdProviderRuntime | None,
+    ) -> tuple[_PreparedMount, EnvironmentStatePublication]:
+        profile = reconstructed.profile
+        key = EnvironmentBindingKey(
+            thread_id=composition.thread_id,
+            environment_profile_id=profile.profile_id,
+            profile_digest=profile.behavior_digest,
+            adapter_key=profile.adapter_key,
+            normalized_root=os.fspath(root),
+        )
+        recovery = await self._session_context(
+            key, exclusive=isinstance(reconstructed.adapter, LocalEnvdProjectAdapter)
+        )
+        head = await self._store.environment_states.get(key)
+        expected = None if head is None else head.state
+        state = await self._load_state(key=key, reference=expected, provider_key=profile.provider_key)
+        try:
+            environment = await self._reconstructor.bind(
+                reconstructed,
+                root=root,
+                state=state,
+                local_runtime=local_runtime,
+                session_recovery=recovery,
+            )
+        except BaseException as error:
+            with CancelScope(shield=True):
+                try:
+                    await self._publish_state(key, expected, state, observed_binding_state(error, state))
+                except Exception as publication_error:
+                    error.add_note(f"Environment state publication also failed: {publication_error!r}")
+            raise
+        publication = await self._publish_state(key, expected, state, environment.state)
+        return _PreparedMount(
+            alias=alias,
+            environment=environment,
+            permission_ceiling=EnvironmentPermissionSet(
+                operations=FILE_ACTIONS if composition.root.source_kind == "live" else _local_actions(profile)
+            ),
+            mount_path=mount_path,
+            provider_root=local_envd_path(root) if isinstance(reconstructed.adapter, LocalEnvdProjectAdapter) else "/",
+        ), publication
+
     async def _prepare_device_mount(
         self, thread_id: str, binding: ResolvedEnvironmentBinding
     ) -> tuple[_PreparedMount, EnvironmentStatePublication]:
@@ -471,10 +586,16 @@ class EnvironmentRunService:
             adapter_key=adapter_key,
             normalized_root=selection.working_directory,
         )
+        recovery = await self._session_context(key, exclusive=True)
         head = await self._store.environment_states.get(key)
         expected = None if head is None else head.state
         state = await self._load_state(key=key, reference=expected, provider_key=provider_key)
-        environment = await self._devices.bind(binding, environment_id=f"device-{key.profile_digest[:20]}", state=state)
+        environment = await self._devices.bind(
+            binding,
+            environment_id=f"device-{key.profile_digest[:20]}",
+            state=state,
+            session_recovery=recovery,
+        )
         publication = await self._publish_state(key, expected, state, environment.state)
         return _PreparedMount(
             alias=selection.alias,
@@ -489,10 +610,15 @@ class EnvironmentRunService:
         root: Path,
         *,
         local_runtime: LocalEnvdProviderRuntime | None = None,
+        session_recovery: EnvdSessionRecovery | None = None,
     ) -> _PreparedMount:
         if isinstance(reconstructed.adapter, (NativeProjectAdapter, LocalEnvdProjectAdapter)):
             environment = await self._reconstructor.bind(
-                reconstructed, root=root, state=None, local_runtime=local_runtime
+                reconstructed,
+                root=root,
+                state=None,
+                local_runtime=local_runtime,
+                session_recovery=session_recovery,
             )
             operations = _local_actions(reconstructed.profile)
         else:
@@ -594,6 +720,60 @@ class EnvironmentRunService:
             mount_path=mount_path,
         )
 
+    async def _session_context(self, key: EnvironmentBindingKey, *, exclusive: bool = False) -> EnvdSessionRecovery:
+        identity = canonical_digest(key.model_dump(mode="json"))
+        async with self._session_lock:
+            existing = self._sessions.get(identity)
+            if existing is not None:
+                return existing
+
+            @asynccontextmanager
+            async def ownership() -> AsyncIterator[EnvdSessionState | None]:
+                if exclusive and not await self._owners.acquire(identity):
+                    raise EnvironmentError("Another App owns this Envd binding.", code="environment_busy")
+                try:
+                    head = await self._store.environment_states.get(key)
+                    stored = (
+                        await self._store.objects.read_model(head.state, StoredEnvironmentState)
+                        if head is not None and head.state is not None
+                        else None
+                    )
+                    if stored is not None and stored.binding != key:
+                        raise EnvironmentLifecycleError(
+                            "Stored Session binding changed", code="environment_state_incompatible"
+                        )
+                    yield stored.envd_session if stored is not None else None
+                finally:
+                    if exclusive:
+                        await self._owners.release(identity)
+
+            async def checkpoint(state: EnvdSessionState) -> None:
+                with CancelScope(shield=True), fail_after(30):
+                    head = await self._store.environment_states.get(key)
+                    expected = None if head is None else head.state
+                    previous = (
+                        await self._store.objects.read_model(expected, StoredEnvironmentState)
+                        if expected is not None
+                        else None
+                    )
+                    value = StoredEnvironmentState(
+                        binding=key,
+                        state=previous.state if previous is not None else None,
+                        envd_session=state,
+                        created_at=_utc_now(),
+                    )
+                    replacement = (
+                        await self._store.objects.publish_model(
+                            object_kind=ObjectKind.environment_state,
+                            value=value,
+                        )
+                    ).ref
+                    await self._store.environment_states.select(key=key, expected=expected, replacement=replacement)
+
+            context = EnvdSessionRecovery(checkpoint=checkpoint, ownership=ownership)
+            self._sessions[identity] = context
+            return context
+
     async def _publish_state(
         self,
         key: EnvironmentBindingKey,
@@ -607,8 +787,14 @@ class EnvironmentRunService:
         # when the caller is cancelled, while keeping storage failure bounded.
         replacement = None
         with CancelScope(shield=True), fail_after(30):
-            if observed is not None:
-                stored = StoredEnvironmentState(binding=key, state=observed, created_at=_utc_now())
+            previous = (
+                await self._store.objects.read_model(expected, StoredEnvironmentState) if expected is not None else None
+            )
+            session = previous.envd_session if previous is not None else None
+            if observed is not None or session is not None:
+                stored = StoredEnvironmentState(
+                    binding=key, state=observed, envd_session=session, created_at=_utc_now()
+                )
                 replacement = (
                     await self._store.objects.publish_model(
                         object_kind=ObjectKind.environment_state,
@@ -628,7 +814,7 @@ class EnvironmentRunService:
         if reference is None:
             return None
         value = await self._store.objects.read_model(reference, StoredEnvironmentState)
-        if value.binding != key or value.state.provider_key != provider_key:
+        if value.binding != key or (value.state is not None and value.state.provider_key != provider_key):
             raise EnvironmentLifecycleError(
                 "Stored Environment state is incompatible with its binding.",
                 code="environment_state_incompatible",

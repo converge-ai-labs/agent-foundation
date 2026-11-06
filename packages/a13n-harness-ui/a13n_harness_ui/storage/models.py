@@ -97,6 +97,25 @@ class CompactionRecord(Base):
     disposition: Mapped[str | None] = mapped_column(String(16), nullable=True)
 
 
+class ToolExecutionHeadRecord(Base):
+    """One retained call and its independently settled completion input."""
+
+    __tablename__ = "tool_execution"
+
+    execution_id: Mapped[str] = mapped_column(String(_ID), primary_key=True)
+    thread_id: Mapped[str] = mapped_column(String(_ID), nullable=False, index=True)
+    record_json: Mapped[str] = mapped_column(Text, nullable=False)
+    payload_digest: Mapped[str | None] = mapped_column(String(_DIGEST), nullable=True)
+    consumed_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
+    composition_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    terminal: Mapped[bool] = mapped_column(Boolean, nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    foreground_released: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    delivery_acknowledged: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    completion_state: Mapped[str] = mapped_column(String(16), nullable=False, default="waiting", index=True)
+
+
 class PlannedRestartRecord(Base):
     """The only prepared/claimed update handoff for this local data root."""
 

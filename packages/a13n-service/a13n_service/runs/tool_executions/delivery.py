@@ -1,4 +1,4 @@
-"""Tool completion uses the ordinary mailbox; its first delivery starts the reread window."""
+"""Enqueue tool completion hints without acknowledging Agent consumption."""
 
 from pydantic import JsonValue
 
@@ -8,7 +8,7 @@ from a13n_service.runs import inbox
 from a13n_service.runs.accept import advance
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.tables import RunRow, ThreadRow, ToolExecutionRow
-from a13n_service.runs.tool_executions.store import delivered, observation
+from a13n_service.runs.tool_executions.store import observation
 
 
 def tool_results(runtime: Runtime) -> Handler:
@@ -29,8 +29,7 @@ def tool_results(runtime: Runtime) -> Handler:
                 return
             if thread.archived_at is not None or origin.cancel_requested_at is not None:
                 # A stopped origin never wakes the conversation. Its result stays explicitly readable.
-                if await settle(session, claimed, "delivered", error="continuation_suppressed"):
-                    delivered(row, current, runtime.settings.tool_executions.delivered_retention_seconds)
+                await settle(session, claimed, "delivered", error="continuation_suppressed")
                 return
             record = observation(row)
             payload: dict[str, JsonValue] = {
@@ -45,7 +44,6 @@ def tool_results(runtime: Runtime) -> Handler:
             if not await settle(session, claimed, "delivered"):
                 return
             await inbox.append_tool_result(session, thread, origin, payload)
-            delivered(row, current, runtime.settings.tool_executions.delivered_retention_seconds)
             thread_id = thread.id
         await advance(runtime, thread_id)
 

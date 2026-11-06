@@ -28,6 +28,11 @@ from a13n_envd_client.eip.v1 import (
     ExecutableName,
     FileReadTextParams,
     FileWriteMode,
+    ProcessInspectParams,
+    ProcessKillParams,
+    ProcessStartParams,
+    SessionKeepaliveParams,
+    SessionLifecyclePolicy,
     ShellExecParams,
 )
 from websockets.asyncio.server import serve
@@ -47,7 +52,12 @@ def device_path(path: Path) -> str:
 
 @asynccontextmanager
 async def running_device(
-    tmp_path: Path, carrier: str, *, limits: dict[str, int] | None = None, monitoring: dict[str, object] | None = None
+    tmp_path: Path,
+    carrier: str,
+    *,
+    limits: dict[str, int] | None = None,
+    monitoring: dict[str, object] | None = None,
+    peer: bool = False,
 ):
     executable = binary()
     root = tmp_path / "alpha"
@@ -119,6 +129,7 @@ async def running_device(
         stderr=asyncio.subprocess.PIPE,
     )
     device = None
+    second = None
     try:
         if carrier == "http":
             for _ in range(100):
@@ -139,8 +150,19 @@ async def running_device(
         else:
             transport = StdioTransport.from_process(process)
         device = await EIPDeviceConnection.initialize(transport, expected_device_id="device-test", request_timeout=2)
-        yield device
+        if peer:
+            assert carrier == "http"
+            second = await EIPDeviceConnection.initialize(
+                HttpTransport(f"http://127.0.0.1:{port}", "fixture-device-token"),
+                expected_device_id="device-test",
+                request_timeout=2,
+            )
+            yield device, second
+        else:
+            yield device
     finally:
+        if second is not None:
+            await second.close()
         if device is not None:
             await device.close()
         terminated_by_test = carrier != "stdio" and process.returncode is None
@@ -165,11 +187,41 @@ async def running_device(
         assert b"fixture-device-token" not in stderr
 
 
+@pytest.mark.parametrize("failure", ["transport", "timeout", "closed"])
+def test_final_keepalive_preserves_body_exception(tmp_path, monkeypatch, failure):
+    from a13n_envd_client.errors import EIPTransportError
+
+    async def scenario():
+        async with running_device(tmp_path, "http") as device:
+            session = await device.open_session()
+            calls = []
+
+            async def fail(params):
+                calls.append(params)
+                if failure == "timeout":
+                    raise TimeoutError("final keepalive timed out")
+                raise EIPTransportError("final keepalive failed")
+
+            monkeypatch.setattr(session._client, "session_keepalive", fail)
+            with pytest.raises(ValueError, match="body failed"):
+                async with session.use():
+                    if failure == "closed":
+                        await device.close()
+                    raise ValueError("body failed")
+            assert len(calls) == (0 if failure == "closed" else 1)
+            assert session._users == 0
+            assert session._keepalive_task is not None
+            await asyncio.gather(session._keepalive_task, return_exceptions=True)
+            assert session._keepalive_task.done()
+
+    asyncio.run(scenario())
+
+
 @pytest.mark.parametrize("carrier", ["stdio", "http", "websocket"])
 def test_real_shared_device_independent_sessions_and_transfers(tmp_path: Path, carrier: str):
     async def scenario():
         async with running_device(tmp_path, carrier) as device:
-            assert device.protocol_version == "0.3"
+            assert device.protocol_version == "0.4"
             assert (await device.describe()).device_id == "device-test"
             discovery = await device.list_directories(
                 DirectoryListParams(
@@ -472,5 +524,153 @@ def test_monitoring_disabled_keeps_system_information(tmp_path: Path, carrier: s
                 )
             assert disabled.value.error.data.error_type == ErrorType.UNSUPPORTED
             assert not device._sessions
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("carrier", ["stdio", "http", "websocket"])
+def test_session_usage_detach_and_idle_expiry(tmp_path: Path, carrier: str):
+    async def scenario():
+        async with running_device(tmp_path, carrier) as device:
+            policy = SessionLifecyclePolicy(idle_timeout_ms=300)
+            session = await device.open_session(lifecycle=policy)
+            assert session.descriptor.lifecycle == policy
+            assert device.descriptor.lifecycle.idle_timeout_ms == 3_600_000
+            assert device.descriptor.lifecycle.max_lifetime_ms is None
+            async with session.use():
+                await asyncio.sleep(0.8)
+                assert (await session.readiness()).ready
+            saved = session.descriptor
+            await session.detach()
+            attached = await device.attach_session(saved)
+            assert attached.session_id == saved.session_id
+            assert attached.descriptor.owner_epoch == saved.owner_epoch + 1
+            # Keeping the Python object and Device connection does not own use.
+            await asyncio.sleep(0.5)
+            with pytest.raises(EIPMethodError) as expired:
+                await attached.readiness()
+            assert expired.value.error.data.error_type is ErrorType.NOT_INITIALIZED
+            await attached.abort()
+            replacement = await device.open_session(lifecycle=policy)
+            assert replacement.session_id != saved.session_id
+            await replacement.close()
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("carrier", ["stdio", "http", "websocket"])
+def test_max_lifetime_is_not_renewed_by_use_or_attachment(tmp_path: Path, carrier: str):
+    async def scenario():
+        async with running_device(tmp_path, carrier) as device:
+            session = await device.open_session(
+                lifecycle=SessionLifecyclePolicy(idle_timeout_ms=2000, max_lifetime_ms=500)
+            )
+            saved = session.descriptor
+            async with session.use():
+                await asyncio.sleep(0.3)
+            await session.detach()
+            attached = await device.attach_session(saved)
+            await asyncio.sleep(0.3)
+            with pytest.raises(EIPMethodError) as expired:
+                await attached.readiness()
+            assert expired.value.error.data.error_type is ErrorType.NOT_INITIALIZED
+            await attached.abort()
+
+    asyncio.run(scenario())
+
+
+def test_http_takeover_fences_old_control_and_preserves_native_job(tmp_path: Path):
+    if os.name == "nt":
+        pytest.skip("uses the POSIX shell fixture")
+
+    async def scenario():
+        async with running_device(tmp_path, "http", peer=True) as (first, second):
+            original = await first.open_session()
+            started = await original.client.process_start(
+                ProcessStartParams(
+                    context=EIPCallContext(operation_id="start-once"),
+                    request=CommandRequest(
+                        command=ArgvCommand(
+                            kind="argv",
+                            executable_spec=ExecutableName(kind="name", name="sh"),
+                            arguments=("-c", "echo admitted >> admissions; sleep 2; echo done"),
+                        )
+                    ),
+                )
+            )
+            saved = original.descriptor
+            successor = await second.attach_session(saved)
+            assert successor.descriptor.owner_epoch == 2
+            for method in (
+                lambda: original.client.session_keepalive(SessionKeepaliveParams()),
+                lambda: original.client.process_kill(
+                    ProcessKillParams(
+                        context=EIPCallContext(operation_id="stale-kill"),
+                        handle=started.process.handle,
+                    )
+                ),
+                original.close,
+            ):
+                with pytest.raises(EIPMethodError) as stale:
+                    await method()
+                assert stale.value.error.data.error_type is ErrorType.CONFLICT
+            # A stale owner cannot claim the epoch already installed by its successor.
+            with pytest.raises(EIPMethodError) as stale_attach:
+                await first.attach_session(saved)
+            assert stale_attach.value.error.data.error_type is ErrorType.CONFLICT
+            async with successor.use():
+                await asyncio.sleep(2.2)
+                observed = await successor.client.process_inspect(
+                    ProcessInspectParams(
+                        context=EIPCallContext(operation_id="inspect-original"),
+                        handle=started.process.handle,
+                    )
+                )
+                assert observed.process.handle == started.process.handle
+                assert observed.process.status.exit_code == 0
+            assert (tmp_path / "alpha" / "admissions").read_text() == "admitted\n"
+            reader = successor.open_output(observed.process.output.stdout.reference)
+            assert (await reader.read_page()).data == b"done\n"
+            await successor.close()
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("noisy", [False, True])
+def test_owned_native_job_lives_and_unowned_job_expires(tmp_path: Path, noisy: bool):
+    if os.name == "nt":
+        pytest.skip("uses the POSIX shell fixture")
+
+    async def scenario():
+        async with running_device(tmp_path, "http") as device:
+            session = await device.open_session(lifecycle=SessionLifecyclePolicy(idle_timeout_ms=300))
+            script = "while :; do echo noisy; sleep 0.02; done" if noisy else "sleep 30"
+            async with session.use():
+                process = await session.client.process_start(
+                    ProcessStartParams(
+                        context=EIPCallContext(operation_id="start-owned"),
+                        request=CommandRequest(
+                            command=ArgvCommand(
+                                kind="argv",
+                                executable_spec=ExecutableName(kind="name", name="sh"),
+                                arguments=("-c", script),
+                            )
+                        ),
+                    )
+                )
+                await asyncio.sleep(0.9)
+                observed = await session.client.process_inspect(
+                    ProcessInspectParams(
+                        context=EIPCallContext(operation_id="still-owned"),
+                        handle=process.process.handle,
+                    )
+                )
+                assert observed.process.status.phase.value == "running"
+            saved = session.descriptor
+            await session.detach()
+            await asyncio.sleep(0.6)
+            with pytest.raises(EIPMethodError) as expired:
+                await device.attach_session(saved)
+            assert expired.value.error.data.error_type is ErrorType.NOT_INITIALIZED
 
     asyncio.run(scenario())

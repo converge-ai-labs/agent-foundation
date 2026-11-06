@@ -98,6 +98,7 @@ from a13n_harness_ui.storage.continuations import publish_continuation, remove_c
 from a13n_harness_ui.storage.contracts import StoredDeferredInput, ThreadReadModel
 from a13n_harness_ui.storage.display import DisplayArchive, seal_display
 from a13n_harness_ui.storage.read_models import project_continuation
+from a13n_harness_ui.storage.tool_executions import completion_ids, execution_composition
 from a13n_harness_ui.subagent_operator import HarnessUiSubagentOperator
 from a13n_harness_ui.surfaces import ApprovalDecision, ExternalToolResult, RunModelOverrides, ThreadDeferredResponse
 from a13n_harness_ui.thread_files import ThreadFiles
@@ -605,6 +606,7 @@ class RootRunExecutor:
                 run_id=stream.run_id,
                 instance=instance,
                 composition=published.value,
+                composition_ref=published.reference,
             ):
                 stream_entry_attempted = True
                 async with stream:
@@ -856,18 +858,20 @@ class RootRunExecutor:
         run_id: str,
         instance: AgentInstanceContext,
         composition: ResolvedRunComposition,
+        composition_ref: ObjectRef,
     ) -> AsyncGenerator[None]:
-        operator = self._subagent_operator
-        if isinstance(operator, HarnessUiSubagentOperator):
-            async with operator.bind_parent_run(
-                thread_id=thread_id,
-                run_id=run_id,
-                instance=instance,
-                composition=composition,
-            ):
-                yield
-            return
-        yield
+        with execution_composition(composition_ref):
+            operator = self._subagent_operator
+            if isinstance(operator, HarnessUiSubagentOperator):
+                async with operator.bind_parent_run(
+                    thread_id=thread_id,
+                    run_id=run_id,
+                    instance=instance,
+                    composition=composition,
+                ):
+                    yield
+                return
+            yield
 
     async def _required_configuration(self) -> LoadedHarnessUiConfiguration:
         source = await self._configurations.current()
@@ -971,6 +975,7 @@ class RootRunExecutor:
                     excerpt=excerpt,
                     activity_changed=activity_changed,
                     compaction_settlement=settlement,
+                    tool_completions=completion_ids(state.message_history),
                 )
                 # Only this Run's previous successful checkpoint is replaceable.
                 # Previous Runs, completions, and finalized restart handoffs stay immutable.
