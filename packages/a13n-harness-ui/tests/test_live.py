@@ -72,6 +72,9 @@ async def test_live_hub_requires_reset_when_subscriber_or_cursor_falls_behind() 
             )
         with pytest.raises(LivePresentationError) as slow:
             await subscription.receive()
+        assert subscription.recover_root_stream("run-1") is None
+        with pytest.raises(LivePresentationError):
+            subscription.drain_pending()
     assert slow.value.code == "live_cursor_expired"
 
     await hub.publish(

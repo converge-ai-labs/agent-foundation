@@ -188,6 +188,30 @@ async def test_probe_handles_paths_with_spaces_and_bounds_output(tmp_path):
     assert await module.probe(sys.executable, str(script)) == ""
 
 
+async def test_probe_reaps_child_with_backpressured_output(tmp_path, monkeypatch):
+    script = tmp_path / "noisy.py"
+    script.write_text("import sys; sys.stdout.write('x' * 4_000_000); sys.stdout.flush()\n")
+    spawn = module.asyncio.create_subprocess_exec
+    children = []
+
+    async def start(*args, **kwargs):
+        child = await spawn(*args, **kwargs)
+        children.append(child)
+        # Let the unread pipe fill, as it can while WebUI startup is busy.
+        await module.asyncio.sleep(0.1)
+        return child
+
+    monkeypatch.setattr(module.asyncio, "create_subprocess_exec", start)
+    try:
+        assert await module.asyncio.wait_for(module.probe(sys.executable, str(script)), 2) == ""
+        assert len(children) == 1 and children[0].returncode is not None
+    finally:
+        for child in children:
+            if child.returncode is None:
+                child.kill()
+            await child.communicate()
+
+
 async def test_probe_timeout_cleans_up_child(tmp_path, monkeypatch):
     script = tmp_path / "slow.py"
     script.write_text("import time; time.sleep(10)\n")
