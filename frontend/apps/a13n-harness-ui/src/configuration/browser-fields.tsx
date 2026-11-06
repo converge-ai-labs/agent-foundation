@@ -1,7 +1,12 @@
 import { useTranslation } from "../i18n";
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Button, ChoiceField, SettingsSection } from "a13n-ui";
+import { Button, Tooltip, TooltipPopup, TooltipTrigger } from "a13n-ui";
+import { ArrowClockwise } from "@phosphor-icons/react";
+import {
+  SettingsChoice as ChoiceField,
+  SettingsSection,
+} from "../shell/settings";
 import { useTransport } from "../transport/context";
 import { result } from "../transport/client";
 import { ErrorNotice, TextField } from "../shell/ui";
@@ -89,22 +94,28 @@ export function BrowserFields({
     <SettingsSection
       title={
         <span className="flex items-center justify-between gap-4">
-          <span>{t("Advanced browser settings")}</span>
-          {setup?.supported !== false && (
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={scan.isFetching}
-              onClick={() => void scan.refetch()}
-            >
-              {scan.isFetching ? t("Scanning…") : t("Scan")}
-            </Button>
+          <span>{t("Configuration")}</span>
+          {active && setup?.supported !== false && (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    aria-label={scan.isFetching ? t("Scanning…") : t("Scan")}
+                    disabled={scan.isFetching}
+                    onClick={() => void scan.refetch()}
+                  />
+                }
+              >
+                <ArrowClockwise />
+              </TooltipTrigger>
+              <TooltipPopup>{t("Scan")}</TooltipPopup>
+            </Tooltip>
           )}
         </span>
       }
-      description={t(
-        "Installed components are selected automatically. Changes require saving and restarting Harness UI.",
-      )}
+      description={t("Save and restart Harness UI to apply changes.")}
     >
       <ChoiceField
         label={t("Browser mode")}
@@ -114,90 +125,83 @@ export function BrowserFields({
           {
             value: "auto",
             label: t("Auto"),
-            hint: t(
-              "Prepare one shared browser and let Agents open pages as needed.",
-            ),
           },
           {
             value: "disabled",
             label: t("Disabled"),
-            hint: t("Do not start the Host browser or provide browser tools."),
           },
         ]}
       />
-      <div className={styles.configuration}>
-        {setup?.supported === false ? (
-          <p className="text-xs text-muted-foreground" role="status">
-            {t(setup.message ?? "")}
-          </p>
-        ) : (
-          <>
-            <ErrorNotice error={scan.error} />
-            <ErrorNotice error={pending ? null : preparation.error} />
-            <BrowserRequirements
-              requirements={requirements}
-              status={
-                checking ? "Checking…" : !setup ? "Not checked" : undefined
-              }
-              controls={{
-                "Window preview": mac ? <MacCaptureSettings /> : undefined,
-                Browser: (
-                  <ExecutableField
-                    label={t("Browser executable")}
-                    value={text("executable")}
-                    candidates={(scan.data?.browsers ?? []).map((item) => ({
-                      value: item.path,
-                      label: `${item.name} — ${item.path}`,
-                    }))}
-                    disabled={disabled}
-                    onChange={(value) => set("executable", value)}
-                  />
-                ),
-                "VNC server": (
-                  <ExecutableField
-                    label={t("VNC executable")}
-                    value={text("vnc_executable")}
-                    candidates={(scan.data?.vncs ?? []).map((item) => ({
-                      value: item.path,
-                      label: `${item.kind === "x11vnc" ? "x11vnc" : item.kind === "wayvnc" ? "WayVNC" : "TigerVNC Xvnc"} — ${item.path}`,
-                    }))}
-                    disabled={disabled}
-                    onChange={(value) => set("vnc_executable", value)}
-                  />
-                ),
-              }}
-            />
-            {notice && (
-              <p className="text-xs text-muted-foreground" role="status">
-                {t(notice)}
-              </p>
-            )}
-            {setup?.vnc && setup.vnc.kind !== "tigervnc" && (
-              <p className="text-xs text-muted-foreground">
-                {t(
-                  "This VNC adapter uses a fixed desktop size. Zoom is available; Viewport size switching is unavailable.",
-                )}
-              </p>
-            )}
-            <p className="text-xs text-muted-foreground">
-              {mac
-                ? ""
-                : t(
-                    "Missing a program? Install a Chromium-based browser and VNC server on this Host (inside the container for Docker), then Scan again. Use Other for an installed program outside the detected locations. ",
-                  )}
-              <a
-                href="https://a13n.dev/docs/a13n-harness-ui/webui#first-time-setup"
-                target="_blank"
-                rel="noreferrer"
-                className="underline underline-offset-4"
-              >
-                {t("Browser setup guide")}
-              </a>
+      {active && (
+        <div className={styles.configuration}>
+          {setup?.supported === false ? (
+            <p className="text-xs text-muted-foreground" role="status">
+              {t(setup.message ?? "")}
             </p>
-            <BrowserInstallInstructions steps={setup?.steps ?? []} />
-          </>
-        )}
-      </div>
+          ) : (
+            <>
+              <ErrorNotice error={scan.error} />
+              <ErrorNotice error={pending ? null : preparation.error} />
+              <BrowserRequirements
+                requirements={requirements}
+                status={
+                  checking ? "Checking…" : !setup ? "Not checked" : undefined
+                }
+                controls={{
+                  "Window preview": mac ? <MacCaptureSettings /> : undefined,
+                  Browser: (
+                    <ExecutableField
+                      label={t("Browser executable")}
+                      value={text("executable")}
+                      candidates={(scan.data?.browsers ?? []).map((item) => ({
+                        value: item.path,
+                        label: `${item.name} — ${item.path}`,
+                      }))}
+                      disabled={disabled}
+                      onChange={(value) => set("executable", value)}
+                    />
+                  ),
+                  "VNC server": (
+                    <ExecutableField
+                      label={t("VNC executable")}
+                      value={text("vnc_executable")}
+                      candidates={(scan.data?.vncs ?? []).map((item) => ({
+                        value: item.path,
+                        label: `${item.kind === "x11vnc" ? "x11vnc" : item.kind === "wayvnc" ? "WayVNC" : "TigerVNC Xvnc"} — ${item.path}`,
+                      }))}
+                      disabled={disabled}
+                      onChange={(value) => set("vnc_executable", value)}
+                    />
+                  ),
+                }}
+              />
+              {notice && (
+                <p className="text-xs text-muted-foreground" role="status">
+                  {t(notice)}
+                </p>
+              )}
+              {setup?.vnc && setup.vnc.kind !== "tigervnc" && (
+                <p className="text-xs text-muted-foreground">
+                  {t(
+                    "This VNC adapter uses a fixed desktop size. Zoom is available; Viewport size switching is unavailable.",
+                  )}
+                </p>
+              )}
+              <p className="text-xs text-muted-foreground">
+                <a
+                  href="https://a13n.dev/docs/a13n-harness-ui/webui#first-time-setup"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="underline underline-offset-4"
+                >
+                  {t("Browser setup guide")}
+                </a>
+              </p>
+              <BrowserInstallInstructions steps={setup?.steps ?? []} />
+            </>
+          )}
+        </div>
+      )}
     </SettingsSection>
   );
 }

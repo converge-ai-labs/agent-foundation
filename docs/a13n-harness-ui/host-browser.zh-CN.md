@@ -12,12 +12,12 @@ description: 准备 WebUI Host 上的浏览器自动化，与 Agent 浏览网页
 ### 首次设置
 
 1. 在服务器[安装 Host 组件](#install-host-components)，不是在显示 WebUI 的设备上安装。启动 WebUI 时保持计算机共享开启。
-2. 使用默认的 `browser.mode: auto` 启动 WebUI。Harness UI 自动探测已安装组件并准备共享浏览器。启动失败时，打开 **Browser**，解决显示的必需组件，再点击 **Try again**。
-3. 开始 **Full Control** 对话，让 Agent 浏览。工具自动可用，首次导航或创建标签页时打开对话窗口。也可在 Run 运行期间选择 **Browser → Open browser** 手动打开。
+2. 使用默认的 `browser.mode: auto` 启动 WebUI。Harness UI 自动探测已安装组件并准备共享浏览器。在 **Settings → Environments → Browser** 查看运行状态和组件。启动失败时，解决错误后点击 **Retry browser startup**。
+3. 开始 **Full Control** 对话，让 Agent 浏览。Run 接纳时浏览器已就绪，才会获得浏览器工具；首次导航或创建标签页时打开对话窗口。也可在 Run 运行期间选择 **Browser → Open browser** 手动打开。
 4. 首次实时浏览会展示查看器，不移动键盘焦点。已打开 Files/Changes 或使用窄屏时，选择 **View browser**。关闭查看器保留浏览器运行，同一 Run 不再自动展示。
 5. Linux 上登录或手动修正时，选择 **Take control**，完成后 **Hand back to Agent**。macOS 上选择 **Pause automation**，在 Mac 本机操作浏览器，再选择 **Resume automation**。
 
-浏览器无需对话级开关或手动添加 Capability。**Advanced browser settings** 提供全局 Auto/Disabled 模式和程序路径覆盖；修改后保存并重启。普通聊天、Files 和 Shell 不创建对话浏览器页面。
+浏览器无需对话级开关或手动添加 Capability。**Settings → Environments → Browser** 提供全局 Auto/Disabled 模式和程序路径覆盖；修改后保存并重启。普通聊天、Files 和 Shell 不创建对话浏览器页面。浏览器启动不会阻塞 Run。浏览器不可用时，Agent 会收到原因，并在没有浏览器工具的情况下继续。恢复后，在后续 Run 使用浏览器；不会向当前 Run 追加工具。
 
 ### 安装 Host 组件
 
@@ -51,7 +51,7 @@ sudo apt-get install --no-install-recommends openbox x11-xserver-utils
 
 ### 探测并选择可执行文件
 
-自动选择已安装浏览器，优先 Chrome，再 Chromium，最后 Edge。Linux 搜索服务器 `PATH`，macOS 检查 `/Applications` 和 `~/Applications`。安装缺失程序后点击 **Scan** 或 **Try again**。更改服务器 `PATH` 后重启服务器。
+自动选择已安装浏览器，优先 Chrome，再 Chromium，最后 Edge。Linux 搜索服务器 `PATH`，macOS 检查 `/Applications` 和 `~/Applications`。安装缺失程序后点击 **Scan** 或 **Retry browser startup**。更改服务器 `PATH` 后重启服务器。
 
 | Linux 显示方案 | 必需组件                             | 尺寸调整               |
 | -------------- | ------------------------------------ | ---------------------- |
@@ -61,7 +61,9 @@ sudo apt-get install --no-install-recommends openbox x11-xserver-utils
 
 自动探测按此顺序优先选择完整适配器。WayVNC 需要私有 Unix socket 和禁用输入的只读支持。Linux 桌面使用专用显示/运行目录，不连接用户当前桌面。Openbox、Fluxbox、IceWM 或 twm 等 X11 窗口管理器提供拖动和关闭控件；没有也能基本浏览。
 
-覆盖路径时，打开 **Settings → General → Host browser**，选择探测到的程序，或在 **Other** 输入绝对路径，再保存并重启。**Automatic** 清除覆盖。无效显式路径直接失败，不回退。**Scan** 检查当前草稿并刷新必需/可选组件结果，不保存也不启动。探测成功后仍可能因缺少共享库或显示权限而启动失败。
+覆盖路径时，打开 **Settings → Environments → Browser**，选择探测到的程序，或在 **Other** 输入绝对路径，再保存并重启。**Automatic** 清除覆盖。无效显式路径直接失败，不回退。**Scan** 检查当前草稿并刷新必需/可选组件结果，不保存也不启动。探测成功后仍可能因缺少共享库或显示权限而启动失败。
+
+**Active configuration** 显示当前应用使用的配置。已保存的浏览器修改在重启 Harness UI 后生效。重试使用当前生效的配置，不使用待重启的已保存修改或未保存草稿，也不会打开对话页面。
 
 macOS 设置显示可选的 **Window preview**，不提供 VNC 程序选择器或密码。
 

@@ -104,3 +104,28 @@ async def test_each_model_request_observes_current_gate_without_registering(brow
     assert "automation is available" in seen[1]
     assert not browsers.handback._pending
     browsers.runtime.send.assert_not_called()
+
+
+async def test_unbound_run_projects_reason_without_browser_tools():
+    context = BrowserContextCapability(unavailable="Browser startup failed: <missing display>")
+    assert context.get_toolset() is None
+    seen = []
+
+    async def stream(messages, info):
+        assert not info.function_tools
+        latest = messages[-1]
+        assert isinstance(latest, ModelRequest)
+        seen.extend(part.value for part in request_input_content(latest) if part.metadata.source_id == context.id)
+        yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(context,),
+    )
+    result = await executable.run("start", bindings=RunBindings.embedded())
+    assert result.output_or_raise() == "done"
+    assert len(seen) == 1
+    assert "&lt;missing display&gt;" in seen[0]
+    assert "Browser tools are absent for this Run" in seen[0]

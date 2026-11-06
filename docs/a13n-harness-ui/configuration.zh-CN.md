@@ -294,7 +294,7 @@ envd:
 
 保留 `browser.executable` 和 `browser.vnc_executable` 的默认值 `null`，启动时便会自动选择已安装的兼容程序。自动选择无须保存配置或重启。Harness UI 负责探测程序；缺少的 Host 组件需要你自行安装。
 
-如需指定程序，在 **Settings → General → Host browser** 中选择，或将下面的示例合并到根 YAML。将绝对路径替换为实际安装路径。`vnc_executable` 仅适用于 Linux：
+如需指定程序，在 **Settings → Environments → Browser** 中选择，或将下面的示例合并到根 YAML。将绝对路径替换为实际安装路径。`vnc_executable` 仅适用于 Linux：
 
 ```yaml title="a13n-harness-ui.yaml — Host browser"
 browser:

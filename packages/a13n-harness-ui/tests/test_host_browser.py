@@ -21,6 +21,7 @@ pytestmark = pytest.mark.anyio
 def browsers(tmp_path):
     host = HostBrowsers(root=tmp_path, available=True, authorize=AsyncMock())
     runtime = host.runtime = Chromium(Mock())
+    host.runtime_ready = True
     runtime.closed = host.page_closed
     runtime.opened = host.opened
 
@@ -1279,3 +1280,65 @@ async def test_expiry_notifies_only_blocked_threads_after_handback(browsers, mon
         await asyncio.wait_for(notice.wait(), 1)
         assert delivered == [("thread-b", HANDBACK)]
         browsers.handback.stop()
+
+
+async def test_runtime_teardown_revokes_admission_before_waiting(browsers):
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    async def settle():
+        entered.set()
+        await release.wait()
+
+    browsers.settle_viewers = settle
+    task = asyncio.create_task(browsers.close_runtime())
+    try:
+        await entered.wait()
+        assert browsers.runtime is not None
+        assert not browsers.runtime_ready
+        assert await browsers.admit("new-thread") is None
+        assert "new-thread" not in browsers.bindings
+    finally:
+        release.set()
+        await task
+
+
+@pytest.mark.parametrize("status,command", [("ready", "stop"), ("failed", "stop"), ("failed", "start")])
+async def test_admission_skips_binding_until_lifecycle_cleanup_finishes(browsers, status, command):
+    item = browsers.bindings["thread-a"]
+    item.status = status
+    entered, release = asyncio.Event(), asyncio.Event()
+    close = item.scope.close
+
+    async def delayed_close():
+        entered.set()
+        await release.wait()
+        await close()
+
+    item.scope.close = delayed_close
+    browsers.launch = AsyncMock()
+    page = Page("replacement", "replacement-session")
+    browsers.runtime.pages[page.target] = page
+    browsers.runtime.create = AsyncMock(return_value=page)
+    task = asyncio.create_task(
+        browsers.stop("thread-a", item.identity)
+        if command == "stop"
+        else browsers.start("thread-a", item.identity, explicit=True)
+    )
+    try:
+        await entered.wait()
+        assert await browsers.admit("thread-a") is None
+        assert browsers.bindings["thread-a"] is item
+        assert await browsers.admit("thread-b")
+    finally:
+        release.set()
+        await task
+    identity = await browsers.admit("thread-a")
+    assert identity and identity != item.identity
+    assert browsers.checked("thread-a", identity).status == "ready"
+
+
+async def test_admission_does_not_capture_binding_during_retirement(browsers):
+    item = browsers.bindings["thread-a"]
+    item.closed.set()
+    assert await browsers.admit("thread-a") is None
+    assert browsers.bindings["thread-a"] is item

@@ -73,6 +73,14 @@ class BrowserState(SurfaceModel):
     resize_available: bool = True
 
 
+class BrowserRuntimeState(SurfaceModel):
+    platform: BrowserPlatform = Field(default_factory=host_platform)
+    status: Literal["disabled", "starting", "ready", "failed"] = "disabled"
+    configuration: BrowserConfiguration = Field(default_factory=BrowserConfiguration)
+    available: bool = False
+    error: str | None = None
+
+
 class BrowserCommand(SurfaceModel):
     session_id: str = Field(min_length=1, max_length=80)
 
@@ -131,6 +139,7 @@ class Binding:
     preview_window: int | None = None
     viewport: BrowserPreset = "desktop"
     closed: asyncio.Event = field(default_factory=asyncio.Event)
+    retiring: bool = False
     error: str | None = None
 
     @property
@@ -162,6 +171,7 @@ class HostBrowsers:
         self.human_tabs: dict[str, tuple[str, str]] = {}
         self.runtime: Chromium | None = None
         self.runtime_failed = False
+        self.runtime_ready = False
         self.prepared = False
         self.startup_error: str | None = None
         self.keepalive: str | None = None
@@ -193,13 +203,30 @@ class HostBrowsers:
             for target in item.scope.targets
         }
 
+    def runtime_state(self) -> BrowserRuntimeState:
+        enabled = self.available and self.configuration.mode != "disabled"
+        return BrowserRuntimeState(
+            status=(
+                "disabled"
+                if not enabled
+                else "ready"
+                if self.runtime_ready
+                else "failed"
+                if self.startup_error
+                else "starting"
+            ),
+            configuration=self.configuration,
+            available=self.available,
+            error=self.startup_error if enabled else self.unavailable_reason(),
+        )
+
     def state(self, thread_id: str) -> BrowserState:
         item = self.bindings.get(thread_id)
         if item is None:
             if not self.available or self.configuration.mode == "disabled":
                 return BrowserState()
             return BrowserState(
-                status="failed" if self.startup_error else "enabled" if self.runtime else "starting",
+                status="failed" if self.startup_error else "enabled" if self.runtime_ready else "starting",
                 error=self.startup_error,
             )
         return BrowserState(
@@ -228,18 +255,31 @@ class HostBrowsers:
             self.startup_error = None
             try:
                 await self.launch()
+                self.runtime_ready = True
             except Exception as exc:
                 self.failed(str(exc))
 
+    def unavailable_reason(self) -> str:
+        if not self.available:
+            return "Host computer sharing is unavailable."
+        if self.configuration.mode == "disabled":
+            return "Browser is disabled in settings."
+        if self.startup_error:
+            return f"Browser startup failed: {self.startup_error}"
+        if not self.runtime_ready:
+            return "Browser is still starting."
+        return "Thread browser binding is being retired."
+
     async def admit(self, thread_id: str) -> str | None:
-        """Capture an empty scope for an eligible Run; preparation failure is optional."""
+        """Capture only a ready runtime; never prepare it or wait for browser locks."""
         if not self.available or self.configuration.mode == "disabled":
             return None
         await self.authorize(thread_id)
-        await self.prepare()
-        if self.runtime is None or self.runtime_failed:
+        if not self.runtime_ready or self.runtime is None or self.runtime_failed:
             return None
         item = self.bindings.get(thread_id)
+        if item is not None and (item.retiring or (item.closed.is_set() and item.status not in {"stopped", "failed"})):
+            return None
         if item is None or item.status in {"stopped", "failed"}:
             item = self.bindings[thread_id] = Binding(status="ready")
 
@@ -333,6 +373,7 @@ class HostBrowsers:
         self.clear_lease()
         self.handback.stop()
         self.runtime_failed = True
+        self.runtime_ready = False
         self.startup_error = reason
         self.generation += 1
         self.controller = None
@@ -442,6 +483,7 @@ class HostBrowsers:
 
             self.monitor = asyncio.create_task(watch())
             self.runtime_failed = False
+            self.runtime_ready = True
         except BaseException:
             await self.close_runtime()
             raise
@@ -564,6 +606,7 @@ class HostBrowsers:
             if item.status in {"stopped", "failed"}:
                 if not explicit:
                     raise failure("Browser stopped. Start it explicitly.", "session_conflict")
+                item.retiring = True
                 item.closed.set()
                 if self.runtime_failed:
                     await self.close_runtime()
@@ -601,6 +644,7 @@ class HostBrowsers:
         await self.authorize(thread_id)
         async with self.control_lock, self.lifecycle:
             item = self.checked(thread_id, binding)
+            item.retiring = True
             item.closed.set()
             self.revoke_viewers(thread_id)
             if self.human_thread == thread_id:
@@ -907,6 +951,7 @@ class HostBrowsers:
         return HostBrowserBackend(self, thread_id, binding)
 
     async def close_runtime(self) -> None:
+        self.runtime_ready = False
         self.clear_lease()
         self.generation += 1
         self.controller = None

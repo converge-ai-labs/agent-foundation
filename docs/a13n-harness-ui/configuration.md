@@ -294,7 +294,7 @@ Restart to apply. Saving does not download, launch, or request OS permissions. `
 
 Leave `browser.executable` and `browser.vnc_executable` at their default `null` values to select compatible installed programs automatically at startup. Automatic selection needs no configuration save or restart. Harness UI detects programs; you install any missing Host components.
 
-To choose specific programs, use **Settings → General → Host browser** or merge this example into the root YAML. Replace the absolute paths with your installed programs. `vnc_executable` applies only to Linux:
+To choose specific programs, use **Settings → Environments → Browser** or merge this example into the root YAML. Replace the absolute paths with your installed programs. `vnc_executable` applies only to Linux:
 
 ```yaml title="a13n-harness-ui.yaml — Host browser"
 browser:

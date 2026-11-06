@@ -216,7 +216,13 @@ export function EnvironmentsPage() {
   const sources = useSources();
   const [params] = useSearchParams();
   const tab = params.get("tab") ?? "local";
-  const selectedTab = ["local", "devices", "profiles", "runtime"].includes(tab)
+  const selectedTab = [
+    "local",
+    "devices",
+    "profiles",
+    "runtime",
+    "browser",
+  ].includes(tab)
     ? tab
     : "local";
   return (
@@ -234,6 +240,7 @@ export function EnvironmentsPage() {
           ["devices", t("Devices")],
           ["profiles", t("Profiles & extensions")],
           ["runtime", t("Local runtime")],
+          ["browser", t("Browser")],
         ].map(([value, label]) => (
           <Link
             key={value}
@@ -351,6 +358,18 @@ export function EnvironmentsPage() {
         </>
       )}
       {selectedTab === "runtime" && <RuntimePage embedded />}
+      {selectedTab === "browser" &&
+        sources.data?.sources
+          .filter((item) => item.resource_kind === "root")
+          .map((root) => (
+            <SourceDocument
+              key={root.relative_path}
+              path={root.relative_path}
+              title={null}
+              embedded
+              section="browser"
+            />
+          ))}
     </div>
   );
 }

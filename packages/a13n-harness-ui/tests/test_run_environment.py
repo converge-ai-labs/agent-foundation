@@ -100,6 +100,7 @@ async def test_sandbox_run_does_not_inherit_host_browser(tmp_path, monkeypatch, 
         app._root_runs._executor._agents = Reconstructor()
         thread = await app.create_thread()
         host = app.browsers()
+        await host.prepare()
         binding = await host.admit(thread.thread_id)
         assert binding is not None
         captures = await _stub_sandbox_runtime(app, thread.thread_id, monkeypatch)
@@ -493,3 +494,66 @@ async def test_management_publication_preserves_session_and_rejects_stale_head(t
         recovered = await environments._session_context(key)
         async with recovered.ownership() as saved:
             assert saved == session
+
+
+@pytest.mark.parametrize("blocked", ["startup", "control_lock", "lifecycle"])
+async def test_run_completes_without_waiting_for_browser(tmp_path, monkeypatch, browser_runtime, blocked):
+    import asyncio
+
+    from a13n_harness_ui.browser import HostBrowsers
+    from a13n_harness_ui.browser_context import BrowserContextCapability
+
+    entered, release = asyncio.Event(), asyncio.Event()
+    captured = []
+
+    async def launch(host):
+        # A connected CDP runtime is not ready until initialization finishes.
+        host.runtime = browser_runtime
+        entered.set()
+        await release.wait()
+
+    class Reconstructor(_CompletedReconstructor):
+        def reconstruct(self, composition, *, root_capabilities=(), **kwargs):
+            captured.append(root_capabilities)
+            return super().reconstruct(composition, root_capabilities=root_capabilities, **kwargs)
+
+    if blocked == "startup":
+        monkeypatch.setattr(HostBrowsers, "launch", launch)
+    async with open_harness_ui_app(
+        _settings(tmp_path / "state"),
+        configuration_path=_write_configuration(tmp_path),
+        host_mode="webui",
+        share_computer=True,
+    ) as app:
+        app._root_runs._executor._agents = Reconstructor()
+        thread = await app.create_thread()
+        host = app.browsers()
+        lock = None
+        try:
+            if blocked == "startup":
+                await asyncio.wait_for(entered.wait(), 5)
+                assert host.runtime_state().status == "starting"
+            else:
+                await host.prepare()
+                lock = host.control_lock if blocked == "control_lock" else host.lifecycle
+                await lock.acquire()
+            async with asyncio.timeout(5):
+                receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="Continue without waiting")
+                assert (await app.wait_root_operation(receipt.receipt_id)).status is RootOperationStatus.completed
+            context = next(cap for cap in captured[-1] if isinstance(cap, BrowserContextCapability))
+            tools = [cap for cap in captured[-1] if isinstance(cap, BrowserUseCapability)]
+            assert bool(tools) is (blocked != "startup")
+            if blocked == "startup":
+                assert context.backend is None and "starting" in context.unavailable
+                assert context.get_toolset() is None
+                release.set()
+                await host.prepare()
+                assert host.runtime_state().status == "ready"
+                assert context.backend is None  # Recovery cannot mutate an admitted Run.
+                receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="Try the next Run")
+                assert (await app.wait_root_operation(receipt.receipt_id)).status is RootOperationStatus.completed
+                assert any(isinstance(cap, BrowserUseCapability) for cap in captured[-1])
+        finally:
+            release.set()
+            if lock is not None:
+                lock.release()

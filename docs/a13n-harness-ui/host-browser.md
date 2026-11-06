@@ -12,12 +12,12 @@ Use the Host browser when the Agent needs to operate a website or you want to re
 ### First-time setup
 
 1. [Install Host components](#install-host-components) on the server, not on the device displaying WebUI. Leave computer sharing enabled when starting WebUI.
-2. Start WebUI with the default `browser.mode: auto`. Harness UI detects installed components and prepares the shared browser. If startup fails, open **Browser**, resolve the displayed required components, and choose **Try again**.
-3. Start a **Full Control** conversation and ask the Agent to browse. Tools are available automatically; first navigation or tab creation opens the conversation's window. You can also choose **Browser → Open browser**, including during a Run.
+2. Start WebUI with the default `browser.mode: auto`. Harness UI detects installed components and prepares the shared browser. Check **Settings → Environments → Browser** for runtime status and components. If startup fails, resolve the error and use **Retry browser startup**.
+3. Start a **Full Control** conversation and ask the Agent to browse. A Run receives browser tools when the browser is ready at admission; first navigation or tab creation opens the conversation's window. You can also choose **Browser → Open browser**, including during a Run.
 4. First live browser use reveals the viewer without moving keyboard focus. If Files/Changes is open or the screen is narrow, choose **View browser**. Closing the viewer keeps the browser running and prevents another automatic reveal in that Run.
 5. For login or manual correction on Linux, choose **Take control**, finish the action, then **Hand back to Agent**. On macOS, choose **Pause automation**, operate the browser locally on the Mac, then **Resume automation**.
 
-Browsing needs no per-conversation switch or manual Capability entry. Use **Advanced browser settings** for the global Auto/Disabled mode and executable overrides; save and restart after changing them. Ordinary chat, Files and Shell do not allocate conversation browser pages.
+Browsing needs no per-conversation switch or manual Capability entry. Use **Settings → Environments → Browser** for the global Auto/Disabled mode and executable overrides; save and restart after changing them. Ordinary chat, Files and Shell do not allocate conversation browser pages. Browser startup never holds up a Run. If the browser is unavailable, the Agent receives the reason and continues without browser tools. After recovery, start a later Run to use the browser; tools are not added to an active Run.
 
 ### Install Host components
 
@@ -51,7 +51,7 @@ Capture never falls back to the desktop, a personal browser, or another conversa
 
 ### Detect and select executables
 
-Automatic selection uses installed browsers, preferring Chrome, Chromium, then Edge. Linux searches the server's `PATH`; macOS checks `/Applications` and `~/Applications`. Install missing programs before **Scan** or **Try again**. Restart the server after changing its `PATH`.
+Automatic selection uses installed browsers, preferring Chrome, Chromium, then Edge. Linux searches the server's `PATH`; macOS checks `/Applications` and `~/Applications`. Install missing programs before **Scan** or **Retry browser startup**. Restart the server after changing its `PATH`.
 
 | Linux display choice | Required components                                | Resizing                      |
 | -------------------- | -------------------------------------------------- | ----------------------------- |
@@ -61,7 +61,9 @@ Automatic selection uses installed browsers, preferring Chrome, Chromium, then E
 
 Automatic discovery prefers a complete adapter in that order. WayVNC needs private Unix sockets and input-disabled viewing support. Linux desktops use private display/runtime resources, not the user's existing desktop. An X11 window manager such as Openbox, Fluxbox, IceWM, or twm supplies window dragging and close controls; basic browsing works without it.
 
-To override a path, open **Settings → General → Host browser**, choose a detected executable or **Other** with an absolute path, then save and restart. **Automatic** clears an override. Invalid explicit paths fail instead of falling back. **Scan** checks the current draft and refreshes required/optional component results without saving or launching. Successful detection can still be followed by a startup error, such as missing shared libraries or display permissions.
+To override a path, open **Settings → Environments → Browser**, choose a detected executable or **Other** with an absolute path, then save and restart. **Automatic** clears an override. Invalid explicit paths fail instead of falling back. **Scan** checks the current draft and refreshes required/optional component results without saving or launching. Successful detection can still be followed by a startup error, such as missing shared libraries or display permissions.
+
+**Active configuration** shows the settings used by this App. Saved browser changes take effect after restarting Harness UI. Retry uses the active configuration, not saved pending changes or the unsaved draft, and opens no conversation pages.
 
 On macOS, settings show optional **Window preview** instead of a VNC executable selector or password.
 

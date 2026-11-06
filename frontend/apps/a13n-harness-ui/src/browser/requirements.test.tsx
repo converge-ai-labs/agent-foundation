@@ -8,7 +8,6 @@ import {
 } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { i18n } from "../i18n";
-import { BrowserSetup } from "./setup";
 import {
   BrowserInstallInstructions,
   BrowserRequirements,
@@ -64,22 +63,4 @@ it("translates known setup labels while preserving control keys, paths, commands
   });
   expect(writeText).toHaveBeenCalledWith(command);
   expect(screen.getByText("已复制")).toBeTruthy();
-});
-
-it("preserves external setup errors that match translated UI copy across locale changes", async () => {
-  const retry = vi.fn();
-  render(
-    <BrowserSetup
-      loading={false}
-      error="Browser could not start."
-      retry={retry}
-    />,
-  );
-  await act(async () => {
-    await i18n.changeLanguage("zh-CN");
-  });
-  expect(screen.getByRole("alert").textContent).toBe(
-    "Browser could not start.",
-  );
-  expect(retry).not.toHaveBeenCalled();
 });

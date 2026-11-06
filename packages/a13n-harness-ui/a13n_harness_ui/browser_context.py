@@ -29,14 +29,17 @@ TAKEOVER = (
 class BrowserContextCapability(AbstractModelContextCapability):
     id = "a13n-harness-ui.browser-context"
 
-    def __init__(self, backend: HostBrowserBackend) -> None:
+    def __init__(self, backend: HostBrowserBackend | None = None, *, unavailable: str = "") -> None:
         self.backend = backend
+        self.unavailable = unavailable
 
     async def availability(self) -> bool:
+        if self.backend is None:
+            raise BrowserError(self.unavailable)
         browsers = self.backend.browsers
         await browsers.authorize(self.backend.thread_id)
         item = browsers.checked(self.backend.thread_id, self.backend.binding)
-        if browsers.runtime_failed or item.status != "ready" or item.scope is None or item.closed.is_set():
+        if not browsers.runtime_ready or item.status != "ready" or item.scope is None or item.closed.is_set():
             raise BrowserError(
                 "Browser binding is unavailable. Ask the user to reopen the browser; handback cannot repair it."
             )
@@ -47,11 +50,14 @@ class BrowserContextCapability(AbstractModelContextCapability):
             # No await between checking the gate and registering. Takeover/release use the same event loop.
             if await self.availability():
                 return {"status": "already_available", "message": AVAILABLE + " No reminder was registered."}
+            assert self.backend is not None
             return self.backend.browsers.handback.register(self.backend.thread_id)
         except (BrowserError, HarnessUiError) as exc:
             return {"status": "unavailable", "message": str(exc)}
 
-    def get_toolset(self) -> FunctionToolset[AgentContext]:
+    def get_toolset(self) -> FunctionToolset[AgentContext] | None:
+        if self.backend is None:
+            return None
         return FunctionToolset(
             tools=[
                 HarnessTool(
@@ -77,7 +83,11 @@ class BrowserContextCapability(AbstractModelContextCapability):
         try:
             message = AVAILABLE if await self.availability() else TAKEOVER
         except (BrowserError, HarnessUiError) as exc:
-            message = f"Browser unavailable: {exc} No handback reminder was registered."
+            message = f"Browser unavailable: {exc}"
+            if self.backend is None:
+                message += (
+                    " Browser tools are absent for this Run. Continue other work; a later Run can capture recovery."
+                )
         return ModelContextProjection(
             blocks=(
                 *projection.blocks,

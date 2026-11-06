@@ -556,7 +556,19 @@ function WorkbenchContent({
                 <Route path="/setup" element={<SetupPage />} />
                 <Route path="/projects" element={<ProjectsPage />} />
                 <Route path="/projects/:projectId" element={<ProjectPage />} />
-                <Route path="/settings" element={<GeneralSettings />} />
+                <Route
+                  path="/settings"
+                  element={
+                    location.hash === "#browser" ? (
+                      <Navigate
+                        to="/settings/environments?tab=browser"
+                        replace
+                      />
+                    ) : (
+                      <GeneralSettings />
+                    )
+                  }
+                />
                 <Route
                   path="/settings/appearance"
                   element={<AppearanceSettings />}
@@ -591,7 +603,19 @@ function WorkbenchContent({
                   path="/settings/connections"
                   element={<ConnectionsPage />}
                 />
-                <Route path="/settings/resources" element={<SourcesPage />} />
+                <Route
+                  path="/settings/resources"
+                  element={
+                    location.hash === "#browser" ? (
+                      <Navigate
+                        to="/settings/environments?tab=browser"
+                        replace
+                      />
+                    ) : (
+                      <SourcesPage />
+                    )
+                  }
+                />
                 <Route path="/settings/source" element={<SourcePage />} />
                 <Route path="/settings/accounts" element={<AccountsPage />} />
                 <Route
