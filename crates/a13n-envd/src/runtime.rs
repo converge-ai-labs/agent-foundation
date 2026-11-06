@@ -77,6 +77,21 @@ impl RuntimeState {
                     "stale runtime generation is not a real directory: {display_name}"
                 ));
             }
+            #[cfg(all(
+                target_os = "linux",
+                any(feature = "vm-boxlite", feature = "vm-microsandbox")
+            ))]
+            crate::execution::vm::reclaim_generation(&parent.join(&name))
+                .map_err(|error| format!("cannot reclaim stale VM generation: {error}"))?;
+            #[cfg(not(all(
+                target_os = "linux",
+                any(feature = "vm-boxlite", feature = "vm-microsandbox")
+            )))]
+            if parent.join(&name).join("vms").exists() {
+                return Err(
+                    "stale VM state requires a VM-enabled Envd build for reclamation".into(),
+                );
+            }
             parent_dir.remove_dir_all(&name).map_err(|error| {
                 format!("cannot clean stale runtime generation {display_name}: {error}")
             })?;
@@ -119,7 +134,16 @@ impl RuntimeState {
 
 impl Drop for RuntimeInner {
     fn drop(&mut self) {
-        let _ = self.parent_dir.remove_dir_all(&self.generation_name);
+        // VM journals outlive cancelled owner tasks and failed SDK cleanup.
+        // The next owner reclaims them under the same runtime-parent lock.
+        let vms = self._generation.join("vms");
+        let vm_state_absent = match fs::read_dir(vms) {
+            Ok(mut entries) => entries.next().is_none(),
+            Err(error) => error.kind() == io::ErrorKind::NotFound,
+        };
+        if vm_state_absent {
+            let _ = self.parent_dir.remove_dir_all(&self.generation_name);
+        }
         let _ = self._lock.unlock();
     }
 }
@@ -226,6 +250,30 @@ mod tests {
         }
         fs::remove_file(path).unwrap();
         assert_ne!(read().unwrap(), first);
+    }
+
+    #[test]
+    fn runtime_drop_preserves_pending_vm_recovery_records() {
+        let parent = tempfile::tempdir().unwrap();
+        let runtime = RuntimeState::prepare(parent.path()).unwrap();
+        let generation = runtime.generation().to_path_buf();
+        let session = generation.join("vms/session-test");
+        fs::create_dir_all(&session).unwrap();
+        fs::write(session.join("backend.json"), b"incomplete").unwrap();
+        drop(runtime);
+        assert!(session.join("backend.json").exists());
+        assert!(RuntimeState::prepare(parent.path()).is_err());
+        assert!(session.join("backend.json").exists());
+    }
+
+    #[test]
+    fn runtime_drop_removes_generation_after_vm_reclamation() {
+        let parent = tempfile::tempdir().unwrap();
+        let runtime = RuntimeState::prepare(parent.path()).unwrap();
+        let generation = runtime.generation().to_path_buf();
+        fs::create_dir(generation.join("vms")).unwrap();
+        drop(runtime);
+        assert!(!generation.exists());
     }
 
     #[test]

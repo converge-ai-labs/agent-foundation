@@ -10,7 +10,7 @@ from a13n_envd_client import (
     EIPSession,
     EIPSessionStateError,
 )
-from a13n_envd_client.eip.v1 import DeviceDescriptor, EgressPolicy
+from a13n_envd_client.eip.v1 import DeviceDescriptor, EgressPolicy, SessionConfiguration
 
 from a13n_harness.environment.envd_policy import EnvdBoundaryRequirement
 from a13n_harness.environment.session_recovery import EnvdSessionRecovery
@@ -94,9 +94,8 @@ class DeviceEIPSessionSource(EIPSessionSource):
                 yield session
         else:
             session = await self._device.open_session(
-                working_directory=working_directory,
+                configuration=SessionConfiguration(working_directory=working_directory, egress=egress),
                 required_methods=tuple(sorted(required_methods)),
-                egress=egress,
             )
             async with session:
                 yield session

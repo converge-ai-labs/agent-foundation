@@ -739,7 +739,7 @@ async fn managed_mtls_export_keeps_credentials_out_of_sessions() {
             "session.open",
             json!({
                 "expected_device_id":"otlp-device", "expected_generation":descriptor["generation"],
-                "working_directory":workspace
+                "configuration":{"working_directory":workspace}
             }),
         )
         .await;
@@ -821,7 +821,7 @@ async fn full_control_does_not_inherit_daemon_exporter_settings() {
         "session.open",
         json!({
             "expected_device_id":"otlp-device", "expected_generation":descriptor["generation"],
-            "working_directory":fixture.0
+            "configuration":{"working_directory":fixture.0}
         }),
     )
     .await;

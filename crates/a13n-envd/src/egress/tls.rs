@@ -35,9 +35,12 @@ impl Authority {
             KeyPair::generate().map_err(io::Error::other)?,
         )
         .map_err(io::Error::other)?;
-        let mut client = ClientConfig::builder()
-            .with_root_certificates(roots)
-            .with_no_client_auth();
+        let mut client =
+            ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
+                .with_safe_default_protocol_versions()
+                .map_err(io::Error::other)?
+                .with_root_certificates(roots)
+                .with_no_client_auth();
         // The HTTP parser owns one supported wire protocol; no opaque upgrades.
         client.alpn_protocols = vec![b"http/1.1".to_vec()];
         Ok(Self {
@@ -65,10 +68,13 @@ impl Authority {
             .signed_by(&key, &self.issuer)
             .map_err(io::Error::other)?;
         let private = PrivatePkcs8KeyDer::from(key.serialize_der());
-        let mut server = ServerConfig::builder()
-            .with_no_client_auth()
-            .with_single_cert(vec![certificate.der().clone()], private.into())
-            .map_err(io::Error::other)?;
+        let mut server =
+            ServerConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
+                .with_safe_default_protocol_versions()
+                .map_err(io::Error::other)?
+                .with_no_client_auth()
+                .with_single_cert(vec![certificate.der().clone()], private.into())
+                .map_err(io::Error::other)?;
         server.alpn_protocols = vec![b"http/1.1".to_vec()];
         Ok(Arc::new(server))
     }
@@ -105,7 +111,9 @@ mod tests {
             roots.add(certificate.unwrap()).unwrap();
         }
         let client = Arc::new(
-            ClientConfig::builder()
+            ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
+                .with_safe_default_protocol_versions()
+                .unwrap()
                 .with_root_certificates(roots)
                 .with_no_client_auth(),
         );

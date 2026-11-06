@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 from a13n_envd_client import EIPMethodError
-from a13n_envd_client.eip.v1 import DirectoryListParams
+from a13n_envd_client.eip.v1 import DirectoryListParams, SessionConfiguration
 from a13n_harness.environment.commands import ArgvCommand, CommandRequest
 from a13n_harness.environment.errors import EnvironmentProviderError
 from a13n_harness.environment.models import EnvironmentError
@@ -181,7 +181,9 @@ async def test_stdio_recovery_uses_common_session_source(binary, tmp_path, close
     )
     async with runtime:
         device = await runtime.acquire_device()
-        original = await device.open_session(working_directory=device_path(tmp_path))
+        original = await device.open_session(
+            configuration=SessionConfiguration(working_directory=device_path(tmp_path))
+        )
         recovery = EnvdSessionRecovery(
             EnvdSessionState(
                 target=device.descriptor.device_id,

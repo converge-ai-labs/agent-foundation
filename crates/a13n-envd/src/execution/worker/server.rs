@@ -27,6 +27,7 @@ pub(super) async fn serve<R, W>(
     config: Config,
     generation: u64,
     session_id: String,
+    staging: &[crate::filesystem::StagingDirectory],
 ) -> io::Result<()>
 where
     R: AsyncRead + Unpin,
@@ -38,9 +39,14 @@ where
     let max_data = config.limits.max_transfer_frame_bytes as usize;
     let (controls, responses) = mpsc::channel(capacity);
     let (data, frames) = mpsc::channel(config.limits.max_concurrent_file_transfers as usize * 2);
-    let (daemon, carrier) =
-        Daemon::isolated_session(&config, generation, session_id.clone(), data.clone())
-            .map_err(io::Error::other)?;
+    let (daemon, carrier) = Daemon::isolated_session(
+        &config,
+        generation,
+        session_id.clone(),
+        data.clone(),
+        staging,
+    )
+    .map_err(io::Error::other)?;
     let mut incoming = DataDispatcher::new(daemon.clone(), carrier.clone(), data.clone(), &config);
     let mut output = tokio::spawn(stdio::writer_loop(
         writer,
@@ -54,7 +60,12 @@ where
     reply(
         &controls,
         0,
-        config.default_working_directory.clone().into(),
+        serde_json::to_value(
+            daemon
+                .worker_ready(&session_id)
+                .map_err(|_| io::Error::other("worker Session is unavailable"))?,
+        )
+        .map_err(io::Error::other)?,
     )
     .await?;
     // Move this same buffer through read_next so prefetched frames survive dispatch.
@@ -230,6 +241,8 @@ mod tests {
     #[tokio::test]
     async fn private_resource_snapshot_uses_the_worker_engine() {
         let config = Config::for_test("device-resources");
+        let cwd = config.default_working_directory.clone();
+        let system_info = crate::monitoring::system_info(&config);
         let limits = config.limits.clone();
         let (client, server) = tokio::io::duplex(65536);
         let (reader, writer) = tokio::io::split(server);
@@ -239,11 +252,24 @@ mod tests {
             config,
             1,
             "session-resources-1".into(),
+            &[],
         ));
         let (reader, writer) = tokio::io::split(client);
         let client = super::super::client::Client::connect(reader, writer, &limits)
             .await
             .unwrap();
+        assert_eq!(client.ready.working_directory, cwd);
+        assert_eq!(client.ready.path_style, crate::device_path::path_style());
+        assert_eq!(client.ready.system_info, system_info);
+        assert!(client.ready.shell_profiles.is_empty());
+        assert!(
+            client
+                .ready
+                .available_methods
+                .iter()
+                .any(|method| method == "environment.readiness")
+        );
+        assert!(!client.ready.execution_features.signal_terminate);
         let resources = serde_json::to_value(client.resources().await.unwrap()).unwrap();
         assert_eq!(
             resources,
@@ -268,7 +294,14 @@ mod tests {
         config.default_working_directory = crate::device_path::from_native(&workspace).unwrap();
         let (client, server) = tokio::io::duplex(4096);
         let (reader, writer) = tokio::io::split(server);
-        let task = tokio::spawn(serve(reader, writer, config, 1, "session-framing-1".into()));
+        let task = tokio::spawn(serve(
+            reader,
+            writer,
+            config,
+            1,
+            "session-framing-1".into(),
+            &[],
+        ));
         let (mut reader, mut writer) = tokio::io::split(client);
         assert_eq!(received(&mut reader).await.ticket, 0);
         for (ticket, method, params) in [
@@ -342,7 +375,14 @@ mod tests {
         let config = Config::for_test("device-framing");
         let (client, server) = tokio::io::duplex(4096);
         let (reader, writer) = tokio::io::split(server);
-        let task = tokio::spawn(serve(reader, writer, config, 1, "session-framing-1".into()));
+        let task = tokio::spawn(serve(
+            reader,
+            writer,
+            config,
+            1,
+            "session-framing-1".into(),
+            &[],
+        ));
         let (mut reader, mut writer) = tokio::io::split(client);
         assert_eq!(received(&mut reader).await.ticket, 0);
         // Prefetching Close with Detach must not lose the second frame.
@@ -367,7 +407,14 @@ mod tests {
         let config = Config::for_test("device-framing");
         let (client, server) = tokio::io::duplex(65536);
         let (reader, writer) = tokio::io::split(server);
-        let task = tokio::spawn(serve(reader, writer, config, 1, "session-framing-1".into()));
+        let task = tokio::spawn(serve(
+            reader,
+            writer,
+            config,
+            1,
+            "session-framing-1".into(),
+            &[],
+        ));
         let (mut reader, mut writer) = tokio::io::split(client);
         assert_eq!(received(&mut reader).await.ticket, 0);
         writer
@@ -457,7 +504,14 @@ mod tests {
         let config = Config::for_test("device-framing");
         let (client, server) = tokio::io::duplex(4096);
         let (reader, writer) = tokio::io::split(server);
-        let task = tokio::spawn(serve(reader, writer, config, 1, "session-framing-1".into()));
+        let task = tokio::spawn(serve(
+            reader,
+            writer,
+            config,
+            1,
+            "session-framing-1".into(),
+            &[],
+        ));
         let (mut reader, mut writer) = tokio::io::split(client);
         assert_eq!(received(&mut reader).await.ticket, 0);
         writer

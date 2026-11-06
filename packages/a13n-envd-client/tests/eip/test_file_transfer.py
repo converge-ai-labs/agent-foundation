@@ -35,11 +35,14 @@ from a13n_envd_client.eip.v1 import (
     FileWriterOpenResult,
     JsonRpcRequest,
     JsonRpcSuccessResponse,
+    OperatingSystem,
     OperationReceipt,
+    PathStyle,
     ReceiptOutcome,
     ReceiptStage,
     SessionDescriptor,
     SessionLifecyclePolicy,
+    SystemInfo,
     decode_model,
     encode_model,
 )
@@ -136,6 +139,8 @@ def descriptor() -> SessionDescriptor:
         session_id="ses-transfer",
         generation=1,
         working_directory="/",
+        path_style=PathStyle.POSIX,
+        system_info=SystemInfo(os=OperatingSystem.LINUX),
         owner_epoch=1,
         lifecycle=SessionLifecyclePolicy(idle_timeout_ms=30_000),
         available_methods=(

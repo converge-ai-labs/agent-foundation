@@ -44,6 +44,111 @@ impl Drop for ChildGuard {
 }
 
 impl Runtime {
+    #[cfg(all(
+        target_os = "linux",
+        any(feature = "vm-boxlite", feature = "vm-microsandbox")
+    ))]
+    pub async fn start_vm(
+        vm: crate::eip::VmIsolation,
+        worker: WorkerConfig,
+        config: crate::config::Config,
+        mut reservation: crate::daemon::execution::Reservation,
+    ) -> io::Result<Self> {
+        use super::vm::{Backend, Plan};
+        let state = config
+            .runtime
+            .clone()
+            .ok_or_else(|| io::Error::other("VM workers require a runtime directory"))?;
+        let parent = state.generation().join("vms");
+        std::fs::create_dir_all(&parent)?;
+        std::fs::File::open(state.generation())?.sync_all()?;
+        let directory = tempfile::Builder::new()
+            .prefix("session-")
+            .tempdir_in(parent)?;
+        let executable = std::env::current_exe()?;
+        let mut protected = config.bootstrap_files.clone();
+        protected.push(state.generation().to_path_buf());
+        super::vm::persist_backend(directory.path(), vm.backend)?;
+        let directory = directory.keep();
+        // Guest close acknowledgements do not authorize host storage release.
+        let clean = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let physically_clean = clean.clone();
+        reservation.started = true;
+        let (ready, receive_ready) = oneshot::channel();
+        let (stop, stopped) = oneshot::channel();
+        let (dead_sender, dead) = watch::channel(false);
+        // The task owns creation before the first SDK await. Cancelling session.open
+        // drops the receiver, never a partially completed SDK create/start future.
+        tokio::spawn(async move {
+            let mut backend = None;
+            let connected = async {
+                let mut plan = Plan::prepare(
+                    &vm,
+                    worker,
+                    &directory,
+                    &executable,
+                    &config.sandbox,
+                    &config.grant_sources,
+                    &protected,
+                )
+                .await?;
+                backend = Some(Backend::new(plan.backend, &plan.home).await?);
+                backend.as_mut().unwrap().start(&plan).await?;
+                plan.connect().await
+            }
+            .await;
+            match connected {
+                Ok(client) => {
+                    let mut closed = client.closed();
+                    if ready.send(Ok(client)).is_ok() {
+                        tokio::select! { _ = stopped => {}, _ = closed.changed() => {} }
+                    }
+                }
+                Err(error) => {
+                    let _ = ready.send(Err(error));
+                }
+            }
+            // Capacity stays owned until VM removal and registered staging cleanup.
+            if let Some(backend) = &mut backend {
+                while backend.remove().await.is_err() {
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                }
+            }
+            drop(backend);
+            let reclaimed = tokio::task::spawn_blocking(move || {
+                while super::vm::staging::reclaim(&directory).is_err() {
+                    std::thread::sleep(Duration::from_secs(1));
+                }
+                loop {
+                    match std::fs::remove_dir_all(&directory) {
+                        Ok(()) => break,
+                        Err(error) if error.kind() == io::ErrorKind::NotFound => break,
+                        Err(_) => std::thread::sleep(Duration::from_secs(1)),
+                    }
+                }
+            })
+            .await;
+            if reclaimed.is_err() {
+                return;
+            }
+            reservation
+                .clean
+                .store(true, std::sync::atomic::Ordering::Release);
+            physically_clean.store(true, std::sync::atomic::Ordering::Release);
+            drop(reservation);
+            drop(state);
+            dead_sender.send_replace(true);
+        });
+        let client = receive_ready.await.map_err(io::Error::other)??;
+        Ok(Self {
+            client,
+            policy: None,
+            clean,
+            stop: Some(stop),
+            dead,
+        })
+    }
+
     #[cfg(windows)]
     pub async fn start(
         mut config: WorkerConfig,
@@ -188,7 +293,8 @@ impl Runtime {
         });
         let (socket, network, death) = boot.await.map_err(io::Error::other)??;
         socket.set_nonblocking(true)?;
-        let death = AsyncFd::new(death)?;
+        // SAFETY: AsyncFd owns this pidfd; its descriptor stays open and unchanged.
+        let death = unsafe { AsyncFd::register(death) }.map_err(io::Error::from)?;
         let socket = tokio::net::UnixStream::from_std(socket)?;
         let (reader, writer) = socket.into_split();
         let client = tokio::time::timeout(

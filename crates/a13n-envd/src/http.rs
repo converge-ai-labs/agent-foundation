@@ -845,10 +845,14 @@ pub(crate) fn build_tls_acceptor(http: &HttpConfig) -> io::Result<Option<TlsAcce
     let key = rustls_pemfile::private_key(&mut key_reader)
         .map_err(|_| invalid_data("invalid HTTP TLS private key file"))?
         .ok_or_else(|| invalid_data("HTTP TLS private key file contains no key"))?;
-    let server = rustls::ServerConfig::builder()
-        .with_no_client_auth()
-        .with_single_cert(certificates, key)
-        .map_err(|_| invalid_data("HTTP TLS certificate and private key do not match"))?;
+    let server = rustls::ServerConfig::builder_with_provider(Arc::new(
+        rustls::crypto::ring::default_provider(),
+    ))
+    .with_safe_default_protocol_versions()
+    .map_err(io::Error::other)?
+    .with_no_client_auth()
+    .with_single_cert(certificates, key)
+    .map_err(|_| invalid_data("HTTP TLS certificate and private key do not match"))?;
     Ok(Some(TlsAcceptor::from(Arc::new(server))))
 }
 

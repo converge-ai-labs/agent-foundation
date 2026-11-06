@@ -202,6 +202,8 @@ class ExecutionBackend(StrEnum):
     LINUX_BUBBLEWRAP = "linux_bubblewrap"
     MACOS_SEATBELT = "macos_seatbelt"
     WINDOWS_MXC = "windows_mxc"
+    BOXLITE = "boxlite"
+    MICROSANDBOX = "microsandbox"
 
 
 class FileKind(StrEnum):
@@ -321,6 +323,11 @@ class TerminationReason(StrEnum):
     CANCELLED = "cancelled"
     OUTPUT_LIMIT = "output_limit"
     BACKEND_LOST = "backend_lost"
+
+
+class VmBackend(StrEnum):
+    BOXLITE = "boxlite"
+    MICROSANDBOX = "microsandbox"
 
 
 EIP_ERROR_CODES: Final[Mapping[ErrorType, int]] = MappingProxyType(
@@ -847,6 +854,10 @@ class MemoryEvents(EIPModel):
     oom_group_kill: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
 
 
+class NativeIsolation(EIPModel):
+    mode: Literal["native"]
+
+
 class NetworkInterfaceMetrics(EIPModel):
     identity: Annotated[StrictStr, Field(max_length=128)]
     received_bytes: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
@@ -1068,6 +1079,12 @@ class UnlimitedCpuLimit(EIPModel):
 
 class UnlimitedMemoryLimit(EIPModel):
     kind: Literal["unlimited"]
+
+
+class VmMount(EIPModel):
+    source: AbsoluteEIPPath
+    target: AbsoluteEIPPath
+    access: GrantAccess
 
 
 class ArgvCommand(EIPModel):
@@ -1368,15 +1385,6 @@ type SandboxPolicy = Annotated[
 ]
 
 
-class SessionOpenParams(EIPModel):
-    expected_device_id: Identifier
-    expected_generation: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)]
-    working_directory: AbsoluteEIPPath | None = None
-    required_methods: tuple[StrictStr, ...] = ()
-    egress: EgressPolicy | None = None
-    lifecycle: SessionLifecyclePolicy | None = None
-
-
 class ShellExecResult(EIPModel):
     status: ProcessStatus
     output: ProcessOutput
@@ -1400,6 +1408,15 @@ class SystemMetrics(EIPModel):
     process_count: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
     thread_count: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
     handle_count: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+
+
+class VmIsolation(EIPModel):
+    mode: Literal["vm"]
+    backend: VmBackend
+    image: Annotated[StrictStr, Field(min_length=1, max_length=4096)]
+    cpus: Annotated[StrictInt, Field(ge=1, le=255)]
+    memory_mib: Annotated[StrictInt, Field(ge=128, le=4294967295)]
+    mounts: tuple[VmMount, ...] = ()
 
 
 class CgroupMetrics(EIPModel):
@@ -1436,6 +1453,7 @@ class ExecutionBoundary(EIPModel):
     privilege_gain_blocked: StrictBool
     backend: ExecutionBackend
     policy_digest: Sha256Digest
+    vm: VmIsolation | None = None
 
 
 class MetricsSample(EIPModel):
@@ -1509,6 +1527,14 @@ class SessionDescriptor(EIPModel):
     egress: EgressStatus | None = None
     boundary: ExecutionBoundary
     owner_epoch: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)]
+    path_style: PathStyle
+    system_info: SystemInfo
+
+
+type SessionIsolation = Annotated[
+    NativeIsolation | VmIsolation,
+    Field(discriminator="mode"),
+]
 
 
 class SessionOpenResult(EIPModel):
@@ -1569,6 +1595,23 @@ class EnvironmentDescribeResult(EIPModel):
 class InitializeResult(EIPModel):
     server: EIPServerInfo
     descriptor: DeviceDescriptor
+
+
+class SessionConfiguration(EIPModel):
+    working_directory: AbsoluteEIPPath | None = None
+    sandbox: SandboxPolicy | None = None
+    egress_mode: EgressMode | None = None
+    egress: EgressPolicy | None = None
+    lifecycle: SessionLifecyclePolicy | None = None
+    commands: StrictBool | None = None
+    isolation: SessionIsolation | None = None
+
+
+class SessionOpenParams(EIPModel):
+    expected_device_id: Identifier
+    expected_generation: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)]
+    required_methods: tuple[StrictStr, ...] = ()
+    configuration: SessionConfiguration
 
 
 class DeviceDescribeResult(EIPModel):
@@ -1656,6 +1699,7 @@ InitializeParams.model_rebuild()
 LimitedCpuLimit.model_rebuild()
 LimitedMemoryLimit.model_rebuild()
 MemoryEvents.model_rebuild()
+NativeIsolation.model_rebuild()
 NetworkInterfaceMetrics.model_rebuild()
 NetworkMetrics.model_rebuild()
 OperationCancelParams.model_rebuild()
@@ -1694,6 +1738,7 @@ ShellProfileDescriptor.model_rebuild()
 SystemInfo.model_rebuild()
 UnlimitedCpuLimit.model_rebuild()
 UnlimitedMemoryLimit.model_rebuild()
+VmMount.model_rebuild()
 ArgvCommand.model_rebuild()
 ComputerActionResult.model_rebuild()
 ComputerClickParams.model_rebuild()
@@ -1737,9 +1782,9 @@ Pressures.model_rebuild()
 ProcessCloseStdinParams.model_rebuild()
 ProcessOutput.model_rebuild()
 RestrictedSandbox.model_rebuild()
-SessionOpenParams.model_rebuild()
 ShellExecResult.model_rebuild()
 SystemMetrics.model_rebuild()
+VmIsolation.model_rebuild()
 CgroupMetrics.model_rebuild()
 CommandRequest.model_rebuild()
 ExecutionBoundary.model_rebuild()
@@ -1760,6 +1805,8 @@ DeviceMetricsResult.model_rebuild()
 EIPErrorData.model_rebuild()
 EnvironmentDescribeResult.model_rebuild()
 InitializeResult.model_rebuild()
+SessionConfiguration.model_rebuild()
+SessionOpenParams.model_rebuild()
 DeviceDescribeResult.model_rebuild()
 EIPError.model_rebuild()
 
@@ -1898,6 +1945,7 @@ __all__ = [
     "MemoryEvents",
     "MemoryLimit",
     "MetricsSample",
+    "NativeIsolation",
     "NetworkInterfaceMetrics",
     "NetworkMetrics",
     "OperatingSystem",
@@ -1961,9 +2009,11 @@ __all__ = [
     "SessionAttachParams",
     "SessionCloseParams",
     "SessionCloseResult",
+    "SessionConfiguration",
     "SessionDescriptor",
     "SessionDetachParams",
     "SessionDetachResult",
+    "SessionIsolation",
     "SessionKeepaliveParams",
     "SessionKeepaliveResult",
     "SessionLifecyclePolicy",
@@ -1978,4 +2028,7 @@ __all__ = [
     "TerminationReason",
     "UnlimitedCpuLimit",
     "UnlimitedMemoryLimit",
+    "VmBackend",
+    "VmIsolation",
+    "VmMount",
 ]

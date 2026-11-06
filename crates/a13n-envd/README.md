@@ -4,15 +4,15 @@
 
 ## Device and Session runtime
 
-The daemon implements EIP 0.4 over trusted stdio, authenticated HTTP(S), and outbound reverse WebSocket. One daemon owns a Device generation. Multiple independent Sessions share its account and filesystem while keeping separate operations, process handles, transfers, receipts, and retained output.
+The daemon implements EIP 0.4 over trusted stdio, authenticated HTTP(S), and outbound reverse WebSocket. One daemon owns a Device generation. Multiple independent Sessions select native or optional VM execution within its launch authority, with separate operations, process handles, transfers, receipts, and retained output.
 
 - `initialize` negotiates the Device connection without creating a Session.
 - `device.describe` and bounded `directory.list` work without a Session.
-- `session.open` captures an existing Device-absolute working directory and checks required methods.
+- `session.open.configuration` captures the Session boundary, working directory, command availability and lifecycle, then checks required methods.
 - Session control and data frames carry the exact Session selector. Closing a Session cleans up only its resources, not its siblings or the Device.
 - Explicit same-Session attachment can resume an existing owner before Session expiry with a newer owner epoch; opening a new Session never replays work or inherits process handles.
 
-Paths address the Device filesystem, not exported mounts. POSIX uses native absolute paths. Windows uses `/C:/...` and `/UNC/server/share/...`; directory discovery at `/` lists available volume roots. The fixed working directory is a default for commands and relative Host routing, not a filesystem access boundary.
+Device paths address the Host filesystem; Session paths address the selected native or guest filesystem. POSIX uses native absolute paths. Windows uses `/C:/...` and `/UNC/server/share/...`; directory discovery at `/` lists available volume roots. The fixed working directory is a default for commands and relative Host routing, not a filesystem access boundary.
 
 The runtime supports bounded text and binary file operations, complete-candidate publication, structured foreground commands, background processes, stdin, retained stdout/stderr, cancellation, receipts, and local port observation. Opt-in [computer use](../../docs/a13n-envd/computer-use.md) adds screenshots and bounded desktop input on macOS, Linux X11, and Windows. It requires disabled Sandbox, inherited egress, and native desktop readiness. Each descriptor advertises exact methods and platform features. Session and aggregate Device quotas bound retained resources. A timeout after dispatch does not prove a mutation failed; clients must reconcile supported operations rather than blindly replay them.
 
@@ -61,6 +61,53 @@ Sessions use the configured execution identity and selected Sandbox/egress bound
 Process cleanup owns the initial Unix process group or a non-breakaway Windows Job. Windows assigns a suspended child before execution and retains kill-on-close ownership. Platform limitations remain explicit in descriptors. Neither a process group nor a Job implies filesystem or network containment.
 
 Complete-candidate writes publish via a same-filesystem rename after verification. They do not promise exclusive filesystem access or compare-and-swap: commands and external writers may race. The [operations guide](../../docs/a13n-envd/operations.md) explains capacity, output evidence, cleanup, and uncertain outcomes.
+
+## Optional VM workers (Linux)
+
+Build one or both embedded Rust SDK backends:
+
+```bash
+cargo build --locked -p a13n-envd --features vm-boxlite,vm-microsandbox
+```
+
+The default build remains native-only. VM execution requires Linux KVM, the selected SDK's runtime assets and image-registry access. BoxLite's build script prepares its runtime assets; follow that SDK's build prerequisites when building from source. Images must provide a compatible Linux userspace for the Envd executable and `/bin/sh`.
+
+Pass this object as `session.open.configuration` on a Device with inherited networking and Full Control commands:
+
+```json
+{
+  "working_directory": "/work",
+  "isolation": {
+    "mode": "vm",
+    "backend": "boxlite",
+    "image": "ubuntu:24.04",
+    "cpus": 1,
+    "memory_mib": 512,
+    "mounts": [
+      {"source": "/absolute/host/workspace", "target": "/work", "access": "read_write"}
+    ]
+  }
+}
+```
+
+Use `microsandbox` for the other backend. Both run the ordinary Session engine as guest root and report guest POSIX paths and methods. Native Sessions and multiple VMs can coexist. Host environment variables are not inherited. Controlled/deny networking, nested native Sandbox and guest computer use are unsupported and fail without fallback.
+
+VMs use standard upstream path-based mounts. Keep source paths and their ancestors stable during startup: concurrent replacement can expose a different Host object than the intended grant. The [execution contract](../../spec/a13n-envd/07-execution-isolation.md#vm-sessions) describes this risk and the deployment's responsibility. Read-only exports apply to file APIs and guest-root commands alike.
+
+Session close, expiry or guest failure removes the VM, private runtime storage and registered upload staging. Daemon restart reclaims journaled VM state before publishing a new generation. Files published to Host mounts survive; private guest changes do not. Files moved or hardlinked outside registered staging are ordinary workspace data. Execution is never replayed after VM loss.
+
+Opt-in real integration checks require the built backends and KVM:
+
+```bash
+strip -o target/debug/a13n-envd-vm-test target/debug/a13n-envd
+python3 crates/a13n-envd/tests/vm_linux.py target/debug/a13n-envd-vm-test boxlite
+python3 crates/a13n-envd/tests/vm_linux.py target/debug/a13n-envd-vm-test microsandbox
+A13N_ENVD_TEST_BINARY="$PWD/target/debug/a13n-envd-vm-test" \
+  A13N_ENVD_VM_TEST_BACKENDS=boxlite,microsandbox \
+  uv run --locked pytest packages/a13n-envd-client/tests/eip/test_vm_e2e.py
+```
+
+The stripped copy avoids filling guest temporary storage during BoxLite bootstrap; keep Cargo's original binary intact.
 
 ## Rust integration boundary
 

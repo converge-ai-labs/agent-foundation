@@ -35,6 +35,10 @@ impl std::ops::Deref for Dir {
 }
 
 impl Dir {
+    pub(crate) fn try_clone(&self) -> io::Result<Self> {
+        self.0.try_clone().map(Self)
+    }
+
     pub(crate) fn open_ambient_dir(
         path: impl AsRef<Path>,
         authority: cap_std::AmbientAuthority,

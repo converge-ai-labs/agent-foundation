@@ -660,9 +660,13 @@ pub(crate) fn tls_client_config(
             "no platform TLS trust roots are available",
         ));
     }
-    let tls = rustls::ClientConfig::builder()
-        .with_root_certificates(roots)
-        .with_no_client_auth();
+    let tls = rustls::ClientConfig::builder_with_provider(Arc::new(
+        rustls::crypto::ring::default_provider(),
+    ))
+    .with_safe_default_protocol_versions()
+    .map_err(io::Error::other)?
+    .with_root_certificates(roots)
+    .with_no_client_auth();
     Ok(Arc::new(tls))
 }
 

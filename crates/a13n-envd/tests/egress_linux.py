@@ -128,8 +128,10 @@ class Device:
             {
                 "expected_device_id": self.descriptor["device_id"],
                 "expected_generation": self.descriptor["generation"],
-                "working_directory": str(self.workspace),
-                **({"egress": policy} if policy is not None else {}),
+                "configuration": {
+                    "working_directory": str(self.workspace),
+                    **({"egress": policy} if policy is not None else {}),
+                },
             },
         )["descriptor"]
         self.session = result["session_id"]

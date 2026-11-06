@@ -47,7 +47,8 @@ pub(super) fn socket() -> io::Result<OwnedFd> {
 }
 
 pub(crate) async fn serve(fd: OwnedFd, routes: Arc<Routes>, policy: Arc<Policy>) -> io::Result<()> {
-    let socket = Arc::new(AsyncFd::new(fd)?);
+    // SAFETY: AsyncFd owns this OwnedFd; its descriptor stays open and unchanged.
+    let socket = Arc::new(unsafe { AsyncFd::register(fd) }.map_err(io::Error::from)?);
     let mut flows = BTreeMap::<Flow, mpsc::Sender<Vec<u8>>>::new();
     let mut tasks = JoinSet::new();
     let mut buffer = vec![0; 65535];

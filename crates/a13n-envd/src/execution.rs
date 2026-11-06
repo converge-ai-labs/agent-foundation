@@ -16,6 +16,11 @@ pub(crate) mod namespace;
 pub(crate) mod runtime;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 mod state;
+#[cfg(all(
+    target_os = "linux",
+    any(feature = "vm-boxlite", feature = "vm-microsandbox")
+))]
+pub(crate) mod vm;
 #[cfg(windows)]
 pub(crate) mod windows;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]

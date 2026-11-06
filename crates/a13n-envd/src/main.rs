@@ -42,6 +42,14 @@ fn main() {
         }
         return;
     }
+    #[cfg(target_os = "linux")]
+    if arguments.as_slice() == [OsString::from("--internal-vm-worker")] {
+        if let Err(error) = a13n_envd::run_internal_vm_worker() {
+            eprintln!("a13n-envd failed: VM worker unavailable: {error}");
+            std::process::exit(1);
+        }
+        return;
+    }
     if arguments.as_slice() == [OsString::from("--internal-session-worker")] {
         if let Err(error) = a13n_envd::run_internal_session_worker() {
             eprintln!("a13n-envd failed: Session worker unavailable: {error}");

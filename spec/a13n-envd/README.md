@@ -4,7 +4,7 @@
 
 `a13n-envd` is a client-neutral device daemon for files, shells, processes, output, transfers and optional native computer use. One daemon normally serves a machine or outer sandbox. Its trusted Host connection carries multiple independent Sessions, each with a Host-selected working directory and Session-owned resources.
 
-HTTP, reverse WebSocket and stdio share EIP 0.4 semantics. Device connection lifetime is independent of individual Sessions. The Host selects immutable Device identity, Sandbox grants and egress mode; Envd applies them to complete Session workers and directory discovery. The Host owns the outer deployment; cwd is not filesystem or shell isolation. Periodic and high-water collection reclaim abandoned Sessions and completed history under generous finite resource bounds.
+HTTP, reverse WebSocket and stdio share EIP 0.4 semantics. Device connection lifetime is independent of individual Sessions. The Host selects immutable Device launch authority and each Session's configuration within it. Envd applies the effective native or VM boundary to complete Session workers; Device directory discovery retains launch defaults. The Host owns the outer deployment; cwd is not filesystem or shell isolation. Periodic and high-water collection reclaim abandoned Sessions and completed history under generous finite resource bounds.
 
 Harness is one consumer through the provider-neutral [Environment integration](../a13n-harness/08-environment-integration.md). The [Environment Providers](../a13n-harness/08a-environment-execution.md) open independent execution Sessions while Host runtimes can reuse Device connections. The [execution paths](../a13n-harness/08b-environment-providers.md#execution-backend-boundary) distinguish native Local/Docker/E2B Files & Shell from general Envd execution, which provides OS sandbox and Egress execution policy enforcement and advanced Computer use and metrics collection. The low-level client does not discover, install or launch daemons.
 
@@ -36,7 +36,7 @@ Harness is one consumer through the provider-neutral [Environment integration](.
 
 - The Host owns Device registration/authentication, working-directory selection, Provider selection, launch security and durable state.
 - Envd owns Session routing, native operations and cleanup, bounded output/transfer storage and aggregate accounting.
-- A Session owns its processes, output, transfers and operation evidence. No resource import or independent resource-lease system exists.
+- A Session owns its processes, output, transfers, operation evidence and any disposable VM. No resource import or independent resource-lease system exists.
 - The carrier owns message delivery, not native command lifetime. Same-Session reattachment is bounded and never implies mutation replay or transfer resume.
 - Harness owns Run-local mounts, action ceilings and model-facing references, not Devices or EIP sockets.
 - Workspace files survive Session cleanup. Session history is temporary, reclaimable and never a durable artifact guarantee.

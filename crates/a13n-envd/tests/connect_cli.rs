@@ -328,7 +328,7 @@ async fn connect_pairs_once_runs_native_shell_and_reuses_credential_after_restar
             .unwrap()
             > 0
     );
-    let opened = call(&mut socket, None, "session.open", json!({"expected_device_id":device_id, "expected_generation":descriptor["generation"], "working_directory":descriptor["default_working_directory"], "required_methods":["shell.exec"]})).await;
+    let opened = call(&mut socket, None, "session.open", json!({"expected_device_id":device_id, "expected_generation":descriptor["generation"], "configuration":{"working_directory":descriptor["default_working_directory"]}, "required_methods":["shell.exec"]})).await;
     let session = opened["descriptor"]["session_id"].as_str().unwrap();
     assert_eq!(
         opened["descriptor"]["shell_profiles"][0]["profile_id"],

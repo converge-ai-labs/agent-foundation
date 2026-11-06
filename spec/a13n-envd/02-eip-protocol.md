@@ -58,6 +58,8 @@ class SessionDescriptor(BaseModel):
     generation: int
     session_id: str
     owner_epoch: int
+    path_style: Literal["posix", "windows"]
+    system_info: SystemInfo
     working_directory: str
     available_methods: tuple[str, ...]
     limits: EIPLimits
@@ -74,9 +76,11 @@ class SessionOpenResult(BaseModel):
 
 `session.open` checks the observed identity/generation and required methods, resolves its working directory and reserves one Session. Omitted/null `working_directory` selects the advertised Device default; an explicit path overrides it. Missing or inaccessible directories fail without creation or fallback. The result contains the exact resolved working directory, immutable for that Session. A working directory is not a filesystem access boundary.
 
-The Host selects folders within the Device's immutable execution boundary. Cwd validation, directory discovery, commands and file operations use the same grants and identity. Device and Session descriptors expose `boundary`; Session publication follows successful worker preparation. Controlled Devices require explicit `egress.destinations` on Session open; inherit and deny reject Session policy. The [execution contract](07-execution-isolation.md) owns the tagged policies and descriptor digest. `required_methods` is a compatibility assertion, not a grant. Host/Harness tool policy controls what the model may invoke. Limits describe actual finite operation capacity, not a separate security policy.
+The Host selects each Session's configuration within the launch authority ceiling. Cwd validation, commands and file operations use that Session's grants and identity; Device directory discovery uses launch authority. Device and Session descriptors expose their respective `boundary`; Session publication follows successful worker preparation. Controlled Sessions require explicit `configuration.egress.destinations` on Session open; inherit and deny reject Session policy. The [execution contract](07-execution-isolation.md) owns the tagged policies and descriptor digest. `required_methods` is a compatibility assertion, not a grant. Host/Harness tool policy controls what the model may invoke. Limits describe actual finite operation capacity, not a separate security policy.
 
 Device methods and Session lifecycle controls are bounded and ledger-external. An uncertain open is not automatically retried; an unclaimed Session expires. Changing the Session default requires a new Session. Per-command cwd overrides do not mutate it. Host Run acceptance captures an explicit directory before execution; retries and recovery never reselect a mutable Device default.
+
+A Session descriptor reports the execution backend's path style, system information, resolved cwd, methods, shell profiles and execution features after preparation. Consumers use these Session facts for file and command semantics. Device information describes the outer launcher. The launcher owns the effective isolation boundary and Session identity; worker readiness supplies execution facts, not authority to attest its own isolation.
 
 ## Readiness and Session Control
 

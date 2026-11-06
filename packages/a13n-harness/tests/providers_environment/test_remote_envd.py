@@ -157,7 +157,7 @@ class Device:
         self.descriptor = SimpleNamespace(device_id=identity, available_methods=("file.read_text",))
         self.sessions = []
 
-    async def open_session(self, *, required_methods, working_directory=None, egress=None):
+    async def open_session(self, *, required_methods, configuration=None):
         if set(required_methods) - set(self.descriptor.available_methods):
             raise EIPSessionStateError("unsupported")
         session = self.session_class(self)

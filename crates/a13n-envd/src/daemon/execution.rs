@@ -62,19 +62,20 @@ impl Daemon {
         })
     }
 
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "worker admission consumes the resolved Session configuration"
+    )]
     pub(super) async fn open_worker(
         &self,
         carrier: &Carrier,
+        config: &Config,
         cwd: String,
         policy: Option<eip::EgressPolicy>,
         lifecycle: eip::SessionLifecyclePolicy,
+        required_methods: &[String],
+        vm: Option<eip::VmIsolation>,
     ) -> Result<eip::SessionOpenResult, EIPError> {
-        if policy.is_some() != self.config.egress.controlled() {
-            return Err(protocol_error(
-                ErrorType::InvalidParams,
-                "Session egress policy is required exactly for controlled Devices",
-            ));
-        }
         #[cfg(target_os = "linux")]
         let policy = policy
             .map(crate::egress::policy::Policy::from_request)
@@ -86,10 +87,21 @@ impl Daemon {
             protocol_error(ErrorType::Busy, "Session worker capacity is exhausted")
         })?;
         let id = self.ids.next("session").map_err(map_ledger_error)?;
-        let mut session =
-            Session::new(self, carrier.id, id.clone(), cwd.clone(), lifecycle.clone()).map_err(
-                |_| protocol_error(ErrorType::InternalError, "session initialization failed"),
-            )?;
+        // Parent records own routing and lifecycle only. Guest executable paths
+        // must never be opened or validated against the Host filesystem.
+        let mut parent_config = config.clone();
+        if vm.is_some() {
+            parent_config.command = None;
+        }
+        let mut session = Session::new(
+            self,
+            &parent_config,
+            carrier.id,
+            id.clone(),
+            cwd.clone(),
+            lifecycle.clone(),
+        )
+        .map_err(|_| protocol_error(ErrorType::InternalError, "session initialization failed"))?;
         #[cfg(target_os = "linux")]
         let mut hide = self.config.bootstrap_files.clone();
         #[cfg(target_os = "linux")]
@@ -113,25 +125,40 @@ impl Daemon {
             }
         }
         let worker = WorkerConfig {
-            computer_use: self.config.computer_use,
-            managed: self.config.managed,
-            sandbox: self.config.sandbox.clone(),
-            grant_sources: self.config.grant_sources.clone(),
-            egress: self.config.egress,
-            execution: self.config.execution,
-            groups: None,
-            allow_sudo: self.config.allow_sudo,
+            computer_use: config.computer_use,
+            managed: config.managed,
+            sandbox: config.sandbox.clone(),
+            grant_sources: config.grant_sources.clone(),
+            egress: config.egress,
+            execution: config.execution,
+            groups: vm.as_ref().map(|_| Vec::new()),
+            allow_sudo: config.allow_sudo,
             runtime_directory: "/run/a13n-session-state".into(),
-            device_id: self.config.device_id.clone(),
+            device_id: config.device_id.clone(),
             generation: self.descriptor.generation,
             session_id: id.clone(),
             working_directory: cwd,
-            limits: self.config.limits.clone(),
-            command: self.config.command.clone(),
+            limits: config.limits.clone(),
+            command: config.command.clone(),
             lifecycle,
         };
         #[cfg(target_os = "linux")]
-        let runtime = Runtime::start(worker, policy, hide, reservation).await;
+        let runtime = if let Some(vm) = &vm {
+            #[cfg(any(feature = "vm-boxlite", feature = "vm-microsandbox"))]
+            {
+                Runtime::start_vm(vm.clone(), worker, self.config.clone(), reservation).await
+            }
+            #[cfg(not(any(feature = "vm-boxlite", feature = "vm-microsandbox")))]
+            {
+                let _ = vm;
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::Unsupported,
+                    "VM backend is unavailable",
+                ))
+            }
+        } else {
+            Runtime::start(worker, policy, hide, reservation).await
+        };
         #[cfg(target_os = "macos")]
         let runtime = Runtime::start(worker, reservation).await;
         #[cfg(windows)]
@@ -142,7 +169,22 @@ impl Daemon {
                 "Session worker initialization failed",
             )
         })?;
-        session.descriptor.working_directory = runtime.client.working_directory.clone();
+        if let Some(vm) = vm {
+            session.descriptor.boundary.backend = match vm.backend {
+                eip::VmBackend::Boxlite => eip::ExecutionBackend::Boxlite,
+                eip::VmBackend::Microsandbox => eip::ExecutionBackend::Microsandbox,
+            };
+            session.descriptor.boundary.vm = Some(vm);
+            crate::execution::boundary::digest(&mut session.descriptor.boundary)
+                .map_err(|_| protocol_error(ErrorType::InternalError, "invalid VM boundary"))?;
+        }
+        let ready = &runtime.client.ready;
+        session.descriptor.working_directory = ready.working_directory.clone();
+        session.descriptor.path_style = ready.path_style;
+        session.descriptor.system_info = ready.system_info.clone();
+        session.descriptor.available_methods = ready.available_methods.clone();
+        session.descriptor.shell_profiles = ready.shell_profiles.clone();
+        session.descriptor.execution_features = ready.execution_features.clone();
         runtime.client.attach(carrier.outbound.clone());
         #[cfg(target_os = "linux")]
         if controlled {
@@ -154,6 +196,16 @@ impl Daemon {
                 .descriptor
                 .available_methods
                 .push("egress.update".to_owned());
+        }
+        if required_methods
+            .iter()
+            .any(|method| !session.descriptor.available_methods.contains(method))
+        {
+            runtime.close().await;
+            return Err(protocol_error(
+                ErrorType::Unsupported,
+                "required session method is unavailable",
+            ));
         }
         session.remote = Some(runtime);
         let descriptor = session.descriptor.clone();

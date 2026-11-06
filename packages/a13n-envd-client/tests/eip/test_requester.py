@@ -28,11 +28,14 @@ from a13n_envd_client.eip.v1 import (
     ExecutionBoundary,
     ExecutionFeatures,
     JsonRpcRequest,
+    OperatingSystem,
     PathStyle,
     SessionCloseParams,
+    SessionConfiguration,
     SessionDescriptor,
     SessionKeepaliveParams,
     SessionLifecyclePolicy,
+    SystemInfo,
     decode_model,
 )
 from a13n_envd_client.eip.v1.methods import DEVICE_DESCRIBE, ENVIRONMENT_READINESS, SESSION_CLOSE, SESSION_KEEPALIVE
@@ -106,6 +109,8 @@ def descriptor(session_id: str = "ses-a", *, idle_timeout_ms: int = 30_000) -> S
         session_id=session_id,
         owner_epoch=1,
         working_directory="/work",
+        path_style=PathStyle.POSIX,
+        system_info=SystemInfo(os=OperatingSystem.LINUX),
         available_methods=("environment.readiness", "environment.describe", "session.keepalive", "session.close"),
         limits=limits(),
         execution_features=ExecutionFeatures(
@@ -247,7 +252,7 @@ def test_stalled_observations_do_not_consume_session_admission(method_name: str)
 async def opened(
     device: EIPDeviceConnection, transport: FakeTransport, session_id: str = "ses-a", *, idle_timeout_ms: int = 30_000
 ):
-    task = asyncio.create_task(device.open_session(working_directory="/work"))
+    task = asyncio.create_task(device.open_session(configuration=SessionConfiguration(working_directory="/work")))
     request = await transport.request()
     assert request.method == "session.open" and request.eip_session is None
     assert request.params["expected_device_id"] == "device-test"
@@ -936,7 +941,7 @@ def test_host_scope_rejection_does_not_close_device_or_sibling(monkeypatch):
         with pytest.raises(EIPSessionStateError):
             await first.readiness()
         with pytest.raises(EIPSessionStateError):
-            await device.open_session(working_directory="/work")
+            await device.open_session(configuration=SessionConfiguration(working_directory="/work"))
         assert not transport.closed
         request_task = asyncio.create_task(second.readiness())
         request = await transport.request()
@@ -971,7 +976,9 @@ def test_abandoned_session_open_cleanup_preserves_its_host_dispatch_context(monk
 
         monkeypatch.setattr(transport, "send", send)
         token = authority.set("binding-a")
-        opening = asyncio.create_task(device.open_session(working_directory="/work"))
+        opening = asyncio.create_task(
+            device.open_session(configuration=SessionConfiguration(working_directory="/work"))
+        )
         authority.reset(token)
         request = await transport.request()
         opening.cancel()
