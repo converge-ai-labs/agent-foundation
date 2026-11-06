@@ -219,7 +219,8 @@ jobs:
     name: Kubernetes journeys (${{ matrix.name }})
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Cold sandbox builds include both embedded VM runtimes; leave time for journeys.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
