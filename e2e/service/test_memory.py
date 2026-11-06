@@ -235,10 +235,7 @@ async def test_a_recovered_attempt_continues_from_the_committed_memory_cursors(s
     lost, retried = requests[1], requests[2]
     # The replacement restored the history holding the context with its cursor: nothing is delivered or written twice.
     assert contexts(retried) == contexts(lost) and [kind for _, kind, _ in contexts(retried)] == ["full"]
-    assert user_texts(retried) == user_texts(lost)
-    assert [text for text in user_texts(retried) if not text.startswith("<memory-context ")] == [
-        "[crash] Log the first entry"
-    ]
+    assert user_texts(retried) == user_texts(lost) == ["[crash] Log the first entry"]
     assert len(tool_results(retried)) == 1 and tool_results(retried) == tool_results(lost)
     assert await history(api, memory, "log.md") == [("create", run_id, "call_log")]
     assert cursors(stack, run_id) == {memory["id"]: "1"}

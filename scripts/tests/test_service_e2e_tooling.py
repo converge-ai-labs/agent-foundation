@@ -137,6 +137,8 @@ def test_user_texts_excludes_runtime_context_without_losing_conversation_order(s
         '<service-context source="a13n-service">\n{"service_run_id":"run_one"}\n</service-context>',
         'Explain the <service-context source="a13n-service"> block',
         '<service-context source="a13n-service">\n{"service_run_id":"run_two"}\n</service-context>',
+        '<runtime-context source="a13n-harness">\n{"current_time":"2026-11-06T18:07:38Z"}\n</runtime-context>',
+        '<memory-context memory="notes" kind="full">\n{"files":[]}\n</memory-context>',
     ]
     messages = [
         {"role": "user", "content": [{"type": "text", "text": content}] if structured else content}
