@@ -140,10 +140,10 @@ function Assert-EnvdArchiveHash {
     param([string]$Archive, [string]$Checksums, [string]$AssetName)
     $hashes = @()
     foreach ($line in [IO.File]::ReadAllLines($Checksums)) {
-        # Standard sha256sum text and binary markers; require the exact asset basename.
-        if ($line -cmatch '\A([0-9a-fA-F]{64}) [ *](.+)\z' -and $Matches[2] -ceq $AssetName) {
+        # Accept sha256sum markers and the release workflow's single ./ prefix.
+        if ($line -cmatch '\A([0-9a-fA-F]{64}) [ *](?:\./)?(.+)\z' -and $Matches[2] -ceq $AssetName) {
             $hashes += $Matches[1]
-        } elseif ($line -cmatch ('(?:\s|\*)' + [regex]::Escape($AssetName) + '\z')) {
+        } elseif ($line -cmatch ('(?:\s|\*)(?:\./)?' + [regex]::Escape($AssetName) + '\z')) {
             throw "Malformed checksum entry for $AssetName."
         }
     }
