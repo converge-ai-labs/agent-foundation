@@ -85,19 +85,20 @@ async def test_kubernetes_claim_lifecycle_and_retained_shared_reuse(stack, reque
                     if r["kind"] == "PersistentVolumeClaim"
                 ]
                 assert len(owned_claims) == 2
-                # Operator metadata edits must not strand the Pod's bootstrap Secret.
-                for owned_claim in owned_claims:
-                    await CoreV1Api(native.api).patch_namespaced_persistent_volume_claim(
-                        owned_claim["name"],
-                        native.connection.namespace,
-                        {
-                            "metadata": {
-                                "uid": owned_claim["uid"],
-                                "annotations": {LABEL_PREFIX + "recipe": "operator-edited"},
-                            }
-                        },
-                        _content_type="application/merge-patch+json",
-                    )
+                [owned_claim] = [r for r in owned_claims if r["name"].endswith("-workspace")]
+                # Retained claims may be edited independently; scratch still requires
+                # its ownership metadata to authorize deletion.
+                await CoreV1Api(native.api).patch_namespaced_persistent_volume_claim(
+                    owned_claim["name"],
+                    native.connection.namespace,
+                    {
+                        "metadata": {
+                            "uid": owned_claim["uid"],
+                            "annotations": {LABEL_PREFIX + "recipe": "operator-edited"},
+                        }
+                    },
+                    _content_type="application/merge-patch+json",
+                )
             await delete(stack.api, f"/api/v1/environments/{identifier}", 120)
             retired = expect(await stack.api.client.get(f"/api/v1/environments/{identifier}"), 200)
             assert retired["retirement_state"] is not None
