@@ -40,11 +40,14 @@ class CodeActStateToolset:
             policy=CodeActToolPolicy(default=True),
         )
 
-    async def snapshot(self) -> CodeActStoredValues:
+    async def _ensure_initialized(self) -> None:
         if not self._initialized:
             state = await self._context.state.read(CODEACT_STATE_ID, CodeActStoredValues, version=CODEACT_STATE_VERSION)
             await self._owner.initialize(self._context.thread_id, state or CodeActStoredValues())
             self._initialized = True
+
+    async def snapshot(self) -> CodeActStoredValues:
+        await self._ensure_initialized()
         return await self._owner.snapshot()
 
     def validate(self, state: CodeActStoredValues) -> None:
@@ -62,7 +65,7 @@ class CodeActStateToolset:
         host to save and restore HarnessState; this is not a durable checkpoint.
         """
         self._require_context(ctx)
-        await self.snapshot()
+        await self._ensure_initialized()
         try:
             await self._owner.store(key, value, self._config)
         except (ValueError, TypeError) as exc:
@@ -79,17 +82,18 @@ class CodeActStateToolset:
         value does not change storage until store is called again.
         """
         self._require_context(ctx)
-        state = await self.snapshot()
+        await self._ensure_initialized()
         if key is None:
-            return [key for key in sorted(state.values)]
-        if key not in state.values:
-            raise ModelRetry("CodeAct stored key does not exist; use load() to list keys")
-        return state.values[key]
+            return list(await self._owner.keys())
+        try:
+            return await self._owner.load(key)
+        except KeyError as exc:
+            raise ModelRetry("CodeAct stored key does not exist; use load() to list keys") from exc
 
     async def forget(self, ctx: RunContext[AgentContext], key: StateKey) -> bool:
         """Delete a stored value. Return whether the key existed."""
         self._require_context(ctx)
-        await self.snapshot()
+        await self._ensure_initialized()
         removed = await self._owner.forget(key)
         if self._context.codeact_state is None:
             await self._context.state.write(
@@ -99,7 +103,8 @@ class CodeActStateToolset:
 
     async def context_index(self) -> str:
         """Project only a bounded key directory, never values or previews."""
-        keys = sorted((await self.snapshot()).values)
+        await self._ensure_initialized()
+        keys = await self._owner.keys()
         if not keys:
             return ""
         visible: list[str] = []

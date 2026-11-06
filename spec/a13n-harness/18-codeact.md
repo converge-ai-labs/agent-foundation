@@ -200,9 +200,9 @@ async def run_program(
 
 Every invocation uses a fresh Monty session. A program cannot observe inline state or state from an earlier program invocation. Inputs cross as validated data and are never interpolated into source. Existing file tools own create, edit, list, and delete behavior; CodeAct adds no duplicate program-management API. `.agents/codeact/` may be an authoring convention but is not an authorization root.
 
-A program defines exactly one undecorated `async def main(inputs)` entrypoint. Module scope permits sandbox-supported imports, declarations, docstrings, and side-effect-free constants. Executable top-level statements, direct or recursive invocation of `main`, unsafe definition-time expressions, and reserved runtime-name collisions fail before execution.
+A program defines exactly one undecorated `async def main(inputs)` entrypoint without defaults. Preflight parses source with the Host Python grammar to check this convention and reserved runtime-name collisions. File-backed source must therefore parse on the Host Python version as well as Monty. Monty owns supported declarations, annotations, decorators, imports, expressions, and execution semantics. Module initialization executes before the runner invokes `main`, in the same fresh session and under the same tool policy and execution budget. Initialization may have Host effects through eligible tools; failure does not roll them back. Programs should put their primary workflow in `main` so execution remains easy to follow.
 
-Preflight rejects loaded references to `open`, `input`, `eval`, `exec`, `compile`, and `__import__`, even if source shadows a name. Imports rooted at `os`, `pathlib`, `socket`, and `subprocess` are rejected. These checks are deterministic authoring diagnostics; Monty's lack of ambient authority remains the security boundary.
+The Harness does not maintain a second Python expression or module whitelist. Monty's lack of ambient authority remains the security boundary; removing authoring restrictions grants no Host filesystem or import mounts.
 
 ## Sandbox and Value Boundary
 
@@ -236,6 +236,8 @@ A completed earlier callback is never rolled back. Failure and timeout metadata 
 
 Once execution starts, runner failures return a JSON diagnostic envelope bounded to 4 KiB of UTF-8, including JSON escaping and all fields. Its version-`1` `codeact` object retains `status=failed`, `execution_id`, the exact started `tool_call_count`, `cumulative_bytes`, and `side_effect_uncertain`. It also includes `calls`, an ordinal-ordered prefix of started calls, and `omitted_call_count`, the exact number of started calls outside that prefix. Each entry contains only `call_id`, `ordinal`, `canonical_tool_name`, and the observed `outcome` (`completed`, `failed`, `cancelled`, or `deferred`). Whole entries are omitted when the envelope would exceed its bound; identities are never shortened. Calls rejected before dispatch are absent, so ordinals may have gaps. The `error` object contains a safe `type` and `message`, bounded to 128 and 256 UTF-8 bytes respectively before JSON encoding.
 
+The `error` object also reports the failure `boundary` and whether `inline_state` was `reset` or `unchanged`. Syntax and sandbox runtime errors include the underlying `exception_type` and innermost numeric `location` (one-based line and column) when Monty supplies them. Filenames, source lines, and exception messages from the sandbox or Host are not copied. A bounded `nested_errors` prefix records observed nested failures with attempt ordinal, boundary (`arguments`, `tool_execution`, or `tool_output`), type, and value-free diagnostics. Argument-validation diagnostics retain bounded schema-declared top-level argument names and error codes, omitting caller-controlled location components. These observations can include errors caught by the program and are not an inferred cause of the terminal failure. Optional details and call entries share the total 4 KiB envelope budget. Program preflight errors report a safe authoring message and numeric syntax location without executing source.
+
 The projection is produced after callback cleanup from the same observations used by lifecycle events. A completed call means its callback returned successfully, not that an external business transaction committed; a failed, cancelled, or deferred call does not imply rollback. These observations help the model inspect prior work before deciding on a new explicit call and confer no replay authority.
 
 ## Events and Data Safety
@@ -248,7 +250,7 @@ Except for explicitly stored values in the portable Capability namespace, the de
 
 The Harness integrates only with public Pydantic AI `RunContext.tool_manager`, `ToolManager`, Toolset, Capability, usage, message, and deferred APIs and public Monty asynchronous session/snapshot APIs. The selected dependency versions must preserve nested validation/execution hooks, successful-call accounting, runner sequential behavior, cancellation, and configured resource limits in conformance tests.
 
-CodeAct source is written for Monty's supported Python subset, not CPython. Changes in supported syntax or pure modules follow the selected Monty compatibility range. `*.codeact.py` distinguishes this contract from ordinary Python files, but source remains application data rather than a Harness state codec.
+CodeAct source is written for Monty's supported Python subset, not CPython. Harness pins `pydantic-monty==1.5.0`; changes in supported syntax or pure modules require an explicit dependency update and runner conformance validation. `*.codeact.py` distinguishes this contract from ordinary Python files, but source remains application data rather than a Harness state codec.
 
 ## Invariants
 

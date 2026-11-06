@@ -27,7 +27,7 @@ def validate_stored_values(state: CodeActStoredValues, config: CodeActConfig) ->
     if len(state.values) > config.max_state_entries:
         raise ValueError(f"CodeAct stored values exceed max_state_entries={config.max_state_entries}")
     try:
-        bounded_json_size(state.model_dump(), config.max_state_bytes)
+        bounded_json_size({"values": state.values}, config.max_state_bytes)
     except JsonLimitExceeded as exc:
         raise ValueError(f"CodeAct stored values exceed max_state_bytes={config.max_state_bytes}") from exc
 
@@ -52,11 +52,22 @@ class CodeActStateOwner:
         async with self._lock:
             return self._state.model_copy(deep=True)
 
+    async def keys(self) -> list[str]:
+        async with self._lock:
+            return sorted(self._state.values)
+
+    async def load(self, key: StateKey) -> JsonValue:
+        async with self._lock:
+            return deepcopy(self._state.values[key])
+
     async def store(self, key: StateKey, value: JsonValue, config: CodeActConfig) -> None:
         async with self._lock:
-            candidate = self._state.model_copy(deep=True)
-            candidate.values[key] = deepcopy(value)
+            values = {**self._state.values, key: value}
+            candidate = self._state.model_copy(update={"values": values})
             validate_stored_values(candidate, config)
+            # Existing entries stay private and unchanged. Copy only the new value,
+            # after validation so rejected writes do not allocate a detached tree.
+            values[key] = deepcopy(value)
             self._state = candidate
 
     async def forget(self, key: StateKey) -> bool:
