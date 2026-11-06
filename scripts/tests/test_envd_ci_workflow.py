@@ -29,3 +29,13 @@ def test_envd_gate_rejects_failed_classification(result: str) -> None:
     gate = yaml.safe_load(WORKFLOW.read_text())["jobs"]["validation"]["steps"][0]
     completed = subprocess.run(["bash", "-e", "-c", gate["run"]], env={"CHANGES_RESULT": result}, check=False)
     assert completed.returncode != 0
+
+
+def test_linux_ci_builds_real_embedded_vm_backends_on_both_architectures():
+    job = yaml.safe_load(WORKFLOW.read_text())["jobs"]["daemon"]
+    assert job["env"]["BOXLITE_DEPS_STUB"] == "2"
+    assert job["env"]["BOXLITE_EMBED_RUNTIME"] == "1"
+    dependencies = next(step for step in job["steps"] if step["name"] == "Install Linux isolation dependency")
+    assert "protobuf-compiler" in dependencies["run"]
+    tests = next(step for step in job["steps"] if step["name"] == "Run a13n-envd tests")
+    assert "--all-features" in tests["run"]

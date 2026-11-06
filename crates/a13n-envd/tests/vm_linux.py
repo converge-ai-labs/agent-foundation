@@ -1,7 +1,8 @@
 """Opt-in public EIP VM integration: python3 vm_linux.py BINARY BACKEND.
 
-Requires Linux KVM and the selected SDK feature. Use a stripped binary: the
-BoxLite copy channel stages bootstrap artifacts in guest temporary storage.
+Requires Linux KVM and the selected SDK feature. The 1 GiB guest budget covers
+bootstrap of release binaries with both embedded runtimes. Strip debug binaries
+before testing: BoxLite stages bootstrap artifacts in guest temporary storage.
 """
 
 import argparse
@@ -23,6 +24,7 @@ def open_session(device, configuration):
             "configuration": configuration,
         },
         device_scope=True,
+        timeout=180,
     )["descriptor"]
     device.session = descriptor["session_id"]
     device.profile = descriptor["shell_profiles"][0]["profile_id"]
@@ -60,7 +62,7 @@ def verify(binary, backend):
                     "backend": backend,
                     "image": "mirror.gcr.io/library/ubuntu:24.04",
                     "cpus": 1,
-                    "memory_mib": 512,
+                    "memory_mib": 1024,
                     "mounts": [],
                 },
             }

@@ -38,7 +38,7 @@ def test_vm_cancelled_open_reclaims_storage_and_allows_replacement(tmp_path: Pat
             backend=backend,
             image="mirror.gcr.io/library/ubuntu:24.04",
             cpus=1,
-            memory_mib=512,
+            memory_mib=1024,
             mounts=(VmMount(source=str(shared), target="/mnt/shared", access=GrantAccess.READ_WRITE),),
         ),
     )

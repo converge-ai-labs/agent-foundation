@@ -446,6 +446,8 @@ async def test_management_publication_preserves_session_and_rejects_stale_head(t
                     "device_id": "fixture-device",
                     "generation": 1,
                     "session_id": "fixture-session",
+                    "path_style": "posix",
+                    "system_info": {"os": "linux"},
                     "working_directory": "/work",
                     "owner_epoch": 7,
                     "limits": dict.fromkeys(EIPLimits.model_fields, 1024),

@@ -849,13 +849,25 @@ mod tests {
         candidate.file.write_all(b"data").unwrap();
         assert!(stage.join(&candidate.name).exists());
         assert_eq!(fs::read_dir(&destination).unwrap().count(), 0);
-        fs::rename(&destination, root.path().join("held")).unwrap();
-        fs::create_dir(&destination).unwrap();
+        #[cfg(unix)]
+        let published_parent = {
+            let held = root.path().join("held");
+            fs::rename(&destination, &held).unwrap();
+            fs::create_dir(&destination).unwrap();
+            held
+        };
+        // Windows keeps the open destination directory pinned against renaming.
+        #[cfg(windows)]
+        let published_parent = {
+            assert!(fs::rename(&destination, root.path().join("held")).is_err());
+            destination.clone()
+        };
         assert!(candidate.verify_complete(4).unwrap());
         filesystem
             .publish_candidate(&mut candidate, &target, false)
             .unwrap();
-        assert_eq!(fs::read(root.path().join("held/target")).unwrap(), b"data");
+        assert_eq!(fs::read(published_parent.join("target")).unwrap(), b"data");
+        #[cfg(unix)]
         assert!(!destination.join("target").exists());
         assert_eq!(fs::read_dir(stage).unwrap().count(), 0);
         assert_eq!(device.staging_usage(), (0, 0));

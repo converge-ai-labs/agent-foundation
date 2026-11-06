@@ -467,3 +467,17 @@ def test_parallel_compose_checks_wait_for_both_and_propagate_failures(tmp_path, 
     for target, port in (("compose", 18080), ("quickstart", 18081)):
         assert (tmp_path / f"{target}.finished").exists()
         assert (tmp_path / f"{target}.args").read_text().strip() == (f"scripts/deploy_smoke.py {target} --port {port}")
+
+
+def test_sandbox_source_and_development_builds_include_embedded_vm_backends():
+    workflow = yaml.safe_load((ROOT / ".github/workflows/images.yml").read_text())
+    job = workflow["jobs"]["sandbox-binaries"]
+    step = next(step for step in job["steps"] if step["name"] == "Build sandbox binary with VM backends")
+    assert "--features vm-boxlite,vm-microsandbox" in step["run"]
+    assert step["env"]["BOXLITE_DEPS_STUB"] == "2"
+    assert step["env"]["BOXLITE_EMBED_RUNTIME"] == "1"
+    assert any("protobuf-compiler" in step.get("run", "") for step in job["steps"])
+    dockerfile = (ROOT / "deploy/docker/images/sandbox/Dockerfile").read_text()
+    assert "--features vm-boxlite,vm-microsandbox" in dockerfile
+    assert "ENV BOXLITE_DEPS_STUB=2 BOXLITE_EMBED_RUNTIME=1" in dockerfile
+    assert "protobuf-compiler" in dockerfile

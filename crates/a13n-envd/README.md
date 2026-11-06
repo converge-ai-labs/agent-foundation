@@ -62,15 +62,24 @@ Process cleanup owns the initial Unix process group or a non-breakaway Windows J
 
 Complete-candidate writes publish via a same-filesystem rename after verification. They do not promise exclusive filesystem access or compare-and-swap: commands and external writers may race. The [operations guide](../../docs/a13n-envd/operations.md) explains capacity, output evidence, cleanup, and uncertain outcomes.
 
-## Optional VM workers (Linux)
+## VM workers (Linux)
 
-Build one or both embedded Rust SDK backends:
+Published Linux binaries and every sandbox image include both embedded Rust SDK backends and their runtime assets. Release and development-image builds run natively on Linux x86_64 and ARM64. VM execution requires accessible Linux KVM and image-registry access. macOS and Windows binaries retain native execution; these Envd VM backends currently target Linux.
+
+For a source build, install a C compiler, `protoc` (3.12 or newer), and the Rust toolchain, then run:
 
 ```bash
-cargo build --locked -p a13n-envd --features vm-boxlite,vm-microsandbox
+make rust-build
 ```
 
-The default build remains native-only. VM execution requires Linux KVM, the selected SDK's runtime assets and image-registry access. BoxLite's build script prepares its runtime assets; follow that SDK's build prerequisites when building from source. Images must provide a compatible Linux userspace for the Envd executable and `/bin/sh`.
+This enables both backends and embeds their runtime assets even in debug builds. The equivalent Cargo invocation is:
+
+```bash
+BOXLITE_DEPS_STUB=2 BOXLITE_EMBED_RUNTIME=1 \
+  cargo build --locked -p a13n-envd --features vm-boxlite,vm-microsandbox
+```
+
+BoxLite mode `2` downloads the SDK's versioned prebuilt runtime; mode `1` produces check-only stubs and must not be used for executable builds. Microsandbox's `download-binaries` and `embed-binaries` features acquire and embed its versioned runtime. Asset preparation failures stop the build. Plain Cargo builds without VM features remain available for native-only development. Guest images must provide a compatible Linux userspace for the Envd executable and `/bin/sh`.
 
 Pass this object as `session.open.configuration` on a Device with inherited networking and Full Control commands:
 
@@ -82,13 +91,15 @@ Pass this object as `session.open.configuration` on a Device with inherited netw
     "backend": "boxlite",
     "image": "ubuntu:24.04",
     "cpus": 1,
-    "memory_mib": 512,
+    "memory_mib": 1024,
     "mounts": [
       {"source": "/absolute/host/workspace", "target": "/work", "access": "read_write"}
     ]
   }
 }
 ```
+
+The example budgets 1 GiB for the guest, including bootstrap of the daemon with embedded runtime assets. A 512 MiB BoxLite guest could not bootstrap the tested dual-backend Linux release binary. Size memory for bootstrap and the workload; strip debug binaries before VM testing.
 
 Use `microsandbox` for the other backend. Both run the ordinary Session engine as guest root and report guest POSIX paths and methods. Native Sessions and multiple VMs can coexist. Host environment variables are not inherited. Controlled/deny networking, nested native Sandbox and guest computer use are unsupported and fail without fallback.
 

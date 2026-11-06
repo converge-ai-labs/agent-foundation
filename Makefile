@@ -385,6 +385,11 @@ a13n-envd-client-build: sync ## Build the a13n-envd client Python distributions
 rust-format-check: ## Check Rust formatting
 	@cargo fmt --all -- --check
 
+# BoxLite mode 2 acquires real versioned runtime assets; mode 1 is check-only.
+# Embed debug assets too so make rust-build produces a relocatable daemon.
+rust-lint rust-test rust-build: export BOXLITE_DEPS_STUB = 2
+rust-lint rust-test rust-build: export BOXLITE_EMBED_RUNTIME = 1
+
 .PHONY: rust-lint
 rust-lint: ## Run Clippy with warnings denied
 	@cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
