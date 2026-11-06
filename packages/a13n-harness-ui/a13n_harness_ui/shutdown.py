@@ -43,7 +43,7 @@ class Shutdown:
 
     def enter(self, phase: str) -> None:
         self.phase = phase
-        get_logger(__name__).info("Stopping App: %s", self.describe())
+        get_logger(__name__).debug("Stopping App: %s", self.describe())
 
     def describe(self) -> str:
         elapsed = 0.0 if self.started is None else monotonic() - self.started
