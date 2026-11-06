@@ -50,6 +50,13 @@ pub(crate) fn run() -> io::Result<()> {
     let decoded = serde_json::from_slice::<Bootstrap>(&bytes);
     bytes.zeroize();
     let mut bootstrap = decoded.map_err(|_| io::Error::other("invalid guest bootstrap"))?;
+    // BoxLite copies this file; Microsandbox exports it on a read-only mount
+    // and the host unlinks that copy after the handshake.
+    match std::fs::remove_file(BOOTSTRAP) {
+        Ok(()) => {}
+        Err(error) if error.raw_os_error() == Some(libc::EROFS) => {}
+        Err(error) => return Err(error),
+    }
     validate(&bootstrap.worker)?;
     let listener = TcpListener::bind(("0.0.0.0", PORT))?;
     let socket = accept(&listener, &bootstrap.token, Duration::from_secs(30));

@@ -52,6 +52,7 @@ impl Runtime {
         vm: crate::eip::VmIsolation,
         worker: WorkerConfig,
         config: crate::config::Config,
+        mut protected: Vec<std::path::PathBuf>,
         mut reservation: crate::daemon::execution::Reservation,
     ) -> io::Result<Self> {
         use super::vm::{Backend, Plan};
@@ -66,7 +67,6 @@ impl Runtime {
             .prefix("session-")
             .tempdir_in(parent)?;
         let executable = std::env::current_exe()?;
-        let mut protected = config.bootstrap_files.clone();
         protected.push(state.generation().to_path_buf());
         super::vm::persist_backend(directory.path(), vm.backend)?;
         let directory = directory.keep();
@@ -75,28 +75,48 @@ impl Runtime {
         let physically_clean = clean.clone();
         reservation.started = true;
         let (ready, receive_ready) = oneshot::channel();
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(120);
+        let (stage, observed_stage) = watch::channel("prepare");
         let (stop, stopped) = oneshot::channel();
         let (dead_sender, dead) = watch::channel(false);
         // The task owns creation before the first SDK await. Cancelling session.open
         // drops the receiver, never a partially completed SDK create/start future.
         tokio::spawn(async move {
             let mut backend = None;
-            let connected = async {
-                let mut plan = Plan::prepare(
-                    &vm,
-                    worker,
-                    &directory,
-                    &executable,
-                    &config.sandbox,
-                    &config.grant_sources,
-                    &protected,
-                )
-                .await?;
-                backend = Some(Backend::new(plan.backend, &plan.home).await?);
-                backend.as_mut().unwrap().start(&plan).await?;
-                plan.connect().await
-            }
-            .await;
+            let check = |next| {
+                super::vm::check_startup(deadline, ready.is_closed())?;
+                stage.send_replace(next);
+                Ok(())
+            };
+            let connected =
+                async {
+                    check("prepare")?;
+                    let mut plan = Plan::prepare(
+                        &vm,
+                        worker,
+                        &directory,
+                        &executable,
+                        &config.sandbox,
+                        &config.grant_sources,
+                        &protected,
+                    )
+                    .await?;
+                    check("runtime_create")?;
+                    backend = Some(Backend::new(plan.backend, &plan.home).await.map_err(
+                        |error| {
+                            if error.kind() == io::ErrorKind::Unsupported {
+                                error
+                            } else {
+                                plan.failure("runtime_create", error)
+                            }
+                        },
+                    )?);
+                    check("vm_start")?;
+                    backend.as_mut().unwrap().start(&plan, &check).await?;
+                    check("worker_connect")?;
+                    plan.connect().await
+                }
+                .await;
             match connected {
                 Ok(client) => {
                     let mut closed = client.closed();
@@ -110,26 +130,29 @@ impl Runtime {
             }
             // Capacity stays owned until VM removal and registered staging cleanup.
             if let Some(backend) = &mut backend {
-                while backend.remove().await.is_err() {
-                    tokio::time::sleep(Duration::from_secs(1)).await;
+                let mut retry = super::vm::CleanupRetry::new(&directory, "vm_remove");
+                while let Err(error) = backend.remove().await {
+                    retry.failed(&error).await;
                 }
             }
             drop(backend);
-            let reclaimed = tokio::task::spawn_blocking(move || {
-                while super::vm::staging::reclaim(&directory).is_err() {
-                    std::thread::sleep(Duration::from_secs(1));
-                }
-                loop {
-                    match std::fs::remove_dir_all(&directory) {
-                        Ok(()) => break,
-                        Err(error) if error.kind() == io::ErrorKind::NotFound => break,
-                        Err(_) => std::thread::sleep(Duration::from_secs(1)),
+            let mut retry = super::vm::CleanupRetry::new(&directory, "storage_reclaim");
+            loop {
+                let path = directory.clone();
+                let reclaimed = tokio::task::spawn_blocking(move || {
+                    super::vm::staging::reclaim(&path)?;
+                    match std::fs::remove_dir_all(&path) {
+                        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+                        result => result,
                     }
+                })
+                .await
+                .map_err(io::Error::other)
+                .and_then(|result| result);
+                match reclaimed {
+                    Ok(()) => break,
+                    Err(error) => retry.failed(&error).await,
                 }
-            })
-            .await;
-            if reclaimed.is_err() {
-                return;
             }
             reservation
                 .clean
@@ -139,7 +162,15 @@ impl Runtime {
             drop(state);
             dead_sender.send_replace(true);
         });
-        let client = receive_ready.await.map_err(io::Error::other)??;
+        let client = tokio::time::timeout_at(deadline, receive_ready)
+            .await
+            .map_err(|_| {
+                io::Error::new(io::ErrorKind::TimedOut, format!(
+                    "VM {} timed out after 120 seconds; cleanup remains owned until the in-flight SDK phase settles",
+                    *observed_stage.borrow(),
+                ))
+            })?
+            .map_err(io::Error::other)??;
         Ok(Self {
             client,
             policy: None,

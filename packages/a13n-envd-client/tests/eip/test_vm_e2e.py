@@ -3,6 +3,7 @@
 import asyncio
 import json
 import os
+import shutil
 from contextlib import suppress
 from pathlib import Path
 
@@ -11,6 +12,7 @@ from a13n_envd_client import EIPDeviceConnection, StdioTransport
 from a13n_envd_client.eip.v1 import (
     EIPCallContext,
     EIPPath,
+    ErrorType,
     FileReadTextParams,
     GrantAccess,
     SessionConfiguration,
@@ -18,13 +20,30 @@ from a13n_envd_client.eip.v1 import (
     VmIsolation,
     VmMount,
 )
+from a13n_envd_client.errors import EIPMethodError
 
 
-@pytest.mark.parametrize("backend", [VmBackend.BOXLITE, VmBackend.MICROSANDBOX])
-def test_vm_cancelled_open_reclaims_storage_and_allows_replacement(tmp_path: Path, backend: VmBackend):
+@pytest.mark.parametrize(
+    ("backend", "failure"),
+    [
+        (VmBackend.BOXLITE, "cancel"),
+        (VmBackend.MICROSANDBOX, "cancel"),
+        (VmBackend.BOXLITE, "bootstrap_space"),
+    ],
+)
+def test_vm_failed_open_reclaims_storage_and_allows_replacement(tmp_path: Path, backend: VmBackend, failure: str):
     if backend.value not in os.environ.get("A13N_ENVD_VM_TEST_BACKENDS", "").split(","):
         pytest.skip("set A13N_ENVD_VM_TEST_BACKENDS and a VM-enabled A13N_ENVD_TEST_BINARY")
     binary = Path(os.environ["A13N_ENVD_TEST_BINARY"]).resolve()
+    if failure == "bootstrap_space":
+        # Trailing ELF padding reproduces a large embedded release artifact without
+        # making the test depend on the build profile's executable size.
+        padded = tmp_path / "large-envd"
+        shutil.copy2(binary, padded)
+        with padded.open("ab") as artifact:
+            for _ in range(max(0, 373 - padded.stat().st_size // (1024 * 1024))):
+                artifact.write(os.urandom(1024 * 1024))
+        binary = padded
     shared = tmp_path / "shared"
     shared.mkdir()
     (shared / "sentinel").write_text("host workspace")
@@ -71,13 +90,32 @@ def test_vm_cancelled_open_reclaims_storage_and_allows_replacement(tmp_path: Pat
                     expected_device_id="vm-client",
                     request_timeout=120,
                 )
-                opening = asyncio.create_task(device.open_session(configuration=configuration, readiness_timeout=120))
-                await wait_for(lambda: bool(list(shared.glob(".eip-stage-vm-*"))))
-                assert not opening.done(), "fixture must cancel during VM preparation"
-                opening.cancel()
-                with pytest.raises(asyncio.CancelledError):
-                    await opening
-                # A cancelled client request still owns late-response cleanup.
+                if failure == "cancel":
+                    opening = asyncio.create_task(
+                        device.open_session(configuration=configuration, readiness_timeout=120)
+                    )
+                    await wait_for(lambda: bool(list(shared.glob(".eip-stage-vm-*"))))
+                    assert not opening.done(), "fixture must cancel during VM preparation"
+                    opening.cancel()
+                    with pytest.raises(asyncio.CancelledError):
+                        await opening
+                else:
+                    small = configuration.model_copy(
+                        update={"isolation": configuration.isolation.model_copy(update={"memory_mib": 512})}
+                    )
+                    with pytest.raises(EIPMethodError) as caught:
+                        await device.open_session(configuration=small, readiness_timeout=120)
+                    assert caught.value.error.data.error_type == ErrorType.INTERNAL_ERROR
+                    message = caught.value.error.message
+                    for expected in (
+                        "bootstrap_copy",
+                        "memory_mib=512",
+                        f"worker_bytes={binary.stat().st_size}",
+                        "increase memory_mib",
+                    ):
+                        assert expected in message
+                    assert "No space left on device" in (tmp_path / "daemon.log").read_text()
+                # Failed/cancelled admission still owns physical cleanup.
                 await wait_for(lambda: not list(runtime.glob("**/vms/session-*")))
                 assert not list(shared.glob(".eip-stage-vm-*"))
                 async with await device.open_session(configuration=configuration, readiness_timeout=120) as session:

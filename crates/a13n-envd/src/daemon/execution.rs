@@ -6,6 +6,20 @@
 use super::*;
 use crate::execution::{runtime::Runtime, worker::WorkerConfig};
 
+fn worker_start_error(error: &std::io::Error) -> EIPError {
+    use std::io::ErrorKind;
+    let kind = match error.kind() {
+        ErrorKind::InvalidInput => ErrorType::InvalidParams,
+        ErrorKind::Unsupported => ErrorType::Unsupported,
+        ErrorKind::TimedOut => ErrorType::Timeout,
+        _ => ErrorType::InternalError,
+    };
+    protocol_error(
+        kind,
+        format!("Session worker initialization failed: {error}"),
+    )
+}
+
 pub(crate) struct Reservation {
     _operations: tokio::sync::OwnedSemaphorePermit,
     _processes: crate::capacity::ResourcePermit,
@@ -146,7 +160,7 @@ impl Daemon {
         let runtime = if let Some(vm) = &vm {
             #[cfg(any(feature = "vm-boxlite", feature = "vm-microsandbox"))]
             {
-                Runtime::start_vm(vm.clone(), worker, self.config.clone(), reservation).await
+                Runtime::start_vm(vm.clone(), worker, self.config.clone(), hide, reservation).await
             }
             #[cfg(not(any(feature = "vm-boxlite", feature = "vm-microsandbox")))]
             {
@@ -163,11 +177,22 @@ impl Daemon {
         let runtime = Runtime::start(worker, reservation).await;
         #[cfg(windows)]
         let runtime = Runtime::start(worker, &self.config.bootstrap_files, reservation).await;
-        let runtime = runtime.map_err(|_| {
-            protocol_error(
-                ErrorType::Unsupported,
-                "Session worker initialization failed",
-            )
+        let runtime = runtime.map_err(|error| {
+            eprintln!(
+                "{}",
+                serde_json::json!({
+                    "level": "warn", "event": "a13n-envd.worker_start_failed",
+                    "session_id": id, "error": error.to_string(),
+                })
+            );
+            if vm.is_some() {
+                worker_start_error(&error)
+            } else {
+                protocol_error(
+                    ErrorType::Unsupported,
+                    "Session worker initialization failed",
+                )
+            }
         })?;
         if let Some(vm) = vm {
             session.descriptor.boundary.backend = match vm.backend {
@@ -314,5 +339,24 @@ impl Session {
             payload,
             handoff: Some(ResponseHandoff::Remote(response.handoff)),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn vm_start_errors_preserve_actionable_classification() {
+        for (kind, expected) in [
+            (std::io::ErrorKind::InvalidInput, ErrorType::InvalidParams),
+            (std::io::ErrorKind::Unsupported, ErrorType::Unsupported),
+            (std::io::ErrorKind::TimedOut, ErrorType::Timeout),
+            (std::io::ErrorKind::Other, ErrorType::InternalError),
+        ] {
+            let error = worker_start_error(&std::io::Error::new(kind, "bootstrap_copy failed"));
+            assert_eq!(error.data.error_type, expected);
+            assert!(error.message.contains("bootstrap_copy"));
+        }
     }
 }

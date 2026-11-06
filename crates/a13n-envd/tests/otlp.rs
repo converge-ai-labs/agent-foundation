@@ -486,6 +486,8 @@ impl Receiver {
         let (send, received) = mpsc::channel(64);
         let mut server = Server::builder();
         if let Some(certificates) = certificates {
+            // VM SDKs enable both Rustls providers; tonic uses the process default.
+            let _ = rustls::crypto::ring::default_provider().install_default();
             let mut tls = ServerTlsConfig::new().identity(Identity::from_pem(
                 certificates.server.pem(),
                 certificates.server_key.serialize_pem(),

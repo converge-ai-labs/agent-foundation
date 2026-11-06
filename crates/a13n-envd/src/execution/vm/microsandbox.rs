@@ -2,7 +2,7 @@
 use super::Plan;
 use microsandbox::setup::{InstallOptions, InstallSource, install_runtime};
 use microsandbox::{
-    Sandbox,
+    ExecEvent, Sandbox,
     backend::{LocalBackend, with_backend},
 };
 use std::{io, sync::Arc};
@@ -41,10 +41,16 @@ impl Backend {
         })
     }
 
-    pub async fn start(&mut self, plan: &Plan) -> io::Result<()> {
+    pub async fn start(
+        &mut self,
+        plan: &Plan,
+        check: &(impl Fn(&'static str) -> io::Result<()> + Sync),
+    ) -> io::Result<()> {
+        check("vm_create")?;
         let sandbox = with_backend(self.backend.clone(), async {
             let mut builder = Sandbox::builder("worker")
                 .image(plan.image.as_str())
+                .user("0:0")
                 .cpus(plan.cpus)
                 .memory(plan.memory_mib)
                 .port(plan.port, super::super::worker::guest::PORT)
@@ -62,8 +68,9 @@ impl Backend {
             builder.create().await
         })
         .await
-        .map_err(io::Error::other)?;
+        .map_err(|error| plan.failure("vm_create", error))?;
         self.sandbox = Some(sandbox);
+        check("worker_exec")?;
         let mut execution = self
             .sandbox
             .as_ref()
@@ -72,14 +79,44 @@ impl Backend {
                 execution.args(["--internal-vm-worker"])
             })
             .await
-            .map_err(io::Error::other)?;
+            .map_err(|error| plan.failure("worker_exec", error))?;
         self.output.spawn(async move {
-            let _ = execution.wait().await;
+            let mut remaining = 4096;
+            while let Some(event) = execution.recv().await {
+                match event {
+                    ExecEvent::Stdout(bytes) | ExecEvent::Stderr(bytes) => {
+                        super::report_worker_output(
+                            "microsandbox",
+                            &String::from_utf8_lossy(&bytes),
+                            &mut remaining,
+                        );
+                    }
+                    ExecEvent::Failed(error) => {
+                        super::report_worker_output(
+                            "microsandbox",
+                            &format!("worker failed: {error:?}"),
+                            &mut remaining,
+                        );
+                        break;
+                    }
+                    ExecEvent::Exited { code } => {
+                        super::report_worker_output(
+                            "microsandbox",
+                            &format!("worker exited: {code}"),
+                            &mut remaining,
+                        );
+                        break;
+                    }
+                    _ => {}
+                }
+            }
         });
         Ok(())
     }
 
     pub async fn remove(&mut self) -> io::Result<()> {
+        self.output.abort_all();
+        while self.output.join_next().await.is_some() {}
         with_backend(self.backend.clone(), async {
             let sandbox = match Sandbox::get("worker").await {
                 Ok(sandbox) => sandbox,
@@ -99,8 +136,6 @@ impl Backend {
         .await
         .map_err(io::Error::other)?;
         self.sandbox.take();
-        self.output.abort_all();
-        while self.output.join_next().await.is_some() {}
         Ok(())
     }
 }

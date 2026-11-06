@@ -29,7 +29,12 @@ impl Backend {
         })
     }
 
-    pub async fn start(&mut self, plan: &Plan) -> io::Result<()> {
+    pub async fn start(
+        &mut self,
+        plan: &Plan,
+        check: &(impl Fn(&'static str) -> io::Result<()> + Sync),
+    ) -> io::Result<()> {
+        check("image_create")?;
         let volumes = plan
             .mounts
             .iter()
@@ -63,14 +68,16 @@ impl Backend {
             self.runtime
                 .create(options, Some("worker".into()))
                 .await
-                .map_err(io::Error::other)?,
+                .map_err(|error| plan.failure("image_create", error))?,
         );
+        check("vm_start")?;
         self.sandbox
             .as_ref()
             .unwrap()
             .start()
             .await
-            .map_err(io::Error::other)?;
+            .map_err(|error| plan.failure("vm_start", error))?;
+        check("bootstrap_copy")?;
         // Bootstrap artifacts use the SDK's copy channel instead of consuming
         // an additional physical filesystem device alongside user mounts.
         self.sandbox
@@ -82,31 +89,28 @@ impl Backend {
                 boxlite::CopyOptions::default(),
             )
             .await
-            .map_err(io::Error::other)?;
+            .map_err(|error| plan.failure("bootstrap_copy", error))?;
+        check("worker_exec")?;
         let mut execution = self
             .sandbox
             .as_ref()
             .unwrap()
             .exec(BoxCommand::new(super::GUEST_BINARY).args(["--internal-vm-worker"]))
             .await
-            .map_err(io::Error::other)?;
+            .map_err(|error| plan.failure("worker_exec", error))?;
         if let Some(mut stream) = execution.stdout() {
             self.output.spawn(async move {
+                let mut remaining = 4096;
                 while let Some(line) = stream.next().await {
-                    #[cfg(test)]
-                    eprintln!("VM bootstrap: {line:?}");
-                    #[cfg(not(test))]
-                    let _ = line;
+                    super::report_worker_output("boxlite", &line, &mut remaining);
                 }
             });
         }
         if let Some(mut stream) = execution.stderr() {
             self.output.spawn(async move {
+                let mut remaining = 4096;
                 while let Some(line) = stream.next().await {
-                    #[cfg(test)]
-                    eprintln!("VM bootstrap: {line:?}");
-                    #[cfg(not(test))]
-                    let _ = line;
+                    super::report_worker_output("boxlite", &line, &mut remaining);
                 }
             });
         }
@@ -117,6 +121,9 @@ impl Backend {
     }
 
     pub async fn remove(&mut self) -> io::Result<()> {
+        self.output.abort_all();
+        while self.output.join_next().await.is_some() {}
+        // Keep the SDK handle on failure so a later removal can retry.
         // The named record may exist even when startup returned an error.
         if self
             .runtime
@@ -130,8 +137,6 @@ impl Backend {
                 .map_err(io::Error::other)?;
         }
         self.sandbox.take();
-        self.output.abort_all();
-        while self.output.join_next().await.is_some() {}
         Ok(())
     }
 }

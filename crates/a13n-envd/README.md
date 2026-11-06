@@ -99,9 +99,15 @@ Pass this object as `session.open.configuration` on a Device with inherited netw
 }
 ```
 
-The example budgets 1 GiB for the guest, including bootstrap of the daemon with embedded runtime assets. A 512 MiB BoxLite guest could not bootstrap the tested dual-backend Linux release binary. Size memory for bootstrap and the workload; strip debug binaries before VM testing.
+The example budgets 1 GiB for the guest, including bootstrap of the daemon with embedded runtime assets. BoxLite uploads the complete worker executable through its guest temporary storage. The tested 373 MiB dual-backend Linux release binary exhausted that storage in a 512 MiB guest (`failed to write temp file: No space left on device`); it started with 1 GiB. This is an artifact-size-dependent bootstrap requirement, not a universal 1 GiB minimum. Size memory for bootstrap and the workload; strip debug binaries before VM testing.
+
+VM startup errors distinguish invalid configuration, unsupported backends, timeouts and runtime failures. A bootstrap-copy failure reports the backend, configured `memory_mib`, worker size and a storage-specific remedy. The `a13n-envd.vm_start_failed` JSON diagnostic on stderr includes the failed stage and the SDK cause; bootstrap tokens are never logged.
+
+Startup admission waits at most 120 seconds and reports the current stage. Cancellation or timeout stops subsequent startup phases; an in-flight SDK call remains owned until it settles, then cleanup runs serially. A stuck SDK call can retain capacity beyond the admission deadline. Cleanup failures emit `a13n-envd.vm_cleanup_pending` with the stage, private directory and retry delay (1 second, doubling to 60 seconds); capacity remains charged until reclamation succeeds. Resolve the reported storage/runtime problem before retrying opens when capacity is exhausted.
 
 Use `microsandbox` for the other backend. Both run the ordinary Session engine as guest root and report guest POSIX paths and methods. Native Sessions and multiple VMs can coexist. Host environment variables are not inherited. Controlled/deny networking, nested native Sandbox and guest computer use are unsupported and fail without fallback.
+
+The SDK private carrier uses a loopback TCP forward and a per-start bootstrap token. Both SDKs bind their own listener, so Envd must release the selected port before SDK binding. Deploy the broker in a trusted local network namespace: a hostile Host process that wins this bind race can receive the bootstrap token or impersonate the worker. Loopback is not a security boundary against other Host users; isolate the broker's network namespace when those users are untrusted.
 
 VMs use standard upstream path-based mounts. Keep source paths and their ancestors stable during startup: concurrent replacement can expose a different Host object than the intended grant. The [execution contract](../../spec/a13n-envd/07-execution-isolation.md#vm-sessions) describes this risk and the deployment's responsibility. Read-only exports apply to file APIs and guest-root commands alike.
 

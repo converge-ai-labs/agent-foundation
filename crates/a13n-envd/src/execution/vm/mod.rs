@@ -26,6 +26,48 @@ use zeroize::Zeroize;
 const GUEST_DIRECTORY: &str = "/opt/a13n-worker";
 const GUEST_BINARY: &str = "/opt/a13n-worker/envd";
 
+// Observe abandonment only between SDK calls: dropping an in-flight SDK future
+// is not a barrier for its background filesystem work or process reaping.
+pub(crate) fn check_startup(deadline: tokio::time::Instant, abandoned: bool) -> io::Result<()> {
+    if abandoned || tokio::time::Instant::now() >= deadline {
+        return Err(io::Error::new(
+            io::ErrorKind::TimedOut,
+            "VM startup admission ended",
+        ));
+    }
+    Ok(())
+}
+
+pub(crate) struct CleanupRetry<'a> {
+    directory: &'a Path,
+    stage: &'static str,
+    delay: Duration,
+}
+
+impl<'a> CleanupRetry<'a> {
+    pub fn new(directory: &'a Path, stage: &'static str) -> Self {
+        Self {
+            directory,
+            stage,
+            delay: Duration::from_secs(1),
+        }
+    }
+
+    pub async fn failed(&mut self, error: &io::Error) {
+        eprintln!(
+            "{}",
+            serde_json::json!({
+                "level": "warn", "event": "a13n-envd.vm_cleanup_pending",
+                "directory": self.directory, "stage": self.stage,
+                "retry_seconds": self.delay.as_secs(), "capacity_retained": true,
+                "error": error.to_string().chars().take(2048).collect::<String>(),
+            })
+        );
+        tokio::time::sleep(self.delay).await;
+        self.delay = (self.delay * 2).min(Duration::from_secs(60));
+    }
+}
+
 struct Mount {
     source: PathBuf,
     target: String,
@@ -41,6 +83,7 @@ pub(crate) struct Plan {
     image: String,
     cpus: u8,
     memory_mib: u32,
+    worker_bytes: u64,
     mounts: Vec<Mount>,
     token: zeroize::Zeroizing<[u8; 32]>,
     limits: crate::config::DaemonLimits,
@@ -62,14 +105,25 @@ impl Plan {
         let cpus = u8::try_from(vm.cpus)
             .ok()
             .filter(|value| *value > 0)
-            .ok_or_else(|| io::Error::other("VM cpus must be between 1 and 255"))?;
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "VM cpus must be between 1 and 255",
+                )
+            })?;
         if vm.memory_mib < 128 || vm.image.is_empty() {
-            return Err(io::Error::other("invalid VM resources or image"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "VM memory_mib must be at least 128 and image must be nonempty",
+            ));
         }
         if !matches!(vm.backend, eip::VmBackend::Boxlite)
             && !matches!(vm.backend, eip::VmBackend::Microsandbox)
         {
-            return Err(io::Error::other("unsupported VM backend"));
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "unsupported VM backend",
+            ));
         }
         let mut mounts = Vec::new();
         for mount in &vm.mounts {
@@ -85,7 +139,10 @@ impl Plan {
                     .iter()
                     .any(|path| overlaps(target, Path::new(path)))
             {
-                return Err(io::Error::other("VM mount target overlaps a reserved path"));
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "VM mount target must be absolute and must not overlap a reserved path",
+                ));
             }
             let read_only = match mount.access {
                 eip::GrantAccess::ReadOnly => true,
@@ -102,7 +159,9 @@ impl Plan {
                 }],
                 full_disk_read: false,
             };
-            policy.validate(protected)?;
+            policy
+                .validate(protected)
+                .map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error))?;
             let Sandbox::Restricted { grants, .. } = policy else {
                 unreachable!()
             };
@@ -118,7 +177,10 @@ impl Plan {
                                 && (read_only || grant.access == Access::ReadWrite)
                         })
                         .ok_or_else(|| {
-                            io::Error::other("VM mount exceeds Device grant authority")
+                            io::Error::new(
+                                io::ErrorKind::InvalidInput,
+                                "VM mount exceeds Device grant authority",
+                            )
                         })?;
                     let root = fs::File::open(&grant.path)?;
                     sources
@@ -138,7 +200,10 @@ impl Plan {
             if mounts.iter().any(|existing: &Mount| {
                 overlaps(&existing.source, &source) || overlaps(Path::new(&existing.target), target)
             }) {
-                return Err(io::Error::other("VM mounts must not overlap"));
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "VM mounts must not overlap",
+                ));
             }
             mounts.push(Mount {
                 source,
@@ -150,7 +215,7 @@ impl Plan {
         let control = directory.join("control");
         fs::create_dir(&control)?;
         fs::set_permissions(&control, fs::Permissions::from_mode(0o755))?;
-        tokio::fs::copy(executable, control.join("envd")).await?;
+        let worker_bytes = tokio::fs::copy(executable, control.join("envd")).await?;
         fs::set_permissions(control.join("envd"), fs::Permissions::from_mode(0o555))?;
         let mut token = zeroize::Zeroizing::new([0; 32]);
         getrandom::fill(token.as_mut()).map_err(|error| io::Error::other(error.to_string()))?;
@@ -193,11 +258,34 @@ impl Plan {
             image: vm.image.clone(),
             cpus,
             memory_mib: vm.memory_mib,
+            worker_bytes,
             mounts,
             token,
             limits,
             port,
         })
+    }
+
+    pub(crate) fn failure(&self, stage: &str, error: impl std::fmt::Display) -> io::Error {
+        let cause = error.to_string();
+        eprintln!(
+            "{}",
+            serde_json::json!({
+                "level": "warn", "event": "a13n-envd.vm_start_failed",
+                "backend": self.backend, "stage": stage,
+                "memory_mib": self.memory_mib, "worker_bytes": self.worker_bytes,
+                "error": cause.chars().take(2048).collect::<String>(),
+            })
+        );
+        let advice = if stage == "bootstrap_copy" && cause.contains("No space left on device") {
+            "guest bootstrap temporary storage is full; increase memory_mib or use a smaller worker executable"
+        } else {
+            "inspect the Envd vm_start_failed diagnostic for the SDK cause"
+        };
+        io::Error::other(format!(
+            "{:?} VM {stage} failed (memory_mib={}, worker_bytes={}): {advice}",
+            self.backend, self.memory_mib, self.worker_bytes,
+        ))
     }
 
     fn check_sources(&self) -> io::Result<()> {
@@ -240,11 +328,42 @@ impl Plan {
             }
         })
         .await
-        .map_err(io::Error::other)?;
+        .map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::TimedOut,
+                "VM worker_connect timed out after 30 seconds",
+            )
+        })
+        .and_then(|result| result);
         self.token.zeroize();
-        fs::remove_file(self.control.join("bootstrap.json"))?;
-        connected
+        let removed = fs::remove_file(self.control.join("bootstrap.json"));
+        let client = connected?;
+        removed?;
+        Ok(client)
     }
+}
+
+impl Drop for Plan {
+    fn drop(&mut self) {
+        // Covers failed startup and cancelled connect futures as well as success.
+        // Zeroizing owns the in-memory token independently of this filesystem step.
+        let _ = fs::remove_file(self.control.join("bootstrap.json"));
+    }
+}
+
+fn report_worker_output(backend: &str, line: &str, remaining: &mut usize) {
+    if *remaining == 0 {
+        return;
+    }
+    let text: String = line.chars().take(*remaining).collect();
+    *remaining = remaining.saturating_sub(text.chars().count());
+    eprintln!(
+        "{}",
+        serde_json::json!({
+            "level": "warn", "event": "a13n-envd.vm_worker_output",
+            "backend": backend, "text": text,
+        })
+    );
 }
 
 /// Publish the recovery record before any SDK side effect. A crash exposes
@@ -281,23 +400,40 @@ pub(crate) fn reclaim_generation(generation: &Path) -> io::Result<()> {
             .enable_all()
             .build()?
             .block_on(async {
+                let mut first_error = None;
                 for entry in fs::read_dir(directory)? {
-                    let entry = entry?;
-                    if !entry.file_type()?.is_dir() {
-                        return Err(io::Error::other("invalid VM state directory"));
+                    let result = async {
+                        let entry = entry?;
+                        if !entry.file_type()?.is_dir() {
+                            return Err(io::Error::other("invalid VM state directory"));
+                        }
+                        let manifest = entry.path().join("backend.json");
+                        let backend = match fs::read(&manifest) {
+                            Ok(bytes) => {
+                                serde_json::from_slice(&bytes).map_err(io::Error::other)?
+                            }
+                            // No SDK call can happen until this manifest is complete.
+                            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+                            Err(error) => return Err(error),
+                        };
+                        let mut backend =
+                            Backend::new(backend, &entry.path().join("runtime")).await?;
+                        backend.remove().await?;
+                        staging::reclaim(&entry.path())
                     }
-                    let manifest = entry.path().join("backend.json");
-                    let backend = match fs::read(&manifest) {
-                        Ok(bytes) => serde_json::from_slice(&bytes).map_err(io::Error::other)?,
-                        // No SDK call can happen until this manifest is complete.
-                        Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
-                        Err(error) => return Err(error),
-                    };
-                    let mut backend = Backend::new(backend, &entry.path().join("runtime")).await?;
-                    backend.remove().await?;
-                    staging::reclaim(&entry.path())?;
+                    .await;
+                    if let Err(error) = result {
+                        eprintln!(
+                            "{}",
+                            serde_json::json!({
+                                "level": "error", "event": "a13n-envd.vm_generation_cleanup_failed",
+                                "error": error.to_string().chars().take(2048).collect::<String>(),
+                            })
+                        );
+                        first_error.get_or_insert(error);
+                    }
                 }
-                Ok(())
+                first_error.map_or(Ok(()), Err)
             })
     })
     .join()
@@ -326,18 +462,25 @@ impl Backend {
                 .map(Box::new)
                 .map(Self::Microsandbox),
             #[allow(unreachable_patterns)]
-            _ => Err(io::Error::other("VM backend is not included in this build")),
+            _ => Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "VM backend is not included in this build",
+            )),
         }
     }
-    pub async fn start(&mut self, plan: &Plan) -> io::Result<()> {
+    pub async fn start(
+        &mut self,
+        plan: &Plan,
+        check: &(impl Fn(&'static str) -> io::Result<()> + Sync),
+    ) -> io::Result<()> {
         // Both SDKs export host paths. These checks detect persistent replacement,
         // but deployment must keep source paths stable during SDK mount setup.
         plan.check_sources()?;
         match self {
             #[cfg(feature = "vm-boxlite")]
-            Self::Boxlite(backend) => backend.start(plan).await?,
+            Self::Boxlite(backend) => backend.start(plan, check).await?,
             #[cfg(feature = "vm-microsandbox")]
-            Self::Microsandbox(backend) => backend.start(plan).await?,
+            Self::Microsandbox(backend) => backend.start(plan, check).await?,
         }
         plan.check_sources()
     }

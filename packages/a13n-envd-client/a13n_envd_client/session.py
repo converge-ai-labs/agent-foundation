@@ -32,6 +32,7 @@ from a13n_envd_client.eip.v1 import (
     InitializeParams,
     OutputInfo,
     OutputReference,
+    RestrictedSandbox,
     SessionAttachParams,
     SessionCloseParams,
     SessionConfiguration,
@@ -186,8 +187,19 @@ class EIPDeviceConnection:
             sandbox = configuration.sandbox or (
                 DisabledSandbox(mode="disabled") if vm else self._descriptor.boundary.sandbox
             )
-            if session.descriptor.boundary.sandbox.mode != sandbox.mode:
+            observed_sandbox = session.descriptor.boundary.sandbox
+            if observed_sandbox.mode != sandbox.mode:
                 raise EIPProtocolError("Session sandbox mode differs from its configuration")
+            if (
+                isinstance(sandbox, RestrictedSandbox)
+                and isinstance(observed_sandbox, RestrictedSandbox)
+                and observed_sandbox.full_disk_read != sandbox.full_disk_read
+            ):
+                raise EIPProtocolError("Session full_disk_read differs from its configuration")
+            # Inherited grants are already canonical in the Device descriptor.
+            # Explicit request paths are canonicalized in the daemon's namespace.
+            if configuration.sandbox is None and observed_sandbox != sandbox:
+                raise EIPProtocolError("Session sandbox differs from its inherited configuration")
             if configuration.lifecycle is not None and session.descriptor.lifecycle != configuration.lifecycle:
                 raise EIPProtocolError("Session lifecycle differs from its configuration")
             if configuration.commands is False and "process.start" in session.descriptor.available_methods:
