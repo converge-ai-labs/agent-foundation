@@ -108,7 +108,8 @@ async def test_attach_revalidates_target_and_cleans_up_without_lifecycle(peer):
     assert sandbox.commands.run.await_count == 2
     assert events[0]["expected_device_id"] == "env-fixed"
     assert "computer.observe" in events[0]["required_methods"]
-    assert events[0]["working_directory"] == "/workspace"
+    assert "working_directory" not in events[0]
+    assert events[0].get("configuration") is None
     assert events[1] == events[3] == "closed"
 
 

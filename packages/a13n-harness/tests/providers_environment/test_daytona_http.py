@@ -112,7 +112,8 @@ async def test_attach_authenticates_fixed_identity_and_does_not_replay(peer):
     )
     assert all("http-token" in call.kwargs["body"]["command"] for call in guest.request.call_args_list)
     assert events[0]["expected_device_id"] == "env-fixed"
-    assert events[0]["working_directory"] == "/workspace"
+    assert "working_directory" not in events[0]
+    assert events[0].get("configuration") is None
     assert "computer.observe" in events[0]["required_methods"]
     with pytest.raises(TimeoutError):
         async with http.http_session(reference()):
