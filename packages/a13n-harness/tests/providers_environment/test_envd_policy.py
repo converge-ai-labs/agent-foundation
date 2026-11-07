@@ -17,6 +17,7 @@ from a13n_envd_client.eip.v1 import (
 from a13n_harness.environment.envd_policy import (
     EnvdBoundaryRequirement,
     EnvdEgressConfiguration,
+    EnvdSessionConfiguration,
     EnvironmentEnvdCredentialResolver,
     resolve_egress,
 )
@@ -112,3 +113,34 @@ def test_native_launch_keeps_inherited_environment(monkeypatch):
         device_id="device-test", runtime_dir=Path("/runtime"), configuration=LocalEnvdLaunchConfiguration()
     )
     assert environment["NATIVE_TEST_VARIABLE"] == "kept"
+
+
+@pytest.mark.parametrize("backend", ["boxlite", "microsandbox"])
+async def test_session_isolation_survives_host_resolution_and_changes_recovery_identity(backend):
+    from a13n_harness.environment.session_recovery import configuration_digest
+
+    value = {
+        "working_directory": "/workspace",
+        "isolation": {
+            "mode": "vm",
+            "backend": backend,
+            "image": "example/worker:latest",
+            "cpus": 2,
+            "memory_mib": 1024,
+            "mounts": [{"source": "/host/project", "target": "/workspace", "access": "read_write"}],
+        },
+    }
+    selection = EnvdSessionConfiguration.model_validate(value)
+    restored = EnvdSessionConfiguration.model_validate_json(selection.model_dump_json())
+    resolved = await restored.resolve(EnvironmentEnvdCredentialResolver())
+    assert resolved.model_dump(mode="json", exclude_none=True) == value
+    assert resolved.isolation == selection.isolation
+    changed = EnvdSessionConfiguration.model_validate(
+        {**value, "isolation": {**value["isolation"], "memory_mib": 2048}}
+    )
+    assert configuration_digest(resolved) != configuration_digest(
+        await changed.resolve(EnvironmentEnvdCredentialResolver())
+    )
+    assert configuration_digest(resolved) != configuration_digest(
+        await EnvdSessionConfiguration().resolve(EnvironmentEnvdCredentialResolver())
+    )

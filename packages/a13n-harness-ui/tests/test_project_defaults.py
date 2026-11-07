@@ -173,7 +173,7 @@ async def test_old_project_files_still_resolve_and_new_normalization_changes_gen
     current = await load_harness_ui_configuration(root)
     assert current.projects["project-main"].defaults.model_dump() == {}
     assert resolve_thread_configuration(current).environment_profile_id == "environment-native"
-    monkeypatch.setattr(loader, "_NORMALIZATION_VERSION", "2")
+    monkeypatch.setattr(loader, "_NORMALIZATION_VERSION", f"{loader._NORMALIZATION_VERSION}-next")
     old_digest = (await load_harness_ui_configuration(root)).source_digest
     assert old_digest != current.source_digest
     # Historical normalized Project objects remain decodable without defaults.

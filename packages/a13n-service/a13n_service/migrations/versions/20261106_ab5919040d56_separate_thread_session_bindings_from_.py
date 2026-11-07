@@ -1,7 +1,7 @@
 """separate thread session bindings from directory views
 
 Revision ID: ab5919040d56
-Revises: f6f3e4930b08
+Revises: fb12402ebb2b
 """
 
 import sqlalchemy as sa
@@ -9,7 +9,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision = "ab5919040d56"
-down_revision = "f6f3e4930b08"
+down_revision = "fb12402ebb2b"
 branch_labels = None
 depends_on = None
 

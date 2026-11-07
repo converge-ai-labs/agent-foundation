@@ -4,7 +4,7 @@ sidebarTitle: Execution boundaries
 description: How Envd applies identity, filesystem, process, and egress policy to a Session, and how to diagnose failures.
 ---
 
-Choose the execution account, filesystem grants, and network mode before launching Envd. These Device settings apply to every Session's commands, file operations, and transfers. Directory discovery uses the same identity and grants. The Host manages the outer account, container, or VM; Envd prepares and cleans up the Session workers.
+Choose the execution account, launch defaults and deployment authority before launching Envd. Each Session selects its Sandbox, network mode and command availability within that authority through `session.open.configuration`. Commands, file operations and transfers use the Session's effective grants. Device directory discovery uses launch grants. The Host manages the outer account, container, or VM; Envd prepares and cleans up the Session workers.
 
 ## Isolation behavior
 
@@ -15,7 +15,7 @@ Start by choosing the filesystem view:
 
 Choose inherited, denied, or [controlled egress](egress.md) separately, using a combination supported by the platform below. The working directory supplies defaults within that view; it does not widen grants or change networking. Sessions share granted files, so mutually untrusted workloads need separate outer deployments.
 
-Inspect the Device and Session descriptors for the effective `boundary`, backend, and nonsecret policy digest. A published Session has completed required worker preparation. The Host must validate its own outer deployment. Boundary changes require a new runtime; commands cannot override the boundary, and unsupported combinations fail preparation without a weaker fallback.
+The Device descriptor reports launch configuration. The Session descriptor reports its prepared effective `boundary`, backend, nonsecret policy digest and execution capabilities. The Host must validate its own outer deployment. Open a new Session to select a different permitted boundary; changing deployment authority requires relaunching the daemon. Commands cannot override the boundary, and unsupported combinations fail preparation without a weaker fallback.
 
 ### Restricted Sandbox example
 
@@ -40,7 +40,7 @@ This example gives commands read-write access to `/workspace`, read-only access 
 }
 ```
 
-Use existing absolute directories for grants and keep them nonoverlapping. Relaunch the daemon to change grants. An empty grant list is valid when the selected cwd is accessible in the resulting view.
+Use existing absolute directories for grants and keep them nonoverlapping. A new Session can narrow deployment grants; changing deployment grants requires relaunching the daemon. An empty grant list is valid when the selected cwd is accessible in the resulting view.
 
 | Platform | Restricted Sandbox                                                                           | Networking                                                                                                                                                                    |
 | -------- | -------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

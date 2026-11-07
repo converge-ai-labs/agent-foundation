@@ -42,13 +42,21 @@ class InitializeResult(BaseModel):
     descriptor: DeviceDescriptor
 
 
+class SessionConfiguration(BaseModel):
+    working_directory: str | None = None
+    sandbox: SandboxPolicy | None = None
+    egress_mode: EgressMode | None = None
+    egress: EgressPolicy | None = None
+    lifecycle: SessionLifecyclePolicy | None = None
+    commands: bool | None = None
+    isolation: SessionIsolation | None = None
+
+
 class SessionOpenParams(BaseModel):
     expected_device_id: str
     expected_generation: int
-    working_directory: str | None = None
     required_methods: tuple[str, ...]
-    egress: EgressPolicy | None = None
-    lifecycle: SessionLifecyclePolicy | None = None
+    configuration: SessionConfiguration
 
 
 class SessionDescriptor(BaseModel):
@@ -74,7 +82,7 @@ class SessionOpenResult(BaseModel):
 
 `initialize` verifies the Device and returns its descriptor without creating a Session. Initialization and Session open carry no protocol version or version negotiation. A null expected identity is for explicit trusted registration only. An unexpected Device ID returns `protocol_incompatible` (-32003) with `data.safe_detail` set to `device_id_mismatch` and the message `Check the environment and use its registered Device ID with --device-id.` `device.describe` returns the current Device descriptor, including basic system information. Optional `device.metrics` reads a cached Device sample as defined by [resource monitoring](11-resource-monitoring.md). `directory.list` provides optional [directory discovery](04-resource-operations.md#directory-discovery) without a Session.
 
-`session.open` checks the observed identity/generation and required methods, resolves its working directory and reserves one Session. Omitted/null `working_directory` selects the advertised Device default; an explicit path overrides it. Missing or inaccessible directories fail without creation or fallback. The result contains the exact resolved working directory, immutable for that Session. A working directory is not a filesystem access boundary.
+`session.open` requires a `configuration` object on the wire, checks the observed identity/generation and required methods, resolves its working directory and reserves one Session. Omitted/null `configuration.working_directory` selects the advertised Device default for native execution; an explicit path overrides it. VM working directories address the guest filesystem. Missing or inaccessible directories fail without creation or fallback. The result contains the exact resolved working directory, immutable for that Session. A working directory is not a filesystem access boundary.
 
 The Host selects each Session's configuration within the launch authority ceiling. Cwd validation, commands and file operations use that Session's grants and identity; Device directory discovery uses launch authority. Device and Session descriptors expose their respective `boundary`; Session publication follows successful worker preparation. Controlled Sessions require explicit `configuration.egress.destinations` on Session open; inherit and deny reject Session policy. The [execution contract](07-execution-isolation.md) owns the tagged policies and descriptor digest. `required_methods` is a compatibility assertion, not a grant. Host/Harness tool policy controls what the model may invoke. Limits describe actual finite operation capacity, not a separate security policy.
 

@@ -28,7 +28,7 @@ For Device resource samples, freshness, and Prometheus or OTLP export, use [moni
 
 ## What it provides
 
-Use the Device's advertised methods to find the operations available on its platform and configuration:
+Use the Session's advertised methods to find the operations available for its platform and effective configuration:
 
 - Read, write, search, and transfer files.
 - Run commands, send input, collect output, and stop processes.

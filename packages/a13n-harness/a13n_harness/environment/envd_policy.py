@@ -15,6 +15,7 @@ from a13n_envd_client.eip.v1 import (
     ExecutionIdentity,
     SandboxPolicy,
     SessionConfiguration,
+    SessionIsolation,
     SessionLifecyclePolicy,
 )
 from a13n_envd_client.eip.v1.models import AbsoluteEIPPath
@@ -58,6 +59,7 @@ class EnvdSessionConfiguration(BaseModel):
     egress: EnvdEgressConfiguration | None = None
     lifecycle: SessionLifecyclePolicy | None = None
     commands: bool | None = None
+    isolation: SessionIsolation | None = None
 
     async def resolve(self, resolver: EnvdCredentialResolver) -> SessionConfiguration:
         return SessionConfiguration(
@@ -67,6 +69,7 @@ class EnvdSessionConfiguration(BaseModel):
             egress=await resolve_egress(self.egress, resolver),
             lifecycle=self.lifecycle,
             commands=self.commands,
+            isolation=self.isolation,
         )
 
 

@@ -9,7 +9,9 @@ from pathlib import Path
 
 import pytest
 from a13n_envd_client.eip.v1 import DirectoryListParams, SessionConfiguration
+from a13n_envd_client.errors import EIPMethodError
 from a13n_harness.environment.commands import ArgvCommand, CommandRequest
+from a13n_harness.environment.errors import EnvironmentProviderError
 from a13n_harness.environment.models import EnvironmentError
 from a13n_harness.environment.retention import EnvironmentOutputPolicy
 from a13n_harness.providers.environment.local_envd.configuration import (
@@ -120,13 +122,14 @@ async def test_local_shared_device_owns_daemon_not_adapter(binary, tmp_path):
             assert (await runtime.describe()).generation == descriptor.generation
             await processes.release(started.process.handle)
             invalid = LOCAL_ENVD.execution_connector(
-                LocalEnvdEnvironmentConfiguration(working_directory=device_path(tmp_path / "missing")),
+                LocalEnvdEnvironmentConfiguration(session={"working_directory": device_path(tmp_path / "missing")}),
                 runtime=runtime,
                 environment_id="invalid",
             )
-            with pytest.raises(EnvironmentError) as failure:
+            with pytest.raises(EnvironmentProviderError) as failure:
                 await invalid.open()
-            assert failure.value.code == "environment_not_found"
+            assert isinstance(failure.value.__cause__, EIPMethodError)
+            assert failure.value.__cause__.error.code == -32011
             assert len(device._sessions) == 1
             assert (await files.read_text(device_path(first_root / "outside-cwd"))).text == "allowed"
         finally:

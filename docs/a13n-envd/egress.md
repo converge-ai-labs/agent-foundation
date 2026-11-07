@@ -22,28 +22,32 @@ Sessions use native accounts. With no execution UID/GID configured, they retain 
 ## Create a controlled Session
 
 1. Initialize the Device connection.
-2. Add `egress` to `session.open.params`, using the Device identity and generation returned by initialization.
+2. Set `configuration.egress_mode` to `controlled` and supply `configuration.egress` in `session.open.params`, using the Device identity and generation returned by initialization.
 3. Send the request over the authenticated EIP carrier. Keep real secrets out of daemon configuration, command arguments and request logs.
 
 ```json
 {
   "expected_device_id": "device-example",
   "expected_generation": 123,
-  "working_directory": "/workspace",
-  "egress": {
-    "destinations": {"mode": "allowlist", "hosts": ["api.github.com"]},
-    "secrets": [
-      {
-        "env": "GH_TOKEN",
-        "value": "<real token supplied by the trusted caller>",
-        "inject_hosts": ["api.github.com"]
-      }
-    ]
+  "required_methods": [],
+  "configuration": {
+    "working_directory": "/workspace",
+    "egress_mode": "controlled",
+    "egress": {
+      "destinations": {"mode": "allowlist", "hosts": ["api.github.com"]},
+      "secrets": [
+        {
+          "env": "GH_TOKEN",
+          "value": "<real token supplied by the trusted caller>",
+          "inject_hosts": ["api.github.com"]
+        }
+      ]
+    }
   }
 }
 ```
 
-Every controlled Session requires an explicit destination policy. Devices using `inherit` or `deny` reject Session egress policies. The returned Session descriptor contains a revision and secret metadata, such as `{"env":"GH_TOKEN","sentinel":"a13n_7d4e9c2a_GH_TOKEN","inject_hosts":["api.github.com"]}`; the secret's `value` is write-only.
+Every controlled Session requires an explicit destination policy. Sessions whose effective mode is `inherit` or `deny` reject destination policies and secret bindings. The returned Session descriptor contains a revision and secret metadata, such as `{"env":"GH_TOKEN","sentinel":"a13n_7d4e9c2a_GH_TOKEN","inject_hosts":["api.github.com"]}`; the secret's `value` is write-only.
 
 Run commands with the placeholder supplied in `GH_TOKEN`:
 
@@ -119,7 +123,7 @@ Read the current revision from Session metadata, then send `egress.update` with 
 }
 ```
 
-An update validates and publishes atomically, then increments `revision`. If it returns `conflict`, read current metadata through `environment.describe` or `session.attach` before choosing a new update. Omitted fields retain their values. An empty allowlist denies external access; public mode restores public-domain access. Device identity, Sandbox grants and network mode stay fixed.
+An update validates and publishes atomically, then increments `revision`. If it returns `conflict`, read current metadata through `environment.describe` or `session.attach` before choosing a new update. Omitted fields retain their values. An empty allowlist denies external access; public mode restores public-domain access. The existing Session's execution identity, Sandbox grants and network mode stay fixed.
 
 `set_secrets` adds or replaces bindings. Rotation keeps the sentinel, so a process already using `$GH_TOKEN` uses the replacement value on its next HTTPS request. `remove_secrets` retires the binding; deleting and re-adding creates a new sentinel. Intercepted headers containing retired sentinels are rejected. When removing a permitted host, remove or change its injection bindings in the same update.
 

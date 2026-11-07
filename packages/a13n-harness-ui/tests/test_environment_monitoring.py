@@ -459,11 +459,11 @@ async def test_configured_monitoring_cadence_only_overrides_builtin_launches(tmp
     monkeypatch.setattr(manager, "resolve_executable", AsyncMock(return_value=tmp_path / "a13n-envd"))
     launches = []
 
-    def create(executable, **kwargs):
-        launches.append(kwargs["launch"])
+    def create(**kwargs):
+        launches.append(kwargs["configuration"])
         return SimpleNamespace()
 
-    monkeypatch.setattr(module, "create_sandbox_runtime", create)
+    monkeypatch.setattr(module, "LocalEnvdProviderRuntime", create)
     builtin = built_in_environment_profile(profile_id)
     provider = (
         {"launch": {"monitoring": {"sample_interval_ms": 1000}}} if builtin is None else builtin.provider_configuration
@@ -475,7 +475,7 @@ async def test_configured_monitoring_cadence_only_overrides_builtin_launches(tmp
         adapter_key="local-envd-project",
         provider_configuration=provider,
     )
-    await manager.runtime((tmp_path,), profile=profile)
+    await manager.runtime(profile=profile)
     assert launches[0].monitoring.sample_interval_ms == (1000 if profile_id == "custom" else 30_000)
 
 

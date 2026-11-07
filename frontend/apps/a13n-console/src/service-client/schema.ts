@@ -10218,6 +10218,14 @@ export interface components {
       /** Working Directory */
       working_directory: string | null;
     };
+    /** NativeIsolation */
+    NativeIsolation: {
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      mode: "native";
+    };
     /** NetworkInterfaceMetrics */
     NetworkInterfaceMetrics: {
       /** Identity */
@@ -12345,6 +12353,7 @@ export interface components {
       commands?: boolean | null;
       egress?: components["schemas"]["EnvdEgressConfiguration"] | null;
       egress_mode?: components["schemas"]["EgressMode"] | null;
+      isolation?: components["schemas"]["SessionIsolation"] | null;
       lifecycle?: components["schemas"]["SessionLifecyclePolicy"] | null;
       sandbox?: components["schemas"]["SandboxPolicy"] | null;
       /** Working Directory */
@@ -12366,6 +12375,9 @@ export interface components {
       /** Title */
       title?: string | null;
     };
+    SessionIsolation:
+      | components["schemas"]["NativeIsolation"]
+      | components["schemas"]["VmIsolation"];
     /** SessionLifecyclePolicy */
     SessionLifecyclePolicy: {
       /** Idle Timeout Ms */
@@ -14115,6 +14127,45 @@ export interface components {
      * @enum {string}
      */
     VideoUrlType: "youtube";
+    /**
+     * VmBackend
+     * @enum {string}
+     */
+    VmBackend: "boxlite" | "microsandbox";
+    /** VmIsolation */
+    VmIsolation: {
+      backend: components["schemas"]["VmBackend"];
+      /** Cpus */
+      cpus: number;
+      /** Image */
+      image: string;
+      /** Memory Mib */
+      memory_mib: number;
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      mode: "vm";
+      /**
+       * Mounts
+       * @default []
+       */
+      mounts?: components["schemas"]["VmMount"][];
+    };
+    /** VmMount */
+    VmMount: {
+      access: components["schemas"]["GrantAccess"];
+      /**
+       * Source
+       * Format: eip-absolute-path
+       */
+      source: string;
+      /**
+       * Target
+       * Format: eip-absolute-path
+       */
+      target: string;
+    };
     /** @enum {string} */
     WaitReason: "approval" | "call" | "multiple" | "desktop_control";
     /** @enum {string} */

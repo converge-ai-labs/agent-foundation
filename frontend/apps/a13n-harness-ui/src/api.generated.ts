@@ -4527,6 +4527,7 @@ export interface components {
             lifecycle?: components["schemas"]["SessionLifecyclePolicy"] | null;
             /** Commands */
             commands?: boolean | null;
+            isolation?: components["schemas"]["SessionIsolation"] | null;
         };
         /** EnvdStatus */
         EnvdStatus: {
@@ -5870,6 +5871,14 @@ export interface components {
         };
         /** @enum {string} */
         NativeInputMediaKind: "image" | "video" | "audio";
+        /** NativeIsolation */
+        NativeIsolation: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            mode: "native";
+        };
         /** NetworkInterfaceMetrics */
         NetworkInterfaceMetrics: {
             /** Identity */
@@ -6596,6 +6605,7 @@ export interface components {
             /** Description */
             description: string;
         };
+        SessionIsolation: components["schemas"]["NativeIsolation"] | components["schemas"]["VmIsolation"];
         /** SessionLifecyclePolicy */
         SessionLifecyclePolicy: {
             /** Idle Timeout Ms */
@@ -8214,6 +8224,45 @@ export interface components {
              * @default 10485760
              */
             max_video_bytes?: number;
+        };
+        /**
+         * VmBackend
+         * @enum {string}
+         */
+        VmBackend: "boxlite" | "microsandbox";
+        /** VmIsolation */
+        VmIsolation: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            mode: "vm";
+            backend: components["schemas"]["VmBackend"];
+            /** Image */
+            image: string;
+            /** Cpus */
+            cpus: number;
+            /** Memory Mib */
+            memory_mib: number;
+            /**
+             * Mounts
+             * @default []
+             */
+            mounts?: components["schemas"]["VmMount"][];
+        };
+        /** VmMount */
+        VmMount: {
+            /**
+             * Source
+             * Format: eip-absolute-path
+             */
+            source: string;
+            /**
+             * Target
+             * Format: eip-absolute-path
+             */
+            target: string;
+            access: components["schemas"]["GrantAccess"];
         };
         /** VncExecutable */
         VncExecutable: {

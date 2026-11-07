@@ -12,7 +12,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
-from a13n_envd_client.eip.v1 import EgressMode, GrantAccess, RestrictedSandbox
+from a13n_envd_client.eip.v1 import EgressMode, GrantAccess, RestrictedSandbox, VmIsolation
 from a13n_harness.environment.envd_policy import EnvdSessionConfiguration
 from a13n_harness.environment.execution import EnvironmentConnector
 from a13n_harness.environment.models import EnvironmentState
@@ -191,6 +191,10 @@ class LocalEnvdProfileConfiguration(BaseModel):
 
     @model_validator(mode="after")
     def _consistent_policy(self) -> LocalEnvdProfileConfiguration:
+        if isinstance(self.session.session.isolation, VmIsolation):
+            raise ValueError(
+                "The local Project adapter requires native isolation; use a Device binding for VM Sessions"
+            )
         mode = self.session.session.egress_mode or self.launch.egress.mode
         if (mode == "controlled") != (self.session.session.egress is not None):
             raise ValueError("controlled egress requires an explicit Session policy; other modes reject it")

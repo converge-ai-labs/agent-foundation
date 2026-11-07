@@ -13385,6 +13385,16 @@
               }
             ],
             "title": "Commands"
+          },
+          "isolation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SessionIsolation"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "title": "EnvdSessionConfiguration",
@@ -16989,6 +16999,21 @@
           "audio"
         ]
       },
+      "NativeIsolation": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "const": "native",
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "title": "NativeIsolation",
+        "type": "object"
+      },
       "NetworkInterfaceMetrics": {
         "properties": {
           "identity": {
@@ -19162,6 +19187,23 @@
           "description"
         ],
         "title": "SessionAffinityPreset"
+      },
+      "SessionIsolation": {
+        "discriminator": {
+          "mapping": {
+            "native": "#/components/schemas/NativeIsolation",
+            "vm": "#/components/schemas/VmIsolation"
+          },
+          "propertyName": "mode"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/NativeIsolation"
+          },
+          {
+            "$ref": "#/components/schemas/VmIsolation"
+          }
+        ]
       },
       "SessionLifecyclePolicy": {
         "additionalProperties": false,
@@ -23434,6 +23476,87 @@
         "type": "object",
         "title": "VideoInputPolicy",
         "description": "Base64-after byte budget for both one video and all inline videos in a request."
+      },
+      "VmBackend": {
+        "enum": [
+          "boxlite",
+          "microsandbox"
+        ],
+        "title": "VmBackend",
+        "type": "string"
+      },
+      "VmIsolation": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "const": "vm",
+            "title": "Mode",
+            "type": "string"
+          },
+          "backend": {
+            "$ref": "#/components/schemas/VmBackend"
+          },
+          "image": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Image",
+            "type": "string"
+          },
+          "cpus": {
+            "maximum": 255,
+            "minimum": 1,
+            "title": "Cpus",
+            "type": "integer"
+          },
+          "memory_mib": {
+            "maximum": 4294967295,
+            "minimum": 128,
+            "title": "Memory Mib",
+            "type": "integer"
+          },
+          "mounts": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/VmMount"
+            },
+            "title": "Mounts",
+            "type": "array"
+          }
+        },
+        "required": [
+          "mode",
+          "backend",
+          "image",
+          "cpus",
+          "memory_mib"
+        ],
+        "title": "VmIsolation",
+        "type": "object"
+      },
+      "VmMount": {
+        "additionalProperties": false,
+        "properties": {
+          "source": {
+            "format": "eip-absolute-path",
+            "title": "Source",
+            "type": "string"
+          },
+          "target": {
+            "format": "eip-absolute-path",
+            "title": "Target",
+            "type": "string"
+          },
+          "access": {
+            "$ref": "#/components/schemas/GrantAccess"
+          }
+        },
+        "required": [
+          "source",
+          "target",
+          "access"
+        ],
+        "title": "VmMount",
+        "type": "object"
       },
       "VncExecutable": {
         "properties": {

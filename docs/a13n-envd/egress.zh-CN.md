@@ -22,28 +22,32 @@ description: 为每个会话设置目标策略，通过 broker 注入 HTTPS 凭�
 ## 创建受控会话
 
 1. 初始化设备连接。
-2. 使用初始化返回的设备身份和代际，向 `session.open.params` 添加 `egress`。
+2. 使用初始化返回的设备身份和代际，在 `session.open.params` 中将 `configuration.egress_mode` 设为 `controlled`，并提供 `configuration.egress`。
 3. 通过经过身份验证的 EIP 传输通道发送请求。真实秘密应避开守护进程配置、命令参数和请求日志。
 
 ```json
 {
   "expected_device_id": "device-example",
   "expected_generation": 123,
-  "working_directory": "/workspace",
-  "egress": {
-    "destinations": {"mode": "allowlist", "hosts": ["api.github.com"]},
-    "secrets": [
-      {
-        "env": "GH_TOKEN",
-        "value": "<real token supplied by the trusted caller>",
-        "inject_hosts": ["api.github.com"]
-      }
-    ]
+  "required_methods": [],
+  "configuration": {
+    "working_directory": "/workspace",
+    "egress_mode": "controlled",
+    "egress": {
+      "destinations": {"mode": "allowlist", "hosts": ["api.github.com"]},
+      "secrets": [
+        {
+          "env": "GH_TOKEN",
+          "value": "<real token supplied by the trusted caller>",
+          "inject_hosts": ["api.github.com"]
+        }
+      ]
+    }
   }
 }
 ```
 
-每个受控会话都必须提供显式目标策略。使用 `inherit` 或 `deny` 的设备会拒绝会话出站网络策略。返回的会话描述符包含修订号和秘密元数据，例如 `{"env":"GH_TOKEN","sentinel":"a13n_7d4e9c2a_GH_TOKEN","inject_hosts":["api.github.com"]}`；秘密的 `value` 只可写入。
+每个受控会话都必须提供显式目标策略。有效模式为 `inherit` 或 `deny` 的会话会拒绝目标策略和秘密绑定。返回的会话描述符包含修订号和秘密元数据，例如 `{"env":"GH_TOKEN","sentinel":"a13n_7d4e9c2a_GH_TOKEN","inject_hosts":["api.github.com"]}`；秘密的 `value` 只可写入。
 
 命令使用 `GH_TOKEN` 中提供的占位标记：
 
@@ -119,7 +123,7 @@ broker 拒绝私有、回环、链路本地、元数据及其他非公共上游�
 }
 ```
 
-更新经过验证后原子发布，再递增 `revision`。若返回 `conflict`，先通过 `environment.describe` 或 `session.attach` 读取当前元数据，再决定新的更新内容。省略的字段保留原值。空 allowlist 拒绝外部访问；public 模式恢复公共域名访问。设备身份、Sandbox 授权和网络模式保持固定。
+更新经过验证后原子发布，再递增 `revision`。若返回 `conflict`，先通过 `environment.describe` 或 `session.attach` 读取当前元数据，再决定新的更新内容。省略的字段保留原值。空 allowlist 拒绝外部访问；public 模式恢复公共域名访问。已有会话的执行身份、Sandbox 授权和网络模式保持固定。
 
 `set_secrets` 添加或替换绑定。轮换保留占位标记，因此已使用 `$GH_TOKEN` 的进程会在下一次 HTTPS 请求中使用新值。`remove_secrets` 停用绑定；删除后重新添加会创建新标记。拦截请求头包含已停用标记时，请求会被拒绝。移除获准主机时，在同一次更新中删除或修改它的注入绑定。
 

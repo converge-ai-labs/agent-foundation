@@ -15059,6 +15059,21 @@
         "title": "MountView",
         "type": "object"
       },
+      "NativeIsolation": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "const": "native",
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "title": "NativeIsolation",
+        "type": "object"
+      },
       "NetworkInterfaceMetrics": {
         "additionalProperties": false,
         "properties": {
@@ -21459,6 +21474,16 @@
               }
             ]
           },
+          "isolation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SessionIsolation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "lifecycle": {
             "anyOf": [
               {
@@ -21552,6 +21577,23 @@
         },
         "title": "SessionCreate",
         "type": "object"
+      },
+      "SessionIsolation": {
+        "discriminator": {
+          "mapping": {
+            "native": "#/components/schemas/NativeIsolation",
+            "vm": "#/components/schemas/VmIsolation"
+          },
+          "propertyName": "mode"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/NativeIsolation"
+          },
+          {
+            "$ref": "#/components/schemas/VmIsolation"
+          }
+        ]
       },
       "SessionLifecyclePolicy": {
         "additionalProperties": false,
@@ -26561,6 +26603,87 @@
         ],
         "title": "VideoUrlType",
         "type": "string"
+      },
+      "VmBackend": {
+        "enum": [
+          "boxlite",
+          "microsandbox"
+        ],
+        "title": "VmBackend",
+        "type": "string"
+      },
+      "VmIsolation": {
+        "additionalProperties": false,
+        "properties": {
+          "backend": {
+            "$ref": "#/components/schemas/VmBackend"
+          },
+          "cpus": {
+            "maximum": 255.0,
+            "minimum": 1.0,
+            "title": "Cpus",
+            "type": "integer"
+          },
+          "image": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Image",
+            "type": "string"
+          },
+          "memory_mib": {
+            "maximum": 4294967295.0,
+            "minimum": 128.0,
+            "title": "Memory Mib",
+            "type": "integer"
+          },
+          "mode": {
+            "const": "vm",
+            "title": "Mode",
+            "type": "string"
+          },
+          "mounts": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/VmMount"
+            },
+            "title": "Mounts",
+            "type": "array"
+          }
+        },
+        "required": [
+          "mode",
+          "backend",
+          "image",
+          "cpus",
+          "memory_mib"
+        ],
+        "title": "VmIsolation",
+        "type": "object"
+      },
+      "VmMount": {
+        "additionalProperties": false,
+        "properties": {
+          "access": {
+            "$ref": "#/components/schemas/GrantAccess"
+          },
+          "source": {
+            "format": "eip-absolute-path",
+            "title": "Source",
+            "type": "string"
+          },
+          "target": {
+            "format": "eip-absolute-path",
+            "title": "Target",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "target",
+          "access"
+        ],
+        "title": "VmMount",
+        "type": "object"
       },
       "WaitReason": {
         "enum": [

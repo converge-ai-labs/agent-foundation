@@ -28,6 +28,7 @@ import asyncio
 import os
 
 from a13n_envd_client import EIPDeviceConnection, HttpTransport
+from a13n_envd_client.eip.v1 import SessionConfiguration
 
 
 async def main() -> None:
@@ -42,7 +43,9 @@ async def main() -> None:
         info = await device.describe()  # Discovery does not open a Session.
         print(info.device_id, info.default_working_directory)
         async with await device.open_session(
-            working_directory=info.default_working_directory,
+            configuration=SessionConfiguration(
+                working_directory=info.default_working_directory,
+            ),
             required_methods=("file.read_text",),
         ) as session:
             print(session.session_id, session.descriptor.working_directory)
@@ -94,7 +97,7 @@ HTTPS 连接通过 `httpx2` 遵循 `HTTPS_PROXY`、`ALL_PROXY`、`NO_PROXY` 及�
 - `descriptor` 读取缓存设备信息；`describe()` 获取新视图。两者提供系统信息、路径格式、默认目录和目录发现可用性。
 - 设备声明 `device.metrics` 时，`metrics()` 读取最新缓存样本。它不打开会话，也不启动采集；首次采集完成前，`sample` 保持 `None`。参见[监控与样本语义](monitoring.md#system-information-and-resource-monitoring)。
 - `list_directories(DirectoryListParams(...))` 使用绝对路径、偏移量、上限、预期设备 ID 和代际列出一层目录。它不打开会话。
-- `open_session(working_directory=None, egress=None, lifecycle=None, required_methods=(), readiness_timeout=10.0)` 创建新会话。省略 cwd 时采用设备默认值。controlled 设备需提供 `egress`；其他模式拒绝该字段。`required_methods` 检查兼容性，不授予权限。
+- `open_session(configuration=None, required_methods=(), readiness_timeout=10.0)` 创建新会话。省略配置时，客户端发送空配置，继承启动默认值。使用 `SessionConfiguration` 在部署权限内选择 cwd、Sandbox、出站网络模式、生命周期和命令可用性。仅当会话的有效模式为 controlled 时提供 `configuration.egress`；inherit 和 deny 拒绝该字段。`required_methods` 检查兼容性，不授予权限。
 - `attach_session(descriptor, owner_epoch=None)` 在过期前接管同一设备代际的精确已有会话。默认 epoch 为保存的描述符 epoch 加一。存在并发恢复者的 Host 必须在执行锁下分配并持久化更新的 epoch。操作和传输不会被重放或恢复。
 - `close()` 先关闭本地管理的会话，再关闭物理连接。
 
@@ -102,7 +105,7 @@ HTTPS 连接通过 `httpx2` 遵循 `HTTPS_PROXY`、`ALL_PROXY`、`NO_PROXY` 及�
 
 通过 `EIPSession.describe()` 和 `readiness(timeout=10.0)` 检查会话，通过 `open_reader()`、`open_writer()`、`open_output()` 或 `observe_computer()` 使用资源 helper。客户端在会话打开期间维护保活。`close()` 和 `abort()` 保留同级会话及借用的传输通道。`abort()` 尝试在有限时间内关闭；结果不确定的操作仍需核对。
 
-通过 `lifecycle` 传入 `SessionLifecyclePolicy(idle_timeout_ms=3600000, max_lifetime_ms=None)`，选择会话不可变的保留策略。设备默认空闲寿命为一小时，无最大寿命。`EIPSession.detach()` 停止保活、释放附加关系并刷新空闲期限，同时保留原生命令、输出和证据。在分离前保存描述符，供后续附加使用。显式关闭会销毁这些资源。daemon 重启或会话过期后，旧资源不可再用。
+通过 `SessionConfiguration.lifecycle` 传入 `SessionLifecyclePolicy(idle_timeout_ms=3600000, max_lifetime_ms=None)`，选择会话不可变的保留策略。设备默认空闲寿命为一小时，无最大寿命。`EIPSession.detach()` 停止保活、释放附加关系并刷新空闲期限，同时保留原生命令、输出和证据。在分离前保存描述符，供后续附加使用。显式关闭会销毁这些资源。daemon 重启或会话过期后，旧资源不可再用。
 
 `process.start` 响应不确定时，使用生成的 `process_resolve_start` 方法，传入 `ProcessResolveStartParams(context=..., target_operation_id=...)`。查询观察原始启动，不会再次执行命令。成功时返回原始句柄和回执，以及当前进程状态。缺失证据仍表示结果未知。
 

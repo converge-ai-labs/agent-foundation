@@ -889,6 +889,35 @@ async def test_changed_api_key_model_gets_new_resource_without_rewriting_shared_
     assert generated.read_text() == edited
 
 
+@pytest.mark.parametrize("backend", ["boxlite", "microsandbox"])
+def test_local_project_adapter_rejects_vm_guest_paths(backend: str) -> None:
+    from a13n_harness.providers.environment.local_envd.provider import LOCAL_ENVD
+    from a13n_harness_ui.extensions.environment_adapters import LocalEnvdProjectAdapter
+
+    with pytest.raises(ValueError, match="use a Device binding for VM Sessions"):
+        LocalEnvdProjectAdapter().validate_profile(
+            provider_configuration={
+                "session": {
+                    "session": {
+                        "working_directory": "/workspace",
+                        "sandbox": {"mode": "disabled"},
+                        "egress_mode": "inherit",
+                        "isolation": {
+                            "mode": "vm",
+                            "backend": backend,
+                            "image": "mirror.gcr.io/library/ubuntu:24.04",
+                            "cpus": 1,
+                            "memory_mib": 1024,
+                            "mounts": [{"source": "/host/project", "target": "/workspace", "access": "read_write"}],
+                        },
+                    }
+                }
+            },
+            adapter_configuration={},
+            provider=LOCAL_ENVD,
+        )
+
+
 @pytest.mark.anyio
 async def test_sandbox_adapter_selects_only_the_session_directory(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -915,8 +944,10 @@ async def test_sandbox_adapter_selects_only_the_session_directory(
     )
     configuration = create.call_args.kwargs["environment"]
     assert configuration.working_directory == local_envd_path(tmp_path)
-    assert configuration.egress is None and configuration.expected_boundary is None
-    assert set(configuration.model_dump()) == {"working_directory", "required_methods", "egress", "expected_boundary"}
+    selected = adapters.LocalEnvdProfileConfiguration()
+    assert configuration.session == selected.session.session
+    assert configuration.expected_boundary is None
+    assert set(configuration.model_dump()) == {"working_directory", "required_methods", "session", "expected_boundary"}
 
 
 @pytest.mark.anyio

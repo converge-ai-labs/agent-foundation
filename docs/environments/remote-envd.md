@@ -116,6 +116,31 @@ Set `HOST_GITHUB_TOKEN` in the Host environment, then pass `recipe` as the first
 
 Set `expected_boundary` to the effective Session boundary you require. For a restricted Session, specify its exact grants. Continue to [controlled egress](../a13n-envd/egress.md) for credential injection and policy updates.
 
+For a VM Session, set `session.isolation` to the Envd VM selection and use guest paths for both `session.working_directory` and each directory view's `working_directory`. For example:
+
+```python
+recipe = {
+    "working_directory": "/workspace/project",
+    "session": {
+        "working_directory": "/workspace",
+        "isolation": {
+            "mode": "vm",
+            "backend": "boxlite",
+            "image": "mirror.gcr.io/library/ubuntu:24.04",
+            "cpus": 1,
+            "memory_mib": 1024,
+            "mounts": [{
+                "source": "/srv/workspace",
+                "target": "/workspace",
+                "access": "read_write",
+            }],
+        },
+    },
+}
+```
+
+The mount source belongs to the Device host; the target belongs to the guest. Create `/srv/workspace/project` before opening this recipe. The Device must include the selected VM backend and permit the requested mount. `microsandbox` is also supported. VM Sessions currently use inherited networking and disabled native Sandbox policy; see [VM isolation](../a13n-envd/isolation.md). Harness UI accepts this selection through explicit Device bindings. Its local Project adapter preserves Host paths and rejects VM profiles because it does not map Project and Thread-file paths into guests.
+
 ## Integrate your own WebSocket Host
 
 Your application owns the listener and a `WebSocketEnvdConnections` instance for its lifespan. Envd connects to that listener; the Host then sends EIP requests over the accepted connection.
@@ -198,7 +223,7 @@ Keep target identity and Session recovery in separate Host records:
 | `EnvdSessionRecovery.state`             | Attempt attachment to a retained Session | Host-private checkpoint for its original logical execution scope                                        |
 | Process handles and output observations | Observe work through an execution        | Local to that execution; reopening does not restore them                                                |
 
-Resolve an omitted cwd from authenticated Device info before accepting a Run that needs immutable directory selection. Device info and bounded directory discovery require no Session. Multiple Sessions can use one Device, but they are resource owners, not tenant isolation boundaries.
+For native Sessions, resolve an omitted cwd from authenticated Device info before accepting a Run that needs immutable directory selection. Device info and bounded directory discovery require no Session. VM Sessions require a guest cwd. Multiple Sessions can use one Device; their effective isolation comes from the selected Session boundary, not from having separate Session identities.
 
 For recovery after an interrupted Host execution:
 

@@ -264,7 +264,7 @@ async def test_projectless_sandbox_setup_requires_preflight_and_execution_does_n
             )
         ).value
 
-        async def runtime(_roots, **kwargs):
+        async def runtime(*, profile=None):
             return LocalEnvdProviderRuntime(
                 executable=tmp_path / "envd",
                 allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(parent=tmp_path),
@@ -278,6 +278,7 @@ async def test_projectless_sandbox_setup_requires_preflight_and_execution_does_n
 
         monkeypatch.setattr(executor._environments._reconstructor, "sandbox_runtime", runtime)
         monkeypatch.setattr(LocalEnvdExecution, "open", unavailable)
+        composition = await executor._environments.admit(composition)
         plan = await executor._environments.prepare(composition)
         assert prepared == []
         with pytest.raises(RuntimeError, match="Sandbox unavailable"):

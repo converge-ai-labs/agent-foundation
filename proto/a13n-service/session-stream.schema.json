@@ -2403,6 +2403,21 @@
       "title": "MessagePayload",
       "type": "object"
     },
+    "NativeIsolation": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "const": "native",
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode"
+      ],
+      "title": "NativeIsolation",
+      "type": "object"
+    },
     "ObserverContinuation": {
       "additionalProperties": false,
       "description": "Native conversion cursors required to resume mid-part, without raw history.",
@@ -3956,6 +3971,17 @@
           ],
           "default": null
         },
+        "isolation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SessionIsolation"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "lifecycle": {
           "anyOf": [
             {
@@ -3994,6 +4020,23 @@
       },
       "title": "SessionConfiguration",
       "type": "object"
+    },
+    "SessionIsolation": {
+      "discriminator": {
+        "mapping": {
+          "native": "#/$defs/NativeIsolation",
+          "vm": "#/$defs/VmIsolation"
+        },
+        "propertyName": "mode"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/NativeIsolation"
+        },
+        {
+          "$ref": "#/$defs/VmIsolation"
+        }
+      ]
     },
     "SessionLifecyclePolicy": {
       "additionalProperties": false,
@@ -4924,6 +4967,87 @@
         }
       },
       "title": "UsageLimits",
+      "type": "object"
+    },
+    "VmBackend": {
+      "enum": [
+        "boxlite",
+        "microsandbox"
+      ],
+      "title": "VmBackend",
+      "type": "string"
+    },
+    "VmIsolation": {
+      "additionalProperties": false,
+      "properties": {
+        "backend": {
+          "$ref": "#/$defs/VmBackend"
+        },
+        "cpus": {
+          "maximum": 255,
+          "minimum": 1,
+          "title": "Cpus",
+          "type": "integer"
+        },
+        "image": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Image",
+          "type": "string"
+        },
+        "memory_mib": {
+          "maximum": 4294967295,
+          "minimum": 128,
+          "title": "Memory Mib",
+          "type": "integer"
+        },
+        "mode": {
+          "const": "vm",
+          "title": "Mode",
+          "type": "string"
+        },
+        "mounts": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/VmMount"
+          },
+          "title": "Mounts",
+          "type": "array"
+        }
+      },
+      "required": [
+        "mode",
+        "backend",
+        "image",
+        "cpus",
+        "memory_mib"
+      ],
+      "title": "VmIsolation",
+      "type": "object"
+    },
+    "VmMount": {
+      "additionalProperties": false,
+      "properties": {
+        "access": {
+          "$ref": "#/$defs/GrantAccess"
+        },
+        "source": {
+          "format": "eip-absolute-path",
+          "title": "Source",
+          "type": "string"
+        },
+        "target": {
+          "format": "eip-absolute-path",
+          "title": "Target",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "target",
+        "access"
+      ],
+      "title": "VmMount",
       "type": "object"
     },
     "WaitReason": {

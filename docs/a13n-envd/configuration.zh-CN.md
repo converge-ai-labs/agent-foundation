@@ -4,7 +4,7 @@ sidebarTitle: 配置与传输
 description: 将 Envd 连接到 Host，选择执行设置，并采集资源指标。
 ---
 
-在启动时配置 Envd，选择连接方式、执行账号、文件系统隔离和网络模式。Host 负责部署、凭据和守护进程生命周期。随后，每个 EIP 会话在这些设置内选择工作目录并执行操作。
+在启动时配置 Envd，选择连接方式、执行账号、文件系统隔离和网络模式。Host 负责部署、凭据和守护进程生命周期。随后，每个 EIP 会话通过 `session.open.configuration` 在部署权限内选择工作目录、Sandbox、出站网络模式、生命周期和命令可用性。省略的选项继承启动默认值。
 
 本页的 JSON 和环境变量用于守护进程。Harness UI YAML 和 `EnvironmentProviderSpec` 配置 Host 侧适配器，包括必需方法及带秘密引用的可选会话出站策略。需要预置账号、shell 和 sudo 的容器时，使用[沙箱镜像](sandbox.md)。
 
@@ -105,7 +105,7 @@ Envd 为当前代次创建不可预测的私有子目录，并持有独占运行
 }
 ```
 
-默认工作目录作为各会话的初始 cwd。省略时，Envd 记录启动 cwd。目录不存在会导致会话打开失败，而非守护进程启动失败。文件访问遵循执行账号、Sandbox 授权及外层沙箱的边界，不以 cwd 为边界。目录发现可在会话创建前读取有界的一层目录。
+`configuration.working_directory` 省略或为 null 时，默认工作目录作为该会话的初始 cwd。省略时，Envd 记录启动 cwd。目录不存在会导致会话打开失败，而非守护进程启动失败。文件访问遵循执行账号、Sandbox 授权及外层沙箱的边界，不以 cwd 为边界。目录发现可在会话创建前读取有界的一层目录。
 
 用 `--device-id`、JSON `device_id` 或 `A13N_ENVD_DEVICE_ID` 指定稳定设备 ID，或让安装状态目录保留生成的 ID。CLI 元数据选项覆盖 JSON。目录发现通过 JSON 或 `A13N_ENVD_DIRECTORY_DISCOVERY` 设置。Windows 启动路径使用原生格式，EIP 路径使用 `/C:/...` 或 `/UNC/server/share/...`。
 
@@ -291,6 +291,8 @@ a13n-envd --version
 | `computer_use_permission_timeout_ms`         | `120000`；开始任何 EIP 传输前，等待 macOS 权限或 X11/Windows 桌面就绪的正数启动期限                                  |
 | `trusted_executable_roots`, `shell_profiles` | 空；除非启用 Full Control，否则命令方法禁用                                                                          |
 | `limits`                                     | 设备总限制和逐会话限制                                                                                               |
+
+`session.open.configuration.lifecycle` 省略或为 null 时，使用 `idle_timeout_ms` 和 `max_lifetime_ms` 默认值。显式会话生命周期覆盖这些默认值，并在该会话内保持不变。
 
 默认容量为 128 个会话、设备 256 个并发操作、每个会话 128 个并发操作、设备 4 GiB spool、会话 1 GiB spool、每条输出流 256 MiB 及 2 MiB 预览。会话容量应不超过设备总额，预览不超过流容量，spool 为两条流保留足够容量。
 

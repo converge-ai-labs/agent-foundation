@@ -116,6 +116,31 @@ recipe = {
 
 将 `expected_boundary` 设为要求的实际 Session 边界。受限 Session 需指定精确授权。凭据注入和策略更新见[受控出站网络](../a13n-envd/egress.md)。
 
+对于 VM Session，将 `session.isolation` 设为 Envd VM 配置，并为 `session.working_directory` 和每个目录视图的 `working_directory` 使用 guest 路径。例如：
+
+```python
+recipe = {
+    "working_directory": "/workspace/project",
+    "session": {
+        "working_directory": "/workspace",
+        "isolation": {
+            "mode": "vm",
+            "backend": "boxlite",
+            "image": "mirror.gcr.io/library/ubuntu:24.04",
+            "cpus": 1,
+            "memory_mib": 1024,
+            "mounts": [{
+                "source": "/srv/workspace",
+                "target": "/workspace",
+                "access": "read_write",
+            }],
+        },
+    },
+}
+```
+
+挂载源属于 Device 宿主机，目标属于 guest。打开此配置前先创建 `/srv/workspace/project`。Device 必须包含所选 VM 后端并允许请求的挂载；也支持 `microsandbox`。VM Session 当前使用继承网络和禁用原生 Sandbox 的策略，详见 [VM 隔离](../a13n-envd/isolation.md)。Harness UI 通过显式 Device 绑定接受此配置。本地 Project 适配器保留 Host 路径，不会将 Project 和 Thread 文件路径映射到 guest，因此拒绝 VM profile。
+
 ## 集成自己的 WebSocket Host
 
 应用在自身生命周期内拥有监听器和 `WebSocketEnvdConnections` 实例。Envd 连接监听器后，Host 通过已接纳连接发送 EIP 请求。
@@ -198,7 +223,7 @@ uv run environment-provider-example websocket_envd \
 | `EnvdSessionRecovery.state` | 尝试附加到保留的 Session         | 只用于原逻辑执行范围的 Host 私有检查点                       |
 | 进程句柄和输出观测          | 通过执行对象观测工作             | 属于该执行范围；重新打开不会还原                             |
 
-接纳需要固定目录选择的执行前，通过已认证的 Device 信息解析省略的 cwd。Device 信息和有界目录发现不需要 Session。多个 Session 可使用同一 Device，但 Session 是资源所有者，不是租户隔离边界。
+对于原生 Session，接纳需要固定目录选择的执行前，通过已认证的 Device 信息解析省略的 cwd。Device 信息和有界目录发现不需要 Session。VM Session 需要 guest cwd。多个 Session 可使用同一 Device；实际隔离取决于所选 Session 边界，而不是不同的 Session 身份。
 
 Host 执行中断后，按以下步骤恢复：
 
