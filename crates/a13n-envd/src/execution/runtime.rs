@@ -75,7 +75,8 @@ impl Runtime {
         let physically_clean = clean.clone();
         reservation.started = true;
         let (ready, receive_ready) = oneshot::channel();
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(120);
+        let startup_timeout = config.vm_startup_timeout;
+        let deadline = tokio::time::Instant::now() + startup_timeout;
         let (stage, observed_stage) = watch::channel("prepare");
         let (stop, stopped) = oneshot::channel();
         let (dead_sender, dead) = watch::channel(false);
@@ -166,8 +167,8 @@ impl Runtime {
             .await
             .map_err(|_| {
                 io::Error::new(io::ErrorKind::TimedOut, format!(
-                    "VM {} timed out after 120 seconds; cleanup remains owned until the in-flight SDK phase settles",
-                    *observed_stage.borrow(),
+                    "VM {} timed out after {} ms; increase vm_startup_timeout_ms (A13N_ENVD_VM_STARTUP_TIMEOUT_MS) for slow image pulls; cleanup remains owned until the in-flight SDK phase settles",
+                    *observed_stage.borrow(), startup_timeout.as_millis(),
                 ))
             })?
             .map_err(io::Error::other)??;

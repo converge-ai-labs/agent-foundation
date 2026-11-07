@@ -67,6 +67,8 @@ impl WorkerConfig {
             computer_use: self.computer_use,
             // Permission readiness belongs to daemon startup, not Session workers.
             computer_use_permission_timeout: Duration::ZERO,
+            // Session workers never admit nested VMs.
+            vm_startup_timeout: Duration::ZERO,
             managed: false,
             execution: None,
             allow_sudo: self.allow_sudo,

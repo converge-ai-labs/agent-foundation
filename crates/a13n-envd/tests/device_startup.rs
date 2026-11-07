@@ -189,6 +189,42 @@ fn environment_overrides_file_and_cli_overrides_environment() {
 }
 
 #[test]
+fn vm_startup_budget_obeys_json_and_scalar_precedence() {
+    let fixture = Fixture::new();
+    let config = fixture.0.join("vm-budget.json");
+    fs::write(&config, r#"{"vm_startup_timeout_ms":0}"#).unwrap();
+    let layered = || {
+        let mut command = fixture.command();
+        command.arg("--config").arg(&config);
+        command
+    };
+    let error = fixture.reject(layered());
+    assert!(
+        String::from_utf8_lossy(&error.stderr).contains("vm_startup_timeout_ms must be positive")
+    );
+    let mut command = layered();
+    command.env(
+        "A13N_ENVD_CONFIG_JSON",
+        r#"{"vm_startup_timeout_ms":600000}"#,
+    );
+    fixture.initialize(command);
+    let mut command = layered();
+    command
+        .env(
+            "A13N_ENVD_CONFIG_JSON",
+            r#"{"vm_startup_timeout_ms":600000}"#,
+        )
+        .env("A13N_ENVD_VM_STARTUP_TIMEOUT_MS", "0");
+    let error = fixture.reject(command);
+    assert!(
+        String::from_utf8_lossy(&error.stderr).contains("vm_startup_timeout_ms must be positive")
+    );
+    let mut command = layered();
+    command.env("A13N_ENVD_VM_STARTUP_TIMEOUT_MS", "600000");
+    fixture.initialize(command);
+}
+
+#[test]
 fn malformed_environment_configuration_is_not_silently_ignored() {
     let fixture = Fixture::new();
     for (name, value) in [
@@ -201,6 +237,12 @@ fn malformed_environment_configuration_is_not_silently_ignored() {
         ("A13N_ENVD_EXECUTION_UID", "-1"),
         ("A13N_ENVD_EGRESS_ENABLED", ""),
         ("A13N_ENVD_IDLE_TIMEOUT_MS", "0"),
+        ("A13N_ENVD_VM_STARTUP_TIMEOUT_MS", "-1"),
+        ("A13N_ENVD_VM_STARTUP_TIMEOUT_MS", "invalid"),
+        (
+            "A13N_ENVD_CONFIG_JSON",
+            r#"{"vm_startup_timeout_ms":"600000"}"#,
+        ),
         ("A13N_ENVD_COMPUTER_USE_PERMISSION_TIMEOUT_MS", "0"),
         ("A13N_ENVD_COMPUTER_USE_PERMISSION_TIMEOUT_MS", "-1"),
         ("A13N_ENVD_COMPUTER_USE_PERMISSION_TIMEOUT_MS", "invalid"),

@@ -28,7 +28,7 @@ export A13N_ENVD_CONFIG_JSON='{"default_working_directory":"/workspace","limits"
 a13n-envd
 ```
 
-Scalar settings cover identity, execution, discovery, metadata and lifetimes: `A13N_ENVD_ALLOW_SUDO`, `A13N_ENVD_EXECUTION_UID`, `A13N_ENVD_EXECUTION_GID`, `A13N_ENVD_EGRESS_MODE`, `A13N_ENVD_FULL_CONTROL`, `A13N_ENVD_COMPUTER_USE`, `A13N_ENVD_COMPUTER_USE_PERMISSION_TIMEOUT_MS`, `A13N_ENVD_DIRECTORY_DISCOVERY`, `A13N_ENVD_DEVICE_ID`, `A13N_ENVD_NAME`, `A13N_ENVD_DESCRIPTION`, `A13N_ENVD_DEFAULT_WORKING_DIRECTORY`, `A13N_ENVD_IDLE_TIMEOUT_MS` and `A13N_ENVD_MAX_LIFETIME_MS`. Boolean values accept `true`, `false`, `1` and `0`.
+Scalar settings cover identity, execution, discovery, metadata and lifetimes: `A13N_ENVD_ALLOW_SUDO`, `A13N_ENVD_EXECUTION_UID`, `A13N_ENVD_EXECUTION_GID`, `A13N_ENVD_EGRESS_MODE`, `A13N_ENVD_FULL_CONTROL`, `A13N_ENVD_COMPUTER_USE`, `A13N_ENVD_COMPUTER_USE_PERMISSION_TIMEOUT_MS`, `A13N_ENVD_DIRECTORY_DISCOVERY`, `A13N_ENVD_DEVICE_ID`, `A13N_ENVD_NAME`, `A13N_ENVD_DESCRIPTION`, `A13N_ENVD_DEFAULT_WORKING_DIRECTORY`, `A13N_ENVD_IDLE_TIMEOUT_MS`, `A13N_ENVD_MAX_LIFETIME_MS` and `A13N_ENVD_VM_STARTUP_TIMEOUT_MS`. Boolean values accept `true`, `false`, `1` and `0`.
 
 ## Connect to Service
 
@@ -281,6 +281,7 @@ Use these fields in daemon JSON:
 | `default_working_directory`                  | Startup cwd if unset                                                                                                                       |
 | `directory_discovery`                        | `true`                                                                                                                                     |
 | `idle_timeout_ms`                            | Default Session idle lifetime: `3600000` (one hour)                                                                                        |
+| `vm_startup_timeout_ms`                      | `120000`; positive Device-wide VM startup admission budget in milliseconds                                                                 |
 | `max_lifetime_ms`                            | Default maximum Session lifetime; positive when set, otherwise unlimited                                                                   |
 | `execution.uid`, `execution.gid`             | Optional paired Linux native IDs; omitted retains the launcher, including root                                                             |
 | `execution.allow_sudo`                       | `true`; native sudoers still controls authorization                                                                                        |
@@ -291,6 +292,8 @@ Use these fields in daemon JSON:
 | `computer_use_permission_timeout_ms`         | `120000`; positive startup deadline for macOS permissions or X11/Windows desktop readiness before any EIP transport starts                 |
 | `trusted_executable_roots`, `shell_profiles` | Empty; command methods disabled unless Full Control is enabled                                                                             |
 | `limits`                                     | Device aggregates and per-Session limits                                                                                                   |
+
+`vm_startup_timeout_ms` defaults to `120000` and must be positive. It sets one Device-wide VM admission budget covering preparation, image acquisition, VM start and worker connection. Use a larger value for slow cold-cache image pulls, for example `{"vm_startup_timeout_ms":600000}` in the `--config` file or `A13N_ENVD_VM_STARTUP_TIMEOUT_MS=600000`. Set the client's Session-open readiness timeout above this budget to receive the daemon's stage-aware timeout error. An in-flight SDK call remains owned after timeout; capacity is released after cleanup settles. This setting does not change native Session admission or Session lifetime.
 
 `idle_timeout_ms` and `max_lifetime_ms` are defaults used when `session.open` omits `lifecycle`. An explicit Session lifecycle overrides these defaults and remains immutable for that Session.
 

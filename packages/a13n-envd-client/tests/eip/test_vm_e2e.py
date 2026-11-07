@@ -29,6 +29,7 @@ from a13n_envd_client.errors import EIPMethodError
         (VmBackend.BOXLITE, "cancel"),
         (VmBackend.MICROSANDBOX, "cancel"),
         (VmBackend.BOXLITE, "bootstrap_space"),
+        (VmBackend.BOXLITE, "timeout"),
     ],
 )
 def test_vm_failed_open_reclaims_storage_and_allows_replacement(tmp_path: Path, backend: VmBackend, failure: str):
@@ -49,7 +50,16 @@ def test_vm_failed_open_reclaims_storage_and_allows_replacement(tmp_path: Path, 
     (shared / "sentinel").write_text("host workspace")
     runtime = tmp_path / "runtime"
     config = tmp_path / "envd.json"
-    config.write_text(json.dumps({"device_id": "vm-client", "full_control": True, "limits": {"max_sessions": 1}}))
+    config.write_text(
+        json.dumps(
+            {
+                "device_id": "vm-client",
+                "full_control": True,
+                "limits": {"max_sessions": 1},
+                "vm_startup_timeout_ms": 600000,
+            }
+        )
+    )
     configuration = SessionConfiguration(
         working_directory="/mnt/shared",
         isolation=VmIsolation(
@@ -77,6 +87,7 @@ def test_vm_failed_open_reclaims_storage_and_allows_replacement(tmp_path: Path, 
                     "PATH": "/usr/local/bin:/usr/bin:/bin",
                     "HOME": str(tmp_path),
                     "A13N_ENVD_RUNTIME_DIR": str(runtime),
+                    "A13N_ENVD_VM_STARTUP_TIMEOUT_MS": "1" if failure == "timeout" else "120000",
                 },
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
@@ -99,6 +110,11 @@ def test_vm_failed_open_reclaims_storage_and_allows_replacement(tmp_path: Path, 
                     opening.cancel()
                     with pytest.raises(asyncio.CancelledError):
                         await opening
+                elif failure == "timeout":
+                    with pytest.raises(EIPMethodError) as caught:
+                        await device.open_session(configuration=configuration, readiness_timeout=10)
+                    assert caught.value.error.data.error_type == ErrorType.TIMEOUT
+                    assert "VM" in caught.value.error.message
                 else:
                     small = configuration.model_copy(
                         update={"isolation": configuration.isolation.model_copy(update={"memory_mib": 512})}
@@ -118,6 +134,22 @@ def test_vm_failed_open_reclaims_storage_and_allows_replacement(tmp_path: Path, 
                 # Failed/cancelled admission still owns physical cleanup.
                 await wait_for(lambda: not list(runtime.glob("**/vms/session-*")))
                 assert not list(shared.glob(".eip-stage-vm-*"))
+                if failure == "timeout":
+                    # The Device-wide VM budget stays short. Native admission is
+                    # unaffected and proves the failed VM released the only slot.
+                    async with await device.open_session(
+                        configuration=SessionConfiguration(working_directory=str(shared))
+                    ) as session:
+                        text = await session.client.file_read_text(
+                            FileReadTextParams(
+                                context=EIPCallContext(operation_id="read-native-replacement"),
+                                path=EIPPath(path=str(shared / "sentinel")),
+                                line_limit=10,
+                                max_line_length=100,
+                            )
+                        )
+                        assert text.text == "host workspace"
+                    return
                 async with await device.open_session(configuration=configuration, readiness_timeout=120) as session:
                     assert session.descriptor.boundary.vm == configuration.isolation
                     assert session.descriptor.boundary.backend.value == backend.value
