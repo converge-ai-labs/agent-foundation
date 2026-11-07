@@ -10,9 +10,9 @@ Optional [resource monitoring](11-resource-monitoring.md) uses Device-scoped EIP
 
 ## Device and Session Admission
 
-The first stdio/WebSocket application request is `initialize`, with the expected device identity and offered versions. Success establishes one device connection, not an Agent workspace. HTTP performs the same authenticated handshake without creating a server-side TCP-affine connection object. Explicit first-contact discovery is allowed only for Host registration; ordinary acquisition pins the registered identity.
+The first stdio/WebSocket application request is `initialize`, with the expected device identity. Success establishes one device connection, not an Agent workspace. HTTP performs the same authenticated handshake without creating a server-side TCP-affine connection object. Explicit first-contact discovery is allowed only for Host registration; ordinary acquisition pins the registered identity.
 
-A device-ready requester calls `session.open` with the selected device/generation/version, an optional working directory and required methods. Admission resolves and checks that directory and reserves one Session slot. Success returns a fresh unpredictable generation-bound session selector and descriptor. A failed open changes neither sibling Sessions nor the carrier; partial allocations are cleaned conservatively.
+A device-ready requester calls `session.open` with the selected device/generation, required Session configuration and required methods. Admission resolves and checks the configured working directory and reserves one Session slot. Success returns a fresh unpredictable generation-bound session selector and descriptor. A failed open changes neither sibling Sessions nor the carrier; partial allocations are cleaned conservatively.
 
 A Session is open/attached, detached, closing or closed. Before the first successful `environment.readiness`, only readiness, keepalive and close are admitted. No provider/model operation scope is published until readiness succeeds. A lost open response can leave an unclaimed Session until idle expiry; clients do not retry open automatically or interpret loss as non-creation.
 
@@ -78,7 +78,7 @@ A Host may supply separate private proxy authentication in bounded `X-` headers 
 
 The dedicated EIP listener requires an Authorization Bearer token on every control/transfer request. Public links use verified HTTPS by default; scoped loopback/provider-private plaintext can sit behind provider TLS. The Python HTTP client accepts an explicit caller-owned `verify=False` as an insecure TLS opt-out without allowing public plaintext or redirects. It does not read Harness environment variables; the Harness Host applies its [operator-controlled outbound TLS policy](../a13n-harness/15-security-compatibility-and-tradeoffs.md#operator-controlled-outbound-tls) when constructing the attachment. Tokens and selectors never appear in URLs, cookies, logs, model state or portable provider state. No redirects, browser CORS surface, generic file routes, health endpoint or arbitrary URL fetch are supported.
 
-`POST /eip/control` contains one control envelope. Selector-free initialize/device.describe observes Device info; directory.list performs optional bounded discovery without a Session. Selector-free session.open validates its explicit expected device/generation/version and creates another independent Session. This does not replace any existing Session. Subsequent control calls select via `eip_session` in the envelope, identically to framed carriers. An authenticated selector cannot be rebound to another trust principal or generation.
+`POST /eip/control` contains one control envelope. Selector-free initialize/device.describe observes Device info; directory.list performs optional bounded discovery without a Session. Selector-free session.open validates its explicit expected device/generation and Session configuration and creates another independent Session. This does not replace any existing Session. Subsequent control calls select via `eip_session` in the envelope, identically to framed carriers. An authenticated selector cannot be rebound to another trust principal or generation.
 
 An admitted request returns HTTP 200 with a typed EIP result/error. Missing/invalid credentials return 401; malformed media/framing 400/415; unknown raw-transfer session/handle 409; oversized bodies 413; capacity rejection 429; unsupported paths/methods 404/405. Pre-admission HTTP rejection proves that request did not dispatch. TCP pooling and affinity have no Session semantics. A recovering Host takes over an existing HTTP Session with `session.attach` and a newer owner epoch; detach preserves its native resources until its lifecycle deadline.
 
@@ -114,7 +114,7 @@ The listener and HTTP requester belong to trusted Host code. The Host owns produ
 
 | Failure                                                            | Effect                                                                                 |
 | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
-| Device authentication/identity/version fails                       | No usable device connection or Session                                                 |
+| Device authentication/identity fails                               | No usable device connection or Session                                                 |
 | One Session open/readiness fails                                   | Close that Session; preserve carrier and siblings unless the carrier itself is corrupt |
 | Session idle/maximum-lifetime deadline expires                     | Clean that Session and its resources; preserve siblings and carrier                    |
 | Local caller timeout/cancel                                        | End that observation; bound correlation and preserve possible-dispatch evidence        |

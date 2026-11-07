@@ -6,7 +6,7 @@ EIP has one language-neutral protocol source that generates the daemon wire surf
 
 The dedicated `a13n-envd-client` Python package contains the generated EIP models, method and transfer metadata, control/data codecs, typed request stubs, high-level async file readers and writers, and a small handwritten transport/session runtime. It has no Harness, provider, product, executable-discovery, artifact-download, installation, or daemon-process authority. It communicates over a session source supplied by an owning provider or Host and never searches `PATH`, selects a release, installs a binary, or launches `a13n-envd`. Envd-backed execution Providers in Harness implement Environment connector and provider-neutral Environment execution over this EIP client; Harness opens those Environment executions and adds Run-local mounts, routing, tools, and context.
 
-The client and `a13n-envd` daemon belong to one a13n-envd release group. Their package version is release identity. The EIP source version identifies the schema revision; peers do not negotiate or compare it, as defined by [EIP Protocol](02-eip-protocol.md).
+The client and `a13n-envd` daemon belong to one a13n-envd release group. Their package version is release identity. The deployment baseline is daemon/client `0.7.0`; Envd `0.6.x` peers are unsupported and must be upgraded together. The EIP source identifier remains `0.4` for this baseline and is not a cross-release compatibility guarantee; peers do not negotiate or compare it, as defined by [EIP Protocol](02-eip-protocol.md).
 
 ## Boundaries
 

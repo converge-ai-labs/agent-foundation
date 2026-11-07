@@ -82,6 +82,7 @@ DEFAULT_SESSION = {
         "egress": None,
         "lifecycle": None,
         "commands": None,
+        "isolation": None,
     },
 }
 

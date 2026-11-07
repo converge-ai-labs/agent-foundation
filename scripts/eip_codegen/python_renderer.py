@@ -854,7 +854,7 @@ from .models import EIPError, Identifier
 
 EIP_PROTOCOL_VERSION: Final = "0.4"
 EIP_PROTOCOL_MAJOR: Final = 0
-EIP_PROTOCOL_MINOR: Final = 2
+EIP_PROTOCOL_MINOR: Final = 4
 EIP_PROTO_PACKAGE: Final = "a13n.agent_envd.eip.v1"
 EIP_DESCRIPTOR_SHA256: Final = "__DESCRIPTOR_SHA256__"
 

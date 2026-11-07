@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 from a13n_envd_client.eip.v1 import EIP_DESCRIPTOR_SHA256
+from a13n_envd_client.eip.v1.protocol import EIP_PROTOCOL_MAJOR, EIP_PROTOCOL_MINOR, EIP_PROTOCOL_VERSION
 
 from scripts.eip_codegen.__main__ import (
     ARTIFACT_PATH,
@@ -54,6 +55,12 @@ def test_generated_manifest_uses_portable_paths(tmp_path: Path) -> None:
     manifest = json.loads((tmp_path / MANIFEST_PATH).read_text(encoding="utf-8"))
     assert manifest["files"] == sorted([relative.as_posix(), MANIFEST_PATH.as_posix()])
     assert all("\\" not in path for path in manifest["files"])
+
+
+def test_generated_protocol_version_components_match_schema_identifier() -> None:
+    assert EIP_PROTOCOL_VERSION == f"{EIP_PROTOCOL_MAJOR}.{EIP_PROTOCOL_MINOR}" == "0.4"
+    openrpc = json.loads(OPENRPC_PATH.read_text(encoding="utf-8"))
+    assert openrpc["info"]["version"] == EIP_PROTOCOL_VERSION
 
 
 def test_checked_inspection_artifacts_follow_eip_json_profile() -> None:
