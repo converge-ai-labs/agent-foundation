@@ -1,4 +1,4 @@
-//! Immutable Device launch policy. Session policy never changes this boundary.
+//! Native execution policy, deployment ceilings, and checked directory grants.
 use serde::{Deserialize, Serialize};
 use std::{
     io,
@@ -110,7 +110,46 @@ impl Sandbox {
         matches!(self, Self::Restricted { .. })
     }
 
+    /// Both policies have canonical, nonoverlapping paths. Requests can narrow
+    /// deployment grants, but cannot turn a mandatory restriction into a default.
+    pub(crate) fn permits(&self, requested: &Self) -> bool {
+        let Self::Restricted {
+            grants: ceiling,
+            full_disk_read,
+        } = self
+        else {
+            return true;
+        };
+        let Self::Restricted {
+            grants,
+            full_disk_read: requested_read,
+        } = requested
+        else {
+            return false;
+        };
+        (!requested_read || *full_disk_read)
+            && grants.iter().all(|grant| {
+                ceiling.iter().any(|allowed| {
+                    path_contains(&allowed.path, &grant.path)
+                        && (allowed.access == Access::ReadWrite || grant.access == Access::ReadOnly)
+                })
+            })
+    }
+
     pub(crate) fn validate(&mut self, protected: &[PathBuf]) -> io::Result<()> {
+        self.validate_with(protected, |path| {
+            if !path.is_dir() {
+                return Err(io::Error::other("Sandbox grant is not a directory"));
+            }
+            std::fs::canonicalize(path)
+        })
+    }
+
+    pub(crate) fn validate_with(
+        &mut self,
+        protected: &[PathBuf],
+        mut resolve: impl FnMut(&Path) -> io::Result<PathBuf>,
+    ) -> io::Result<()> {
         if matches!(
             self,
             Self::Restricted {
@@ -136,12 +175,12 @@ impl Sandbox {
             ));
         }
         for grant in grants.iter_mut() {
-            if !grant.path.is_absolute() || !grant.path.is_dir() {
+            if !grant.path.is_absolute() {
                 return Err(io::Error::other(
                     "Sandbox grants must be existing absolute directories",
                 ));
             }
-            grant.path = std::fs::canonicalize(&grant.path)?;
+            grant.path = resolve(&grant.path)?;
             #[cfg(windows)]
             if runtime_roots.iter().any(|root| overlaps(root, &grant.path)) {
                 return Err(io::Error::other(
@@ -186,6 +225,75 @@ impl Sandbox {
     }
 }
 
+pub(crate) fn open_grant(path: &Path) -> io::Result<std::fs::File> {
+    #[cfg(windows)]
+    return super::windows::open_directory(path);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        std::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_DIRECTORY | libc::O_CLOEXEC)
+            .open(path)
+    }
+}
+
+pub(crate) fn grant_identity(file: &std::fs::File) -> io::Result<GrantSource> {
+    #[cfg(windows)]
+    return super::windows::directory_identity(file);
+    #[cfg(unix)]
+    {
+        let metadata = file.metadata()?;
+        if !metadata.is_dir() {
+            return Err(io::Error::other("Sandbox grant is not a directory"));
+        }
+        Ok(GrantSource::from_metadata(&metadata))
+    }
+}
+
+/// The policy pathname and retained source identity describe the same open object.
+pub(crate) fn grant_path(file: &std::fs::File) -> io::Result<PathBuf> {
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::fd::AsRawFd;
+        std::fs::read_link(format!("/proc/self/fd/{}", file.as_raw_fd()))
+    }
+    #[cfg(target_os = "macos")]
+    {
+        use std::os::{fd::AsRawFd, unix::ffi::OsStrExt};
+        let mut path = [0_u8; libc::PATH_MAX as usize];
+        if unsafe { libc::fcntl(file.as_raw_fd(), libc::F_GETPATH, path.as_mut_ptr()) } < 0 {
+            return Err(io::Error::last_os_error());
+        }
+        let length = path
+            .iter()
+            .position(|byte| *byte == 0)
+            .ok_or_else(|| io::Error::other("unterminated directory path"))?;
+        Ok(PathBuf::from(std::ffi::OsStr::from_bytes(&path[..length])))
+    }
+    #[cfg(windows)]
+    {
+        crate::windows_path::canonicalize_handle(file)
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
+    {
+        let _ = file;
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "Sandbox grant resolution is unavailable",
+        ))
+    }
+}
+
+fn path_contains(a: &Path, b: &Path) -> bool {
+    #[cfg(windows)]
+    let (a, b) = (
+        PathBuf::from(a.to_string_lossy().to_lowercase()),
+        PathBuf::from(b.to_string_lossy().to_lowercase()),
+    );
+    b.starts_with(a)
+}
+
 fn overlaps(a: &Path, b: &Path) -> bool {
     #[cfg(windows)]
     let (a, b) = (
@@ -197,13 +305,12 @@ fn overlaps(a: &Path, b: &Path) -> bool {
     a.starts_with(b) || b.starts_with(a)
 }
 
-/// Nonsecret Device policy. Session publication uses the same descriptor after
-/// the worker handshake; destinations and credentials have a separate lifetime.
+/// Nonsecret effective policy. The launcher owns this statement; worker facts
+/// cannot replace it. Destinations and credentials have a separate lifetime.
 pub(crate) fn descriptor(
     config: &crate::config::Config,
 ) -> io::Result<crate::eip::ExecutionBoundary> {
     use crate::eip;
-    use sha2::{Digest, Sha256};
     let sandbox = match &config.sandbox {
         Sandbox::Disabled {} => eip::SandboxPolicy::Disabled(eip::DisabledSandbox {
             mode: "disabled".into(),
@@ -259,8 +366,15 @@ pub(crate) fn descriptor(
             && (config.sandbox.restricted() || !config.allow_sudo),
         backend,
         policy_digest: String::new(),
+        vm: None,
     };
-    let mut value = serde_json::to_value(&boundary).map_err(io::Error::other)?;
+    digest(&mut boundary)?;
+    Ok(boundary)
+}
+
+pub(crate) fn digest(boundary: &mut crate::eip::ExecutionBoundary) -> io::Result<()> {
+    use sha2::{Digest, Sha256};
+    let mut value = serde_json::to_value(&*boundary).map_err(io::Error::other)?;
     value
         .as_object_mut()
         .expect("boundary object")
@@ -270,7 +384,7 @@ pub(crate) fn descriptor(
         "{:x}",
         Sha256::digest(serde_json::to_vec(&value).map_err(io::Error::other)?)
     );
-    Ok(boundary)
+    Ok(())
 }
 
 pub(crate) fn managed(sandbox: &Sandbox, egress: Egress) -> bool {

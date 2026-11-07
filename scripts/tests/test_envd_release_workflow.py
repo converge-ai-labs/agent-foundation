@@ -158,3 +158,44 @@ def test_native_release_checks_binary_version_without_inner_isolation(
     result = run_step(step["run"], tmp_path)
 
     assert (result.returncode == 0) == (version == binary_version)
+
+
+@pytest.mark.parametrize("target", ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"])
+def test_linux_release_archives_build_both_embedded_vm_backends(jobs, tmp_path, monkeypatch, target):
+    job = jobs["build-binaries"]
+    entry = next(item for item in job["strategy"]["matrix"]["include"] if item["target"] == target)
+    assert entry["os"] == ("ubuntu-24.04-arm" if target.startswith("aarch64") else "ubuntu-24.04")
+    assert job["env"]["BOXLITE_DEPS_STUB"] == "2"
+    assert job["env"]["BOXLITE_EMBED_RUNTIME"] == "1"
+    dependencies = next(step for step in job["steps"] if step["name"] == "Install Linux SDK build dependencies")
+    assert dependencies["if"] == "runner.os == 'Linux'"
+    assert "protobuf-compiler" in dependencies["run"]
+    step = next(step for step in job["steps"] if step["name"] == "Build Unix binary archive")
+    cargo = tmp_path / "cargo"
+    cargo.write_text(
+        '#!/bin/sh\nset -eu\nprintf "%s\\n" "$*" > cargo-args\n'
+        'test "$BOXLITE_DEPS_STUB" = 2\ntest "$BOXLITE_EMBED_RUNTIME" = 1\n'
+        'mkdir -p "target/$TARGET/release"\nprintf vm-enabled > "target/$TARGET/release/a13n-envd"\n'
+    )
+    cargo.chmod(0o755)
+    (tmp_path / "LICENSE").write_text("license")
+    monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ['PATH']}")
+    for key, value in {**job["env"], "TARGET": target, "VERSION": "1.2.3"}.items():
+        monkeypatch.setenv(key, value)
+    result = run_step(step["run"], tmp_path)
+    assert result.returncode == 0, result.stderr
+    assert (tmp_path / "cargo-args").read_text().split() == [
+        "build",
+        "--release",
+        "--locked",
+        "--package",
+        "a13n-envd",
+        "--features",
+        "vm-boxlite,vm-microsandbox",
+        "--target",
+        target,
+    ]
+    with tarfile.open(tmp_path / f"a13n-envd-1.2.3-{target}.tar.gz") as archive:
+        binary = archive.extractfile("a13n-envd")
+        assert binary is not None
+        assert binary.read() == b"vm-enabled"

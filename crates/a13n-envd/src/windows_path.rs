@@ -58,7 +58,7 @@ pub(crate) fn nt_name(file: &impl AsRawHandle) -> io::Result<PathBuf> {
     }
 }
 
-fn canonicalize_handle(file: &File) -> io::Result<PathBuf> {
+pub(crate) fn canonicalize_handle(file: &File) -> io::Result<PathBuf> {
     let name = nt_name(file)?;
     let drives = unsafe { GetLogicalDrives() };
     if drives == 0 {

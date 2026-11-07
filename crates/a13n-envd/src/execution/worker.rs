@@ -20,10 +20,24 @@ use std::{
 use std::os::{fd::FromRawFd, unix::net::UnixStream};
 
 pub(crate) mod client;
+#[cfg(target_os = "linux")]
+pub(crate) mod guest;
 mod server;
 mod wire;
 
 const MAX_BOOTSTRAP_BYTES: usize = 16 * 1024 * 1024;
+
+/// Facts observed inside the execution target; Host policy stays in the broker.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct WorkerReady {
+    pub working_directory: String,
+    pub system_info: crate::eip::SystemInfo,
+    pub path_style: crate::eip::PathStyle,
+    pub shell_profiles: Vec<crate::eip::ShellProfileDescriptor>,
+    pub execution_features: crate::eip::ExecutionFeatures,
+    pub available_methods: Vec<String>,
+}
 
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -53,6 +67,8 @@ impl WorkerConfig {
             computer_use: self.computer_use,
             // Permission readiness belongs to daemon startup, not Session workers.
             computer_use_permission_timeout: Duration::ZERO,
+            // Session workers never admit nested VMs.
+            vm_startup_timeout: Duration::ZERO,
             managed: false,
             execution: None,
             allow_sudo: self.allow_sudo,
@@ -316,6 +332,7 @@ fn serve(socket: UnixStream, bootstrap: WorkerConfig) -> io::Result<()> {
             config,
             bootstrap.generation,
             bootstrap.session_id,
+            &[],
         )
         .await
     });
@@ -337,6 +354,7 @@ pub(crate) fn run_session() -> io::Result<()> {
         config,
         bootstrap.generation,
         bootstrap.session_id,
+        &[],
     ));
     runtime.shutdown_timeout(Duration::from_secs(1));
     result

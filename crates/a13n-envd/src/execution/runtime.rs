@@ -44,6 +44,143 @@ impl Drop for ChildGuard {
 }
 
 impl Runtime {
+    #[cfg(all(
+        target_os = "linux",
+        any(feature = "vm-boxlite", feature = "vm-microsandbox")
+    ))]
+    pub async fn start_vm(
+        vm: crate::eip::VmIsolation,
+        worker: WorkerConfig,
+        config: crate::config::Config,
+        mut protected: Vec<std::path::PathBuf>,
+        mut reservation: crate::daemon::execution::Reservation,
+    ) -> io::Result<Self> {
+        use super::vm::{Backend, Plan};
+        let state = config
+            .runtime
+            .clone()
+            .ok_or_else(|| io::Error::other("VM workers require a runtime directory"))?;
+        let parent = state.generation().join("vms");
+        std::fs::create_dir_all(&parent)?;
+        std::fs::File::open(state.generation())?.sync_all()?;
+        let directory = tempfile::Builder::new()
+            .prefix("session-")
+            .tempdir_in(parent)?;
+        let executable = std::env::current_exe()?;
+        protected.push(state.generation().to_path_buf());
+        super::vm::persist_backend(directory.path(), vm.backend)?;
+        let directory = directory.keep();
+        // Guest close acknowledgements do not authorize host storage release.
+        let clean = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let physically_clean = clean.clone();
+        reservation.started = true;
+        let (ready, receive_ready) = oneshot::channel();
+        let startup_timeout = config.vm_startup_timeout;
+        let deadline = tokio::time::Instant::now() + startup_timeout;
+        let (stage, observed_stage) = watch::channel("prepare");
+        let (stop, stopped) = oneshot::channel();
+        let (dead_sender, dead) = watch::channel(false);
+        // The task owns creation before the first SDK await. Cancelling session.open
+        // drops the receiver, never a partially completed SDK create/start future.
+        tokio::spawn(async move {
+            let mut backend = None;
+            let check = |next| {
+                super::vm::check_startup(deadline, ready.is_closed())?;
+                stage.send_replace(next);
+                Ok(())
+            };
+            let connected =
+                async {
+                    check("prepare")?;
+                    let mut plan = Plan::prepare(
+                        &vm,
+                        worker,
+                        &directory,
+                        &executable,
+                        &config.sandbox,
+                        &config.grant_sources,
+                        &protected,
+                    )
+                    .await?;
+                    check("runtime_create")?;
+                    backend = Some(Backend::new(plan.backend, &plan.home).await.map_err(
+                        |error| {
+                            if error.kind() == io::ErrorKind::Unsupported {
+                                error
+                            } else {
+                                plan.failure("runtime_create", error)
+                            }
+                        },
+                    )?);
+                    check("vm_start")?;
+                    backend.as_mut().unwrap().start(&plan, &check).await?;
+                    check("worker_connect")?;
+                    plan.connect().await
+                }
+                .await;
+            match connected {
+                Ok(client) => {
+                    let mut closed = client.closed();
+                    if ready.send(Ok(client)).is_ok() {
+                        tokio::select! { _ = stopped => {}, _ = closed.changed() => {} }
+                    }
+                }
+                Err(error) => {
+                    let _ = ready.send(Err(error));
+                }
+            }
+            // Capacity stays owned until VM removal and registered staging cleanup.
+            if let Some(backend) = &mut backend {
+                let mut retry = super::vm::CleanupRetry::new(&directory, "vm_remove");
+                while let Err(error) = backend.remove().await {
+                    retry.failed(&error).await;
+                }
+            }
+            drop(backend);
+            let mut retry = super::vm::CleanupRetry::new(&directory, "storage_reclaim");
+            loop {
+                let path = directory.clone();
+                let reclaimed = tokio::task::spawn_blocking(move || {
+                    super::vm::staging::reclaim(&path)?;
+                    match std::fs::remove_dir_all(&path) {
+                        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+                        result => result,
+                    }
+                })
+                .await
+                .map_err(io::Error::other)
+                .and_then(|result| result);
+                match reclaimed {
+                    Ok(()) => break,
+                    Err(error) => retry.failed(&error).await,
+                }
+            }
+            reservation
+                .clean
+                .store(true, std::sync::atomic::Ordering::Release);
+            physically_clean.store(true, std::sync::atomic::Ordering::Release);
+            drop(reservation);
+            drop(state);
+            dead_sender.send_replace(true);
+        });
+        let client = tokio::time::timeout_at(deadline, receive_ready)
+            .await
+            .map_err(|_| {
+                io::Error::new(io::ErrorKind::TimedOut, format!(
+                    "VM {} timed out after {} ms; increase vm_startup_timeout_ms (A13N_ENVD_VM_STARTUP_TIMEOUT_MS) for slow image pulls; cleanup remains owned until the in-flight SDK phase settles",
+                    *observed_stage.borrow(), startup_timeout.as_millis(),
+                ))
+            })?
+            .map_err(io::Error::other)??;
+        Ok(Self {
+            client,
+            policy: None,
+            clean,
+            stop: Some(stop),
+            dead,
+        })
+    }
+
     #[cfg(windows)]
     pub async fn start(
         mut config: WorkerConfig,
@@ -188,7 +325,8 @@ impl Runtime {
         });
         let (socket, network, death) = boot.await.map_err(io::Error::other)??;
         socket.set_nonblocking(true)?;
-        let death = AsyncFd::new(death)?;
+        // SAFETY: AsyncFd owns this pidfd; its descriptor stays open and unchanged.
+        let death = unsafe { AsyncFd::register(death) }.map_err(io::Error::from)?;
         let socket = tokio::net::UnixStream::from_std(socket)?;
         let (reader, writer) = socket.into_split();
         let client = tokio::time::timeout(

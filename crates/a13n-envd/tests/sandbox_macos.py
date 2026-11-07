@@ -123,7 +123,7 @@ def verify_sandbox(binary, mode):
                 {
                     "expected_device_id": device.descriptor["device_id"],
                     "expected_generation": device.descriptor["generation"],
-                    "working_directory": str(device.workspace),
+                    "configuration": {"working_directory": str(device.workspace)},
                 },
                 error="unsupported",
             )

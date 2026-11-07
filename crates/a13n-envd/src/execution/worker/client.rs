@@ -15,7 +15,7 @@ use std::{
 };
 use tokio::{
     sync::{mpsc, oneshot, watch},
-    task::JoinHandle,
+    task::JoinSet,
 };
 
 type Pending = BTreeMap<u64, oneshot::Sender<Response>>;
@@ -43,12 +43,12 @@ impl Shared {
 }
 
 pub(crate) struct Client {
-    pub working_directory: String,
+    pub ready: super::WorkerReady,
     shared: Arc<Shared>,
     next_ticket: AtomicU64,
     data: mpsc::Sender<DataFrame>,
     route: watch::Sender<Option<mpsc::Sender<DataFrame>>>,
-    tasks: Vec<JoinHandle<()>>,
+    tasks: JoinSet<()>,
 }
 
 pub(crate) struct Response {
@@ -117,7 +117,9 @@ impl Client {
         let max_data = limits.max_transfer_frame_bytes as usize;
         let output_state = shared.clone();
         let mut output_closed = shared.closed.subscribe();
-        let output = tokio::spawn(async move {
+        // JoinSet owns startup tasks even if readiness fails or connect is cancelled.
+        let mut tasks = JoinSet::new();
+        tasks.spawn(async move {
             tokio::select! {
                 _ = stdio::writer_loop(writer, responses, frames, max_request, max_data) => {},
                 _ = output_closed.changed() => {},
@@ -126,26 +128,24 @@ impl Client {
         });
         let input_state = shared.clone();
         let mut input_closed = shared.closed.subscribe();
-        let input = tokio::spawn(async move {
+        tasks.spawn(async move {
             tokio::select! {
                 _ = read_replies(reader, input_state.clone(), routes, max_response, max_data) => {},
                 _ = input_closed.changed() => {},
             }
             input_state.fail();
         });
-        let mut client = Self {
-            working_directory: String::new(),
+        let response = booted.await.map_err(|_| broken())?;
+        let ready = serde_json::from_slice(&response.payload).map_err(|_| broken())?;
+        response.handoff.complete();
+        Ok(Self {
+            ready,
             shared,
             next_ticket: AtomicU64::new(1),
             data,
             route,
-            tasks: vec![input, output],
-        };
-        let response = booted.await.map_err(|_| broken())?;
-        client.working_directory =
-            serde_json::from_slice::<String>(&response.payload).map_err(|_| broken())?;
-        response.handoff.complete();
-        Ok(client)
+            tasks,
+        })
     }
 
     pub fn shutdown(&self) {
@@ -249,9 +249,7 @@ impl Client {
 impl Drop for Client {
     fn drop(&mut self) {
         self.shared.fail();
-        for task in &self.tasks {
-            task.abort();
-        }
+        self.tasks.abort_all();
     }
 }
 
@@ -323,7 +321,20 @@ mod tests {
             ticket,
             requires_finish: true,
             payload: if ticket == 0 {
-                serde_json::json!("/workspace")
+                serde_json::json!({
+                    "working_directory": "/workspace",
+                    "path_style": "posix",
+                    "system_info": crate::monitoring::system_info(
+                        &crate::config::Config::for_test("worker-test")
+                    ),
+                    "available_methods": ["environment.readiness"],
+                    "shell_profiles": [],
+                    "execution_features": {
+                        "process_count_limit": false, "memory_bytes_limit": false,
+                        "cpu_time_limit": false, "signal_interrupt": false,
+                        "signal_terminate": false
+                    }
+                })
             } else {
                 serde_json::json!({"ok":true})
             },

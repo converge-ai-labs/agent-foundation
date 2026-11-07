@@ -86,6 +86,13 @@ pub fn run_internal_session_worker() -> std::io::Result<()> {
     }
 }
 
+/// Runs the private Linux VM guest engine without same-kernel descriptor passing.
+#[doc(hidden)]
+#[cfg(target_os = "linux")]
+pub fn run_internal_vm_worker() -> std::io::Result<()> {
+    execution::worker::guest::run()
+}
+
 /// Runs a one-shot directory observation under the execution identity.
 #[doc(hidden)]
 pub fn run_internal_directory_worker() -> std::io::Result<()> {

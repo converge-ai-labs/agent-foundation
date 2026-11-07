@@ -262,6 +262,9 @@ jobs:
 
   daemon:
     name: a13n-envd (${{ matrix.name }})
+    env:
+      BOXLITE_DEPS_STUB: "2"
+      BOXLITE_EMBED_RUNTIME: "1"
     needs: changes
     if: >-
       github.event_name == 'workflow_dispatch' || needs.changes.outputs.daemon == 'true'
@@ -307,7 +310,7 @@ jobs:
         shell: bash
         run: |
           sudo apt-get update
-          sudo apt-get install --yes bubblewrap xvfb xauth xclip
+          sudo apt-get install --yes bubblewrap xvfb xauth xclip protobuf-compiler
           if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
             sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           fi
@@ -337,7 +340,7 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p test-results
-          cargo test --locked --package a13n-envd 2>&1 | tee test-results/native.log
+          cargo test --locked --package a13n-envd --all-features 2>&1 | tee test-results/native.log
 
       - name: Test native X11 clipboard under Xvfb
         if: matrix.linux

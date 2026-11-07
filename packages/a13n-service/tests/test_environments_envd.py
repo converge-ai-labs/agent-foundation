@@ -989,6 +989,7 @@ async def test_thread_context_cache_restores_bindings_and_fences_checkpoints(
     import weakref
 
     from a13n_envd_client import EIPDeviceConnection, HttpTransport
+    from a13n_envd_client.eip.v1 import SessionConfiguration
     from a13n_harness import RunConfiguration
     from a13n_harness.environment.session_recovery import EnvdSessionState
     from a13n_service.infra.db import transaction
@@ -1018,7 +1019,7 @@ async def test_thread_context_cache_restores_bindings_and_fences_checkpoints(
     async with await EIPDeviceConnection.initialize(
         HttpTransport(daemon.endpoint, TOKEN), expected_device_id=daemon.device_id
     ) as device:
-        native = await device.open_session(working_directory=str(daemon.workspace))
+        native = await device.open_session(configuration=SessionConfiguration(working_directory=str(daemon.workspace)))
         saved = EnvdSessionState(
             target=daemon.endpoint, descriptor=native.descriptor, working_directory=str(daemon.workspace)
         )

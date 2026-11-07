@@ -795,3 +795,17 @@ def test_isolated_launcher_target_uses_its_own_context_port_and_credentials(monk
     cluster, context, url, state = json.loads(output)
     assert (cluster, context, url) == ("isolated-check", "kind-isolated-check", "http://127.0.0.1:18081")
     assert state.endswith("a13n-service-kind-isolated-check")
+
+
+def test_checkout_binary_is_selected_only_for_sandbox_build(monkeypatch):
+    commands = []
+    monkeypatch.setenv("K8S_SANDBOX_BINARY_SOURCE", "prebuilt")
+    monkeypatch.delenv("K8S_BUILD_CACHE", raising=False)
+    monkeypatch.delenv("K8S_SERVICE_IMAGE", raising=False)
+    monkeypatch.delenv("K8S_SANDBOX_IMAGE", raising=False)
+    monkeypatch.setattr(k8s, "run", lambda *args, **kwargs: commands.append(args) or "")
+    for component in ("a13n-service", "sandbox"):
+        k8s.prepare_image(component, component + ":ci")
+    service, sandbox = commands
+    assert "--build-arg" not in service
+    assert sandbox[sandbox.index("--build-arg") + 1] == "ENVD_BINARY_SOURCE=prebuilt"

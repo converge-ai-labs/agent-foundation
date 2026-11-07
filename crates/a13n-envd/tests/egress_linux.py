@@ -87,7 +87,7 @@ class Device:
             {"client": {"name": "egress-integration", "version": "1"}},
         )["descriptor"]
 
-    def call(self, method, params, error=None, *, device_scope=False):
+    def call(self, method, params, error=None, *, device_scope=False, timeout=60):
         self.sequence += 1
         payload = {"jsonrpc": "2.0", "id": self.sequence, "method": method, "params": params}
         if self.session and not device_scope:
@@ -99,7 +99,7 @@ class Device:
         )
         self.process.stdin.flush()
         header = b""
-        deadline = time.monotonic() + 60
+        deadline = time.monotonic() + timeout
         while not header.endswith(b"\r\n\r\n"):
             assert time.monotonic() < deadline, f"timed out: {method}"
             if not select.select([self.process.stdout], [], [], 1)[0]:
@@ -128,8 +128,10 @@ class Device:
             {
                 "expected_device_id": self.descriptor["device_id"],
                 "expected_generation": self.descriptor["generation"],
-                "working_directory": str(self.workspace),
-                **({"egress": policy} if policy is not None else {}),
+                "configuration": {
+                    "working_directory": str(self.workspace),
+                    **({"egress": policy} if policy is not None else {}),
+                },
             },
         )["descriptor"]
         self.session = result["session_id"]

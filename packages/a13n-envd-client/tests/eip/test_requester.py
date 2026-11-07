@@ -28,11 +28,14 @@ from a13n_envd_client.eip.v1 import (
     ExecutionBoundary,
     ExecutionFeatures,
     JsonRpcRequest,
+    OperatingSystem,
     PathStyle,
     SessionCloseParams,
+    SessionConfiguration,
     SessionDescriptor,
     SessionKeepaliveParams,
     SessionLifecyclePolicy,
+    SystemInfo,
     decode_model,
 )
 from a13n_envd_client.eip.v1.methods import DEVICE_DESCRIBE, ENVIRONMENT_READINESS, SESSION_CLOSE, SESSION_KEEPALIVE
@@ -106,6 +109,8 @@ def descriptor(session_id: str = "ses-a", *, idle_timeout_ms: int = 30_000) -> S
         session_id=session_id,
         owner_epoch=1,
         working_directory="/work",
+        path_style=PathStyle.POSIX,
+        system_info=SystemInfo(os=OperatingSystem.LINUX),
         available_methods=("environment.readiness", "environment.describe", "session.keepalive", "session.close"),
         limits=limits(),
         execution_features=ExecutionFeatures(
@@ -247,7 +252,7 @@ def test_stalled_observations_do_not_consume_session_admission(method_name: str)
 async def opened(
     device: EIPDeviceConnection, transport: FakeTransport, session_id: str = "ses-a", *, idle_timeout_ms: int = 30_000
 ):
-    task = asyncio.create_task(device.open_session(working_directory="/work"))
+    task = asyncio.create_task(device.open_session(configuration=SessionConfiguration(working_directory="/work")))
     request = await transport.request()
     assert request.method == "session.open" and request.eip_session is None
     assert request.params["expected_device_id"] == "device-test"
@@ -288,6 +293,71 @@ def test_device_handshake_opens_no_session_and_close_is_session_local():
         await closed(c, transport)
         await device.close()
         assert transport.closed
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("mismatch", ["full_disk_read", "inherited_grants"])
+def test_open_rejects_sandbox_mismatch_without_closing_sibling(mismatch: str):
+    from a13n_envd_client.eip.v1 import RestrictedSandbox
+
+    async def scenario():
+        transport = FakeTransport()
+        device = await initialized(transport)
+        sibling = await opened(device, transport, "ses-sibling")
+        sandbox = RestrictedSandbox.model_validate(
+            {"mode": "restricted", "full_disk_read": False, "grants": [{"path": "/work", "access": "read_write"}]}
+        )
+        device._descriptor = device.descriptor.model_copy(
+            update={"boundary": BOUNDARY.model_copy(update={"sandbox": sandbox})}
+        )
+        configuration = (
+            SessionConfiguration(sandbox=sandbox) if mismatch == "full_disk_read" else SessionConfiguration()
+        )
+        changed = sandbox.model_copy(
+            update={"full_disk_read": True} if mismatch == "full_disk_read" else {"grants": ()}
+        )
+        task = asyncio.create_task(device.open_session(configuration=configuration))
+        request = await transport.request()
+        observed = descriptor().model_copy(update={"boundary": BOUNDARY.model_copy(update={"sandbox": changed})})
+        transport.reply(request, {"descriptor": observed.model_dump(mode="json")})
+        close = await transport.request()
+        assert close.method == "session.close" and close.eip_session == "ses-a"
+        transport.reply(close, {"closed": True})
+        with pytest.raises(EIPProtocolError, match=r"full_disk_read|inherited"):
+            await task
+        assert not transport.closed
+        probe = asyncio.create_task(sibling.readiness())
+        request = await transport.request()
+        transport.reply(request, readiness("ses-sibling"))
+        assert (await probe).ready
+        await device.close()
+
+    asyncio.run(scenario())
+
+
+def test_open_accepts_daemon_canonicalized_explicit_grants():
+    from a13n_envd_client.eip.v1 import RestrictedSandbox
+
+    async def scenario():
+        transport = FakeTransport()
+        device = await initialized(transport)
+        requested = RestrictedSandbox.model_validate(
+            {"mode": "restricted", "full_disk_read": False, "grants": [{"path": "/alias", "access": "read_only"}]}
+        )
+        canonical = RestrictedSandbox.model_validate(
+            {"mode": "restricted", "full_disk_read": False, "grants": [{"path": "/actual", "access": "read_only"}]}
+        )
+        task = asyncio.create_task(device.open_session(configuration=SessionConfiguration(sandbox=requested)))
+        request = await transport.request()
+        observed = descriptor().model_copy(update={"boundary": BOUNDARY.model_copy(update={"sandbox": canonical})})
+        transport.reply(request, {"descriptor": observed.model_dump(mode="json")})
+        probe = await transport.request()
+        assert probe.method == "environment.readiness"
+        transport.reply(probe, readiness())
+        session = await task
+        assert session.descriptor.boundary.sandbox == canonical
+        await device.close()
 
     asyncio.run(scenario())
 
@@ -936,7 +1006,7 @@ def test_host_scope_rejection_does_not_close_device_or_sibling(monkeypatch):
         with pytest.raises(EIPSessionStateError):
             await first.readiness()
         with pytest.raises(EIPSessionStateError):
-            await device.open_session(working_directory="/work")
+            await device.open_session(configuration=SessionConfiguration(working_directory="/work"))
         assert not transport.closed
         request_task = asyncio.create_task(second.readiness())
         request = await transport.request()
@@ -971,7 +1041,9 @@ def test_abandoned_session_open_cleanup_preserves_its_host_dispatch_context(monk
 
         monkeypatch.setattr(transport, "send", send)
         token = authority.set("binding-a")
-        opening = asyncio.create_task(device.open_session(working_directory="/work"))
+        opening = asyncio.create_task(
+            device.open_session(configuration=SessionConfiguration(working_directory="/work"))
+        )
         authority.reset(token)
         request = await transport.request()
         opening.cancel()

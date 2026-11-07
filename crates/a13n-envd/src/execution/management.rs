@@ -64,7 +64,9 @@ pub(crate) fn enter(mut config: Config) -> io::Result<()> {
     };
     let mut image = Image::default();
     image.executable(&std::env::current_exe()?, Path::new(EXECUTABLE))?;
-    if config.sandbox.restricted() {
+    // A managed Device may admit restricted Sessions even when its default is
+    // unrestricted. Missing bwrap leaves that mode unavailable, not downgraded.
+    if config.sandbox.restricted() || Path::new("/usr/bin/bwrap").is_file() {
         // Only executable dependencies enter this public readonly bootstrap
         // image. Credentials, broker state and the original tree never do.
         let mut worker = Image::default();
@@ -349,6 +351,14 @@ pub(crate) fn attach_tree(tree: OwnedFd, target: &Path) -> io::Result<()> {
 /// Resolve bind sources inside the original tree, including absolute symlinks.
 /// A mutable original path must never resolve into broker credentials or state.
 pub(crate) fn open_original(path: &Path) -> io::Result<fs::File> {
+    open_original_with_flags(path, 0)
+}
+
+pub(crate) fn open_original_directory(path: &Path) -> io::Result<fs::File> {
+    open_original_with_flags(path, libc::O_DIRECTORY)
+}
+
+fn open_original_with_flags(path: &Path, flags: i32) -> io::Result<fs::File> {
     let root = fs::File::open(ORIGINAL)?;
     let path = CString::new(path.as_os_str().as_bytes()).map_err(io::Error::other)?;
     #[repr(C)]
@@ -358,7 +368,7 @@ pub(crate) fn open_original(path: &Path) -> io::Result<fs::File> {
         resolve: u64,
     }
     let how = OpenHow {
-        flags: libc::O_CLOEXEC as u64,
+        flags: (libc::O_CLOEXEC | flags) as u64,
         mode: 0,
         resolve: 0x10 | 0x02,
     }; // IN_ROOT | NO_MAGICLINKS

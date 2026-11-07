@@ -63,6 +63,8 @@ def descriptors():
         {
             **common,
             "session_id": "ses-desktop",
+            "path_style": "posix",
+            "system_info": {"os": "linux"},
             "owner_epoch": 1,
             "working_directory": "/",
             "available_methods": [

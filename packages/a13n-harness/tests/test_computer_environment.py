@@ -681,6 +681,10 @@ def test_eip_zoom_advertisement_requires_exact_method_and_reader_cleanup(methods
         ),
         device_id="device-zoom",
         session_id="ses-zoom",
+        path_style=eip.PathStyle(path_style),
+        system_info=eip.SystemInfo(
+            os=eip.OperatingSystem.WINDOWS if path_style == "windows" else eip.OperatingSystem.LINUX
+        ),
         owner_epoch=1,
         generation=1,
         working_directory="/",

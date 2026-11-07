@@ -54,12 +54,14 @@ async def run_command(stack, account, agent, cleanup, marker, command):
     return identifier
 
 
-@pytest.mark.parametrize("disposition", ["delete", "retain"])
-async def test_kubernetes_claim_lifecycle_and_retained_shared_reuse(stack, request, disposition):
+async def test_kubernetes_claim_lifecycle_and_retained_shared_reuse(stack, request):
     async with backend("kubernetes", stack.directory, request.config) as base:
         recipe = deepcopy(base.recipe)
         recipe["pod_template"]["spec"]["securityContext"] = {"fsGroup": 1000}
-        recipe["storage"] = [claim(disposition)]
+        recipe["storage"] = [
+            claim("retain"),
+            {**claim("delete"), "name": "scratch", "mount_path": "/scratch"},
+        ]
         account = replace(base, recipe=recipe)
         agent = await stack.api.create_agent("Storage", await stack.api.create_model(stack.model.base_url))
         cleanup = []
@@ -67,37 +69,42 @@ async def test_kubernetes_claim_lifecycle_and_retained_shared_reuse(stack, reque
         try:
             # kind's default storage class uses WaitForFirstConsumer.
             identifier = await run_command(
-                stack, account, agent, cleanup, "[owned]", "echo storage-ok > proof.txt && cat proof.txt"
+                stack,
+                account,
+                agent,
+                cleanup,
+                "[owned]",
+                "echo storage-ok > proof.txt && cp proof.txt /scratch/proof.txt && cat /scratch/proof.txt",
             )
-            if disposition == "retain":
-                from kubernetes_asyncio.client import CoreV1Api
+            from kubernetes_asyncio.client import CoreV1Api
 
-                async with kubernetes.runtime() as native:
-                    [owned_claim] = [
-                        r
-                        for r in await account.kubernetes_resources(native, identifier)
-                        if r["kind"] == "PersistentVolumeClaim"
-                    ]
-                    # Operator metadata edits must not strand the Pod's bootstrap Secret.
-                    await CoreV1Api(native.api).patch_namespaced_persistent_volume_claim(
-                        owned_claim["name"],
-                        native.connection.namespace,
-                        {
-                            "metadata": {
-                                "uid": owned_claim["uid"],
-                                "annotations": {LABEL_PREFIX + "recipe": "operator-edited"},
-                            }
-                        },
-                        _content_type="application/merge-patch+json",
-                    )
+            async with kubernetes.runtime() as native:
+                owned_claims = [
+                    r
+                    for r in await account.kubernetes_resources(native, identifier)
+                    if r["kind"] == "PersistentVolumeClaim"
+                ]
+                assert len(owned_claims) == 2
+                [owned_claim] = [r for r in owned_claims if r["name"].endswith("-workspace")]
+                # Retained claims may be edited independently; scratch still requires
+                # its ownership metadata to authorize deletion.
+                await CoreV1Api(native.api).patch_namespaced_persistent_volume_claim(
+                    owned_claim["name"],
+                    native.connection.namespace,
+                    {
+                        "metadata": {
+                            "uid": owned_claim["uid"],
+                            "annotations": {LABEL_PREFIX + "recipe": "operator-edited"},
+                        }
+                    },
+                    _content_type="application/merge-patch+json",
+                )
             await delete(stack.api, f"/api/v1/environments/{identifier}", 120)
             retired = expect(await stack.api.client.get(f"/api/v1/environments/{identifier}"), 200)
             assert retired["retirement_state"] is not None
             async with kubernetes.runtime() as native:
                 remaining = await account.kubernetes_resources(native, identifier)
-                if disposition == "delete":
-                    assert remaining == []
-                    return
+                # Only the retained claim survives: scratch, Pod and Secret are gone.
                 [retained] = remaining
                 assert retained["kind"] == "PersistentVolumeClaim"
                 saved = await native.get("PersistentVolumeClaim", retained["name"])

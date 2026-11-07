@@ -112,7 +112,7 @@ fn initialize() -> Value {
 }
 
 fn open_params(descriptor: &Value, path: &str) -> Value {
-    json!({"expected_device_id":"device-test", "expected_generation":descriptor["generation"], "working_directory":path, "required_methods":[]})
+    json!({"expected_device_id":"device-test", "expected_generation":descriptor["generation"], "configuration":{"working_directory":path}, "required_methods":[]})
 }
 
 fn context(operation: &str) -> Value {

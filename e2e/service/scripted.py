@@ -10,6 +10,8 @@ from .api import eventually, expect
 RUNTIME_CONTEXT = (
     "Current Environment mounts (trusted dynamic context)",
     "<agent-context ",
+    "<runtime-context ",
+    "<memory-context ",
     "<service-context ",
     "<file-context ",
 )

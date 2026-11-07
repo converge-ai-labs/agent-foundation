@@ -11,8 +11,13 @@ impl Daemon {
         generation: u64,
         session_id: String,
         outbound: mpsc::Sender<eip::DataFrame>,
+        staging: &[crate::filesystem::StagingDirectory],
     ) -> Result<(Arc<Self>, Arc<Carrier>), DaemonInitError> {
         let mut daemon = Self::with_generation(config, generation)?;
+        Arc::get_mut(&mut daemon.filesystem)
+            .expect("new worker filesystem")
+            .set_staging_directories(staging)
+            .map_err(|error| DaemonInitError::new(error.to_string()))?;
         daemon.ids = ShortIdAllocator::for_session(&session_id);
         let daemon = Arc::new(daemon);
         let mut carrier = daemon.carrier(outbound.clone());
@@ -22,6 +27,7 @@ impl Daemon {
         carrier.initialized.store(true, Ordering::Release);
         let session = Arc::new(Session::new(
             &daemon,
+            config,
             carrier.id,
             session_id.clone(),
             config.default_working_directory.clone(),
@@ -40,6 +46,22 @@ impl Daemon {
             .map_err(|_| DaemonInitError::new("worker transfer initialization failed"))?;
         daemon.sessions().insert(session_id, session);
         Ok((daemon, carrier))
+    }
+
+    pub(crate) fn worker_ready(
+        &self,
+        session_id: &str,
+    ) -> Result<crate::execution::worker::WorkerReady, EIPError> {
+        let session = self.lookup(session_id)?;
+        let descriptor = &session.descriptor;
+        Ok(crate::execution::worker::WorkerReady {
+            working_directory: descriptor.working_directory.clone(),
+            path_style: descriptor.path_style,
+            system_info: descriptor.system_info.clone(),
+            available_methods: descriptor.available_methods.clone(),
+            shell_profiles: descriptor.shell_profiles.clone(),
+            execution_features: descriptor.execution_features.clone(),
+        })
     }
 
     pub(crate) async fn close_isolated_session(&self, session_id: &str) -> bool {

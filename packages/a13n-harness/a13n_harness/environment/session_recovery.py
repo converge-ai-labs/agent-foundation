@@ -7,7 +7,7 @@ from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontext
 from dataclasses import dataclass, field
 
 from a13n_envd_client import EIPDeviceConnection, EIPSession, EIPSessionStateError
-from a13n_envd_client.eip.v1 import EgressPolicy, ErrorType, SessionDescriptor
+from a13n_envd_client.eip.v1 import EgressPolicy, ErrorType, SessionConfiguration, SessionDescriptor
 from a13n_envd_client.errors import EIPMethodError
 from anyio import CancelScope
 from pydantic import BaseModel, ConfigDict, Field
@@ -95,9 +95,8 @@ class EnvdSessionRecovery:
                                 raise
                     if session is None:
                         session = await device.open_session(
-                            working_directory=working_directory,
+                            configuration=SessionConfiguration(working_directory=working_directory, egress=egress),
                             required_methods=tuple(sorted(required_methods)),
-                            egress=egress,
                         )
                     scope.push_async_callback(session.detach)
                     await self._save(

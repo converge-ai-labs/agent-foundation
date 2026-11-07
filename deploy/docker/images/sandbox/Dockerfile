@@ -6,6 +6,11 @@ ARG SANDBOX_VARIANT=standard
 
 FROM rust:1.96-trixie AS builder
 ARG TARGETARCH
+# Use the SDK's versioned prebuilt runtime, embedded in the shipped daemon.
+ENV BOXLITE_DEPS_STUB=2 BOXLITE_EMBED_RUNTIME=1
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends protobuf-compiler \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src
 COPY Cargo.toml Cargo.lock ./
@@ -15,7 +20,7 @@ COPY crates/a13n-envd crates/a13n-envd
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,id=a13n-envd-target-${TARGETARCH},target=/src/target,sharing=locked \
-    cargo build --release --locked --package a13n-envd \
+    cargo build --release --locked --package a13n-envd --features vm-boxlite,vm-microsandbox \
     && install -D target/release/a13n-envd /out/a13n-envd
 
 FROM scratch AS envd-source

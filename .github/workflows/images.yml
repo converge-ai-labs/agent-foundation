@@ -198,10 +198,15 @@ jobs:
         with:
           shared-key: dev-sandbox-${{ matrix.target }}
 
-      - name: Build native sandbox binary
+      - name: Install SDK build dependencies
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+      - name: Build sandbox binary with VM backends
         env:
           TARGET: ${{ matrix.target }}
-        run: cargo build --release --locked --package a13n-envd --target "$TARGET"
+          BOXLITE_DEPS_STUB: "2"
+          BOXLITE_EMBED_RUNTIME: "1"
+        run: cargo build --release --locked --package a13n-envd --features vm-boxlite,vm-microsandbox --target "$TARGET"
 
       - name: Upload sandbox binary
         uses: actions/upload-artifact@v4

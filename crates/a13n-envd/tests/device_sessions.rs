@@ -146,7 +146,7 @@ impl Device {
     async fn open(&mut self, folder: &str) -> String {
         let result = self.call(None, "session.open", json!({
             "expected_device_id":"device-test", "expected_generation":self.descriptor["generation"],
-            "working_directory":device_path(&self.root.join(folder)), "required_methods":["file.read_text"]
+            "configuration":{"working_directory":device_path(&self.root.join(folder))}, "required_methods":["file.read_text"]
         })).await;
         let session = result["descriptor"]["session_id"]
             .as_str()
@@ -248,7 +248,7 @@ async fn failed_open_and_disabled_discovery_do_not_poison_device() {
     assert_eq!(result["error"]["data"]["error_type"], "unsupported");
     let failed = device.response(None, "session.open", json!({
         "expected_device_id":"device-test", "expected_generation":device.descriptor["generation"],
-        "working_directory":device_path(&device.root.join("missing")), "required_methods":[]
+        "configuration":{"working_directory":device_path(&device.root.join("missing"))}, "required_methods":[]
     })).await;
     assert_eq!(failed["error"]["data"]["error_type"], "not_found_or_denied");
     let session = device.open("beta").await;
@@ -527,5 +527,74 @@ async fn process_record_pressure_reclaims_completed_output_groups() {
     device
         .call(Some(&session), "session.close", json!({}))
         .await;
+    device.stop().await;
+}
+
+#[tokio::test]
+async fn sessions_select_independent_execution_configuration_on_one_device() {
+    let mut device = Device::start(json!({"full_control": true})).await;
+    let generation = device.descriptor["generation"].clone();
+    let first = device.call(None, "session.open", json!({
+        "expected_device_id": "device-test", "expected_generation": generation,
+        "configuration": {"commands": false, "working_directory": device_path(&device.root.join("alpha")),
+            "lifecycle": {"idle_timeout_ms": 60000}},
+        "required_methods": ["file.read_text"]
+    })).await["descriptor"].clone();
+    let second = device.call(None, "session.open", json!({
+        "expected_device_id": "device-test", "expected_generation": generation,
+        "configuration": {"commands": true, "working_directory": device_path(&device.root.join("beta")),
+            "lifecycle": {"idle_timeout_ms": 120000}},
+        "required_methods": ["shell.exec"]
+    })).await["descriptor"].clone();
+    for descriptor in [&first, &second] {
+        device
+            .call(
+                Some(descriptor["session_id"].as_str().unwrap()),
+                "environment.readiness",
+                context("ready-configured"),
+            )
+            .await;
+    }
+    assert_ne!(first["session_id"], second["session_id"]);
+    assert_eq!(first["generation"], second["generation"]);
+    // Empty repeated fields are omitted by the EIP JSON encoder.
+    assert!(first.get("shell_profiles").is_none());
+    assert!(
+        !first["available_methods"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("shell.exec"))
+    );
+    assert!(!second["shell_profiles"].as_array().unwrap().is_empty());
+    assert_eq!(first["lifecycle"]["idle_timeout_ms"], 60000);
+    assert_eq!(second["lifecycle"]["idle_timeout_ms"], 120000);
+    assert_eq!(first["path_style"], device.descriptor["path_style"]);
+    assert!(first["system_info"].is_object());
+    let denied = device
+        .response(
+            None,
+            "session.open",
+            json!({
+                "expected_device_id": "device-test", "expected_generation": generation,
+                "configuration": {"commands": false}, "required_methods": ["shell.exec"]
+            }),
+        )
+        .await;
+    assert_eq!(denied["error"]["data"]["error_type"], "unsupported");
+    device
+        .call(
+            Some(first["session_id"].as_str().unwrap()),
+            "session.close",
+            json!({}),
+        )
+        .await;
+    let observed = device
+        .call(
+            Some(second["session_id"].as_str().unwrap()),
+            "environment.describe",
+            context("describe-second"),
+        )
+        .await;
+    assert_eq!(observed["descriptor"], second);
     device.stop().await;
 }

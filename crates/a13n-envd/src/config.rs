@@ -18,6 +18,7 @@ const DEFAULT_MAX_TRANSFER_FRAME_BYTES: u64 = 4 * 1024 * 1024;
 const DEFAULT_MAX_CONCURRENT_FILE_TRANSFERS: u64 = 64;
 const DEFAULT_SESSION_IDLE_TTL_MS: u64 = 60 * 60 * 1000;
 const INITIALIZATION_TIMEOUT: Duration = Duration::from_secs(30);
+const DEFAULT_VM_STARTUP_TIMEOUT_MS: u64 = 120_000;
 const DEFAULT_MAX_COMMAND_ARGUMENTS: usize = 1024;
 const DEFAULT_MAX_COMMAND_ARGUMENT_BYTES: usize = 1024 * 1024;
 const DEFAULT_MAX_COMMAND_ENVIRONMENT_ENTRIES: usize = 1024;
@@ -33,6 +34,7 @@ const KNOWN_ENVIRONMENT_VARIABLES: &[&str] = &[
     "A13N_ENVD_DESCRIPTION",
     "A13N_ENVD_IDLE_TIMEOUT_MS",
     "A13N_ENVD_MAX_LIFETIME_MS",
+    "A13N_ENVD_VM_STARTUP_TIMEOUT_MS",
     "A13N_ENVD_TRANSPORT",
     "A13N_ENVD_HTTP_BIND",
     "A13N_ENVD_HTTP_CREDENTIAL_FILE",
@@ -119,6 +121,7 @@ struct FileConfig {
     computer_use_permission_timeout_ms: Option<u64>,
     idle_timeout_ms: Option<u64>,
     max_lifetime_ms: Option<u64>,
+    vm_startup_timeout_ms: Option<u64>,
     #[serde(default)]
     limits: DaemonLimits,
     #[serde(default)]
@@ -248,6 +251,7 @@ pub(crate) struct Config {
     pub(crate) transport: TransportConfig,
     pub(crate) limits: DaemonLimits,
     pub(crate) initialization_timeout: Duration,
+    pub(crate) vm_startup_timeout: Duration,
     pub(crate) session_idle_timeout: Duration,
     pub(crate) session_max_lifetime: Option<Duration>,
     pub(crate) command: Option<CommandConfig>,
@@ -373,6 +377,12 @@ impl Config {
                 "Session lifecycle durations must be positive",
             ));
         }
+        let vm_startup_timeout_ms = file
+            .vm_startup_timeout_ms
+            .unwrap_or(DEFAULT_VM_STARTUP_TIMEOUT_MS);
+        if vm_startup_timeout_ms == 0 {
+            return Err(ConfigError::new("vm_startup_timeout_ms must be positive"));
+        }
         let execution =
             crate::execution::resolve(file.execution.identity().map_err(ConfigError::new)?)
                 .map_err(ConfigError::new)?;
@@ -466,6 +476,7 @@ impl Config {
             description: file.description,
             transport,
             initialization_timeout: INITIALIZATION_TIMEOUT,
+            vm_startup_timeout: Duration::from_millis(vm_startup_timeout_ms),
             session_idle_timeout: Duration::from_millis(idle_timeout_ms),
             session_max_lifetime: file.max_lifetime_ms.map(Duration::from_millis),
             command,
@@ -499,6 +510,7 @@ impl Config {
             transport: TransportConfig::Stdio,
             limits: default_limits(),
             initialization_timeout: Duration::from_millis(20),
+            vm_startup_timeout: Duration::from_millis(DEFAULT_VM_STARTUP_TIMEOUT_MS),
             session_idle_timeout: Duration::from_secs(1),
             session_max_lifetime: None,
             command: None,
@@ -1191,6 +1203,10 @@ fn apply_environment(value: &mut serde_json::Value) -> Result<(), ConfigError> {
         ("A13N_ENVD_EXECUTION_UID", &["execution", "uid"][..]),
         ("A13N_ENVD_EXECUTION_GID", &["execution", "gid"][..]),
         ("A13N_ENVD_IDLE_TIMEOUT_MS", &["idle_timeout_ms"][..]),
+        (
+            "A13N_ENVD_VM_STARTUP_TIMEOUT_MS",
+            &["vm_startup_timeout_ms"][..],
+        ),
         (
             "A13N_ENVD_COMPUTER_USE_PERMISSION_TIMEOUT_MS",
             &["computer_use_permission_timeout_ms"][..],

@@ -27,6 +27,15 @@ pub(crate) struct DeviceFilesystem {
     staging_quota: StagingQuota,
     session_staging_limits: (u64, u64),
     pending_cleanup: Mutex<Vec<OwnedCandidate>>,
+    staging_directories: Arc<Vec<(PathBuf, Dir)>>,
+}
+
+/// Guest paths selected by the VM owner before admitting execution.
+#[derive(Clone, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct StagingDirectory {
+    pub root: PathBuf,
+    pub directory: PathBuf,
 }
 
 pub(crate) struct OpenedFile {
@@ -50,6 +59,7 @@ pub(crate) struct OwnedCandidate {
     destination: EIPPath,
     destination_name: std::ffi::OsString,
     parent: Dir,
+    destination_parent: Dir,
     reservation: StagingReservation,
     removed: bool,
 }
@@ -270,6 +280,7 @@ impl DeviceFilesystem {
         Ok(Arc::new(Self {
             max_file_bytes: config.limits.max_file_bytes,
             pending_cleanup: Mutex::new(Vec::new()),
+            staging_directories: Arc::new(Vec::new()),
             staging_quota: StagingQuota::new(
                 config.limits.max_device_staged_file_bytes,
                 config.limits.max_device_staged_file_objects,
@@ -284,10 +295,29 @@ impl DeviceFilesystem {
     pub(crate) fn for_session(&self) -> Arc<Self> {
         Arc::new(Self {
             max_file_bytes: self.max_file_bytes,
+            staging_directories: self.staging_directories.clone(),
             staging_quota: self.staging_quota.for_session(self.session_staging_limits),
             session_staging_limits: self.session_staging_limits,
             pending_cleanup: Mutex::new(Vec::new()),
         })
+    }
+
+    pub(crate) fn set_staging_directories(
+        &mut self,
+        directories: &[StagingDirectory],
+    ) -> std::io::Result<()> {
+        self.staging_directories = Arc::new(
+            directories
+                .iter()
+                .map(|entry| {
+                    Ok((
+                        fs::canonicalize(&entry.root)?,
+                        Dir::open_ambient_dir(&entry.directory, ambient_authority())?,
+                    ))
+                })
+                .collect::<std::io::Result<Vec<_>>>()?,
+        );
+        Ok(())
     }
 
     pub(crate) fn cleanup_failures(&self) -> u64 {
@@ -500,6 +530,10 @@ impl DeviceFilesystem {
         path: &EIPPath,
     ) -> Result<(Dir, std::ffi::OsString), PathError> {
         let native = self.resolve_entry(path)?;
+        Self::open_resolved_parent(&native)
+    }
+
+    fn open_resolved_parent(native: &Path) -> Result<(Dir, std::ffi::OsString), PathError> {
         let name = native.file_name().ok_or(PathError::Denied)?.to_os_string();
         let parent = native.parent().ok_or(PathError::Denied)?;
         let directory =
@@ -511,14 +545,33 @@ impl DeviceFilesystem {
         self: &Arc<Self>,
         destination: &EIPPath,
     ) -> Result<StagedCandidate, PathError> {
-        let (parent, destination_name) = self.open_parent(destination)?;
-        self.create_candidate_in(destination, parent, destination_name)
+        let native = self.resolve_entry(destination)?;
+        self.create_candidate_resolved(destination, &native)
+    }
+
+    fn create_candidate_resolved(
+        self: &Arc<Self>,
+        destination: &EIPPath,
+        native: &Path,
+    ) -> Result<StagedCandidate, PathError> {
+        let (destination_parent, destination_name) = Self::open_resolved_parent(native)?;
+        let parent = match self
+            .staging_directories
+            .iter()
+            .find(|(root, _)| native.starts_with(root))
+        {
+            Some((_, directory)) => directory.try_clone(),
+            None => destination_parent.try_clone(),
+        }
+        .map_err(PathError::from_io)?;
+        self.create_candidate_in(destination, parent, destination_parent, destination_name)
     }
 
     fn create_candidate_in(
         self: &Arc<Self>,
         destination: &EIPPath,
         parent: Dir,
+        destination_parent: Dir,
         destination_name: std::ffi::OsString,
     ) -> Result<StagedCandidate, PathError> {
         self.retry_cleanup();
@@ -527,6 +580,11 @@ impl DeviceFilesystem {
             let name = random_candidate_name().map_err(|_| PathError::Internal)?;
             let mut options = cap_std::fs::OpenOptions::new();
             options.write(true).read(true).create_new(true);
+            #[cfg(unix)]
+            {
+                use cap_std::fs::OpenOptionsExt;
+                options.mode(0o600);
+            }
             match parent.open_with(&name, &options) {
                 Ok(file) => {
                     let file = file.into_std();
@@ -538,11 +596,11 @@ impl DeviceFilesystem {
                             destination: destination.clone(),
                             destination_name,
                             parent,
+                            destination_parent,
                             reservation,
                             removed: false,
                         }),
                     };
-                    set_private_file_permissions(&candidate.file).map_err(PathError::from_io)?;
                     return Ok(candidate);
                 }
                 Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
@@ -574,20 +632,27 @@ impl DeviceFilesystem {
         if replace {
             candidate
                 .parent
-                .rename(&source, &candidate.parent, &target)
+                .rename(&source, &candidate.destination_parent, &target)
+                .map_err(atomic_rename_error)
                 .map_err(PathError::from_io)?;
         } else {
-            rename_no_replace(&candidate.parent, &source, &candidate.parent, &target)
-                .map_err(PathError::from_io)?;
+            rename_no_replace(
+                &candidate.parent,
+                &source,
+                &candidate.destination_parent,
+                &target,
+            )
+            .map_err(PathError::from_io)?;
         }
         candidate.mark_removed();
         let published = candidate
-            .parent
+            .destination_parent
             .symlink_metadata(&target)
             .map_err(|_| PathError::UnknownOutcome)?;
         if !published.is_file() || published.is_symlink() || !same_cap_file(&held, &published) {
             return Err(PathError::UnknownOutcome);
         }
+        sync_directory(&candidate.destination_parent).map_err(|_| PathError::UnknownOutcome)?;
         sync_directory(&candidate.parent).map_err(|_| PathError::UnknownOutcome)?;
         Ok(())
     }
@@ -760,6 +825,93 @@ mod tests {
     }
 
     #[test]
+    fn registered_staging_publishes_to_the_held_destination_parent() {
+        use std::io::Write;
+        let root = tempfile::tempdir().unwrap();
+        let stage = root.path().join("stage");
+        let destination = root.path().join("destination");
+        fs::create_dir(&stage).unwrap();
+        fs::create_dir(&destination).unwrap();
+        let mut device = DeviceFilesystem::new(&Config::for_test("test")).unwrap();
+        Arc::get_mut(&mut device)
+            .unwrap()
+            .set_staging_directories(&[StagingDirectory {
+                root: root.path().into(),
+                directory: stage.clone(),
+            }])
+            .unwrap();
+        let filesystem = device.for_session();
+        let target = EIPPath {
+            path: device_path::from_native(&destination.join("target")).unwrap(),
+        };
+        let mut candidate = filesystem.create_candidate(&target).unwrap();
+        candidate.reserve_bytes(4).unwrap();
+        candidate.file.write_all(b"data").unwrap();
+        assert!(stage.join(&candidate.name).exists());
+        assert_eq!(fs::read_dir(&destination).unwrap().count(), 0);
+        #[cfg(unix)]
+        let published_parent = {
+            let held = root.path().join("held");
+            fs::rename(&destination, &held).unwrap();
+            fs::create_dir(&destination).unwrap();
+            held
+        };
+        // Windows keeps the open destination directory pinned against renaming.
+        #[cfg(windows)]
+        let published_parent = {
+            assert!(fs::rename(&destination, root.path().join("held")).is_err());
+            destination.clone()
+        };
+        assert!(candidate.verify_complete(4).unwrap());
+        filesystem
+            .publish_candidate(&mut candidate, &target, false)
+            .unwrap();
+        assert_eq!(fs::read(published_parent.join("target")).unwrap(), b"data");
+        #[cfg(unix)]
+        assert!(!destination.join("target").exists());
+        assert_eq!(fs::read_dir(stage).unwrap().count(), 0);
+        assert_eq!(device.staging_usage(), (0, 0));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn staging_selection_and_destination_share_one_resolution() {
+        let root = tempfile::tempdir().unwrap();
+        let private = root.path().join("private");
+        let shared = root.path().join("shared");
+        let stage = shared.join("stage");
+        fs::create_dir(&private).unwrap();
+        fs::create_dir(&shared).unwrap();
+        fs::create_dir(&stage).unwrap();
+        let link = root.path().join("link");
+        std::os::unix::fs::symlink(&private, &link).unwrap();
+        let mut device = DeviceFilesystem::new(&Config::for_test("test")).unwrap();
+        Arc::get_mut(&mut device)
+            .unwrap()
+            .set_staging_directories(&[StagingDirectory {
+                root: shared.clone(),
+                directory: stage.clone(),
+            }])
+            .unwrap();
+        let filesystem = device.for_session();
+        let target = EIPPath {
+            path: device_path::from_native(&link.join("target")).unwrap(),
+        };
+        for (next, expected) in [(&shared, &private), (&private, &stage)] {
+            let resolved = filesystem.resolve_entry(&target).unwrap();
+            fs::remove_file(&link).unwrap();
+            std::os::unix::fs::symlink(next, &link).unwrap();
+            let candidate = filesystem
+                .create_candidate_resolved(&target, &resolved)
+                .unwrap();
+            assert!(expected.join(&candidate.name).exists());
+            assert!(!shared.join(&candidate.name).exists());
+            drop(candidate);
+        }
+        assert_eq!(device.staging_usage(), (0, 0));
+    }
+
+    #[test]
     fn scoped_staging_quota_keeps_siblings_independent_and_releases_both_charges() {
         let device = StagingQuota::new(12, 2).unwrap();
         let first = device.for_session((8, 1));
@@ -875,17 +1027,6 @@ fn file_has_multiple_links(_metadata: &fs::Metadata) -> bool {
 }
 
 #[cfg(unix)]
-fn set_private_file_permissions(file: &fs::File) -> std::io::Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-    file.set_permissions(fs::Permissions::from_mode(0o600))
-}
-
-#[cfg(not(unix))]
-fn set_private_file_permissions(_file: &fs::File) -> std::io::Result<()> {
-    Ok(())
-}
-
-#[cfg(unix)]
 fn sync_directory(directory: &Dir) -> std::io::Result<()> {
     directory.open(".")?.sync_all()
 }
@@ -983,6 +1124,11 @@ fn atomic_rename_error(error: std::io::Error) -> std::io::Error {
     } else {
         error
     }
+}
+
+#[cfg(windows)]
+fn atomic_rename_error(error: std::io::Error) -> std::io::Error {
+    error
 }
 
 #[cfg(windows)]

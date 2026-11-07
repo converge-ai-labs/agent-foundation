@@ -94,6 +94,40 @@ message SandboxPolicy {
   }
 }
 
+// VM exports name both sides explicitly. Guest paths never authorize Host paths.
+message VmMount {
+  string source = 1 [(eip_field).string_format = EIP_STRING_FORMAT_PATH];
+  string target = 2 [(eip_field).string_format = EIP_STRING_FORMAT_PATH];
+  GrantAccess access = 3;
+}
+
+enum VmBackend {
+  VM_BACKEND_UNSPECIFIED = 0;
+  VM_BACKEND_BOXLITE = 1 [(eip_enum_value).json_name = "boxlite"];
+  VM_BACKEND_MICROSANDBOX = 2 [(eip_enum_value).json_name = "microsandbox"];
+}
+
+message NativeIsolation {
+  string mode = 1 [(eip_field).const_string = "native"];
+}
+
+message VmIsolation {
+  string mode = 1 [(eip_field).const_string = "vm"];
+  VmBackend backend = 2;
+  string image = 3 [(eip_field).min_length = 1, (eip_field).max_length = 4096];
+  uint32 cpus = 4 [(eip_field).minimum = 1, (eip_field).maximum = 255];
+  uint32 memory_mib = 5 [(eip_field).minimum = 128];
+  repeated VmMount mounts = 6;
+}
+
+message SessionIsolation {
+  option (eip_message).discriminated_union = true;
+  oneof isolation {
+    NativeIsolation native = 1;
+    VmIsolation vm = 2;
+  }
+}
+
 enum EgressMode {
   EGRESS_MODE_UNSPECIFIED = 0;
   EGRESS_MODE_INHERIT = 1 [(eip_enum_value).json_name = "inherit"];
@@ -108,6 +142,8 @@ enum ExecutionBackend {
   EXECUTION_BACKEND_LINUX_BUBBLEWRAP = 3 [(eip_enum_value).json_name = "linux_bubblewrap"];
   EXECUTION_BACKEND_MACOS_SEATBELT = 4 [(eip_enum_value).json_name = "macos_seatbelt"];
   EXECUTION_BACKEND_WINDOWS_MXC = 5 [(eip_enum_value).json_name = "windows_mxc"];
+  EXECUTION_BACKEND_BOXLITE = 6 [(eip_enum_value).json_name = "boxlite"];
+  EXECUTION_BACKEND_MICROSANDBOX = 7 [(eip_enum_value).json_name = "microsandbox"];
 }
 
 message ExecutionBoundary {
@@ -117,6 +153,7 @@ message ExecutionBoundary {
   bool privilege_gain_blocked = 4;
   ExecutionBackend backend = 5;
   string policy_digest = 6 [(eip_field).string_format = EIP_STRING_FORMAT_SHA256];
+  optional VmIsolation vm = 7;
 }
 
 message DeviceDescriptor {
@@ -147,6 +184,8 @@ message SessionDescriptor {
   optional EgressStatus egress = 10;
   ExecutionBoundary boundary = 11;
   uint64 owner_epoch = 12 [(eip_field).minimum = 1];
+  PathStyle path_style = 13;
+  SystemInfo system_info = 14;
 }
 
 message InitializeResult {
@@ -162,15 +201,24 @@ message DeviceDescribeResult {
   DeviceDescriptor descriptor = 1;
 }
 
+message SessionConfiguration {
+  optional string working_directory = 1 [(eip_field).string_format = EIP_STRING_FORMAT_PATH];
+  optional SandboxPolicy sandbox = 2;
+  optional EgressMode egress_mode = 3;
+  optional EgressPolicy egress = 4;
+  optional SessionLifecyclePolicy lifecycle = 5;
+  // Omission inherits the launcher's command authority; false disables commands.
+  optional bool commands = 6;
+  optional SessionIsolation isolation = 7;
+}
+
 message SessionOpenParams {
   string expected_device_id = 1 [(eip_field).string_format = EIP_STRING_FORMAT_IDENTIFIER];
   uint64 expected_generation = 2 [(eip_field).minimum = 1];
-  reserved 3;
-  reserved "protocol_version";
-  optional string working_directory = 4 [(eip_field).string_format = EIP_STRING_FORMAT_PATH];
+  reserved 3, 4, 6, 7;
+  reserved "protocol_version", "working_directory", "egress", "lifecycle";
   repeated string required_methods = 5;
-  optional EgressPolicy egress = 6;
-  optional SessionLifecyclePolicy lifecycle = 7;
+  SessionConfiguration configuration = 8;
 }
 
 message SessionOpenResult {

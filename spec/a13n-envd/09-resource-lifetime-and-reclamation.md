@@ -10,7 +10,7 @@ A long-lived daemon collects abandoned Sessions and completed history periodical
 
 A Session has one owning Host execution context, which can span Runs. Active Runs and retained background work borrow that context under current Host authorization. Accepted requests update its last owner activity. The client sends `session.keepalive` while a borrower uses the Session, independently of command waits and output traffic. A saved context, cached client or shared Device connection does not keep historical Sessions alive. Final release touches the Session and stops keepalive, starting its idle window at the end of use.
 
-`session.open` accepts an immutable lifecycle policy with a positive `idle_timeout_ms` and optional positive `max_lifetime_ms`. The Device advertises its default policy: one hour idle and unlimited maximum lifetime. The Session descriptor returns the effective policy. Envd uses monotonic clocks for last activity and creation time. Attach and keepalive never reset creation time. A finite maximum lifetime is a hard deadline, including during active work. Browser presence, output production, CPU usage, sibling traffic and WebSocket ping/pong are not Session owner activity.
+`session.open.configuration` accepts an immutable lifecycle policy with a positive `idle_timeout_ms` and optional positive `max_lifetime_ms`. The Device advertises its default policy: one hour idle and unlimited maximum lifetime. The Session descriptor returns the effective policy. Envd uses monotonic clocks for last activity and creation time. Attach and keepalive never reset creation time. A finite maximum lifetime is a hard deadline, including during active work. Browser presence, output production, CPU usage, sibling traffic and WebSocket ping/pong are not Session owner activity.
 
 - An owned Session with current keepalive remains live even when its command is quiet for hours.
 - A Session without owner activity expires at its idle deadline, even if an abandoned process continues producing output.
@@ -41,6 +41,16 @@ One cleanup path:
 5. Remove owned output, completed records and temporary data, then retire the Session.
 
 Native work still settling keeps its accounting owner until cleanup is proved. A closed selector need not retain a permanent tombstone. A later request receives `session_expired` or an invalid-selector result. Unknown cleanup outcomes remain failures rather than freeing capacity by forgetting them.
+
+### VM Reclamation
+
+A VM Session owns its VM, private SDK storage and registered staging directories on read-write Host mounts. Its lifecycle task retains ownership across cancelled startup requests, guest failures and private-carrier loss. It first removes the SDK VM, then reclaims registered staging and private storage. Session capacity remains charged until physical reclamation succeeds; a guest cleanup acknowledgement alone cannot release Host storage charges. Failed cleanup remains owned and retryable without blocking sibling Session control.
+
+VM startup admission has an overall deadline and reports the phase that failed or timed out. Timeout or caller cancellation ends admission, not physical ownership: an in-flight SDK phase settles before removal, and abandoned startup does not advance to later phases. A stuck SDK phase can retain its reservation beyond that deadline. Cleanup failures report the affected private state and retry with bounded backoff; they never free accounting by forgetting the resource.
+
+Before any SDK side effect, Envd durably records the backend and private Session storage in the Device generation. After daemon restart, Envd uses those records to remove surviving VM state and registered staging before publishing the next generation. It does not resume a guest or replay an operation. Reclamation requires the backend that created the record; an unavailable backend or uncertain cleanup fails generation preparation rather than forgetting ownership.
+
+Each read-write mount has a registered staging directory with recorded source and directory identities. Cleanup removes only that directory's registered contents after VM removal, verifying the recorded identities. A moved or replaced registered directory keeps cleanup unresolved. Bytes moved out or independently hardlinked elsewhere are ordinary workspace state and are not followed or removed. Published files and unrelated workspace entries survive reclamation.
 
 ## Completed History and Pressure
 

@@ -31,6 +31,7 @@ from a13n_envd_client.eip.v1 import (
     ProcessInspectParams,
     ProcessKillParams,
     ProcessStartParams,
+    SessionConfiguration,
     SessionKeepaliveParams,
     SessionLifecyclePolicy,
     ShellExecParams,
@@ -232,8 +233,12 @@ def test_real_shared_device_independent_sessions_and_transfers(tmp_path: Path, c
             )
             assert len(discovery.entries) == 1 and discovery.next_offset is not None
             alpha, beta = await asyncio.gather(
-                device.open_session(working_directory=device_path(tmp_path / "alpha")),
-                device.open_session(working_directory=device_path(tmp_path / "beta")),
+                device.open_session(
+                    configuration=SessionConfiguration(working_directory=device_path(tmp_path / "alpha"))
+                ),
+                device.open_session(
+                    configuration=SessionConfiguration(working_directory=device_path(tmp_path / "beta"))
+                ),
             )
             assert alpha.device_descriptor == beta.device_descriptor == device.descriptor
             assert alpha.session_id != beta.session_id
@@ -250,7 +255,9 @@ def test_real_shared_device_independent_sessions_and_transfers(tmp_path: Path, c
             async with beta.open_reader(path) as reader:
                 received = b"".join([chunk async for chunk in reader])
             assert received == payload == (tmp_path / "beta" / "binary.dat").read_bytes()
-            gamma = await device.open_session(working_directory=device_path(tmp_path / "alpha"))
+            gamma = await device.open_session(
+                configuration=SessionConfiguration(working_directory=device_path(tmp_path / "alpha"))
+            )
             # cwd is not a file-access boundary; Device absolute paths are shared.
             text = tmp_path / "beta" / "outside.txt"
             text.write_text("outside selected cwd")
@@ -285,7 +292,9 @@ def test_bad_session_open_does_not_break_existing_session(tmp_path: Path):
         async with running_device(tmp_path, "stdio") as device:
             session = await device.open_session()
             with pytest.raises(EIPMethodError):
-                await device.open_session(working_directory=device_path(tmp_path / "absent"))
+                await device.open_session(
+                    configuration=SessionConfiguration(working_directory=device_path(tmp_path / "absent"))
+                )
             assert (await session.readiness()).ready
             await session.close()
 
@@ -299,7 +308,9 @@ def test_session_open_captures_resolved_directory(tmp_path: Path, carrier: str):
         async with running_device(tmp_path, carrier) as device:
             alias = tmp_path / "alias"
             alias.symlink_to(tmp_path / "alpha", target_is_directory=True)
-            async with await device.open_session(working_directory=device_path(alias)) as session:
+            async with await device.open_session(
+                configuration=SessionConfiguration(working_directory=device_path(alias))
+            ) as session:
                 resolved = device_path((tmp_path / "alpha").resolve())
                 assert session.descriptor.working_directory == resolved
                 assert (await session.describe()).working_directory == resolved
@@ -386,20 +397,134 @@ def test_slow_transfer_backpressures_without_stalling_sibling(tmp_path: Path, ca
     asyncio.run(scenario())
 
 
-def test_session_boundary_mismatch_closes_unpublished_session(tmp_path, monkeypatch):
+def test_native_and_restricted_sessions_share_device_not_filesystem_policy(tmp_path: Path):
+    import shutil
+    import sys
+
+    from a13n_envd_client.eip.v1 import EgressMode, GrantAccess, RestrictedSandbox, SandboxGrant
+
+    if sys.platform != "linux" or shutil.which("bwrap") is None:
+        pytest.skip("requires Linux bubblewrap")
+
+    async def scenario():
+        async with running_device(tmp_path, "stdio") as device:
+            visible = tmp_path / "alpha" / "visible.txt"
+            hidden = tmp_path / "beta" / "hidden.txt"
+            visible.write_text("visible")
+            hidden.write_text("hidden")
+            ordinary = await device.open_session()
+            restricted = await device.open_session(
+                configuration=SessionConfiguration(
+                    working_directory=device_path(tmp_path / "alpha"),
+                    sandbox=RestrictedSandbox(
+                        mode="restricted",
+                        grants=(
+                            SandboxGrant(
+                                path=device_path(tmp_path / "alpha"),
+                                access=GrantAccess.READ_ONLY,
+                            ),
+                        ),
+                    ),
+                    egress_mode=EgressMode.DENY,
+                    commands=False,
+                )
+            )
+            assert ordinary.descriptor.boundary.sandbox.mode == "disabled"
+            assert restricted.descriptor.boundary.sandbox.mode == "restricted"
+            assert restricted.descriptor.boundary.egress == EgressMode.DENY
+            assert device.descriptor.boundary.sandbox.mode == "disabled"
+            assert (
+                await restricted.client.file_read_text(
+                    FileReadTextParams(
+                        context=EIPCallContext(operation_id="read-visible"),
+                        line_limit=10,
+                        max_line_length=100,
+                        path=EIPPath(path=device_path(visible)),
+                    )
+                )
+            ).text == "visible"
+            with pytest.raises(EIPMethodError):
+                await restricted.client.file_read_text(
+                    FileReadTextParams(
+                        context=EIPCallContext(operation_id="read-hidden"),
+                        line_limit=10,
+                        max_line_length=100,
+                        path=EIPPath(path=device_path(hidden)),
+                    )
+                )
+            saved = restricted.descriptor
+            await restricted.detach()
+            attached = await device.attach_session(saved)
+            assert attached.descriptor.boundary == saved.boundary
+            await attached.close()
+            assert (
+                await ordinary.client.file_read_text(
+                    FileReadTextParams(
+                        context=EIPCallContext(operation_id="native-read-hidden"),
+                        line_limit=10,
+                        max_line_length=100,
+                        path=EIPPath(path=device_path(hidden)),
+                    )
+                )
+            ).text == "hidden"
+            await ordinary.close()
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("carrier", ["stdio", "http", "websocket"])
+def test_sessions_select_independent_configuration_on_one_device(tmp_path: Path, carrier: str):
+    async def scenario():
+        async with running_device(tmp_path, carrier) as device:
+            first = await device.open_session(
+                configuration=SessionConfiguration(
+                    working_directory=device_path(tmp_path / "alpha"),
+                    commands=False,
+                    lifecycle=SessionLifecyclePolicy(idle_timeout_ms=60_000),
+                )
+            )
+            second = await device.open_session(
+                configuration=SessionConfiguration(
+                    working_directory=device_path(tmp_path / "beta"),
+                    commands=True,
+                    lifecycle=SessionLifecyclePolicy(idle_timeout_ms=120_000),
+                ),
+                required_methods=("shell.exec",),
+            )
+            assert first.session_id != second.session_id
+            assert first.descriptor.generation == second.descriptor.generation
+            assert first.descriptor.path_style == second.descriptor.path_style
+            assert first.descriptor.system_info.os == second.descriptor.system_info.os
+            assert "shell.exec" not in first.descriptor.available_methods
+            assert not first.descriptor.shell_profiles
+            assert "shell.exec" in second.descriptor.available_methods
+            await first.close()
+            before = second.descriptor
+            assert await second.describe() == before
+            await second.detach()
+            attached = await device.attach_session(before)
+            assert attached.descriptor.lifecycle.idle_timeout_ms == 120_000
+            assert attached.descriptor.working_directory == device_path(tmp_path / "beta")
+            await attached.close()
+
+    asyncio.run(scenario())
+
+
+def test_session_configuration_mismatch_closes_unpublished_session(tmp_path, monkeypatch):
     from a13n_envd_client import EIPProtocolError
+    from a13n_envd_client.eip.v1 import EgressMode
 
     async def scenario():
         async with running_device(tmp_path, "stdio") as device:
             original = device._bind
 
             def tampered(descriptor):
-                boundary = descriptor.boundary.model_copy(update={"policy_digest": "0" * 64})
+                boundary = descriptor.boundary.model_copy(update={"egress": EgressMode.DENY})
                 return original(descriptor.model_copy(update={"boundary": boundary}))
 
             monkeypatch.setattr(device, "_bind", tampered)
             for _ in range(3):
-                with pytest.raises(EIPProtocolError, match="boundary"):
+                with pytest.raises(EIPProtocolError, match="network mode"):
                     await device.open_session()
                 assert not device._sessions
             monkeypatch.setattr(device, "_bind", original)
@@ -409,14 +534,14 @@ def test_session_boundary_mismatch_closes_unpublished_session(tmp_path, monkeypa
     asyncio.run(scenario())
 
 
-def test_session_policy_presence_must_match_device_mode_before_dispatch(tmp_path, monkeypatch):
+def test_session_policy_presence_must_match_selected_mode_before_dispatch(tmp_path, monkeypatch):
     from a13n_envd_client.eip.v1 import EgressMode, EgressPolicy, PublicDestinations
 
     async def scenario():
         async with running_device(tmp_path, "stdio") as device:
             policy = EgressPolicy(destinations=PublicDestinations(mode="public"))
             with pytest.raises(ValueError, match="exactly for controlled"):
-                await device.open_session(egress=policy)
+                await device.open_session(configuration=SessionConfiguration(egress=policy))
             boundary = device.descriptor.boundary.model_copy(update={"egress": EgressMode.CONTROLLED})
             monkeypatch.setattr(device, "_descriptor", device.descriptor.model_copy(update={"boundary": boundary}))
             with pytest.raises(ValueError, match="exactly for controlled"):
@@ -494,7 +619,9 @@ def test_monitoring_native_sample_without_session_and_after_session_close(tmp_pa
                 assert cached is not None
                 sequences.append(cached.sequence)
             assert len(set(sequences)) < len(sequences)
-            session = await device.open_session(working_directory=device_path(tmp_path / "alpha"))
+            session = await device.open_session(
+                configuration=SessionConfiguration(working_directory=device_path(tmp_path / "alpha"))
+            )
             await session.close()
             async with asyncio.timeout(5):
                 while True:
@@ -532,7 +659,7 @@ def test_session_usage_detach_and_idle_expiry(tmp_path: Path, carrier: str):
     async def scenario():
         async with running_device(tmp_path, carrier) as device:
             policy = SessionLifecyclePolicy(idle_timeout_ms=300)
-            session = await device.open_session(lifecycle=policy)
+            session = await device.open_session(configuration=SessionConfiguration(lifecycle=policy))
             assert session.descriptor.lifecycle == policy
             assert device.descriptor.lifecycle.idle_timeout_ms == 3_600_000
             assert device.descriptor.lifecycle.max_lifetime_ms is None
@@ -550,7 +677,7 @@ def test_session_usage_detach_and_idle_expiry(tmp_path: Path, carrier: str):
                 await attached.readiness()
             assert expired.value.error.data.error_type is ErrorType.NOT_INITIALIZED
             await attached.abort()
-            replacement = await device.open_session(lifecycle=policy)
+            replacement = await device.open_session(configuration=SessionConfiguration(lifecycle=policy))
             assert replacement.session_id != saved.session_id
             await replacement.close()
 
@@ -562,7 +689,9 @@ def test_max_lifetime_is_not_renewed_by_use_or_attachment(tmp_path: Path, carrie
     async def scenario():
         async with running_device(tmp_path, carrier) as device:
             session = await device.open_session(
-                lifecycle=SessionLifecyclePolicy(idle_timeout_ms=2000, max_lifetime_ms=500)
+                configuration=SessionConfiguration(
+                    lifecycle=SessionLifecyclePolicy(idle_timeout_ms=2000, max_lifetime_ms=500)
+                )
             )
             saved = session.descriptor
             async with session.use():
@@ -642,7 +771,9 @@ def test_owned_native_job_lives_and_unowned_job_expires(tmp_path: Path, noisy: b
 
     async def scenario():
         async with running_device(tmp_path, "http") as device:
-            session = await device.open_session(lifecycle=SessionLifecyclePolicy(idle_timeout_ms=300))
+            session = await device.open_session(
+                configuration=SessionConfiguration(lifecycle=SessionLifecyclePolicy(idle_timeout_ms=300))
+            )
             script = "while :; do echo noisy; sleep 0.02; done" if noisy else "sleep 30"
             async with session.use():
                 process = await session.client.process_start(

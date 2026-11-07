@@ -137,6 +137,8 @@ def test_user_texts_excludes_runtime_context_without_losing_conversation_order(s
         '<service-context source="a13n-service">\n{"service_run_id":"run_one"}\n</service-context>',
         'Explain the <service-context source="a13n-service"> block',
         '<service-context source="a13n-service">\n{"service_run_id":"run_two"}\n</service-context>',
+        '<runtime-context source="a13n-harness">\n{"current_time":"2026-11-06T18:07:38Z"}\n</runtime-context>',
+        '<memory-context memory="notes" kind="full">\n{"files":[]}\n</memory-context>',
     ]
     messages = [
         {"role": "user", "content": [{"type": "text", "text": content}] if structured else content}
@@ -172,7 +174,7 @@ def test_the_e2e_suite_collects_every_module_and_requires_opt_in_for_external_jo
     assert f"{lifecycle}[docker]" in default
     assert f"{lifecycle}[kubernetes]" not in default
     assert f"{lifecycle}[kubernetes]" in kubernetes
-    assert len(kubernetes) == 9
+    assert len(kubernetes) == 8
     deployment = yaml.safe_load((ROOT / ".github/workflows/ci-deploy.yml").read_text())
     journeys = deployment["jobs"]["journeys"]
     [journey_step] = [step for step in journeys["steps"] if step.get("run", "").startswith("make service-e2e ")]
@@ -196,9 +198,11 @@ def test_the_e2e_suite_collects_every_module_and_requires_opt_in_for_external_jo
     for shard in shards:
         nodes = collect_scenarios("--require-all", "-k", shard["selection"])
         assert nodes and not selected.intersection(nodes)
-        assert (f"{lifecycle}[docker]" in nodes) == shard["sandbox"]
+        assert f"{lifecycle}[docker]" not in nodes
         selected.update(nodes)
-    assert selected == default
+    docker = collect_scenarios("--require-all", "-k", "docker")
+    assert docker and not selected.intersection(docker)
+    assert selected | docker == default
     assert not {node for node in default if "e2b" in node or "modal" in node}
     assert f"{lifecycle}[modal]" in collect_scenarios("--hosted")
     assert f"{lifecycle}[modal]" in collect_scenarios("-m", "hosted")

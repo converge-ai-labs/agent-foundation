@@ -2627,7 +2627,9 @@
         "linux_managed",
         "linux_bubblewrap",
         "macos_seatbelt",
-        "windows_mxc"
+        "windows_mxc",
+        "boxlite",
+        "microsandbox"
       ],
       "title": "ExecutionBackend",
       "type": "string"
@@ -2663,6 +2665,17 @@
         },
         "sandbox": {
           "$ref": "#/$defs/SandboxPolicy"
+        },
+        "vm": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/VmIsolation"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
@@ -4368,6 +4381,21 @@
       "title": "MetricsSample",
       "type": "object"
     },
+    "NativeIsolation": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "const": "native",
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode"
+      ],
+      "title": "NativeIsolation",
+      "type": "object"
+    },
     "NetworkInterfaceMetrics": {
       "additionalProperties": false,
       "properties": {
@@ -5715,6 +5743,93 @@
       "title": "SessionCloseResult",
       "type": "object"
     },
+    "SessionConfiguration": {
+      "additionalProperties": false,
+      "properties": {
+        "commands": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Commands"
+        },
+        "egress": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EgressPolicy"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "egress_mode": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EgressMode"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "isolation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SessionIsolation"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "lifecycle": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SessionLifecyclePolicy"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "sandbox": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SandboxPolicy"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "working_directory": {
+          "anyOf": [
+            {
+              "format": "eip-absolute-path",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Working Directory"
+        }
+      },
+      "title": "SessionConfiguration",
+      "type": "object"
+    },
     "SessionDescriptor": {
       "additionalProperties": false,
       "properties": {
@@ -5766,6 +5881,9 @@
           "title": "Owner Epoch",
           "type": "integer"
         },
+        "path_style": {
+          "$ref": "#/$defs/PathStyle"
+        },
         "session_id": {
           "minLength": 1,
           "title": "Session Id",
@@ -5778,6 +5896,9 @@
           },
           "title": "Shell Profiles",
           "type": "array"
+        },
+        "system_info": {
+          "$ref": "#/$defs/SystemInfo"
         },
         "working_directory": {
           "format": "eip-absolute-path",
@@ -5794,7 +5915,9 @@
         "execution_features",
         "lifecycle",
         "boundary",
-        "owner_epoch"
+        "owner_epoch",
+        "path_style",
+        "system_info"
       ],
       "title": "SessionDescriptor",
       "type": "object"
@@ -5819,6 +5942,23 @@
       ],
       "title": "SessionDetachResult",
       "type": "object"
+    },
+    "SessionIsolation": {
+      "discriminator": {
+        "mapping": {
+          "native": "#/$defs/NativeIsolation",
+          "vm": "#/$defs/VmIsolation"
+        },
+        "propertyName": "mode"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/NativeIsolation"
+        },
+        {
+          "$ref": "#/$defs/VmIsolation"
+        }
+      ]
     },
     "SessionKeepaliveParams": {
       "additionalProperties": false,
@@ -5874,16 +6014,8 @@
     "SessionOpenParams": {
       "additionalProperties": false,
       "properties": {
-        "egress": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/EgressPolicy"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
+        "configuration": {
+          "$ref": "#/$defs/SessionConfiguration"
         },
         "expected_device_id": {
           "minLength": 1,
@@ -5896,17 +6028,6 @@
           "title": "Expected Generation",
           "type": "integer"
         },
-        "lifecycle": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/SessionLifecyclePolicy"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
         "required_methods": {
           "default": [],
           "items": {
@@ -5914,24 +6035,12 @@
           },
           "title": "Required Methods",
           "type": "array"
-        },
-        "working_directory": {
-          "anyOf": [
-            {
-              "format": "eip-absolute-path",
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Working Directory"
         }
       },
       "required": [
         "expected_device_id",
-        "expected_generation"
+        "expected_generation",
+        "configuration"
       ],
       "title": "SessionOpenParams",
       "type": "object"
@@ -6380,6 +6489,87 @@
         "kind"
       ],
       "title": "UnlimitedMemoryLimit",
+      "type": "object"
+    },
+    "VmBackend": {
+      "enum": [
+        "boxlite",
+        "microsandbox"
+      ],
+      "title": "VmBackend",
+      "type": "string"
+    },
+    "VmIsolation": {
+      "additionalProperties": false,
+      "properties": {
+        "backend": {
+          "$ref": "#/$defs/VmBackend"
+        },
+        "cpus": {
+          "maximum": 255,
+          "minimum": 1,
+          "title": "Cpus",
+          "type": "integer"
+        },
+        "image": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Image",
+          "type": "string"
+        },
+        "memory_mib": {
+          "maximum": 4294967295,
+          "minimum": 128,
+          "title": "Memory Mib",
+          "type": "integer"
+        },
+        "mode": {
+          "const": "vm",
+          "title": "Mode",
+          "type": "string"
+        },
+        "mounts": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/VmMount"
+          },
+          "title": "Mounts",
+          "type": "array"
+        }
+      },
+      "required": [
+        "mode",
+        "backend",
+        "image",
+        "cpus",
+        "memory_mib"
+      ],
+      "title": "VmIsolation",
+      "type": "object"
+    },
+    "VmMount": {
+      "additionalProperties": false,
+      "properties": {
+        "access": {
+          "$ref": "#/$defs/GrantAccess"
+        },
+        "source": {
+          "format": "eip-absolute-path",
+          "title": "Source",
+          "type": "string"
+        },
+        "target": {
+          "format": "eip-absolute-path",
+          "title": "Target",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "target",
+        "access"
+      ],
+      "title": "VmMount",
       "type": "object"
     }
   },

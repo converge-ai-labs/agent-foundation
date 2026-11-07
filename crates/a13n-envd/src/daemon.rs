@@ -41,6 +41,7 @@ use crate::{
 
 const MAX_STRING_REQUEST_ID_BYTES: usize = 128;
 mod computer;
+mod configuration;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 pub(crate) mod execution;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
@@ -1063,39 +1064,42 @@ impl EipDeviceHandler for DeviceRequest<'_> {
     ) -> Result<eip::SessionOpenResult, EIPError> {
         self.daemon
             .check_device(&params.expected_device_id, params.expected_generation)?;
-        if params.egress.is_some() != self.daemon.config.egress.controlled() {
-            return Err(protocol_error(
-                ErrorType::InvalidParams,
-                "Session egress policy is required exactly for controlled Devices",
-            ));
-        }
-        let methods = session_methods(&self.daemon.config);
-        if params.required_methods.iter().any(|method| {
-            !(methods.contains(method)
-                || (method == "egress.update"
-                    && params.egress.is_some()
-                    && self.daemon.config.egress.controlled()
-                    && cfg!(target_os = "linux")))
-        }) {
-            return Err(protocol_error(
-                ErrorType::Unsupported,
-                "required session method is unavailable",
-            ));
-        }
-        let lifecycle = params
-            .lifecycle
-            .unwrap_or_else(|| self.daemon.descriptor.lifecycle.clone());
-        let path = params
-            .working_directory
-            .unwrap_or_else(|| self.daemon.config.default_working_directory.clone());
+        let launch = self.daemon.config.clone();
+        let request = params.configuration;
+        let policy = request.egress.clone();
+        let vm = match &request.isolation {
+            Some(eip::SessionIsolation::Vm(vm)) => Some(vm.clone()),
+            _ => None,
+        };
+        let config = tokio::task::spawn_blocking(move || launch.for_session(&request))
+            .await
+            .map_err(|_| protocol_error(ErrorType::InternalError, "Session configuration failed"))?
+            .map_err(|error| {
+                protocol_error(
+                    if error.kind() == std::io::ErrorKind::Unsupported {
+                        ErrorType::Unsupported
+                    } else {
+                        ErrorType::InvalidParams
+                    },
+                    error.to_string(),
+                )
+            })?;
+        let lifecycle = eip::SessionLifecyclePolicy {
+            idle_timeout_ms: config.session_idle_timeout.as_millis() as u64,
+            max_lifetime_ms: config
+                .session_max_lifetime
+                .map(|duration| duration.as_millis() as u64),
+        };
+        let path = config.default_working_directory.clone();
         #[cfg(target_os = "linux")]
-        let worker = self.daemon.config.managed
-            || self.daemon.config.sandbox.restricted()
-            || self.daemon.config.execution.is_some_and(|identity| {
-                crate::execution::needs_worker(identity) || !self.daemon.config.allow_sudo
+        let worker = vm.is_some()
+            || config.managed
+            || config.sandbox.restricted()
+            || config.execution.is_some_and(|identity| {
+                crate::execution::needs_worker(identity) || !config.allow_sudo
             });
         #[cfg(any(target_os = "macos", target_os = "windows"))]
-        let worker = self.daemon.config.sandbox.restricted();
+        let worker = config.sandbox.restricted();
         #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
         let worker = false;
         let cwd = tokio::task::spawn_blocking(move || {
@@ -1114,27 +1118,30 @@ impl EipDeviceHandler for DeviceRequest<'_> {
                 "working directory is unavailable",
             )
         })?;
-        if let Some(policy) = params.egress {
-            #[cfg(target_os = "linux")]
-            return self
-                .daemon
-                .open_worker(self.carrier, cwd, Some(policy), lifecycle)
-                .await;
-            #[cfg(not(target_os = "linux"))]
-            {
-                let _ = policy;
-                return Err(protocol_error(
-                    ErrorType::Unsupported,
-                    "egress requires Linux",
-                ));
-            }
-        }
         #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
         if worker {
             return self
                 .daemon
-                .open_worker(self.carrier, cwd, None, lifecycle)
+                .open_worker(
+                    self.carrier,
+                    &config,
+                    cwd,
+                    policy,
+                    lifecycle,
+                    &params.required_methods,
+                    vm,
+                )
                 .await;
+        }
+        if params
+            .required_methods
+            .iter()
+            .any(|method| !session_methods(&config).contains(method))
+        {
+            return Err(protocol_error(
+                ErrorType::Unsupported,
+                "required session method is unavailable",
+            ));
         }
         if self.daemon.sessions().len() >= self.daemon.config.limits.max_sessions {
             self.daemon.maintenance().await;
@@ -1156,9 +1163,17 @@ impl EipDeviceHandler for DeviceRequest<'_> {
         }
         let id = self.daemon.ids.next("session").map_err(map_ledger_error)?;
         let session = Arc::new(
-            Session::new(self.daemon, self.carrier.id, id.clone(), cwd, lifecycle).map_err(
-                |_| protocol_error(ErrorType::InternalError, "session initialization failed"),
-            )?,
+            Session::new(
+                self.daemon,
+                &config,
+                self.carrier.id,
+                id.clone(),
+                cwd,
+                lifecycle,
+            )
+            .map_err(|_| {
+                protocol_error(ErrorType::InternalError, "session initialization failed")
+            })?,
         );
         session
             .transfers
@@ -1294,12 +1309,12 @@ impl Drop for SessionWorkGuard<'_> {
 impl Session {
     fn new(
         daemon: &Daemon,
+        config: &Config,
         owner: u64,
         session_id: String,
         working_directory: String,
         lifecycle: eip::SessionLifecyclePolicy,
     ) -> Result<Self, DaemonInitError> {
-        let config = &daemon.config;
         let operations = OperationLedger::new(
             config.device_id.clone(),
             daemon.descriptor.generation,
@@ -1330,7 +1345,10 @@ impl Session {
         )
         .map_err(|_| DaemonInitError::new("transfer initialization failed"))?;
         let descriptor = SessionDescriptor {
-            boundary: daemon.descriptor.boundary.clone(),
+            path_style: daemon.descriptor.path_style,
+            system_info: crate::monitoring::system_info(config),
+            boundary: crate::execution::boundary::descriptor(config)
+                .map_err(|_| DaemonInitError::new("Session boundary initialization failed"))?,
             owner_epoch: 1,
             egress: None,
             device_id: config.device_id.clone(),
@@ -3852,7 +3870,7 @@ mod tests {
         fn open_params(&self, required_methods: Value) -> Value {
             json!({"expected_device_id": self.device.descriptor.device_id,
                 "expected_generation": self.device.descriptor.generation,
-                "working_directory": self.device.descriptor.default_working_directory,
+                "configuration": {"working_directory": self.device.descriptor.default_working_directory},
                 "required_methods": required_methods})
         }
 

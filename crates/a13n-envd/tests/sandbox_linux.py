@@ -145,8 +145,10 @@ def verify_grant_replacement(binary, mode):
                 {
                     "expected_device_id": device.descriptor["device_id"],
                     "expected_generation": device.descriptor["generation"],
-                    "working_directory": str(device.workspace),
-                    **({"egress": policy} if policy is not None else {}),
+                    "configuration": {
+                        "working_directory": str(device.workspace),
+                        **({"egress": policy} if policy is not None else {}),
+                    },
                 },
                 error="unsupported",
             )
@@ -164,6 +166,38 @@ def verify_grant_replacement(binary, mode):
         finally:
             device.shutdown()
     print(f"PASS restricted+{mode}: replacement grant rejected for Session and discovery")
+
+
+def verify_session_grant_selection(binary, mode):
+    """An unrestricted launcher admits restricted Sessions and rejects FIFO grants."""
+    with tempfile.TemporaryDirectory(prefix="a13n-session-grants-") as temporary:
+        root = Path(temporary)
+        device = Device(binary, root, egress=mode)
+        fifo = device.workspace / "fifo"
+        os.mkfifo(fifo)
+        configuration = {
+            "working_directory": str(device.workspace),
+            "sandbox": {"mode": "restricted", "grants": [{"path": str(fifo), "access": "read_only"}]},
+            **({"egress": {"destinations": {"mode": "allowlist", "hosts": []}}} if mode == "controlled" else {}),
+        }
+        request = {
+            "expected_device_id": device.descriptor["device_id"],
+            "expected_generation": device.descriptor["generation"],
+            "configuration": configuration,
+        }
+        try:
+            device.call("session.open", request, error="invalid_params")
+            configuration["sandbox"]["grants"][0]["path"] = str(device.workspace)
+            result = device.call("session.open", request)["descriptor"]
+            assert result["boundary"]["sandbox"]["mode"] == "restricted"
+            device.session = result["session_id"]
+            device.profile = result["shell_profiles"][0]["profile_id"]
+            assert device.call("environment.readiness", {"context": {"operation_id": "op-ready"}})["ready"]
+            device.success('test -z "$HOST_ONLY_SECRET"')
+            device.close()
+        finally:
+            device.shutdown()
+    print(f"PASS Session grants+{mode}: FIFO rejected, restricted worker selected on unrestricted launcher")
 
 
 def verify_runtime_alias(binary):
@@ -209,6 +243,8 @@ def main():
     args = parser.parse_args()
     binary = str(Path(args.binary).resolve())
     verify_runtime_alias(binary)
+    for mode in ["inherit", "controlled"] if args.privileged else ["inherit"]:
+        verify_session_grant_selection(binary, mode)
     for mode in ["inherit", "controlled"] if args.privileged else ["inherit"]:
         verify_grant_replacement(binary, mode)
     for uid in [0, 1000] if args.privileged else [os.geteuid()]:

@@ -2342,13 +2342,6 @@
           }
         },
         {
-          "name": "working_directory",
-          "required": false,
-          "schema": {
-            "$ref": "schema.json#/$defs/SessionOpenParams/properties/working_directory"
-          }
-        },
-        {
           "name": "required_methods",
           "required": false,
           "schema": {
@@ -2356,17 +2349,10 @@
           }
         },
         {
-          "name": "egress",
-          "required": false,
+          "name": "configuration",
+          "required": true,
           "schema": {
-            "$ref": "schema.json#/$defs/SessionOpenParams/properties/egress"
-          }
-        },
-        {
-          "name": "lifecycle",
-          "required": false,
-          "schema": {
-            "$ref": "schema.json#/$defs/SessionOpenParams/properties/lifecycle"
+            "$ref": "schema.json#/$defs/SessionOpenParams/properties/configuration"
           }
         }
       ],

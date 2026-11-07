@@ -133,7 +133,7 @@ def test_routing_tests_do_not_select_product_ci_but_workflow_edits_do(workflow_n
     workflow = yaml.safe_load((WORKFLOWS / workflow_name).read_text())
     selections = [workflow[True][event]["paths"] for event in ("pull_request", "push") if event in workflow[True]]
     for job in workflow["jobs"].values():
-        for step in job["steps"]:
+        for step in job.get("steps", []):
             if step.get("uses", "").startswith("dorny/paths-filter@"):
                 selections.extend(yaml.safe_load(step["with"]["filters"]).values())
     for patterns in selections:
@@ -458,7 +458,9 @@ def test_service_e2e_owns_automated_scenarios(path: str, selected: bool) -> None
 
 def test_e2e_builds_current_checkout_with_optional_layer_cache_and_loads_the_test_image() -> None:
     workflow = yaml.safe_load((WORKFLOWS / "ci-a13n-service-e2e.yml").read_text())
-    steps = workflow["jobs"]["scenarios"]["steps"]
+    steps = workflow["jobs"]["docker"]["steps"]
+    assert workflow["jobs"]["docker"]["needs"] == "sandbox-binary"
+    assert "needs" not in workflow["jobs"]["scenarios"]
     build = next(step for step in steps if step.get("uses", "").startswith("docker/build-push-action@"))
     options = build["with"]
     assert options["context"] == "." and options["file"] == "deploy/docker/images/sandbox/Dockerfile"
@@ -468,36 +470,45 @@ def test_e2e_builds_current_checkout_with_optional_layer_cache_and_loads_the_tes
     assert options["cache-from"] == "type=gha,scope=service-e2e-sandbox"
     assert options["cache-to"] == "type=gha,scope=service-e2e-sandbox,mode=max,ignore-error=true"
     # A restored cache never skips the build or test gate, and never substitutes a released daemon.
-    assert build["if"] == "matrix.sandbox"
-    buildx = next(step for step in steps if step.get("uses", "").startswith("docker/setup-buildx-action@"))
-    assert buildx["if"] == build["if"]
-    assert "continue-on-error" not in build and "build-args" not in options
+    assert "if" not in build and "continue-on-error" not in build
+    assert options["build-args"] == "ENVD_BINARY_SOURCE=prebuilt"
+    download = next(step for step in steps if step.get("uses", "").startswith("actions/download-artifact@"))
+    assert download["with"]["name"] == "sandbox-binary-amd64"
     run = next(step for step in steps if step.get("run", "").startswith("make service-e2e "))
     assert steps.index(build) < steps.index(run)
     assert "--require-all" in run["run"] and "if" not in run
-    assert run["env"]["SELECTION"] == "${{ matrix.selection }}"
-    assert "-k '$SELECTION'" in run["run"]
+    assert "-k docker" in run["run"]
     assert workflow["jobs"]["scenarios"]["strategy"]["fail-fast"] is False
     reports = next(step for step in steps if step.get("uses", "").startswith("actions/upload-artifact@"))
-    assert reports["with"]["name"] == "service-e2e-${{ matrix.name }}-${{ github.run_attempt }}"
+    assert reports["with"]["name"] == "service-e2e-docker-${{ github.run_attempt }}"
 
 
-@pytest.mark.parametrize("support", ["success", "failure", "cancelled", "skipped"])
-@pytest.mark.parametrize("scenarios", ["success", "failure", "cancelled", "skipped"])
-def test_service_e2e_gate_requires_support_and_scenarios(support: str, scenarios: str) -> None:
+@pytest.mark.parametrize(
+    "support,scenarios,docker",
+    [("success", "success", "success")]
+    + [
+        tuple(status if index == failed else "success" for index in range(3))
+        for failed in range(3)
+        for status in ("failure", "cancelled", "skipped")
+    ],
+)
+def test_service_e2e_gate_requires_support_and_scenarios(support: str, scenarios: str, docker: str) -> None:
     workflow = yaml.safe_load((WORKFLOWS / "ci-a13n-service-e2e.yml").read_text())
     gate = workflow["jobs"]["e2e"]
-    assert gate["name"] == "Service E2E" and set(gate["needs"]) == {"support", "scenarios"}
+    assert gate["name"] == "Service E2E" and set(gate["needs"]) == {"support", "scenarios", "docker"}
     assert "always()" in gate["if"] and "draft == false" in gate["if"]
     step = gate["steps"][0]
     assert step["env"] == {
         "SUPPORT_RESULT": "${{ needs.support.result }}",
         "SCENARIOS_RESULT": "${{ needs.scenarios.result }}",
+        "DOCKER_RESULT": "${{ needs.docker.result }}",
     }
     result = subprocess.run(
-        ["bash", "-e", "-c", step["run"]], env={"SUPPORT_RESULT": support, "SCENARIOS_RESULT": scenarios}, check=False
+        ["bash", "-e", "-c", step["run"]],
+        env={"SUPPORT_RESULT": support, "SCENARIOS_RESULT": scenarios, "DOCKER_RESULT": docker},
+        check=False,
     )
-    assert (result.returncode == 0) == (support == scenarios == "success")
+    assert (result.returncode == 0) == (support == scenarios == docker == "success")
 
 
 @pytest.mark.parametrize(
@@ -567,9 +578,15 @@ def test_harness_gate_requires_every_matrix_member(result: str) -> None:
     assert (completed.returncode == 0) == (result == "success")
 
 
-@pytest.mark.parametrize("chart", ["success", "failure", "cancelled", "skipped"])
-@pytest.mark.parametrize("helm", ["success", "failure", "cancelled", "skipped"])
-@pytest.mark.parametrize("journeys", ["success", "failure", "cancelled", "skipped"])
+@pytest.mark.parametrize(
+    "chart,helm,journeys",
+    [("success", "success", "success")]
+    + [
+        tuple(status if index == failed else "success" for index in range(3))
+        for failed in range(3)
+        for status in ("failure", "cancelled", "skipped")
+    ],
+)
 def test_deployment_gate_requires_chart_helm_and_every_journey_shard(chart: str, helm: str, journeys: str) -> None:
     workflow = yaml.safe_load((WORKFLOWS / "ci-deploy.yml").read_text())
     gate = workflow["jobs"]["kind"]

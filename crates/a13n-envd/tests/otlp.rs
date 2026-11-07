@@ -486,6 +486,8 @@ impl Receiver {
         let (send, received) = mpsc::channel(64);
         let mut server = Server::builder();
         if let Some(certificates) = certificates {
+            // VM SDKs enable both Rustls providers; tonic uses the process default.
+            let _ = rustls::crypto::ring::default_provider().install_default();
             let mut tls = ServerTlsConfig::new().identity(Identity::from_pem(
                 certificates.server.pem(),
                 certificates.server_key.serialize_pem(),
@@ -739,7 +741,7 @@ async fn managed_mtls_export_keeps_credentials_out_of_sessions() {
             "session.open",
             json!({
                 "expected_device_id":"otlp-device", "expected_generation":descriptor["generation"],
-                "working_directory":workspace
+                "configuration":{"working_directory":workspace}
             }),
         )
         .await;
@@ -821,7 +823,7 @@ async fn full_control_does_not_inherit_daemon_exporter_settings() {
         "session.open",
         json!({
             "expected_device_id":"otlp-device", "expected_generation":descriptor["generation"],
-            "working_directory":fixture.0
+            "configuration":{"working_directory":fixture.0}
         }),
     )
     .await;
