@@ -7,6 +7,7 @@ import math
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from functools import partial
 
 from a13n_envd_client import AcceptedWebSocketTransport, EIPDeviceConnection
 from a13n_envd_client.eip.v1 import DeviceDescriptor, DirectoryListParams, DirectoryListResult
@@ -182,7 +183,7 @@ class WebSocketEnvdConnections:
         async with DeviceEIPSessionSource(device, session_recovery=session_recovery).open_session(
             expected_device_id=expected_device_id,
             required_methods=required_methods,
-            configuration=await (configuration or EnvdSessionConfiguration()).resolve(self.credential_resolver),
+            configuration=partial((configuration or EnvdSessionConfiguration()).resolve, self.credential_resolver),
             expected_boundary=expected_boundary,
         ) as session:
             yield EIPSessionBinding(session, device.descriptor)

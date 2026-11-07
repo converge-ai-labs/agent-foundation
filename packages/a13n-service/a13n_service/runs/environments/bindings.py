@@ -4,7 +4,7 @@ from collections.abc import Sequence
 
 from a13n_harness.environment.session_recovery import EnvdSessionState
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import exists, or_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra.audit import record
@@ -61,20 +61,32 @@ async def ensure(
 async def require_idle(session: AsyncSession, thread_id: str, mount: EnvironmentMount) -> None:
     """Durable admitted work, rather than a live carrier or unexpired lease, prevents replacement."""
     selector = [{"environment_id": mount.environment_id, "session_binding": mount.session_binding}]
-    busy = or_(
-        exists().where(
-            RunRow.thread_id == thread_id,
-            RunRow.status.in_(("accepted", "running", "waiting")),
-            RunRow.environment_mounts.contains(selector),
-        ),
-        exists().where(
-            ToolExecutionRow.thread_id == thread_id,
-            ToolExecutionRow.completed_at.is_(None),
-            ToolExecutionRow.environment_mounts.contains(selector),
-        ),
-    )
-    if await session.scalar(select(busy)):
-        raise conflict("session_binding", mount.session_binding, "environment_busy")
+    run_id, execution_id = (
+        await session.execute(
+            select(
+                select(RunRow.id)
+                .where(
+                    RunRow.thread_id == thread_id,
+                    RunRow.status.in_(("accepted", "running", "waiting")),
+                    RunRow.environment_mounts.contains(selector),
+                )
+                .limit(1)
+                .scalar_subquery(),
+                select(ToolExecutionRow.id)
+                .where(
+                    ToolExecutionRow.thread_id == thread_id,
+                    ToolExecutionRow.completed_at.is_(None),
+                    ToolExecutionRow.environment_mounts.contains(selector),
+                )
+                .limit(1)
+                .scalar_subquery(),
+            )
+        )
+    ).one()
+    if run_id is not None or execution_id is not None:
+        raise conflict(
+            "session_binding", mount.session_binding, "environment_busy", run_id=run_id, execution_id=execution_id
+        )
 
 
 async def admit(session: AsyncSession, thread: ThreadRow, mounts: Sequence[EnvironmentMount]) -> list[EnvironmentMount]:

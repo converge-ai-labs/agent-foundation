@@ -28,6 +28,14 @@ class EnvdSessionState(BaseModel):
     status: Literal["active", "retiring", "retired"] = "active"
 
 
+type SessionConfigurationSource = SessionConfiguration | Callable[[], Awaitable[SessionConfiguration]]
+
+
+async def resolve_configuration(configuration: SessionConfigurationSource) -> SessionConfiguration:
+    """Resolve startup inputs only when the owner needs ordinary acquisition."""
+    return configuration if isinstance(configuration, SessionConfiguration) else await configuration()
+
+
 class EnvdSessionBorrower(Protocol):
     def borrow(
         self,
@@ -35,7 +43,7 @@ class EnvdSessionBorrower(Protocol):
         *,
         target: str,
         expected_device_id: str,
-        configuration: SessionConfiguration,
+        configuration: SessionConfigurationSource,
         required_methods: frozenset[str],
         expected_boundary: EnvdBoundaryRequirement | None,
     ) -> AbstractAsyncContextManager[EIPSession]: ...
@@ -52,7 +60,7 @@ class _ExactSession:
         *,
         target: str,
         expected_device_id: str,
-        configuration: SessionConfiguration,
+        configuration: SessionConfigurationSource,
         required_methods: frozenset[str],
         expected_boundary: EnvdBoundaryRequirement | None,
     ) -> AbstractAsyncContextManager[EIPSession]:
@@ -71,15 +79,13 @@ class _ExactSession:
 class EnvdSessionRecovery:
     """One logical context shared by compatible Runs and their retained work.
 
-    The Host keys contexts by Thread and binding, and persists state before exposing
-    an acquisition. Live borrowers share one client; the final release detaches it.
+    The Host keys contexts by Thread and binding, reloads state under its ownership
+    lock before borrowing, and persists checkpoints before acquisition is exposed.
+    Live borrowers share one client; the final release detaches it.
     """
 
     state: EnvdSessionState | None = field(default=None, repr=False)
     checkpoint: Callable[[EnvdSessionState], Awaitable[None]] | None = field(default=None, repr=False)
-    ownership: Callable[[], AbstractAsyncContextManager[EnvdSessionState | None]] | None = field(
-        default=None, repr=False
-    )
     _scope: AsyncExitStack | None = field(default=None, init=False, repr=False)
     _session: EIPSession | None = field(default=None, init=False, repr=False)
     _users: int = field(default=0, init=False)
@@ -102,31 +108,33 @@ class EnvdSessionRecovery:
         *,
         target: str,
         expected_device_id: str,
-        configuration: SessionConfiguration,
+        configuration: SessionConfigurationSource,
         required_methods: frozenset[str],
         expected_boundary: EnvdBoundaryRequirement | None,
         original_session_id: str | None = None,
     ) -> AsyncIterator[EIPSession]:
-        digest = configuration_digest(configuration)
         async with self._lock:
             if device.descriptor.device_id != expected_device_id:
                 raise EIPSessionStateError("Session context belongs to another Device")
+            self._check_original(original_session_id)
+            if original_session_id is None:
+                configuration = await resolve_configuration(configuration)
+                digest = configuration_digest(configuration)
+            else:
+                # Exact recovery uses the original worker's immutable startup inputs.
+                # Its current secret sources need not still exist, and cannot reconfigure it.
+                assert self.state is not None
+                digest = self.state.configuration_digest
             if self._session is not None and self._session.is_closed:
                 with CancelScope(shield=True):
                     await self._release()
             if self._session is not None:
-                self._check_original(original_session_id)
                 if not self._compatible(device, target, digest):
                     raise EIPSessionStateError("Active Session context has an incompatible binding")
                 session = self._session
             else:
                 scope = AsyncExitStack()
                 try:
-                    if self.ownership is not None:
-                        # Reload under Host ownership, even if an old connector kept
-                        # this context alive while another Host advanced its epoch.
-                        self.state = await scope.enter_async_context(self.ownership())
-                    self._check_original(original_session_id)
                     compatible = self._compatible(device, target, digest)
                     session = None
                     previous = self.state
@@ -135,24 +143,13 @@ class EnvdSessionRecovery:
                     if previous is not None and previous.status == "active" and previous.configuration_digest != digest:
                         raise EIPSessionStateError("Session configuration changed; retire the current binding first")
                     if compatible and previous is not None:
-                        # Reserve the next epoch durably before takeover. An uncertain
-                        # response retains this reservation; a later attempt advances it.
-                        epoch = previous.descriptor.owner_epoch + 1
-                        await self._save(
-                            previous.model_copy(
-                                update={"descriptor": previous.descriptor.model_copy(update={"owner_epoch": epoch})}
-                            )
-                        )
-                        try:
-                            session = await device.attach_session(previous.descriptor, owner_epoch=epoch)
-                        except EIPMethodError as error:
-                            if error.error.data.error_type != ErrorType.NOT_INITIALIZED:
-                                raise
+                        session = await self._attach(device, previous)
                     if session is None:
                         if original_session_id is not None:
                             raise EnvironmentError(
                                 "The original Session is no longer available", code="environment_not_found"
                             )
+                        assert isinstance(configuration, SessionConfiguration)
                         session = await device.open_session(
                             configuration=configuration,
                             required_methods=tuple(sorted(required_methods)),
@@ -231,35 +228,36 @@ class EnvdSessionRecovery:
         async with self._lock:
             if self._users:
                 raise EIPSessionStateError("Session is busy; settle its borrowers before replacement")
-            async with AsyncExitStack() as scope:
-                if self.ownership is not None:
-                    self.state = await scope.enter_async_context(self.ownership())
-                previous = self.state
-                if previous is None or previous.status == "retired":
-                    return
-                if previous.target != target or previous.descriptor.device_id != device.descriptor.device_id:
-                    raise EIPSessionStateError("Session retirement belongs to another Device")
-                await self._save(previous.model_copy(update={"status": "retiring"}))
-                if previous.descriptor.generation == device.descriptor.generation:
-                    epoch = previous.descriptor.owner_epoch + 1
-                    assert self.state is not None
-                    await self._save(
-                        self.state.model_copy(
-                            update={"descriptor": previous.descriptor.model_copy(update={"owner_epoch": epoch})}
-                        )
-                    )
+            previous = self.state
+            if previous is None or previous.status == "retired":
+                return
+            if previous.target != target or previous.descriptor.device_id != device.descriptor.device_id:
+                raise EIPSessionStateError("Session retirement belongs to another Device")
+            retiring = previous.model_copy(update={"status": "retiring"})
+            await self._save(retiring)
+            if previous.descriptor.generation == device.descriptor.generation:
+                session = await self._attach(device, retiring)
+                if session is not None:
                     try:
-                        session = await device.attach_session(previous.descriptor, owner_epoch=epoch)
-                    except EIPMethodError as error:
-                        if error.error.data.error_type != ErrorType.NOT_INITIALIZED:
-                            raise
-                    else:
-                        try:
-                            await session.close()
-                        finally:
-                            await session.detach()
-                assert self.state is not None
-                await self._save(self.state.model_copy(update={"status": "retired"}))
+                        await session.close()
+                    finally:
+                        await session.detach()
+            assert self.state is not None
+            await self._save(self.state.model_copy(update={"status": "retired"}))
+
+    async def _attach(self, device: EIPDeviceConnection, previous: EnvdSessionState) -> EIPSession | None:
+        # Reserve the next epoch before takeover. An uncertain response retains
+        # this reservation; a later attempt advances it without replaying work.
+        epoch = previous.descriptor.owner_epoch + 1
+        await self._save(
+            previous.model_copy(update={"descriptor": previous.descriptor.model_copy(update={"owner_epoch": epoch})})
+        )
+        try:
+            return await device.attach_session(previous.descriptor, owner_epoch=epoch)
+        except EIPMethodError as error:
+            if error.error.data.error_type != ErrorType.NOT_INITIALIZED:
+                raise
+            return None
 
     async def _save(self, state: EnvdSessionState) -> None:
         if self.checkpoint is not None:

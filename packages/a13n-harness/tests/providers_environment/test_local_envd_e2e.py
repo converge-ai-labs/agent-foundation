@@ -405,8 +405,6 @@ async def test_session_replacement_requires_retirement_and_never_resurrects(bina
 
 
 async def test_exact_restore_rejects_a_reloaded_successor_before_taking_ownership(binary, tmp_path):
-    from contextlib import asynccontextmanager
-
     from a13n_harness.environment.attachments import DeviceEIPSessionSource
     from a13n_harness.environment.models import EnvironmentError
     from a13n_harness.environment.session_recovery import EnvdSessionRecovery
@@ -419,11 +417,7 @@ async def test_exact_restore_rejects_a_reloaded_successor_before_taking_ownershi
         current = state
         checkpoints.append(state)
 
-    @asynccontextmanager
-    async def ownership():
-        yield current
-
-    owner = EnvdSessionRecovery(checkpoint=checkpoint, ownership=ownership)
+    owner = EnvdSessionRecovery(checkpoint=checkpoint)
     async with LocalEnvdProviderRuntime(
         executable=binary,
         allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(parent=tmp_path),
@@ -440,13 +434,14 @@ async def test_exact_restore_rejects_a_reloaded_successor_before_taking_ownershi
         async with borrow(owner):
             original = current
         assert original is not None
-        exact = EnvdSessionRecovery(state=original, checkpoint=checkpoint, ownership=ownership).exact(
-            original.descriptor.session_id
-        )
+        restored = EnvdSessionRecovery(state=original, checkpoint=checkpoint)
+        exact = restored.exact(original.descriptor.session_id)
         await owner.retire(device, target=target)
         async with borrow(owner) as successor:
             successor_id = successor.session_id
         checkpoint_count = len(checkpoints)
+        # Hosts reload the durable head under their own lock before acquisition.
+        restored.state = current
         with pytest.raises(EnvironmentError, match="original Session"):
             async with borrow(exact):
                 pytest.fail("old work must not attach to the new Session")
@@ -455,3 +450,63 @@ async def test_exact_restore_rejects_a_reloaded_successor_before_taking_ownershi
         assert not device._sessions
         async with borrow(owner) as still_current:
             assert still_current.session_id == successor_id
+
+
+async def test_local_exact_recovery_skips_startup_secret_resolution(binary, tmp_path, monkeypatch):
+    from a13n_envd_client import EIPDeviceConnection
+    from a13n_harness.environment.envd_policy import EnvdEgressConfiguration, EnvdSessionConfiguration
+    from a13n_harness.environment.models import EnvironmentError
+    from a13n_harness.environment.session_recovery import EnvdSessionRecovery
+
+    owner = EnvdSessionRecovery()
+    async with LocalEnvdProviderRuntime(
+        executable=binary,
+        allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(parent=tmp_path),
+        configuration=LocalEnvdLaunchConfiguration(default_working_directory=tmp_path),
+    ) as runtime:
+        connector = LOCAL_ENVD.execution_connector(
+            LocalEnvdEnvironmentConfiguration(), runtime=runtime, environment_id="view", session_recovery=owner
+        )
+        original = await connector.open()
+        await original.close()
+        previous = owner.state
+        assert previous is not None
+        monkeypatch.delenv("REMOVED_SESSION_SECRET", raising=False)
+        configuration = LocalEnvdEnvironmentConfiguration(
+            session=EnvdSessionConfiguration(
+                egress=EnvdEgressConfiguration.model_validate(
+                    {
+                        "destinations": {"mode": "allowlist"},
+                        "secrets": [
+                            {
+                                "env": "API_KEY",
+                                "source": {"kind": "environment", "name": "REMOVED_SESSION_SECRET"},
+                                "inject_hosts": ["example.com"],
+                            }
+                        ],
+                    }
+                )
+            )
+        )
+        restored = EnvdSessionRecovery(state=previous)
+        exact = restored.exact(previous.descriptor.session_id)
+
+        async def forbidden_open(*args, **kwargs):
+            pytest.fail("exact recovery must not open a successor")
+
+        monkeypatch.setattr(EIPDeviceConnection, "open_session", forbidden_open)
+        recovered = await LOCAL_ENVD.execution_connector(
+            configuration, runtime=runtime, environment_id="view", session_recovery=exact
+        ).open()
+        await recovered.close()
+        assert restored.state.descriptor.session_id == previous.descriptor.session_id
+        assert restored.state.configuration_digest == previous.configuration_digest
+        assert restored.state.descriptor.owner_epoch > previous.descriptor.owner_epoch
+        device = await runtime.acquire_device()
+        stale = EnvdSessionRecovery(state=restored.state).exact(previous.descriptor.session_id)
+        await restored.retire(device, target=previous.target)
+        with pytest.raises(EnvironmentError) as lost:
+            await LOCAL_ENVD.execution_connector(
+                configuration, runtime=runtime, environment_id="view", session_recovery=stale
+            ).open()
+        assert lost.value.code == "environment_not_found"

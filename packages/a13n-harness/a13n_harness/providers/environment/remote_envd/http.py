@@ -7,6 +7,7 @@ import ssl
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
+from functools import partial
 
 from a13n_envd_client import EIPDeviceConnection, HttpTransport
 from a13n_envd_client.eip.v1 import DeviceDescriptor, DirectoryListParams, DirectoryListResult, ErrorType
@@ -118,7 +119,6 @@ class HttpEnvdProviderRuntime:
         *,
         expected_device_id: str,
         required_methods: frozenset[str],
-        working_directory: str | None = None,
         configuration: EnvdSessionConfiguration | None = None,
         expected_boundary: EnvdBoundaryRequirement | None = None,
         session_recovery: EnvdSessionBorrower | None = None,
@@ -132,7 +132,7 @@ class HttpEnvdProviderRuntime:
         ).open_session(
             expected_device_id=expected_device_id,
             required_methods=required_methods,
-            configuration=await (configuration or EnvdSessionConfiguration()).resolve(self.credential_resolver),
+            configuration=partial((configuration or EnvdSessionConfiguration()).resolve, self.credential_resolver),
             expected_boundary=expected_boundary,
         ) as session:
             yield EIPSessionBinding(session, device.descriptor)
@@ -195,7 +195,6 @@ def _construct(
         session_context=runtime.open_session(
             expected_device_id=data.device_id,
             session_recovery=session_recovery,
-            working_directory=configuration.working_directory,
             required_methods=REQUIRED_METHODS | frozenset(configuration.required_methods),
             configuration=configuration.session,
             expected_boundary=configuration.expected_boundary,

@@ -228,10 +228,10 @@ uv run environment-provider-example websocket_envd \
 Host 执行中断后，按以下步骤恢复：
 
 1. 从 `a13n_harness.environment.session_recovery` 创建 `EnvdSessionRecovery`。只在原逻辑范围内恢复可选 `EnvdSessionState`。
-2. 将 `session_recovery=recovery` 传给 `execution_connector(...)`。执行活跃期间，将观测到的 `recovery.state` 与 `EnvironmentState` 和 Harness 状态分开保存。
+2. 提供异步 `checkpoint(state)` 回调，将每个 `EnvdSessionState` 与 `EnvironmentState` 和 Harness 状态分开持久化。持有 Host 的绑定所有权锁，将已保存状态重新加载到 `recovery.state`，再将 `session_recovery=recovery` 传给 `execution_connector(...)`。直到最后一个借用者退出后才释放所有权。
 3. 使用当前凭据重新连接。附加验证逻辑目标、Device 代次、所选 Session 配置和实际描述符。普通新工作可在确认原 Session 丢失后新建；认证、传输和协议错误直接返回。启动配置变化时，必须先显式退役，再打开后继 Session。关闭旧 Session 前先持久化退役状态；关闭结果不确定时保留其描述符。
 4. 为绑定的全部目录视图传入同一个所有者。最后一个执行对象关闭时只分离连接，保留检查点供后续 Run 使用。视图工作目录不划分 Session 身份。
-5. 恢复保留的原生工作时使用 `recovery.exact(original_session_id)`。该借用者必须恢复原 Session，绝不新建替代。绑定已接纳的工作全部结束后才可退役；已退役的配置不会复活。
+5. 恢复保留的原生工作时使用 `recovery.exact(original_session_id)`。该借用者必须恢复原 Session，绝不新建替代。它不再解析启动密钥来源，因此来源轮换或移除不会阻止原 worker 恢复。Device 认证和授权仍然适用。绑定已接纳的工作全部结束后才可退役；已退役的配置不会复活。
 
 消息帧传输通道丢失后，Session 分离，原有的空闲期限和最大生命周期保持不变。恢复要求守护进程仍保留同一代次中的同一 Session。重新附加会推进 owner epoch，使旧所有者的请求失效；这不构成已认证客户端之间的授权边界。先检查不确定的结果，再继续操作。绝不能因断线重放可能已分派的命令或修改；准备失败后，使用新的执行尝试。
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 from contextlib import AbstractAsyncContextManager
+from functools import partial
 from pathlib import Path
 
 from a13n_harness.environment.attachments import DeviceEIPSessionSource
@@ -136,7 +137,7 @@ class LocalEnvdExecution(ExecutionBackend):
                 device_id=device.descriptor.device_id,
                 working_directory=self._configuration.working_directory,
                 required_methods=frozenset(self._configuration.required_methods),
-                configuration=await self._configuration.session.resolve(self._runtime.credential_resolver),
+                configuration=partial(self._configuration.session.resolve, self._runtime.credential_resolver),
                 expected_boundary=self._configuration.expected_boundary,
             )
             self._bound = await scope.__aenter__()

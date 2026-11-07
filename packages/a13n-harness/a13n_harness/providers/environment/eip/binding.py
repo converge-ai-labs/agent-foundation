@@ -18,6 +18,7 @@ from a13n_harness.environment.models import (
     EnvironmentPermissionSet,
 )
 from a13n_harness.environment.operations import EnvironmentOperations
+from a13n_harness.environment.session_recovery import SessionConfigurationSource
 from a13n_harness.providers.environment.eip._common import invoke
 from a13n_harness.providers.environment.eip.computer import EIPComputerOperations
 from a13n_harness.providers.environment.eip.files import EIPFileOperator
@@ -83,7 +84,7 @@ async def open_eip_environment(
     device_id: str,
     working_directory: str | None = None,
     required_methods: frozenset[str] = frozenset(),
-    configuration: eip.SessionConfiguration | None = None,
+    configuration: SessionConfigurationSource | None = None,
     expected_boundary: EnvdBoundaryRequirement | None = None,
 ) -> AsyncGenerator[EIPEnvironmentSession]:
     """Open one provider-owned EIP session and expose semantic operation facets."""

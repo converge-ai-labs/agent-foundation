@@ -13,7 +13,11 @@ from a13n_envd_client import (
 from a13n_envd_client.eip.v1 import DeviceDescriptor, SessionConfiguration
 
 from a13n_harness.environment.envd_policy import EnvdBoundaryRequirement
-from a13n_harness.environment.session_recovery import EnvdSessionBorrower
+from a13n_harness.environment.session_recovery import (
+    EnvdSessionBorrower,
+    SessionConfigurationSource,
+    resolve_configuration,
+)
 
 
 @dataclass(frozen=True)
@@ -36,7 +40,7 @@ class EIPSessionSource(ABC):
         *,
         expected_device_id: str,
         required_methods: frozenset[str],
-        configuration: SessionConfiguration | None = None,
+        configuration: SessionConfigurationSource | None = None,
         expected_boundary: EnvdBoundaryRequirement | None = None,
     ) -> AbstractAsyncContextManager[EIPSession]: ...
 
@@ -71,7 +75,7 @@ class DeviceEIPSessionSource(EIPSessionSource):
         *,
         expected_device_id: str,
         required_methods: frozenset[str],
-        configuration: SessionConfiguration | None = None,
+        configuration: SessionConfigurationSource | None = None,
         expected_boundary: EnvdBoundaryRequirement | None = None,
     ) -> AsyncGenerator[EIPSession]:
         self._claim()
@@ -90,7 +94,7 @@ class DeviceEIPSessionSource(EIPSessionSource):
                 yield session
         else:
             session = await self._device.open_session(
-                configuration=configuration,
+                configuration=await resolve_configuration(configuration),
                 required_methods=tuple(sorted(required_methods)),
             )
             async with session:

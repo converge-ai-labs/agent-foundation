@@ -781,6 +781,8 @@ async def test_retained_shell_recovers_original_process_after_run_seals(
                     ],
                 )
         assert busy.value.details["reason"] == "environment_busy"
+        assert busy.value.details["execution_id"] == execution_id
+        assert busy.value.details["run_id"] is None
     if outcome == "cancel":
         async with transaction(service.runtime.storage) as session:
             row = await session.get_one(ToolExecutionRow, execution_id)
@@ -1876,6 +1878,8 @@ async def test_named_session_bindings_share_views_and_replace_atomically(service
                 ],
             )
     assert refused.value.details["reason"] == "environment_busy"
+    assert refused.value.details["run_id"] == next_run.json()["run"]["id"]
+    assert refused.value.details["execution_id"] is None
     await (await runs_kit.attempt(service))
     second = await heads()
     assert second[key].version == 2

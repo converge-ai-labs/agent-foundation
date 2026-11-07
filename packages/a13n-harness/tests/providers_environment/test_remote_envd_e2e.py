@@ -859,7 +859,6 @@ async def test_managed_defaults_reach_real_envd_commands_and_children(
         def session(reference, *, session_recovery=None):
             return runtime.open_session(
                 expected_device_id=NATIVE_ID,
-                working_directory=str(workspace),
                 required_methods=frozenset({"shell.exec", "process.start"}),
             )
 
@@ -950,7 +949,7 @@ async def test_session_context_shares_live_borrowers_and_restores_after_final_re
 
 
 @pytest.mark.parametrize("failure", ["open", "checkpoint", "cancel_checkpoint", "attach"])
-async def test_session_ownership_unwinds_failed_acquisition(binary, tmp_path, http_runtime, monkeypatch, failure):
+async def test_session_recovery_unwinds_failed_acquisition(binary, tmp_path, http_runtime, monkeypatch, failure):
     from a13n_envd_client import EIPSession, EIPTransportError
     from a13n_harness.environment.session_recovery import EnvdSessionRecovery
     from anyio import create_task_group, sleep_forever
@@ -960,14 +959,6 @@ async def test_session_ownership_unwinds_failed_acquisition(binary, tmp_path, ht
     durable = None
     failing = False
     checkpoint_entered = asyncio.Event()
-
-    @asynccontextmanager
-    async def ownership():
-        events.append("acquire")
-        try:
-            yield durable
-        finally:
-            events.append("release")
 
     async def checkpoint(state):
         nonlocal durable
@@ -985,12 +976,13 @@ async def test_session_ownership_unwinds_failed_acquisition(binary, tmp_path, ht
         await detach(self)
 
     monkeypatch.setattr(EIPSession, "detach", tracked_detach)
-    context = EnvdSessionRecovery(checkpoint=checkpoint, ownership=ownership)
+    context = EnvdSessionRecovery(checkpoint=checkpoint)
     async with daemon(binary, tmp_path, "http", endpoint.removeprefix("http://")):
         runtime = http_runtime(endpoint)
         device = await runtime.acquire_device(expected_device_id=NATIVE_ID)
 
         async def acquire():
+            context.state = durable
             async with runtime.open_session(
                 expected_device_id=NATIVE_ID, required_methods=frozenset(), session_recovery=context
             ):
@@ -1017,37 +1009,29 @@ async def test_session_ownership_unwinds_failed_acquisition(binary, tmp_path, ht
         else:
             with pytest.raises((EIPTransportError, OSError)):
                 await acquire()
-        expected = ["acquire", "release"]
-        if failure in {"checkpoint", "cancel_checkpoint"}:
-            expected.insert(1, "detach")
+        expected = ["detach"] if failure in {"checkpoint", "cancel_checkpoint"} else []
         assert events == expected
         assert context._scope is None and context._session is None and context._users == 0
         failing = False
         monkeypatch.setattr(device, method, original)
         await acquire()
-        assert events[len(expected) :] == ["acquire", "detach", "release"]
+        assert events[len(expected) :] == ["detach"]
 
 
-async def test_dead_session_late_borrower_does_not_release_successor_owner(binary, tmp_path, http_runtime):
+async def test_dead_session_late_borrower_does_not_detach_successor(binary, tmp_path, http_runtime, monkeypatch):
+    from a13n_envd_client import EIPSession
     from a13n_harness.environment.session_recovery import EnvdSessionRecovery
 
     endpoint = f"http://127.0.0.1:{free_port()}"
-    durable = None
-    events = []
+    detached = []
+    detach = EIPSession.detach
 
-    @asynccontextmanager
-    async def ownership():
-        events.append("acquire")
-        try:
-            yield durable
-        finally:
-            events.append("release")
+    async def tracked_detach(self):
+        detached.append(self.descriptor.owner_epoch)
+        await detach(self)
 
-    async def checkpoint(state):
-        nonlocal durable
-        durable = state
-
-    context = EnvdSessionRecovery(checkpoint=checkpoint, ownership=ownership)
+    monkeypatch.setattr(EIPSession, "detach", tracked_detach)
+    context = EnvdSessionRecovery()
     async with daemon(binary, tmp_path, "http", endpoint.removeprefix("http://")):
         runtime = http_runtime(endpoint)
 
@@ -1062,11 +1046,13 @@ async def test_dead_session_late_borrower_does_not_release_successor_owner(binar
         async with borrow() as successor:
             assert successor.session.session_id == old.session.session_id
             assert successor.session.descriptor.owner_epoch > old.session.descriptor.owner_epoch
-            assert events == ["acquire", "release", "acquire"]
+            assert detached == [old.session.descriptor.owner_epoch]
             await old_scope.__aexit__(None, None, None)
-            assert events == ["acquire", "release", "acquire"]
+            assert detached == [old.session.descriptor.owner_epoch]
+            assert context._users == 1
             assert (await successor.session.readiness()).ready
-        assert events == ["acquire", "release", "acquire", "release"]
+        assert detached == [old.session.descriptor.owner_epoch, successor.session.descriptor.owner_epoch]
+        assert context._users == 0
 
 
 async def test_uncertain_takeover_keeps_checkpoint_and_advances_epoch_on_retry(

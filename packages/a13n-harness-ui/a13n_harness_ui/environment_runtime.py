@@ -787,9 +787,10 @@ class EnvironmentRunService:
             if existing is not None:
                 return existing
 
-            async def require_idle() -> None:
-                records = await self._store.tool_executions.list(thread_id, offset=0, limit=1)
-                if records and not records[0].terminal:
+            async def require_idle(exclude_execution_id: str | None) -> None:
+                # Nonterminal records sort first; two suffice when excluding one caller.
+                records = await self._store.tool_executions.list(thread_id, offset=0, limit=2)
+                if any(not record.terminal and record.execution_id != exclude_execution_id for record in records):
                     raise EnvironmentError(
                         "Retained tools must finish before changing the Session configuration.", code="environment_busy"
                     )

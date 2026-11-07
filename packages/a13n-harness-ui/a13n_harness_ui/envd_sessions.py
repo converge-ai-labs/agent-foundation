@@ -6,10 +6,16 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 
 from a13n_envd_client import EIPDeviceConnection, EIPSession
-from a13n_envd_client.eip.v1 import SessionConfiguration
 from a13n_harness.environment.envd_policy import EnvdBoundaryRequirement
 from a13n_harness.environment.models import EnvironmentError
-from a13n_harness.environment.session_recovery import EnvdSessionRecovery, EnvdSessionState
+from a13n_harness.environment.session_recovery import (
+    EnvdSessionRecovery,
+    EnvdSessionState,
+    SessionConfigurationSource,
+    configuration_digest,
+    resolve_configuration,
+)
+from a13n_harness.tool_execution import current_execution
 from anyio import CancelScope, fail_after
 
 from a13n_harness_ui.storage.envd_sessions import EnvdSessionRepository, SessionBindingHead, SessionTarget
@@ -26,7 +32,7 @@ class SessionBinding:
         device_key: str,
         repository: EnvdSessionRepository,
         owners: OwnershipLocks,
-        require_idle: Callable[[], Awaitable[None]],
+        require_idle: Callable[[str | None], Awaitable[None]],
         retirement_device: Callable[[SessionTarget, EnvdSessionState], Awaitable[EIPDeviceConnection | None]],
     ) -> None:
         self.thread_id = thread_id
@@ -86,10 +92,14 @@ class SessionBinding:
             raise EnvironmentError("The captured Session selection is no longer current.", code="envd_session_conflict")
         return self._head
 
-    async def _idle(self) -> None:
+    async def _idle(self, *, acquiring: bool = False) -> None:
         if self._users:
             raise EnvironmentError("Session borrowers must finish before replacement.", code="environment_busy")
-        await self._require_idle()
+        # Owned runners are admitted before their first lazy mount access. Only
+        # acquisition may exclude the caller; selection changes still require idle work.
+        caller = current_execution() if acquiring else None
+        excluded = caller.execution_id if caller is not None and caller.thread_id == self.thread_id else None
+        await self._require_idle(excluded)
 
     async def _save(self, replacement: SessionBindingHead) -> None:
         with CancelScope(shield=True), fail_after(30):
@@ -105,7 +115,7 @@ class SessionBinding:
         previous = self._head.session
         if previous is None or previous.status == "retired":
             return
-        await self._idle()
+        await self._idle(acquiring=True)
         old_target = self._head.session_target
         assert old_target is not None
         await self._checkpoint(previous.model_copy(update={"status": "retiring"}))
@@ -127,14 +137,28 @@ class SessionBinding:
         original_session_id: str | None,
         target: str,
         expected_device_id: str,
-        configuration: SessionConfiguration,
+        configuration: SessionConfigurationSource,
         required_methods: frozenset[str],
         expected_boundary: EnvdBoundaryRequirement | None,
     ) -> AsyncIterator[EIPSession]:
         scope = AsyncExitStack()
         async with self._lock, self._ownership():
             head = self._validate(version)
-            if head.session_version != version:
+            replace = head.session_version != version
+            if original_session_id is None:
+                configuration = await resolve_configuration(configuration)
+                previous = head.session
+                replace = replace or (
+                    previous is not None
+                    and (
+                        previous.status == "retiring"
+                        or (
+                            previous.status == "active"
+                            and previous.configuration_digest != configuration_digest(configuration)
+                        )
+                    )
+                )
+            if replace:
                 if original_session_id is not None:
                     raise EnvironmentError("The original Session is no longer current.", code="environment_not_found")
                 await self._retire()
@@ -190,7 +214,7 @@ class AdmittedSession:
         *,
         target: str,
         expected_device_id: str,
-        configuration: SessionConfiguration,
+        configuration: SessionConfigurationSource,
         required_methods: frozenset[str],
         expected_boundary: EnvdBoundaryRequirement | None,
     ):

@@ -222,7 +222,7 @@ a13n-envd connect https://your-harness-ui.example.com
 
 浏览不打开 Session，在尚无 Run 时也可用。Device 不可用或发现功能关闭时，可以输入已知路径；执行仍要求 Device 和目录可访问。Windows Device 路径使用 `/C:/work` 或 `/UNC/server/share/work`，不是 Harness UI 服务器路径。
 
-**Add directory** 沿用已有分组的 Device 和访问策略。不同访问、网络或边界策略保留为不同组。**Advanced routing** 显示生成的别名。绑定、工作目录和执行策略不变时，Thread 跨 Run 复用 Session。不同绑定保持独立的进程句柄和保留输出，即使它们使用同一 Device。
+**Add directory** 沿用已有分组的 Device 和访问策略。不同访问、网络或边界策略保留为不同组。**Advanced routing** 显示生成的别名。同一 Thread 中，同一 Device 的所有目录视图共享一个 Session，并选择相同的 Session 启动策略。修改视图别名或工作目录不会替换该 Session。独立 Thread 保持独立的 Session、进程句柄和保留输出。
 
 Run 正常结束或等待人工输入时会释放 Session 使用权，不销毁 Session。活跃 Run 和保留的后台 Shell 工作维持保活。最后一次使用后默认有一小时空闲窗口，后续 Run 可在过期前重新附加。只要外部 daemon 和原 Session 存活，App 重启后就能恢复保留的 Envd Shell 执行，沿用原 `exec-*` 身份，不重新启动命令。临时连接失败时继续等待恢复。daemon 重启或 Session 过期后，原工作不可再用。App 管理的本地 daemon 随 App 停止，因此其中的原生进程不能跨 App 重启存活。
 
@@ -244,7 +244,7 @@ defaults:
 
 在所选配置树验证此文件，再在 **Remote build** 中创建新对话。混合 Project 在这些默认值旁保留本地 `roots`。Device 绑定要求从最终挂载中显式选择默认值。本地别名 `workspace`、`workspace-2` 和 `thread-files` 等 Host 辅助名称为保留值。
 
-Device 目录是工作目录默认值，不是文件系统边界。本地模式控制本地挂载和 Thread 文件，不会隔离 Device。互不信任的工作负载应使用独立、由 Host 管理的安全边界。受控出站按[远程 Provider 用法](../environments/remote-envd.md#session-egress-and-credential-references)添加目标和密钥来源引用，以及 `expected_boundary`。值在准备时解析；Project YAML 中不要写 token 值。
+Device 目录是工作目录默认值，不是文件系统边界。本地模式控制本地挂载和 Thread 文件，不会隔离 Device。互不信任的工作负载应使用独立、由 Host 管理的安全边界。受控出站按[远程 Provider 用法](../environments/remote-envd.md#session-egress-and-credential-references)添加目标和密钥来源引用，以及 `expected_boundary`。值在普通获取时解析；Project YAML 中不要写 token 值。来源值变化后，下一次获取会在全部活跃借用者和未完成的保留工具结束后替换 Session。绑定忙碌时返回错误，不中断已有工作；完成或取消该工作后再重试。保留工作的精确恢复使用原 Session，即使启动密钥来源已轮换或移除。Device 认证和撤销检查仍然适用。
 
 应用 Project 默认值时，省略绑定集合会保留 Thread 集合；显式空列表会移除它。仅编辑默认值不会创建空覆盖。活动和历史 Run 保留捕获选择。
 

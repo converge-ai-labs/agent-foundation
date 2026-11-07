@@ -87,7 +87,6 @@ async def http_session(
         async with runtime.open_session(
             expected_device_id=reference.allocation_id,
             session_recovery=session_recovery,
-            working_directory="/workspace",
             required_methods=REQUIRED_METHODS
             | (frozenset({"computer.describe", "computer.observe"}) if reference.config.desktop else frozenset()),
         ) as session:

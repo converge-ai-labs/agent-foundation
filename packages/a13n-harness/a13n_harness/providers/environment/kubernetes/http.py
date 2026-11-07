@@ -159,7 +159,6 @@ async def session(
             session_recovery=session_recovery,
             # The forwarding port and Pod IP are connection details, not Session identity.
             recovery_target=json.dumps([KEY, state.profile_fingerprint, state.cluster, state.namespace, state.pod_uid]),
-            working_directory=config.working_directory,
             required_methods=REQUIRED_METHODS,
         ) as binding:
             yield binding

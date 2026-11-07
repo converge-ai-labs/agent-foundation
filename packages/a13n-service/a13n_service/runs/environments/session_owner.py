@@ -6,10 +6,10 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 
 from a13n_envd_client import EIPDeviceConnection, EIPSession
-from a13n_envd_client.eip.v1 import AllowlistDestinations, EgressMode, EgressPolicy, SessionConfiguration
+from a13n_envd_client.eip.v1 import AllowlistDestinations, EgressMode, EgressPolicy
 from a13n_harness.environment.envd_policy import EnvdBoundaryRequirement, EnvironmentEnvdCredentialResolver
 from a13n_harness.environment.models import EnvironmentError
-from a13n_harness.environment.session_recovery import EnvdSessionRecovery, EnvdSessionState
+from a13n_harness.environment.session_recovery import EnvdSessionRecovery, EnvdSessionState, SessionConfigurationSource
 from anyio import CancelScope
 from sqlalchemy import select
 
@@ -157,7 +157,7 @@ class AdmittedSession:
         *,
         target: str,
         expected_device_id: str,
-        configuration: SessionConfiguration,
+        configuration: SessionConfigurationSource,
         required_methods: frozenset[str],
         expected_boundary: EnvdBoundaryRequirement | None,
     ):
