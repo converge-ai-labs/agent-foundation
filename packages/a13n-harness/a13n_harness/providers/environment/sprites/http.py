@@ -11,7 +11,7 @@ from websockets.exceptions import WebSocketException
 
 from a13n_harness.environment.attachments import EIPSessionBinding
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
-from a13n_harness.environment.session_recovery import EnvdSessionRecovery
+from a13n_harness.environment.session_recovery import EnvdSessionBorrower
 from a13n_harness.providers.environment.native.errors import failure
 from a13n_harness.providers.environment.remote_envd.configuration import (
     HttpEnvdConnectionConfiguration,
@@ -101,7 +101,7 @@ async def private_tunnel(reference: SpritesReference) -> AsyncIterator[str]:
 
 @asynccontextmanager
 async def http_session(
-    reference: SpritesReference, *, session_recovery: EnvdSessionRecovery | None = None
+    reference: SpritesReference, *, session_recovery: EnvdSessionBorrower | None = None
 ) -> AsyncIterator[EIPSessionBinding]:
     try:
         reference.require_target()
@@ -134,7 +134,6 @@ async def http_session(
                 async with runtime.open_session(
                     expected_device_id=reference.owner,
                     session_recovery=session_recovery,
-                    working_directory="/workspace",
                     required_methods=REQUIRED_METHODS | frozenset({"computer.describe", "computer.observe"}),
                 ) as session:
                     yield session
@@ -143,7 +142,7 @@ async def http_session(
 
 
 def http_execution(
-    reference: SpritesReference, *, session_recovery: EnvdSessionRecovery | None = None
+    reference: SpritesReference, *, session_recovery: EnvdSessionBorrower | None = None
 ) -> RemoteEnvdExecution:
     reference.require_target()
     assert reference.state is not None

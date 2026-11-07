@@ -7,6 +7,7 @@ import math
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from functools import partial
 
 from a13n_envd_client import AcceptedWebSocketTransport, EIPDeviceConnection
 from a13n_envd_client.eip.v1 import DeviceDescriptor, DirectoryListParams, DirectoryListResult
@@ -16,13 +17,12 @@ from a13n_harness.environment.attachments import DeviceEIPSessionSource, EIPSess
 from a13n_harness.environment.envd_policy import (
     EnvdBoundaryRequirement,
     EnvdCredentialResolver,
-    EnvdEgressConfiguration,
+    EnvdSessionConfiguration,
     EnvironmentEnvdCredentialResolver,
-    resolve_egress,
 )
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
 from a13n_harness.environment.errors import provider_error
-from a13n_harness.environment.session_recovery import EnvdSessionRecovery
+from a13n_harness.environment.session_recovery import EnvdSessionBorrower
 from a13n_harness.providers.environment.remote_envd.configuration import (
     RemoteEnvdConnectionConfiguration,
     RemoteEnvdStateData,
@@ -175,16 +175,15 @@ class WebSocketEnvdConnections:
         required_methods: frozenset[str],
         working_directory: str | None = None,
         timeout: float = 10,
-        egress: EnvdEgressConfiguration | None = None,
+        configuration: EnvdSessionConfiguration | None = None,
         expected_boundary: EnvdBoundaryRequirement | None = None,
-        session_recovery: EnvdSessionRecovery | None = None,
+        session_recovery: EnvdSessionBorrower | None = None,
     ) -> AsyncGenerator[EIPSessionBinding]:
         device = await self.acquire_device(expected_device_id=expected_device_id, timeout=timeout)
         async with DeviceEIPSessionSource(device, session_recovery=session_recovery).open_session(
             expected_device_id=expected_device_id,
             required_methods=required_methods,
-            working_directory=working_directory,
-            egress=await resolve_egress(egress, self.credential_resolver),
+            configuration=partial((configuration or EnvdSessionConfiguration()).resolve, self.credential_resolver),
             expected_boundary=expected_boundary,
         ) as session:
             yield EIPSessionBinding(session, device.descriptor)

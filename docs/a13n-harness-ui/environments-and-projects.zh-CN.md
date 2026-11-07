@@ -222,7 +222,7 @@ a13n-envd connect https://your-harness-ui.example.com
 
 浏览不打开 Session，在尚无 Run 时也可用。Device 不可用或发现功能关闭时，可以输入已知路径；执行仍要求 Device 和目录可访问。Windows Device 路径使用 `/C:/work` 或 `/UNC/server/share/work`，不是 Harness UI 服务器路径。
 
-**Add directory** 沿用已有分组的 Device 和访问策略。不同访问、网络或边界策略保留为不同组。**Advanced routing** 显示生成的别名。绑定、工作目录和执行策略不变时，Thread 跨 Run 复用 Session。不同绑定保持独立的进程句柄和保留输出，即使它们使用同一 Device。
+**Add directory** 沿用已有分组的 Device 和访问策略。不同访问、网络或边界策略保留为不同组。**Advanced routing** 显示生成的别名。同一 Thread 中，同一 Device 的所有目录视图共享一个 Session，并选择相同的 Session 启动策略。修改视图别名或工作目录不会替换该 Session。独立 Thread 保持独立的 Session、进程句柄和保留输出。
 
 Run 正常结束或等待人工输入时会释放 Session 使用权，不销毁 Session。活跃 Run 和保留的后台 Shell 工作维持保活。最后一次使用后默认有一小时空闲窗口，后续 Run 可在过期前重新附加。只要外部 daemon 和原 Session 存活，App 重启后就能恢复保留的 Envd Shell 执行，沿用原 `exec-*` 身份，不重新启动命令。临时连接失败时继续等待恢复。daemon 重启或 Session 过期后，原工作不可再用。App 管理的本地 daemon 随 App 停止，因此其中的原生进程不能跨 App 重启存活。
 
@@ -244,7 +244,7 @@ defaults:
 
 在所选配置树验证此文件，再在 **Remote build** 中创建新对话。混合 Project 在这些默认值旁保留本地 `roots`。Device 绑定要求从最终挂载中显式选择默认值。本地别名 `workspace`、`workspace-2` 和 `thread-files` 等 Host 辅助名称为保留值。
 
-Device 目录是工作目录默认值，不是文件系统边界。本地模式控制本地挂载和 Thread 文件，不会隔离 Device。互不信任的工作负载应使用独立、由 Host 管理的安全边界。受控出站按[远程 Provider 用法](../environments/remote-envd.md#session-egress-and-credential-references)添加目标和密钥来源引用，以及 `expected_boundary`。值在准备时解析；Project YAML 中不要写 token 值。
+Device 目录是工作目录默认值，不是文件系统边界。本地模式控制本地挂载和 Thread 文件，不会隔离 Device。互不信任的工作负载应使用独立、由 Host 管理的安全边界。受控出站按[远程 Provider 用法](../environments/remote-envd.md#session-egress-and-credential-references)添加目标和密钥来源引用，以及 `expected_boundary`。值在普通获取时解析；Project YAML 中不要写 token 值。来源值变化后，下一次获取会在全部活跃借用者和未完成的保留工具结束后替换 Session。绑定忙碌时返回错误，不中断已有工作；完成或取消该工作后再重试。保留工作的精确恢复使用原 Session，即使启动密钥来源已轮换或移除。Device 认证和撤销检查仍然适用。
 
 应用 Project 默认值时，省略绑定集合会保留 Thread 集合；显式空列表会移除它。仅编辑默认值不会创建空覆盖。活动和历史 Run 保留捕获选择。
 
@@ -297,6 +297,12 @@ WebUI 原生 Files、Git Changes 和 Terminal 面板访问 Harness UI 服务器�
 
 历史保存在 App 内存，重启、Device 变更或撤销时清空。等待、禁用、过期、离线和采集上限状态会明确显示。计数器重置会中断速率基线；缺失或停滞样本留空，或显示上次值及其年龄。
 
+## 升级到 Session 所有的环境
+
+完成或取消并收尾已接纳的环境工作（包括保留的 Shell 工具），然后停止所有使用该数据目录的旧 App，再升级。迁移后只启动新版本。provider 状态、Thread 文件和不可变历史会保留；旧 Session 恢复提示被清除，不会导入新绑定头。新接纳使用新 Session 和规范化配置。此次切换不要混用新旧版本。
+
+同一 Thread 中，同一 Device 上的目录绑定共享一个 Session，必须选择相同的启动配置。各自的目录和允许操作仍独立。后续 Run 复用绑定，直到启动配置变化或确认 Session 丢失。未完成的保留 Shell 必须恢复原 Session，不能迁移到替代 Session。
+
 ## 自定义 Environment 配置
 
 内置模式不满足需求时再创建自定义 profile。内置 ID 为保留值。profile 选择已安装 Provider 和兼容的 Project adapter；它不会创建供应商资源，也不能证明隔离。
@@ -329,18 +335,18 @@ id: environment-restricted-network
 name: Restricted files with native networking
 provider_key: local_envd
 provider_configuration:
-  launch:
-    sandbox: {mode: restricted, grants: []}
-    egress: {mode: inherit}
-  session: {}
+  session:
+    session:
+      sandbox: {mode: restricted, grants: []}
+      egress_mode: inherit
 adapter_key: a13n.local-envd-project-root
 adapter_configuration:
   project_access: read_write
 ```
 
-按同样的验证、选择、测试步骤使用 `environment-restricted-network`。adapter 按 `project_access` 授权各个捕获的 Project 根；额外授权写在 `launch.sandbox.grants`。
+按同样的验证、选择、测试步骤使用 `environment-restricted-network`。在 `provider_configuration` 下，外层 `session` 是 Environment 配置，内层 `session` 是 Session 启动策略。adapter 将捕获的 Project 授权和 Thread 文件授权合并到一个 Session；额外授权写在 `session.session.sandbox.grants`。
 
-显式 `launch` 省略 `sandbox.full_disk_read` 时，使用 Envd 的 false 默认值。Windows 上设为 true 可使用内置广泛读取策略；省略整个 `launch` 的 profile 使用该 Windows UI 默认值。Linux 和 macOS 拒绝 true。禁止网络时，设置 `launch.egress.mode: deny`，同时保留 `sandbox.mode: restricted`。受控出站要求特权 Linux 后端，以及 `session.egress` 目标/凭据引用。兼容的 Session 策略变化复用 daemon；启动边界变化会准备不同 daemon。
+上述显式 sandbox 的 `full_disk_read` 默认为 false。Windows 上设为 true 可允许广泛读取；省略整个外层 `session` 时选择平台 Sandbox 默认值，包括 Windows 广泛读取。Linux 和 macOS 拒绝 true。禁止网络时，设置 `session.session.egress_mode: deny`。受控出站要求配置了受控网络的特权 Linux launcher，并设置 `session.session.egress_mode: controlled` 和 `session.session.egress` 目标/凭据引用。Session 策略变化会替换 Thread 的 Session 并复用 daemon；部署配置变化会选择不同 daemon。只有已接纳的环境工作结束后才能替换，否则返回忙冲突。
 
 adapter 作者需注意：`EnvironmentProjectAdapter.bind()` 返回 Harness 执行连接配置。准备在观察到新状态后失败时，抛出 `a13n_harness_ui.extensions` 中的 `EnvironmentBindingError(message, state)` 或 `EnvironmentBindingCancelled(state)`；Host 先发布状态，再传播失败。目标管理属于 adapter，不属于 Harness 执行定义上的生命周期方法。
 

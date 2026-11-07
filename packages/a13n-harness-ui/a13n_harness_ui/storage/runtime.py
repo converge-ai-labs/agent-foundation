@@ -20,6 +20,7 @@ from .compaction import CompactionRepository
 from .continuations import read_continuation
 from .contracts import Continuation, StoredThreadInitialState
 from .database import Database, open_database
+from .envd_sessions import EnvdSessionRepository
 from .inspection import InspectionRepository
 from .layout import StorageLayout
 from .objects import ImmutableObjectStore, ObjectEnvelope, ObjectKind, ObjectRef
@@ -72,6 +73,7 @@ class LocalStore:
         self.restarts = RestartRepository(database.sessions)
         self.child_executions = ChildExecutionRepository(database.sessions)
         self.environment_states = EnvironmentStateRepository(database.sessions)
+        self.envd_sessions = EnvdSessionRepository(database.sessions)
         self.tool_executions = ToolExecutionRepository(database.sessions, objects, layout.root)
 
     async def publish_object(

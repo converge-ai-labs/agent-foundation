@@ -294,7 +294,11 @@ it.each([
       ...binding,
       permission_ceiling: ceiling,
       expected_boundary: { sandbox: { mode: "disabled" }, egress: "inherit" },
-      egress: { destinations: { mode: "allowlist", hosts: ["example.com"] } },
+      session: {
+        commands: false,
+        egress_mode: "controlled",
+        egress: { destinations: { mode: "allowlist", hosts: ["example.com"] } },
+      },
     };
     mount(<Fields initial={[initial]} />);
     const user = userEvent.setup();

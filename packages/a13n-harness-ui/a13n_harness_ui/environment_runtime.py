@@ -7,8 +7,8 @@ import hashlib
 import inspect
 import os
 import stat
-from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Mapping, Sequence
-from contextlib import asynccontextmanager
+from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
+from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -16,6 +16,7 @@ from types import MappingProxyType
 from typing import Literal
 from weakref import WeakValueDictionary
 
+from a13n_envd_client import EIPDeviceConnection
 from a13n_harness.environment import (
     FILE_ACTIONS,
     FILE_READ_ACTIONS,
@@ -35,7 +36,7 @@ from a13n_harness.environment.models import (
     EnvironmentState,
 )
 from a13n_harness.environment.providers import EnvironmentRuntime
-from a13n_harness.environment.session_recovery import EnvdSessionRecovery, EnvdSessionState
+from a13n_harness.environment.session_recovery import EnvdSessionBorrower, EnvdSessionState
 from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
 from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
 from a13n_harness.providers.environment.local_envd.configuration import local_envd_path
@@ -44,9 +45,10 @@ from anyio import CancelScope, fail_after, to_thread
 
 from a13n_harness_ui.composition import ResolvedEnvironmentProfile, ResolvedRunComposition
 from a13n_harness_ui.composition.models import ResolvedEnvironmentBinding
-from a13n_harness_ui.configuration.models import HttpDeviceTransport, canonical_digest
+from a13n_harness_ui.configuration.models import DeviceResource, HttpDeviceTransport, canonical_digest
 from a13n_harness_ui.devices import DeviceConnections
 from a13n_harness_ui.envd_runtime import EnvdRuntimeManager, EnvdStatus
+from a13n_harness_ui.envd_sessions import AdmittedSession, SessionBinding
 from a13n_harness_ui.environment_monitoring import MonitoringSource
 from a13n_harness_ui.environment_paths import BUILTIN_SKILLS_PATH, BUILTIN_SKILLS_ROOT, EnvironmentPathLayout
 from a13n_harness_ui.errors import CompositionError, EnvironmentLifecycleError
@@ -64,6 +66,7 @@ from a13n_harness_ui.extensions.environment_adapters import (
 )
 from a13n_harness_ui.settings import EnvdRuntimeSettings
 from a13n_harness_ui.storage import EnvironmentBindingKey, LocalStore, ObjectRef, StoredEnvironmentState
+from a13n_harness_ui.storage.envd_sessions import SessionTarget
 from a13n_harness_ui.storage.objects import ObjectKind
 from a13n_harness_ui.storage.ownership import OwnershipLocks
 from a13n_harness_ui.thread_files import ThreadFiles
@@ -162,10 +165,10 @@ class EnvironmentSnapshotReconstructor:
         root: Path,
         state: EnvironmentState | None,
         local_runtime: LocalEnvdProviderRuntime | None = None,
-        session_recovery: EnvdSessionRecovery | None = None,
+        session_recovery: EnvdSessionBorrower | None = None,
     ) -> EnvironmentConnector:
         collaborator = (
-            local_runtime or await self.sandbox_runtime((root,), profile=reconstructed.profile)
+            local_runtime or await self.sandbox_runtime(profile=reconstructed.profile)
             if reconstructed.provider.type == LOCAL_ENVD_PROVIDER_KEY
             else await self._runtime_collaborator(reconstructed.provider)
         )
@@ -219,12 +222,10 @@ class EnvironmentSnapshotReconstructor:
 
     async def sandbox_runtime(
         self,
-        roots: tuple[Path, ...],
         *,
-        thread_files_root: Path | None = None,
         profile: ResolvedEnvironmentProfile | None = None,
     ) -> LocalEnvdProviderRuntime:
-        return await self.envd.runtime(roots, thread_files_root=thread_files_root, profile=profile)
+        return await self.envd.runtime(profile=profile)
 
     def monitoring_sources(self) -> Iterable[MonitoringSource]:
         return self.envd.monitoring_sources()
@@ -304,7 +305,7 @@ class EnvironmentRunService:
         self._thread_files = thread_files or ThreadFiles(store.layout.root)
         self._configuration_root = configuration_root
         self._devices = devices
-        self._sessions: WeakValueDictionary[str, EnvdSessionRecovery] = WeakValueDictionary()
+        self._sessions: WeakValueDictionary[str, SessionBinding] = WeakValueDictionary()
         self._session_lock = asyncio.Lock()
         self._owners = OwnershipLocks(store.layout.root / "envd-session-locks")
 
@@ -313,7 +314,63 @@ class EnvironmentRunService:
         self._sessions.clear()
         await self._owners.close()
 
+    async def admit(self, composition: ResolvedRunComposition) -> ResolvedRunComposition:
+        """Freeze Session selections before scheduling, without opening Device connections."""
+        profile = composition.environment_profile
+        if profile.adapter_key == LocalEnvdProjectAdapter.key:
+            roots = await normalize_project_roots(composition.project_roots) if composition.project_roots else ()
+            thread_root = await self._thread_files.touch(composition.thread_id)
+            profile = await self._reconstructor.envd.session_profile(profile, roots, thread_files_root=thread_root)
+            composition = composition.model_copy(
+                update={
+                    "environment_profile": profile,
+                    "project_roots": tuple(str(root) for root in roots),
+                }
+            )
+        digests: dict[str, str] = {}
+        if profile.adapter_key == LocalEnvdProjectAdapter.key:
+            digests["local"] = canonical_digest(profile.provider_configuration)
+        for binding in composition.environment_bindings:
+            key = binding.device.id
+            digest = canonical_digest(
+                {
+                    "device": binding.device.model_dump(mode="json", exclude={"name", "id"}),
+                    "session": binding.selection.session.model_dump(mode="json"),
+                    "expected_boundary": None
+                    if binding.selection.expected_boundary is None
+                    else binding.selection.expected_boundary.model_dump(mode="json"),
+                }
+            )
+            if key in digests and digests[key] != digest:
+                raise EnvironmentLifecycleError(
+                    "Directory views of one Device must select the same Session configuration.",
+                    code="envd_session_conflict",
+                )
+            digests[key] = digest
+        versions: dict[str, int] = {}
+        previous = await self._store.envd_sessions.list(composition.thread_id)
+        async with AsyncExitStack() as scope:
+            changes = {}
+            for key in sorted(previous.keys() | digests.keys()):
+                owner = await self._session_owner(composition.thread_id, key)
+                changes[key] = await scope.enter_async_context(owner.selection(digests.get(key)))
+                if key in digests:
+                    versions[key] = changes[key][1].version
+            with CancelScope(shield=True), fail_after(30):
+                await self._store.envd_sessions.select_many(composition.thread_id, changes, complete=True)
+        return composition.model_copy(update={"session_versions": versions})
+
+    async def validate_admission(self, composition: ResolvedRunComposition) -> None:
+        expected = {binding.device.id for binding in composition.environment_bindings}
+        if composition.environment_profile.adapter_key == LocalEnvdProjectAdapter.key:
+            expected.add("local")
+        if expected != composition.session_versions.keys():
+            raise EnvironmentLifecycleError("Session selection was not admitted.", code="envd_session_conflict")
+        for key, version in composition.session_versions.items():
+            await (await self._session_owner(composition.thread_id, key)).validate(version)
+
     async def prepare(self, composition: ResolvedRunComposition) -> EnvironmentRunPlan:
+        await self.validate_admission(composition)
         live = composition.root.source_kind == "live"
         profile = composition.environment_profile
         reconstructed = self._reconstructor.reconstruct(profile)
@@ -328,9 +385,7 @@ class EnvironmentRunService:
         )
         thread_root = await self._thread_files.touch(composition.thread_id)
         local_runtime = (
-            await self._reconstructor.sandbox_runtime(
-                (*roots, thread_root), thread_files_root=thread_root, profile=profile
-            )
+            await self._reconstructor.sandbox_runtime(profile=profile)
             if isinstance(reconstructed.adapter, LocalEnvdProjectAdapter)
             else None
         )
@@ -350,7 +405,7 @@ class EnvironmentRunService:
         for binding in composition.environment_bindings:
             if isinstance(binding.device.transport, HttpDeviceTransport):
                 composition.run_configuration.authorize_url(binding.device.transport.configuration.endpoint)
-            mount, publication = await self._prepare_device_mount(composition.thread_id, binding)
+            mount, publication = await self._prepare_device_mount(composition, binding)
             mounts.append(mount)
             publications.append(publication)
         for index, ((_plugin_id, root, _skills), (_layout_id, mount_path)) in enumerate(
@@ -398,16 +453,9 @@ class EnvironmentRunService:
             reconstructed,
             thread_root,
             local_runtime=local_runtime,
-            session_recovery=await self._session_context(
-                EnvironmentBindingKey(
-                    thread_id=composition.thread_id,
-                    environment_profile_id=profile.profile_id,
-                    profile_digest=profile.behavior_digest,
-                    adapter_key=profile.adapter_key,
-                    normalized_root=os.fspath(thread_root),
-                ),
-                exclusive=isinstance(reconstructed.adapter, LocalEnvdProjectAdapter),
-            ),
+            session_recovery=await self._session_context(composition, "local", local_runtime.configuration)
+            if local_runtime is not None
+            else None,
         )
         if live:
             thread_mount.permission_ceiling = EnvironmentPermissionSet(operations=FILE_ACTIONS)
@@ -444,13 +492,15 @@ class EnvironmentRunService:
             ),
         )
 
-    async def prepare_recovery(self, composition: ResolvedRunComposition, alias: str) -> EnvironmentRuntime:
+    async def prepare_recovery(
+        self, composition: ResolvedRunComposition, alias: str, *, original_session_id: str
+    ) -> EnvironmentRuntime:
         """Reconstruct only a retained Shell's captured mount, without admitting a Run."""
         binding = next((item for item in composition.environment_bindings if item.selection.alias == alias), None)
         if binding is not None:
             if isinstance(binding.device.transport, HttpDeviceTransport):
                 composition.run_configuration.authorize_url(binding.device.transport.configuration.endpoint)
-            mount, _ = await self._prepare_device_mount(composition.thread_id, binding)
+            mount, _ = await self._prepare_device_mount(composition, binding, original_session_id=original_session_id)
         else:
             roots = {
                 "workspace" if index == 1 else f"workspace-{index}": Path(root)
@@ -461,13 +511,10 @@ class EnvironmentRunService:
             if alias not in roots:
                 raise EnvironmentLifecycleError("The captured Shell mount is unavailable.", code="shell_mount_missing")
             root = (await normalize_project_roots((roots[alias],)))[0]
-            reconstructed = self._reconstructor.reconstruct(composition.environment_profile)
+            profile = composition.environment_profile
+            reconstructed = self._reconstructor.reconstruct(profile)
             local_runtime = (
-                await self._reconstructor.sandbox_runtime(
-                    (*(Path(item) for item in composition.project_roots), thread_root),
-                    thread_files_root=thread_root,
-                    profile=composition.environment_profile,
-                )
+                await self._reconstructor.sandbox_runtime(profile=profile)
                 if isinstance(reconstructed.adapter, LocalEnvdProjectAdapter)
                 else None
             )
@@ -478,15 +525,13 @@ class EnvironmentRunService:
                     root,
                     local_runtime=local_runtime,
                     session_recovery=await self._session_context(
-                        EnvironmentBindingKey(
-                            thread_id=composition.thread_id,
-                            environment_profile_id=profile.profile_id,
-                            profile_digest=profile.behavior_digest,
-                            adapter_key=profile.adapter_key,
-                            normalized_root=os.fspath(root),
-                        ),
-                        exclusive=isinstance(reconstructed.adapter, LocalEnvdProjectAdapter),
-                    ),
+                        composition,
+                        "local",
+                        local_runtime.configuration,
+                        original_session_id=original_session_id,
+                    )
+                    if local_runtime is not None
+                    else None,
                 )
                 if composition.root.source_kind == "live":
                     mount.permission_ceiling = EnvironmentPermissionSet(operations=FILE_ACTIONS)
@@ -498,6 +543,7 @@ class EnvironmentRunService:
                     alias=alias,
                     mount_path=root.as_posix() if reconstructed.adapter.preserves_host_paths else None,
                     local_runtime=local_runtime,
+                    original_session_id=original_session_id,
                 )
         return create_environment_runtime(
             mounts={
@@ -520,6 +566,7 @@ class EnvironmentRunService:
         alias: str,
         mount_path: str | None,
         local_runtime: LocalEnvdProviderRuntime | None,
+        original_session_id: str | None = None,
     ) -> tuple[_PreparedMount, EnvironmentStatePublication]:
         profile = reconstructed.profile
         key = EnvironmentBindingKey(
@@ -529,8 +576,12 @@ class EnvironmentRunService:
             adapter_key=profile.adapter_key,
             normalized_root=os.fspath(root),
         )
-        recovery = await self._session_context(
-            key, exclusive=isinstance(reconstructed.adapter, LocalEnvdProjectAdapter)
+        recovery = (
+            await self._session_context(
+                composition, "local", local_runtime.configuration, original_session_id=original_session_id
+            )
+            if local_runtime is not None
+            else None
         )
         head = await self._store.environment_states.get(key)
         expected = None if head is None else head.state
@@ -562,7 +613,11 @@ class EnvironmentRunService:
         ), publication
 
     async def _prepare_device_mount(
-        self, thread_id: str, binding: ResolvedEnvironmentBinding
+        self,
+        composition: ResolvedRunComposition,
+        binding: ResolvedEnvironmentBinding,
+        *,
+        original_session_id: str | None = None,
     ) -> tuple[_PreparedMount, EnvironmentStatePublication]:
         if self._devices is None:
             raise EnvironmentLifecycleError(
@@ -573,7 +628,7 @@ class EnvironmentRunService:
         adapter_key = provider_key
         selection = binding.selection
         key = EnvironmentBindingKey(
-            thread_id=thread_id,
+            thread_id=composition.thread_id,
             environment_profile_id="",
             device_id=binding.device.id,
             alias=selection.alias,
@@ -586,7 +641,12 @@ class EnvironmentRunService:
             adapter_key=adapter_key,
             normalized_root=selection.working_directory,
         )
-        recovery = await self._session_context(key, exclusive=True)
+        recovery = await self._session_context(
+            composition,
+            binding.device.id,
+            binding.device,
+            original_session_id=original_session_id,
+        )
         head = await self._store.environment_states.get(key)
         expected = None if head is None else head.state
         state = await self._load_state(key=key, reference=expected, provider_key=provider_key)
@@ -610,7 +670,7 @@ class EnvironmentRunService:
         root: Path,
         *,
         local_runtime: LocalEnvdProviderRuntime | None = None,
-        session_recovery: EnvdSessionRecovery | None = None,
+        session_recovery: EnvdSessionBorrower | None = None,
     ) -> _PreparedMount:
         if isinstance(reconstructed.adapter, (NativeProjectAdapter, LocalEnvdProjectAdapter)):
             environment = await self._reconstructor.bind(
@@ -720,59 +780,60 @@ class EnvironmentRunService:
             mount_path=mount_path,
         )
 
-    async def _session_context(self, key: EnvironmentBindingKey, *, exclusive: bool = False) -> EnvdSessionRecovery:
-        identity = canonical_digest(key.model_dump(mode="json"))
+    async def _session_owner(self, thread_id: str, device_key: str) -> SessionBinding:
+        identity = f"{thread_id}:{device_key}"
         async with self._session_lock:
             existing = self._sessions.get(identity)
             if existing is not None:
                 return existing
 
-            @asynccontextmanager
-            async def ownership() -> AsyncIterator[EnvdSessionState | None]:
-                if exclusive and not await self._owners.acquire(identity):
-                    raise EnvironmentError("Another App owns this Envd binding.", code="environment_busy")
-                try:
-                    head = await self._store.environment_states.get(key)
-                    stored = (
-                        await self._store.objects.read_model(head.state, StoredEnvironmentState)
-                        if head is not None and head.state is not None
-                        else None
+            async def require_idle(exclude_execution_id: str | None) -> None:
+                # Nonterminal records sort first; two suffice when excluding one caller.
+                records = await self._store.tool_executions.list(thread_id, offset=0, limit=2)
+                if any(not record.terminal and record.execution_id != exclude_execution_id for record in records):
+                    raise EnvironmentError(
+                        "Retained tools must finish before changing the Session configuration.", code="environment_busy"
                     )
-                    if stored is not None and stored.binding != key:
-                        raise EnvironmentLifecycleError(
-                            "Stored Session binding changed", code="environment_state_incompatible"
-                        )
-                    yield stored.envd_session if stored is not None else None
-                finally:
-                    if exclusive:
-                        await self._owners.release(identity)
 
-            async def checkpoint(state: EnvdSessionState) -> None:
-                with CancelScope(shield=True), fail_after(30):
-                    head = await self._store.environment_states.get(key)
-                    expected = None if head is None else head.state
-                    previous = (
-                        await self._store.objects.read_model(expected, StoredEnvironmentState)
-                        if expected is not None
-                        else None
-                    )
-                    value = StoredEnvironmentState(
-                        binding=key,
-                        state=previous.state if previous is not None else None,
-                        envd_session=state,
-                        created_at=_utc_now(),
-                    )
-                    replacement = (
-                        await self._store.objects.publish_model(
-                            object_kind=ObjectKind.environment_state,
-                            value=value,
-                        )
-                    ).ref
-                    await self._store.environment_states.select(key=key, expected=expected, replacement=replacement)
+            owner = SessionBinding(
+                thread_id=thread_id,
+                device_key=device_key,
+                repository=self._store.envd_sessions,
+                owners=self._owners,
+                require_idle=require_idle,
+                retirement_device=self._retirement_device,
+            )
+            self._sessions[identity] = owner
+            return owner
 
-            context = EnvdSessionRecovery(checkpoint=checkpoint, ownership=ownership)
-            self._sessions[identity] = context
-            return context
+    async def _retirement_device(
+        self,
+        target: SessionTarget,
+        previous: EnvdSessionState,
+    ) -> EIPDeviceConnection | None:
+        if isinstance(target, DeviceResource):
+            if self._devices is None:
+                raise EnvironmentLifecycleError(
+                    "Device connections are unavailable.", code="device_connections_unavailable"
+                )
+            return await self._devices.acquire_device(target)
+        device = self._reconstructor.envd.running_device(target)
+        return device if device is not None and device.descriptor.device_id == previous.descriptor.device_id else None
+
+    async def _session_context(
+        self,
+        composition: ResolvedRunComposition,
+        device_key: str,
+        recipe: SessionTarget,
+        *,
+        original_session_id: str | None = None,
+    ) -> EnvdSessionBorrower:
+        version = composition.session_versions.get(device_key)
+        if version is None:
+            raise EnvironmentLifecycleError("Session selection was not admitted.", code="envd_session_conflict")
+        owner = await self._session_owner(composition.thread_id, device_key)
+        await owner.validate(version)
+        return AdmittedSession(owner, version, recipe, original_session_id)
 
     async def _publish_state(
         self,
@@ -787,14 +848,8 @@ class EnvironmentRunService:
         # when the caller is cancelled, while keeping storage failure bounded.
         replacement = None
         with CancelScope(shield=True), fail_after(30):
-            previous = (
-                await self._store.objects.read_model(expected, StoredEnvironmentState) if expected is not None else None
-            )
-            session = previous.envd_session if previous is not None else None
-            if observed is not None or session is not None:
-                stored = StoredEnvironmentState(
-                    binding=key, state=observed, envd_session=session, created_at=_utc_now()
-                )
+            if observed is not None:
+                stored = StoredEnvironmentState(binding=key, state=observed, created_at=_utc_now())
                 replacement = (
                     await self._store.objects.publish_model(
                         object_kind=ObjectKind.environment_state,

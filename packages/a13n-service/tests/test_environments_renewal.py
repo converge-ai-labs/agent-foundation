@@ -19,6 +19,7 @@ from sqlalchemy import func, select, text, update
 
 from .environments_support import (
     BACKEND,
+    DEFAULT_SESSION,
     act,
     backdate,
     environment,
@@ -314,7 +315,8 @@ async def test_lost_primary_uses_ordinary_reservation_and_preparation(env, scrip
     instance = await environment(env, replacement)
     assert (instance["status"], instance["template_id"]) == ("reserved", template)
     [desired] = (await env.client.get(f"{env.api}/threads/{thread}/environments")).json()["items"]
-    assert desired == {**mount, "desktop_enabled": False}
+    view = {key: value for key, value in mount.items() if key not in {"session_version", "session_configuration"}}
+    assert desired == {**view, "desktop_enabled": False}
     assert (await runs_kit.get_run(env, first["run"]["id"]))["environment_mounts"][0]["environment_id"] == sandbox
 
     async with transaction(env.runtime.storage) as session:
@@ -371,7 +373,7 @@ async def test_lost_instance_is_only_replaced_for_the_desired_primary(env, runs_
     restored = await follow_up(env, primary["thread"]["id"], "use workspace")
     [replacement] = restored.json()["run"]["environment_mounts"]
     assert replacement["environment_id"] != sandbox
-    assert {**replacement, "environment_id": sandbox} == mount
+    assert {**replacement, "environment_id": sandbox} == {**mount, **DEFAULT_SESSION}
 
 
 async def lose_sandbox(env, sandbox):
@@ -409,6 +411,7 @@ async def test_recovering_primary_preserves_offline_client_mount_settings(env):
     laptop, workspace = followup.json()["run"]["environment_mounts"]
     assert workspace["name"] == "workspace" and workspace["environment_id"] != sandbox
     assert laptop == {
+        **DEFAULT_SESSION,
         "name": "laptop",
         "environment_id": client_id,
         "working_directory": "/project",
@@ -433,7 +436,7 @@ async def test_concurrent_recovery_of_a_thread_and_its_fork_reserves_one_success
     )
     assert fork.status_code == 201, fork.text
     child = fork.json()
-    assert child["run"]["environment_mounts"] == [mount]
+    assert child["run"]["environment_mounts"] == [{**mount, **DEFAULT_SESSION}]
     await interrupt(env, child["run"]["id"])
     pinned = await start(env, options={"environment": {"mode": "existing", "environment_id": sandbox}})
     await lose_sandbox(env, sandbox)
@@ -463,7 +466,7 @@ async def test_concurrent_recovery_of_a_thread_and_its_fork_reserves_one_success
     runs = [r.json()["run"] for r in responses]
     successor = runs[0]["environment_mounts"][0]["environment_id"]
     assert successor != sandbox
-    assert [r["environment_mounts"] for r in runs] == [[{**mount, "environment_id": successor}]] * 2
+    assert [r["environment_mounts"] for r in runs] == [[{**mount, **DEFAULT_SESSION, "environment_id": successor}]] * 2
     async with transaction(env.runtime.storage) as session:
         links = await session.execute(select(EnvironmentRow.id, EnvironmentRow.replaces_environment_id))
         assert set(links) == {(sandbox, None), (successor, sandbox)}
@@ -598,7 +601,7 @@ async def test_idle_retired_successor_releases_quota_then_reunites_its_sharers(e
     bindings = [r.json()["run"]["environment_mounts"] for r in responses]
     new_id = bindings[0][0]["environment_id"]
     assert new_id not in {lost_id, idle_id}
-    assert bindings == [[{**mount, "environment_id": new_id}]] * 2
+    assert bindings == [[{**mount, **DEFAULT_SESSION, "environment_id": new_id}]] * 2
     async with transaction(env.runtime.storage) as session:
         assert list(
             await session.scalars(select(EnvironmentRow.id).where(EnvironmentRow.replaces_environment_id == idle_id))
@@ -607,11 +610,11 @@ async def test_idle_retired_successor_releases_quota_then_reunites_its_sharers(e
     assert exact["run"] is None and exact["entry"]["failure"]["code"] == "environment_deleted"
 
 
-async def test_a_late_thread_refuses_a_conflicting_mount_or_deleted_successor(env):
+async def test_a_late_thread_shares_successor_views_but_refuses_a_deleted_successor(env):
     original = await ready_sandbox(env)
     mounts = [{"name": "workspace", "environment_id": original}]
-    leader, late = [await start(env, environments=mounts) for _ in range(2)]
-    for r in (leader, late):
+    leader, late, delayed = [await start(env, environments=mounts) for _ in range(3)]
+    for r in (leader, late, delayed):
         await interrupt(env, r["run"]["id"])
     await lose_sandbox(env, original)
     run = (await follow_up(env, leader["thread"]["id"], "recover")).json()["run"]
@@ -621,14 +624,21 @@ async def test_a_late_thread_refuses_a_conflicting_mount_or_deleted_successor(en
     etag = (await env.client.get(path)).headers["etag"]
     added = await env.client.post(path, json={"name": "data", "environment_id": successor}, headers={"if-match": etag})
     assert added.status_code == 201, added.text
-    conflict = (await follow_up(env, late["thread"]["id"], "keep unique mounts")).json()
-    assert conflict["run"] is None and conflict["entry"]["failure"]["code"] == "already_mounted"
+    shared = (await follow_up(env, late["thread"]["id"], "share successor")).json()
+    assert shared["run"] is not None, shared
+    views = shared["run"]["environment_mounts"]
+    assert [view["name"] for view in views] == ["data", "workspace"]
+    assert all(view["environment_id"] == successor for view in views)
+    assert all({key: view[key] for key in DEFAULT_SESSION} == DEFAULT_SESSION for view in views)
+    await interrupt(env, shared["run"]["id"])
 
     etag = (await env.client.get(path)).headers["etag"]
     assert (await env.client.delete(f"{path}/data", headers={"if-match": etag})).status_code == 204
     await unmount(env, leader["thread"]["id"])
+    await unmount(env, late["thread"]["id"])
     assert (await act(env, "DELETE", successor))[0] == 202
-    refused = (await follow_up(env, late["thread"]["id"], "use latest")).json()
+    # A Thread still pointing at the original loss must not recreate an explicitly deleted successor.
+    refused = (await follow_up(env, delayed["thread"]["id"], "use latest")).json()
     assert refused["run"] is None and refused["entry"]["failure"]["code"] == "environment_deleted"
     async with transaction(env.runtime.storage) as session:
         assert set(await session.scalars(select(EnvironmentRow.id))) == {original, successor}

@@ -25,9 +25,17 @@ def upgrade_desktop(database):
         command.upgrade(config, NEW_HEAD)
 
 
+async def cancel_fixture_run(service, run_id):
+    """Settle current-version work before crossing the Session binding migration."""
+    response = await service.client.post(f"{service.api}/runs/{run_id}/interrupt")
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "cancelled"
+
+
 @pytest.fixture
 async def legacy(database, service, desktop):
     run = desktop[0]["run"]
+    await cancel_fixture_run(service, run["id"])
     with migration_connection(database, OSS) as config:
         command.downgrade(config, OLD_HEAD)
     engine = create_engine(database.url.get_secret_value())
@@ -101,7 +109,7 @@ async def test_cutover_refuses_latest_sealed_desktop_wait(database, legacy, pend
         connection.execute(text("SET LOCAL session_replication_role = replica"))
         connection.execute(
             text(
-                "UPDATE runs SET status = 'waiting', sealed_at = now(), wait_reason = 'desktop_control', "
+                "UPDATE runs SET status = 'waiting', failure = NULL, sealed_at = now(), wait_reason = 'desktop_control', "
                 "pending = CAST(:pending AS jsonb), checkpoint = '{}'::jsonb, tail = '{}'::jsonb WHERE id = :run"
             ),
             {"pending": json.dumps(pending), "run": run["id"]},
@@ -117,10 +125,10 @@ async def test_cutover_refuses_latest_sealed_desktop_wait(database, legacy, pend
 
 async def test_cutover_preserves_historical_wait_after_a_new_run(database, service, desktop, runs_kit):
     run = desktop[0]["run"]
-    response = await service.client.post(f"{service.api}/runs/{run['id']}/interrupt")
-    assert response.status_code == 200, response.text
+    await cancel_fixture_run(service, run["id"])
     response = await runs_kit.submit(service, run["thread_id"], runs_kit.message({"id": run["agent_id"]}, "New work"))
     assert response.status_code == 201, response.text
+    await cancel_fixture_run(service, response.json()["run"]["id"])
     with migration_connection(database, OSS) as config:
         command.downgrade(config, OLD_HEAD)
     engine = create_engine(database.url.get_secret_value())
@@ -159,6 +167,7 @@ async def test_cutover_accepts_revoked_records_without_rewriting_run_selection(d
 
 
 async def test_downgrade_refuses_live_computer_control_without_changing_data(database, service, desktop):
+    await cancel_fixture_run(service, desktop[0]["run"]["id"])
     await begin(service, desktop)
     with migration_connection(database, OSS) as config:
         command.downgrade(config, NEW_HEAD)
@@ -173,6 +182,7 @@ async def test_downgrade_refuses_live_computer_control_without_changing_data(dat
 
 @pytest.mark.parametrize("table", ["runs", "inbox_entries", "outbox"])
 async def test_downgrade_preserves_handback_history_after_control_pruning(database, service, desktop, table):
+    await cancel_fixture_run(service, desktop[0]["run"]["id"])
     with migration_connection(database, OSS) as config:
         command.downgrade(config, NEW_HEAD)
     engine = create_engine(database.url.get_secret_value())

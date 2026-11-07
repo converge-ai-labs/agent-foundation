@@ -328,7 +328,12 @@ class RootRunExecutor:
             envelope = await self._store.objects.publish_model(object_kind=ObjectKind.run_composition, value=captured)
             published = PublishedRunComposition(value=captured, reference=envelope.ref)
         if restart is not None:
+            await self._environments.validate_admission(published.value)
             previous_state = await self._store.usage.restore(thread_id=thread_id, state=previous_state)
+        else:
+            captured = await self._environments.admit(published.value)
+            envelope = await self._store.objects.publish_model(object_kind=ObjectKind.run_composition, value=captured)
+            published = PublishedRunComposition(value=captured, reference=envelope.ref)
         browser_binding = None
         browser_unavailable = "Host browser is unavailable."
         if published.value.environment_profile.profile_id != FULL_CONTROL_PROFILE_ID:

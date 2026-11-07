@@ -222,7 +222,7 @@ Open **Project menu → Project settings → Environments** or **Conversation de
 
 Browsing opens no Session and works before a Run exists. If the Device is unavailable or discovery is disabled, enter a known path; execution still needs the Device and directory to be accessible. Windows Device paths use `/C:/work` or `/UNC/server/share/work`, not the Harness UI server's paths.
 
-**Add directory** extends an existing group's Device and access policy. Different access, network, or boundary policies remain separate groups. **Advanced routing** exposes generated aliases. A Thread reuses its Session across Runs when the binding, working directory and execution policy are unchanged. Different bindings keep separate process handles and retained output, even on the same Device.
+**Add directory** extends an existing group's Device and access policy. Different access, network, or boundary policies remain separate groups. **Advanced routing** exposes generated aliases. Within a Thread, all directory views of one Device share a Session and select the same Session startup policy. Changing a view's alias or working directory preserves that Session. Independent Threads keep separate Sessions, process handles and retained output.
 
 Normal Run completion and human-input pauses release Session use without destroying it. Active Runs and retained background Shell work maintain keepalive. After final use, the default idle window is one hour; a later Run can reattach before expiry. An App restart can recover retained Envd Shell executions when the external daemon and original Session survive, using the original `exec-*` identity without starting the command again. Temporary connection loss leaves recovery pending. Daemon restart or Session expiry makes the original work unavailable. App-owned local daemons stop with the App, so their native processes do not survive an App restart.
 
@@ -244,7 +244,7 @@ defaults:
 
 Validate this file in the selected tree and create a new conversation in **Remote build**. A mixed Project keeps local `roots` alongside these defaults. Device bindings require an explicit default from the resulting mounts. Local aliases `workspace`, `workspace-2`, and Host auxiliary names such as `thread-files` are reserved.
 
-A Device directory is a working-directory default, not a filesystem boundary. Local mode controls local mounts and Thread files; it does not sandbox the Device. Use separate Host-managed security boundaries for mutually untrusted workloads. For controlled egress, add destination and secret-source references plus `expected_boundary` using the [remote Provider recipe](../environments/remote-envd.md#session-egress-and-credential-references). Values resolve during preparation; keep token values out of Project YAML.
+A Device directory is a working-directory default, not a filesystem boundary. Local mode controls local mounts and Thread files; it does not sandbox the Device. Use separate Host-managed security boundaries for mutually untrusted workloads. For controlled egress, add destination and secret-source references plus `expected_boundary` using the [remote Provider recipe](../environments/remote-envd.md#session-egress-and-credential-references). Values resolve during ordinary acquisition; keep token values out of Project YAML. If a source's value changes, the next acquisition replaces the Session after all live borrowers and unfinished retained tools have settled. A busy binding fails without interrupting its work; finish or cancel that work and retry. Exact recovery of retained work uses its original Session even if a startup secret source was rotated or removed. Device authentication and revocation still apply.
 
 When applying Project defaults, an omitted binding collection preserves the Thread's collection; an explicit empty list removes it. Editing only the default does not create an empty override. Active and historical Runs retain captured choices.
 
@@ -297,6 +297,12 @@ Built-in local Sandbox, Envd, and Desktop enable sampling when started. For remo
 
 History lives in App memory and clears on restart, Device changes, or revocation. Waiting, disabled, stale, offline, and collection-limit states are explicit. Counter resets break rate baselines; missing/stalled samples leave gaps or show the previous value with its age.
 
+## Upgrade to Session-owned environments
+
+Finish or cancel and settle admitted environment work, including retained Shell tools, then stop every old App using the data root before upgrading. Start only the new version after migration. Provider state, Thread files and immutable history are preserved; old Session recovery hints are discarded rather than imported as new binding heads. New admissions use fresh Sessions and normalized configuration. Do not run mixed versions across this cutover.
+
+Within a Thread, directory bindings on the same Device share one Session and must select the same startup configuration. Their directories and allowed actions remain independent. Later Runs reuse the binding until its startup configuration changes or its Session is confirmed lost. An unfinished retained Shell must recover its original Session; it cannot move to a replacement.
+
 ## Custom Environment profiles
 
 Create a custom profile only when the built-in modes do not fit. Built-in IDs are reserved. A profile selects an installed Provider and a compatible Project adapter; it does not create a vendor resource or prove isolation.
@@ -329,18 +335,18 @@ id: environment-restricted-network
 name: Restricted files with native networking
 provider_key: local_envd
 provider_configuration:
-  launch:
-    sandbox: {mode: restricted, grants: []}
-    egress: {mode: inherit}
-  session: {}
+  session:
+    session:
+      sandbox: {mode: restricted, grants: []}
+      egress_mode: inherit
 adapter_key: a13n.local-envd-project-root
 adapter_configuration:
   project_access: read_write
 ```
 
-Select `environment-restricted-network` using the same validate/select/test steps. The adapter grants each captured Project root according to `project_access`; extra grants belong in `launch.sandbox.grants`.
+Select `environment-restricted-network` using the same validate/select/test steps. Under `provider_configuration`, the outer `session` contains the Environment configuration and the inner `session` contains Session startup policy. The adapter combines the captured Project grants and Thread file grants into one Session; extra grants belong in `session.session.sandbox.grants`.
 
-An explicit `launch` that omits `sandbox.full_disk_read` uses Envd's false default. On Windows, set it to true for the built-in broad-read policy; a profile omitting `launch` uses that Windows UI default. Linux and macOS reject true. To block networking, set `launch.egress.mode: deny` while keeping `sandbox.mode: restricted`. Controlled egress requires the privileged Linux backend plus `session.egress` destination/credential references. Compatible Session-policy changes reuse the daemon; launch-boundary changes prepare a different one.
+The explicit sandbox above defaults `full_disk_read` to false. On Windows, set it to true for broad reads; omitting the entire outer `session` selects the platform Sandbox default, including Windows broad reads. Linux and macOS reject true. To block networking, set `session.session.egress_mode: deny`. Controlled egress requires a privileged Linux launcher configured for controlled networking, plus `session.session.egress_mode: controlled` and `session.session.egress` destination/credential references. Session-policy changes replace the Thread's Session and reuse the daemon; deployment changes select a different daemon. Replacement requires admitted environment work to finish and otherwise reports a busy conflict.
 
 For adapter authors, `EnvironmentProjectAdapter.bind()` returns a Harness execution connector. If preparation observes new state before failing, raise `EnvironmentBindingError(message, state)` or `EnvironmentBindingCancelled(state)` from `a13n_harness_ui.extensions`; the Host publishes that state before propagating failure. Target management belongs to the adapter, not to lifecycle methods on the Harness execution definition.
 

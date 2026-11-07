@@ -87,20 +87,23 @@ CLI 在 Device 的默认 cwd 下写入或替换 `provider-example.txt`，再通�
 
 ## 会话出站网络与凭据引用
 
-让 Session 配置匹配 Device 的启动策略。`controlled` Device 要求每个 Session 显式提供目标；`inherit` 和 `deny` Device 拒绝 Session 策略。本地、HTTP 和 WebSocket Envd 使用相同的只含引用的配置。
+在 `session` 下选择不可变启动策略，权限受 Device 部署上限约束。受控 Session 必须显式提供目标；继承和拒绝网络的 Session 不接受目标策略。本地、HTTP 和 WebSocket Envd 使用相同的只含引用的配置。
 
 对于以禁用 Sandbox、受控出站网络模式启动的 Device，以下配置允许 GitHub API 流量，并指定 Host 侧凭据来源：
 
 ```python
 recipe = {
     "working_directory": "/work/project",
-    "egress": {
-        "destinations": {"mode": "allowlist", "hosts": ["api.github.com"]},
-        "secrets": [{
-            "env": "GH_TOKEN",
-            "source": {"kind": "environment", "name": "HOST_GITHUB_TOKEN"},
-            "inject_hosts": ["api.github.com"],
-        }],
+    "session": {
+        "egress_mode": "controlled",
+        "egress": {
+            "destinations": {"mode": "allowlist", "hosts": ["api.github.com"]},
+            "secrets": [{
+                "env": "GH_TOKEN",
+                "source": {"kind": "environment", "name": "HOST_GITHUB_TOKEN"},
+                "inject_hosts": ["api.github.com"],
+            }],
+        },
     },
     "expected_boundary": {
         "sandbox": {"mode": "disabled"},
@@ -111,7 +114,32 @@ recipe = {
 
 在 Host 环境中设置 `HOST_GITHUB_TOKEN`，再将 `recipe` 作为第一个参数传给 `execution_connector`。运行时在打开每个 Session 前解析来源，值缺失或为空会导致准备失败。保存的配置只含引用，命令收到占位标记而非真实凭据。
 
-将 `expected_boundary` 设为预期使用的 Device 设置。受限 Device 需指定精确授权。凭据注入和策略更新见[受控出站网络](../a13n-envd/egress.md)。
+将 `expected_boundary` 设为要求的实际 Session 边界。受限 Session 需指定精确授权。凭据注入和策略更新见[受控出站网络](../a13n-envd/egress.md)。
+
+对于 VM Session，将 `session.isolation` 设为 Envd VM 配置，并为 `session.working_directory` 和每个目录视图的 `working_directory` 使用 guest 路径。例如：
+
+```python
+recipe = {
+    "working_directory": "/workspace/project",
+    "session": {
+        "working_directory": "/workspace",
+        "isolation": {
+            "mode": "vm",
+            "backend": "boxlite",
+            "image": "mirror.gcr.io/library/ubuntu:24.04",
+            "cpus": 1,
+            "memory_mib": 1024,
+            "mounts": [{
+                "source": "/srv/workspace",
+                "target": "/workspace",
+                "access": "read_write",
+            }],
+        },
+    },
+}
+```
+
+挂载源属于 Device 宿主机，目标属于 guest。打开此配置前先创建 `/srv/workspace/project`。Device 必须包含所选 VM 后端并允许请求的挂载；也支持 `microsandbox`。VM Session 当前使用继承网络和禁用原生 Sandbox 的策略，详见 [VM 隔离](../a13n-envd/isolation.md)。Harness UI 通过显式 Device 绑定接受此配置。本地 Project 适配器保留 Host 路径，不会将 Project 和 Thread 文件路径映射到 guest，因此拒绝 VM profile。
 
 ## 集成自己的 WebSocket Host
 
@@ -156,7 +184,7 @@ environment = websocket_envd.execution_connector(
 )
 ```
 
-用 `async with await environment.open() as execution` 打开返回的 connector，或通过 Host 来源提供它。每个执行对象在共享 Device 连接上拥有独立 Session。执行完成或取消会关闭该 Session，共享连接仍可供其他执行使用。
+用 `async with await environment.open() as execution` 打开返回的 connector，或通过 Host 来源提供它。未提供 Host Session 所有者时，每个执行对象在共享 Device 连接上独立拥有并关闭 Session。要让目录视图和多次 Run 共享 Session，按下文提供同一个 `EnvdSessionRecovery` 所有者。
 
 在 Host 关闭时关闭注册表。注册表容量有限，拒绝重复的活跃 Device 连接，获取连接也有有限超时。未提供连接运行时的 WebSocket provider 会明确报告失败。
 
@@ -195,14 +223,15 @@ uv run environment-provider-example websocket_envd \
 | `EnvdSessionRecovery.state` | 尝试附加到保留的 Session         | 只用于原逻辑执行范围的 Host 私有检查点                       |
 | 进程句柄和输出观测          | 通过执行对象观测工作             | 属于该执行范围；重新打开不会还原                             |
 
-接纳需要固定目录选择的执行前，通过已认证的 Device 信息解析省略的 cwd。Device 信息和有界目录发现不需要 Session。多个 Session 可使用同一 Device，但 Session 是资源所有者，不是租户隔离边界。
+对于原生 Session，接纳需要固定目录选择的执行前，通过已认证的 Device 信息解析省略的 cwd。Device 信息和有界目录发现不需要 Session。VM Session 需要 guest cwd。多个 Session 可使用同一 Device；实际隔离取决于所选 Session 边界，而不是不同的 Session 身份。
 
 Host 执行中断后，按以下步骤恢复：
 
 1. 从 `a13n_harness.environment.session_recovery` 创建 `EnvdSessionRecovery`。只在原逻辑范围内恢复可选 `EnvdSessionState`。
-2. 将 `session_recovery=recovery` 传给 `execution_connector(...)`。执行活跃期间，将观测到的 `recovery.state` 与 `EnvironmentState` 和 Harness 状态分开保存。
-3. 使用当前凭据和策略重新连接。附加检查目标、Device 身份/代次、cwd 和必需方法。提示不可用或不兼容时打开新 Session；执行边界改变时拒绝附加。认证、传输和兼容性失败直接返回。受控出站 Session 解析当前策略并打开新 Session。
-4. 正常关闭执行后，将已清除的内存提示同步到 Host 持久存储。附加后正常关闭仍会关闭 Session。
+2. 提供异步 `checkpoint(state)` 回调，将每个 `EnvdSessionState` 与 `EnvironmentState` 和 Harness 状态分开持久化。持有 Host 的绑定所有权锁，将已保存状态重新加载到 `recovery.state`，再将 `session_recovery=recovery` 传给 `execution_connector(...)`。直到最后一个借用者退出后才释放所有权。
+3. 使用当前凭据重新连接。附加验证逻辑目标、Device 代次、所选 Session 配置和实际描述符。普通新工作可在确认原 Session 丢失后新建；认证、传输和协议错误直接返回。启动配置变化时，必须先显式退役，再打开后继 Session。关闭旧 Session 前先持久化退役状态；关闭结果不确定时保留其描述符。
+4. 为绑定的全部目录视图传入同一个所有者。最后一个执行对象关闭时只分离连接，保留检查点供后续 Run 使用。视图工作目录不划分 Session 身份。
+5. 恢复保留的原生工作时使用 `recovery.exact(original_session_id)`。该借用者必须恢复原 Session，绝不新建替代。它不再解析启动密钥来源，因此来源轮换或移除不会阻止原 worker 恢复。Device 认证和授权仍然适用。绑定已接纳的工作全部结束后才可退役；已退役的配置不会复活。
 
 消息帧传输通道丢失后，Session 分离，原有的空闲期限和最大生命周期保持不变。恢复要求守护进程仍保留同一代次中的同一 Session。重新附加会推进 owner epoch，使旧所有者的请求失效；这不构成已认证客户端之间的授权边界。先检查不确定的结果，再继续操作。绝不能因断线重放可能已分派的命令或修改；准备失败后，使用新的执行尝试。
 

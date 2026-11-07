@@ -399,6 +399,30 @@
       "title": "AgentReviewer",
       "type": "object"
     },
+    "AllowlistDestinations": {
+      "additionalProperties": false,
+      "properties": {
+        "hosts": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 256,
+          "title": "Hosts",
+          "type": "array"
+        },
+        "mode": {
+          "const": "allowlist",
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode"
+      ],
+      "title": "AllowlistDestinations",
+      "type": "object"
+    },
     "AppReady": {
       "description": "App originals and references are committed; opening still checks access and fetches current HTML.",
       "properties": {
@@ -1021,6 +1045,21 @@
       "title": "Deny",
       "type": "object"
     },
+    "DisabledSandbox": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "const": "disabled",
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode"
+      ],
+      "title": "DisabledSandbox",
+      "type": "object"
+    },
     "DisplayContinuation": {
       "additionalProperties": false,
       "description": "Parsing state at a semantic cut; Host paging may retire only immutable items.",
@@ -1132,6 +1171,32 @@
       },
       "title": "DynamicSubagents",
       "type": "object"
+    },
+    "EgressDestinations": {
+      "discriminator": {
+        "mapping": {
+          "allowlist": "#/$defs/AllowlistDestinations",
+          "public": "#/$defs/PublicDestinations"
+        },
+        "propertyName": "mode"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/PublicDestinations"
+        },
+        {
+          "$ref": "#/$defs/AllowlistDestinations"
+        }
+      ]
+    },
+    "EgressMode": {
+      "enum": [
+        "inherit",
+        "deny",
+        "controlled"
+      ],
+      "title": "EgressMode",
+      "type": "string"
     },
     "EntryStatus": {
       "enum": [
@@ -1305,6 +1370,58 @@
       "title": "EntryView",
       "type": "object"
     },
+    "EnvdEgressConfiguration": {
+      "additionalProperties": false,
+      "properties": {
+        "destinations": {
+          "$ref": "#/$defs/EgressDestinations"
+        },
+        "secrets": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/EnvdSecretReference"
+          },
+          "maxItems": 64,
+          "title": "Secrets",
+          "type": "array"
+        }
+      },
+      "required": [
+        "destinations"
+      ],
+      "title": "EnvdEgressConfiguration",
+      "type": "object"
+    },
+    "EnvdSecretReference": {
+      "additionalProperties": false,
+      "properties": {
+        "env": {
+          "maxLength": 128,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+          "title": "Env",
+          "type": "string"
+        },
+        "inject_hosts": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 256,
+          "minItems": 1,
+          "title": "Inject Hosts",
+          "type": "array"
+        },
+        "source": {
+          "$ref": "#/$defs/EnvironmentCredentialSource"
+        }
+      },
+      "required": [
+        "env",
+        "source",
+        "inject_hosts"
+      ],
+      "title": "EnvdSecretReference",
+      "type": "object"
+    },
     "EnvironmentAction": {
       "description": "Exact authorization values in the locked first-party catalog.",
       "enum": [
@@ -1354,6 +1471,27 @@
       "title": "EnvironmentAction",
       "type": "string"
     },
+    "EnvironmentCredentialSource": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "environment",
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "name"
+      ],
+      "title": "EnvironmentCredentialSource",
+      "type": "object"
+    },
     "EnvironmentMount": {
       "additionalProperties": false,
       "properties": {
@@ -1402,6 +1540,19 @@
               "environment.state.restore"
             ]
           }
+        },
+        "session_binding": {
+          "default": "default",
+          "title": "Session Binding",
+          "type": "string"
+        },
+        "session_configuration": {
+          "$ref": "#/$defs/SessionConfiguration"
+        },
+        "session_version": {
+          "default": 0,
+          "title": "Session Version",
+          "type": "integer"
         },
         "working_directory": {
           "anyOf": [
@@ -1536,6 +1687,23 @@
               "environment.state.restore"
             ]
           }
+        },
+        "session_binding": {
+          "default": "default",
+          "pattern": "^[a-z][a-z0-9-]{0,62}$",
+          "title": "Session Binding",
+          "type": "string"
+        },
+        "session_configuration": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SessionConfiguration"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "working_directory": {
           "anyOf": [
@@ -1712,6 +1880,23 @@
             ]
           }
         },
+        "session_binding": {
+          "default": "default",
+          "pattern": "^[a-z][a-z0-9-]{0,62}$",
+          "title": "Session Binding",
+          "type": "string"
+        },
+        "session_configuration": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SessionConfiguration"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "template_id": {
           "maxLength": 41,
           "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
@@ -1756,6 +1941,14 @@
       ],
       "title": "Gap",
       "type": "object"
+    },
+    "GrantAccess": {
+      "enum": [
+        "read_only",
+        "read_write"
+      ],
+      "title": "GrantAccess",
+      "type": "string"
     },
     "HistoricalDesktopPending": {
       "additionalProperties": false,
@@ -2208,6 +2401,21 @@
         "content"
       ],
       "title": "MessagePayload",
+      "type": "object"
+    },
+    "NativeIsolation": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "const": "native",
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode"
+      ],
+      "title": "NativeIsolation",
       "type": "object"
     },
     "ObserverContinuation": {
@@ -2867,6 +3075,21 @@
       "title": "Progress",
       "type": "object"
     },
+    "PublicDestinations": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "const": "public",
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode"
+      ],
+      "title": "PublicDestinations",
+      "type": "object"
+    },
     "RecordSource": {
       "additionalProperties": false,
       "properties": {
@@ -2899,6 +3122,34 @@
         }
       },
       "title": "RequestContext",
+      "type": "object"
+    },
+    "RestrictedSandbox": {
+      "additionalProperties": false,
+      "properties": {
+        "full_disk_read": {
+          "default": false,
+          "title": "Full Disk Read",
+          "type": "boolean"
+        },
+        "grants": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/SandboxGrant"
+          },
+          "title": "Grants",
+          "type": "array"
+        },
+        "mode": {
+          "const": "restricted",
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode"
+      ],
+      "title": "RestrictedSandbox",
       "type": "object"
     },
     "Resume": {
@@ -3576,6 +3827,42 @@
       "title": "RunView",
       "type": "object"
     },
+    "SandboxGrant": {
+      "additionalProperties": false,
+      "properties": {
+        "access": {
+          "$ref": "#/$defs/GrantAccess"
+        },
+        "path": {
+          "format": "eip-absolute-path",
+          "title": "Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "access"
+      ],
+      "title": "SandboxGrant",
+      "type": "object"
+    },
+    "SandboxPolicy": {
+      "discriminator": {
+        "mapping": {
+          "disabled": "#/$defs/DisabledSandbox",
+          "restricted": "#/$defs/RestrictedSandbox"
+        },
+        "propertyName": "mode"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/DisabledSandbox"
+        },
+        {
+          "$ref": "#/$defs/RestrictedSandbox"
+        }
+      ]
+    },
     "ScheduleEvent": {
       "properties": {
         "configuration": {
@@ -3645,6 +3932,141 @@
         "manual"
       ],
       "type": "string"
+    },
+    "SessionConfiguration": {
+      "additionalProperties": false,
+      "description": "Tenant-authored Session policy; Service credentials are not process-environment references.",
+      "properties": {
+        "commands": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Commands"
+        },
+        "egress": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EnvdEgressConfiguration"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "egress_mode": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EgressMode"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "isolation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SessionIsolation"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "lifecycle": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SessionLifecyclePolicy"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "sandbox": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SandboxPolicy"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "working_directory": {
+          "anyOf": [
+            {
+              "format": "eip-absolute-path",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Working Directory"
+        }
+      },
+      "title": "SessionConfiguration",
+      "type": "object"
+    },
+    "SessionIsolation": {
+      "discriminator": {
+        "mapping": {
+          "native": "#/$defs/NativeIsolation",
+          "vm": "#/$defs/VmIsolation"
+        },
+        "propertyName": "mode"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/NativeIsolation"
+        },
+        {
+          "$ref": "#/$defs/VmIsolation"
+        }
+      ]
+    },
+    "SessionLifecyclePolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "idle_timeout_ms": {
+          "maximum": 18446744073709551615,
+          "minimum": 1,
+          "title": "Idle Timeout Ms",
+          "type": "integer"
+        },
+        "max_lifetime_ms": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Lifetime Ms"
+        }
+      },
+      "required": [
+        "idle_timeout_ms"
+      ],
+      "title": "SessionLifecyclePolicy",
+      "type": "object"
     },
     "SharedSkillSync": {
       "additionalProperties": false,
@@ -4545,6 +4967,87 @@
         }
       },
       "title": "UsageLimits",
+      "type": "object"
+    },
+    "VmBackend": {
+      "enum": [
+        "boxlite",
+        "microsandbox"
+      ],
+      "title": "VmBackend",
+      "type": "string"
+    },
+    "VmIsolation": {
+      "additionalProperties": false,
+      "properties": {
+        "backend": {
+          "$ref": "#/$defs/VmBackend"
+        },
+        "cpus": {
+          "maximum": 255,
+          "minimum": 1,
+          "title": "Cpus",
+          "type": "integer"
+        },
+        "image": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Image",
+          "type": "string"
+        },
+        "memory_mib": {
+          "maximum": 4294967295,
+          "minimum": 128,
+          "title": "Memory Mib",
+          "type": "integer"
+        },
+        "mode": {
+          "const": "vm",
+          "title": "Mode",
+          "type": "string"
+        },
+        "mounts": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/VmMount"
+          },
+          "title": "Mounts",
+          "type": "array"
+        }
+      },
+      "required": [
+        "mode",
+        "backend",
+        "image",
+        "cpus",
+        "memory_mib"
+      ],
+      "title": "VmIsolation",
+      "type": "object"
+    },
+    "VmMount": {
+      "additionalProperties": false,
+      "properties": {
+        "access": {
+          "$ref": "#/$defs/GrantAccess"
+        },
+        "source": {
+          "format": "eip-absolute-path",
+          "title": "Source",
+          "type": "string"
+        },
+        "target": {
+          "format": "eip-absolute-path",
+          "title": "Target",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "target",
+        "access"
+      ],
+      "title": "VmMount",
       "type": "object"
     },
     "WaitReason": {

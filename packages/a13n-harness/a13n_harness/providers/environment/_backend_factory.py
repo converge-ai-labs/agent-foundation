@@ -21,7 +21,7 @@ from a13n_harness.environment.models import (
     EnvironmentState,
 )
 from a13n_harness.environment.operations import EnvironmentOperations
-from a13n_harness.environment.session_recovery import EnvdSessionRecovery
+from a13n_harness.environment.session_recovery import EnvdSessionBorrower
 from a13n_harness.providers.environment._backend import ExecutionBackend
 from a13n_harness.providers.environment._runtime import ClosableRuntime, RuntimeFactory, _release
 from a13n_harness.providers.environment.definition import TargetIdentity, _no_target_identity
@@ -37,7 +37,7 @@ class ExecutionFactory[E: BaseModel, R](Protocol):
         environment_id: str,
         state: EnvironmentState | None,
         runtime: R | None,
-        session_recovery: EnvdSessionRecovery | None = None,
+        session_recovery: EnvdSessionBorrower | None = None,
     ) -> ExecutionBackend: ...
 
 
@@ -67,7 +67,7 @@ class BackendFactory[C: BaseModel, K: BaseModel, E: BaseModel, R]:
         environment_id: str,
         state: EnvironmentState | None,
         runtime: R | None,
-        session_recovery: EnvdSessionRecovery | None = None,
+        session_recovery: EnvdSessionBorrower | None = None,
     ) -> EnvironmentConnector:
         if capabilities(environment).host_connection:
             raise provider_error(
@@ -91,7 +91,7 @@ class BackendConnector[C: BaseModel, K: BaseModel, E: BaseModel, R](EnvironmentC
     _environment_id: str
     _state: EnvironmentState | None
     runtime: R | None = field(repr=False)
-    session_recovery: EnvdSessionRecovery | None = field(default=None, repr=False)
+    session_recovery: EnvdSessionBorrower | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "configuration", self.configuration.model_copy(deep=True))

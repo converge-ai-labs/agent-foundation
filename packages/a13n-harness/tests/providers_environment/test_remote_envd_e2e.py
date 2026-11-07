@@ -11,12 +11,14 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import pytest
-from a13n_envd_client.eip.v1 import DirectoryListParams, EIPPath
+from a13n_envd_client.eip.v1 import DirectoryListParams, EIPPath, SessionConfiguration
 from a13n_harness.environment.commands import ArgvCommand, CommandRequest, PortTarget
+from a13n_harness.environment.envd_policy import EnvdSessionConfiguration
 from a13n_harness.environment.errors import EnvironmentProviderError
 from a13n_harness.environment.files import FileQueryRequest, FileTextSearchRequest
 from a13n_harness.environment.models import EnvironmentError, EnvironmentState
 from a13n_harness.environment.retention import EnvironmentOutputPolicy
+from a13n_harness.environment.session_recovery import configuration_digest
 from a13n_harness.providers.environment.remote_envd.configuration import (
     HttpEnvdConnectionConfiguration,
     HttpEnvdCredential,
@@ -250,7 +252,7 @@ async def test_http_runtime_replaces_stale_connection_on_next_explicit_use(
                     async with runtime.open_session(
                         expected_device_id=NATIVE_ID,
                         required_methods=frozenset(),
-                        working_directory=str(second_root / "missing"),
+                        configuration=EnvdSessionConfiguration(working_directory=str(second_root / "missing")),
                     ):
                         pytest.fail("Opening a missing directory must fail")
                 assert await runtime.acquire_device(expected_device_id=NATIVE_ID) is replacement
@@ -520,7 +522,11 @@ async def test_http_checkpoint_attaches_live_session_or_opens_after_close(binary
         first = http_runtime(endpoint)
         device = await first.acquire_device(expected_device_id=NATIVE_ID)
         original = await device.open_session()
-        saved = EnvdSessionState(target=endpoint, descriptor=original.descriptor)
+        saved = EnvdSessionState(
+            target=endpoint,
+            descriptor=original.descriptor,
+            configuration_digest=configuration_digest(SessionConfiguration()),
+        )
         # Round-trip the exact value a Host stores, without keeping a client object.
         recovery = EnvdSessionRecovery(EnvdSessionState.model_validate_json(saved.model_dump_json()))
         if closed:
@@ -550,7 +556,13 @@ async def test_http_recovery_late_close_fails_without_reopening_or_replaying(bin
     async with daemon(binary, tmp_path, "http", address) as (_, workspace):
         device = await http_runtime(endpoint).acquire_device(expected_device_id=NATIVE_ID)
         original = await device.open_session()
-        recovery = EnvdSessionRecovery(EnvdSessionState(target=endpoint, descriptor=original.descriptor))
+        recovery = EnvdSessionRecovery(
+            EnvdSessionState(
+                target=endpoint,
+                descriptor=original.descriptor,
+                configuration_digest=configuration_digest(SessionConfiguration()),
+            )
+        )
         restored = http_runtime(endpoint)
         with pytest.raises(EIPClientError):
             async with restored.open_session(
@@ -578,7 +590,11 @@ async def test_http_recovery_after_daemon_restart_opens_new_generation(binary, t
     async with daemon(binary, first_root, "http", address):
         device = await http_runtime(endpoint).acquire_device(expected_device_id=NATIVE_ID)
         original = await device.open_session()
-        saved = EnvdSessionState(target=endpoint, descriptor=original.descriptor)
+        saved = EnvdSessionState(
+            target=endpoint,
+            descriptor=original.descriptor,
+            configuration_digest=configuration_digest(SessionConfiguration()),
+        )
     async with daemon(binary, second_root, "http", address):
         recovery = EnvdSessionRecovery(saved)
         restored = http_runtime(endpoint)
@@ -605,7 +621,13 @@ async def test_http_recovery_does_not_open_fresh_session_after_uncertain_attach(
     async with daemon(binary, tmp_path, "http", address):
         device = await http_runtime(endpoint).acquire_device(expected_device_id=NATIVE_ID)
         original = await device.open_session()
-        recovery = EnvdSessionRecovery(EnvdSessionState(target=endpoint, descriptor=original.descriptor))
+        recovery = EnvdSessionRecovery(
+            EnvdSessionState(
+                target=endpoint,
+                descriptor=original.descriptor,
+                configuration_digest=configuration_digest(SessionConfiguration()),
+            )
+        )
         restored = http_runtime(endpoint)
         next_device = await restored.acquire_device(expected_device_id=NATIVE_ID)
         error = (EIPTransportError if failure == "transport" else EIPProtocolError)("attachment failed")
@@ -630,7 +652,13 @@ async def test_http_recovery_uses_current_credentials(binary, tmp_path, http_run
     async with daemon(binary, tmp_path, "http", address):
         device = await http_runtime(endpoint).acquire_device(expected_device_id=NATIVE_ID)
         original = await device.open_session()
-        recovery = EnvdSessionRecovery(EnvdSessionState(target=endpoint, descriptor=original.descriptor))
+        recovery = EnvdSessionRecovery(
+            EnvdSessionState(
+                target=endpoint,
+                descriptor=original.descriptor,
+                configuration_digest=configuration_digest(SessionConfiguration()),
+            )
+        )
         restored = http_runtime(endpoint, token="invalid-current-token")
         with pytest.raises(EnvironmentProviderError):
             async with restored.open_session(
@@ -657,7 +685,11 @@ async def test_reverse_websocket_recovers_session_after_carrier_reconnect(binary
                 socket = await asyncio.wait_for(sockets.get(), 5)
                 original_device = await hub.acquire_device(expected_device_id=NATIVE_ID)
                 original = await original_device.open_session()
-                saved = EnvdSessionState(target=NATIVE_ID, descriptor=original.descriptor)
+                saved = EnvdSessionState(
+                    target=NATIVE_ID,
+                    descriptor=original.descriptor,
+                    configuration_digest=configuration_digest(SessionConfiguration()),
+                )
                 if closed:
                     await original.close()
                 await socket.close()
@@ -704,16 +736,30 @@ async def test_session_recovery_checks_current_binding_before_attach(
     endpoint = f"http://{address}"
     async with daemon(binary, tmp_path, "http", address):
         original = await (await http_runtime(endpoint).acquire_device(expected_device_id=NATIVE_ID)).open_session()
-        saved = EnvdSessionState(target=endpoint, descriptor=original.descriptor)
+        saved = EnvdSessionState(
+            target=endpoint,
+            descriptor=original.descriptor,
+            configuration_digest=configuration_digest(SessionConfiguration()),
+        )
         if changed == "target":
             saved = saved.model_copy(update={"target": "another-target"})
         elif changed == "directory":
-            saved = saved.model_copy(update={"working_directory": "/another-directory"})
+            saved = saved.model_copy(
+                update={
+                    "configuration_digest": configuration_digest(
+                        SessionConfiguration(working_directory="/another-directory")
+                    )
+                }
+            )
         else:
             changes = {
                 "device": {"device_id": "another-device"},
                 "generation": {"generation": "another-generation"},
-                "methods": {"available_methods": []},
+                "methods": {
+                    "available_methods": tuple(
+                        method for method in original.descriptor.available_methods if method != "file.read_text"
+                    )
+                },
                 "boundary": {"boundary": original.descriptor.boundary.model_copy(update={"policy_digest": "0" * 64})},
             }
             saved = saved.model_copy(update={"descriptor": original.descriptor.model_copy(update=changes[changed])})
@@ -727,19 +773,31 @@ async def test_session_recovery_checks_current_binding_before_attach(
         scope = runtime.open_session(
             expected_device_id=NATIVE_ID, required_methods=frozenset({"file.read_text"}), session_recovery=recovery
         )
-        if changed == "boundary":
-            with pytest.raises(EIPSessionStateError, match="boundary changed"):
+        if changed == "directory":
+            with pytest.raises(EIPSessionStateError, match="retire the current binding first"):
                 async with scope:
-                    pytest.fail("Changed boundary must fail")
+                    pytest.fail("Configuration changes require explicit retirement")
             opened.assert_not_awaited()
+            attach.assert_not_awaited()
+        elif changed in {"boundary", "methods"}:
+            from a13n_envd_client import EIPProtocolError
+
+            await original.detach()
+            message = "boundary changed" if changed == "boundary" else "available methods widened"
+            with pytest.raises(EIPProtocolError, match=message):
+                async with scope:
+                    pytest.fail("Changed Session facts must fail exact attachment")
+            opened.assert_not_awaited()
+            attach.assert_awaited_once()
         else:
             async with scope as binding:
                 session = binding.session
                 assert session.session_id != original.session_id
             opened.assert_awaited_once()
-        attach.assert_not_awaited()
+            attach.assert_not_awaited()
         assert recovery.state is not None
-        assert (await original.readiness()).ready
+        if changed not in {"boundary", "methods"}:
+            assert (await original.readiness()).ready
 
 
 async def test_session_recovery_busy_takeover_never_opens_a_duplicate(binary, tmp_path, http_runtime, monkeypatch):
@@ -753,7 +811,13 @@ async def test_session_recovery_busy_takeover_never_opens_a_duplicate(binary, tm
     endpoint = f"http://{address}"
     async with daemon(binary, tmp_path, "http", address):
         original = await (await http_runtime(endpoint).acquire_device(expected_device_id=NATIVE_ID)).open_session()
-        recovery = EnvdSessionRecovery(EnvdSessionState(target=endpoint, descriptor=original.descriptor))
+        recovery = EnvdSessionRecovery(
+            EnvdSessionState(
+                target=endpoint,
+                descriptor=original.descriptor,
+                configuration_digest=configuration_digest(SessionConfiguration()),
+            )
+        )
         runtime = http_runtime(endpoint)
         device = await runtime.acquire_device(expected_device_id=NATIVE_ID)
         error = EIPMethodError(
@@ -795,7 +859,6 @@ async def test_managed_defaults_reach_real_envd_commands_and_children(
         def session(reference, *, session_recovery=None):
             return runtime.open_session(
                 expected_device_id=NATIVE_ID,
-                working_directory=str(workspace),
                 required_methods=frozenset({"shell.exec", "process.start"}),
             )
 
@@ -886,7 +949,7 @@ async def test_session_context_shares_live_borrowers_and_restores_after_final_re
 
 
 @pytest.mark.parametrize("failure", ["open", "checkpoint", "cancel_checkpoint", "attach"])
-async def test_session_ownership_unwinds_failed_acquisition(binary, tmp_path, http_runtime, monkeypatch, failure):
+async def test_session_recovery_unwinds_failed_acquisition(binary, tmp_path, http_runtime, monkeypatch, failure):
     from a13n_envd_client import EIPSession, EIPTransportError
     from a13n_harness.environment.session_recovery import EnvdSessionRecovery
     from anyio import create_task_group, sleep_forever
@@ -896,14 +959,6 @@ async def test_session_ownership_unwinds_failed_acquisition(binary, tmp_path, ht
     durable = None
     failing = False
     checkpoint_entered = asyncio.Event()
-
-    @asynccontextmanager
-    async def ownership():
-        events.append("acquire")
-        try:
-            yield durable
-        finally:
-            events.append("release")
 
     async def checkpoint(state):
         nonlocal durable
@@ -921,12 +976,13 @@ async def test_session_ownership_unwinds_failed_acquisition(binary, tmp_path, ht
         await detach(self)
 
     monkeypatch.setattr(EIPSession, "detach", tracked_detach)
-    context = EnvdSessionRecovery(checkpoint=checkpoint, ownership=ownership)
+    context = EnvdSessionRecovery(checkpoint=checkpoint)
     async with daemon(binary, tmp_path, "http", endpoint.removeprefix("http://")):
         runtime = http_runtime(endpoint)
         device = await runtime.acquire_device(expected_device_id=NATIVE_ID)
 
         async def acquire():
+            context.state = durable
             async with runtime.open_session(
                 expected_device_id=NATIVE_ID, required_methods=frozenset(), session_recovery=context
             ):
@@ -953,37 +1009,29 @@ async def test_session_ownership_unwinds_failed_acquisition(binary, tmp_path, ht
         else:
             with pytest.raises((EIPTransportError, OSError)):
                 await acquire()
-        expected = ["acquire", "release"]
-        if failure in {"checkpoint", "cancel_checkpoint"}:
-            expected.insert(1, "detach")
+        expected = ["detach"] if failure in {"checkpoint", "cancel_checkpoint"} else []
         assert events == expected
         assert context._scope is None and context._session is None and context._users == 0
         failing = False
         monkeypatch.setattr(device, method, original)
         await acquire()
-        assert events[len(expected) :] == ["acquire", "detach", "release"]
+        assert events[len(expected) :] == ["detach"]
 
 
-async def test_dead_session_late_borrower_does_not_release_successor_owner(binary, tmp_path, http_runtime):
+async def test_dead_session_late_borrower_does_not_detach_successor(binary, tmp_path, http_runtime, monkeypatch):
+    from a13n_envd_client import EIPSession
     from a13n_harness.environment.session_recovery import EnvdSessionRecovery
 
     endpoint = f"http://127.0.0.1:{free_port()}"
-    durable = None
-    events = []
+    detached = []
+    detach = EIPSession.detach
 
-    @asynccontextmanager
-    async def ownership():
-        events.append("acquire")
-        try:
-            yield durable
-        finally:
-            events.append("release")
+    async def tracked_detach(self):
+        detached.append(self.descriptor.owner_epoch)
+        await detach(self)
 
-    async def checkpoint(state):
-        nonlocal durable
-        durable = state
-
-    context = EnvdSessionRecovery(checkpoint=checkpoint, ownership=ownership)
+    monkeypatch.setattr(EIPSession, "detach", tracked_detach)
+    context = EnvdSessionRecovery()
     async with daemon(binary, tmp_path, "http", endpoint.removeprefix("http://")):
         runtime = http_runtime(endpoint)
 
@@ -998,11 +1046,13 @@ async def test_dead_session_late_borrower_does_not_release_successor_owner(binar
         async with borrow() as successor:
             assert successor.session.session_id == old.session.session_id
             assert successor.session.descriptor.owner_epoch > old.session.descriptor.owner_epoch
-            assert events == ["acquire", "release", "acquire"]
+            assert detached == [old.session.descriptor.owner_epoch]
             await old_scope.__aexit__(None, None, None)
-            assert events == ["acquire", "release", "acquire"]
+            assert detached == [old.session.descriptor.owner_epoch]
+            assert context._users == 1
             assert (await successor.session.readiness()).ready
-        assert events == ["acquire", "release", "acquire", "release"]
+        assert detached == [old.session.descriptor.owner_epoch, successor.session.descriptor.owner_epoch]
+        assert context._users == 0
 
 
 async def test_uncertain_takeover_keeps_checkpoint_and_advances_epoch_on_retry(

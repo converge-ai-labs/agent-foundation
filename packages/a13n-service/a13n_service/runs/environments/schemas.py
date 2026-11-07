@@ -3,13 +3,23 @@
 from datetime import datetime
 from typing import Annotated, Literal
 
+from a13n_harness.environment.envd_policy import EnvdSessionConfiguration
 from a13n_harness.environment.models import (
     FILE_EXECUTION_ACTIONS,
     EnvironmentAction,
     EnvironmentPermissionSet,
     EnvironmentState,
 )
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, JsonValue, SecretStr, StringConstraints
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    JsonValue,
+    SecretStr,
+    StringConstraints,
+    model_validator,
+)
 
 from a13n_service.infra.crypto import Envelope
 from a13n_service.infra.ids import ObjectId
@@ -190,10 +200,36 @@ class EnvironmentUpdate(BaseModel):
     token: EnvdToken | None = None
 
 
+class SessionConfiguration(EnvdSessionConfiguration):
+    """Tenant-authored Session policy; Service credentials are not process-environment references."""
+
+    @model_validator(mode="after")
+    def no_host_credentials(self) -> "SessionConfiguration":
+        if self.egress is not None and self.egress.secrets:
+            raise ValueError("Service Session bindings cannot reference Host environment credentials")
+        return self
+
+
+class SessionBindingUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    configuration: SessionConfiguration
+
+
+class SessionBindingView(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    name: str
+    environment_id: str
+    configuration: SessionConfiguration
+    version: int
+
+
 class MountCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: MountName
     environment_id: ObjectId
+    session_binding: MountName = "default"
+    # Omission selects the existing binding, or creates it with Device defaults.
+    session_configuration: SessionConfiguration | None = None
     # The mount's default directory inside the environment and the root of its route.
     working_directory: WorkingDirectory | None = None
     permission_ceiling: EnvironmentPermissionSet = DEFAULT_MOUNT_PERMISSIONS
@@ -211,6 +247,7 @@ class MountView(BaseModel):
     )
     name: str
     environment_id: str
+    session_binding: str
     working_directory: str | None
     permission_ceiling: EnvironmentPermissionSet = DEFAULT_MOUNT_PERMISSIONS
 

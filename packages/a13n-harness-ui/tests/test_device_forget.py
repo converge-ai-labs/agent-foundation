@@ -101,7 +101,9 @@ async def test_forget_and_repair_leave_completed_run_capture_and_history_unchang
         async def local_execution(composition):
             # Test durable capture/removal independently of actual remote execution.
             return await prepare(
-                composition.model_copy(update={"environment_bindings": (), "default_environment": None})
+                composition.model_copy(
+                    update={"environment_bindings": (), "default_environment": None, "session_versions": {}}
+                )
             )
 
         monkeypatch.setattr(executor._environments, "prepare", local_execution)

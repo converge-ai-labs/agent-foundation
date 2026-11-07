@@ -28,6 +28,7 @@ pytestmark = pytest.mark.anyio
 def request(method="process.start", *, seconds=3, environment_id="env_client", epoch="1" * 32):
     return Request(
         environment_id=environment_id,
+        mount_name="pc",
         epoch=epoch,
         scope_id=uuid4().hex,
         thread_id="thr_client",

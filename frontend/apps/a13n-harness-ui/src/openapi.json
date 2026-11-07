@@ -13193,7 +13193,7 @@
       },
       "EnvdBoundaryRequirement": {
         "additionalProperties": false,
-        "description": "A selected remote boundary, not authority to change that Device.",
+        "description": "An expected effective Session boundary.",
         "properties": {
           "sandbox": {
             "$ref": "#/components/schemas/SandboxPolicy"
@@ -13317,6 +13317,87 @@
           "inject_hosts"
         ],
         "title": "EnvdSecretReference",
+        "type": "object"
+      },
+      "EnvdSessionConfiguration": {
+        "additionalProperties": false,
+        "description": "Immutable Session selection; credential references are resolved at acquisition.",
+        "properties": {
+          "working_directory": {
+            "anyOf": [
+              {
+                "format": "eip-absolute-path",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Working Directory"
+          },
+          "sandbox": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SandboxPolicy"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "egress_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EgressMode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "egress": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EnvdEgressConfiguration"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lifecycle": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SessionLifecyclePolicy"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "commands": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Commands"
+          },
+          "isolation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SessionIsolation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "EnvdSessionConfiguration",
         "type": "object"
       },
       "EnvdStatus": {
@@ -13537,15 +13618,8 @@
             "title": "Working Directory",
             "type": "string"
           },
-          "egress": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/EnvdEgressConfiguration"
-              },
-              {
-                "type": "null"
-              }
-            ]
+          "session": {
+            "$ref": "#/components/schemas/EnvdSessionConfiguration"
           },
           "expected_boundary": {
             "anyOf": [
@@ -16925,6 +16999,21 @@
           "audio"
         ]
       },
+      "NativeIsolation": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "const": "native",
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "title": "NativeIsolation",
+        "type": "object"
+      },
       "NetworkInterfaceMetrics": {
         "properties": {
           "identity": {
@@ -19098,6 +19187,52 @@
           "description"
         ],
         "title": "SessionAffinityPreset"
+      },
+      "SessionIsolation": {
+        "discriminator": {
+          "mapping": {
+            "native": "#/components/schemas/NativeIsolation",
+            "vm": "#/components/schemas/VmIsolation"
+          },
+          "propertyName": "mode"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/NativeIsolation"
+          },
+          {
+            "$ref": "#/components/schemas/VmIsolation"
+          }
+        ]
+      },
+      "SessionLifecyclePolicy": {
+        "additionalProperties": false,
+        "properties": {
+          "idle_timeout_ms": {
+            "maximum": 18446744073709551615,
+            "minimum": 1,
+            "title": "Idle Timeout Ms",
+            "type": "integer"
+          },
+          "max_lifetime_ms": {
+            "anyOf": [
+              {
+                "maximum": 18446744073709551615,
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Lifetime Ms"
+          }
+        },
+        "required": [
+          "idle_timeout_ms"
+        ],
+        "title": "SessionLifecyclePolicy",
+        "type": "object"
       },
       "SetupPreview": {
         "properties": {
@@ -23341,6 +23476,87 @@
         "type": "object",
         "title": "VideoInputPolicy",
         "description": "Base64-after byte budget for both one video and all inline videos in a request."
+      },
+      "VmBackend": {
+        "enum": [
+          "boxlite",
+          "microsandbox"
+        ],
+        "title": "VmBackend",
+        "type": "string"
+      },
+      "VmIsolation": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "const": "vm",
+            "title": "Mode",
+            "type": "string"
+          },
+          "backend": {
+            "$ref": "#/components/schemas/VmBackend"
+          },
+          "image": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Image",
+            "type": "string"
+          },
+          "cpus": {
+            "maximum": 255,
+            "minimum": 1,
+            "title": "Cpus",
+            "type": "integer"
+          },
+          "memory_mib": {
+            "maximum": 4294967295,
+            "minimum": 128,
+            "title": "Memory Mib",
+            "type": "integer"
+          },
+          "mounts": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/VmMount"
+            },
+            "title": "Mounts",
+            "type": "array"
+          }
+        },
+        "required": [
+          "mode",
+          "backend",
+          "image",
+          "cpus",
+          "memory_mib"
+        ],
+        "title": "VmIsolation",
+        "type": "object"
+      },
+      "VmMount": {
+        "additionalProperties": false,
+        "properties": {
+          "source": {
+            "format": "eip-absolute-path",
+            "title": "Source",
+            "type": "string"
+          },
+          "target": {
+            "format": "eip-absolute-path",
+            "title": "Target",
+            "type": "string"
+          },
+          "access": {
+            "$ref": "#/components/schemas/GrantAccess"
+          }
+        },
+        "required": [
+          "source",
+          "target",
+          "access"
+        ],
+        "title": "VmMount",
+        "type": "object"
       },
       "VncExecutable": {
         "properties": {

@@ -92,7 +92,7 @@ def convert_command_request(request: CommandRequest, *, files: EIPFileOperator) 
     limits = request.limits
     return eip.CommandRequest(
         command=converted_command,
-        cwd=None if request.cwd is None else files.to_eip_path(request.cwd),
+        cwd=files.to_eip_path(request.cwd if request.cwd is not None else files.working_directory),
         environment=eip.CommandEnvironment(
             set=dict(request.environment.set),
             unset=request.environment.unset,

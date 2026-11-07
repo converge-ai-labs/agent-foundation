@@ -27,6 +27,7 @@ from a13n_envd_client.eip.v1 import (
     ProcessInfo,
     ProcessInspectResult,
     ProcessStartResult,
+    SessionConfiguration,
     SessionDescriptor,
 )
 from a13n_envd_client.eip.v1.methods import MethodSpec
@@ -93,6 +94,7 @@ class Scope:
     session: EIPSession
     # A lost scope.open response must not keep an unclaimed Session alive for an entire run.
     first_use_until: float | None
+    binding: str = "default"
     lifetime: AsyncExitStack = field(default_factory=AsyncExitStack, repr=False)
     transfers: dict[str, Transfer] = field(default_factory=dict)
     callers: dict[tuple[str, str, str | None], Caller] = field(default_factory=dict)
@@ -163,8 +165,8 @@ class Sessions:
             )
         return connection
 
-    def _acquisition(self, request: Request) -> asyncio.Lock:
-        key = (request.thread_id, request.environment_id)
+    def _acquisition(self, request: Request, binding: str) -> asyncio.Lock:
+        key = (request.thread_id, f"{request.environment_id}/{binding}")
         lock = self.acquisitions.get(key)
         if lock is None:
             lock = self.acquisitions[key] = asyncio.Lock()
@@ -173,7 +175,9 @@ class Sessions:
     async def open(self, request: Request) -> dict[str, JsonValue]:
         # Retirement and borrowing share one boundary, including concurrent
         # recovery of several executions from the same Thread.
-        async with self._acquisition(request):
+        connection = await self.connection(request)
+        mount = await self._resolve(request, connection, frozenset())
+        async with self._acquisition(request, mount.session_binding):
             return await self._open(request)
 
     async def _open(self, request: Request) -> dict[str, JsonValue]:
@@ -210,7 +214,12 @@ class Sessions:
         try:
             assert connection.device is not None
             recovery = await self.runtime.environment_contexts.for_control(
-                request.thread_id, request.caller.run_id, request.caller.worker_id, request.environment_id
+                request.thread_id,
+                request.caller.run_id,
+                request.caller.worker_id,
+                request.environment_id,
+                request.mount_name,
+                execution_id=request.caller.execution_id if request.retained_cleanup else None,
             )
             # A new Thread owner fences the old Worker's logical scopes before
             # attaching the same native Session on this still-connected carrier.
@@ -218,6 +227,7 @@ class Sessions:
                 if (
                     previous.request.thread_id == request.thread_id
                     and previous.request.environment_id == request.environment_id
+                    and previous.binding == mount.session_binding
                     and previous.request.caller.worker_id != request.caller.worker_id
                 ):
                     await self._retire(identity, previous)
@@ -230,17 +240,17 @@ class Sessions:
                     connection.device,
                     target=request.environment_id,
                     expected_device_id=connection.attachment.device_id,
-                    working_directory=body.working_directory,
+                    configuration=SessionConfiguration(
+                        working_directory=body.working_directory,
+                        egress=EgressPolicy(destinations=AllowlistDestinations(mode="allowlist"))
+                        if controlled
+                        else None,
+                    ),
                     required_methods=frozenset(body.required_methods),
                     expected_boundary=None,
-                    egress=EgressPolicy(destinations=AllowlistDestinations(mode="allowlist")) if controlled else None,
                 )
             )
-            # Recheck after native preparation, before publishing access to it.
-            if session.descriptor.working_directory != mount.working_directory:
-                raise EnvironmentError(
-                    "Client Session did not open the frozen working directory.", code="environment_stale_mount"
-                )
+            # Each view retains its own directory; Session cwd belongs to the shared binding.
             await self.connection(request)
             await self._resolve(request, connection, frozenset(), descriptor=session.descriptor)
             scope = Scope(
@@ -248,6 +258,7 @@ class Sessions:
                 connection,
                 session,
                 asyncio.get_running_loop().time() + self.runtime.settings.client_environments.request_seconds,
+                binding=mount.session_binding,
                 lifetime=lifetime,
             )
             await self.connection(request)
@@ -298,8 +309,13 @@ class Sessions:
         connection = await self.connection(request)
         if scope is not None and (
             scope.connection is not connection
-            or (request.environment_id, request.caller.run_id, request.thread_id)
-            != (scope.request.environment_id, scope.request.caller.run_id, scope.request.thread_id)
+            or (request.environment_id, request.mount_name, request.caller.run_id, request.thread_id)
+            != (
+                scope.request.environment_id,
+                scope.request.mount_name,
+                scope.request.caller.run_id,
+                scope.request.thread_id,
+            )
         ):
             raise EnvironmentError(
                 "Client Session does not belong to this execution.",
@@ -324,7 +340,7 @@ class Sessions:
             return await self.attach_transfer(request)
         if request.method in {"scope.close", "scope.detach"}:
             scope = await self.authorize(request, frozenset())
-            async with self._acquisition(request):
+            async with self._acquisition(request, scope.binding):
                 if self.scopes.get(request.scope_id) is not scope:
                     raise self._session_lost()
                 del self.scopes[request.scope_id]
@@ -500,7 +516,7 @@ class Sessions:
         scope.transfers[handle] = Transfer(channel, direction, actions, caller)
 
     async def retire(self, identity: str, scope: Scope) -> None:
-        async with self._acquisition(scope.request):
+        async with self._acquisition(scope.request, scope.binding):
             await self._retire(identity, scope)
 
     async def _retire(self, identity: str, scope: Scope) -> None:

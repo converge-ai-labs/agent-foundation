@@ -141,6 +141,7 @@ function panelMount(
   return {
     name,
     environment_id: name,
+    session_binding: "default",
     working_directory: null,
     desktop_enabled,
     permission_ceiling: {

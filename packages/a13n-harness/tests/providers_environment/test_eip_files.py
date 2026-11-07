@@ -15,7 +15,7 @@ pytestmark = pytest.mark.anyio
 def operator(*, methods=(), failure=None):
     session = SimpleNamespace(
         descriptor=SimpleNamespace(
-            mounts=[SimpleNamespace(execution_id="workspace", logical_root="/")],
+            working_directory="/",
             available_methods=methods,
         ),
         open_reader=Mock(side_effect=failure),
@@ -73,7 +73,7 @@ async def test_cancelled_transfer_setup_preserves_cancellation(action):
 @pytest.mark.parametrize("action", ["read", "stat", "write"])
 async def test_closed_session_control_setup_is_converted(action):
     class ClosedSession:
-        descriptor = SimpleNamespace(mounts=[SimpleNamespace(execution_id="workspace", logical_root="/")])
+        descriptor = SimpleNamespace(working_directory="/")
 
         @property
         def client(self):

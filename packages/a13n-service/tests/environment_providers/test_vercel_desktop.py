@@ -259,7 +259,8 @@ async def test_eip_uses_guest_token_and_closes_on_cancellation(monkeypatch):
             async def open_session(self, **options):
                 assert options["expected_device_id"] == "env-fixture"
                 assert "computer.observe" in options["required_methods"]
-                assert options["working_directory"] == "/workspace"
+                assert "working_directory" not in options
+                assert options.get("configuration") is None
                 try:
                     yield object()
                 finally:

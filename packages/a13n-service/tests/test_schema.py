@@ -26,6 +26,7 @@ NOT_OBJECT_KEYED = {
     "thread_codeact",
     "thread_environments",
     "thread_execution_contexts",
+    "thread_session_bindings",
     "thread_memories",
     "usage_records",
     "workspace_provisioning",

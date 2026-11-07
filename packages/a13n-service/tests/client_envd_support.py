@@ -52,6 +52,9 @@ async def check_retained_client_process(service, worker, runs_kit, model, agent,
             # The start was admitted but its response/identity checkpoint was lost.
             row.shell = {**row.shell, "process": {**row.shell["process"], "identity": None}}
     if recover:
+        # Recovery addresses the existing process, not its former cwd. It must
+        # neither probe files under cancelled authority nor replay the command.
+        workspace.rename(workspace.with_name(workspace.name + "-moved"))
         successor = replace(worker)
         try:
             await successor.executions.recover("client-successor")

@@ -16,6 +16,7 @@ class ShellTarget(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     resource_id: str
+    mount_name: str
     identity: ProcessIdentity
     backing_identity: str | None
 

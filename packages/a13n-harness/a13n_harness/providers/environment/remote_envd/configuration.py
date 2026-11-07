@@ -6,13 +6,13 @@ from a13n_envd_client.eip.v1.models import AbsoluteEIPPath
 from a13n_envd_client.http import normalize_http_endpoint
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
-from a13n_harness.environment.envd_policy import EnvdBoundaryRequirement, EnvdEgressConfiguration
+from a13n_harness.environment.envd_policy import EnvdBoundaryRequirement, EnvdSessionConfiguration
 
 
 class RemoteEnvdEnvironmentConfiguration(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    egress: EnvdEgressConfiguration | None = None
+    session: EnvdSessionConfiguration = Field(default_factory=EnvdSessionConfiguration)
     expected_boundary: EnvdBoundaryRequirement | None = None
     working_directory: AbsoluteEIPPath | None = None
     required_methods: tuple[str, ...] = Field(default=(), max_length=128)

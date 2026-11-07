@@ -5,10 +5,10 @@ from __future__ import annotations
 import asyncio
 import os
 from contextlib import AbstractAsyncContextManager
+from functools import partial
 from pathlib import Path
 
 from a13n_harness.environment.attachments import DeviceEIPSessionSource
-from a13n_harness.environment.envd_policy import resolve_egress
 from a13n_harness.environment.errors import EnvironmentProviderError, provider_error
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
 from a13n_harness.environment.models import (
@@ -19,7 +19,7 @@ from a13n_harness.environment.models import (
     EnvironmentState,
 )
 from a13n_harness.environment.operations import EnvironmentOperations
-from a13n_harness.environment.session_recovery import EnvdSessionRecovery
+from a13n_harness.environment.session_recovery import EnvdSessionBorrower
 from a13n_harness.providers.environment._backend import ExecutionBackend
 from a13n_harness.providers.environment._backend_factory import BackendFactory
 from a13n_harness.providers.environment._local_identity import local_backing_identity
@@ -53,7 +53,7 @@ def _construct(
     environment_id: str,
     state: EnvironmentState | None,
     runtime: LocalEnvdProviderRuntime | None,
-    session_recovery: EnvdSessionRecovery | None = None,
+    session_recovery: EnvdSessionBorrower | None = None,
 ) -> ExecutionBackend:
     if not isinstance(configuration, LocalEnvdEnvironmentConfiguration):
         raise TypeError("Local Envd requires LocalEnvdEnvironmentConfiguration")
@@ -81,7 +81,7 @@ LOCAL_ENVD = EnvironmentProviderDefinition(
 
 
 class LocalEnvdExecution(ExecutionBackend):
-    """One fixed-cwd Session on a shared Device; a borrowed daemon runtime outlives it."""
+    """One directory view of a Host-owned Session on a shared native Device."""
 
     def __init__(
         self,
@@ -89,7 +89,7 @@ class LocalEnvdExecution(ExecutionBackend):
         runtime: LocalEnvdProviderRuntime,
         *,
         environment_id: str,
-        session_recovery: EnvdSessionRecovery | None = None,
+        session_recovery: EnvdSessionBorrower | None = None,
     ) -> None:
         super().__init__(None)
         self._environment_id = environment_id
@@ -135,10 +135,9 @@ class LocalEnvdExecution(ExecutionBackend):
                 session_source=DeviceEIPSessionSource(device, session_recovery=self._session_recovery),
                 execution_id=execution_id,
                 device_id=device.descriptor.device_id,
-                path_style=device.descriptor.path_style,
                 working_directory=self._configuration.working_directory,
                 required_methods=frozenset(self._configuration.required_methods),
-                egress=await resolve_egress(self._configuration.egress, self._runtime.credential_resolver),
+                configuration=partial(self._configuration.session.resolve, self._runtime.credential_resolver),
                 expected_boundary=self._configuration.expected_boundary,
             )
             self._bound = await scope.__aenter__()

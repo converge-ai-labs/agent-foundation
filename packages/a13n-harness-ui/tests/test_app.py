@@ -645,9 +645,15 @@ async def test_environment_run_service_prepares_sandbox_with_canonical_host_path
         prepared.append(environment)
 
     monkeypatch.setattr(LocalEnvdExecution, "open", prepare_local_envd)
-    root = _write_configuration(tmp_path)
+    config_root = tmp_path / "config"
+    config_root.mkdir()
+    root = _write_configuration(config_root)
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    project = config_root / "projects" / "main.yaml"
+    project.write_text(project.read_text().replace((config_root / "workspace").as_posix(), workspace.as_posix()))
     root.write_text(f"{root.read_text()}  environment_profile: {SANDBOX_PROFILE_ID}\n")
-    agent = tmp_path / "agents" / "assistant.yaml"
+    agent = config_root / "agents" / "assistant.yaml"
     agent.write_text(f"{agent.read_text()}capabilities:\n  - capability: skills\n")
     user_skills = tmp_path / "home" / ".agents" / "skills"
 
@@ -665,7 +671,7 @@ async def test_environment_run_service_prepares_sandbox_with_canonical_host_path
         executor._environments._user_skills_root = user_skills
         reconstructor = executor._environments._reconstructor
 
-        async def local_envd_runtime(_roots, **kwargs) -> LocalEnvdProviderRuntime:
+        async def local_envd_runtime(*, profile=None) -> LocalEnvdProviderRuntime:
             return LocalEnvdProviderRuntime(
                 executable=(tmp_path / "a13n-envd").resolve(),
                 allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(parent=tmp_path),
@@ -685,7 +691,8 @@ async def test_environment_run_service_prepares_sandbox_with_canonical_host_path
             mcp_server_ids=stored.configuration.mcp_server_ids,
         )
         published = await executor._compositions.publish(source, selection)
-        plan = await executor._environments.prepare(published.value)
+        admitted = await executor._environments.admit(published.value)
+        plan = await executor._environments.prepare(admitted)
         project_root = Path(published.value.project_roots[0]).as_posix()
 
         assert tuple(plan.environments) == (
@@ -743,7 +750,8 @@ async def test_environment_run_service_directly_prepares_and_finalizes_native_pr
             mcp_server_ids=stored.configuration.mcp_server_ids,
         )
         published = await executor._compositions.publish(source, selection)
-        plan = await executor._environments.prepare(published.value)
+        admitted = await executor._environments.admit(published.value)
+        plan = await executor._environments.prepare(admitted)
         project_root = Path(published.value.project_roots[0]).as_posix()
         async with plan.runtime.bind(
             thread_id=stored.thread_id,

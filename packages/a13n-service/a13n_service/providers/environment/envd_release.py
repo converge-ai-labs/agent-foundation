@@ -2,7 +2,7 @@
 
 import shlex
 
-VERSION = "0.6.0"
+VERSION = "0.7.0"
 TARGET = "x86_64-unknown-linux-gnu"
 
 # Executed by the guest's Python, not by the Service event loop. Keep the whole

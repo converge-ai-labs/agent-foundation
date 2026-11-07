@@ -57,6 +57,7 @@ class RemoteEnvdExecution(ExecutionBackend):
         self._provider_key = provider_key
         self._environment_id = environment_id
         self._environment = dict(environment or {})
+        self._working_directory = working_directory
         self._session_context = session_context
         self._entered_session = False
         self._bound: EIPEnvironmentSession | None = None
@@ -94,7 +95,7 @@ class RemoteEnvdExecution(ExecutionBackend):
             self._entered_session = True
             self._bound = EIPEnvironmentSession(
                 session=binding.session,
-                path_style=binding.device_descriptor.path_style,
+                working_directory=self._working_directory,
                 provider_key=self.provider_key,
                 environment_id=self.environment_id,
                 execution_id=execution_id,

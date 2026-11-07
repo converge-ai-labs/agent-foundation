@@ -374,6 +374,16 @@ class ThreadUsageRecord(Base):
     observed_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
 
 
+class EnvdSessionBindingRecord(Base):
+    __tablename__ = "envd_session_binding"
+
+    thread_id: Mapped[str] = mapped_column(
+        String(80), ForeignKey("thread.thread_id", ondelete="CASCADE"), primary_key=True
+    )
+    device_key: Mapped[str] = mapped_column(String(200), primary_key=True)
+    head_json: Mapped[str] = mapped_column(Text, nullable=False)
+
+
 class EnvironmentBindingRecord(Base):
     __tablename__ = "environment_binding"
     __table_args__ = (

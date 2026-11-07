@@ -30,6 +30,7 @@ def _observation(stdout, stderr=b""):
     return ShellObservation(
         target=ShellTarget(
             resource_id="process-test",
+            mount_name="workspace",
             backing_identity="backing",
             identity=ProcessIdentity(
                 provider_type="local",

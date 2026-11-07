@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory
 from a13n_harness.environment.models import EnvironmentDescriptor, EnvironmentState
-from a13n_harness.environment.session_recovery import EnvdSessionRecovery
+from a13n_harness.environment.session_recovery import EnvdSessionBorrower
 from a13n_harness.providers.environment._backend import ExecutionBackend
 from a13n_harness.providers.environment._backend_factory import BackendFactory
 from a13n_harness.providers.environment.configuration import EnvironmentProviderConfiguration
@@ -36,7 +36,7 @@ def _construct_execution(
     environment_id: str,
     state: EnvironmentState | None,
     runtime: object | None,
-    session_recovery: EnvdSessionRecovery | None = None,
+    session_recovery: EnvdSessionBorrower | None = None,
 ) -> ExecutionBackend:
     """Direct Local needs no collaborator: the host filesystem is the target."""
     del runtime

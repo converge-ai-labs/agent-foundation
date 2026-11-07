@@ -104,7 +104,8 @@ async def test_fixed_identity_recovery_and_cleanup_without_replay(peer):
     assert "http-token" in command.call_args.args[1][-1]
     assert events[0]["expected_device_id"] == "env-fixed"
     assert events[0]["session_recovery"] is recovery
-    assert events[0]["working_directory"] == "/workspace"
+    assert "working_directory" not in events[0]
+    assert events[0].get("configuration") is None
     assert "computer.observe" in events[0]["required_methods"]
     assert events[1:] == ["closed"]
     closed.assert_awaited_once()

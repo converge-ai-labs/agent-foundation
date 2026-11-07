@@ -33,6 +33,7 @@ def _observation(data=b"ready"):
     return ShellObservation(
         target=ShellTarget(
             resource_id="process-test",
+            mount_name="workspace",
             backing_identity=None,
             identity=ProcessIdentity(
                 provider_type="local", environment_id="env-test", generation="one", process_id="native"

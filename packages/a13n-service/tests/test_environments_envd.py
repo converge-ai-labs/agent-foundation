@@ -347,9 +347,33 @@ async def test_a_registered_target_serves_runs_and_keeps_its_token_sealed(  # ty
     assert TOKEN not in caplog.text
 
 
-async def test_every_connection_expects_the_registered_device(service, daemons) -> None:  # type: ignore[no-untyped-def]
+async def test_every_connection_expects_the_registered_device(service, daemons, scripted_model, runs_kit) -> None:
+    from a13n_service.infra.db import transaction
+    from a13n_service.runs.environments.bindings import SessionHead
+    from a13n_service.runs.environments.tables import ThreadSessionBindingRow
+
+    await runs_kit.pause_sweeps(service)
     laptop = await daemons.start("device-laptop")
     environment_id = (await register(service, laptop.endpoint)).json()["id"]
+    agent = await runs_kit.create_agent(service, scripted_model)
+    scripted_model.call("shell_exec", {"command": "pwd"}, call_id="before-rotation")
+    scripted_model.say("Connected.")
+    submitted = await runs_kit.start_thread(
+        service,
+        agent,
+        "Open the original Session",
+        environments=[{"name": "workspace", "environment_id": environment_id}],
+    )
+    await (await runs_kit.attempt(service))
+    thread_id = submitted["thread"]["id"]
+
+    async def binding():
+        async with transaction(service.runtime.storage) as db:
+            row = await db.get_one(ThreadSessionBindingRow, (thread_id, environment_id, "default"))
+            return row.version, row.configuration, SessionHead.model_validate(row.head)
+
+    before_version, before_policy, before = await binding()
+    assert before.session is not None
 
     # The endpoint now reaches another daemon: the next connection is refused, and so is re-verifying it.
     await daemons.stop(laptop)
@@ -381,6 +405,17 @@ async def test_every_connection_expects_the_registered_device(service, daemons) 
     adapter = await execution_connector(service.runtime, await target(service, environment_id))
     async with await adapter.open():
         pass
+    assert await binding() == (before_version, before_policy, before)
+    scripted_model.call("shell_exec", {"command": "pwd"}, call_id="after-rotation")
+    scripted_model.say("Reconnected.")
+    follow = await runs_kit.submit(service, thread_id, runs_kit.message(agent, "Use the moved Device"))
+    assert follow.status_code == 201, follow.text
+    await (await runs_kit.attempt(service))
+    assert (await runs_kit.get_run(service, follow.json()["run"]["id"]))["status"] == "completed"
+    version, policy, after = await binding()
+    assert (version, policy, after.version) == (before_version, before_policy, before.version)
+    assert after.session.descriptor.session_id != before.session.descriptor.session_id
+    assert after.session.descriptor.generation != before.session.descriptor.generation
 
 
 async def test_reverse_device_real_envd_export_cross_replica_query_and_revocation(service, tmp_path, monkeypatch):
@@ -541,7 +576,7 @@ async def test_thread_sessions_survive_attempt_and_run_replacement(
     from a13n_envd_client import EIPSession
     from a13n_harness.environment.session_recovery import EnvdSessionState
     from a13n_service.infra.db import transaction
-    from a13n_service.runs.environments.tables import ThreadExecutionContextRow
+    from a13n_service.runs.environments.tables import ThreadSessionBindingRow
     from a13n_service.runs.seal import LeaseExpirer
     from a13n_service.runs.tables import AttemptRow, RunRow
     from sqlalchemy import update
@@ -565,9 +600,8 @@ async def test_thread_sessions_survive_attempt_and_run_replacement(
 
     async def saved_state():
         async with transaction(service.runtime.storage) as session:
-            row = await session.get_one(ThreadExecutionContextRow, submitted["thread"]["id"])
-            assert len(row.sessions) == 1
-            return EnvdSessionState.model_validate(next(iter(row.sessions.values())))
+            row = await session.get_one(ThreadSessionBindingRow, (submitted["thread"]["id"], environment_id, "default"))
+            return EnvdSessionState.model_validate(row.head["session"])
 
     first = await runs_kit.attempt(service)
     await scripted_model.request()
@@ -687,11 +721,11 @@ async def test_retained_shell_recovers_original_process_after_run_seals(
     original_identity = shell["process"]["identity"]
     if outcome == "complete":
         from a13n_service.runs.claim import claim
-        from a13n_service.runs.environments.tables import ThreadExecutionContextRow
+        from a13n_service.runs.environments.tables import ThreadSessionBindingRow
 
         async with transaction(service.runtime.storage) as session:
-            context = await session.get_one(ThreadExecutionContextRow, thread_id)
-            original_sessions = context.sessions
+            binding = await session.get_one(ThreadSessionBindingRow, (thread_id, environment_id, "default"))
+            original_head = binding.head
         scripted_model.say("The original command is still running.")
         following = await runs_kit.submit(
             service,
@@ -711,9 +745,9 @@ async def test_retained_shell_recovers_original_process_after_run_seals(
         assert (await runs_kit.get_run(service, following.json()["run"]["id"]))["status"] == "completed"
         assert any(record.execution_id == execution_id for record in service.runtime.executions.active)
         async with transaction(service.runtime.storage) as session:
-            context = await session.get_one(ThreadExecutionContextRow, thread_id)
-            assert original_sessions.items() <= context.sessions.items()
-            assert len(context.sessions) == len(original_sessions) + 1
+            binding = await session.get_one(ThreadSessionBindingRow, (thread_id, environment_id, "default"))
+            # Run configuration no longer partitions Session identity.
+            assert binding.head == original_head
 
     # A scanner must not rotate the lease of its own still-detaching supervisor.
     async with transaction(service.runtime.storage) as session:
@@ -722,6 +756,33 @@ async def test_retained_shell_recovers_original_process_after_run_seals(
     assert await claim_shells(service.runtime, worker_id="worker-test", limit=10) == []
     assert service.runtime.executions.yield_shell(execution_id)
     await service.runtime.executions.join()
+    if outcome == "complete":
+        from a13n_service.infra.db import lock
+        from a13n_service.infra.errors import ServiceError
+        from a13n_service.runs.environments import bindings
+        from a13n_service.runs.environments.schemas import SessionConfiguration
+        from a13n_service.runs.schemas import EnvironmentMount
+        from a13n_service.runs.tables import ThreadRow
+
+        # No active Run or live supervisor remains. The unfinished durable tool
+        # still pins its original binding even after its worker lease expires.
+        with pytest.raises(ServiceError) as busy:
+            async with transaction(service.runtime.storage) as session:
+                thread = await lock(session, ThreadRow, thread_id)
+                await bindings.admit(
+                    session,
+                    thread,
+                    [
+                        EnvironmentMount(
+                            name="workspace",
+                            environment_id=environment_id,
+                            session_configuration=SessionConfiguration(working_directory=str(daemon.workspace)),
+                        )
+                    ],
+                )
+        assert busy.value.details["reason"] == "environment_busy"
+        assert busy.value.details["execution_id"] == execution_id
+        assert busy.value.details["run_id"] is None
     if outcome == "cancel":
         async with transaction(service.runtime.storage) as session:
             row = await session.get_one(ToolExecutionRow, execution_id)
@@ -735,11 +796,11 @@ async def test_retained_shell_recovers_original_process_after_run_seals(
     if outcome == "session_gone":
         from a13n_envd_client import HttpTransport
         from a13n_harness.environment.session_recovery import EnvdSessionState
-        from a13n_service.runs.environments.tables import ThreadExecutionContextRow
+        from a13n_service.runs.environments.tables import ThreadSessionBindingRow
 
         async with transaction(service.runtime.storage) as session:
-            context = await session.get_one(ThreadExecutionContextRow, thread_id)
-            saved = EnvdSessionState.model_validate(next(iter(context.sessions.values())))
+            binding = await session.get_one(ThreadSessionBindingRow, (thread_id, environment_id, "default"))
+            saved = EnvdSessionState.model_validate(binding.head["session"])
         async with await EIPDeviceConnection.initialize(
             HttpTransport(daemon.endpoint, TOKEN), expected_device_id=daemon.device_id
         ) as device:
@@ -990,87 +1051,97 @@ async def test_thread_context_cache_restores_bindings_and_fences_checkpoints(
 
     from a13n_envd_client import EIPDeviceConnection, HttpTransport
     from a13n_envd_client.eip.v1 import SessionConfiguration
-    from a13n_harness import RunConfiguration
-    from a13n_harness.environment.session_recovery import EnvdSessionState
     from a13n_service.infra.db import transaction
     from a13n_service.runs.attempts import LeaseLost
     from a13n_service.runs.claim import claim
     from a13n_service.runs.environments.contexts import Contexts
     from a13n_service.runs.environments.tables import ThreadExecutionContextRow
     from a13n_service.runs.schemas import EnvironmentMount
-    from a13n_service.runs.tables import AttemptRow
+    from a13n_service.runs.tables import AttemptRow, RunRow
 
     await runs_kit.pause_sweeps(service)
     daemon = await daemons.start("device-context-cache")
     environment_id = (await register(service, daemon.endpoint)).json()["id"]
     agent = await runs_kit.create_agent(service, scripted_model)
-    submitted = await runs_kit.start_thread(service, agent, "Claim a context")
+    submitted = await runs_kit.start_thread(
+        service,
+        agent,
+        "Claim a context",
+        environments=[
+            {"name": "workspace", "environment_id": environment_id, "working_directory": str(daemon.workspace)}
+        ],
+    )
     (lease,) = await claim(service.runtime, worker_id="worker-context", worker_build="test", limit=1)
     assert lease.thread_id == submitted["thread"]["id"]
-    mount = EnvironmentMount(name="workspace", environment_id=environment_id, working_directory=str(daemon.workspace))
-    configuration = RunConfiguration()
+    async with transaction(service.runtime.storage) as db:
+        run = await db.get_one(RunRow, lease.run_id)
+        mount = EnvironmentMount.model_validate(run.environment_mounts[0])
     contexts = Contexts(service.runtime)
-    recovery = await contexts.get(lease, mount, configuration)
-    assert await contexts.get(lease, mount, configuration) is recovery
-    changed_mount = await contexts.get(lease, mount.model_copy(update={"name": "other"}), configuration)
-    changed_policy = await contexts.get(lease, mount, RunConfiguration(allowed_hosts=frozenset({"example.com"})))
-    assert changed_mount is not recovery and changed_mount.state is None
-    assert changed_policy is not recovery and changed_policy.state is None
+    recovery = await contexts.get(lease, mount)
+    assert (await contexts.get(lease, mount)).owner is recovery.owner
+    changed_mount = await contexts.get(lease, mount.model_copy(update={"name": "other", "working_directory": "/tmp"}))
+    assert changed_mount.owner is recovery.owner
+    independent = await contexts.get(lease, mount.model_copy(update={"session_binding": "independent"}))
+    assert independent.owner is not recovery.owner
+    options = dict(
+        target=environment_id,
+        expected_device_id=daemon.device_id,
+        configuration=SessionConfiguration(),
+        required_methods=frozenset(),
+        expected_boundary=None,
+    )
     async with await EIPDeviceConnection.initialize(
         HttpTransport(daemon.endpoint, TOKEN), expected_device_id=daemon.device_id
     ) as device:
-        native = await device.open_session(configuration=SessionConfiguration(working_directory=str(daemon.workspace)))
-        saved = EnvdSessionState(
-            target=daemon.endpoint, descriptor=native.descriptor, working_directory=str(daemon.workspace)
-        )
-        assert recovery.checkpoint is not None
-        async with transaction(service.runtime.storage) as session:
-            row = await session.get_one(ThreadExecutionContextRow, lease.thread_id)
-            row.sessions = {f"obsolete-{index}": saved.model_dump(mode="json") for index in range(20)}
-        await recovery.checkpoint(saved)
-        async with transaction(service.runtime.storage) as session:
-            row = await session.get_one(ThreadExecutionContextRow, lease.thread_id)
-            assert len(row.sessions) == 1
-            assert list(row.sessions.values()) == [saved.model_dump(mode="json")]
-        await native.close()
-    reference = weakref.ref(recovery)
-    del recovery
+        async with recovery.borrow(device, **options) as native:
+            async with changed_mount.borrow(device, **options) as shared:
+                assert shared is native
+        saved = recovery.owner.recovery.state
+        assert saved is not None
+    reference = weakref.ref(recovery.owner)
+    del recovery, changed_mount
     gc.collect()
     assert reference() is None
-    restored = await contexts.get(lease, mount, configuration)
-    assert restored.state == saved
-    assert restored.checkpoint is not None
+    restored = await contexts.get(lease, mount)
+    async with await EIPDeviceConnection.initialize(
+        HttpTransport(daemon.endpoint, TOKEN), expected_device_id=daemon.device_id
+    ) as device:
+        async with restored.borrow(device, **options) as native:
+            assert native.session_id == saved.descriptor.session_id
+        saved = restored.owner.recovery.state
+        assert saved is not None
     async with transaction(service.runtime.storage) as session:
         row = await session.get_one(ThreadExecutionContextRow, lease.thread_id)
         row.generation += 1
     with pytest.raises(LeaseLost):
-        await restored.checkpoint(saved)
-    current = await contexts.get(lease, mount, configuration)
-    assert current is not restored and current.state == saved
-    assert current.checkpoint is not None
+        await restored.owner._checkpoint(saved)
+    current = await contexts.get(lease, mount)
+    assert current.owner is not restored.owner
+    current.owner._head = await current.owner._read(mount)
     async with transaction(service.runtime.storage) as session:
         attempt = await session.get_one(AttemptRow, lease.attempt_id)
         attempt.lease_expires_at = attempt.created_at
     with pytest.raises(LeaseLost):
-        await current.checkpoint(saved)
+        await current.owner._checkpoint(saved)
     async with transaction(service.runtime.storage) as session:
         row = await session.get_one(ThreadExecutionContextRow, lease.thread_id)
         row.worker_id = "worker-replacement"
     with pytest.raises(LeaseLost):
-        await contexts.get(lease, mount, configuration)
+        await contexts.get(lease, mount)
 
 
 async def test_thread_context_refreshes_on_control_takeover_and_rejects_stale_publication(
     service, daemons, scripted_model, runs_kit
 ):
     from a13n_envd_client import EIPDeviceConnection, HttpTransport
-    from a13n_harness import RunConfiguration
+    from a13n_envd_client.eip.v1 import SessionConfiguration
     from a13n_service.infra.db import transaction
     from a13n_service.runs.attempts import LeaseLost
     from a13n_service.runs.claim import claim
     from a13n_service.runs.environments.contexts import Contexts, binding_key
-    from a13n_service.runs.environments.tables import ThreadExecutionContextRow
+    from a13n_service.runs.environments.tables import ThreadSessionBindingRow
     from a13n_service.runs.schemas import EnvironmentMount
+    from a13n_service.runs.tables import RunRow
 
     await runs_kit.pause_sweeps(service)
     daemon = await daemons.start("device-control-takeover")
@@ -1079,38 +1150,43 @@ async def test_thread_context_refreshes_on_control_takeover_and_rejects_stale_pu
     mounts = [{"name": "workspace", "environment_id": environment_id, "working_directory": str(daemon.workspace)}]
     await runs_kit.start_thread(service, agent, "Claim a context", environments=mounts)
     (lease,) = await claim(service.runtime, worker_id="worker-context", worker_build="test", limit=1)
-    mount = EnvironmentMount.model_validate(mounts[0])
-    configuration = RunConfiguration()
+    async with transaction(service.runtime.storage) as db:
+        run = await db.get_one(RunRow, lease.run_id)
+        mount = EnvironmentMount.model_validate(run.environment_mounts[0])
     first_control = Contexts(service.runtime)
-    cached = await first_control.get(lease, mount, configuration)
+    cached = await first_control.get(lease, mount)
     second_control = Contexts(service.runtime)
-    original = await second_control.for_control(lease.thread_id, lease.run_id, lease.worker_id, environment_id)
+    original = await second_control.for_control(
+        lease.thread_id, lease.run_id, lease.worker_id, environment_id, mount.name
+    )
     async with await EIPDeviceConnection.initialize(
         HttpTransport(daemon.endpoint, TOKEN), expected_device_id=daemon.device_id
     ) as device:
         options = dict(
             target=environment_id,
             expected_device_id=daemon.device_id,
-            working_directory=str(daemon.workspace),
+            configuration=SessionConfiguration(),
             required_methods=frozenset(),
             expected_boundary=None,
         )
         async with original.borrow(device, **options) as session:
             session_id = session.session_id
-        assert cached.state is None
-        restored = await first_control.for_control(lease.thread_id, lease.run_id, lease.worker_id, environment_id)
-        assert restored is cached
+        assert cached.owner.recovery.state is None
+        restored = await first_control.for_control(
+            lease.thread_id, lease.run_id, lease.worker_id, environment_id, mount.name
+        )
+        assert restored.owner is cached.owner
         async with restored.borrow(device, **options) as current:
             assert current.session_id == session_id
-            assert original.state is not None
-            assert current.descriptor.owner_epoch > original.state.descriptor.owner_epoch
-            assert original.checkpoint is not None
+            saved_original = original.owner.recovery.state
+            assert saved_original is not None
+            assert current.descriptor.owner_epoch > saved_original.descriptor.owner_epoch
             with pytest.raises(LeaseLost):
-                await original.checkpoint(original.state)
+                await original.owner._checkpoint(saved_original)
             async with transaction(service.runtime.storage) as db:
-                row = await db.get_one(ThreadExecutionContextRow, lease.thread_id)
-                saved = row.sessions[binding_key(mount, configuration)]
-                assert saved["descriptor"]["owner_epoch"] == current.descriptor.owner_epoch
+                row = await db.get_one(ThreadSessionBindingRow, (lease.thread_id, *binding_key(mount)))
+                saved = row.head
+                assert saved["session"]["descriptor"]["owner_epoch"] == current.descriptor.owner_epoch
             await current.close()
 
 
@@ -1689,3 +1765,337 @@ async def test_managed_outbound_uses_existing_identity_and_executes_without_http
             if process.returncode is None:
                 process.terminate()
             await asyncio.wait_for(process.communicate(), 5)
+
+
+async def test_named_session_bindings_share_views_and_replace_atomically(service, daemons, scripted_model, runs_kit):
+    from a13n_envd_client import EIPDeviceConnection, HttpTransport
+    from a13n_envd_client.errors import EIPMethodError
+    from a13n_service.infra.db import transaction
+    from a13n_service.runs.environments.bindings import SessionHead
+    from a13n_service.runs.environments.tables import ThreadSessionBindingRow
+
+    await runs_kit.pause_sweeps(service)
+    daemon = await daemons.start("device-session-views")
+    left, right = daemon.workspace / "left", daemon.workspace / "right"
+    left.mkdir()
+    right.mkdir()
+    environment_id = (await register(service, daemon.endpoint)).json()["id"]
+    agent = await runs_kit.create_agent(service, scripted_model)
+    mounts = [
+        {"name": "workspace", "environment_id": environment_id, "working_directory": str(left)},
+        {"name": "right", "environment_id": environment_id, "working_directory": str(right)},
+        {
+            "name": "independent",
+            "environment_id": environment_id,
+            "session_binding": "independent",
+            "session_configuration": {"working_directory": str(right)},
+            "working_directory": str(right),
+        },
+    ]
+
+    def script():
+        for name in ("workspace", "right", "independent"):
+            scripted_model.call("shell_exec", {"alias": name, "command": "pwd > location"}, call_id=f"call-{name}")
+        scripted_model.say("Both directory views and the independent Session executed.")
+
+    script()
+    submitted = await runs_kit.start_thread(service, agent, "Use three views", environments=mounts)
+    thread_id = submitted["thread"]["id"]
+    await (await runs_kit.attempt(service))
+    assert (await runs_kit.get_run(service, submitted["run"]["id"]))["status"] == "completed"
+    assert (left / "location").read_text().strip() == str(left)
+    assert (right / "location").read_text().strip() == str(right)
+
+    async def heads():
+        async with transaction(service.runtime.storage) as db:
+            from sqlalchemy import select
+
+            rows = await db.scalars(
+                select(ThreadSessionBindingRow).where(ThreadSessionBindingRow.thread_id == thread_id)
+            )
+            return {(row.environment_id, row.name): SessionHead.model_validate(row.head) for row in rows}
+
+    first = await heads()
+    key, other = (environment_id, "default"), (environment_id, "independent")
+    assert set(first) == {key, other}
+    assert first[key].session.descriptor.session_id != first[other].session.descriptor.session_id
+    binding_path = f"{service.api}/threads/{thread_id}/session-bindings/{environment_id}/default"
+    current = await service.client.get(binding_path)
+    assert current.status_code == 200, current.text
+    changed = await service.client.put(
+        binding_path,
+        headers={"if-match": current.headers["etag"]},
+        json={"configuration": {"working_directory": str(left)}},
+    )
+    assert changed.status_code == 200, changed.text
+    assert changed.json()["version"] == current.json()["version"] + 1
+    assert changed.headers["etag"] != current.headers["etag"]
+    stale = await service.client.put(
+        binding_path, headers={"if-match": current.headers["etag"]}, json={"configuration": {}}
+    )
+    assert stale.status_code == 412, stale.text
+    assert await heads() == first  # Desired edits do not mutate the accepted Session.
+
+    script()
+    next_run = await runs_kit.submit(
+        service,
+        thread_id,
+        runs_kit.message(
+            agent,
+            "Use the changed Session",
+            options={
+                "environment": {"mode": "existing", "environment_id": environment_id, "working_directory": str(left)}
+            },
+        ),
+    )
+    assert next_run.status_code == 201, next_run.text
+    # A later desired edit cannot replace a binding used by this accepted Run.
+    current = await service.client.get(binding_path)
+    changed = await service.client.put(
+        binding_path, headers={"if-match": current.headers["etag"]}, json={"configuration": {}}
+    )
+    assert changed.status_code == 200, changed.text
+    # Inbox submission would steer the existing Run, not admit another one.
+    # Exercise replacement at the acceptance boundary under its owning Thread lock.
+    from a13n_service.infra.db import lock
+    from a13n_service.infra.errors import ServiceError
+    from a13n_service.runs.environments import bindings
+    from a13n_service.runs.environments.schemas import SessionConfiguration
+    from a13n_service.runs.schemas import EnvironmentMount
+    from a13n_service.runs.tables import ThreadRow
+
+    with pytest.raises(ServiceError) as refused:
+        async with transaction(service.runtime.storage) as db:
+            thread = await lock(db, ThreadRow, thread_id)
+            assert thread is not None
+            await bindings.admit(
+                db,
+                thread,
+                [
+                    EnvironmentMount(
+                        name="workspace", environment_id=environment_id, session_configuration=SessionConfiguration()
+                    )
+                ],
+            )
+    assert refused.value.details["reason"] == "environment_busy"
+    assert refused.value.details["run_id"] == next_run.json()["run"]["id"]
+    assert refused.value.details["execution_id"] is None
+    await (await runs_kit.attempt(service))
+    second = await heads()
+    assert second[key].version == 2
+    assert second[key].session.descriptor.session_id != first[key].session.descriptor.session_id
+    assert second[other].session.descriptor.session_id == first[other].session.descriptor.session_id
+
+    script()
+    third_run = await runs_kit.submit(service, thread_id, runs_kit.message(agent, "Return to the original policy"))
+    assert third_run.status_code == 201, third_run.text
+    await (await runs_kit.attempt(service))
+    third = await heads()
+    assert third[key].version == 3
+    assert third[key].session.descriptor.session_id not in {
+        first[key].session.descriptor.session_id,
+        second[key].session.descriptor.session_id,
+    }
+    assert third[other].session.descriptor.session_id == first[other].session.descriptor.session_id
+    async with await EIPDeviceConnection.initialize(
+        HttpTransport(daemon.endpoint, TOKEN), expected_device_id=daemon.device_id
+    ) as device:
+        for old in (first[key], second[key]):
+            with pytest.raises(EIPMethodError) as error:
+                await device.attach_session(old.session.descriptor, owner_epoch=100)
+            assert error.value.error.data.error_type.value == "not_initialized"
+
+
+async def test_session_head_io_is_independent_of_binding_history(service, daemons, scripted_model, runs_kit):
+    from a13n_envd_client import EIPDeviceConnection, HttpTransport
+    from a13n_envd_client.eip.v1 import SessionConfiguration as NativeConfiguration
+    from a13n_service.infra.db import lock, transaction
+    from a13n_service.infra.errors import ServiceError
+    from a13n_service.runs.claim import claim
+    from a13n_service.runs.environments import bindings
+    from a13n_service.runs.environments.contexts import Contexts
+    from a13n_service.runs.environments.schemas import SessionConfiguration
+    from a13n_service.runs.environments.tables import ThreadExecutionContextRow, ThreadSessionBindingRow
+    from a13n_service.runs.schemas import EnvironmentMount
+    from a13n_service.runs.tables import RunRow, ThreadRow
+    from sqlalchemy import event
+
+    await runs_kit.pause_sweeps(service)
+    daemon = await daemons.start("device-binding-history")
+    environment_id = (await register(service, daemon.endpoint)).json()["id"]
+    agent = await runs_kit.create_agent(service, scripted_model)
+    scripted_model.say("Ready to select a Session.")
+    submitted = await runs_kit.start_thread(service, agent, "Claim without a directory view")
+    await (await runs_kit.attempt(service))
+    thread_id = submitted["thread"]["id"]
+    mount = EnvironmentMount(name="workspace", environment_id=environment_id)
+    async with transaction(service.runtime.storage) as db:
+        thread = await lock(db, ThreadRow, thread_id)
+        # These durable bindings are not selected by any current directory view.
+        for index in range(128):
+            row = await bindings.ensure(db, thread, environment_id, f"history-{index}")
+            row.head = bindings.SessionHead(version=1, configuration=SessionConfiguration()).model_dump(mode="json")
+        (first,) = await bindings.admit(db, thread, [mount])
+    loaded = []
+
+    def observe(row, context):
+        loaded.append((row.environment_id, row.name))
+
+    event.listen(ThreadSessionBindingRow, "load", observe)
+    try:
+        async with transaction(service.runtime.storage) as db:
+            thread = await lock(db, ThreadRow, thread_id)
+            changed = mount.model_copy(
+                update={"session_configuration": SessionConfiguration(working_directory=str(daemon.workspace))}
+            )
+            (second,) = await bindings.admit(db, thread, [changed])
+            assert second.session_version == first.session_version + 1
+        with pytest.raises(ServiceError) as stale:
+            async with transaction(service.runtime.storage) as db:
+                thread = await lock(db, ThreadRow, thread_id)
+                await bindings.admit(db, thread, [first])
+        assert stale.value.details["reason"] == "session_binding_changed"
+        async with transaction(service.runtime.storage) as db:
+            thread = await lock(db, ThreadRow, thread_id)
+            (third,) = await bindings.admit(db, thread, [mount])
+            assert third.session_version == second.session_version + 1
+        submitted = await runs_kit.submit(
+            service,
+            thread_id,
+            runs_kit.message(
+                agent,
+                "Use the current Session",
+                options={"environment": {"mode": "existing", "environment_id": environment_id}},
+            ),
+        )
+        assert submitted.status_code == 201, submitted.text
+        (lease,) = await claim(service.runtime, worker_id="worker-history", worker_build="test", limit=1)
+        async with transaction(service.runtime.storage) as db:
+            run = await db.get_one(RunRow, lease.run_id)
+            captured = EnvironmentMount.model_validate(run.environment_mounts[0])
+            assert captured.session_version == third.session_version
+        owner = await Contexts(service.runtime).get(lease, captured)
+        async with await EIPDeviceConnection.initialize(
+            HttpTransport(daemon.endpoint, TOKEN), expected_device_id=daemon.device_id
+        ) as device:
+            async with owner.borrow(
+                device,
+                target=environment_id,
+                expected_device_id=daemon.device_id,
+                configuration=NativeConfiguration(),
+                required_methods=frozenset(),
+                expected_boundary=None,
+            ) as native:
+                assert native.session_id
+        assert loaded and set(loaded) == {(environment_id, "default")}
+        assert "sessions" not in ThreadExecutionContextRow.__table__.columns
+    finally:
+        event.remove(ThreadSessionBindingRow, "load", observe)
+    async with transaction(service.runtime.storage) as db:
+        untouched = await db.get_one(ThreadSessionBindingRow, (thread_id, environment_id, "history-127"))
+        assert untouched.head == bindings.SessionHead(version=1, configuration=SessionConfiguration()).model_dump(
+            mode="json"
+        )
+
+
+@pytest.mark.parametrize("failure", ["close_before", "close_after", "open_rejected"])
+async def test_session_replacement_recovers_from_durable_head(
+    service, daemons, scripted_model, runs_kit, monkeypatch, failure
+):
+    from a13n_envd_client import EIPDeviceConnection, EIPSession, HttpTransport
+    from a13n_envd_client.eip.v1 import SessionConfiguration as NativeConfiguration
+    from a13n_envd_client.errors import EIPMethodError
+    from a13n_service.infra.db import transaction
+    from a13n_service.runs.claim import claim
+    from a13n_service.runs.environments.bindings import SessionHead
+    from a13n_service.runs.environments.contexts import Contexts
+    from a13n_service.runs.environments.tables import ThreadSessionBindingRow
+    from a13n_service.runs.schemas import EnvironmentMount
+    from a13n_service.runs.tables import RunRow
+
+    await runs_kit.pause_sweeps(service)
+    daemon = await daemons.start("device-retirement")
+    environment_id = (await register(service, daemon.endpoint)).json()["id"]
+    agent = await runs_kit.create_agent(service, scripted_model)
+    scripted_model.call("shell_exec", {"command": "pwd"}, call_id="call-retirement")
+    scripted_model.say("The original Session is ready.")
+    submitted = await runs_kit.start_thread(
+        service, agent, "Open a Session", environments=[{"name": "workspace", "environment_id": environment_id}]
+    )
+    await (await runs_kit.attempt(service))
+    thread_id = submitted["thread"]["id"]
+
+    async def read_head():
+        async with transaction(service.runtime.storage) as db:
+            row = await db.get_one(ThreadSessionBindingRow, (thread_id, environment_id, "default"))
+            return SessionHead.model_validate(row.head)
+
+    first = await read_head()
+    assert first.session is not None
+    destination = daemon.workspace / "replacement"
+    if failure != "open_rejected":
+        destination.mkdir()
+    path = f"{service.api}/threads/{thread_id}/session-bindings/{environment_id}/default"
+    current = await service.client.get(path)
+    changed = await service.client.put(
+        path,
+        headers={"if-match": current.headers["etag"]},
+        json={"configuration": {"working_directory": str(destination)}},
+    )
+    assert changed.status_code == 200, changed.text
+    submitted = await runs_kit.submit(service, thread_id, runs_kit.message(agent, "Replace the Session"))
+    assert submitted.status_code == 201, submitted.text
+    (lease,) = await claim(service.runtime, worker_id="worker-retirement", worker_build="test", limit=1)
+    async with transaction(service.runtime.storage) as db:
+        run = await db.get_one(RunRow, lease.run_id)
+        captured = EnvironmentMount.model_validate(run.environment_mounts[0])
+    borrower = await Contexts(service.runtime).get(lease, captured)
+    async with await EIPDeviceConnection.initialize(
+        HttpTransport(daemon.endpoint, TOKEN), expected_device_id=daemon.device_id
+    ) as device:
+        arguments = dict(
+            target=environment_id,
+            expected_device_id=daemon.device_id,
+            configuration=NativeConfiguration(),
+            required_methods=frozenset(),
+            expected_boundary=None,
+        )
+        original_close = EIPSession.close
+        attempted = []
+
+        async def uncertain_close(session):
+            attempted.append(session.session_id)
+            if failure == "close_after":
+                await original_close(session)
+            raise TimeoutError("Injected lost close response")
+
+        with monkeypatch.context() as patch:
+            if failure != "open_rejected":
+                patch.setattr(EIPSession, "close", uncertain_close)
+            with pytest.raises(EIPMethodError if failure == "open_rejected" else TimeoutError):
+                async with borrower.borrow(device, **arguments):
+                    pytest.fail("A failed replacement must not publish a successor")
+        failed = await read_head()
+        assert failed.version == 2
+        assert failed.session is not None
+        assert failed.session.descriptor.session_id == first.session.descriptor.session_id
+        if failure == "open_rejected":
+            assert failed.session.status == "retired"
+            assert failed.session_version == 2
+            destination.mkdir()
+        else:
+            assert attempted == [first.session.descriptor.session_id]
+            assert failed.session.status == "retiring"
+            assert failed.session_version == 1
+        # A fresh owner has no in-memory recovery hints; PostgreSQL alone drives retry.
+        restored = await Contexts(service.runtime).get(lease, captured)
+        async with restored.borrow(device, **arguments) as successor:
+            assert successor.session_id != first.session.descriptor.session_id
+            assert successor.descriptor.working_directory == str(destination)
+        recovered = await read_head()
+        assert recovered.version == recovered.session_version == 2
+        assert recovered.session is not None and recovered.session.status == "active"
+        assert recovered.session.descriptor.session_id == successor.session_id
+        with pytest.raises(EIPMethodError) as gone:
+            await device.attach_session(first.session.descriptor, owner_epoch=100)
+        assert gone.value.error.data.error_type.value == "not_initialized"

@@ -4475,7 +4475,7 @@ export interface components {
         EgressMode: "inherit" | "deny" | "controlled";
         /**
          * EnvdBoundaryRequirement
-         * @description A selected remote boundary, not authority to change that Device.
+         * @description An expected effective Session boundary.
          */
         EnvdBoundaryRequirement: {
             sandbox: components["schemas"]["SandboxPolicy"];
@@ -4513,6 +4513,21 @@ export interface components {
             source: components["schemas"]["EnvironmentCredentialSource"];
             /** Inject Hosts */
             inject_hosts: string[];
+        };
+        /**
+         * EnvdSessionConfiguration
+         * @description Immutable Session selection; credential references are resolved at acquisition.
+         */
+        EnvdSessionConfiguration: {
+            /** Working Directory */
+            working_directory?: string | null;
+            sandbox?: components["schemas"]["SandboxPolicy"] | null;
+            egress_mode?: components["schemas"]["EgressMode"] | null;
+            egress?: components["schemas"]["EnvdEgressConfiguration"] | null;
+            lifecycle?: components["schemas"]["SessionLifecyclePolicy"] | null;
+            /** Commands */
+            commands?: boolean | null;
+            isolation?: components["schemas"]["SessionIsolation"] | null;
         };
         /** EnvdStatus */
         EnvdStatus: {
@@ -4602,7 +4617,7 @@ export interface components {
              * Format: eip-absolute-path
              */
             working_directory: string;
-            egress?: components["schemas"]["EnvdEgressConfiguration"] | null;
+            session?: components["schemas"]["EnvdSessionConfiguration"];
             expected_boundary?: components["schemas"]["EnvdBoundaryRequirement"] | null;
             /** Alias */
             alias: string;
@@ -5856,6 +5871,14 @@ export interface components {
         };
         /** @enum {string} */
         NativeInputMediaKind: "image" | "video" | "audio";
+        /** NativeIsolation */
+        NativeIsolation: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            mode: "native";
+        };
         /** NetworkInterfaceMetrics */
         NetworkInterfaceMetrics: {
             /** Identity */
@@ -6581,6 +6604,14 @@ export interface components {
             header: string;
             /** Description */
             description: string;
+        };
+        SessionIsolation: components["schemas"]["NativeIsolation"] | components["schemas"]["VmIsolation"];
+        /** SessionLifecyclePolicy */
+        SessionLifecyclePolicy: {
+            /** Idle Timeout Ms */
+            idle_timeout_ms: number;
+            /** Max Lifetime Ms */
+            max_lifetime_ms?: number | null;
         };
         /** SetupPreview */
         SetupPreview: {
@@ -8193,6 +8224,45 @@ export interface components {
              * @default 10485760
              */
             max_video_bytes?: number;
+        };
+        /**
+         * VmBackend
+         * @enum {string}
+         */
+        VmBackend: "boxlite" | "microsandbox";
+        /** VmIsolation */
+        VmIsolation: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            mode: "vm";
+            backend: components["schemas"]["VmBackend"];
+            /** Image */
+            image: string;
+            /** Cpus */
+            cpus: number;
+            /** Memory Mib */
+            memory_mib: number;
+            /**
+             * Mounts
+             * @default []
+             */
+            mounts?: components["schemas"]["VmMount"][];
+        };
+        /** VmMount */
+        VmMount: {
+            /**
+             * Source
+             * Format: eip-absolute-path
+             */
+            source: string;
+            /**
+             * Target
+             * Format: eip-absolute-path
+             */
+            target: string;
+            access: components["schemas"]["GrantAccess"];
         };
         /** VncExecutable */
         VncExecutable: {

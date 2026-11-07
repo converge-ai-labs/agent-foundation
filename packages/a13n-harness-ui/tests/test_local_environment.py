@@ -108,9 +108,7 @@ def _profile(profile_id):
     )
 
 
-async def test_manager_shares_full_control_but_never_merges_sandbox_grants(tmp_path, monkeypatch):
-    import sys
-
+async def test_manager_shares_launcher_without_merging_session_grants(tmp_path, monkeypatch):
     from a13n_harness_ui.envd_runtime import EnvdRuntimeManager
 
     manager = EnvdRuntimeManager(settings=EnvdRuntimeSettings(), runtime_parent=tmp_path / "runtimes")
@@ -119,16 +117,23 @@ async def test_manager_shares_full_control_but_never_merges_sandbox_grants(tmp_p
     for root in roots:
         root.mkdir()
     try:
-        first = await manager.runtime((roots[0],), profile=_profile("environment-envd"))
-        second = await manager.runtime((roots[1],), profile=_profile("environment-envd"))
+        first = await manager.runtime(profile=_profile("environment-envd"))
+        second = await manager.runtime(profile=_profile("environment-sandbox"))
         assert first is second
         assert first.running_device() is None
-        if sys.platform in {"linux", "darwin", "win32"}:
-            first_sandbox = await manager.runtime((roots[0],), profile=_profile("environment-sandbox"))
-            second_sandbox = await manager.runtime((roots[1],), profile=_profile("environment-sandbox"))
-            assert first_sandbox is not second_sandbox
-            assert [grant.path for grant in first_sandbox.configuration.sandbox.grants] == [local_envd_path(roots[0])]
-            assert [grant.path for grant in second_sandbox.configuration.sandbox.grants] == [local_envd_path(roots[1])]
+        for root in roots:
+            thread_files = root / "thread-files"
+            (thread_files / "tmp").mkdir(parents=True)
+            profile = await manager.session_profile(
+                _profile("environment-sandbox"), (root,), thread_files_root=thread_files
+            )
+            assert await manager.runtime(profile=profile) is first
+            session = LocalEnvdProfileConfiguration.model_validate(profile.provider_configuration).session.session
+            assert session.sandbox.mode == "restricted"
+            assert local_envd_path(root) in {grant.path for grant in session.sandbox.grants}
+            assert local_envd_path(roots[1] if root == roots[0] else roots[0]) not in {
+                grant.path for grant in session.sandbox.grants
+            }
     finally:
         await manager.close()
     assert not (await manager.status()).instances
@@ -142,7 +147,7 @@ async def test_desktop_requires_host_opt_in_before_resolving_executable(tmp_path
     resolve = AsyncMock()
     monkeypatch.setattr(manager, "resolve_executable", resolve)
     with pytest.raises(EnvironmentLifecycleError, match="Enable Computer Use"):
-        await manager.runtime((tmp_path,), profile=_profile("environment-desktop"))
+        await manager.runtime(profile=_profile("environment-desktop"))
     resolve.assert_not_awaited()
     assert not (tmp_path / "runtimes").exists()
 
@@ -165,7 +170,7 @@ async def test_explicit_start_keeps_app_owned_runtime_and_stop_clears_it(tmp_pat
     monkeypatch.setattr(manager, "resolve_executable", AsyncMock(return_value=tmp_path / "a13n-envd"))
     probe = AsyncMock(return_value=None)
     monkeypatch.setattr(envd_runtime, "probe_local_envd_runtime", probe)
-    owner = await manager.runtime((tmp_path,), profile=_profile("environment-envd"))
+    owner = await manager.runtime(profile=_profile("environment-envd"))
     device = AsyncMock()
     device.is_closed = False
     acquire = AsyncMock(return_value=device)
@@ -174,7 +179,7 @@ async def test_explicit_start_keeps_app_owned_runtime_and_stop_clears_it(tmp_pat
     acquire.assert_awaited_once()
     assert checked.ready
     owner = probe.call_args.args[0]
-    assert owner is await manager.runtime((tmp_path,), profile=_profile("environment-envd"))
+    assert owner is await manager.runtime(profile=_profile("environment-envd"))
     close = AsyncMock(wraps=owner.close)
     monkeypatch.setattr(owner, "close", close)
     assert (await manager.status()).readiness == (checked,)
@@ -182,7 +187,7 @@ async def test_explicit_start_keeps_app_owned_runtime_and_stop_clears_it(tmp_pat
     close.assert_awaited_once()
     status = await manager.status()
     assert status.instances == () and status.readiness == ()
-    assert await manager.runtime((tmp_path,), profile=_profile("environment-envd")) is not owner
+    assert await manager.runtime(profile=_profile("environment-envd")) is not owner
     await manager.close()
 
 
@@ -191,7 +196,7 @@ async def test_explicit_start_replaces_only_a_disconnected_owner(tmp_path, monke
 
     manager = envd_runtime.EnvdRuntimeManager(settings=EnvdRuntimeSettings(), runtime_parent=tmp_path / "runtimes")
     monkeypatch.setattr(manager, "resolve_executable", AsyncMock(return_value=tmp_path / "a13n-envd"))
-    owner = await manager.runtime((tmp_path,), profile=_profile("environment-envd"))
+    owner = await manager.runtime(profile=_profile("environment-envd"))
     device = AsyncMock()
     device.is_closed = True
     monkeypatch.setattr(owner, "acquire_device", AsyncMock(return_value=device))
@@ -203,7 +208,7 @@ async def test_explicit_start_replaces_only_a_disconnected_owner(tmp_path, monke
         assert (await manager.start("environment-envd", tmp_path)).ready
         replacement = probe.call_args.args[0]
         assert replacement is not owner
-        assert replacement is await manager.runtime((tmp_path,), profile=_profile("environment-envd"))
+        assert replacement is await manager.runtime(profile=_profile("environment-envd"))
         close.assert_awaited_once()
     finally:
         await manager.close()
@@ -220,12 +225,12 @@ async def test_restart_replaces_owned_runtime_and_clears_old_readiness(tmp_path,
     monkeypatch.setattr(envd_runtime, "probe_local_envd_runtime", AsyncMock(return_value=None))
     try:
         assert (await manager.start("environment-envd", tmp_path)).ready
-        owner = await manager.runtime((tmp_path,), profile=_profile("environment-envd"))
+        owner = await manager.runtime(profile=_profile("environment-envd"))
         close = AsyncMock(wraps=owner.close)
         monkeypatch.setattr(owner, "close", close)
         assert (await manager.start("environment-envd", tmp_path, restart=True)).ready
         close.assert_awaited_once()
-        assert await manager.runtime((tmp_path,), profile=_profile("environment-envd")) is not owner
+        assert await manager.runtime(profile=_profile("environment-envd")) is not owner
         assert len((await manager.status()).readiness) == 1
     finally:
         await manager.close()

@@ -1,4 +1,7 @@
 {
+  "Get Session Binding": "获取 Envd 会话绑定",
+  "Update Session Binding": "更新 Envd 会话绑定",
+  "Tenant-authored Session policy; Service credentials are not process-environment references.": "租户编写的 Envd 会话策略；Service 凭据不是进程环境变量引用。",
   "Delay automatic retirement for at most one day; null clears the hold.": "将自动回收最多延后一天；null 清除调试保留。",
   "Get Kubernetes Environment Diagnostics": "获取 Kubernetes 环境诊断",
   "Get Kubernetes Environment Logs": "获取 Kubernetes 环境日志",

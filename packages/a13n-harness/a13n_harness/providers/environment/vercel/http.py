@@ -7,7 +7,7 @@ from pydantic import SecretStr
 
 from a13n_harness.environment.attachments import EIPSessionBinding
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
-from a13n_harness.environment.session_recovery import EnvdSessionRecovery
+from a13n_harness.environment.session_recovery import EnvdSessionBorrower
 from a13n_harness.providers.environment.native.configuration import NamedTargetState
 from a13n_harness.providers.environment.native.errors import failure
 from a13n_harness.providers.environment.remote_envd.configuration import (
@@ -31,7 +31,7 @@ class HttpReference(VercelReference):
 
 @asynccontextmanager
 async def http_session(
-    reference: VercelReference, *, session_recovery: EnvdSessionRecovery | None = None
+    reference: VercelReference, *, session_recovery: EnvdSessionBorrower | None = None
 ) -> AsyncIterator[EIPSessionBinding]:
     try:
         session_id = await reference.running_session()
@@ -68,7 +68,6 @@ async def http_session(
             async with runtime.open_session(
                 expected_device_id=reference.owner,
                 session_recovery=session_recovery,
-                working_directory="/workspace",
                 required_methods=REQUIRED_METHODS
                 | (frozenset({"computer.describe", "computer.observe"}) if reference.config.desktop else frozenset()),
             ) as session:
@@ -78,7 +77,7 @@ async def http_session(
 
 
 def http_execution(
-    reference: VercelReference, *, session_recovery: EnvdSessionRecovery | None = None
+    reference: VercelReference, *, session_recovery: EnvdSessionBorrower | None = None
 ) -> RemoteEnvdExecution:
     reference.require_target()
     assert reference.state is not None

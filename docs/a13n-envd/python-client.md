@@ -17,7 +17,7 @@ uv add a13n-envd-client
 
 The client and native daemon share an Envd release version. Upgrade them together, including the daemon in custom images and remote endpoints. Recreate environments that still retain an older image. For source examples, use the repository lockfile and matching source daemon.
 
-Initialization does not negotiate or compare protocol versions. Cross-release interoperability is best effort through the actual schemas and advertised methods, without legacy protocol branches. The generated Python namespace remains `eip.v1`, and the binary data-frame profile remains `1`. Harness, Harness UI and Service require client `>=0.6.0,<0.7.0` for publication.
+Initialization does not negotiate or compare protocol versions. Cross-release interoperability is best effort through the actual schemas and advertised methods, without legacy protocol branches. The generated Python namespace remains `eip.v1`, and the binary data-frame profile remains `1`. Harness, Harness UI and Service require client `>=0.7.0,<0.8.0` for publication. Envd `0.7.0` is the deployment baseline; upgrade daemon and client together. Envd `0.6.x` peers are unsupported. The EIP schema identifier remains `0.4` and is not a cross-release compatibility guarantee.
 
 ## Connect to an existing HTTP daemon
 
@@ -28,6 +28,7 @@ import asyncio
 import os
 
 from a13n_envd_client import EIPDeviceConnection, HttpTransport
+from a13n_envd_client.eip.v1 import SessionConfiguration
 
 
 async def main() -> None:
@@ -42,7 +43,9 @@ async def main() -> None:
         info = await device.describe()  # Discovery does not open a Session.
         print(info.device_id, info.default_working_directory)
         async with await device.open_session(
-            working_directory=info.default_working_directory,
+            configuration=SessionConfiguration(
+                working_directory=info.default_working_directory,
+            ),
             required_methods=("file.read_text",),
         ) as session:
             print(session.session_id, session.descriptor.working_directory)
@@ -94,7 +97,7 @@ Initialization also accepts a client name/version, `initialization_timeout=10.0`
 - `descriptor` reads cached Device information; `describe()` fetches a fresh view. Both expose system information, path style, default directory and directory-discovery availability.
 - `metrics()` reads the latest cached sample when `device.metrics` is advertised. It opens no Session and starts no collection; `sample` remains `None` until the first collection completes. See [monitoring and sample semantics](monitoring.md#system-information-and-resource-monitoring).
 - `list_directories(DirectoryListParams(...))` lists one directory level with an absolute path, offset, limit, expected Device ID and generation. It opens no Session.
-- `open_session(working_directory=None, egress=None, lifecycle=None, required_methods=(), readiness_timeout=10.0)` creates a fresh Session. Omitted cwd selects the Device default. Supply `egress` for controlled Devices; other modes reject it. `required_methods` checks compatibility rather than granting permissions.
+- `open_session(configuration=None, required_methods=(), readiness_timeout=10.0)` creates a fresh Session. The client sends an empty configuration when omitted, inheriting launch defaults. Use `SessionConfiguration` to select the cwd, Sandbox, egress mode, lifecycle and command availability within deployment authority. Supply `configuration.egress` exactly when the effective Session mode is controlled; inherit and deny reject it. `required_methods` checks compatibility rather than granting permissions.
 - `attach_session(descriptor, owner_epoch=None)` takes over the exact existing Session before expiry in the same Device generation. The default epoch is the saved descriptor's epoch plus one. Hosts with concurrent recovery owners must allocate and persist a newer epoch under their execution lock. Operations and transfers are not replayed or resumed.
 - `close()` closes locally owned Sessions, then the physical connection.
 
@@ -102,7 +105,7 @@ A Session owns its generated `client`, transfers, commands, output and receipt n
 
 Use `EIPSession.describe()` and `readiness(timeout=10.0)` to inspect the Session, and `open_reader()`, `open_writer()`, `open_output()` or `observe_computer()` for resource helpers. The client maintains keepalive while the Session is open. `close()` and `abort()` leave sibling Sessions and the borrowed carrier intact. `abort()` attempts a bounded close; uncertain operations still need reconciliation.
 
-Pass `SessionLifecyclePolicy(idle_timeout_ms=3600000, max_lifetime_ms=None)` through `lifecycle` to select the Session's immutable retention policy. The Device default is one hour idle with no maximum lifetime. `EIPSession.detach()` stops keepalive, releases the attachment and refreshes the idle deadline while retaining native commands, output and evidence. Save the descriptor before detach for later attachment. Explicit close destroys those resources. A daemon restart or Session expiry makes the old resources unavailable.
+Pass `SessionLifecyclePolicy(idle_timeout_ms=3600000, max_lifetime_ms=None)` through `SessionConfiguration.lifecycle` to select the Session's immutable retention policy. The Device default is one hour idle with no maximum lifetime. `EIPSession.detach()` stops keepalive, releases the attachment and refreshes the idle deadline while retaining native commands, output and evidence. Save the descriptor before detach for later attachment. Explicit close destroys those resources. A daemon restart or Session expiry makes the old resources unavailable.
 
 For an uncertain `process.start` response, use the generated `process_resolve_start` method with `ProcessResolveStartParams(context=..., target_operation_id=...)`. It observes the original start without executing the command again. A successful query returns the original handle and receipt with current process status. Missing evidence remains an unknown outcome.
 

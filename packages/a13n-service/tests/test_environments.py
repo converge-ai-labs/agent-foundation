@@ -32,6 +32,7 @@ from sqlalchemy import select, text
 
 from .environments_support import (
     BACKEND,
+    DEFAULT_SESSION,
     FAKE,
     act,
     backdate,
@@ -133,8 +134,11 @@ async def test_acceptance_freezes_mounts_and_edits_follow_the_thread_version(env
     again = await client.post(mounts, json=body, headers={"if-match": added.headers["etag"]})
     assert again.status_code == 409 and again.json()["error"]["code"] == "already_exists"
     twice = await client.post(mounts, json={**body, "name": "copy"}, headers={"if-match": added.headers["etag"]})
-    assert twice.status_code == 409 and reason(twice.json()) == "already_mounted"
-    removed = await client.delete(f"{mounts}/data", headers={"if-match": added.headers["etag"]})
+    assert twice.status_code == 201, twice.text
+    assert twice.json()["session_binding"] == added.json()["session_binding"] == "default"
+    copy_removed = await client.delete(f"{mounts}/copy", headers={"if-match": twice.headers["etag"]})
+    assert copy_removed.status_code == 204
+    removed = await client.delete(f"{mounts}/data", headers={"if-match": copy_removed.headers["etag"]})
     assert removed.status_code == 204
     assert (await client.delete(f"{mounts}/data", headers={"if-match": removed.headers["etag"]})).status_code == 404
     # The accepted run keeps the set frozen at its acceptance.
@@ -146,9 +150,11 @@ async def test_acceptance_freezes_mounts_and_edits_follow_the_thread_version(env
     await interrupt(env, run["id"])
     next_run = await follow_up(env, thread_id, "use next directory")
     assert next_run.status_code == 201, next_run.text
-    assert {**changed, "permission_ceiling": DEFAULT_MOUNT_PERMISSIONS.model_dump(mode="json")} in next_run.json()[
-        "run"
-    ]["environment_mounts"]
+    assert {
+        **changed,
+        **DEFAULT_SESSION,
+        "permission_ceiling": DEFAULT_MOUNT_PERMISSIONS.model_dump(mode="json"),
+    } in next_run.json()["run"]["environment_mounts"]
     assert (await client.get(f"{env.api}/runs/{run['id']}")).json()["environment_mounts"] == run["environment_mounts"]
 
 
@@ -171,9 +177,11 @@ async def test_a_reserved_sandbox_is_created_by_maintenance_and_mounted_by_a_new
         }
     ]
     submitted = await start(env, environments=mounts)
-    assert submitted["run"]["environment_mounts"] == mounts
+    assert submitted["run"]["environment_mounts"] == [{**mount, **DEFAULT_SESSION} for mount in mounts]
     listing = await client.get(f"{env.api}/threads/{submitted['thread']['id']}/environments")
-    assert listing.json()["items"] == [{**mount, "desktop_enabled": False} for mount in mounts]
+    assert listing.json()["items"] == [
+        {**mount, "session_binding": "default", "desktop_enabled": False} for mount in mounts
+    ]
     assert [item["id"] for item in (await client.get(environments)).json()["items"]] == [sandbox["id"]]
 
     # Initial mounts take the checks of mount edits, and a refused one stores nothing.
@@ -182,11 +190,6 @@ async def test_a_reserved_sandbox_is_created_by_maintenance_and_mounted_by_a_new
     assert (code, body["status"]) == (202, "deleted")
     for initial, status, refusal in (
         ([{"name": "data", "environment_id": sandbox["id"]}] * 2, 409, "already_exists"),
-        (
-            [{"name": "data", "environment_id": sandbox["id"]}, {"name": "copy", "environment_id": sandbox["id"]}],
-            409,
-            "already_mounted",
-        ),
         ([{"name": "data", "environment_id": retired["id"]}], 409, "environment_deleted"),
         ([{"name": "data", "environment_id": f"env_{uuid4().hex}"}], 404, "not_found"),
         ([{"name": "data", "environment_id": sandbox["id"], "working_directory": "/work/../etc"}], 400, None),
@@ -231,6 +234,8 @@ async def test_a_fork_shares_its_origins_mounts_and_adds_its_own(env, scripted_m
         json={
             "name": "data",
             "environment_id": first,
+            "session_binding": "analysis",
+            "session_configuration": {"working_directory": "/analysis"},
             "permission_ceiling": {"operations": ["environment.computer.observe"]},
         },
         headers=runs_kit.if_match(thread),
@@ -254,6 +259,18 @@ async def test_a_fork_shares_its_origins_mounts_and_adds_its_own(env, scripted_m
     assert shared.json()["run"]["environment_mounts"][0]["permission_ceiling"] == {
         "operations": ["environment.computer.observe"]
     }
+    shared_mount = shared.json()["run"]["environment_mounts"][0]
+    assert shared_mount["session_binding"] == "analysis"
+    assert shared_mount["session_configuration"]["working_directory"] == "/analysis"
+    assert shared_mount["session_version"] == 1
+    from a13n_service.runs.environments.tables import ThreadSessionBindingRow
+
+    async with transaction(env.runtime.storage) as db:
+        original = await db.get_one(ThreadSessionBindingRow, (thread["id"], first, "analysis"))
+        copied = await db.get_one(ThreadSessionBindingRow, (shared.json()["thread"]["id"], first, "analysis"))
+        assert original.head is None
+        assert copied.configuration == original.configuration
+        assert copied.head["session"] is None
     primary = [{"name": "workspace", "environment_id": second}]
     assert mounted(await fork("fresh", fresh_environments=True, environments=primary)) == [("workspace", second)]
     clash = await fork("clash", environments=[{"name": "data", "environment_id": second}])
@@ -502,7 +519,8 @@ async def test_each_async_edge_applies_its_own_environment_policy(env, scripted_
         return (await env.client.get(f"{env.api}/threads/{thread_id}/environments")).json()["items"]
 
     assert await mounted(children["researcher"]) == []
-    assert await mounted(children["builder"]) == [{**primary, "desktop_enabled": False}]
+    desired = {key: value for key, value in primary.items() if key not in {"session_version", "session_configuration"}}
+    assert await mounted(children["builder"]) == [{**desired, "desktop_enabled": False}]
     [dedicated] = await mounted(children["tester"])
     assert dedicated["name"] == "workspace" and dedicated["environment_id"] != primary["environment_id"]
 
@@ -2034,3 +2052,20 @@ async def test_retained_failure_does_not_starve_the_maintenance_batch(env):
     await maintain_environments(limited, owner="delete-next")
     assert (await environment(env, other["id"]))["status"] == "deleted"
     assert (await environment(env, failed["id"]))["status"] == "creating"
+
+
+async def test_native_transport_rejects_session_configuration(env):
+    from a13n_service.infra.errors import ServiceError
+    from a13n_service.runs.environments.schemas import SessionConfiguration
+
+    await start(env)
+    [lease] = await claim_run(env.runtime, worker_id="worker-native-session", worker_build="test", limit=1)
+    # The fake provider uses the ordinary native execution mode. Defaults remain valid.
+    async with _open(env, lease) as opened:
+        mount = opened["workspace"].source.mount
+    configured = mount.model_copy(update={"session_configuration": SessionConfiguration(working_directory="/work")})
+    with pytest.raises(ServiceError) as refused:
+        async with _open(env, lease, [configured]):
+            pytest.fail("Native transport silently ignored Session configuration")
+    assert refused.value.code == "conflict"
+    assert refused.value.details["reason"] == "session_configuration_unsupported"

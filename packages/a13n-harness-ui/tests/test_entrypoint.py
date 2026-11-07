@@ -130,13 +130,15 @@ def test_terminal_entrypoint_exits_cleanly_and_restores_pty(tmp_path: Path) -> N
     output = bytearray()
     try:
         startup_deadline = time.monotonic() + _ENTRYPOINT_TIMEOUT_SECONDS
-        while b"Connect a model" not in output and process.poll() is None:
+        # The introductory text appears before discovery; wait for the actual question.
+        ready = b"Enter continue"
+        while ready not in output and process.poll() is None:
             if time.monotonic() >= startup_deadline:
                 break
             readable, _, _ = select.select([master], [], [], 0.1)
             if readable:
                 output.extend(os.read(master, 65536))
-        assert b"Connect a model" in output, output.decode(errors="replace")
+        assert ready in output, output.decode(errors="replace")
 
         os.write(master, b"\x03")
         exit_deadline = time.monotonic() + 10

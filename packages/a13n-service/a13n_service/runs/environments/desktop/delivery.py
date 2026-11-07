@@ -9,10 +9,11 @@ from a13n_service.infra.db import lock, now, transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.outbox import Claim, Handler, settle
 from a13n_service.runs import inbox
+from a13n_service.runs.environments.bindings import SessionHead, binding_key
 from a13n_service.runs.environments.desktop import access, identity
 from a13n_service.runs.environments.desktop.tables import DesktopBlockedRow, DesktopControlRow
 from a13n_service.runs.environments.mounts import interactive_mounts
-from a13n_service.runs.environments.tables import EnvironmentRow, ThreadEnvironmentRow
+from a13n_service.runs.environments.tables import EnvironmentRow, ThreadEnvironmentRow, ThreadSessionBindingRow
 from a13n_service.runs.notices import StaleNotice
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import EnvironmentMount
@@ -56,6 +57,9 @@ async def eligible(session: AsyncSession, runtime: Runtime, registration: Deskto
     mount = EnvironmentMount.model_validate(registration.mount)
     environment = await session.get(EnvironmentRow, mount.environment_id)
     bindings = await interactive_mounts(session, thread) if thread is not None else []
+    binding = await session.get(ThreadSessionBindingRow, (registration.thread_id, *binding_key(mount)))
+    raw_head = binding.head if binding is not None else None
+    head = SessionHead.model_validate(raw_head) if raw_head is not None else None
     current = await now(session)
     if (
         registration.suppressed
@@ -72,7 +76,12 @@ async def eligible(session: AsyncSession, runtime: Runtime, registration: Deskto
         or thread is None
         or thread.archived_at is not None
         or (thread.origin == "child" and thread.current_run_id is None)
-        or mount not in bindings
+        or head is None
+        or head.version != mount.session_version
+        or head.configuration != mount.session_configuration
+        or not any(
+            candidate.model_copy(update={"session_version": mount.session_version}) == mount for candidate in bindings
+        )
     ):
         return None
     scope = WorkspaceScope(origin.organization_id, origin.workspace_id)

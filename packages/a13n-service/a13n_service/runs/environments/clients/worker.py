@@ -19,10 +19,10 @@ from a13n_envd_client import (
 from a13n_envd_client.eip import v1 as eip
 from a13n_envd_client.transport import EIPTransportFrame, TransferDirection
 from a13n_harness.environment.attachments import EIPSessionBinding
-from a13n_harness.environment.envd_policy import EnvdBoundaryRequirement, EnvdEgressConfiguration
+from a13n_harness.environment.envd_policy import EnvdBoundaryRequirement, EnvdSessionConfiguration
 from a13n_harness.environment.execution import EnvironmentConnector
 from a13n_harness.environment.models import EnvironmentError, EnvironmentState
-from a13n_harness.environment.session_recovery import EnvdSessionRecovery
+from a13n_harness.environment.session_recovery import EnvdSessionBorrower
 from a13n_harness.providers.environment.remote_envd.websocket import WEBSOCKET_ENVD, WebSocketEnvdProviderRuntime
 from a13n_harness.tool_execution import current_execution, execution_cleanup_active
 from pydantic import BaseModel, JsonValue, TypeAdapter
@@ -72,7 +72,7 @@ class Target:
         self,
         runtime: Runtime,
         lease: Lease,
-        recovery: EnvdSessionRecovery | None,
+        recovery: EnvdSessionBorrower | None,
         incarnation: Incarnation | None = None,
     ) -> EnvironmentConnector:
         return WEBSOCKET_ENVD.execution_connector(
@@ -100,6 +100,7 @@ class Calls:
         execution = current_execution()
         request = Request(
             environment_id=self.target.environment_id,
+            mount_name=self.target.mount_name,
             epoch=self.online.epoch,
             scope_id=self.scope_id,
             thread_id=self.lease.thread_id,
@@ -207,9 +208,9 @@ class Client:
         required_methods: frozenset[str],
         working_directory: str | None = None,
         timeout: float = 10,
-        egress: EnvdEgressConfiguration | None = None,
+        configuration: EnvdSessionConfiguration | None = None,
         expected_boundary: EnvdBoundaryRequirement | None = None,
-        session_recovery: EnvdSessionRecovery | None = None,
+        session_recovery: EnvdSessionBorrower | None = None,
     ) -> AsyncIterator[EIPSessionBinding]:
         if expected_device_id != self.target.device_id or working_directory != self.target.directory:
             raise EnvironmentError("Client mount selection changed.", code="environment_stale_mount")
@@ -233,10 +234,10 @@ class Client:
             raise EnvironmentError(
                 "Client identity differs from the registered device.", code="environment_stale_mount"
             )
-        if expected_boundary is not None:
-            expected_boundary.check(online.descriptor.boundary)
-        if egress is not None:
-            raise EnvironmentError("Client mounts do not grant an egress policy.", code="environment_denied")
+        if configuration is not None and configuration != EnvdSessionConfiguration():
+            raise EnvironmentError(
+                "Client Session configuration must come from its frozen binding.", code="environment_denied"
+            )
         async with self.runtime.client_routing.replies(self.target.environment_id):
             calls = Calls(self.runtime, self.lease, self.target, online, uuid4().hex, self.incarnation)
             try:
@@ -259,6 +260,8 @@ class Client:
                 online.descriptor.generation,
             ):
                 raise EnvironmentError("Client changed during Session preparation.", code="environment_stale_mount")
+            if expected_boundary is not None:
+                expected_boundary.check(result.descriptor.boundary)
             transport = SessionTransport(calls, result)
             coordinator = RequestCoordinator(
                 transport,

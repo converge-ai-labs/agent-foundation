@@ -1599,6 +1599,30 @@
         "title": "AgentValidate",
         "type": "object"
       },
+      "AllowlistDestinations": {
+        "additionalProperties": false,
+        "properties": {
+          "hosts": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 256,
+            "title": "Hosts",
+            "type": "array"
+          },
+          "mode": {
+            "const": "allowlist",
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "title": "AllowlistDestinations",
+        "type": "object"
+      },
       "Analysis": {
         "properties": {
           "agent_id": {
@@ -6761,6 +6785,21 @@
         "title": "Diagnostics",
         "type": "object"
       },
+      "DisabledSandbox": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "const": "disabled",
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "title": "DisabledSandbox",
+        "type": "object"
+      },
       "DiscoverySource": {
         "additionalProperties": false,
         "properties": {
@@ -7056,6 +7095,32 @@
         },
         "title": "DynamicSubagents",
         "type": "object"
+      },
+      "EgressDestinations": {
+        "discriminator": {
+          "mapping": {
+            "allowlist": "#/components/schemas/AllowlistDestinations",
+            "public": "#/components/schemas/PublicDestinations"
+          },
+          "propertyName": "mode"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/PublicDestinations"
+          },
+          {
+            "$ref": "#/components/schemas/AllowlistDestinations"
+          }
+        ]
+      },
+      "EgressMode": {
+        "enum": [
+          "inherit",
+          "deny",
+          "controlled"
+        ],
+        "title": "EgressMode",
+        "type": "string"
       },
       "EmailChangeConfirm": {
         "additionalProperties": false,
@@ -7537,6 +7602,58 @@
         "title": "EntryView",
         "type": "object"
       },
+      "EnvdEgressConfiguration": {
+        "additionalProperties": false,
+        "properties": {
+          "destinations": {
+            "$ref": "#/components/schemas/EgressDestinations"
+          },
+          "secrets": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/EnvdSecretReference"
+            },
+            "maxItems": 64,
+            "title": "Secrets",
+            "type": "array"
+          }
+        },
+        "required": [
+          "destinations"
+        ],
+        "title": "EnvdEgressConfiguration",
+        "type": "object"
+      },
+      "EnvdSecretReference": {
+        "additionalProperties": false,
+        "properties": {
+          "env": {
+            "maxLength": 128,
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+            "title": "Env",
+            "type": "string"
+          },
+          "inject_hosts": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 256,
+            "minItems": 1,
+            "title": "Inject Hosts",
+            "type": "array"
+          },
+          "source": {
+            "$ref": "#/components/schemas/EnvironmentCredentialSource"
+          }
+        },
+        "required": [
+          "env",
+          "source",
+          "inject_hosts"
+        ],
+        "title": "EnvdSecretReference",
+        "type": "object"
+      },
       "EnvironmentAction": {
         "description": "Exact authorization values in the locked first-party catalog.",
         "enum": [
@@ -7585,6 +7702,27 @@
         ],
         "title": "EnvironmentAction",
         "type": "string"
+      },
+      "EnvironmentCredentialSource": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "environment",
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "name"
+        ],
+        "title": "EnvironmentCredentialSource",
+        "type": "object"
       },
       "EnvironmentFailure": {
         "additionalProperties": false,
@@ -7681,6 +7819,19 @@
                 "environment.state.restore"
               ]
             }
+          },
+          "session_binding": {
+            "default": "default",
+            "title": "Session Binding",
+            "type": "string"
+          },
+          "session_configuration": {
+            "$ref": "#/components/schemas/SessionConfiguration"
+          },
+          "session_version": {
+            "default": 0,
+            "title": "Session Version",
+            "type": "integer"
           },
           "working_directory": {
             "anyOf": [
@@ -8726,6 +8877,22 @@
               ]
             }
           },
+          "session_binding": {
+            "default": "default",
+            "pattern": "^[a-z][a-z0-9-]{0,62}$",
+            "title": "Session Binding",
+            "type": "string"
+          },
+          "session_configuration": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SessionConfiguration"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "working_directory": {
             "anyOf": [
               {
@@ -8797,6 +8964,22 @@
                 "environment.state.restore"
               ]
             }
+          },
+          "session_binding": {
+            "default": "default",
+            "pattern": "^[a-z][a-z0-9-]{0,62}$",
+            "title": "Session Binding",
+            "type": "string"
+          },
+          "session_configuration": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SessionConfiguration"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "working_directory": {
             "anyOf": [
@@ -9575,6 +9758,22 @@
               ]
             }
           },
+          "session_binding": {
+            "default": "default",
+            "pattern": "^[a-z][a-z0-9-]{0,62}$",
+            "title": "Session Binding",
+            "type": "string"
+          },
+          "session_configuration": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SessionConfiguration"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "template_id": {
             "maxLength": 41,
             "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
@@ -9646,6 +9845,22 @@
                 "environment.state.restore"
               ]
             }
+          },
+          "session_binding": {
+            "default": "default",
+            "pattern": "^[a-z][a-z0-9-]{0,62}$",
+            "title": "Session Binding",
+            "type": "string"
+          },
+          "session_configuration": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SessionConfiguration"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "template_id": {
             "maxLength": 41,
@@ -9725,6 +9940,14 @@
         ],
         "title": "GitHubSource",
         "type": "object"
+      },
+      "GrantAccess": {
+        "enum": [
+          "read_only",
+          "read_write"
+        ],
+        "title": "GrantAccess",
+        "type": "string"
       },
       "GrantCreate": {
         "additionalProperties": false,
@@ -14682,6 +14905,22 @@
               ]
             }
           },
+          "session_binding": {
+            "default": "default",
+            "pattern": "^[a-z][a-z0-9-]{0,62}$",
+            "title": "Session Binding",
+            "type": "string"
+          },
+          "session_configuration": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SessionConfiguration"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "working_directory": {
             "anyOf": [
               {
@@ -14794,6 +15033,10 @@
               ]
             }
           },
+          "session_binding": {
+            "title": "Session Binding",
+            "type": "string"
+          },
           "working_directory": {
             "anyOf": [
               {
@@ -14810,9 +15053,25 @@
           "desktop_enabled",
           "name",
           "environment_id",
+          "session_binding",
           "working_directory"
         ],
         "title": "MountView",
+        "type": "object"
+      },
+      "NativeIsolation": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "const": "native",
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "title": "NativeIsolation",
         "type": "object"
       },
       "NetworkInterfaceMetrics": {
@@ -17851,6 +18110,21 @@
         "title": "ProviderUpdate",
         "type": "object"
       },
+      "PublicDestinations": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "const": "public",
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "title": "PublicDestinations",
+        "type": "object"
+      },
       "Query": {
         "additionalProperties": false,
         "properties": {
@@ -18346,6 +18620,34 @@
           "observation"
         ],
         "title": "ResourceObservation",
+        "type": "object"
+      },
+      "RestrictedSandbox": {
+        "additionalProperties": false,
+        "properties": {
+          "full_disk_read": {
+            "default": false,
+            "title": "Full Disk Read",
+            "type": "boolean"
+          },
+          "grants": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/SandboxGrant"
+            },
+            "title": "Grants",
+            "type": "array"
+          },
+          "mode": {
+            "const": "restricted",
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "title": "RestrictedSandbox",
         "type": "object"
       },
       "Resume": {
@@ -20094,6 +20396,42 @@
         "title": "RunView",
         "type": "object"
       },
+      "SandboxGrant": {
+        "additionalProperties": false,
+        "properties": {
+          "access": {
+            "$ref": "#/components/schemas/GrantAccess"
+          },
+          "path": {
+            "format": "eip-absolute-path",
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "access"
+        ],
+        "title": "SandboxGrant",
+        "type": "object"
+      },
+      "SandboxPolicy": {
+        "discriminator": {
+          "mapping": {
+            "disabled": "#/components/schemas/DisabledSandbox",
+            "restricted": "#/components/schemas/RestrictedSandbox"
+          },
+          "propertyName": "mode"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/DisabledSandbox"
+          },
+          {
+            "$ref": "#/components/schemas/RestrictedSandbox"
+          }
+        ]
+      },
       "Schedule": {
         "additionalProperties": false,
         "properties": {
@@ -21061,6 +21399,127 @@
         "title": "ServiceAccountUpdate",
         "type": "object"
       },
+      "SessionBindingUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "configuration": {
+            "$ref": "#/components/schemas/SessionConfiguration"
+          }
+        },
+        "required": [
+          "configuration"
+        ],
+        "title": "SessionBindingUpdate",
+        "type": "object"
+      },
+      "SessionBindingView": {
+        "properties": {
+          "configuration": {
+            "$ref": "#/components/schemas/SessionConfiguration"
+          },
+          "environment_id": {
+            "title": "Environment Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "environment_id",
+          "configuration",
+          "version"
+        ],
+        "title": "SessionBindingView",
+        "type": "object"
+      },
+      "SessionConfiguration": {
+        "additionalProperties": false,
+        "description": "Tenant-authored Session policy; Service credentials are not process-environment references.",
+        "properties": {
+          "commands": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Commands"
+          },
+          "egress": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EnvdEgressConfiguration"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "egress_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EgressMode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "isolation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SessionIsolation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lifecycle": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SessionLifecyclePolicy"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sandbox": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SandboxPolicy"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "working_directory": {
+            "anyOf": [
+              {
+                "format": "eip-absolute-path",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Working Directory"
+          }
+        },
+        "title": "SessionConfiguration",
+        "type": "object"
+      },
       "SessionCreate": {
         "additionalProperties": false,
         "properties": {
@@ -21117,6 +21576,52 @@
           }
         },
         "title": "SessionCreate",
+        "type": "object"
+      },
+      "SessionIsolation": {
+        "discriminator": {
+          "mapping": {
+            "native": "#/components/schemas/NativeIsolation",
+            "vm": "#/components/schemas/VmIsolation"
+          },
+          "propertyName": "mode"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/NativeIsolation"
+          },
+          {
+            "$ref": "#/components/schemas/VmIsolation"
+          }
+        ]
+      },
+      "SessionLifecyclePolicy": {
+        "additionalProperties": false,
+        "properties": {
+          "idle_timeout_ms": {
+            "maximum": 1.8446744073709552e+19,
+            "minimum": 1.0,
+            "title": "Idle Timeout Ms",
+            "type": "integer"
+          },
+          "max_lifetime_ms": {
+            "anyOf": [
+              {
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Lifetime Ms"
+          }
+        },
+        "required": [
+          "idle_timeout_ms"
+        ],
+        "title": "SessionLifecyclePolicy",
         "type": "object"
       },
       "SessionMemorySettings": {
@@ -26098,6 +26603,87 @@
         ],
         "title": "VideoUrlType",
         "type": "string"
+      },
+      "VmBackend": {
+        "enum": [
+          "boxlite",
+          "microsandbox"
+        ],
+        "title": "VmBackend",
+        "type": "string"
+      },
+      "VmIsolation": {
+        "additionalProperties": false,
+        "properties": {
+          "backend": {
+            "$ref": "#/components/schemas/VmBackend"
+          },
+          "cpus": {
+            "maximum": 255.0,
+            "minimum": 1.0,
+            "title": "Cpus",
+            "type": "integer"
+          },
+          "image": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Image",
+            "type": "string"
+          },
+          "memory_mib": {
+            "maximum": 4294967295.0,
+            "minimum": 128.0,
+            "title": "Memory Mib",
+            "type": "integer"
+          },
+          "mode": {
+            "const": "vm",
+            "title": "Mode",
+            "type": "string"
+          },
+          "mounts": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/VmMount"
+            },
+            "title": "Mounts",
+            "type": "array"
+          }
+        },
+        "required": [
+          "mode",
+          "backend",
+          "image",
+          "cpus",
+          "memory_mib"
+        ],
+        "title": "VmIsolation",
+        "type": "object"
+      },
+      "VmMount": {
+        "additionalProperties": false,
+        "properties": {
+          "access": {
+            "$ref": "#/components/schemas/GrantAccess"
+          },
+          "source": {
+            "format": "eip-absolute-path",
+            "title": "Source",
+            "type": "string"
+          },
+          "target": {
+            "format": "eip-absolute-path",
+            "title": "Target",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "target",
+          "access"
+        ],
+        "title": "VmMount",
+        "type": "object"
       },
       "WaitReason": {
         "enum": [
@@ -52790,6 +53376,205 @@
           "effect": "read",
           "group": "execution"
         }
+      }
+    },
+    "/api/v1/threads/{thread_id}/session-bindings/{environment_id}/{name}": {
+      "get": {
+        "operationId": "get_session_binding",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "thread_id",
+            "required": true,
+            "schema": {
+              "title": "Thread Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "environment_id",
+            "required": true,
+            "schema": {
+              "title": "Environment Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionBindingView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Get Session Binding",
+        "tags": [
+          "environments"
+        ],
+        "x-a13n-mcp": true
+      },
+      "put": {
+        "operationId": "update_session_binding",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "thread_id",
+            "required": true,
+            "schema": {
+              "title": "Thread Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "environment_id",
+            "required": true,
+            "schema": {
+              "title": "Environment Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionBindingUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionBindingView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Update Session Binding",
+        "tags": [
+          "environments"
+        ],
+        "x-a13n-mcp": true
       }
     },
     "/api/v1/threads/{thread_id}/stream": {

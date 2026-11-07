@@ -359,7 +359,7 @@ async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, 
         options = options.model_copy(update={"execution": policy.override()})
     parent, lineage = await parent_of(session, thread)
     # An instance reserved here is a new row that a refusal discards with it; freezing checks the mounts are usable.
-    primary_override = source.environment_mount
+    primary_override: EnvironmentMount | MountCreate | None = source.environment_mount
     if options.environment is not None and primary_override is None:
         selection = options.environment
         if selection.mode == "fresh":
@@ -369,9 +369,11 @@ async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, 
             environment_id = instance.id
         else:
             environment_id = selection.environment_id
-        primary_override = EnvironmentMount(
+        primary_override = MountCreate(
             name=PRIMARY,
             environment_id=environment_id,
+            session_binding=selection.session_binding,
+            session_configuration=selection.session_configuration,
             working_directory=selection.working_directory,
             permission_ceiling=selection.permission_ceiling,
         )

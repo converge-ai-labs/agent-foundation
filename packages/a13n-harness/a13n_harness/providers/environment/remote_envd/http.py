@@ -7,6 +7,7 @@ import ssl
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
+from functools import partial
 
 from a13n_envd_client import EIPDeviceConnection, HttpTransport
 from a13n_envd_client.eip.v1 import DeviceDescriptor, DirectoryListParams, DirectoryListResult, ErrorType
@@ -17,14 +18,13 @@ from a13n_harness.environment.attachments import DeviceEIPSessionSource, EIPSess
 from a13n_harness.environment.envd_policy import (
     EnvdBoundaryRequirement,
     EnvdCredentialResolver,
-    EnvdEgressConfiguration,
+    EnvdSessionConfiguration,
     EnvironmentEnvdCredentialResolver,
-    resolve_egress,
 )
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
 from a13n_harness.environment.errors import provider_error
 from a13n_harness.environment.models import EnvironmentState
-from a13n_harness.environment.session_recovery import EnvdSessionRecovery
+from a13n_harness.environment.session_recovery import EnvdSessionBorrower
 from a13n_harness.providers.authentication import Authentication, CredentialMode
 from a13n_harness.providers.environment._backend import ExecutionBackend
 from a13n_harness.providers.environment._backend_factory import BackendFactory
@@ -119,10 +119,9 @@ class HttpEnvdProviderRuntime:
         *,
         expected_device_id: str,
         required_methods: frozenset[str],
-        working_directory: str | None = None,
-        egress: EnvdEgressConfiguration | None = None,
+        configuration: EnvdSessionConfiguration | None = None,
         expected_boundary: EnvdBoundaryRequirement | None = None,
-        session_recovery: EnvdSessionRecovery | None = None,
+        session_recovery: EnvdSessionBorrower | None = None,
         recovery_target: str | None = None,
     ) -> AsyncGenerator[EIPSessionBinding]:
         device = await self.acquire_device(expected_device_id=expected_device_id)
@@ -133,8 +132,7 @@ class HttpEnvdProviderRuntime:
         ).open_session(
             expected_device_id=expected_device_id,
             required_methods=required_methods,
-            working_directory=working_directory,
-            egress=await resolve_egress(egress, self.credential_resolver),
+            configuration=partial((configuration or EnvdSessionConfiguration()).resolve, self.credential_resolver),
             expected_boundary=expected_boundary,
         ) as session:
             yield EIPSessionBinding(session, device.descriptor)
@@ -183,7 +181,7 @@ def _construct(
     environment_id: str,
     state: EnvironmentState | None,
     runtime: HttpEnvdProviderRuntime | None,
-    session_recovery: EnvdSessionRecovery | None = None,
+    session_recovery: EnvdSessionBorrower | None = None,
 ) -> ExecutionBackend:
     if not isinstance(configuration, RemoteEnvdEnvironmentConfiguration) or runtime is None:
         raise TypeError("HTTP Envd requires RemoteEnvdEnvironmentConfiguration and HttpEnvdProviderRuntime")
@@ -197,9 +195,8 @@ def _construct(
         session_context=runtime.open_session(
             expected_device_id=data.device_id,
             session_recovery=session_recovery,
-            working_directory=configuration.working_directory,
             required_methods=REQUIRED_METHODS | frozenset(configuration.required_methods),
-            egress=configuration.egress,
+            configuration=configuration.session,
             expected_boundary=configuration.expected_boundary,
         ),
     )

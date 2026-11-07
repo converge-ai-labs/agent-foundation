@@ -132,7 +132,8 @@ async def test_provider_session_cleanup_without_replay(peer, session_context, ou
             await execute()
     assert peer[0] == "connect"
     assert peer[1]["expected_device_id"] == "env-fixed"
-    assert peer[1]["working_directory"] == "/workspace"
+    assert "working_directory" not in peer[1]
+    assert peer[1].get("configuration") is None
     assert "computer.observe" in peer[1]["required_methods"]
     assert "environment.describe" in peer[1]["required_methods"]
     assert peer[2:] == ["session_closed", "connection_closed"]

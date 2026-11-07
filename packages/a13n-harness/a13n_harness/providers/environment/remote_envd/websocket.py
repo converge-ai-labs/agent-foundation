@@ -7,11 +7,11 @@ from typing import Protocol, runtime_checkable
 from pydantic import BaseModel
 
 from a13n_harness.environment.attachments import EIPSessionBinding
-from a13n_harness.environment.envd_policy import EnvdBoundaryRequirement, EnvdEgressConfiguration
+from a13n_harness.environment.envd_policy import EnvdBoundaryRequirement, EnvdSessionConfiguration
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
 from a13n_harness.environment.errors import provider_error
 from a13n_harness.environment.models import EnvironmentState
-from a13n_harness.environment.session_recovery import EnvdSessionRecovery
+from a13n_harness.environment.session_recovery import EnvdSessionBorrower
 from a13n_harness.providers.environment._backend import ExecutionBackend
 from a13n_harness.providers.environment._backend_factory import BackendFactory
 from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
@@ -40,9 +40,9 @@ class WebSocketSessionSource(Protocol):
         required_methods: frozenset[str],
         working_directory: str | None = None,
         timeout: float = 10,
-        egress: EnvdEgressConfiguration | None = None,
+        configuration: EnvdSessionConfiguration | None = None,
         expected_boundary: EnvdBoundaryRequirement | None = None,
-        session_recovery: EnvdSessionRecovery | None = None,
+        session_recovery: EnvdSessionBorrower | None = None,
     ) -> AbstractAsyncContextManager[EIPSessionBinding]: ...
 
 
@@ -77,7 +77,7 @@ def _construct(
     environment_id: str,
     state: EnvironmentState | None,
     runtime: WebSocketEnvdProviderRuntime | None,
-    session_recovery: EnvdSessionRecovery | None = None,
+    session_recovery: EnvdSessionBorrower | None = None,
 ) -> ExecutionBackend:
     if not isinstance(configuration, RemoteEnvdEnvironmentConfiguration) or runtime is None:
         raise TypeError("WebSocket Envd requires RemoteEnvdEnvironmentConfiguration and WebSocketEnvdProviderRuntime")
@@ -93,7 +93,7 @@ def _construct(
             session_recovery=session_recovery,
             working_directory=configuration.working_directory,
             required_methods=REQUIRED_METHODS | frozenset(configuration.required_methods),
-            egress=configuration.egress,
+            configuration=configuration.session,
             expected_boundary=configuration.expected_boundary,
             timeout=runtime.configuration.connection_timeout,
         ),

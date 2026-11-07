@@ -18,7 +18,7 @@ function policyKey(binding: EnvironmentBinding) {
       permissions: binding.permission_ceiling
         ? [...(binding.permission_ceiling.operations ?? [])].sort()
         : null,
-      egress: binding.egress ?? null,
+      session: binding.session ?? {},
       boundary: binding.expected_boundary ?? null,
     },
     (_, value) =>

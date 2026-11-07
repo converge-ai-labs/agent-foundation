@@ -10,10 +10,14 @@ from a13n_envd_client import (
     EIPSession,
     EIPSessionStateError,
 )
-from a13n_envd_client.eip.v1 import DeviceDescriptor, EgressPolicy, SessionConfiguration
+from a13n_envd_client.eip.v1 import DeviceDescriptor, SessionConfiguration
 
 from a13n_harness.environment.envd_policy import EnvdBoundaryRequirement
-from a13n_harness.environment.session_recovery import EnvdSessionRecovery
+from a13n_harness.environment.session_recovery import (
+    EnvdSessionBorrower,
+    SessionConfigurationSource,
+    resolve_configuration,
+)
 
 
 @dataclass(frozen=True)
@@ -36,8 +40,7 @@ class EIPSessionSource(ABC):
         *,
         expected_device_id: str,
         required_methods: frozenset[str],
-        working_directory: str | None = None,
-        egress: EgressPolicy | None = None,
+        configuration: SessionConfigurationSource | None = None,
         expected_boundary: EnvdBoundaryRequirement | None = None,
     ) -> AbstractAsyncContextManager[EIPSession]: ...
 
@@ -59,7 +62,7 @@ class DeviceEIPSessionSource(EIPSessionSource):
         device: EIPDeviceConnection,
         *,
         target: str | None = None,
-        session_recovery: EnvdSessionRecovery | None = None,
+        session_recovery: EnvdSessionBorrower | None = None,
     ) -> None:
         super().__init__()
         self._device = device
@@ -72,32 +75,31 @@ class DeviceEIPSessionSource(EIPSessionSource):
         *,
         expected_device_id: str,
         required_methods: frozenset[str],
-        working_directory: str | None = None,
-        egress: EgressPolicy | None = None,
+        configuration: SessionConfigurationSource | None = None,
         expected_boundary: EnvdBoundaryRequirement | None = None,
     ) -> AsyncGenerator[EIPSession]:
         self._claim()
         if self._device.descriptor.device_id != expected_device_id:
             raise EIPSessionStateError("Session source belongs to another Device")
-        if expected_boundary is not None:
-            expected_boundary.check(self._device.descriptor.boundary)
+        configuration = configuration or SessionConfiguration()
         if self._recovery is not None:
             async with self._recovery.borrow(
                 self._device,
                 target=self._target,
                 expected_device_id=expected_device_id,
-                working_directory=working_directory,
+                configuration=configuration,
                 required_methods=required_methods,
                 expected_boundary=expected_boundary,
-                egress=egress,
             ) as session:
                 yield session
         else:
             session = await self._device.open_session(
-                configuration=SessionConfiguration(working_directory=working_directory, egress=egress),
+                configuration=await resolve_configuration(configuration),
                 required_methods=tuple(sorted(required_methods)),
             )
             async with session:
+                if expected_boundary is not None:
+                    expected_boundary.check(session.descriptor.boundary)
                 yield session
 
     async def discard(self) -> None:

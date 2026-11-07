@@ -12,7 +12,6 @@ from sqlalchemy import (
     Index,
     PrimaryKeyConstraint,
     String,
-    UniqueConstraint,
     func,
     text,
 )
@@ -32,7 +31,6 @@ class ThreadEnvironmentRow(Base):
     __tablename__ = "thread_environments"
     __table_args__ = (
         PrimaryKeyConstraint("thread_id", "name"),
-        UniqueConstraint("thread_id", "environment_id"),
         ForeignKeyConstraint(["organization_id", "workspace_id"], ["workspaces.organization_id", "workspaces.id"]),
         ForeignKeyConstraint(["workspace_id", "thread_id"], ["threads.workspace_id", "threads.id"]),
         ForeignKeyConstraint(["workspace_id", "environment_id"], ["environments.workspace_id", "environments.id"]),
@@ -52,6 +50,7 @@ class ThreadEnvironmentRow(Base):
     organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"))
     workspace_id: Mapped[str]
     name: Mapped[str]
+    session_binding: Mapped[str] = mapped_column(server_default=text("'default'"))
     working_directory: Mapped[str | None]
     permission_ceiling: Mapped[dict] = mapped_column(
         JSONB, server_default=text("'" + json.dumps({"operations": sorted(FILE_EXECUTION_ACTIONS)}) + "'::jsonb")
@@ -59,8 +58,28 @@ class ThreadEnvironmentRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class ThreadSessionBindingRow(Base):
+    """Desired startup policy and admitted Session head for one logical binding."""
+
+    __tablename__ = "thread_session_bindings"
+    __table_args__ = (
+        PrimaryKeyConstraint("thread_id", "environment_id", "name"),
+        ForeignKeyConstraint(["organization_id", "workspace_id"], ["workspaces.organization_id", "workspaces.id"]),
+        ForeignKeyConstraint(["workspace_id", "thread_id"], ["threads.workspace_id", "threads.id"]),
+        ForeignKeyConstraint(["workspace_id", "environment_id"], ["environments.workspace_id", "environments.id"]),
+    )
+    thread_id: Mapped[str] = mapped_column(String(72))
+    environment_id: Mapped[str] = mapped_column(String(72))
+    name: Mapped[str]
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"))
+    workspace_id: Mapped[str]
+    configuration: Mapped[dict] = mapped_column(JSONB)
+    version: Mapped[int] = mapped_column(BigInteger, server_default=text("1"))
+    head: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
+
+
 class ThreadExecutionContextRow(Base):
-    """Continuing Envd bindings, co-located while execution leases remain live."""
+    """Worker affinity and generation shared by a Thread's Session bindings."""
 
     __tablename__ = "thread_execution_contexts"
     __table_args__ = (
@@ -72,4 +91,3 @@ class ThreadExecutionContextRow(Base):
     workspace_id: Mapped[str]
     worker_id: Mapped[str | None]
     generation: Mapped[int] = mapped_column(BigInteger, server_default=text("0"))
-    sessions: Mapped[dict] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))

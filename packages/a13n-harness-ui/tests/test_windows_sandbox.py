@@ -67,16 +67,17 @@ def test_windows_sandbox_selects_powershell_without_posix_paths(tmp_path, monkey
 
 
 @pytest.mark.parametrize("platform", ["win32", "linux", "darwin"])
-def test_profile_broad_read_default_is_windows_only_and_explicit_launch_stays_strict(monkeypatch, platform):
+def test_profile_broad_read_default_is_windows_only_and_explicit_session_stays_strict(monkeypatch, platform):
     monkeypatch.setattr(environment_adapters, "sys", SimpleNamespace(platform=platform))
     default = environment_adapters.LocalEnvdProfileConfiguration()
-    assert isinstance(default.launch.sandbox, RestrictedSandbox)
-    assert default.launch.sandbox.full_disk_read is (platform == "win32")
+    assert default.launch.full_control
+    assert isinstance(default.session.session.sandbox, RestrictedSandbox)
+    assert default.session.session.sandbox.full_disk_read is (platform == "win32")
     explicit = environment_adapters.LocalEnvdProfileConfiguration.model_validate(
-        {"launch": {"sandbox": {"mode": "restricted", "grants": []}}}
+        {"session": {"session": {"sandbox": {"mode": "restricted", "grants": []}}}}
     )
-    assert isinstance(explicit.launch.sandbox, RestrictedSandbox)
-    assert not explicit.launch.sandbox.full_disk_read
+    assert isinstance(explicit.session.session.sandbox, RestrictedSandbox)
+    assert not explicit.session.session.sandbox.full_disk_read
 
 
 @pytest.fixture

@@ -83,6 +83,7 @@ from a13n_harness_ui.capability_runtime import production_run_bindings
 from a13n_harness_ui.composition import (
     AgentReconstructor,
     CompositionAcceptanceService,
+    PublishedRunComposition,
     ReconstructedAgent,
     ResolvedAgentNode,
     ResolvedRunComposition,
@@ -481,6 +482,9 @@ class HarnessUiSubagentOperator(SubagentOperator):
             title=request.subagent_name,
         )
         # Preparation publishes binding state against this Thread, before execution is admitted.
+        captured = await self._environments.admit(published.value)
+        envelope = await self._store.objects.publish_model(object_kind=ObjectKind.run_composition, value=captured)
+        published = PublishedRunComposition(value=captured, reference=envelope.ref)
         environment = await self._environments.prepare(published.value)
 
         execution_id = _public_id("execution")
@@ -1014,6 +1018,9 @@ class HarnessUiSubagentOperator(SubagentOperator):
             if self._restart is None
             else (RestartPauseCapability(self._restart, thread.thread_id),),
         )
+        captured = await self._environments.admit(published.value)
+        envelope = await self._store.objects.publish_model(object_kind=ObjectKind.run_composition, value=captured)
+        published = PublishedRunComposition(value=captured, reference=envelope.ref)
         environment = await self._environments.prepare(published.value)
         execution_id = _public_id("execution")
         agent_instance_id = _public_id("agent")

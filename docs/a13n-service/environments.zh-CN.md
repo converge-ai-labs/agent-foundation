@@ -226,7 +226,13 @@ Service 验证设备，加密保存 token，并返回 `ready` 实例。使用注
 
 轮换 token 或迁移端点时，向 `PATCH /api/v1/environments/{id}` 提交环境 ETag。修改端点时同时提交 token。Service 验证新连接仍指向同一设备；设备不同时以 `provider_device_mismatch` 拒绝。删除注册会忘记 token，计算机继续运行。
 
-Worker 恢复会尽力复用检查点中的 Envd 会话。会话已关闭或过期时需要新建。恢复不会还原运行内的进程引用或输出观测；重试结果不确定的命令前，先检查当前状态。正常清理会关闭会话，后续运行使用独立会话。
+每个 Thread 在 Environment 上拥有具名 Session 绑定。使用同一绑定的目录挂载跨 Run 共享 Session；不同绑定名在同一 Device 上选择独立 Session。最后清理时分离连接并保留恢复描述符。普通新工作在确认原 Session 丢失后可以新建；保留的 Shell 工作必须恢复原 Session 和原进程，恢复绝不替代或重放命令。端点和 token 轮换保留逻辑绑定。
+
+挂载通过 `session_binding` 选择绑定（默认 `default`），通过 `session_configuration` 初始化启动策略。使用 `GET` 或 `PUT /api/v1/threads/{thread_id}/session-bindings/{environment_id}/{name}?workspace_id=…` 查看或替换期望策略；PUT 使用 Thread ETag 和 `configuration` 对象。启动策略变化后，只有没有已接纳 Run 或未完成保留工具使用该绑定时，接纳才会替换 Session；否则返回 `environment_busy`。目录选择仍属于单个挂载。
+
+### 升级到 Session 绑定
+
+切换 schema 前，完成或取消并收尾所有使用环境挂载的已接纳 Run（包括等待中的 Run），以及全部保留的环境或 Shell 工具。仅 drain 或移交 Worker 不够。停止全部旧 Control 和 Worker，执行迁移，再仅启动新版本。迁移保留注册、provider 状态、文件和历史 Run 捕获，但不会将旧 Session 恢复提示导入新绑定头。新工作打开新 Session。升级期间不要混用新旧进程。
 
 ### 连接客户端电脑
 

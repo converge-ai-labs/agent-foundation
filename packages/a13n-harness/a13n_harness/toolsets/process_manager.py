@@ -155,12 +155,14 @@ class _OwnedProcess:
         self.execution_id = execution_id
         self.resource_id = controller.resource_id(process_id)
         self.identity = controller._entry(process_id).handle.identity
-        self.backing_identity = next(
-            mount.descriptor.backing_identity
+        mount = next(
+            mount
             for mount in controller._environment.snapshot.mounts
             if controller._environment.resolve_path(".", alias=mount.name).execution_id
             == controller._entry(process_id).handle.execution_id
         )
+        self.mount_name = mount.name
+        self.backing_identity = mount.descriptor.backing_identity
         self._condition = asyncio.Condition()
         self._readers = 0
         self._closed = False
@@ -178,7 +180,10 @@ class _OwnedProcess:
         try:
             if control.operation == "describe":
                 return ShellTarget(
-                    resource_id=self.resource_id, identity=self.identity, backing_identity=self.backing_identity
+                    resource_id=self.resource_id,
+                    mount_name=self.mount_name,
+                    identity=self.identity,
+                    backing_identity=self.backing_identity,
                 ).model_dump(mode="json")
             async with self.controller._environment.retained_process_dispatch(
                 self.controller._entry(self.process_id).handle,
@@ -419,6 +424,7 @@ class _ProcessController:
                     ShellObservation(
                         target=ShellTarget(
                             resource_id=resource.resource_id,
+                            mount_name=resource.mount_name,
                             identity=resource.identity,
                             backing_identity=resource.backing_identity,
                         ),

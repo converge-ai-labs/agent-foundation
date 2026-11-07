@@ -4,7 +4,7 @@ sidebarTitle: Configuration and transports
 description: Connect Envd to a Host, choose execution settings, and collect resource metrics.
 ---
 
-Configure Envd at startup to choose its connection, execution account, filesystem isolation and network mode. The Host owns deployment, credentials and daemon lifetime. Each EIP Session then selects a working directory and operations within those settings.
+Configure Envd at startup to choose its connection, execution account, filesystem isolation and network mode. The Host owns deployment, credentials and daemon lifetime. Each EIP Session then selects its working directory, Sandbox, egress mode, lifecycle and command availability through `session.open.configuration`, within the deployment authority. Omitted selections inherit launch defaults.
 
 Use the JSON and environment variables on this page for the daemon. Harness UI YAML and `EnvironmentProviderSpec` configure the Host-side adapter, including required methods and optional Session egress policies with secret references. For a prepared container with account, shell and sudo settings, use the [sandbox image](sandbox.md).
 
@@ -105,7 +105,7 @@ Envd creates an unpredictable private child for this generation and holds an exc
 }
 ```
 
-The default working directory becomes each Session's initial cwd. If omitted, Envd captures its startup cwd. A nonexistent directory fails Session opening rather than daemon startup. File access follows the execution account, Sandbox grants and outer sandbox, not a cwd boundary. Directory discovery reads one bounded level before a Session exists.
+The default working directory becomes the Session's initial cwd when `configuration.working_directory` is omitted or null. If omitted, Envd captures its startup cwd. A nonexistent directory fails Session opening rather than daemon startup. File access follows the execution account, Sandbox grants and outer sandbox, not a cwd boundary. Directory discovery reads one bounded level before a Session exists.
 
 Choose a stable Device ID with `--device-id`, JSON `device_id` or `A13N_ENVD_DEVICE_ID`, or let the installation state directory retain a generated ID. CLI metadata options override JSON. Directory discovery uses JSON or `A13N_ENVD_DIRECTORY_DISCOVERY`. On Windows, bootstrap paths use native spelling; EIP paths use `/C:/...` or `/UNC/server/share/...`.
 
@@ -295,7 +295,7 @@ Use these fields in daemon JSON:
 
 `vm_startup_timeout_ms` defaults to `120000` and must be positive. It sets one Device-wide VM admission budget covering preparation, image acquisition, VM start and worker connection. Use a larger value for slow cold-cache image pulls, for example `{"vm_startup_timeout_ms":600000}` in the `--config` file or `A13N_ENVD_VM_STARTUP_TIMEOUT_MS=600000`. Set the client's Session-open readiness timeout above this budget to receive the daemon's stage-aware timeout error. An in-flight SDK call remains owned after timeout; capacity is released after cleanup settles. This setting does not change native Session admission or Session lifetime.
 
-`idle_timeout_ms` and `max_lifetime_ms` are defaults used when `session.open` omits `lifecycle`. An explicit Session lifecycle overrides these defaults and remains immutable for that Session.
+`idle_timeout_ms` and `max_lifetime_ms` are defaults used when `session.open.configuration.lifecycle` is omitted or null. An explicit Session lifecycle overrides these defaults and remains immutable for that Session.
 
 Default capacity is 128 Sessions, 256 concurrent Device operations, 128 concurrent operations per Session, 4 GiB Device spool, 1 GiB Session spool, 256 MiB per output stream and 2 MiB previews. Keep Session capacities within Device aggregates, previews within stream capacity, and enough spool capacity reserved for both streams.
 

@@ -155,6 +155,7 @@ async def test_eip_readiness_recovers_through_real_adapter_and_aggregate(failure
             session_id="session",
             generation=1,
             working_directory="/",
+            path_style=eip.PathStyle.POSIX,
             available_methods=("file.stat",),
             limits=limits,
             boundary=eip.ExecutionBoundary(

@@ -10,6 +10,7 @@ from a13n_harness import RunConfiguration
 from a13n_harness.environment.advanced import create_environment_runtime
 from a13n_harness.environment.execution import EnvironmentConnector
 from a13n_harness.environment.models import EnvironmentAction, EnvironmentDescriptor, EnvironmentState
+from a13n_harness.environment.process_recovery import ShellExecutionState
 from a13n_harness.environment.providers import EnvironmentRuntime
 from a13n_harness.tool_execution import ToolExecutionLost, execution_cleanup_active
 
@@ -61,8 +62,11 @@ async def prepare(runtime: Runtime, lease: Lease, execution_id: str, mount_name:
         run, execution, _ = await lock_execution(session, lease, execution_id, cleanup=True)
         mounts = [EnvironmentMount.model_validate(value) for value in execution.environment_mounts]
         mount = next((item for item in mounts if item.name == mount_name), None)
-        if mount is None:
+        if mount is None or execution.shell is None:
             raise ToolExecutionLost("The original Shell mount is missing; its command cannot be replayed.")
+        shell = ShellExecutionState.model_validate(execution.shell)
+        if shell.mount_name != mount.name:
+            raise ToolExecutionLost("The original Shell mount selection changed.")
         configuration = RunOptions.model_validate(run.options).configuration or RunConfiguration()
         environment = await session.get(EnvironmentRow, mount.environment_id)
         if environment is None or environment.status != "ready":
@@ -99,7 +103,8 @@ async def prepare(runtime: Runtime, lease: Lease, execution_id: str, mount_name:
                 )
             else:
                 target = managed_target(runtime.keys, environment, provider, handle)
-    recovery = await runtime.environment_contexts.get(lease, mount, configuration)
+    owner = await runtime.environment_contexts.get(lease, mount)
+    recovery = owner.exact(shell.process.session_id)
     connector = (
         target.connector(runtime, lease, recovery)
         if isinstance(target, ClientTarget)

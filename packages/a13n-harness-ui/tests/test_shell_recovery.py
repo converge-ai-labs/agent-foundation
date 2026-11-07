@@ -101,7 +101,8 @@ async def test_owned_daemon_shutdown_loses_old_job_and_reuses_replacement(tmp_pa
         assert lost.record.status == "lost", lost.record
         assert lost.shell.process == original.shell.process
         assert calls == calls_before_restart
-        assert len(opened) == 2 and opened[0] != opened[1]
+        # Exact recovery never creates a replacement for a lost original Session.
+        assert len(opened) == 1
 
         for _ in range(2):
             commands.append("printf replacement-ready")
@@ -378,14 +379,27 @@ async def test_binding_owner_excludes_other_apps_but_shares_local_borrowers(tmp_
             async with asyncio.timeout(10):
                 while not (await owner.device_info(recipe.id)).available:
                     await asyncio.sleep(0.02)
-            first, _ = await service._prepare_device_mount(thread.thread_id, binding)
-            second, _ = await service._prepare_device_mount(thread.thread_id, binding)
+            from a13n_harness_ui.root_execution import _selection
+
+            published = await owner._root_runs._executor._compositions.publish(
+                await owner.current_configuration(), _selection(await owner._threads.get(thread.thread_id))
+            )
+            composition = await service.admit(
+                published.value.model_copy(
+                    update={
+                        "environment_bindings": (binding,),
+                        "default_environment": "build",
+                    }
+                )
+            )
+            first, _ = await service._prepare_device_mount(composition, binding)
+            second, _ = await service._prepare_device_mount(composition, binding)
             async with open_harness_ui_app(settings, configuration_path=path) as observer:
                 other = observer._root_runs._executor._environments
                 async with asyncio.timeout(10):
                     while not (await observer.device_info(recipe.id)).available:
                         await asyncio.sleep(0.02)
-                recovered, _ = await other._prepare_device_mount(thread.thread_id, binding)
+                recovered, _ = await other._prepare_device_mount(composition, binding)
                 assert not service._owners._held and not other._owners._held
                 assert not await owner._store.tool_executions.active()  # No execution lock participates.
                 first_open = await first.environment.open()
@@ -402,14 +416,18 @@ async def test_binding_owner_excludes_other_apps_but_shares_local_borrowers(tmp_
                     assert busy.value.code == "environment_busy"
                     assert second_open.operations.files is not None
                     assert (await second_open.operations.files.list(device_path(root), max_results=10)).entries
-                    # A changed binding receives a separate Session and independent ownership.
+                    # Renaming a directory view preserves Session and ownership identity.
                     changed = binding.model_copy(
                         update={"selection": binding.selection.model_copy(update={"alias": "other"})}
                     )
-                    unrelated, _ = await other._prepare_device_mount(thread.thread_id, changed)
-                    unrelated_open = await unrelated.environment.open()
-                    await unrelated_open.close()
-                    assert len(set(opened)) == 2
+                    renamed, _ = await other._prepare_device_mount(composition, changed)
+                    with pytest.raises(EnvironmentError) as busy:
+                        await renamed.environment.open()
+                    assert busy.value.code == "environment_busy"
+                    local_renamed, _ = await service._prepare_device_mount(composition, changed)
+                    renamed_open = await local_renamed.environment.open()
+                    await renamed_open.close()
+                    assert len(set(opened)) == 1
                 finally:
                     await first_open.close()
                     await second_open.close()
@@ -417,7 +435,7 @@ async def test_binding_owner_excludes_other_apps_but_shares_local_borrowers(tmp_
                 recovered_open = await recovered.environment.open()
                 try:
                     assert attached == [opened[0]]
-                    assert len(opened) == 2
+                    assert len(opened) == 1
                 finally:
                     await recovered_open.close()
                 # The original connector reloads B's newer epoch before taking over again.

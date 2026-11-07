@@ -12,7 +12,7 @@ from a13n_harness.environment.attachments import EIPSessionBinding
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
 from a13n_harness.environment.errors import provider_error
 from a13n_harness.environment.models import EnvironmentError
-from a13n_harness.environment.session_recovery import EnvdSessionRecovery
+from a13n_harness.environment.session_recovery import EnvdSessionBorrower
 from a13n_harness.providers.environment.docker.commands import DockerCommands
 from a13n_harness.providers.environment.docker.errors import engine_errors
 from a13n_harness.providers.environment.docker.shared import DockerReference, _missing
@@ -81,13 +81,12 @@ async def http_runtime(
 
 @asynccontextmanager
 async def http_session(
-    reference: DockerReference, *, session_recovery: EnvdSessionRecovery | None = None
+    reference: DockerReference, *, session_recovery: EnvdSessionBorrower | None = None
 ) -> AsyncGenerator[EIPSessionBinding]:
     async with http_runtime(reference) as runtime:
         async with runtime.open_session(
             expected_device_id=reference.allocation_id,
             session_recovery=session_recovery,
-            working_directory="/workspace",
             required_methods=REQUIRED_METHODS
             | (frozenset({"computer.describe", "computer.observe"}) if reference.config.desktop else frozenset()),
         ) as session:
@@ -120,7 +119,7 @@ async def _credential(reference: DockerReference) -> HttpEnvdCredential:
 
 
 def http_execution(
-    reference: DockerReference, *, session_recovery: EnvdSessionRecovery | None = None
+    reference: DockerReference, *, session_recovery: EnvdSessionBorrower | None = None
 ) -> RemoteEnvdExecution:
     if reference.state is None:
         raise EnvironmentError("Docker target state is required", code="environment_not_found")
