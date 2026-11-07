@@ -105,6 +105,19 @@ async def test_frame_input_then_click_does_not_scroll_during_hover_verification(
             for(const f of document.querySelectorAll('iframe')){f.style.height='100px';f.style.marginBottom='12px';}
             """,
         )
+        # Main-document readiness does not imply that either iframe has loaded.
+        for label in ("Same", "Cross"):
+            ready = json.loads(
+                await call(
+                    "browser_wait",
+                    condition={
+                        "kind": "element",
+                        "target": {"kind": "locator", "name": label + " input"},
+                        "state": "visible",
+                    },
+                )
+            )
+            assert ready["verification"] == "passed", ready
         calls = []
         original_send = backend.browser.send
 
