@@ -10,6 +10,7 @@ from a13n_harness.environment.accessibility import (
     AccessibilityLimits,
     AccessibilityNodeReference,
     AccessibilityRootScope,
+    AccessibilityTree,
 )
 from a13n_harness.environment.accessibility_mutations import AccessibilityMutation
 from a13n_harness.environment.models import ACCESSIBILITY_MUTATION_ACTIONS, ACCESSIBILITY_READ_ACTIONS, EnvironmentError
@@ -174,6 +175,53 @@ async def test_root_results_bind_execution_provenance():
     result = await adapter.roots(AccessibilityRootScope(), limits=AccessibilityLimits())
     assert result.nodes[0].reference == node()
     assert transport.calls[0][1].context.timeout_ms == 5000
+
+
+@pytest.mark.parametrize("identity", ["exec", 'long-"\\\\\n😀' * 40])
+@pytest.mark.parametrize("backend", ["ax", "uia", "atspi"])
+def test_public_byte_reservation_covers_every_reference_occurrence(identity, backend):
+    adapter = EIPAccessibilityOperations(session(requester()), execution_id=identity, generation=identity)
+    reference = eip.AccessibilityNodeReference(backend=backend, backend_epoch="e", node_handle="n")
+    native = eip.AccessibilityTree.model_validate(
+        {
+            "backend": backend,
+            "sampled_at": NOW,
+            "completeness": {
+                "complete": False,
+                "reason": "node_limit",
+                "continuation": {"root": reference, "cursor_handle": "c"},
+            },
+            "nodes": [
+                {
+                    "reference": reference,
+                    "parent": reference,
+                    "children": [reference] * 50,
+                    "native_role": "entry",
+                    "sampled_at": NOW,
+                    "capabilities": [
+                        {
+                            "operation": "do_action",
+                            "supported": "yes",
+                            "source": "native",
+                            "action": {"node": reference, "action_handle": "a", "native_identifier": "click"},
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+    full_size = len(native.model_dump_json().encode("utf-8"))
+    public = AccessibilityTree.model_validate(adapter._bind(native.model_dump(mode="json", exclude_none=True)))
+    # Pick the smallest public budget whose adapted wire budget holds this full
+    # result, including every nested parent, child, action and cursor reference.
+    budget = (
+        full_size * (adapter._reference_bytes + adapter._provenance_bytes) + adapter._reference_bytes - 1
+    ) // adapter._reference_bytes
+    limits = AccessibilityLimits(max_result_bytes=budget)
+    wire = adapter._wire_limits(limits)
+    assert full_size <= wire["max_result_bytes"] < budget
+    assert len(public.model_dump_json().encode("utf-8")) <= budget
+    assert "execution_id" not in wire
 
 
 @pytest.mark.anyio

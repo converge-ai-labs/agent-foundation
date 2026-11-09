@@ -59,6 +59,50 @@ DATA_FRAME_GOLDEN_PATH = REPOSITORY_ROOT / "crates/a13n-envd/protocol/eip/v1/tes
 
 
 @pytest.mark.parametrize(
+    ("union", "payload"),
+    [
+        (wire.AccessibilityRead, {"kind": "text"}),
+        (wire.AccessibilityRead, {"kind": "numeric_value"}),
+        (wire.AccessibilityRead, {"kind": "table"}),
+        (wire.AccessibilityRangeQuery, {"kind": "document"}),
+        (wire.AccessibilityRangeReadRequest, {"kind": "text"}),
+        (wire.AccessibilityValue, {"kind": "scalars", "values": []}),
+    ],
+)
+def test_accessibility_union_tags_survive_compact_encoding(union: object, payload: dict[str, object]):
+    from pydantic import TypeAdapter
+
+    adapter = TypeAdapter(union)
+    value = adapter.validate_python(payload)
+    encoded = encode_model(value)
+    assert json.loads(encoded)["kind"] == payload["kind"]
+    assert adapter.validate_json(encoded) == value
+
+
+@pytest.mark.parametrize("model", [wire.AccessibilityTextRead, wire.LimitedCpuLimit, wire.UnlimitedMemoryLimit])
+def test_constant_serializers_preserve_model_json_schema(model: type[BaseModel]):
+    for mode in ("validation", "serialization"):
+        schema = model.model_json_schema(mode=mode)
+        assert schema["additionalProperties"] is False
+        assert schema["properties"]["kind"]["type"] == "string"
+        assert "const" in schema["properties"]["kind"]
+    assert model.model_json_schema(mode="serialization") == model.model_json_schema(mode="validation")
+
+
+def test_accessibility_compact_encoding_keeps_nested_tags():
+    value = wire.ComputerA11yReadParams.model_validate(
+        {
+            "context": {"operation_id": "op-text", "timeout_ms": 1000},
+            "node": {"backend": "atspi", "backend_epoch": "epoch", "node_handle": "node"},
+            "request": {"kind": "text"},
+        }
+    )
+    encoded = encode_model(value)
+    assert json.loads(encoded)["request"] == {"kind": "text"}
+    assert decode_model(encoded, wire.ComputerA11yReadParams) == value
+
+
+@pytest.mark.parametrize(
     ("model", "operand"),
     [
         (wire.AXChildrenSelectedChildrenSet, "children"),

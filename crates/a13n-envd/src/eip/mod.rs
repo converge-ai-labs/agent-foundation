@@ -39,14 +39,67 @@ mod tests {
     }
 
     #[test]
+    fn accessibility_helper_json_preserves_discriminators_and_defaults() {
+        use super::EipExpandedJson;
+        let read: super::AccessibilityRead = decode(r#"{"kind":"text"}"#).unwrap();
+        assert!(matches!(
+            read,
+            super::AccessibilityRead::AccessibilityTextRead(_)
+        ));
+        assert_eq!(
+            read.expanded_json().unwrap(),
+            serde_json::json!({"kind":"text", "span":null})
+        );
+        let encoded = String::from_utf8(encode(&read).unwrap()).unwrap();
+        let round_trip: super::AccessibilityRead = decode(&encoded).unwrap();
+        assert_eq!(round_trip, read);
+        for kind in ["document", "numeric_value", "scroll", "selection"] {
+            let value: super::AccessibilityRead =
+                decode(&format!(r#"{{"kind":"{kind}"}}"#)).unwrap();
+            assert_eq!(value.expanded_json().unwrap()["kind"], kind);
+        }
+        let table: super::AccessibilityRead = decode(r#"{"kind":"table"}"#).unwrap();
+        let full = table.expanded_json().unwrap();
+        assert_eq!(full["row"], 0);
+        assert_eq!(full["rows"], 1);
+        assert_eq!(full["include_headers"], true);
+        let scope: super::AccessibilityRootScope = decode("{}").unwrap();
+        assert_eq!(scope.expanded_json().unwrap()["kind"], "windows");
+        let span: super::AccessibilityRangeQuery =
+            decode(r#"{"kind":"span","span":{"unit":"atspi_character","start":0,"end":2}}"#)
+                .unwrap();
+        assert_eq!(span.expanded_json().unwrap()["kind"], "span");
+        let wrong = decode::<super::AccessibilityRead>(r#"{"kind":"invented"}"#);
+        assert!(wrong.is_err());
+    }
+
+    #[test]
+    fn accessibility_nested_message_defaults_match_explicit_empty_objects() {
+        let defaults = super::AccessibilityLimits::default();
+        let explicit: super::AccessibilityLimits = decode("{}").unwrap();
+        assert_eq!(defaults, explicit);
+        defaults.validate().unwrap();
+        assert_eq!(defaults.max_nodes, 256);
+        let omitted: super::ComputerA11yInspectParams = decode(
+            r#"{"context":{"operation_id":"foreign-node"},"node":{"backend":"atspi","backend_epoch":"aep_test","node_handle":"an_test"}}"#,
+        ).unwrap();
+        assert_eq!(omitted.limits, explicit);
+    }
+
+    #[test]
     fn accessibility_operand_presence_preserves_explicit_clear() {
         assert!(decode::<super::AXChildrenSelectedChildrenSet>(r#"{}"#).is_err());
         assert!(decode::<super::AXRanges>(r#"{}"#).is_err());
         assert!(decode::<super::AtspiDocumentSelections>(r#"{}"#).is_err());
         let value: super::AXChildrenSelectedChildrenSet = decode(r#"{"children":[]}"#).unwrap();
-        assert_eq!(encode(&value).unwrap(), br#"{"children":[]}"#);
+        let encoded: serde_json::Value = serde_json::from_slice(&encode(&value).unwrap()).unwrap();
+        assert_eq!(encoded["children"], serde_json::json!([]));
+        assert_eq!(encoded["op"], "selected_children_set");
         let value: super::AXRanges = decode(r#"{"ranges":[]}"#).unwrap();
-        assert_eq!(encode(&value).unwrap(), br#"{"ranges":[]}"#);
+        assert_eq!(
+            encode(&value).unwrap(),
+            br#"{"op":"text_ranges_select","ranges":[]}"#
+        );
     }
 
     #[test]

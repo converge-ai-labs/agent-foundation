@@ -292,6 +292,8 @@ def render_models(index: SchemaIndex, options: OptionReader) -> str:
         "    StrictFloat,",
         "    StrictInt,",
         "    StrictStr,",
+        "    SerializerFunctionWrapHandler,",
+        "    model_serializer,",
         "    model_validator,",
         ")",
         "",
@@ -474,6 +476,26 @@ def render_models(index: SchemaIndex, options: OptionReader) -> str:
             annotation, default = _field_annotation(field, message, index, options)
             suffix = "" if default is None else f" = {default}"
             lines.append(f"    {field.name}: {annotation}{suffix}")
+
+        constants = [
+            field.name
+            for field in message.field
+            if (option := options.field(field)) is not None and option.HasField("const_string")
+        ]
+        if constants:
+            # A default-valued discriminator still identifies its union variant on the wire.
+            # No return annotation: Pydantic must retain the model's serialization
+            # schema instead of replacing it with a generic mapping schema.
+            lines.extend(
+                [
+                    "",
+                    "    @model_serializer(mode='wrap')",
+                    "    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):",
+                    "        result = handler(self)",
+                    *(f"        result[{name!r}] = self.{name}" for name in constants),
+                    "        return result",
+                ]
+            )
 
         if message_option is not None and message_option.redacted_debug:
             lines.extend(

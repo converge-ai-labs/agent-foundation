@@ -252,6 +252,25 @@ class EIPAccessibilityOperations:
         self._session = session
         self._execution_id = execution_id
         self._generation = generation
+        minimal = eip.AccessibilityNodeReference(backend="ax", backend_epoch="x", node_handle="x")
+        self._reference_bytes = len(minimal.model_dump_json().encode("utf-8"))
+        bound = AccessibilityNodeReference(
+            **minimal.model_dump(), execution_id=execution_id, observed_generation=generation
+        )
+        self._provenance_bytes = len(bound.model_dump_json().encode("utf-8")) - self._reference_bytes
+
+    def _wire_limits(self, limits: AccessibilityLimits) -> dict[str, JsonValue]:
+        # A result of X default-inclusive bytes contains at most X/S node
+        # references, where S is the smallest legal wire reference. Binding
+        # adds D bytes per occurrence, so X <= B*S/(S+D) guarantees <= B.
+        budget = limits.max_result_bytes * self._reference_bytes // (self._reference_bytes + self._provenance_bytes)
+        if budget < 1:
+            raise EnvironmentError(
+                "Result byte budget cannot hold accessibility provenance",
+                code="environment_quota_exceeded",
+                details={"dispatch_stage": "pre_dispatch"},
+            )
+        return {**self._wire(limits), "max_result_bytes": budget}
 
     def _wire(self, value: BaseModel) -> dict[str, JsonValue]:
         def strip(item: JsonValue) -> JsonValue:
@@ -307,7 +326,7 @@ class EIPAccessibilityOperations:
             {
                 "context": new_context(timeout_seconds=limits.timeout_ms / 1000),
                 "scope": self._wire(scope),
-                "limits": self._wire(limits),
+                "limits": self._wire_limits(limits),
             }
         )
         return await self._read(session_client(self._session).computer_a11y_roots(params), AccessibilityTree)
@@ -323,7 +342,7 @@ class EIPAccessibilityOperations:
                     "observation_id": observation.observation_id,
                     "image_point": point.model_dump(),
                 },
-                "limits": self._wire(limits),
+                "limits": self._wire_limits(limits),
             }
         )
         return await self._read(session_client(self._session).computer_a11y_roots(params), AccessibilityTree)
@@ -341,7 +360,7 @@ class EIPAccessibilityOperations:
             {
                 "context": new_context(timeout_seconds=limits.timeout_ms / 1000),
                 "node": self._wire(node),
-                "limits": self._wire(limits),
+                "limits": self._wire_limits(limits),
                 "view": view,
                 **({"cursor": self._wire(cursor)} if cursor is not None else {}),
                 **({"projection_observation_id": projection.observation_id} if projection is not None else {}),
@@ -363,7 +382,7 @@ class EIPAccessibilityOperations:
                 "context": new_context(timeout_seconds=limits.timeout_ms / 1000),
                 "node": self._wire(node),
                 "query": self._wire(query),
-                "limits": self._wire(limits),
+                "limits": self._wire_limits(limits),
                 "view": view,
                 **({"cursor": self._wire(cursor)} if cursor is not None else {}),
             }
@@ -382,7 +401,7 @@ class EIPAccessibilityOperations:
                 "context": new_context(timeout_seconds=limits.timeout_ms / 1000),
                 "node": self._wire(node),
                 "request": self._wire(request),
-                "limits": self._wire(limits),
+                "limits": self._wire_limits(limits),
             }
         )
         return await self._read(session_client(self._session).computer_a11y_read(params), AccessibilityContent)
@@ -400,7 +419,7 @@ class EIPAccessibilityOperations:
                 "context": new_context(timeout_seconds=limits.timeout_ms / 1000),
                 "node": self._wire(node),
                 "query": self._wire(query),
-                "limits": self._wire(limits),
+                "limits": self._wire_limits(limits),
                 **({"source": self._wire(source)} if source is not None else {}),
             }
         )
@@ -418,7 +437,7 @@ class EIPAccessibilityOperations:
                 "context": new_context(timeout_seconds=limits.timeout_ms / 1000),
                 "reference": self._wire(reference),
                 "request": self._wire(request),
-                "limits": self._wire(limits),
+                "limits": self._wire_limits(limits),
             }
         )
         return await self._read(

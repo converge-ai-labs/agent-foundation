@@ -5,7 +5,7 @@
 )]
 
 use super::*;
-use crate::eip::EipValidate;
+use crate::eip::{EipExpandedJson, EipValidate};
 use serde_json::Value;
 
 use crate::accessibility::{NativeMutation, unknown_outcome};
@@ -19,7 +19,7 @@ impl Session {
         timeout_ms: u32,
     ) -> Result<R, EIPError>
     where
-        P: Serialize + EipValidate,
+        P: Serialize + EipValidate + EipExpandedJson,
         R: Serialize + DeserializeOwned + EipValidate + Send + 'static,
     {
         self.preflight(method)?;
@@ -27,7 +27,7 @@ impl Session {
             protocol_error(ErrorType::InvalidParams, "invalid accessibility request")
         })?;
         let deadline = accessibility_deadline(context, timeout_ms);
-        let mut payload = serde_json::to_value(params).map_err(|_| {
+        let mut payload = params.expanded_json().map_err(|_| {
             protocol_error(
                 ErrorType::InternalError,
                 "accessibility request encoding failed",
@@ -62,6 +62,14 @@ impl Session {
             if let Some(object) = payload.as_object_mut() {
                 object.remove("projection_observation_id");
             }
+            if let Some(projection) = &projection {
+                payload["_projection_bytes"] = serde_json::json!(
+                    crate::accessibility::budget::projection_reserve(projection)?
+                );
+            }
+            let max_bytes = payload["limits"]["max_result_bytes"]
+                .as_u64()
+                .map(|value| value as usize);
             let mut value = supervisor
                 .call(method, payload, deadline, || {
                     ledger.interruption(&worker_id)
@@ -77,6 +85,14 @@ impl Session {
                 .map_err(|_| {
                     protocol_error(ErrorType::InternalError, "screenshot projection failed")
                 })??;
+            }
+            if let Some(max) = max_bytes
+                && crate::accessibility::budget::result_bytes(method, &value, 0)? > max
+            {
+                return Err(protocol_error(
+                    ErrorType::InternalError,
+                    "native accessibility result exceeded its byte budget",
+                ));
             }
             let result: R = serde_json::from_value(value).map_err(|_| {
                 protocol_error(
@@ -97,7 +113,7 @@ impl Session {
         self.await_owned_operation(&id, owned).await
     }
 
-    pub(super) async fn mutate_accessibility<P: Serialize + EipValidate>(
+    pub(super) async fn mutate_accessibility<P: Serialize + EipValidate + EipExpandedJson>(
         &self,
         method: &'static str,
         context: &eip::EIPCallContext,
@@ -108,7 +124,7 @@ impl Session {
             protocol_error(ErrorType::InvalidParams, "invalid accessibility mutation")
         })?;
         let deadline = accessibility_deadline(context, 5000);
-        let mut payload = serde_json::to_value(params).map_err(|_| {
+        let mut payload = params.expanded_json().map_err(|_| {
             protocol_error(
                 ErrorType::InternalError,
                 "accessibility request encoding failed",

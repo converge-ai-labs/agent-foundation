@@ -31,6 +31,9 @@ use crate::{
 const MAX_FRAME_BYTES: usize = 2 * 1024 * 1024;
 const MAX_PENDING: usize = 32;
 
+#[path = "accessibility_budget.rs"]
+pub(crate) mod budget;
+
 /// Exact platform inventory, separate from the canonical protocol inventory.
 /// Platform implementations extend this only alongside their native dispatcher.
 pub(crate) fn supports(_method: &str) -> bool {

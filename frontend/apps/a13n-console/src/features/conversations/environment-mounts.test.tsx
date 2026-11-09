@@ -3,6 +3,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, it, vi } from "vitest";
 import type { Schema } from "../../shared/api";
+import { computerActions, observationActions } from "./computer-permissions";
 import { ThreadEnvironmentMounts } from "./environment-mounts";
 import { fixtureSession, fixtureThread } from "./transcript/fixture";
 
@@ -240,21 +241,9 @@ it.each(["observation", "interaction"])(
             permission_ceiling: {
               operations: [
                 "environment.file.read_text",
-                "environment.computer.describe",
-                "environment.computer.observe",
-                "environment.computer.zoom",
                 ...(mode === "interaction"
-                  ? [
-                      "environment.computer.click",
-                      "environment.computer.move",
-                      "environment.computer.drag",
-                      "environment.computer.scroll",
-                      "environment.computer.type_text",
-                      "environment.computer.press_keys",
-                      "environment.computer.read_clipboard",
-                      "environment.computer.write_clipboard",
-                    ]
-                  : []),
+                  ? computerActions
+                  : observationActions),
               ],
             },
           },
@@ -275,11 +264,7 @@ it("shows Computer permissions without offering edits to a reader", async () => 
       desktop_enabled: false,
       working_directory: null,
       permission_ceiling: {
-        operations: [
-          "environment.computer.describe",
-          "environment.computer.observe",
-          "environment.computer.zoom",
-        ],
+        operations: [...observationActions],
       },
     },
   ];

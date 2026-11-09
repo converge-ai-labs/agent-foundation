@@ -18,10 +18,12 @@ from pydantic import (
     ConfigDict,
     Field,
     RootModel,
+    SerializerFunctionWrapHandler,
     StrictBool,
     StrictFloat,
     StrictInt,
     StrictStr,
+    model_serializer,
     model_validator,
 )
 
@@ -584,40 +586,88 @@ class AXBooleanDisclosingSet(EIPModel):
     op: Literal["disclosing_set"] = "disclosing_set"
     value: StrictBool
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
+
 
 class AXBooleanExpandedSet(EIPModel):
     op: Literal["expanded_set"] = "expanded_set"
     value: StrictBool
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
 
 
 class AXBooleanMainSet(EIPModel):
     op: Literal["main_set"] = "main_set"
     value: StrictBool
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
+
 
 class AXBooleanMinimizedSet(EIPModel):
     op: Literal["minimized_set"] = "minimized_set"
     value: StrictBool
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
 
 
 class AXBooleanSelectedSet(EIPModel):
     op: Literal["selected_set"] = "selected_set"
     value: StrictBool
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
+
 
 class AXFocus(EIPModel):
     op: Literal["focus"] = "focus"
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
 
 
 class AXNumberValue(EIPModel):
     op: Literal["value_number_set"] = "value_number_set"
     value: Annotated[StrictFloat, Field(allow_inf_nan=False)]
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
+
 
 class AXPosition(EIPModel):
     op: Literal["position_set"] = "position_set"
     x: Annotated[StrictFloat, Field(allow_inf_nan=False)]
     y: Annotated[StrictFloat, Field(allow_inf_nan=False)]
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
 
 
 class AXSelectedText(EIPModel):
@@ -629,11 +679,23 @@ class AXSelectedText(EIPModel):
         AfterValidator(partial(_validate_utf8_bytes, maximum=65536)),
     ]
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
+
 
 class AXSize(EIPModel):
     op: Literal["size_set"] = "size_set"
     width: Annotated[StrictFloat, Field(allow_inf_nan=False, gt=0.0)]
     height: Annotated[StrictFloat, Field(allow_inf_nan=False, gt=0.0)]
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
 
 
 class AXStringValue(EIPModel):
@@ -645,6 +707,12 @@ class AXStringValue(EIPModel):
         AfterValidator(partial(_validate_utf8_bytes, maximum=65536)),
     ]
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
+
 
 class AccessibilityAttributeMetadata(EIPModel):
     name: Annotated[StrictStr, Field(min_length=1, max_length=1024)]
@@ -654,6 +722,12 @@ class AccessibilityAttributeMetadata(EIPModel):
 
 class AccessibilityDocumentSelectionsRead(EIPModel):
     kind: Literal["document_selections"] = "document_selections"
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["kind"] = self.kind
+        return result
 
 
 class AccessibilityFieldError(EIPModel):
@@ -675,6 +749,12 @@ class AccessibilityFind(EIPModel):
 class AccessibilityIdleRead(EIPModel):
     kind: Literal["wait_for_input_idle"] = "wait_for_input_idle"
     timeout_ms: Annotated[StrictInt, Field(ge=0, le=15000)] = 1000
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["kind"] = self.kind
+        return result
 
 
 class AccessibilityImageProjection(EIPModel):
@@ -716,6 +796,12 @@ class AccessibilityNativeRead(EIPModel):
     kind: Literal["native_details"] = "native_details"
     group: AccessibilityNativeReadGroup
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["kind"] = self.kind
+        return result
+
 
 class AccessibilityNativeSpan(EIPModel):
     unit: AccessibilityNativeSpanUnit
@@ -726,6 +812,12 @@ class AccessibilityNativeSpan(EIPModel):
 class AccessibilityNavigateRead(EIPModel):
     kind: Literal["navigate"] = "navigate"
     direction: AccessibilityNavigateReadDirection
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["kind"] = self.kind
+        return result
 
 
 class AccessibilityNodeReference(EIPModel):
@@ -738,39 +830,93 @@ class AccessibilityNodesValue(EIPModel):
     kind: Literal["nodes"] = "nodes"
     values: Annotated[tuple[AccessibilityNodeReference, ...], Field(max_length=512)] = ()
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["kind"] = self.kind
+        return result
+
 
 class AccessibilityPropertyRead(EIPModel):
     kind: Literal["properties"] = "properties"
     groups: Annotated[tuple[AccessibilityPropertyReadGroups, ...], Field(min_length=1, max_length=4)]
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["kind"] = self.kind
+        return result
+
 
 class AccessibilityRangeAcquireActiveComposition(EIPModel):
     kind: Literal["active_composition"] = "active_composition"
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["kind"] = self.kind
+        return result
 
 
 class AccessibilityRangeAcquireCaret(EIPModel):
     kind: Literal["caret"] = "caret"
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["kind"] = self.kind
+        return result
+
 
 class AccessibilityRangeAcquireConversionTarget(EIPModel):
     kind: Literal["conversion_target"] = "conversion_target"
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["kind"] = self.kind
+        return result
 
 
 class AccessibilityRangeAcquireDocument(EIPModel):
     kind: Literal["document"] = "document"
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["kind"] = self.kind
+        return result
+
 
 class AccessibilityRangeAcquireSelection(EIPModel):
     kind: Literal["selection"] = "selection"
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["kind"] = self.kind
+        return result
 
 
 class AccessibilityRangeAcquireVisible(EIPModel):
     kind: Literal["visible"] = "visible"
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["kind"] = self.kind
+        return result
+
 
 class AccessibilityRangeChild(EIPModel):
     kind: Literal["child"] = "child"
     child: AccessibilityNodeReference
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["kind"] = self.kind
+        return result
 
 
 class AccessibilityRangeFind(EIPModel):
@@ -784,20 +930,44 @@ class AccessibilityRangeFind(EIPModel):
     backward: StrictBool = False
     ignore_case: StrictBool = False
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["kind"] = self.kind
+        return result
+
 
 class AccessibilityRangeIndexIndex(EIPModel):
     kind: Literal["index"] = "index"
     index: Annotated[StrictInt, Field(ge=0, le=4294967295)]
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["kind"] = self.kind
+        return result
 
 
 class AccessibilityRangeIndexLine(EIPModel):
     kind: Literal["line"] = "line"
     index: Annotated[StrictInt, Field(ge=0, le=4294967295)]
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["kind"] = self.kind
+        return result
+
 
 class AccessibilityRangeIndexLineForIndex(EIPModel):
     kind: Literal["line_for_index"] = "line_for_index"
     index: Annotated[StrictInt, Field(ge=0, le=4294967295)]
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["kind"] = self.kind
+        return result
 
 
 class AccessibilityRangeMoveExpand(EIPModel):
@@ -806,12 +976,24 @@ class AccessibilityRangeMoveExpand(EIPModel):
     count: Annotated[StrictInt, Field(ge=-10000, le=10000)] = 0
     endpoint: AccessibilityRangeCompareEndpoint | None = None
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["kind"] = self.kind
+        return result
+
 
 class AccessibilityRangeMoveMove(EIPModel):
     kind: Literal["move"] = "move"
     unit: AccessibilityRangeMoveExpandUnit
     count: Annotated[StrictInt, Field(ge=-10000, le=10000)] = 0
     endpoint: AccessibilityRangeCompareEndpoint | None = None
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["kind"] = self.kind
+        return result
 
 
 class AccessibilityRangeMoveMoveEndpoint(EIPModel):
@@ -820,10 +1002,22 @@ class AccessibilityRangeMoveMoveEndpoint(EIPModel):
     count: Annotated[StrictInt, Field(ge=-10000, le=10000)] = 0
     endpoint: AccessibilityRangeCompareEndpoint | None = None
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["kind"] = self.kind
+        return result
+
 
 class AccessibilityRangePoint(EIPModel):
     kind: Literal["point"] = "point"
     point: AccessibilityNativePoint
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["kind"] = self.kind
+        return result
 
 
 class AccessibilityRangeReadAttributes(EIPModel):
@@ -832,12 +1026,24 @@ class AccessibilityRangeReadAttributes(EIPModel):
         tuple[Annotated[StrictInt, Field(ge=-2147483648, le=2147483647)], ...], Field(max_length=128)
     ] = ()
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["kind"] = self.kind
+        return result
+
 
 class AccessibilityRangeReadBounds(EIPModel):
     kind: Literal["bounds"] = "bounds"
     attribute_ids: Annotated[
         tuple[Annotated[StrictInt, Field(ge=-2147483648, le=2147483647)], ...], Field(max_length=128)
     ] = ()
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["kind"] = self.kind
+        return result
 
 
 class AccessibilityRangeReadChildren(EIPModel):
@@ -846,6 +1052,12 @@ class AccessibilityRangeReadChildren(EIPModel):
         tuple[Annotated[StrictInt, Field(ge=-2147483648, le=2147483647)], ...], Field(max_length=128)
     ] = ()
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["kind"] = self.kind
+        return result
+
 
 class AccessibilityRangeReadEnclosingElement(EIPModel):
     kind: Literal["enclosing_element"] = "enclosing_element"
@@ -853,12 +1065,24 @@ class AccessibilityRangeReadEnclosingElement(EIPModel):
         tuple[Annotated[StrictInt, Field(ge=-2147483648, le=2147483647)], ...], Field(max_length=128)
     ] = ()
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["kind"] = self.kind
+        return result
+
 
 class AccessibilityRangeReadText(EIPModel):
     kind: Literal["text"] = "text"
     attribute_ids: Annotated[
         tuple[Annotated[StrictInt, Field(ge=-2147483648, le=2147483647)], ...], Field(max_length=128)
     ] = ()
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["kind"] = self.kind
+        return result
 
 
 class AccessibilityRangeReference(EIPModel):
@@ -871,20 +1095,44 @@ class AccessibilityRangeSpan(EIPModel):
     kind: Literal["span"] = "span"
     span: AccessibilityNativeSpan
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["kind"] = self.kind
+        return result
+
 
 class AccessibilityRangesValue(EIPModel):
     kind: Literal["ranges"] = "ranges"
     values: Annotated[tuple[AccessibilityRangeReference, ...], Field(max_length=256)] = ()
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["kind"] = self.kind
+        return result
 
 
 class AccessibilityRelationsRead(EIPModel):
     kind: Literal["relations"] = "relations"
     relations: Annotated[tuple[StrictStr, ...], Field(max_length=64)] = ()
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["kind"] = self.kind
+        return result
+
 
 class AccessibilityScalar(EIPModel):
     kind: Literal["scalar"] = "scalar"
     value: StrictBool | StrictInt | Annotated[StrictFloat, Field(allow_inf_nan=False)] | StrictStr
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["kind"] = self.kind
+        return result
 
 
 class AccessibilityScalarsValue(EIPModel):
@@ -894,37 +1142,91 @@ class AccessibilityScalarsValue(EIPModel):
         Field(max_length=512),
     ] = ()
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["kind"] = self.kind
+        return result
+
 
 class AccessibilitySimpleReadDocument(EIPModel):
     kind: Literal["document"] = "document"
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["kind"] = self.kind
+        return result
 
 
 class AccessibilitySimpleReadNumericValue(EIPModel):
     kind: Literal["numeric_value"] = "numeric_value"
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["kind"] = self.kind
+        return result
+
 
 class AccessibilitySimpleReadScroll(EIPModel):
     kind: Literal["scroll"] = "scroll"
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["kind"] = self.kind
+        return result
 
 
 class AccessibilitySimpleReadSelection(EIPModel):
     kind: Literal["selection"] = "selection"
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["kind"] = self.kind
+        return result
+
 
 class AccessibilitySpecialValueMixed(EIPModel):
     kind: Literal["mixed"] = "mixed"
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["kind"] = self.kind
+        return result
 
 
 class AccessibilitySpecialValueProtected(EIPModel):
     kind: Literal["protected"] = "protected"
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["kind"] = self.kind
+        return result
+
 
 class AccessibilitySpecialValueUnavailable(EIPModel):
     kind: Literal["unavailable"] = "unavailable"
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["kind"] = self.kind
+        return result
+
 
 class AccessibilitySpecialValueUnsupported(EIPModel):
     kind: Literal["unsupported"] = "unsupported"
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["kind"] = self.kind
+        return result
 
 
 class AccessibilityTableRead(EIPModel):
@@ -935,6 +1237,12 @@ class AccessibilityTableRead(EIPModel):
     columns: Annotated[StrictInt, Field(ge=1, le=512)] = 1
     include_headers: StrictBool = True
     include_selection: StrictBool = False
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["kind"] = self.kind
+        return result
 
 
 class AccessibilityTextContent(EIPModel):
@@ -948,37 +1256,85 @@ class AccessibilityTextRead(EIPModel):
     kind: Literal["text"] = "text"
     span: AccessibilityNativeSpan | None = None
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["kind"] = self.kind
+        return result
+
 
 class AllowlistDestinations(EIPModel):
     mode: Literal["allowlist"]
     hosts: Annotated[tuple[StrictStr, ...], Field(max_length=256)] = ()
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["mode"] = self.mode
+        return result
 
 
 class AtspiChildSelectionSelectionAddChild(EIPModel):
     op: Literal["selection_add_child"] = "selection_add_child"
     child: AccessibilityNodeReference
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
+
 
 class AtspiChildSelectionSelectionRemoveChild(EIPModel):
     op: Literal["selection_remove_child"] = "selection_remove_child"
     child: AccessibilityNodeReference
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
 
 
 class AtspiChildSelectionSelectionRemoveSelected(EIPModel):
     op: Literal["selection_remove_selected"] = "selection_remove_selected"
     child: AccessibilityNodeReference
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
+
 
 class AtspiCommandFocus(EIPModel):
     op: Literal["focus"] = "focus"
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
 
 
 class AtspiCommandSelectionAll(EIPModel):
     op: Literal["selection_all"] = "selection_all"
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
+
 
 class AtspiCommandSelectionClear(EIPModel):
     op: Literal["selection_clear"] = "selection_clear"
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
 
 
 class AtspiDocumentSelection(EIPModel):
@@ -993,6 +1349,12 @@ class AtspiDocumentSelections(EIPModel):
     op: Literal["document_selections_set"] = "document_selections_set"
     selections: Annotated[tuple[AtspiDocumentSelection, ...], Field(max_length=256)]
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
+
 
 class AtspiExtents(EIPModel):
     op: Literal["component_extents_set"] = "component_extents_set"
@@ -1000,11 +1362,23 @@ class AtspiExtents(EIPModel):
     width: Annotated[StrictInt, Field(ge=1, le=2147483647)]
     height: Annotated[StrictInt, Field(ge=1, le=2147483647)]
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
+
 
 class AtspiRangeScroll(EIPModel):
     op: Literal["range_scroll_to"] = "range_scroll_to"
     range: AccessibilityRangeReference
     alignment: AtspiRangeScrollAlignment
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
 
 
 class AtspiRangeScrollPoint(EIPModel):
@@ -1012,25 +1386,55 @@ class AtspiRangeScrollPoint(EIPModel):
     range: AccessibilityRangeReference
     point: AccessibilityNativePoint
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
+
 
 class AtspiScroll(EIPModel):
     op: Literal["scroll_to"] = "scroll_to"
     alignment: AtspiRangeScrollAlignment
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
 
 
 class AtspiScrollPointComponentPositionSet(EIPModel):
     op: Literal["component_position_set"] = "component_position_set"
     point: AccessibilityNativePoint
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
+
 
 class AtspiScrollPointScrollToPoint(EIPModel):
     op: Literal["scroll_to_point"] = "scroll_to_point"
     point: AccessibilityNativePoint
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
+
 
 class AtspiSelectionRemove(EIPModel):
     op: Literal["text_selection_remove"] = "text_selection_remove"
     index: Annotated[StrictInt, Field(ge=0, le=4294967295)]
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
 
 
 class AtspiSelectionSet(EIPModel):
@@ -1038,31 +1442,67 @@ class AtspiSelectionSet(EIPModel):
     index: Annotated[StrictInt, Field(ge=0, le=4294967295)]
     range: AccessibilityRangeReference
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
+
 
 class AtspiSize(EIPModel):
     op: Literal["component_size_set"] = "component_size_set"
     width: Annotated[StrictInt, Field(ge=1, le=2147483647)]
     height: Annotated[StrictInt, Field(ge=1, le=2147483647)]
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
+
 
 class AtspiTableSelectionTableColumnSelect(EIPModel):
     op: Literal["table_column_select"] = "table_column_select"
     index: Annotated[StrictInt, Field(ge=0, le=4294967295)]
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
 
 
 class AtspiTableSelectionTableColumnUnselect(EIPModel):
     op: Literal["table_column_unselect"] = "table_column_unselect"
     index: Annotated[StrictInt, Field(ge=0, le=4294967295)]
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
+
 
 class AtspiTableSelectionTableRowSelect(EIPModel):
     op: Literal["table_row_select"] = "table_row_select"
     index: Annotated[StrictInt, Field(ge=0, le=4294967295)]
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
+
 
 class AtspiTableSelectionTableRowUnselect(EIPModel):
     op: Literal["table_row_unselect"] = "table_row_unselect"
     index: Annotated[StrictInt, Field(ge=0, le=4294967295)]
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
 
 
 class AtspiTextContents(EIPModel):
@@ -1073,6 +1513,12 @@ class AtspiTextContents(EIPModel):
         AfterValidator(_validate_no_nul),
         AfterValidator(partial(_validate_utf8_bytes, maximum=65536)),
     ]
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
 
 
 class AtspiTextInsert(EIPModel):
@@ -1085,40 +1531,88 @@ class AtspiTextInsert(EIPModel):
         AfterValidator(partial(_validate_utf8_bytes, maximum=65536)),
     ]
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
+
 
 class AtspiTextPositionCaretSet(EIPModel):
     op: Literal["caret_set"] = "caret_set"
     position: Annotated[StrictInt, Field(ge=0, le=4294967295)]
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
 
 
 class AtspiTextPositionTextPaste(EIPModel):
     op: Literal["text_paste"] = "text_paste"
     position: Annotated[StrictInt, Field(ge=0, le=4294967295)]
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
+
 
 class AtspiTextRangeTextCopy(EIPModel):
     op: Literal["text_copy"] = "text_copy"
     range: AccessibilityRangeReference
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
 
 
 class AtspiTextRangeTextCut(EIPModel):
     op: Literal["text_cut"] = "text_cut"
     range: AccessibilityRangeReference
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
+
 
 class AtspiTextRangeTextDelete(EIPModel):
     op: Literal["text_delete"] = "text_delete"
     range: AccessibilityRangeReference
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
 
 
 class AtspiTextRangeTextSelectionAdd(EIPModel):
     op: Literal["text_selection_add"] = "text_selection_add"
     range: AccessibilityRangeReference
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
+
 
 class AtspiValue(EIPModel):
     op: Literal["value_set"] = "value_set"
     value: Annotated[StrictFloat, Field(allow_inf_nan=False)]
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
 
 
 class CommandEnvironment(EIPModel):
@@ -1191,6 +1685,12 @@ class ContentDigest(EIPModel):
     algorithm: Literal["sha256"]
     value: Sha256Digest
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["algorithm"] = self.algorithm
+        return result
+
 
 class CpuTimeSeconds(EIPModel):
     user: Annotated[StrictFloat, Field(allow_inf_nan=False, ge=0.0)] | None = None
@@ -1242,6 +1742,12 @@ class DirectoryListResult(EIPModel):
 
 class DisabledSandbox(EIPModel):
     mode: Literal["disabled"]
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["mode"] = self.mode
+        return result
 
 
 class DiskIoMetrics(EIPModel):
@@ -1300,6 +1806,12 @@ class EIPServerInfo(EIPModel):
     name: Literal["a13n-envd"]
     version: StrictStr
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["name"] = self.name
+        return result
+
 
 class EgressSecret(EIPModel):
     env: Annotated[StrictStr, Field(min_length=1, max_length=128)]
@@ -1319,6 +1831,12 @@ class EgressSecretStatus(EIPModel):
 class EncodedBytes(EIPModel):
     encoding: Literal["base64"]
     data: Base64Unpadded
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["encoding"] = self.encoding
+        return result
 
 
 class EnvironmentDescribeParams(EIPModel):
@@ -1340,10 +1858,22 @@ class ExecutableName(EIPModel):
     kind: Literal["name"]
     name: StrictStr
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["kind"] = self.kind
+        return result
+
 
 class ExecutablePath(EIPModel):
     kind: Literal["path"]
     path: EIPPath
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["kind"] = self.kind
+        return result
 
 
 type ExecutableSpec = Annotated[
@@ -1441,6 +1971,12 @@ class FilePatchTextParams(EIPModel):
     path: EIPPath
     patch_format: Literal["unified_diff"]
     patch: StrictStr
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["patch_format"] = self.patch_format
+        return result
 
 
 class FileReadCompletion(EIPModel):
@@ -1617,10 +2153,22 @@ class LimitedCpuLimit(EIPModel):
     quota_usec: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)]
     period_usec: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)]
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["kind"] = self.kind
+        return result
+
 
 class LimitedMemoryLimit(EIPModel):
     kind: Literal["limited"]
     bytes: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)]
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["kind"] = self.kind
+        return result
 
 
 class MemoryEvents(EIPModel):
@@ -1634,6 +2182,12 @@ class MemoryEvents(EIPModel):
 
 class NativeIsolation(EIPModel):
     mode: Literal["native"]
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["mode"] = self.mode
+        return result
 
 
 class NetworkInterfaceMetrics(EIPModel):
@@ -1693,6 +2247,12 @@ class PortTarget(EIPModel):
     protocol: Literal["tcp"]
     address: PortAddress
     port: Annotated[StrictInt, Field(ge=1, le=65535)]
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["protocol"] = self.protocol
+        return result
 
 
 class PortWaitParams(EIPModel):
@@ -1781,6 +2341,12 @@ class ProcessWriteStdinResult(EIPModel):
 class PublicDestinations(EIPModel):
     mode: Literal["public"]
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["mode"] = self.mode
+        return result
+
 
 class ReceiptGetParams(EIPModel):
     context: EIPCallContext
@@ -1835,6 +2401,12 @@ class ShellCommand(EIPModel):
     script: StrictStr
     login: StrictBool = False
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["kind"] = self.kind
+        return result
+
 
 class ShellProfileDescriptor(EIPModel):
     profile_id: Identifier
@@ -1854,58 +2426,142 @@ class SystemInfo(EIPModel):
 class UIACommandCollapse(EIPModel):
     op: Literal["collapse"] = "collapse"
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
+
 
 class UIACommandExpand(EIPModel):
     op: Literal["expand"] = "expand"
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
 
 
 class UIACommandFocus(EIPModel):
     op: Literal["focus"] = "focus"
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
+
 
 class UIACommandInvoke(EIPModel):
     op: Literal["invoke"] = "invoke"
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
 
 
 class UIACommandLegacyDefaultAction(EIPModel):
     op: Literal["legacy_default_action"] = "legacy_default_action"
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
+
 
 class UIACommandRealize(EIPModel):
     op: Literal["realize"] = "realize"
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
 
 
 class UIACommandScrollIntoView(EIPModel):
     op: Literal["scroll_into_view"] = "scroll_into_view"
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
+
 
 class UIACommandSelectionAdd(EIPModel):
     op: Literal["selection_add"] = "selection_add"
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
 
 
 class UIACommandSelectionRemove(EIPModel):
     op: Literal["selection_remove"] = "selection_remove"
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
+
 
 class UIACommandSelectionSelect(EIPModel):
     op: Literal["selection_select"] = "selection_select"
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
 
 
 class UIACommandShowContextMenu(EIPModel):
     op: Literal["show_context_menu"] = "show_context_menu"
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
+
 
 class UIACommandToggle(EIPModel):
     op: Literal["toggle"] = "toggle"
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
 
 
 class UIACommandWindowClose(EIPModel):
     op: Literal["window_close"] = "window_close"
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
+
 
 class UIADock(EIPModel):
     op: Literal["dock_set"] = "dock_set"
     position: UIADockPosition
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
 
 
 class UIALegacySelect(EIPModel):
@@ -1913,36 +2569,78 @@ class UIALegacySelect(EIPModel):
     selection: UIALegacySelectSelection = UIALegacySelectSelection("none")
     take_focus: StrictBool = False
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
+
 
 class UIAMove(EIPModel):
     op: Literal["transform_move"] = "transform_move"
     x: Annotated[StrictFloat, Field(allow_inf_nan=False)]
     y: Annotated[StrictFloat, Field(allow_inf_nan=False)]
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
+
 
 class UIANumberValue(EIPModel):
     op: Literal["range_value_set"] = "range_value_set"
     value: Annotated[StrictFloat, Field(allow_inf_nan=False)]
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
 
 
 class UIARangeRangeAddSelection(EIPModel):
     op: Literal["range_add_selection"] = "range_add_selection"
     range: AccessibilityRangeReference
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
+
 
 class UIARangeRangeRemoveSelection(EIPModel):
     op: Literal["range_remove_selection"] = "range_remove_selection"
     range: AccessibilityRangeReference
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
 
 
 class UIARangeRangeSelect(EIPModel):
     op: Literal["range_select"] = "range_select"
     range: AccessibilityRangeReference
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
+
 
 class UIARangeRangeShowContextMenu(EIPModel):
     op: Literal["range_show_context_menu"] = "range_show_context_menu"
     range: AccessibilityRangeReference
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
 
 
 class UIARangeScroll(EIPModel):
@@ -1950,16 +2648,34 @@ class UIARangeScroll(EIPModel):
     range: AccessibilityRangeReference
     align_top: StrictBool = True
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
+
 
 class UIAResize(EIPModel):
     op: Literal["transform_resize"] = "transform_resize"
     width: Annotated[StrictFloat, Field(allow_inf_nan=False, gt=0.0)]
     height: Annotated[StrictFloat, Field(allow_inf_nan=False, gt=0.0)]
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
+
 
 class UIARotate(EIPModel):
     op: Literal["transform_rotate"] = "transform_rotate"
     degrees: Annotated[StrictFloat, Field(allow_inf_nan=False)]
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
 
 
 class UIAScrollAmount(EIPModel):
@@ -1967,11 +2683,23 @@ class UIAScrollAmount(EIPModel):
     horizontal: UIAScrollAmountHorizontal = UIAScrollAmountHorizontal("no_amount")
     vertical: UIAScrollAmountHorizontal = UIAScrollAmountHorizontal("no_amount")
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
+
 
 class UIAScrollPercent(EIPModel):
     op: Literal["scroll_percent"] = "scroll_percent"
     horizontal: Annotated[StrictFloat, Field(allow_inf_nan=False, ge=0.0, le=100.0)] | None = None
     vertical: Annotated[StrictFloat, Field(allow_inf_nan=False, ge=0.0, le=100.0)] | None = None
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
 
 
 class UIAStringValueLegacyValueSet(EIPModel):
@@ -1983,6 +2711,12 @@ class UIAStringValueLegacyValueSet(EIPModel):
         AfterValidator(partial(_validate_utf8_bytes, maximum=65536)),
     ]
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
+
 
 class UIAStringValueValueSet(EIPModel):
     op: Literal["value_set"] = "value_set"
@@ -1993,33 +2727,75 @@ class UIAStringValueValueSet(EIPModel):
         AfterValidator(partial(_validate_utf8_bytes, maximum=65536)),
     ]
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
+
 
 class UIAView(EIPModel):
     op: Literal["view_set"] = "view_set"
     view_id: Annotated[StrictInt, Field(ge=-2147483648, le=2147483647)]
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
 
 
 class UIAWindowState(EIPModel):
     op: Literal["window_state_set"] = "window_state_set"
     state: UIAWindowStateState
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
+
 
 class UIAZoom(EIPModel):
     op: Literal["transform_zoom"] = "transform_zoom"
     percent: Annotated[StrictFloat, Field(allow_inf_nan=False, gt=0.0)]
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
 
 
 class UIAZoomUnit(EIPModel):
     op: Literal["transform_zoom_unit"] = "transform_zoom_unit"
     unit: UIAZoomUnitUnit
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
+
 
 class UnlimitedCpuLimit(EIPModel):
     kind: Literal["unlimited"]
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["kind"] = self.kind
+        return result
+
 
 class UnlimitedMemoryLimit(EIPModel):
     kind: Literal["unlimited"]
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["kind"] = self.kind
+        return result
 
 
 class VmMount(EIPModel):
@@ -2032,35 +2808,77 @@ class AXChildrenSelectedChildrenSet(EIPModel):
     op: Literal["selected_children_set"] = "selected_children_set"
     children: Annotated[tuple[AccessibilityNodeReference, ...], Field(max_length=512)]
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
+
 
 class AXChildrenSelectedColumnsSet(EIPModel):
     op: Literal["selected_columns_set"] = "selected_columns_set"
     children: Annotated[tuple[AccessibilityNodeReference, ...], Field(max_length=512)]
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
 
 
 class AXChildrenSelectedRowsSet(EIPModel):
     op: Literal["selected_rows_set"] = "selected_rows_set"
     children: Annotated[tuple[AccessibilityNodeReference, ...], Field(max_length=512)]
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
+
 
 class AXFocusedWindow(EIPModel):
     op: Literal["focused_window_set"] = "focused_window_set"
     window: AccessibilityNodeReference
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
 
 
 class AXRangeTextRangeSelect(EIPModel):
     op: Literal["text_range_select"] = "text_range_select"
     range: AccessibilityRangeReference
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
+
 
 class AXRangeVisibleTextRangeSet(EIPModel):
     op: Literal["visible_text_range_set"] = "visible_text_range_set"
     range: AccessibilityRangeReference
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
+
 
 class AXRanges(EIPModel):
     op: Literal["text_ranges_select"] = "text_ranges_select"
     ranges: Annotated[tuple[AccessibilityRangeReference, ...], Field(max_length=256)]
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
 
 
 class AccessibilityActionReference(EIPModel):
@@ -2072,6 +2890,12 @@ class AccessibilityActionReference(EIPModel):
 class AccessibilityBoundsValue(EIPModel):
     kind: Literal["bounds"] = "bounds"
     values: Annotated[tuple[AccessibilityNativeBounds, ...], Field(max_length=512)] = ()
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["kind"] = self.kind
+        return result
 
 
 class AccessibilityCapability(EIPModel):
@@ -2105,6 +2929,12 @@ class AccessibilityItemRead(EIPModel):
     name: Annotated[StrictStr, Field(max_length=4096)]
     after: AccessibilityNodeReference | None = None
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["kind"] = self.kind
+        return result
+
 
 class AccessibilityNode(EIPModel):
     reference: AccessibilityNodeReference
@@ -2130,6 +2960,12 @@ class AccessibilityRangeCompare(EIPModel):
     endpoint: AccessibilityRangeCompareEndpoint | None = None
     other_endpoint: AccessibilityRangeCompareEndpoint | None = None
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["kind"] = self.kind
+        return result
+
 
 class AccessibilityRangeCompose(EIPModel):
     kind: Literal["endpoint_by_range"] = "endpoint_by_range"
@@ -2137,12 +2973,24 @@ class AccessibilityRangeCompose(EIPModel):
     other: AccessibilityRangeReference
     other_endpoint: AccessibilityRangeCompareEndpoint
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["kind"] = self.kind
+        return result
+
 
 class AccessibilityRangeFindAttribute(EIPModel):
     kind: Literal["find_attribute"] = "find_attribute"
     attribute_id: Annotated[StrictInt, Field(ge=0, le=4294967295)]
     value: AccessibilityScalar
     backward: StrictBool = False
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["kind"] = self.kind
+        return result
 
 
 type AccessibilityRangeQuery = Annotated[
@@ -2222,10 +3070,22 @@ class ArgvCommand(EIPModel):
     arguments: tuple[StrictStr, ...] = ()
     executable_spec: ExecutableSpec
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["kind"] = self.kind
+        return result
+
 
 class AtspiAction(EIPModel):
     op: Literal["do_action"] = "do_action"
     action: AccessibilityActionReference
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
 
 
 type CommandSpec = Annotated[
@@ -3143,6 +4003,12 @@ class RestrictedSandbox(EIPModel):
     grants: tuple[SandboxGrant, ...] = ()
     full_disk_read: StrictBool = False
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["mode"] = self.mode
+        return result
+
 
 type SandboxPolicy = Annotated[
     DisabledSandbox | RestrictedSandbox,
@@ -3183,10 +4049,22 @@ class VmIsolation(EIPModel):
     memory_mib: Annotated[StrictInt, Field(ge=128, le=4294967295)]
     mounts: tuple[VmMount, ...] = ()
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["mode"] = self.mode
+        return result
+
 
 class AXAction(EIPModel):
     op: Literal["perform_action"] = "perform_action"
     action: AccessibilityActionReference
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["op"] = self.op
+        return result
 
 
 class AccessibilityCompleteness(EIPModel):
@@ -3194,6 +4072,12 @@ class AccessibilityCompleteness(EIPModel):
     reason: AccessibilityCompletenessReason | None = None
     continuation: AccessibilityCursor | None = None
     consistency: Literal["live"] = "live"
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["consistency"] = self.consistency
+        return result
 
 
 class AccessibilityMutationResult(EIPModel):
@@ -3203,6 +4087,12 @@ class AccessibilityMutationResult(EIPModel):
     dispatch_complete: StrictBool
     observation: AccessibilityNode | None = None
     application_outcome: Literal["unverified"] = "unverified"
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["application_outcome"] = self.application_outcome
+        return result
 
 
 class AccessibilityProperty(EIPModel):

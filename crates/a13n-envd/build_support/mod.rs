@@ -74,6 +74,11 @@ pub fn render(pool: &DescriptorPool) -> Result<String, String> {
          pub trait EipValidate {\n\
          \x20   fn validate(&self) -> Result<(), ValidationError>;\n\
          }\n\n\
+         /// Default-inclusive JSON for native helper operands and result budgeting.\n\
+         /// Wire serialization remains compact and uses the normal Serialize impl.\n\
+         pub trait EipExpandedJson {\n\
+         \x20   fn expanded_json(&self) -> Result<serde_json::Value, serde_json::Error>;\n\
+         }\n\n\
          #[derive(Debug)]\n\
          pub enum DecodeError {\n\
          \x20   Json(serde_json::Error),\n\
@@ -806,9 +811,22 @@ fn render_field_default(
         field.name().to_snake_case()
     );
     output.push_str(&format!(
-        "fn {function}() -> {field_type} {{ {expression} }}\n\
-         fn is_{function}(value: &{field_type}) -> bool {{ value == &{function}() }}\n\n"
+        "fn {function}() -> {field_type} {{ {expression} }}\n\n"
     ));
+    if !option.has_field_by_name("const_string") {
+        output.push_str(&format!(
+            "fn is_{function}(value: &{field_type}) -> bool {{ value == &{function}() }}\n\n"
+        ));
+    }
+    if option.has_field_by_name("const_string") {
+        let expected = string_field(&option, "const_string")?;
+        output.push_str(&format!(
+            "fn deserialize_{function}<'de, D: serde::Deserializer<'de>>(d: D) -> Result<String, D::Error> {{\n\
+             let value = String::deserialize(d)?;\n\
+             if value != {expected:?} {{ return Err(serde::de::Error::custom(\"invalid discriminator\")); }}\n\
+             Ok(value)\n}}\n\n"
+        ));
+    }
     Ok(Some(function))
 }
 
@@ -849,8 +867,17 @@ fn render_message(
             rust_field_type(&fields[0], false)?.0
         ));
         render_validation_impl(output, descriptor, &fields, extensions, true, false)?;
+        render_expanded_json(output, descriptor, &fields, extensions, true, false)?;
         return Ok(());
     }
+    render_expanded_json(
+        output,
+        descriptor,
+        &fields,
+        extensions,
+        transparent,
+        discriminated_union,
+    )?;
     if discriminated_union {
         let oneofs = real_oneof_fields(descriptor);
         if oneofs.len() != 1 {
@@ -887,13 +914,8 @@ fn render_message(
             "redacted_debug",
         );
     let debug = if redacted { "" } else { "Debug, " };
-    let default = if defaulted_messages.contains(descriptor.full_name()) {
-        "Default, "
-    } else {
-        ""
-    };
     output.push_str(&format!(
-        "#[derive({debug}Clone, {default}PartialEq, Serialize, Deserialize)]\n"
+        "#[derive({debug}Clone, PartialEq, Serialize, Deserialize)]\n"
     ));
     output.push_str("#[serde(deny_unknown_fields)]\n");
     output.push_str(&format!("pub struct {} {{\n", descriptor.name()));
@@ -908,8 +930,19 @@ fn render_message(
             || real_oneof_names.contains(field.full_name()))
             && explicit_default.is_none();
         let (field_type, default) = rust_field_type(field, optional)?;
-        let required = field_option_message(field, extensions)?
-            .is_some_and(|option| bool_field(&option, "required"));
+        let field_option = field_option_message(field, extensions)?;
+        let required = field_option
+            .as_ref()
+            .is_some_and(|option| bool_field(option, "required"));
+        if field_option
+            .as_ref()
+            .is_some_and(|option| option.has_field_by_name("const_string"))
+            && let Some(function) = explicit_default
+        {
+            output.push_str(&format!(
+                "    #[serde(deserialize_with = \"deserialize_{function}\")]\n"
+            ));
+        }
         if required && !(field.is_list() || field.is_map()) {
             return Err(format!(
                 "required presence is only supported for collections: {}",
@@ -919,9 +952,17 @@ fn render_message(
         if required {
             // Keep explicit empty collections in JSON and reject absent operands.
         } else if let Some(function) = explicit_default {
-            output.push_str(&format!(
-                "    #[serde(default = \"{function}\", skip_serializing_if = \"is_{function}\")]\n"
-            ));
+            if field_option
+                .as_ref()
+                .is_some_and(|option| option.has_field_by_name("const_string"))
+            {
+                // Discriminators identify the union variant even at their default value.
+                output.push_str(&format!("    #[serde(default = \"{function}\")]\n"));
+            } else {
+                output.push_str(&format!(
+                    "    #[serde(default = \"{function}\", skip_serializing_if = \"is_{function}\")]\n"
+                ));
+            }
         } else if field.is_map() {
             output
                 .push_str("    #[serde(default, skip_serializing_if = \"BTreeMap::is_empty\")]\n");
@@ -936,11 +977,94 @@ fn render_message(
         output.push_str(&format!("    pub {}: {},\n", field.name(), field_type));
     }
     output.push_str("}\n\n");
+    if defaulted_messages.contains(descriptor.full_name()) {
+        output.push_str(&format!(
+            "impl Default for {} {{\n    fn default() -> Self {{\n        Self {{\n",
+            descriptor.name()
+        ));
+        for field in &fields {
+            let expression = match default_functions.get(field.full_name()) {
+                Some(function) => format!("{function}()"),
+                None => "Default::default()".to_owned(),
+            };
+            output.push_str(&format!("            {}: {expression},\n", field.name()));
+        }
+        output.push_str("        }\n    }\n}\n\n");
+    }
     if redacted {
         let name = descriptor.name();
         output.push_str(&format!("impl std::fmt::Debug for {name} {{ fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {{ f.write_str(\"{name}([REDACTED])\") }} }}\n"));
     }
     render_validation_impl(output, descriptor, &fields, extensions, false, false)?;
+    Ok(())
+}
+
+fn render_expanded_json(
+    output: &mut String,
+    descriptor: &MessageDescriptor,
+    fields: &[FieldDescriptor],
+    extensions: &Extensions,
+    transparent: bool,
+    union: bool,
+) -> Result<(), String> {
+    output.push_str(&format!(
+        "impl EipExpandedJson for {} {{\n    fn expanded_json(&self) -> Result<serde_json::Value, serde_json::Error> {{\n",
+        descriptor.name()
+    ));
+    if transparent {
+        output.push_str("        serde_json::to_value(&self.0)\n");
+    } else if union {
+        output.push_str("        match self {\n");
+        for field in real_oneof_fields(descriptor).into_iter().flatten() {
+            output.push_str(&format!(
+                "            Self::{}(value) => value.expanded_json(),\n",
+                field.name().to_upper_camel_case()
+            ));
+        }
+        output.push_str("        }\n");
+    } else {
+        let oneofs: BTreeSet<_> = real_oneof_fields(descriptor)
+            .into_iter()
+            .flatten()
+            .map(|field| field.full_name().to_owned())
+            .collect();
+        output.push_str("        Ok(serde_json::json!({\n");
+        for field in fields {
+            let name = field.name();
+            let optional = (field.field_descriptor_proto().proto3_optional()
+                || oneofs.contains(field.full_name()))
+                && !field_has_explicit_default(field, extensions)?;
+            let expression = if field.is_map() {
+                let Kind::Message(entry) = field.kind() else {
+                    unreachable!()
+                };
+                if matches!(entry.map_entry_value_field().kind(), Kind::Message(message) if message.package_name() == PACKAGE)
+                {
+                    format!(
+                        "self.{name}.iter().map(|(key, value)| Ok((key.clone(), value.expanded_json()?))).collect::<Result<serde_json::Map<String, serde_json::Value>, serde_json::Error>>()?"
+                    )
+                } else {
+                    format!("serde_json::to_value(&self.{name})?")
+                }
+            } else if matches!(field.kind(), Kind::Message(message) if message.package_name() == PACKAGE)
+            {
+                if field.is_list() {
+                    format!(
+                        "self.{name}.iter().map(EipExpandedJson::expanded_json).collect::<Result<Vec<_>, _>>()?"
+                    )
+                } else if optional {
+                    format!("self.{name}.as_ref().map(EipExpandedJson::expanded_json).transpose()?")
+                } else {
+                    format!("self.{name}.expanded_json()?")
+                }
+            } else {
+                format!("serde_json::to_value(&self.{name})?")
+            };
+            output.push_str(&format!("            {name:?}: {expression},\n"));
+        }
+        output.push_str("        }))\n");
+    }
+    output.push_str("    }\n}\n\n");
     Ok(())
 }
 
