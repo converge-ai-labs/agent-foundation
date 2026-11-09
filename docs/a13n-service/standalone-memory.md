@@ -36,6 +36,8 @@ Save the returned `id` (`mem_...`), then [mount it on a thread](standalone-memor
 
 `DELETE /memories/{id}` needs `write` and `If-Match`. It removes the files, history and thread mounts. A running agent using that memory receives `memory_deleted` on its next memory tool call.
 
+File memories also support [custom organization tasks and automatic policies](memory.md#automatically-extract-conversation-knowledge) without a Space. Standalone automation has its own policy ETag under `/memories/{id}/organization`; the memory resource ETag still controls ordinary configuration.
+
 ## Record memories
 
 ### Set up a Memory Provider

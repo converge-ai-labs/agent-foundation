@@ -76,6 +76,25 @@ description: 保存知识，在另一段对话中复用，并检查 agent 做过
 
 API 客户端通过 `GET /memory-spaces/{id}/organization` 读取状态，通过 `POST /memory-spaces/{id}/organizations` 请求整理，用同一路径的 `GET` 列出轮次。`/memory-spaces/{id}/sessions` 列出关联业务会话。列表使用 `limit` 和 `cursor`。文件和修订 API 使用空间的 `memory_id`，位于 `/memories/{memory_id}` 下。通过空间管理底层存储；它不出现在独立记忆列表中，也不能直接挂载。
 
+### 自动提取对话知识
+
+自动策略可包含任务 `instructions` 和 `history` 选择。指定对话会话 ID 和显式起始封存时间（`after`）；可选 `before` 关闭时间窗口，`max_runs` 限制每批数量（默认 100，最大 1000）。例如，在空间的 `organization` 策略中添加：
+
+```json
+{
+  "instructions": "Maintain product decisions and current handoff notes.",
+  "history": {
+    "session_ids": ["sess_..."],
+    "after": "2026-11-01T00:00:00Z",
+    "max_runs": 50
+  }
+}
+```
+
+未处理的已封存 Run 即使没有文件修改、记忆为空也能触发整理。完成的轮次消耗选定 Run；失败和取消的轮次在冷却后仍可重试。每批保留精确来源身份。文件修改计数与历史进度独立，因此清理修订和并发文件修改不会重放已成功处理的对话。修改选择保留已完成的历史进度。一次性整理任务不推进自动进度。
+
+独立文件型记忆使用同一策略，无需创建空间。先调用 `GET /memories/{id}/organization`，再用返回的 ETag 作为 `If-Match`，通过 `PUT` 替换策略。响应包含策略配置、状态、`processed_history_runs` 和配置版本；状态变化不改变策略 ETag。新独立策略默认关闭。托管底层记忆使用所属空间的策略。每轮接收前，服务重新检查配置者的当前权限和已配置资源。
+
 ### 运行自定义整理任务
 
 通过 `POST /memory-organizations` 使用自己选择的模型和指令，整理独立文件型记忆或已启用的空间。需要工作区 `read`、`write` 和 `run` 权限。无需配置自动策略，空存储也可以使用：

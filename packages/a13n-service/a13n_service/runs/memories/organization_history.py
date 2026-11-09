@@ -1,12 +1,12 @@
 """Frozen source Runs and their read boundary for memory organization."""
 
-from sqlalchemy import select
+from sqlalchemy import exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra.db import short_session
 from a13n_service.infra.errors import invalid
 from a13n_service.runs.memories.organization_schemas import OrganizationHistory, OrganizationSource
-from a13n_service.runs.memories.organization_tables import OrganizationRow
+from a13n_service.runs.memories.organization_tables import OrganizationProgressRow, OrganizationRow
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.sessions import find_session
 from a13n_service.runs.tables import RunRow, ThreadRow
@@ -17,7 +17,12 @@ TOOLS = frozenset({"list_organization_sources", "get_run", "list_run_items", "re
 
 
 async def select_sources(
-    session: AsyncSession, actor: Principal, scope: WorkspaceScope, selection: OrganizationHistory | None
+    session: AsyncSession,
+    actor: Principal,
+    scope: WorkspaceScope,
+    selection: OrganizationHistory | None,
+    *,
+    memory_id: str | None = None,
 ) -> list[OrganizationSource]:
     if selection is None:
         return []
@@ -35,12 +40,23 @@ async def select_sources(
             ThreadRow.purpose == "conversation",
         )
     )
+    if memory_id is not None:
+        query = query.where(
+            ~exists().where(
+                OrganizationProgressRow.memory_id == memory_id,
+                OrganizationProgressRow.source_run_id == RunRow.id,
+            )
+        )
     if selection.after is not None:
         query = query.where(RunRow.sealed_at >= selection.after)
     if selection.before is not None:
         query = query.where(RunRow.sealed_at <= selection.before)
-    rows = list(await session.scalars(query.order_by(RunRow.sealed_at, RunRow.id).limit(selection.max_runs + 1)))
-    if len(rows) > selection.max_runs:
+    rows = list(
+        await session.scalars(
+            query.order_by(RunRow.sealed_at, RunRow.id).limit(selection.max_runs + (memory_id is None))
+        )
+    )
+    if memory_id is None and len(rows) > selection.max_runs:
         raise invalid(
             "history.max_runs", "History exceeds max_runs; narrow the seal-time window or select fewer Sessions"
         )

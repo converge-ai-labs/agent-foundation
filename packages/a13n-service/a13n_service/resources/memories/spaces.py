@@ -105,7 +105,7 @@ async def create_space(
             description=body.description,
             labels=body.labels,
             enabled=body.enabled,
-            organization=body.organization.model_dump(mode="json"),
+            organization=body.organization.model_dump(mode="json", exclude_none=True),
             authority=authority,
             created_by_id=actor.id,
             updated_by_id=actor.id,
@@ -170,7 +170,7 @@ async def update_space(
         if "description" in body.model_fields_set:
             values["description"] = body.description
         if body.organization is not None:
-            values["organization"] = body.organization.model_dump(mode="json")
+            values["organization"] = body.organization.model_dump(mode="json", exclude_none=True)
             values["authority"] = await _authority(session, actor, scope, body.organization)
         memory = await session.get_one(MemoryRow, row.memory_id)
         memory_values: dict[str, object] = {}

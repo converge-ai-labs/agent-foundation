@@ -76,6 +76,25 @@ The **Organization** tab shows status, costs, traces and revisions separately fr
 
 For API clients, `GET /memory-spaces/{id}/organization` reads status; `POST /memory-spaces/{id}/organizations` requests a round; `GET` on that path lists rounds. `/memory-spaces/{id}/sessions` lists associated business sessions. Lists use `limit` and `cursor`. File and revision APIs use the Space's `memory_id` under `/memories/{memory_id}`. Manage the backing store through the Space; it stays out of standalone memory lists and cannot be mounted directly.
 
+### Automatically extract conversation knowledge
+
+Automatic policies can include task `instructions` and a `history` selection. Choose conversation Session IDs and an explicit starting seal time (`after`); optional `before` closes the window and `max_runs` limits each batch (default 100, maximum 1000). For example, add this to a Space's `organization` policy:
+
+```json
+{
+  "instructions": "Maintain product decisions and current handoff notes.",
+  "history": {
+    "session_ids": ["sess_..."],
+    "after": "2026-11-01T00:00:00Z",
+    "max_runs": 50
+  }
+}
+```
+
+Unprocessed sealed runs trigger organization even when no files changed or the memory is empty. Completed rounds consume their selected runs; failed and cancelled rounds leave them eligible after cooldown. Each batch keeps its exact source identities. File change counts and history progress are independent, so revision cleanup and concurrent file edits do not replay successfully processed conversations. Changing the selection preserves completed history progress. One-off organization tasks do not advance automatic progress.
+
+Standalone file memories use the same policy without requiring a Space. Read `GET /memories/{id}/organization`, then replace the policy with `PUT` and the returned `If-Match` ETag. The response includes policy configuration, status, `processed_history_runs` and configuration version; status changes leave the policy ETag unchanged. New standalone policies are disabled. Managed backing memories use their Space policy instead. The service rechecks the configuring actor's current permissions and configured resources before admitting every round.
+
 ### Run a custom organization task
 
 Use `POST /memory-organizations` to organize a standalone file memory or an enabled Space with your own model and instructions. This needs workspace `read`, `write` and `run` permissions. It works without an automatic policy, including on an empty store:

@@ -1915,6 +1915,24 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/memories/{memory_id}/organization": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Memory Automation */
+    get: operations["get_memory_automation"];
+    /** Update Memory Automation */
+    put: operations["update_memory_automation"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/memories/{memory_id}/records": {
     parameters: {
       query?: never;
@@ -5911,6 +5929,23 @@ export interface components {
       subject?: string | null;
     };
     /**
+     * AutomaticOrganizationHistory
+     * @description Automatic history starts only at an explicitly chosen seal time.
+     */
+    AutomaticOrganizationHistory: {
+      /** After */
+      after?: string | null;
+      /** Before */
+      before?: string | null;
+      /**
+       * Max Runs
+       * @default 100
+       */
+      max_runs?: number;
+      /** Session Ids */
+      session_ids: string[];
+    };
+    /**
      * AutomaticToolSearch
      * @description Group Service-owned sources individually, following the agent's selections.
      */
@@ -9398,6 +9433,17 @@ export interface components {
     };
     /** @enum {string} */
     MemoryAccess: "read" | "write";
+    /** MemoryAutomation */
+    MemoryAutomation: {
+      /** Id */
+      id: string;
+      policy: components["schemas"]["OrganizationPolicy"];
+      /** Processed History Runs */
+      processed_history_runs: number;
+      status: components["schemas"]["SpaceOrganizationStatus"];
+      /** Version */
+      version: number;
+    };
     /**
      * MemoryCreate
      * @description `postgres` makes a file memory the Service stores; a Memory Provider's type makes a record memory in that
@@ -10834,6 +10880,9 @@ export interface components {
        * @default false
        */
       enabled?: boolean;
+      history?: components["schemas"]["AutomaticOrganizationHistory"] | null;
+      /** Instructions */
+      instructions?: string | null;
       /** Model */
       model?: string | null;
       /** Trigger */
@@ -18831,6 +18880,66 @@ export interface operations {
           [name: string]: unknown;
         };
         content?: never;
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_memory_automation: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        memory_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryAutomation"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  update_memory_automation: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        memory_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["OrganizationPolicy"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryAutomation"];
+        };
       };
       400: components["responses"]["Error"];
       default: components["responses"]["Error"];

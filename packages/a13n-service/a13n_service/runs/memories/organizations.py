@@ -55,6 +55,7 @@ async def admit(
     *,
     authority: ExecutionAuthority,
     owner: SessionRow | None = None,
+    history_sources: list[OrganizationSource] | None = None,
 ) -> OrganizationRow:
     """The caller owns one short transaction; no execution or external I/O happens here."""
     for verb in ("run", "read", "write"):
@@ -77,7 +78,11 @@ async def admit(
     if request.output == "candidate":
         target = await find_row(session, actor, MemoryRow, scope, memory_id, "read")
         candidate_memory_id, baseline = await candidates.prepare(session, runtime, actor, scope, target)
-    sources = await organization_history.select_sources(session, actor, scope, request.history)
+    sources = (
+        await organization_history.select_sources(session, actor, scope, request.history)
+        if history_sources is None
+        else history_sources
+    )
     agent_id, revision_id = await organizer.revision(
         session, runtime, actor, scope, request.model, history=request.history is not None
     )

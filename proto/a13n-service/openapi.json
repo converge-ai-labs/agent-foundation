@@ -2849,6 +2849,56 @@
         "title": "AuthorizationStatus",
         "type": "object"
       },
+      "AutomaticOrganizationHistory": {
+        "description": "Automatic history starts only at an explicitly chosen seal time.",
+        "properties": {
+          "after": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After"
+          },
+          "before": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before"
+          },
+          "max_runs": {
+            "default": 100,
+            "maximum": 1000.0,
+            "minimum": 1.0,
+            "title": "Max Runs",
+            "type": "integer"
+          },
+          "session_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Session Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "session_ids"
+        ],
+        "title": "AutomaticOrganizationHistory",
+        "type": "object"
+      },
       "AutomaticToolSearch": {
         "additionalProperties": false,
         "description": "Group Service-owned sources individually, following the agent's selections.",
@@ -12121,6 +12171,37 @@
         ],
         "type": "string"
       },
+      "MemoryAutomation": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "policy": {
+            "$ref": "#/components/schemas/OrganizationPolicy"
+          },
+          "processed_history_runs": {
+            "title": "Processed History Runs",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SpaceOrganizationStatus"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "policy",
+          "status",
+          "processed_history_runs",
+          "version"
+        ],
+        "title": "MemoryAutomation",
+        "type": "object"
+      },
       "MemoryCreate": {
         "additionalProperties": false,
         "description": "`postgres` makes a file memory the Service stores; a Memory Provider's type makes a record memory in that\nprovider's backend, under a new namespace or the existing one `namespace` adopts.",
@@ -16587,7 +16668,6 @@
         "type": "object"
       },
       "OrganizationHistory": {
-        "additionalProperties": false,
         "description": "Explicit Sessions and a bounded, inclusive seal-time window.",
         "properties": {
           "after": {
@@ -16686,6 +16766,29 @@
             "default": false,
             "title": "Enabled",
             "type": "boolean"
+          },
+          "history": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AutomaticOrganizationHistory"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "instructions": {
+            "anyOf": [
+              {
+                "maxLength": 16384,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instructions"
           },
           "model": {
             "anyOf": [
@@ -39575,6 +39678,168 @@
           "memories"
         ],
         "x-a13n-mcp": true
+      }
+    },
+    "/api/v1/memories/{memory_id}/organization": {
+      "get": {
+        "operationId": "get_memory_automation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "memory_id",
+            "required": true,
+            "schema": {
+              "title": "Memory Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryAutomation"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Get Memory Automation",
+        "tags": [
+          "memory organizations"
+        ],
+        "x-a13n-mcp": true
+      },
+      "put": {
+        "operationId": "update_memory_automation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "memory_id",
+            "required": true,
+            "schema": {
+              "title": "Memory Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrganizationPolicy"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryAutomation"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Update Memory Automation",
+        "tags": [
+          "memory organizations"
+        ]
       }
     },
     "/api/v1/memories/{memory_id}/records": {

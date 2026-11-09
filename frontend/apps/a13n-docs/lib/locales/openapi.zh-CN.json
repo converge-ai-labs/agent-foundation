@@ -1,5 +1,8 @@
 {
   "Explicit Sessions and a bounded, inclusive seal-time window.": "显式选择 Session，并限定包含端点的运行封存时间范围。",
+  "Automatic history starts only at an explicitly chosen seal time.": "自动历史整理仅从显式选择的封存时间开始。",
+  "Get Memory Automation": "获取记忆自动整理策略",
+  "Update Memory Automation": "更新记忆自动整理策略",
   "Create Memory Organization": "创建记忆整理任务",
   "List Memory Organizations": "列出记忆整理任务",
   "Get Memory Organization": "获取记忆整理任务",

@@ -46,6 +46,10 @@ async def test_management_fidelity_and_audit(service: SimpleNamespace) -> None:
         assert created["headers"]["etag"]
         assert created["headers"]["x-request-id"]
         args = {"memory_id": memory_id}
+        automation = await call(http, service, "GET", "/memories/{memory_id}/organization", **args)
+        assert automation["status"] == 200
+        assert automation["body"]["processed_history_runs"] == 0
+        assert automation["body"]["policy"]["enabled"] is False
         missing = await call(http, service, "PATCH", "/memories/{memory_id}", **args, request_body={})
         assert missing["status"] == 428
         assert missing["body"]["error"]["code"] == "precondition_required"

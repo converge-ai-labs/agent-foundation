@@ -403,6 +403,7 @@ Retained-execution list, detail and bounded-result queries are admitted to MCP u
 
 | Path                                                             | Methods            | Owner                                               |
 | ---------------------------------------------------------------- | ------------------ | --------------------------------------------------- |
+| `/memories/{memory}/organization`                                | GET, PUT           | [11](11-memory.md#automatic-organization-policies)  |
 | `/memory-organizations`                                          | GET, POST          | [11](11-memory.md#organization-requests)            |
 | `/memory-organizations/{organization}`                           | GET                | [11](11-memory.md#organization-requests)            |
 | `/memory-organizations/{organization}/candidate`                 | GET                | [11](11-memory.md#candidate-output-and-publication) |

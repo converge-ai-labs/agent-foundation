@@ -121,8 +121,12 @@ from a13n_service.runs.findings.routes import router as findings_router
 from a13n_service.runs.findings.tables import AnalysisRow, FindingRow
 from a13n_service.runs.memories.organization import organization_sweep
 from a13n_service.runs.memories.organization_routes import router as memory_organizations_router
+from a13n_service.runs.memories.organization_tables import (
+    FileOrganizationRow,
+    OrganizationProgressRow,
+    SpaceOrganizationRow,
+)
 from a13n_service.runs.memories.organization_tables import OrganizationRow as MemoryOrganizationRow
-from a13n_service.runs.memories.organization_tables import SpaceOrganizationRow
 from a13n_service.runs.memories.routes import router as thread_memories_router
 from a13n_service.runs.memories.space_routes import router as space_execution_router
 from a13n_service.runs.memories.tables import ThreadMemoryRow
@@ -416,6 +420,8 @@ OSS = Distribution(
         MemoryRecordSourceRow,
         SessionRow,
         SpaceOrganizationRow,
+        FileOrganizationRow,
+        OrganizationProgressRow,
         MemoryOrganizationRow,
         ThreadRow,
         ThreadCodeActRow,

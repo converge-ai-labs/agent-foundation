@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Annotated, Literal
 
 from a13n_harness.providers.memory import MemoryAccess
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstraints, model_validator
+from pydantic import AfterValidator, AwareDatetime, BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 from a13n_service.infra.ids import Key, ObjectId
 from a13n_service.infra.labels import Labels
@@ -80,12 +80,42 @@ class ChangeCountTrigger(BaseModel):
     count: int = Field(ge=1, le=1_000_000)
 
 
+class OrganizationHistory(BaseModel):
+    """Explicit Sessions and a bounded, inclusive seal-time window."""
+
+    model_config = ConfigDict(frozen=True)
+    session_ids: tuple[str, ...] = Field(min_length=1, max_length=100)
+    after: AwareDatetime | None = None
+    before: AwareDatetime | None = None
+    max_runs: int = Field(default=100, ge=1, le=1000)
+
+    @model_validator(mode="after")
+    def valid_selection(self):
+        if len(set(self.session_ids)) != len(self.session_ids):
+            raise ValueError("Session IDs must be unique")
+        if self.after is not None and self.before is not None and self.after > self.before:
+            raise ValueError("after must not be later than before")
+        return self
+
+
+class AutomaticOrganizationHistory(OrganizationHistory):
+    """Automatic history starts only at an explicitly chosen seal time."""
+
+    @model_validator(mode="after")
+    def explicit_start(self):
+        if self.after is None:
+            raise ValueError("Automatic history requires an explicit after seal time")
+        return self
+
+
 class OrganizationPolicy(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     enabled: bool = False
     model: Key | None = None
     check_interval_seconds: int = Field(default=10, ge=10, le=86400)
     cooldown_seconds: int = Field(default=300, ge=0, le=604800)
+    instructions: str | None = Field(default=None, min_length=1, max_length=16384)
+    history: AutomaticOrganizationHistory | None = None
     trigger: Annotated[AnyChangeTrigger | ChangeCountTrigger, Field(discriminator="type")] = Field(
         default_factory=AnyChangeTrigger
     )

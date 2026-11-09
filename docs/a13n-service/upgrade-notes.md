@@ -11,6 +11,14 @@ Default and preset-following file guidance omit the optional `modules` key in st
 
 Before rolling back to a build without composable guidance, reset explicit selections to `modules: null` through the current API and drain the new organization tasks. Keep compatible readers for already accepted Runs; schema rollback does not convert accepted execution history. Automatic organization requires the policy owner's current and captured `read`, `write` and `run` authority; a revoked grant is recorded as an admission failure and follows the configured retry cooldown.
 
+## Automatic memory policy rollout
+
+The migration adds standalone policy and successful history-consumption tables. It preserves existing Space scheduler rows, Memory and Space IDs, files, revisions, Session bindings and accepted Runs. There is no data backfill, historical scan or model execution during migration. New foreign keys require brief locks on referenced tables; migration timeouts bound lock acquisition, and a rolled-back migration can be retried.
+
+Upgrade every control and worker before configuring policy `instructions` or `history` or using standalone automation. Unset new policy fields are omitted from storage so default policies retain their previous shape. Old processes reject explicitly configured new fields. Before rollback, disable standalone policies, clear Space `instructions` and `history`, and drain accepted organization Runs. Retain the additive tables and compatible readers for accepted history; dropping the tables discards standalone policy and consumption progress.
+
+History automation requires an explicit Session allowlist and starting seal time. Existing file-only policies retain their saved-change behavior; installation alone never opts them into conversation processing.
+
 ## Run search rollout
 
 For upgrades that introduce run search, the migration adds an empty-default search column and builds its GIN index concurrently. It does not backfill historical content. Column and trigger changes still need brief table locks; configured migration timeouts bound the work. A failed index build can be rerun: invalid indexes are removed and completed valid indexes are retained.
