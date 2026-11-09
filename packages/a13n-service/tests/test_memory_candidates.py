@@ -88,12 +88,15 @@ async def test_candidate_worker_isolated_then_apply_preserves_unchanged_identity
     assert (await service.client.post(f"{endpoint(service, organization)}/discard")).status_code == 409
 
 
-async def test_candidate_diff_preserves_unterminated_lines_and_newline_only_changes(service, scripted_model, runs_kit):
+async def test_candidate_diff_uses_lf_lines_and_preserves_final_newlines(service, scripted_model, runs_kit):
     memory = await team_memory(service)
     cases = [
         ("replace.md", "old", "new", "-old\n\\ No newline at end of file\n+new\n\\ No newline at end of file\n"),
         ("add-newline.md", "same", "same\n", "-same\n\\ No newline at end of file\n+same\n"),
         ("remove-newline.md", "same\n", "same", "-same\n+same\n\\ No newline at end of file\n"),
+        ("form-feed.md", "a\fb\n", "a\fc\n", "-a\fb\n+a\fc\n"),
+        ("unicode-separator.md", "a\u2028b\n", "a\u2028c\n", "-a\u2028b\n+a\u2028c\n"),
+        ("carriage-return.md", "a\rb\n", "a\rc\n", "-a\rb\n+a\rc\n"),
     ]
     for path, before, _, _ in cases:
         await write_file(service, memory, path, before)
