@@ -151,7 +151,7 @@ export function EnvdRuntime() {
   const progress = checkingSandbox
     ? t("Checking Sandbox isolation…")
     : state?.phase === "downloading"
-      ? t("Downloading envd · {{downloaded}} MB{{total}}", {
+      ? t("Downloading envd - {{downloaded}} MB{{total}}", {
           downloaded: ((state.downloaded_bytes ?? 0) / 1048576).toFixed(1),
           total: state.total_bytes
             ? ` / ${(state.total_bytes / 1048576).toFixed(1)} MB`
@@ -174,8 +174,8 @@ export function EnvdRuntime() {
             label="envd"
             description={
               state?.source === "custom"
-                ? t("Custom executable · managed on this host")
-                : t("Managed by Harness UI · {{version}}", {
+                ? t("Custom executable - managed on this host")
+                : t("Managed by Harness UI - {{version}}", {
                     version: state?.required_version ?? t("loading version…"),
                   })
             }
@@ -189,7 +189,7 @@ export function EnvdRuntime() {
                   : state.running_devices
                     ? t("{{count}} running", { count: state.running_devices })
                     : state.installed
-                      ? t("Installed · stopped")
+                      ? t("Installed - stopped")
                       : updateAvailable
                         ? t("Update required")
                         : t("Not installed")}
@@ -465,7 +465,7 @@ function RuntimeDetails() {
           <div className="min-w-0">
             <strong>
               {instance.sandbox ? t("Sandbox") : t("Full Control")}
-              {instance.computer_use ? ` · ${t("Computer Use")}` : ""}
+              {instance.computer_use ? ` - ${t("Computer Use")}` : ""}
             </strong>
             <small className="break-all">{instance.device_id}</small>
             {instance.roots.map((root) => (

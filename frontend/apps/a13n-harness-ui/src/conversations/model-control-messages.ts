@@ -51,7 +51,7 @@ export function modelControlMessage(message: string, t: TFunction): string {
   if (modelControlMessages.has(message)) return t(message);
   // Exact server-authored formats; do not partially translate unknown text.
   const budget =
-    /^(Thinking budget: |Budget · )(-?(?:0|[1-9]\d{0,2}(?:,\d{3})*)) tokens$/.exec(
+    /^(Thinking budget: |Budget - )(-?(?:0|[1-9]\d{0,2}(?:,\d{3})*)) tokens$/.exec(
       message,
     );
   if (budget) {
@@ -59,15 +59,15 @@ export function modelControlMessage(message: string, t: TFunction): string {
     if (Number.isSafeInteger(count))
       return budget[1] === "Thinking budget: "
         ? t("Thinking budget: {{count, number}} tokens", { count })
-        : t("Budget · {{count, number}} tokens", { count });
+        : t("Budget - {{count, number}} tokens", { count });
   }
   const effort =
-    /^(Adaptive|Effort) · (Minimal|Low|Medium|High|Xhigh|Max|Provider default|Custom)$/.exec(
+    /^(Adaptive|Effort) - (Minimal|Low|Medium|High|Xhigh|Max|Provider default|Custom)$/.exec(
       message,
     );
   if (effort)
     return effort[1] === "Adaptive"
-      ? t("Adaptive · {{level}}", { level: t(effort[2]) })
-      : t("Effort · {{level}}", { level: t(effort[2]) });
+      ? t("Adaptive - {{level}}", { level: t(effort[2]) })
+      : t("Effort - {{level}}", { level: t(effort[2]) });
   return message;
 }

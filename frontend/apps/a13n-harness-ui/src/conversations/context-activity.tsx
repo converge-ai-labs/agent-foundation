@@ -44,7 +44,7 @@ export function ContextActivity({
         </span>
         <span className={styles.contextStatus}>
           {state
-            ? [states[state], ...(diagnostics ?? [])].join(" · ")
+            ? [states[state], ...(diagnostics ?? [])].join(" - ")
             : text
               ? t("Saved")
               : t("In progress")}

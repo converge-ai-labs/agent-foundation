@@ -119,39 +119,39 @@ export function AgentNativeTools({
   const configured = capabilities.map(nativeToolKind).filter(Boolean);
   const tools = options.data?.native_tools ?? [];
   const knownText: Record<string, string> = {
-    "Web Search \u00b7 native": t("Web Search \u00b7 native"),
+    "Web Search \u00b7 native": t("Web Search - native"),
     "Provider search and citations; provider usage charges may apply.": t(
       "Provider search and citations; provider usage charges may apply.",
     ),
-    "Web Fetch \u00b7 native": t("Web Fetch \u00b7 native"),
+    "Web Fetch \u00b7 native": t("Web Fetch - native"),
     "Provider reads URLs in model context; not a crawler or local download.": t(
       "Provider reads URLs in model context; not a crawler or local download.",
     ),
-    "X Search \u00b7 native": t("X Search \u00b7 native"),
+    "X Search \u00b7 native": t("X Search - native"),
     "Search X posts through xAI; separate from general web search.": t(
       "Search X posts through xAI; separate from general web search.",
     ),
-    "Image Generation \u00b7 native": t("Image Generation \u00b7 native"),
+    "Image Generation \u00b7 native": t("Image Generation - native"),
     "Save generated images to Thread tmp; return file paths. Uses image quota.":
       t(
         "Save generated images to Thread tmp; return file paths. Uses image quota.",
       ),
-    "Code Execution \u00b7 native": t("Code Execution \u00b7 native"),
+    "Code Execution \u00b7 native": t("Code Execution - native"),
     "Provider sandbox, not your workspace shell; files stay with the provider.":
       t(
         "Provider sandbox, not your workspace shell; files stay with the provider.",
       ),
-    "Remote MCP \u00b7 provider-hosted": t("Remote MCP \u00b7 provider-hosted"),
+    "Remote MCP \u00b7 provider-hosted": t("Remote MCP - provider-hosted"),
     "Requires a public remote server URL and label; provider connects, not the Host.":
       t(
         "Requires a public remote server URL and label; provider connects, not the Host.",
       ),
-    "File Search \u00b7 native": t("File Search \u00b7 native"),
+    "File Search \u00b7 native": t("File Search - native"),
     "Requires provider stores; no local uploads. Google: deselect other native tools first.":
       t(
         "Requires provider stores; no local uploads. Google: deselect other native tools first.",
       ),
-    "Advisor \u00b7 native": t("Advisor \u00b7 native"),
+    "Advisor \u00b7 native": t("Advisor - native"),
     "Requires an advisor model ID; additional model usage is billed by the provider.":
       t(
         "Requires an advisor model ID; additional model usage is billed by the provider.",

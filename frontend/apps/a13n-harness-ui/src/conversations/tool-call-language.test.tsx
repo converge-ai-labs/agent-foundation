@@ -123,12 +123,12 @@ it("translates grouped exploration titles and the operations they contain", asyn
     />,
   );
   const group = screen.getByRole("button", {
-    name: "Explored 2 files · 1 lookup",
+    name: "Explored 2 files - 1 lookup",
   });
   fireEvent.click(group);
   await language("简体中文");
   expect(
-    screen.getByRole("button", { name: "已查看 2 个文件 · 1 次查找" }),
+    screen.getByRole("button", { name: "已查看 2 个文件 - 1 次查找" }),
   ).toBe(group);
   expect(group.getAttribute("aria-expanded")).toBe("true");
   expect(screen.getAllByText("读取").length).toBe(2);
@@ -143,10 +143,10 @@ it("translates execution counts in the group title and its observed phase", asyn
       tools={[completed("listed", "tool_execution_info", {}, [{}, {}, {}])]}
     />,
   );
-  expect(screen.getByText("Tool calls · 1 operation")).toBeTruthy();
+  expect(screen.getByText("Tool calls - 1 operation")).toBeTruthy();
   expect(screen.getByText("3 executions listed")).toBeTruthy();
   await language("简体中文");
-  expect(screen.getByText("工具调用 · 1 次操作")).toBeTruthy();
+  expect(screen.getByText("工具调用 - 1 次操作")).toBeTruthy();
   expect(screen.getByText("列出 3 次执行")).toBeTruthy();
 });
 

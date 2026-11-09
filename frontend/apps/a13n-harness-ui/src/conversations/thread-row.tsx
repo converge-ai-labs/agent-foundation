@@ -281,7 +281,7 @@ export function ThreadRow({
             <span
               className={styles.draftMarker}
               role="img"
-              aria-label={t("Draft · Unsent input")}
+              aria-label={t("Draft - Unsent input")}
               title={t("Unsent input")}
             >
               <PencilSimple size={12} aria-hidden="true" />
@@ -321,7 +321,7 @@ export function ThreadRow({
             className={styles.threadStar}
             role="img"
             aria-label={t("Starred chat: {{title}}", { title })}
-            title={t("Starred · Shared with everyone in this project")}
+            title={t("Starred - Shared with everyone in this project")}
           >
             <Star size={12} weight="fill" aria-hidden="true" />
           </span>

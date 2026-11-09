@@ -79,14 +79,14 @@ export function ModelOptions({
             disabled={disabled}
             className={styles.modelOption}
             aria-pressed={value === item.model_id}
-            title={`${item.model_id} · ${item.route}`}
+            title={`${item.model_id} - ${item.route}`}
             onClick={() => onChange(item.model_id)}
           >
             <span>
               <ModelIdentity model={item} />
               {(names.get(item.name) ?? 0) > 1 && (
                 <small>
-                  {item.model_id} · {item.route}
+                  {item.model_id} - {item.route}
                 </small>
               )}
             </span>

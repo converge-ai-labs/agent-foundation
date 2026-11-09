@@ -1198,8 +1198,11 @@ async def test_client_environment_runs_on_reverse_daemon_and_streams_files(
 
     from a13n_service.app import open_runtime
     from a13n_service.distribution import OSS
+    from a13n_service.infra.db import transaction
     from a13n_service.runs.claim import claim
     from a13n_service.runs.environments.clients.observations import Incarnation
+    from a13n_service.runs.environments.clients.schemas import Registration
+    from a13n_service.runs.environments.clients.service import register as register_client
     from a13n_service.runs.environments.clients.worker import Target
     from a13n_service.runs.environments.schemas import DEFAULT_MOUNT_PERMISSIONS
 
@@ -1217,27 +1220,36 @@ async def test_client_environment_runs_on_reverse_daemon_and_streams_files(
         interrupt_control_subscription,
     )
     from .conftest import listening
+    from .test_metrics_queries import builder
+    from .test_platform_tools import set_role
 
     workspace = (tmp_path / "client-project").resolve()
     workspace.mkdir()
     permissions = DEFAULT_MOUNT_PERMISSIONS.model_dump(mode="json")
     permissions["operations"].append("environment.computer.observe")
-    created = await service.client.post(
-        f"{service.api}/client-environments",
-        json={
-            "device_id": "device-client",
-            "name": "My computer",
-            "default_working_directory": str(workspace),
-            "permission_ceiling": permissions,
-        },
+    created = await register_client(
+        service.runtime,
+        await builder(service),
+        service.tenant.workspace_id,
+        Registration.model_validate(
+            {
+                "device_id": "device-client",
+                "name": "My computer",
+                "default_working_directory": str(workspace),
+                "permission_ceiling": permissions,
+            }
+        ),
     )
-    assert created.status_code == 201, created.text
-    identity = created.json()["client"]["environment"]["id"]
+    identity = created.client.environment.id
     token_file = tmp_path / "attachment-token"
-    token_file.write_text(created.json()["token"])
+    assert created.token is not None
+    token_file.write_text(created.token)
     token_file.chmod(0o600)
     agent = await runs_kit.create_agent(service, scripted_model)
     mount = [{"name": "workspace", "environment_id": identity, "permission_ceiling": permissions}]
+    # Another principal with Run but no Write permission uses the registered device.
+    async with transaction(service.runtime.storage) as session:
+        await set_role(session, service, "runner")
     # This run and its directory are accepted before the Device has connected.
     first = await runs_kit.start_thread(service, agent, "Write the proof file", environments=mount)
     assert await service.runtime.client_connections.presence(identity) is None
@@ -1272,7 +1284,7 @@ async def test_client_environment_runs_on_reverse_daemon_and_streams_files(
                     "A13N_ENVD_DEVICE_ID": "device-client",
                     "A13N_ENVD_RUNTIME_DIR": str(tmp_path / "daemon-state"),
                     "A13N_ENVD_TRANSPORT": "reverse_websocket",
-                    "A13N_ENVD_REVERSE_WS_URL": origin.replace("http://", "ws://") + created.json()["connection_path"],
+                    "A13N_ENVD_REVERSE_WS_URL": origin.replace("http://", "ws://") + created.connection_path,
                     "A13N_ENVD_REVERSE_WS_CREDENTIAL_FILE": str(token_file),
                     "A13N_ENVD_CONFIG_JSON": json.dumps(
                         {
@@ -1354,6 +1366,10 @@ async def test_client_environment_runs_on_reverse_daemon_and_streams_files(
             assert (workspace / "proof.txt").read_text().splitlines() == ["reverse-ok", "again"]
             assert not any((workspace / path).exists() for path in ("missed", "cached", "stale"))
             assert not service.runtime.client_sessions.scopes
+
+            # The remaining checks exercise explicit management and credential revocation.
+            async with transaction(service.runtime.storage) as session:
+                await set_role(session, service, "admin")
 
             if reconnect != "resume":
                 return

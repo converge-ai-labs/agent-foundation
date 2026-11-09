@@ -572,7 +572,7 @@ function ProjectGroup({
                         }),
                     ]
                       .filter(Boolean)
-                      .join(" · ")}
+                      .join(" - ")}
                   </p>
                 )}
                 {!!group.roots?.length && (
@@ -720,7 +720,7 @@ function ProjectGroup({
                   <span
                     role="heading"
                     aria-level={3}
-                    aria-label={t("New results · {{count, number}}", {
+                    aria-label={t("New results - {{count, number}}", {
                       count: unreadRows.length,
                     })}
                   >

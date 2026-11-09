@@ -270,7 +270,7 @@ it("retains recovery outcomes and counts subsequent attempts without flashing aw
   expect(screen.getByRole("status").textContent).toContain("restored");
   act(() => vi.advanceTimersByTime(10000));
   expect(screen.getByRole("status").textContent).toContain(
-    "restored · 1 retry",
+    "restored - 1 retry",
   );
   view.rerender(
     <RecoveryNotice
@@ -623,7 +623,7 @@ it("groups only adjacent notifications in order across saved/live cutover", () =
     />,
   );
   const check = () => {
-    const group = screen.getByText("System updates · 2").closest("details")!;
+    const group = screen.getByText("System updates - 2").closest("details")!;
     expect(group.open).toBe(false);
     expect(group.querySelectorAll("details")).toHaveLength(0);
     expect(
@@ -967,7 +967,7 @@ it.each([false, true])(
     expect(screen.queryByRole("status")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /Work log/ }));
     const notice = screen.getByRole("status");
-    expect(notice.textContent).toContain("Model connection restored · 1 retry");
+    expect(notice.textContent).toContain("Model connection restored - 1 retry");
     expect(notice.closest("[data-execution-reader]")).toBe(
       screen.getByRole("region", { name: "Work log" }),
     );
@@ -1020,7 +1020,7 @@ it.each(["desktop", "mobile"])(
     expect(screen.getByRole("region", { name: "Work log" })).toBe(reader);
     if (layout === "mobile") expect(screen.getByRole("dialog")).toBe(dialog);
     expect(screen.getByRole("status").textContent).toContain(
-      "Model connection restored · 1 retry",
+      "Model connection restored - 1 retry",
     );
   },
 );

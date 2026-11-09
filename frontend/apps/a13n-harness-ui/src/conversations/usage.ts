@@ -75,10 +75,10 @@ export function usageSummary(
             : totalTokens >= 1000
               ? `${(totalTokens / 1000).toFixed(1)}K`
               : String(totalTokens),
-    context:
+    contextPercent:
       used != null && window != null && window > 0
-        ? `${Math.round((100 * used) / window)}%`
-        : "—",
+        ? (100 * used) / window
+        : undefined,
     cost: modelCost(usage?.first_observed_at ? usage.combined : undefined),
     cache:
       usage?.first_observed_at && total > 0 && cache != null

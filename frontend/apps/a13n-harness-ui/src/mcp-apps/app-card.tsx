@@ -35,7 +35,7 @@ export function AppCard(props: {
   const { t } = useTranslation();
   const guest = useGuestAccess();
   return guest ? (
-    <p>{t("Interactive app · available to the instance owner")}</p>
+    <p>{t("Interactive app - available to the instance owner")}</p>
   ) : (
     <OwnerAppCard {...props} />
   );
@@ -192,7 +192,7 @@ function OwnerAppCard({
       <header className={styles.header}>
         <div>
           <strong>{reference.tool_name}</strong>
-          <small>{reference.server_id} · MCP App</small>
+          <small>{reference.server_id} - MCP App</small>
         </div>
         <Button
           size="sm"
@@ -243,10 +243,10 @@ function OwnerAppCard({
             <p>
               {session
                 ? t(
-                    "Server interactions active · follow-up results stay in this View",
+                    "Server interactions active - follow-up results stay in this View",
                   )
                 : t(
-                    "Original presentation · server interactions are not activated",
+                    "Original presentation - server interactions are not activated",
                   )}
             </p>
             {!session && (
@@ -325,7 +325,7 @@ function AppMessageConfirmation({ session }: { session: AppSession }) {
       {state.receipt?.reason && <p role="alert">{state.receipt.reason}</p>}
       {state.receipt?.receipt && (
         <p role="status">
-          {t("Accepted by the chat · {{id}}", {
+          {t("Accepted by the chat - {{id}}", {
             id: state.receipt.receipt.receipt_id,
           })}
         </p>

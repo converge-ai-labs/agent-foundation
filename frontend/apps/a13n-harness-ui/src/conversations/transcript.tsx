@@ -82,7 +82,7 @@ function ActivityRow({ row }: { row: Extract<Row, { kind: "activity" }> }) {
         ? t("Execution suspended")
         : t("Execution failed")
     : row.childName
-      ? t("Subagent · {{name}}", { name: row.childName })
+      ? t("Subagent - {{name}}", { name: row.childName })
       : (row.name ?? t("Activity"));
   const generated =
     row.childState === "running"
@@ -1295,7 +1295,7 @@ function ExecutionSegment({
       ? t("Worked for {{duration}}", { duration })
       : t("Worked")
     : toolInfo
-      ? `${[toolLabel(toolInfo, t), toolSummary(toolInfo, t)].filter(Boolean).join(" ")}${toolInfo.showPhase ? ` · ${toolPhase(toolInfo.phase, t)}` : ""}`
+      ? `${[toolLabel(toolInfo, t), toolSummary(toolInfo, t)].filter(Boolean).join(" ")}${toolInfo.showPhase ? ` - ${toolPhase(toolInfo.phase, t)}` : ""}`
       : latest?.kind === "thinking"
         ? t("Thought")
         : t("View the available execution steps");
@@ -1400,7 +1400,7 @@ export function RecoveryNotice({
           : recovery.state === "resumed"
             ? t("Model connection restored")
             : t("Model reconnection ended")}
-        {` · ${t("Retry count", { count: recovery.retries })}`}
+        {` - ${t("Retry count", { count: recovery.retries })}`}
       </span>
     </div>
   );

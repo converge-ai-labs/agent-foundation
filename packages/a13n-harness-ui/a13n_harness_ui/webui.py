@@ -10,6 +10,7 @@ import ipaddress
 import json
 import os
 import secrets
+import sys
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 from pathlib import Path
@@ -225,6 +226,7 @@ class ListenerFeatures(SurfaceModel):
 
     shared_drafts: Literal[True] = True
     page_presence: Literal[True] = True
+    file_manager: Literal["finder", "explorer"] | None = None
     host_files: bool = False
     host_git: bool = False
     host_terminal: bool = False
@@ -727,13 +729,29 @@ def create_webui(
         await app().sharing.revoke(share_id)
         return Response(status_code=204)
 
+    def local_file_manager(request: Request) -> Literal["finder", "explorer"] | None:
+        local_hosts = {"127.0.0.1", "::1", "localhost"}
+        if (
+            not app().shares_computer
+            or host not in local_hosts
+            or request.url.hostname not in local_hosts
+            or not request.client
+            or request.client.host not in local_hosts
+            or any(header in request.headers for header in ("forwarded", "x-forwarded-for", "x-forwarded-host"))
+        ):
+            return None
+        if sys.platform == "darwin":
+            return "finder"
+        return "explorer" if sys.platform == "win32" else None
+
     @server.get("/api/status", response_model=ListenerStatus)
-    async def status() -> ListenerStatus:
+    async def status(request: Request) -> ListenerStatus:
         return ListenerStatus(
             version=__version__,
             build_revision=os.environ.get("A13N_HARNESS_UI_BUILD_REVISION"),
             app=await app().status(),
             features=ListenerFeatures(
+                file_manager=local_file_manager(request),
                 host_files=app().shares_computer,
                 host_git=app().host_git_available,
                 host_terminal=app().host_terminal_available,
@@ -1350,6 +1368,28 @@ def create_webui(
             pass
         finally:
             session.detach(participant)
+
+    @server.post("/api/host/files/reveal", status_code=204)
+    async def reveal_host_file(request: Request, path: NativePath) -> Response:
+        app().require_host_files()
+        manager = local_file_manager(request)
+        if not manager:
+            raise HarnessUiError("Local file manager unavailable.", code="host_files_permission_denied")
+        entry = await app().host_file_metadata(path)
+        if entry.kind not in {"file", "directory"}:
+            raise HarnessUiError("Select a regular file or folder.", code="request_invalid")
+        try:
+            if manager == "finder":
+                process = await asyncio.create_subprocess_exec("/usr/bin/open", "-R", entry.path)
+                if await process.wait():
+                    raise OSError("Finder could not reveal the item.")
+            else:
+                await asyncio.create_subprocess_exec(
+                    str(Path(os.environ["SystemRoot"]) / "explorer.exe"), "/select,", entry.path
+                )
+        except OSError as exc:
+            raise HarnessUiError("Could not reveal the item.", code="host_files_io_error") from exc
+        return Response(status_code=204)
 
     @server.get("/api/host/files/metadata", response_model=FileEntry)
     async def host_file_metadata(path: NativePath) -> FileEntry:

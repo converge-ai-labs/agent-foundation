@@ -620,7 +620,7 @@ export default function AnnotationEditor({
             {saving
               ? t("Exporting PNG…")
               : text
-                ? t("Editing text · Ctrl/⌘ Enter to apply · Esc to cancel")
+                ? t("Editing text - Ctrl/⌘ Enter to apply - Esc to cancel")
                 : (message && t(message)) ||
                   `${document.crop.width} × ${document.crop.height} px`}
           </span>

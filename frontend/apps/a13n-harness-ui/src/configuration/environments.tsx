@@ -88,7 +88,7 @@ export function EnvironmentsEditor({
               ? [
                   {
                     value: value.environment_profile_id,
-                    label: t("{{name}} · Unavailable", {
+                    label: t("{{name}} - Unavailable", {
                       name: value.environment_profile_id,
                     }),
                     disabled: true,
@@ -144,12 +144,12 @@ export function EnvironmentsSummary({
   return (
     <div className={styles.summary}>
       <section className={styles.summaryEnvironment}>
-        <p className="font-medium">{t("Local · Harness server")}</p>
+        <p className="font-medium">{t("Local - Harness server")}</p>
         <p className="text-muted-foreground">
           {profile?.name ?? value.environment_profile_id ?? t("Default mode")}
           {value.local_roots?.length
-            ? ` · ${directoryCount(value.local_roots.length)}`
-            : ` · ${t("Chat files only")}`}
+            ? ` - ${directoryCount(value.local_roots.length)}`
+            : ` - ${t("Chat files only")}`}
         </p>
         {(value.local_roots ?? []).map((path, index) => (
           <p key={path} className={styles.summaryPath}>
@@ -159,7 +159,7 @@ export function EnvironmentsSummary({
             )}
           </p>
         ))}
-        {selected === "thread-files" && <p>{t("Chat files · Default")}</p>}
+        {selected === "thread-files" && <p>{t("Chat files - Default")}</p>}
       </section>
       <BindingSummary
         bindings={value.environment_bindings ?? []}

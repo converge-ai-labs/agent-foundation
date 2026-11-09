@@ -85,6 +85,7 @@ pub(crate) async fn serve(
             Ok(credential) => credential,
             Err(error) => break Err(error),
         };
+        crate::connect::launcher::emit("connecting", serde_json::json!({}));
         let connected = connect(
             websocket,
             &credential,
@@ -117,6 +118,7 @@ pub(crate) async fn serve(
             }
         }
 
+        crate::connect::launcher::emit("reconnecting", serde_json::json!({}));
         let delay = full_jitter(backoff);
         backoff = backoff.saturating_mul(2).min(RECONNECT_CAP);
         let mut reconnect_shutdown = shutdown.clone();
@@ -373,6 +375,7 @@ async fn serve_connection(
         return Err(ConnectionFailure::Transient);
     }
 
+    crate::connect::launcher::emit("online", serde_json::json!({}));
     let mut requests = JoinSet::new();
     let mut ping_interval = tokio::time::interval(PING_INTERVAL);
     ping_interval.set_missed_tick_behavior(MissedTickBehavior::Delay);

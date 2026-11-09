@@ -149,7 +149,7 @@ export function GoalStatus({
         {moving ? <LogoAnimation size={16} /> : <Icon aria-hidden="true" />}
         <span className={styles.name}>{t("Goal")}</span>
         <span className={styles.phase} role="status" aria-live="polite">
-          <span aria-hidden="true">· </span>
+          <span aria-hidden="true">- </span>
           {label}
           {status === "checking" && !preparing && iteration > 0 && (
             <> {iteration}</>
@@ -197,7 +197,7 @@ export function GoalStatus({
           <div>
             <dt>{t("Tokens")}</dt>
             <dd>
-              {t("{{input}} in · {{output}} out", {
+              {t("{{input}} in - {{output}} out", {
                 input: (goal.input_tokens ?? 0).toLocaleString(),
                 output: (goal.output_tokens ?? 0).toLocaleString(),
               })}

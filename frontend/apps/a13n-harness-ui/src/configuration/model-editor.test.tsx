@@ -328,7 +328,7 @@ it("provider defaults remove preset-owned fields without removing custom native 
   expect(budget.textContent).toContain("128,000 tokens");
   await user.click(budget);
   await user.click(
-    await screen.findByRole("option", { name: "Compact · 64,000 tokens" }),
+    await screen.findByRole("option", { name: "Compact - 64,000 tokens" }),
   );
   expect(budget.textContent).toContain("64,000 tokens");
   await user.click(budget);
@@ -351,7 +351,7 @@ it("provider defaults remove preset-owned fields without removing custom native 
 it("localizes preset labels without changing the draft or replaying preparation", async () => {
   mount();
   const user = userEvent.setup();
-  await screen.findByText(/High reasoning ·/);
+  await screen.findByText(/High reasoning -/);
   await openDefaults(user);
   const before = source();
   const prepareCalls = mocks.prepare.mock.calls.length;
@@ -369,10 +369,10 @@ it("localizes preset labels without changing the draft or replaying preparation"
   expect(source()).toContain("# Keep custom setting");
 
   await user.click(screen.getByRole("tab", { name: "连接" }));
-  await screen.findByText(/提供商默认设置 ·/);
+  await screen.findByText(/提供商默认设置 -/);
   const updated = source();
   await act(() => i18n.changeLanguage("en"));
-  await screen.findByText(/Provider defaults ·/);
+  await screen.findByText(/Provider defaults -/);
   await openDefaults(user);
   expect(
     screen.getByRole("combobox", { name: "Settings preset" }).textContent,

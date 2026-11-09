@@ -80,7 +80,7 @@ export function DefaultWorkingDirectory({
             ? [
                 {
                   value: selected,
-                  label: t("Removed directory · Choose a replacement"),
+                  label: t("Removed directory - Choose a replacement"),
                   disabled: true,
                 },
               ]
@@ -111,7 +111,7 @@ export function BindingSummary({
           <p className="font-medium">
             {devices.data?.find((item) => item.id === group.deviceId)?.name ??
               group.deviceId}
-            {" · "}
+            {" - "}
             {permissionLabel(group.directories[0].permission_ceiling)}
           </p>
           <p className="text-muted-foreground">
@@ -182,7 +182,7 @@ export function EnvironmentBindings({
               <div>
                 <h3 className="font-medium">{name}</h3>
                 <p className="text-sm text-muted-foreground">
-                  {permissionLabel(policy.permission_ceiling)} ·{" "}
+                  {permissionLabel(policy.permission_ceiling)} -{" "}
                   {directoryCount(group.directories.length)}
                 </p>
                 {devices.data &&
@@ -257,7 +257,7 @@ export function EnvironmentBindings({
               )}
               {group.directories.map((binding) => (
                 <p key={binding.alias} className="mt-1 break-all">
-                  {binding.alias} · {binding.working_directory}
+                  {binding.alias} - {binding.working_directory}
                 </p>
               ))}
             </details>
@@ -431,7 +431,7 @@ function DeviceEnvironmentEditor({
               ? [
                   {
                     value: deviceId,
-                    label: t("{{name}} · Not configured", { name: deviceId }),
+                    label: t("{{name}} - Not configured", { name: deviceId }),
                   },
                 ]
               : []),
@@ -639,8 +639,8 @@ function BindingStatus({ deviceId }: { deviceId: string }) {
     >
       {info.data
         ? info.data.available
-          ? t("Online · Check")
-          : t("Offline · Retry")
+          ? t("Online - Check")
+          : t("Offline - Retry")
         : t("Check connection")}
     </Button>
   );

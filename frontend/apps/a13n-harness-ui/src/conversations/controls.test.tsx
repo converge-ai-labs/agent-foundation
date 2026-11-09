@@ -323,7 +323,7 @@ it("keeps child instructions after unknown control and addresses the exact paren
       GET: vi.fn().mockResolvedValue({ data: { outputs: [] } }),
     }),
   });
-  fireEvent.click(screen.getByText("Explorer · running"));
+  fireEvent.click(screen.getByText("Explorer - running"));
   fireEvent.change(
     await screen.findByRole("textbox", { name: "Instruction for Explorer" }),
     { target: { value: "Inspect this" } },
@@ -578,7 +578,7 @@ it("edits Run-only local and remote selections without changing the Thread", asy
   await user.click(
     screen.getByRole("button", {
       name: "Environments",
-      description: "2 environments · 2 directories",
+      description: "2 environments - 2 directories",
     }),
   );
   const path = screen.getByRole("textbox", { name: "Server directory" });

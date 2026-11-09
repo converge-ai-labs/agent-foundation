@@ -50,7 +50,7 @@ it("matches chat-wide CLI accounting while context stays request-local", () => {
   ).toEqual({
     totalTokens: 10000,
     tokens: "10.0K",
-    context: "25%",
+    contextPercent: 25,
     cost: "$100.03",
     cache: "6.0%",
   });
@@ -59,7 +59,7 @@ it("distinguishes missing usage from zero, partial costs and tiny nonzero costs"
   expect(usageSummary()).toEqual({
     totalTokens: undefined,
     tokens: "—",
-    context: "—",
+    contextPercent: undefined,
     cost: "—",
     cache: "—",
   });
@@ -90,8 +90,8 @@ it("distinguishes missing usage from zero, partial costs and tiny nonzero costs"
       thread_id: "thread-one",
       context_window: 0,
       latest_request_tokens: 1,
-    }).context,
-  ).toBe("—");
+    }).contextPercent,
+  ).toBeUndefined();
 });
 it.each([
   [0, "0"],

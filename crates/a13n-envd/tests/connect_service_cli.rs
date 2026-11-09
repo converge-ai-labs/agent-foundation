@@ -222,3 +222,242 @@ async fn supplied_environment_is_forwarded_and_rejection_does_not_retry_or_repla
             .is_err()
     );
 }
+
+#[tokio::test]
+async fn console_pairing_saves_secret_before_claim_and_reconnects_without_api_token() {
+    let fixture = Fixture::new();
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    let mut child = fixture
+        .command(&url)
+        .args(["--workspace-id", "ws_test", "--pairing-id", "pair_test"])
+        .spawn()
+        .unwrap();
+    let (stream, line, headers, body) = request(&listener).await;
+    assert!(line.starts_with("POST /api/v1/client-environments/pairings/pair_test/claim "));
+    let credential = fs::read_to_string(fixture.profile().join("credential")).unwrap();
+    assert_eq!(credential.len(), 64);
+    assert_eq!(
+        headers["x-a13n-device-credential"],
+        format!("Bearer {credential}")
+    );
+    assert_eq!(body["device_id"], "dev-test");
+    assert_eq!(body["full_control"], true);
+    respond(
+        stream,
+        200,
+        json!({"state":"pending", "verification_code":"123456"}),
+    )
+    .await;
+    let (stream, _, repeated_headers, repeated_body) = request(&listener).await;
+    assert_eq!(
+        headers["x-a13n-device-credential"],
+        repeated_headers["x-a13n-device-credential"]
+    );
+    assert_eq!(body, repeated_body);
+    respond(stream, 200, json!({"state":"approved", "verification_code":"123456", "environment_id":"env_test", "connection_path":"/api/v1/client-environments/env_test/connect"})).await;
+    websocket(&listener, &credential).await;
+    child.kill().await.unwrap();
+    let output = child.wait_with_output().await.unwrap();
+    let log = String::from_utf8(output.stderr).unwrap();
+    assert!(log.contains("123456") && log.contains("env_test"));
+    assert!(!log.contains(&credential));
+    let mut reconnect = fixture.command("test").spawn().unwrap();
+    websocket(&listener, &credential).await;
+    reconnect.kill().await.unwrap();
+    reconnect.wait().await.unwrap();
+}
+
+#[tokio::test]
+async fn rejected_pairing_preserves_local_secret_and_does_not_open_a_websocket() {
+    let fixture = Fixture::new();
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    let child = fixture
+        .command(&url)
+        .args(["--workspace-id", "ws_test", "--pairing-id", "pair_expired"])
+        .spawn()
+        .unwrap();
+    let (stream, _, _, _) = request(&listener).await;
+    let credential = fs::read_to_string(fixture.profile().join("credential")).unwrap();
+    respond(
+        stream,
+        404,
+        json!({"error":{"code":"not_found", "message":"Pairing expired"}}),
+    )
+    .await;
+    let error = finish(child).await;
+    assert!(!error.contains(&credential));
+    assert_eq!(
+        credential,
+        fs::read_to_string(fixture.profile().join("credential")).unwrap()
+    );
+    assert!(
+        timeout(Duration::from_millis(100), listener.accept())
+            .await
+            .is_err()
+    );
+}
+
+#[tokio::test]
+async fn link_check_reports_target_without_contacting_it_or_starting_a_daemon() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let link = format!(
+        "a13n-envd://connect?service=http://{}&workspace=ws_test&host=console-test&pairing=pair_test",
+        listener.local_addr().unwrap()
+    );
+    let output = Command::new(env!("CARGO_BIN_EXE_a13n-envd"))
+        .args(["connect-link", &link, "--check"])
+        .output()
+        .await
+        .unwrap();
+    assert!(output.status.success());
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(text.contains("Service: http://127.0.0.1:"));
+    assert!(text.contains("Workspace: ws_test"));
+    assert!(!text.contains("pair_test"));
+    let output = Command::new(env!("CARGO_BIN_EXE_a13n-envd"))
+        .args(["connect-link", &link, "--check-json"])
+        .output()
+        .await
+        .unwrap();
+    assert!(output.status.success());
+    let data: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(data["workspace"], "ws_test");
+    assert_eq!(data["host"], "console-test");
+    assert!(
+        !String::from_utf8(output.stdout)
+            .unwrap()
+            .contains("pair_test")
+    );
+    assert!(
+        timeout(Duration::from_millis(100), listener.accept())
+            .await
+            .is_err()
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn launcher_reports_verification_without_secrets_and_stops_when_app_pipe_closes() {
+    let fixture = Fixture::new();
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let mut child = fixture
+        .command(&format!("http://{}", listener.local_addr().unwrap()))
+        .args([
+            "--workspace-id",
+            "ws_test",
+            "--pairing-id",
+            "pair_test",
+            "--launcher",
+        ])
+        .stdin(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let (stream, _, _, _) = request(&listener).await;
+    respond(
+        stream,
+        200,
+        json!({"state":"pending", "verification_code":"123456"}),
+    )
+    .await;
+    let mut output = BufReader::new(child.stdout.take().unwrap());
+    let mut line = String::new();
+    timeout(Duration::from_secs(5), output.read_line(&mut line))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        serde_json::from_str::<Value>(&line).unwrap(),
+        json!({"event":"verification","data":{"code":"123456"}})
+    );
+    let credential = fs::read_to_string(fixture.profile().join("credential")).unwrap();
+    assert!(!line.contains(&credential));
+    drop(child.stdin.take());
+    let error = finish(child).await;
+    assert!(error.contains("Console pairing cancelled"), "{error}");
+}
+
+#[tokio::test]
+async fn recognition_reuses_registration_while_daemon_owns_runtime_and_preserves_files() {
+    let fixture = Fixture::new();
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    let child = fixture.enroll(&url);
+    let (stream, _, _, _) = request(&listener).await;
+    respond(stream, 200, registered(json!("device-secret"))).await;
+    // Keep the original daemon alive and holding its runtime lock.
+    let (carrier, line, _, _) = request(&listener).await;
+    assert!(line.starts_with("GET /api/v1/client-environments/env_test/connect "));
+    let profile = fs::read(fixture.profile().join("service.json")).unwrap();
+    let credential = fs::read(fixture.profile().join("credential")).unwrap();
+    for status in [200, 401] {
+        let link = format!(
+            "a13n-envd://connect?service={url}&workspace=ws_test&host=test&pairing=pair_test"
+        );
+        let probe = Command::new(env!("CARGO_BIN_EXE_a13n-envd"))
+            .args(["connect-link", &link, "--recognize", "--state-dir"])
+            .arg(fixture.0.path().join("state"))
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        let (stream, line, headers, body) = request(&listener).await;
+        assert!(line.starts_with("POST /api/v1/client-environments/pairings/pair_test/recognize "));
+        assert_eq!(headers["x-a13n-device-credential"], "Bearer device-secret");
+        assert_eq!(
+            body,
+            json!({"device_id":"dev-test", "environment_id":"env_test"})
+        );
+        respond(
+            stream,
+            status,
+            json!({"state":"approved", "reused":true, "environment_id":"env_test"}),
+        )
+        .await;
+        let output = timeout(Duration::from_secs(5), probe.wait_with_output())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(output.status.success(), status == 200);
+        if status == 200 {
+            assert_eq!(
+                serde_json::from_slice::<Value>(&output.stdout).unwrap(),
+                json!({"registered":true})
+            );
+        }
+        assert!(!String::from_utf8_lossy(&output.stdout).contains("device-secret"));
+        assert!(!String::from_utf8_lossy(&output.stderr).contains("device-secret"));
+        assert_eq!(
+            profile,
+            fs::read(fixture.profile().join("service.json")).unwrap()
+        );
+        assert_eq!(
+            credential,
+            fs::read(fixture.profile().join("credential")).unwrap()
+        );
+    }
+    respond(carrier, 403, json!({})).await;
+    finish(child).await;
+    assert!(
+        timeout(Duration::from_millis(100), listener.accept())
+            .await
+            .is_err()
+    );
+}
+
+#[tokio::test]
+async fn recognition_without_registration_does_not_create_state_or_contact_service() {
+    let fixture = Fixture::new();
+    let output = Command::new(env!("CARGO_BIN_EXE_a13n-envd"))
+        .args(["connect-link", "a13n-envd://connect?service=https://unreachable.invalid&workspace=ws_test&host=test&pairing=pair_test", "--recognize", "--state-dir"])
+        .arg(fixture.0.path().join("state"))
+        .output().await.unwrap();
+    assert!(output.status.success());
+    assert_eq!(
+        serde_json::from_slice::<Value>(&output.stdout).unwrap(),
+        json!({"registered":false})
+    );
+    assert!(!fixture.0.path().join("state").exists());
+}

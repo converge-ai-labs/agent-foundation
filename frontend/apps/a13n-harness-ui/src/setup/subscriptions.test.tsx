@@ -255,7 +255,7 @@ it("lists vouchers by expiry and requires confirmation after choosing Use", asyn
     within(rows[0]).getByText(voucherCredits[2].description!),
   ).toBeTruthy();
   fireEvent.click(within(rows[0]).getByRole("button", { name: "Use" }));
-  expect(screen.getByText(/Account: Work · upstream-work/)).toBeTruthy();
+  expect(screen.getByText(/Account: Work - upstream-work/)).toBeTruthy();
   expect(writes).toHaveLength(0);
   fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   expect(writes).toHaveLength(0);

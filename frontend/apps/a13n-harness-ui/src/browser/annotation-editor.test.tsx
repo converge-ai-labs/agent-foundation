@@ -122,7 +122,7 @@ it("keeps native multiline composition separate from document history", async ()
   const input = screen.getByRole("textbox", { name: "Annotation text" });
   await waitFor(() => expect(document.activeElement).toBe(input));
   expect(
-    screen.getByText(/Editing text · Ctrl\/⌘ Enter to apply/),
+    screen.getByText(/Editing text - Ctrl\/⌘ Enter to apply/),
   ).toBeTruthy();
   fireEvent.compositionStart(input);
   fireEvent.change(input, { target: { value: "中文\nsecond line" } });
