@@ -79,9 +79,9 @@ function activityText(
           count,
         });
       }
-      const pending = /^(\d+) (waiting|running|need attention)$/.exec(segment);
-      if (pending)
-        return t(`{{count}} ${pending[2]}`, { count: Number(pending[1]) });
+      const attention = /^(\d+) need attention$/.exec(segment);
+      if (attention)
+        return t("{{count}} need attention", { count: Number(attention[1]) });
       const phrase =
         /^(Running|Ran|Exploring|Explored) (\d+) (command|process operation|file|lookup)s?$/.exec(
           segment,

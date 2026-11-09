@@ -142,8 +142,7 @@ export function describeTool(tool: ToolView) {
               : tool.inputComplete
                 ? "Awaiting result"
                 : "Receiving input";
-  const running =
-    !!tool.live && (phase === "Receiving input" || phase === "Awaiting result");
+  const pending = phase === "Receiving input" || phase === "Awaiting result";
   let label = tool.name || "Tool";
   let generatedLabel = true;
   let summary = path;
@@ -476,8 +475,8 @@ export function describeTool(tool: ToolView) {
     path,
     label,
     generatedLabel,
-    showPhase: phase !== "Awaiting result" && phase !== "Result received",
-    running,
+    showPhase: !pending && phase !== "Result received",
+    running: !!tool.live && pending,
     generatedSummary,
     summary,
     kind,
@@ -750,7 +749,7 @@ export function activitySummary(tools: ToolView[]) {
   const count = (n: number, noun: string) =>
     `${n} ${noun}${n === 1 ? "" : "s"}`;
   const files = new Set(infos.map((info) => info.path).filter(Boolean)).size;
-  const pendingTools = tools.filter(
+  const pending = tools.some(
     (tool) =>
       tool.result === undefined &&
       tool.resultParts === undefined &&
@@ -759,7 +758,6 @@ export function activitySummary(tools: ToolView[]) {
       !tool.failure &&
       !tool.retry,
   );
-  const pending = pendingTools.length;
   const issues = infos.filter(
     (info) =>
       info.failed ||
@@ -795,30 +793,25 @@ export function activitySummary(tools: ToolView[]) {
   const notices = issues.filter(
     (info) => info.phase !== "Failed" || kind === "executions",
   );
-  const waiting = pendingTools.filter(
-    (tool) => tool.name === "tool_execution_wait",
-  ).length;
   const cancellations = tools.filter(
     (tool) => tool.name === "tool_execution_cancel",
   ).length;
-  const lastPhase = infos.at(-1)?.phase;
+  const last = infos.at(-1);
   return {
     title,
     issue: issues.length > 0,
     running: infos.some((info) => info.running),
     status: [
       !pending && !issues.length ? shellStatus : "",
-      waiting ? `${waiting} waiting` : "",
-      pending > waiting ? `${pending - waiting} running` : "",
       kind === "executions" && cancellations
         ? count(cancellations, "cancellation request")
         : "",
       kind === "executions" &&
       !pending &&
       !issues.length &&
-      lastPhase !== "Result received" &&
-      lastPhase !== "Cancellation requested"
-        ? lastPhase
+      last?.showPhase &&
+      last.phase !== "Cancellation requested"
+        ? last.phase
         : "",
       notices.length === 1
         ? notices[0].phase

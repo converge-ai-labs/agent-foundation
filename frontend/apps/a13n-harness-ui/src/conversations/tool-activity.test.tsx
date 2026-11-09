@@ -130,7 +130,11 @@ it("keeps attention states in collapsed groups without claiming an unrecorded re
   ])
     expect(activitySummary([tool]).issue).toBe(true);
   const pending = { id: "pending", name: "shell_exec", inputComplete: true };
-  expect(activitySummary([pending]).status).toBe("1 running");
+  expect(activitySummary([{ ...pending, live: true }])).toMatchObject({
+    status: "",
+    running: true,
+    issue: false,
+  });
   expect(
     describeTool({
       ...completed("run_thread"),
@@ -463,15 +467,16 @@ it("groups execution controls in live and saved output and keeps waiting distinc
       kind: "tool" as const,
       name: "tool_execution_wait",
       text: '{"execution_id":"exec-one"}',
-      inputComplete: true,
+      done: true,
     },
   ];
   const mounted = render(<LiveOutput gap={false} blocks={blocks} />);
   const group = screen.getByRole("button", {
     name: /Tool calls · 2 operations/,
   });
-  expect(group.textContent).toContain("1 waiting");
+  expect(group.textContent).not.toContain("1 waiting");
   fireEvent.click(group);
+  expect(screen.queryByText("Waiting")).toBeNull();
   expect(screen.getByText("Running at last check")).toBeTruthy();
   mounted.rerender(
     <LiveOutput
