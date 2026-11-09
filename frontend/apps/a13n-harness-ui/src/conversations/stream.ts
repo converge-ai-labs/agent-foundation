@@ -1097,7 +1097,7 @@ export class FocusDisplay {
             : "",
         ]
           .filter(Boolean)
-          .join(" · "),
+          .join(" - "),
       });
       return;
     }

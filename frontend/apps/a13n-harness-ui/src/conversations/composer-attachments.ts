@@ -158,10 +158,10 @@ export function composerAttachments(
     return isReadyAttachment(id)
       ? (context().metadata.get(id)?.name ?? t("Attachment"))
       : id === "failed"
-        ? t("{{name}} · upload failed — retry", { name })
+        ? t("{{name}} - upload failed — retry", { name })
         : draft.uploads.get(key)?.status === "staged"
-          ? t("{{name}} · ready to upload", { name })
-          : t("{{name}} · not ready", { name });
+          ? t("{{name}} - ready to upload", { name })
+          : t("{{name}} - not ready", { name });
   };
   const displayText = (text: string) =>
     text.replace(inlinePattern, (_match, key: string) => `[${label(key)}]`);
@@ -178,7 +178,7 @@ export function composerAttachments(
             context(),
             t("Remove {{name}}", { name: label(match[1]) }),
             draft.uploads.get(match[1])?.status === "staged"
-              ? t("{{name}} · Uploads when you send", {
+              ? t("{{name}} - Uploads when you send", {
                   name: draft.uploads.get(match[1])!.file.name,
                 })
               : label(match[1]),

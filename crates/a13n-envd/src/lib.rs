@@ -117,7 +117,60 @@ pub fn run_internal_mxc_launcher() -> std::io::Result<i32> {
 
 /// Runs one a13n-envd instance from trusted process configuration.
 pub fn run_from_environment() -> Result<(), Box<dyn Error + Send + Sync>> {
-    let arguments: Vec<_> = std::env::args_os().skip(1).collect();
+    let mut arguments: Vec<_> = std::env::args_os().skip(1).collect();
+    if arguments
+        .first()
+        .is_some_and(|value| value == "connect-link")
+    {
+        let link = arguments
+            .get(1)
+            .and_then(|value| value.to_str())
+            .ok_or("connect-link requires a Console link")?;
+        let connection = connect::service::link::arguments(link)?;
+        if arguments.get(2).is_some_and(|value| value == "--recognize") {
+            let mut options = connection;
+            options.extend(arguments.into_iter().skip(3));
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()?;
+            println!(
+                "{}",
+                runtime.block_on(connect::service::recognize_link(options))?
+            );
+            return Ok(());
+        }
+        if arguments.len() == 3 && (arguments[2] == "--check" || arguments[2] == "--check-json") {
+            if arguments[2] == "--check-json" {
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "service": connection[0].to_string_lossy(),
+                        "workspace": connection[2].to_string_lossy(),
+                        "host": connection[4].to_string_lossy(),
+                    })
+                );
+            } else {
+                println!(
+                    "Service: {}\nWorkspace: {}",
+                    connection[0].to_string_lossy(),
+                    connection[2].to_string_lossy()
+                );
+            }
+            return Ok(());
+        }
+        let mut expanded = vec![std::ffi::OsString::from("connect-service")];
+        expanded.extend(connection);
+        expanded.extend(arguments.into_iter().skip(2));
+        arguments = expanded;
+    }
+    if arguments
+        .first()
+        .is_some_and(|value| value == "connect-service")
+        && arguments.iter().any(|value| value == "--launcher")
+    {
+        arguments.retain(|value| value != "--launcher");
+        connect::launcher::enable()?;
+    }
     if arguments.as_slice() == [std::ffi::OsString::from("--help")]
         || arguments.as_slice()
             == [

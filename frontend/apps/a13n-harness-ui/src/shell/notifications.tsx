@@ -50,7 +50,7 @@ function NoticeTitle({
   }[status];
   return (
     <>
-      {state} ·{" "}
+      {state} -{" "}
       {Array.from(name || t("Chat"))
         .slice(0, 80)
         .join("")}

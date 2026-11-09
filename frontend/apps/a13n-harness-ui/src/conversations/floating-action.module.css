@@ -1,0 +1,14 @@
+/* A standalone action above the transcript is its own floating surface. */
+.action {
+  background-color: var(--popover);
+  border-color: transparent;
+  box-shadow: var(--a13n-shadow);
+  color: var(--a13n-secondary);
+}
+.action:is(:hover, :focus-visible, [data-popup-open]) {
+  color: var(--popover-foreground);
+}
+.action:focus-visible {
+  outline: 2px solid var(--a13n-focus);
+  outline-offset: 2px;
+}

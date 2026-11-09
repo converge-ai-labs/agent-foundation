@@ -85,18 +85,18 @@ it("translates usage details while keeping model names, unknown sources and obse
   fireEvent.click(screen.getByText("Agents and sources"));
   expect(breakdown.open).toBe(true);
   expect(screen.getByText("3 requests")).toBeTruthy();
-  expect(screen.getByText("Root · workflows.custom_source")).toBeTruthy();
+  expect(screen.getByText("Root - workflows.custom_source")).toBeTruthy();
   expect(screen.getByText("1 response has no recorded price.")).toBeTruthy();
-  expect(screen.getByText("Non-model providers · 1 receipt")).toBeTruthy();
+  expect(screen.getByText("Non-model providers - 1 receipt")).toBeTruthy();
   await language("简体中文");
   expect(breakdown.open).toBe(true);
   expect(screen.getByText("token 明细")).toBeTruthy();
   expect(screen.getByText("3 次请求")).toBeTruthy();
-  expect(screen.getByText("主智能体 · workflows.custom_source")).toBeTruthy();
+  expect(screen.getByText("主智能体 - workflows.custom_source")).toBeTruthy();
   expect(screen.getByText("provider/root-model")).toBeTruthy();
   expect(screen.getByText("其他模型")).toBeTruthy();
   expect(screen.getByText("1 次响应没有记录价格。")).toBeTruthy();
-  expect(screen.getByText("非模型提供商 · 1 条收据")).toBeTruthy();
+  expect(screen.getByText("非模型提供商 - 1 条收据")).toBeTruthy();
   expect(screen.getByText("USD").nextElementSibling!.textContent).toBe(
     "0.5000",
   );
@@ -130,7 +130,7 @@ it("keeps legacy overflow attribution when model scopes are absent", () => {
     </DebugProvider>,
   );
   expect(screen.getByText("Other models")).toBeTruthy();
-  expect(screen.getByText("Root · Agent requests")).toBeTruthy();
+  expect(screen.getByText("Root - Agent requests")).toBeTruthy();
 });
 
 it("localizes the current overflow model while preserving scoped attribution", async () => {
@@ -167,17 +167,17 @@ it("localizes the current overflow model while preserving scoped attribution", a
   const row = screen.getByText("Other models").closest("details")!;
   fireEvent.click(screen.getByText("Other models"));
   fireEvent.click(screen.getByText("Agents and sources"));
-  expect(screen.getByText("Root · Agent requests")).toBeTruthy();
+  expect(screen.getByText("Root - Agent requests")).toBeTruthy();
   expect(
-    screen.getByText("Subagent · Media understanding · view"),
+    screen.getByText("Subagent - Media understanding - view"),
   ).toBeTruthy();
   await language("简体中文");
   expect(screen.getByText("其他模型").closest("details")).toBe(row);
   expect(row.open).toBe(true);
-  expect(screen.getByText("主智能体 · 智能体请求")).toBeTruthy();
+  expect(screen.getByText("主智能体 - 智能体请求")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "子智能体" }));
-  expect(screen.queryByText("主智能体 · 智能体请求")).toBeNull();
-  expect(screen.getByText("子智能体 · 媒体理解 · 查看")).toBeTruthy();
+  expect(screen.queryByText("主智能体 - 智能体请求")).toBeNull();
+  expect(screen.getByText("子智能体 - 媒体理解 - 查看")).toBeTruthy();
 });
 
 it("translates the status metrics and context help without replaying usage requests", async () => {

@@ -83,8 +83,7 @@ async def resolve_many(runtime: Runtime, checks: Sequence[Check]) -> list[Enviro
                 if request.retained_cleanup:
                     run, mount = retained_mount(snapshot, check)
                     grant = None
-                    principal = None
-                    principal_id, workspace_id = run.principal_id, run.workspace_id
+                    workspace_id = run.workspace_id
                 else:
                     grant = snapshot.authorize(
                         request.caller,
@@ -94,8 +93,7 @@ async def resolve_many(runtime: Runtime, checks: Sequence[Check]) -> list[Enviro
                         actions=actions,
                         cleanup=check.renewing or request.allows_cancelled_owner,
                     )
-                    principal, mount = grant.principal, grant.mount
-                    principal_id, workspace_id = principal.id, grant.workspace_id
+                    mount, workspace_id = grant.mount, grant.workspace_id
                 pair = rows.get(request.environment_id)
                 if pair is None:
                     raise LeaseLost()
@@ -131,12 +129,11 @@ async def resolve_many(runtime: Runtime, checks: Sequence[Check]) -> list[Enviro
                         or config.token_hash is None
                         or config.credential_version != attachment.credential_version
                         or environment.device_id != attachment.device_id
-                        or environment.owner_principal_id != principal_id
                         or not actions <= EnvironmentPermissionSet.model_validate(config.permission_ceiling).operations
                     ):
                         raise LeaseLost()
-                    if principal is not None:
-                        authorize(principal, scope, "write")
+                    if grant is not None:
+                        authorize(grant.principal, scope, "run", authority=grant.authority)
                     results.append(mount)
             except (ServiceError, LeaseLost, AuthorityRevoked) as error:
                 # Unavailable authorization evidence is not a revocation.

@@ -300,7 +300,7 @@ function WorkbenchContent({
               {t("Log out")}
             </MenuItem>
             <span className={styles.version}>
-              Harness UI · {status.version}
+              Harness UI - {status.version}
             </span>
           </MenuPopup>
         </Menu>
@@ -681,7 +681,7 @@ function WorkbenchContent({
           <details className={styles.details}>
             <summary>{t("About this instance")}</summary>
             <p>
-              {t("Version")} {status.version} ·{" "}
+              {t("Version")} {status.version} -{" "}
               {status.app?.state ?? t("Connected")}
             </p>
             <p>
@@ -728,12 +728,12 @@ function WorkbenchContent({
                     <strong>
                       {participant.display_name || t("Anonymous")}
                       {own && (
-                        <span className={styles.personYou}> · {t("You")}</span>
+                        <span className={styles.personYou}> - {t("You")}</span>
                       )}
                     </strong>
                     <span>
                       {t(participant.foreground ? "Active" : "Away")}
-                      {samePage ? ` · ${t("This page")}` : ""}
+                      {samePage ? ` - ${t("This page")}` : ""}
                     </span>
                     {participant.unavailable_reason && (
                       <span>{participant.unavailable_reason}</span>

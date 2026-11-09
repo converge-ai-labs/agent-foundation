@@ -384,7 +384,7 @@ it("adds directories inside an existing environment and applies access changes t
   expect(
     screen.getAllByRole("region", { name: "Build machine environment" }),
   ).toHaveLength(1);
-  expect(screen.getByText("Read only · 2 directories")).toBeTruthy();
+  expect(screen.getByText("Read only - 2 directories")).toBeTruthy();
   await user.click(
     screen.getByRole("button", { name: "Edit Build machine environment" }),
   );

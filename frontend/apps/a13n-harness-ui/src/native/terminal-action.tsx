@@ -30,7 +30,7 @@ export function TerminalAction({
       <TooltipPopup>
         {label}
         {shortcut && ` (${shortcut})`}
-        {description && ` · ${description}`}
+        {description && ` - ${description}`}
       </TooltipPopup>
     </Tooltip>
   );

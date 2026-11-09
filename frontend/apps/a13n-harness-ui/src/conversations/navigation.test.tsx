@@ -594,7 +594,7 @@ it("locates a deep-linked selected row without fetching preceding pages and pres
       .getByRole("link", { name: "selected-old" })
       .getAttribute("aria-current"),
   ).toBe("page");
-  expect(screen.queryByText("Selected chat · outside this page")).toBeNull();
+  expect(screen.queryByText("Selected chat - outside this page")).toBeNull();
   expect(activity).toHaveLength(1);
   fireEvent.click(screen.getByRole("button", { name: "One" }));
   await act(() =>
@@ -1268,7 +1268,7 @@ it("pins off-page unread results, counts collapsed groups, and keeps running dot
       .map(
         (heading) => heading.getAttribute("aria-label") ?? heading.textContent,
       ),
-  ).toEqual(["Active", "New results · 1", "History"]);
+  ).toEqual(["Active", "New results - 1", "History"]);
   expect(
     within(group).getByRole("link", { name: /Running result/ }),
   ).toBeTruthy();
@@ -1350,7 +1350,7 @@ it("opens unvisited drafts on demand and refreshes only discovery on a draft hin
   const project = await screen.findByRole("region", { name: "One" });
   const row = within(project).getByRole("link", { name: /old-draft/ });
   expect(
-    within(row).getByRole("img", { name: "Draft · Unsent input" }),
+    within(row).getByRole("img", { name: "Draft - Unsent input" }),
   ).toBeTruthy();
   expect(within(row).queryByText("Draft")).toBeNull();
   expect(within(row).getByText("Running")).toBeTruthy();
@@ -1369,7 +1369,7 @@ it("opens unvisited drafts on demand and refreshes only discovery on a draft hin
     expect(screen.getByRole("button", { name: "Drafts" })).toBe(trigger),
   );
   expect(
-    within(row).queryByRole("img", { name: "Draft · Unsent input" }),
+    within(row).queryByRole("img", { name: "Draft - Unsent input" }),
   ).toBeNull();
   expect(activity).toHaveLength(activityCalls);
 });
@@ -1572,7 +1572,7 @@ it("groups only owners of active unarchived workers under Running and returns th
   await act(() => queryClient.invalidateQueries({ queryKey: ["threads"] }));
   await waitFor(() =>
     expect(
-      within(project).queryByRole("heading", { name: /Running ·/ }),
+      within(project).queryByRole("heading", { name: /Running -/ }),
     ).toBeNull(),
   );
   expect(within(project).getAllByRole("link")[0].textContent).toContain(
@@ -1653,7 +1653,7 @@ it("finds workers through ordinary global search without expanding the Coordinat
     target: { value: "worker" },
   });
   await screen.findByRole("link", { name: "search-worker" });
-  expect(screen.getByText("One · Coordinator worker")).toBeTruthy();
+  expect(screen.getByText("One - Coordinator worker")).toBeTruthy();
   const request = activity.find(
     (url) => url.searchParams.get("query") === "worker",
   )!;
@@ -1826,7 +1826,7 @@ it("counts an unread Coordinator once and retains its anchor after fresh paginat
     within(group).getByRole("link", { name: /owner.*Coordinator/ }),
   ).toBeTruthy();
   expect(
-    within(group).getByRole("heading", { name: "New results · 1" }),
+    within(group).getByRole("heading", { name: "New results - 1" }),
   ).toBeTruthy();
   fireEvent.click(
     await screen.findByRole("button", {
@@ -2015,7 +2015,7 @@ it("retains Coordinator summaries during delayed refresh and failed worker disco
     .getByLabelText("2 workers active")
     .closest("small")!;
   const spinner = within(owner).getByTitle("Running").querySelector("svg");
-  await within(owner).findByRole("img", { name: "Draft · Unsent input" });
+  await within(owner).findByRole("img", { name: "Draft - Unsent input" });
   fireEvent.click(
     screen.getByRole("button", { name: "Expand workers for owner" }),
   );
@@ -2172,7 +2172,7 @@ it("keeps older history reachable when every loaded recent row becomes unread", 
       results.observe(item);
     }
   });
-  expect(screen.getByRole("heading", { name: "New results · 5" })).toBeTruthy();
+  expect(screen.getByRole("heading", { name: "New results - 5" })).toBeTruthy();
   expect(screen.getByRole("link", { name: /Recent 5/ })).toBeTruthy();
   fireEvent.click(
     screen.getByRole("button", { name: "Show more chats in One" }),
@@ -2209,7 +2209,7 @@ it("keeps the owner of an unread worker above read history", async () => {
   expect(screen.getByRole("link", { name: /worker-owner.*Coordinator/ })).toBe(
     owner,
   );
-  expect(screen.getByRole("heading", { name: "New results · 1" })).toBeTruthy();
+  expect(screen.getByRole("heading", { name: "New results - 1" })).toBeTruthy();
   fireEvent.click(
     screen.getByRole("button", { name: "Expand workers for worker-owner" }),
   );

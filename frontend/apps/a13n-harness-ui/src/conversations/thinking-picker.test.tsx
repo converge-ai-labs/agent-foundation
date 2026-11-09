@@ -26,7 +26,7 @@ const model: Schema<"ModelSummary"> = {
   route: "custom:provider-independent",
   thinking: {
     status: "supported",
-    default_summary: "Budget · 8,192 tokens",
+    default_summary: "Budget - 8,192 tokens",
     options: [
       { value: null, label: "Model default", description: "Configured budget" },
       { value: false, label: "No thinking", description: "Disable thinking" },
@@ -180,7 +180,7 @@ it("keeps opaque backend labels and stale values while localizing their recovery
   render(<ThinkingPicker model={model} value="max" onChange={change} />);
   await act(() => i18n.changeLanguage("zh-CN"));
   const inherited = screen.getByRole("button", { name: "使用默认思考设置" });
-  expect(inherited.getAttribute("title")).toBe("预算 · 8,192 token");
+  expect(inherited.getAttribute("title")).toBe("预算 - 8,192 token");
   expect(inherited.getAttribute("aria-pressed")).toBe("false");
   expect(screen.getByRole("button", { name: "Quick" })).toBeTruthy();
   const disabled = screen.getByRole("button", { name: "Deep" });

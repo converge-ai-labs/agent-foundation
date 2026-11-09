@@ -321,14 +321,14 @@ export function ProviderAccount({
                   : account.data?.usable
                     ? t("Connected")
                     : ready
-                      ? t("Account available · refreshes on first use")
+                      ? t("Account available - refreshes on first use")
                       : t("Not connected")}
                 {account.data?.availability === "available" &&
-                  ` · ${account.data.source}${account.data.expiry === "unknown" ? "" : ` · ${account.data.expiry}`}`}
+                  ` - ${account.data.source}${account.data.expiry === "unknown" ? "" : ` - ${account.data.expiry}`}`}
               </p>
               {account.data?.account_id && (
                 <p>
-                  {t("Account: {{id}}", { id: account.data.account_id })} ·{" "}
+                  {t("Account: {{id}}", { id: account.data.account_id })} -{" "}
                   {account.data.shared_with_cli
                     ? t("Shared with {{provider}} CLI", { provider: label })
                     : t("Host account")}
@@ -342,7 +342,7 @@ export function ProviderAccount({
                     ),
                   })}
                   {account.data.required_action === "refresh"
-                    ? t(" · refreshes on first use")
+                    ? t(" - refreshes on first use")
                     : ""}
                 </p>
               )}
@@ -381,7 +381,7 @@ export function ProviderAccount({
                     onClick={() => select.mutate(candidate.selection)}
                   >
                     {candidate.label}
-                    {candidate.selected ? t(" · selected") : ""}
+                    {candidate.selected ? t(" - selected") : ""}
                   </Button>
                 ))}
                 <Button

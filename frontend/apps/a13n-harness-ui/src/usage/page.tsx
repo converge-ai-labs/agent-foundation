@@ -198,7 +198,7 @@ export function UsagePage() {
         >
           <SlidersHorizontal />
           {t("Filters")}
-          {extraFilters ? ` · ${extraFilters}` : ""}
+          {extraFilters ? ` - ${extraFilters}` : ""}
         </Button>
       </div>
       {moreFilters && (
@@ -252,12 +252,12 @@ export function UsagePage() {
       <p className={styles.freshness} role="status">
         {query.isFetching
           ? data
-            ? t("Updating · showing previous results…")
+            ? t("Updating - showing previous results…")
             : t("Loading recorded usage…")
           : query.isError && data
-            ? t("Update failed · showing previous results")
+            ? t("Update failed - showing previous results")
             : data
-              ? t("As of {{time}} · UTC days", {
+              ? t("As of {{time}} - UTC days", {
                   time: new Date(data.as_of).toLocaleString(locale),
                 })
               : ""}
@@ -270,7 +270,7 @@ export function UsagePage() {
               <dd>
                 <Cost totals={data.summary} />
                 <small>
-                  USD ·{" "}
+                  USD -{" "}
                   {data.summary.unknown_model_costs
                     ? t("{{count}} unknown-cost requests", {
                         count: data.summary.unknown_model_costs,
@@ -284,16 +284,16 @@ export function UsagePage() {
               <dd>
                 <Count value={data.summary.total_tokens} />
                 <small
-                  title={t("{{input}} input · {{output}} output", {
+                  title={t("{{input}} input - {{output}} output", {
                     input: number(data.summary.input_tokens),
                     output: number(data.summary.output_tokens),
                   })}
-                  aria-label={t("{{input}} input · {{output}} output", {
+                  aria-label={t("{{input}} input - {{output}} output", {
                     input: number(data.summary.input_tokens),
                     output: number(data.summary.output_tokens),
                   })}
                 >
-                  {t("{{input}} input · {{output}} output", {
+                  {t("{{input}} input - {{output}} output", {
                     input: compactNumber(data.summary.input_tokens, locale),
                     output: compactNumber(data.summary.output_tokens, locale),
                   })}
@@ -541,7 +541,7 @@ function DailyChart({ days }: { days: Schema<"UsageDay">[] }) {
               ? number(day.totals.total_tokens)
               : compactNumber(day.totals.total_tokens, locale),
           })
-        : `${estimatedCost(day.totals, !exact, locale)}${day.totals.unknown_model_costs ? ` · ${t("{{count}} unknown-cost requests", { count: day.totals.unknown_model_costs })}` : ""}`;
+        : `${estimatedCost(day.totals, !exact, locale)}${day.totals.unknown_model_costs ? ` - ${t("{{count}} unknown-cost requests", { count: day.totals.unknown_model_costs })}` : ""}`;
   const current = days[selected];
   return (
     <section className={styles.trend} aria-label={t("Daily usage")}>
@@ -561,7 +561,7 @@ function DailyChart({ days }: { days: Schema<"UsageDay">[] }) {
           title={current ? description(current, true) : undefined}
         >
           {current
-            ? `${current.day} · ${description(current)}`
+            ? `${current.day} - ${description(current)}`
             : t("No records")}
         </span>
       </div>
@@ -585,8 +585,8 @@ function DailyChart({ days }: { days: Schema<"UsageDay">[] }) {
               type="button"
               tabIndex={index === selected ? 0 : -1}
               className={styles.barTarget}
-              title={`${day.day} · ${description(day, true)}`}
-              aria-label={`${day.day} · ${description(day, true)}`}
+              title={`${day.day} - ${description(day, true)}`}
+              aria-label={`${day.day} - ${description(day, true)}`}
               onMouseEnter={() => setSelected(index)}
               onFocus={() => setSelected(index)}
               onClick={() => setSelected(index)}

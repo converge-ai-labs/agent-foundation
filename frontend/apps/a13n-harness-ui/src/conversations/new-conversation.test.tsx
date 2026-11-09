@@ -490,7 +490,7 @@ it("keeps the blank composer and files local, then creates, uploads, synchronize
       files: [new File(["notes"], "notes.txt", { type: "text/plain" })],
     },
   });
-  await screen.findByRole("button", { name: "notes.txt · ready to upload" });
+  await screen.findByRole("button", { name: "notes.txt - ready to upload" });
   expect(writes).toHaveLength(0);
   // Workbench discovery may read activity, but blank input has no Thread yet.
   expect(
@@ -1178,7 +1178,7 @@ it("retains accepted input on a saved-page read failure and starts a fresh draft
   await screen.findByText("Thread detail unavailable");
   expect(screen.getByLabelText("Location").textContent).toBe(`/threads/${id}`);
   expect(drafts.get(id)!.localInputs[0].state).toBe("accepted");
-  expect(screen.queryByText("Not sent · input retained")).toBeNull();
+  expect(screen.queryByText("Not sent - input retained")).toBeNull();
   expect(creations.current).toBeUndefined();
   fireEvent.click(screen.getByRole("link", { name: "New in second project" }));
   await screen.findByRole("heading", {
@@ -2490,7 +2490,7 @@ it("retains Coordinator intent across Project changes without falling back to or
 it("restores worker assignment and removes only ownership without losing the authored draft", async () => {
   mount(newConversationPath("project-one", ownerId));
   await fill();
-  await screen.findByText("Managed by · Project manager");
+  await screen.findByText("Managed by - Project manager");
   expect(
     screen.queryByRole("switch", { name: "Coordinate agents" }),
   ).toBeNull();
@@ -2534,7 +2534,7 @@ it("creates an owned worker directly and keeps fixed ownership after a rejected 
   failure = "submit-reject";
   mount(newConversationPath("project-one", ownerId));
   await fill();
-  await screen.findByText("Managed by · Project manager");
+  await screen.findByText("Managed by - Project manager");
   if (!screen.queryByRole("switch", { name: "Goal" }))
     await userEvent.click(screen.getByRole("button", { name: "Chat options" }));
   fireEvent.click(screen.getByRole("switch", { name: "Goal" }));
@@ -2555,7 +2555,7 @@ it("creates an owned worker directly and keeps fixed ownership after a rejected 
   expect(
     screen.queryByRole("switch", { name: "Coordinate agents" }),
   ).toBeNull();
-  expect(screen.getByText("Managed by · Project manager")).toBeTruthy();
+  expect(screen.getByText("Managed by - Project manager")).toBeTruthy();
   failure = null;
   fireEvent.click(screen.getByRole("button", { name: "Send" }));
   await waitFor(() => expect(writes).toHaveLength(3));
@@ -2570,7 +2570,7 @@ it("locks uncertain worker creation, reconciles its retained identity and never 
   failure = "create";
   mount(newConversationPath("project-one", ownerId));
   await fill();
-  await screen.findByText("Managed by · Project manager");
+  await screen.findByText("Managed by - Project manager");
   fireEvent.click(screen.getByRole("button", { name: "Send" }));
   await screen.findByText(
     "Unable to reach the server. Check your connection and try again.",
@@ -2597,7 +2597,7 @@ it("locks uncertain worker creation, reconciles its retained identity and never 
     ),
   );
   expect(writes).toHaveLength(1);
-  await screen.findByText("Managed by · Project manager");
+  await screen.findByText("Managed by - Project manager");
   expect(
     screen.queryByRole("button", { name: "Remove Coordinator assignment" }),
   ).toBeNull();
@@ -2606,7 +2606,7 @@ it("locks uncertain worker creation, reconciles its retained identity and never 
 it("blocks sending when owner refresh fails despite cached ownership", async () => {
   mount(newConversationPath("project-one", ownerId));
   await fill();
-  await screen.findByText("Managed by · Project manager");
+  await screen.findByText("Managed by - Project manager");
   const fetch = vi.mocked(globalThis.fetch);
   const original = fetch.getMockImplementation()!;
   fetch.mockImplementation(async (input, init) => {
@@ -2637,7 +2637,7 @@ it("blocks unavailable owners rather than silently creating an independent threa
   ownerArchived = true;
   mount(newConversationPath("project-one", ownerId));
   await fill();
-  await screen.findByText("Managed by · Project manager");
+  await screen.findByText("Managed by - Project manager");
   expect(
     (screen.getByRole("button", { name: "Send" }) as HTMLButtonElement)
       .disabled,

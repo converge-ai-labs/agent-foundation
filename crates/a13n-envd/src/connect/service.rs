@@ -1,9 +1,15 @@
 //! Service enrollment with API authentication and locally saved device credentials.
 use super::*;
 
+pub(crate) mod link;
+mod pairing;
+mod recognition;
+pub(crate) use recognition::recognize_link;
+
 pub(crate) const HELP: &str = "a13n-envd connect-service <URL or saved name> [options]
 
 First use: --workspace-id ID --api-token-file PATH
+Console pairing: --workspace-id ID --pairing-id ID (no API token)
 Reconnect using the saved name; the API token is no longer needed.
 
   --environment-id ID     Select an existing environment; never create a replacement
@@ -20,6 +26,7 @@ Startup never rotates credentials. Use a different saved name when switching acc
 
 #[derive(Default)]
 struct Options {
+    pairing_id: Option<String>,
     api_token_file: Option<PathBuf>,
     credential_file: Option<PathBuf>,
     workspace_id: Option<String>,
@@ -38,6 +45,7 @@ impl Options {
             if matches!(
                 flag,
                 "--api-token-file"
+                    | "--pairing-id"
                     | "--credential-file"
                     | "--workspace-id"
                     | "--environment-id"
@@ -50,6 +58,7 @@ impl Options {
                     .next()
                     .ok_or_else(|| invalid("Service option requires a value"))?;
                 match flag {
+                    "--pairing-id" => result.pairing_id = Some(text(value)?),
                     "--api-token-file" => result.api_token_file = Some(absolute(value.into())?),
                     "--credential-file" => result.credential_file = Some(absolute(value.into())?),
                     "--workspace-id" => result.workspace_id = Some(text(value)?),
@@ -68,6 +77,16 @@ impl Options {
                     );
                 }
             }
+        }
+        if result.pairing_id.is_some()
+            && (result.api_token_file.is_some() || result.credential_file.is_some())
+        {
+            return Err(invalid(
+                "Console pairing cannot import API or device credentials",
+            ));
+        }
+        if let Some(id) = &result.pairing_id {
+            validate_alias(id)?;
         }
         Ok((result, Arguments::parse(common)?))
     }
@@ -220,7 +239,7 @@ pub(crate) async fn prepare(
         .validate(&config.bootstrap_files)
         .map_err(io::Error::other)?;
     profile.name = Some(config.display_name.clone().unwrap_or(arguments.instance));
-    let credential = if let Some(path) = &options.credential_file {
+    let mut credential = if let Some(path) = &options.credential_file {
         Some(crate::websocket::read_credential(path).await?)
     } else if fs::metadata(&credential_path)?.len() == 0 {
         None
@@ -228,7 +247,33 @@ pub(crate) async fn prepare(
         Some(crate::websocket::read_credential(&credential_path).await?)
     };
     save(&profile_path, &serde_json::to_vec_pretty(&profile)?)?;
-    if profile.environment_id.is_none() || credential.is_none() {
+    if let Some(pairing_id) = options.pairing_id.as_deref() {
+        if credential.is_none() {
+            if profile.environment_id.is_some() {
+                return Err(credential_required(profile.environment_id.as_deref()).into());
+            }
+            let mut bytes = [0_u8; 32];
+            getrandom::fill(&mut bytes).map_err(io::Error::other)?;
+            let token = hex(&bytes);
+            // Save before contacting Service: a lost approval response is recoverable.
+            save(&credential_path, token.as_bytes())?;
+            credential = Some(token);
+        }
+        let id = if profile.environment_id.is_some() {
+            recognition::report(&url, pairing_id, credential.as_deref().unwrap(), &profile).await?
+        } else {
+            pairing::enroll(
+                &url,
+                pairing_id,
+                credential.as_deref().unwrap(),
+                &profile,
+                &config,
+            )
+            .await?
+        };
+        profile.environment_id = Some(id);
+        save(&profile_path, &serde_json::to_vec_pretty(&profile)?)?;
+    } else if profile.environment_id.is_none() || credential.is_none() {
         let api_path = options
             .api_token_file
             .as_ref()

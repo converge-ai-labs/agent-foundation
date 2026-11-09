@@ -996,7 +996,7 @@ export function Composer({
       title={t("Managed by {{name}}", { name: owner.title })}
     >
       <CoordinatorIcon size={16} />
-      <span>{t("Managed by · {{name}}", { name: owner.title })}</span>
+      <span>{t("Managed by - {{name}}", { name: owner.title })}</span>
       {owner.onRemove && (
         <Button
           variant="ghost"
@@ -1222,10 +1222,7 @@ export function Composer({
                   : null)}
           </div>
         )}
-        <div
-          className={styles.composerInput}
-          data-filled={hasInput || undefined}
-        >
+        <div className={styles.composerInput}>
           <input
             ref={upload}
             type="file"
@@ -1240,7 +1237,7 @@ export function Composer({
             size="icon-sm"
             className={styles.attachButton}
             aria-label={t("Attach files")}
-            title={t("Attach files · you can also paste or drop files")}
+            title={t("Attach files - you can also paste or drop files")}
             loading={uploading}
             disabled={preparing}
             onClick={() => upload.current?.click()}
@@ -1402,8 +1399,8 @@ export function Composer({
               (stopAction
                 ? t("Stop this operation")
                 : busy
-                  ? t("Steer current operation · Enter")
-                  : t("Send message · Enter"))
+                  ? t("Steer current operation - Enter")
+                  : t("Send message - Enter"))
             }
             disabled={stopAction ? !canStop : busy ? !canSteer : !canSend}
             loading={stopAction ? stopping : pending || preparing}
@@ -1440,12 +1437,12 @@ export function Composer({
           <div className={styles.summary}>
             {"path" in preview.source && (
               <p>
-                {t("Server snapshot · {{path}}", { path: preview.source.path })}
+                {t("Server snapshot - {{path}}", { path: preview.source.path })}
               </p>
             )}
             {"repository_path" in preview.source && (
               <p>
-                {preview.source.comparison} · {preview.source.repository_path} ·
+                {preview.source.comparison} - {preview.source.repository_path} -
                 HEAD {preview.source.head_oid ?? t("empty tree")}
               </p>
             )}

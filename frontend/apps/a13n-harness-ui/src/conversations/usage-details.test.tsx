@@ -118,13 +118,13 @@ it("switches model scope without treating a subagent media source as extra usage
   fireEvent.click(screen.getByRole("button", { name: "This chat" }));
   expect(screen.getByText("provider/root-model")).toBeTruthy();
   expect(screen.queryByText("provider/media-model")).toBeNull();
-  expect(number("Model cost · USD")).toBe("$0.1250");
+  expect(number("Model cost - USD")).toBe("$0.1250");
   fireEvent.click(screen.getByRole("button", { name: "Subagents" }));
   expect(screen.queryByText("provider/root-model")).toBeNull();
   expect(screen.getByText("provider/media-model")).toBeTruthy();
   fireEvent.click(screen.getByText("Agents and sources"));
   expect(
-    screen.getByText("Subagent · Media understanding · view"),
+    screen.getByText("Subagent - Media understanding - view"),
   ).toBeTruthy();
   expect(screen.queryByText("agent-child")).toBeNull();
   fireEvent.keyDown(window, {
@@ -143,7 +143,7 @@ it("renders legacy summaries without new attribution fields and does not invent 
   expect(
     screen.getByText(/Older records don't show which models were used here/),
   ).toBeTruthy();
-  expect(number("Model cost · USD")).toBe("$0.1250");
+  expect(number("Model cost - USD")).toBe("$0.1250");
 });
 
 it("shows an empty scoped view without unknown-cost placeholders and restores totals on return", () => {
@@ -151,7 +151,7 @@ it("shows an empty scoped view without unknown-cost placeholders and restores to
   fireEvent.click(screen.getByRole("button", { name: "Subagents" }));
   expect(screen.getByText("No usage in this scope yet.")).toBeTruthy();
   expect(screen.queryByText("Total tokens")).toBeNull();
-  expect(screen.queryByText("Model cost · USD")).toBeNull();
+  expect(screen.queryByText("Model cost - USD")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "All" }));
   expect(number("Total tokens")).toBe("15,456");
   expect(screen.queryByText("No usage in this scope yet.")).toBeNull();

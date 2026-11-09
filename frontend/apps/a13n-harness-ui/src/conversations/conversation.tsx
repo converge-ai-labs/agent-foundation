@@ -1103,7 +1103,7 @@ function ConversationContent({
         )}
         {guest && !canCompose && (
           <p className={styles.composerConnection}>
-            {t("View-only link · Following this chat live.")}
+            {t("View-only link - Following this chat live.")}
           </p>
         )}
         {!guest && !readOnly && (

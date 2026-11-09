@@ -35,8 +35,8 @@ def require_usable_state(environment: EnvironmentRow) -> None:
 
 
 def require_usable(environment: EnvironmentRow, principal_id: str) -> None:
-    """New use refuses retiring instances, unresolved permanent failures and other principals' devices."""
-    if environment.owner_principal_id not in {None, principal_id}:
+    """Client devices are workspace-shared; owner-bound HTTP environments remain private."""
+    if environment.kind != "external" and environment.owner_principal_id not in {None, principal_id}:
         raise ServiceError("forbidden", "Private environments are usable only by their owner", {"id": environment.id})
     if environment.status in {"disabled", "deleting", "deleted"}:
         raise conflict("environment", environment.id, f"environment_{environment.status}")

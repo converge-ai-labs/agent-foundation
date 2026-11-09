@@ -59,7 +59,7 @@ export function ClearContext({
         size="sm"
         className={styles.optionAction}
         aria-label={t("Clear context")}
-        title={t("Clear context · keep chat history and your draft")}
+        title={t("Clear context - keep chat history and your draft")}
         disabled={disabled || !continuationId || clear.isPending}
         loading={clear.isPending}
         onClick={() => {

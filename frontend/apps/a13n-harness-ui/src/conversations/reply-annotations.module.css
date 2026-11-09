@@ -41,12 +41,22 @@
   padding: 0;
 }
 
+.selection[data-slot] {
+  background: transparent;
+  box-shadow: none;
+}
 .selection [data-slot="popover-viewport"] {
-  padding: 4px;
+  overflow: visible;
+}
+.add {
+  composes: action from "./floating-action.module.css";
 }
 .add[data-slot] {
-  height: 24px;
-  padding-inline: 7px;
+  display: flex;
+  width: 100%;
+  height: 32px;
+  padding-inline: 11px;
+  border-radius: var(--harness-radius-panel);
   font-size: var(--a13n-text-sm);
   font-weight: 400;
 }
@@ -91,7 +101,6 @@
 }
 .actions > :first-child {
   margin-inline-end: auto;
-  color: var(--a13n-secondary);
 }
 .form [data-slot="button"] {
   height: 24px;
@@ -160,8 +169,13 @@
 .itemHeading > button:first-of-type {
   margin-inline-start: auto;
 }
-.itemHeading [data-slot="button"] {
+.actions [data-variant="ghost"],
+.itemHeading [data-variant="ghost"] {
+  background: transparent;
   color: var(--a13n-secondary);
+}
+:is(.actions, .itemHeading) [data-variant="ghost"]:is(:hover, :focus-visible) {
+  color: var(--a13n-text);
 }
 .preview blockquote,
 .preview p,
@@ -193,8 +207,10 @@
 @media (pointer: coarse) {
   /* Shared buttons extend their pointer targets to 44px. Leave those targets
      room without enlarging the visible button faces. */
-  .selection [data-slot="popover-viewport"] {
-    padding: 10px;
+  .add[data-slot] {
+    min-height: 44px;
+    padding-inline: 17px;
+    border-radius: var(--harness-radius-composer);
   }
   .form {
     padding: 10px;

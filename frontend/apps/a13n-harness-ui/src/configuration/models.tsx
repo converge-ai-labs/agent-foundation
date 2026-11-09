@@ -350,7 +350,7 @@ function ModelCredentialSummary({ path }: { path: string }) {
     <small className={management.metadata}>
       <span>
         {auth.env
-          ? t("Environment · {{name}}", { name: auth.env })
+          ? t("Environment - {{name}}", { name: auth.env })
           : keys.data
             ? keys.data.some(
                 (key) => key.credential_ref === auth.credential_ref,
