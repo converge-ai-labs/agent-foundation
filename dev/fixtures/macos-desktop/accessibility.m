@@ -9,7 +9,7 @@
 @property(nonatomic, strong) NSSlider *numeric;
 @property(nonatomic, copy) NSString *statePath;
 @property(nonatomic, strong) NSTimer *timer;
-@property(nonatomic, strong) NSUInteger clicks;
+@property(nonatomic, assign) NSUInteger clicks;
 @end
 
 @implementation Fixture
