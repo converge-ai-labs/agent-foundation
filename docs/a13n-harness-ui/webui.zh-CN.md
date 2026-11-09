@@ -10,7 +10,7 @@ WebUI 是 Harness UI 的浏览器工作台，与 TUI 使用相同的 App 和已�
 | 得到第一个回答                      | [启动服务器](#start-the-server)                                                                                                                                                     |
 | 更换 Agent、Model 或工作目录        | [Agent 与 Model 设置](#agent-and-model-settings)                                                                                                                                    |
 | 补充指引或回答问题                  | [Steering](#tool-executions-and-immediate-steering) 与[待处理决策](#pending-questions-approvals-and-external-results)                                                               |
-| 与 Agent 一起审阅文件或 diff        | [Files 与 Changes](#%E8%AF%BB%E5%8F%96%E5%92%8C%E6%8D%95%E8%8E%B7-host-%E6%96%87%E4%BB%B6%E5%92%8C-git-%E5%8F%98%E6%9B%B4)                                                          |
+| 与 Agent 一起审阅文件或 diff        | [Files 与 Changes](#read-and-capture-host-files-and-git-changes)                                                                                                                    |
 | 让 Agent 浏览网页，或标注看到的画面 | [Host 浏览器](host-browser.md#browse-on-the-host)                                                                                                                                   |
 | 邀请他人或协调其他 Agent            | [分享](#share-a-thread-or-project)与 [Coordinator](#work-with-a-coordinator)                                                                                                        |
 | 从远程持续使用工作台                | [认证](running-webui.md#authentication-and-key-retention)、[代理设置](running-webui.md#reverse-proxies-and-public-addresses)与[重启](running-webui.md#restart-or-update-the-server) |
