@@ -1287,10 +1287,8 @@ it.each(["/native", "C:\\native", "\\\\server\\share\\native"])(
     await chooseView("Files");
     await screen.findByText(`Folder ${root}`);
     expect(
-      screen
-        .getByRole("button", { name: "Up one level" })
-        .hasAttribute("disabled"),
-    ).toBe(true);
+      screen.queryByRole("navigation", { name: "Current folder" }),
+    ).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Open child folder" }));
     await screen.findByText(`Folder ${first}`);
     fireEvent.click(screen.getByRole("button", { name: "Open child folder" }));
@@ -1299,24 +1297,22 @@ it.each(["/native", "C:\\native", "\\\\server\\share\\native"])(
     expect(
       trail.querySelector('[aria-current="location"]')?.getAttribute("title"),
     ).toBe(second);
-    fireEvent.click(screen.getByRole("button", { name: "Up one level" }));
+    fireEvent.click(within(trail).getByRole("button", { name: "nested" }));
     await screen.findByText(`Folder ${first}`);
     fireEvent.click(
       within(trail).getByRole("button", { name: "Current project" }),
     );
     await screen.findByText(`Folder ${root}`);
     expect(
-      screen
-        .getByRole("button", { name: "Up one level" })
-        .hasAttribute("disabled"),
-    ).toBe(true);
+      screen.queryByRole("navigation", { name: "Current folder" }),
+    ).toBeNull();
     await waitFor(() =>
       expect(focus).toHaveBeenLastCalledWith({ kind: "file", path: root }),
     );
   },
 );
 
-it.each(["Up", "breadcrumb", "working folder"])(
+it.each(["breadcrumb", "working folder"])(
   "%s navigation from a file stays in its current tab even when the destination is already open",
   async (action) => {
     setup(
@@ -1338,14 +1334,17 @@ it.each(["Up", "breadcrumb", "working folder"])(
           screen.getByRole("navigation", { name: "Working folders" }),
         ).getByRole("button", { name: "other" }),
       );
-    else fireEvent.click(screen.getByRole("button", { name: "Up one level" }));
+    else
+      fireEvent.click(
+        within(
+          screen.getByRole("navigation", { name: "Current folder" }),
+        ).getByRole("button", { name: "native" }),
+      );
     const destination = action === "working folder" ? "/other" : "/native";
     await screen.findByText(`Folder ${destination}`);
     const otherTab = screen.getByRole("tab", { name: "Files", selected: true });
     fireEvent.click(fileTab);
-    if (action === "Up")
-      fireEvent.click(screen.getByRole("button", { name: "Up one level" }));
-    else if (action === "breadcrumb")
+    if (action === "breadcrumb")
       fireEvent.click(
         within(
           screen.getByRole("navigation", { name: "Current folder" }),
@@ -1389,11 +1388,9 @@ it("Back to files navigates within the current tab even when that folder is alre
   const fileTab = screen.getByRole("tab", { name: "first.txt - Unsaved" });
   const id = fileTab.id;
   const trail = screen.getByRole("navigation", { name: "Current folder" });
-  expect(
-    within(trail)
-      .getByRole("button", { name: "src" })
-      .getAttribute("aria-current"),
-  ).toBe("location");
+  expect(within(trail).getByText("src").getAttribute("aria-current")).toBe(
+    "location",
+  );
   fireEvent.click(screen.getByRole("button", { name: "New tab" }));
   fireEvent.click(screen.getByRole("button", { name: "Files" }));
   const otherFolderTab = screen.getByRole("tab", {
@@ -1424,7 +1421,11 @@ it("a failed parent open keeps the actual location and a late child response can
   );
   await screen.findByText("Folder /native/src");
   get.mockRejectedValueOnce(new Error("Folder unavailable"));
-  fireEvent.click(screen.getByRole("button", { name: "Up one level" }));
+  fireEvent.click(
+    within(
+      screen.getByRole("navigation", { name: "Current folder" }),
+    ).getByTitle("/native"),
+  );
   await screen.findByText("Folder unavailable");
   expect(screen.getByText("Folder /native/src")).toBeTruthy();
   let finish!: (value: { data: { kind: string } }) => void;
@@ -1436,7 +1437,11 @@ it("a failed parent open keeps the actual location and a late child response can
   );
   fireEvent.click(screen.getByRole("button", { name: "Open child folder" }));
   await screen.findByText("Opening…");
-  fireEvent.click(screen.getByRole("button", { name: "Up one level" }));
+  fireEvent.click(
+    within(
+      screen.getByRole("navigation", { name: "Current folder" }),
+    ).getByTitle("/native"),
+  );
   await screen.findByText("Folder /native");
   finish({ data: { kind: "directory" } });
   await waitFor(() => expect(screen.queryByText("Opening…")).toBeNull());
@@ -1450,15 +1455,13 @@ it("explicit external native links keep usable ancestry rather than an empty Pro
   expect(
     within(trail).queryByRole("button", { name: "Current project" }),
   ).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Up one level" }));
+  fireEvent.click(within(trail).getByTitle("/external"));
   await screen.findByText("Folder /external");
   fireEvent.click(within(trail).getByRole("button", { name: "/" }));
   await screen.findByText("Folder /");
   expect(
-    screen
-      .getByRole("button", { name: "Up one level" })
-      .hasAttribute("disabled"),
-  ).toBe(true);
+    screen.queryByRole("navigation", { name: "Current folder" }),
+  ).toBeNull();
 });
 
 it("switching configured roots from a file view returns to the selected folder instead of leaving a stale editor", async () => {
@@ -1479,10 +1482,8 @@ it("switching configured roots from a file view returns to the selected folder i
   await screen.findByText("Folder /second-root");
   expect(screen.queryByText("Editor /native/first.txt")).toBeNull();
   expect(
-    screen
-      .getByRole("button", { name: "Up one level" })
-      .hasAttribute("disabled"),
-  ).toBe(true);
+    screen.queryByRole("navigation", { name: "Current folder" }),
+  ).toBeNull();
 });
 
 it("opens tool paths through existing private buffers without re-reading or replacing dirty text", async () => {

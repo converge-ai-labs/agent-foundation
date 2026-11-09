@@ -385,19 +385,19 @@
   padding: 0 0 12px;
   flex: 1;
 }
+.paneBody[data-pane="files"] {
+  padding-block-start: 12px;
+}
 .location {
   display: grid;
   gap: 8px;
   padding: 8px 0 12px;
   flex-shrink: 0;
 }
-.folderNavigation {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
+.paneHeader:has(> .breadcrumbs) {
+  flex-wrap: nowrap;
 }
-.folderNavigation > button {
+.paneHeader > .actions {
   flex-shrink: 0;
 }
 .projectFolders {
@@ -464,9 +464,13 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.breadcrumbs button[aria-current] {
+.breadcrumbs [aria-current] {
+  padding-inline: 8px;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--a13n-text);
-  background: var(--a13n-surface);
 }
 .stack {
   display: flex;
@@ -489,6 +493,18 @@
 }
 .fileToolbar > .actions {
   margin-left: auto;
+}
+.fileHeaderActions,
+.fileHeaderActions .actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+@media (pointer: fine) {
+  .pane > .paneHeader .fileHeaderActions button[data-size^="icon"] {
+    width: 26px;
+    height: 26px;
+  }
 }
 .viewControls {
   display: flex;
@@ -517,6 +533,12 @@
   flex: 1;
   min-width: 0;
   max-width: none;
+}
+.directoryChildren {
+  margin-inline-start: 16px;
+}
+.fileLink[aria-expanded="true"] > svg:first-child {
+  transform: rotate(90deg);
 }
 .fileRow {
   display: flex;
@@ -570,6 +592,11 @@
   flex-shrink: 0;
   color: var(--a13n-secondary);
 }
+@media (hover: hover) and (pointer: fine) {
+  .fileRow:not(:hover, :focus-within, :has([data-popup-open])) .fileActions {
+    opacity: 0;
+  }
+}
 .fileActions:hover,
 .fileActions[data-popup-open] {
   color: var(--a13n-text);
@@ -589,6 +616,33 @@
   gap: 12px;
   padding: 0;
   min-width: 0;
+}
+.unsupportedPreview {
+  flex: 1 0 auto;
+  min-height: 164px;
+  padding: 24px 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  gap: 4px;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-body);
+}
+.unsupportedPreview strong {
+  color: var(--a13n-text);
+  font-size: 14px;
+  font-weight: 500;
+}
+.previewFileMark {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  margin-bottom: 8px;
+  border-radius: 14px;
+  background: var(--a13n-surface);
 }
 /* One line: name, unsaved state and size; the full path lives in the
    name's title and in File details. */
@@ -651,8 +705,10 @@
   display: block;
 }
 .editor {
-  flex: 1 1 0;
-  min-height: 160px;
+  border: 1px solid var(--a13n-border);
+  border-radius: var(--a13n-radius-group);
+  background: var(--a13n-surface);
+  flex: 0 0 auto;
   min-width: 0;
   overflow: hidden;
 }
@@ -994,5 +1050,90 @@
   }
   to {
     transform: translateX(100%);
+  }
+}
+
+.previewStage {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1 0 auto;
+  min-width: 0;
+}
+.loadingPreview {
+  display: none;
+  position: absolute;
+  inset: 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+.previewStage:has([data-file-pending]) > .loadingPreview {
+  display: flex;
+  animation: previewAppear 120ms ease-out 150ms backwards;
+}
+.previewStage:has([data-file-pending]) > .file {
+  visibility: hidden;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .previewStage:not(:has([data-file-pending])) > .file {
+    animation: previewAppear 120ms ease-out;
+  }
+}
+.loadingMark {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: var(--a13n-surface);
+}
+.loadingPreview span {
+  max-width: 80%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.loadingTrack {
+  width: 36px;
+  height: 2px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: var(--a13n-border);
+}
+.loadingTrack::after {
+  content: "";
+  display: block;
+  width: 50%;
+  height: 100%;
+  background: var(--a13n-secondary);
+  border-radius: inherit;
+  animation: previewTravel 1.2s ease-in-out infinite alternate;
+}
+@keyframes previewAppear {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes previewTravel {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .previewStage:has([data-file-pending]) > .loadingPreview {
+    animation: previewAppear 0s 150ms backwards;
+  }
+  .loadingTrack::after {
+    animation: none;
   }
 }

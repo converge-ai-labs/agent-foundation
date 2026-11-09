@@ -237,13 +237,15 @@ it("range inputs validate before HTTP and preserve exact one-based endpoints", a
     ),
   );
 });
-it("dirty file text survives refresh, conflict and navigation until explicit resolution", async () => {
+it("shows read-only disk text and refreshes without submitting edits", async () => {
   const f = fixture();
-  const props = { path: "/code/file.txt", refresh: vi.fn(), open: vi.fn() };
-  const view = render(<FileView {...props} />, { wrapper: f.Wrapper });
-  fireEvent.change(await screen.findByLabelText("File text: /code/file.txt"), {
-    target: { value: "local changes" },
+  render(<FileView path={file.entry.path} open={vi.fn()} />, {
+    wrapper: f.Wrapper,
   });
+  const text = (await screen.findByLabelText(
+    "File text: /code/file.txt",
+  )) as HTMLTextAreaElement;
+  expect(text.readOnly).toBe(true);
   f.get.mockResolvedValue({
     data: {
       ...file,
@@ -252,59 +254,19 @@ it("dirty file text survives refresh, conflict and navigation until explicit res
     },
   });
   fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
-  await screen.findByText("Disk revision changed");
-  expect(
-    (screen.getByLabelText("File text: /code/file.txt") as HTMLTextAreaElement)
-      .value,
-  ).toBe("local changes");
-  expect(
-    (screen.getByRole("button", { name: "Save" }) as HTMLButtonElement)
-      .disabled,
-  ).toBe(true);
-  view.unmount();
-  render(<FileView {...props} />, { wrapper: f.Wrapper });
-  await screen.findByText("Disk revision changed");
-  expect(f.buffers.get(props.path)?.value).toBe("local changes");
-  await waitFor(() =>
-    expect(
-      (screen.getByText("Keep local text") as HTMLButtonElement).disabled,
-    ).toBe(false),
-  );
-  fireEvent.click(screen.getByText("Keep local text"));
-  const confirmation = await screen.findByRole("dialog", {
-    name: "Keep your local text?",
-  });
-  fireEvent.click(
-    within(confirmation).getByRole("button", { name: "Keep local text" }),
-  );
-  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-  const retained = f.buffers.get(props.path)!;
-  expect(retained.value).toBe("local changes");
-  expect(retained.base.entry.revision).toBe("second");
-  expect(retained.dirty).toBe(true);
+  await waitFor(() => expect(text.value).toBe("external changes"));
+  expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
   expect(f.put).not.toHaveBeenCalled();
-  expect(screen.getByRole("status").textContent).toContain("Save explicitly");
-  f.put.mockResolvedValue({ data: { ...file.entry, revision: "third" } });
-  fireEvent.click(screen.getByRole("button", { name: "Save" }));
-  await screen.findByText("File saved.");
-  expect(f.put).toHaveBeenCalledWith("/api/host/files/text", {
-    body: {
-      path: props.path,
-      text: "local changes",
-      expected_revision: "second",
-    },
-  });
 });
 it("binary and oversize views never fabricate editable text or inline context", async () => {
   const f = fixture();
   f.get.mockResolvedValue({
     data: { ...file, presentation: "binary", text: null },
   });
-  render(
-    <FileView path={file.entry.path} refresh={() => {}} open={() => {}} />,
-    { wrapper: f.Wrapper },
-  );
-  await screen.findByText("Binary file");
+  render(<FileView path={file.entry.path} open={() => {}} />, {
+    wrapper: f.Wrapper,
+  });
+  await screen.findByText("Preview not supported");
   expect(screen.queryByRole("textbox")).toBeNull();
   expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
   expect(screen.queryByLabelText("Choose line range")).toBeNull();
@@ -500,7 +462,6 @@ it.each(["/code", "C:\\code"])(
     render(
       <FileOperation
         operation={{ kind: "move", entry }}
-        directory={directory}
         refresh={vi.fn()}
         done={done}
       />,
@@ -545,7 +506,6 @@ it("raw replacement uses the inspected revision and does not replay an unknown w
   render(
     <FileOperation
       operation={{ kind: "replace", entry: file.entry }}
-      directory="/code"
       refresh={refresh}
       done={done}
     />,
@@ -621,25 +581,29 @@ it("keeps capture range and local error while switching languages", async () => 
 it("switches file-operation language without losing the destination or changing request paths", async () => {
   const f = fixture();
   const user = userEvent.setup();
-  f.put.mockResolvedValue({ data: {} });
+  f.post.mockResolvedValue({ data: {} });
   render(
     <FileOperation
-      operation={{ kind: "new-file" }}
-      directory="/code"
+      operation={{ kind: "move", entry: file.entry }}
       refresh={vi.fn()}
       done={vi.fn()}
     />,
     { wrapper: f.Wrapper },
   );
+  await user.clear(screen.getByLabelText("Name"));
   await user.type(screen.getByLabelText("Name"), "raw-file.txt");
   await act(() => i18n.changeLanguage("zh-CN"));
   expect((screen.getByLabelText("名称") as HTMLInputElement).value).toBe(
     "raw-file.txt",
   );
-  await user.click(screen.getByRole("button", { name: "创建" }));
+  await user.click(screen.getByRole("button", { name: "保存" }));
   await waitFor(() =>
-    expect(f.put).toHaveBeenCalledWith("/api/host/files/text", {
-      body: { path: "/code/raw-file.txt", text: "" },
+    expect(f.post).toHaveBeenCalledWith("/api/host/files/move", {
+      body: {
+        path: file.entry.path,
+        destination: "/code/raw-file.txt",
+        expected_revision: file.entry.revision,
+      },
     }),
   );
   await act(() => i18n.changeLanguage("en"));
