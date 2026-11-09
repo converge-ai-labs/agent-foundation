@@ -179,8 +179,12 @@ fn linux_accessibility_real_gtk_application() {
         state(&path)["ready"] == true
     });
     let mut backend = new("aep_live_test").unwrap();
-    let described = call(backend.as_mut(), "computer.a11y_describe", json!({}));
-    assert_eq!(described["ready"], true);
+    // A mapped GTK window and the lazily activated AT-SPI registry have
+    // independent readiness. Observe the backend instead of racing activation.
+    wait_for(|| {
+        assert!(app.0.try_wait().unwrap().is_none(), "GTK fixture exited");
+        call(backend.as_mut(), "computer.a11y_describe", json!({}))["ready"] == true
+    });
     let mut application = None;
     wait_for(|| {
         let roots = call(

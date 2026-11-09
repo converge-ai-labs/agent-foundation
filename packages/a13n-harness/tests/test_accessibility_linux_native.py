@@ -115,8 +115,15 @@ async def test_real_linux_accessibility_session_and_harness(tmp_path):
                     thread_id="thread-native", run_id="run-native", instance=_instance(), host_refs={}
                 ) as env:
                     accessibility = env.computer.accessibility
-                    description = await accessibility.describe()
-                    assert description.ready and description.backend == "atspi"
+                    # GTK mapping does not imply that lazy AT-SPI registry
+                    # activation has finished. Poll the actual native readiness.
+                    description = None
+                    async with asyncio.timeout(15):
+                        while description is None or not description.ready:
+                            description = await accessibility.describe()
+                            if not description.ready:
+                                await asyncio.sleep(0.02)
+                    assert description.backend == "atspi"
                     assert len(description.methods) == 37
                     scope = AccessibilityRootScope(kind="application", process_id=application.pid)
                     limits = AccessibilityLimits(depth=8, max_native_calls=8192)
