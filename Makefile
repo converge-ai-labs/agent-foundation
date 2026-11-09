@@ -37,6 +37,12 @@ install: ## Install locked dependencies and Git hooks
 	@echo "Installing pre-commit hooks"
 	@uv run --locked pre-commit install --install-hooks
 
+.PHONY: accessibility-linux-test
+accessibility-linux-test: ## Test Linux AT-SPI against disposable GTK and native D-Bus providers
+	cargo build --locked --package a13n-envd
+	CARGO_HOME="$${CARGO_HOME:-$$HOME/.cargo}" RUSTUP_HOME="$${RUSTUP_HOME:-$$HOME/.rustup}" bash dev/fixtures/linux-desktop/test-accessibility.sh cargo test --locked --package a13n-envd --lib accessibility::linux -- --include-ignored --test-threads=1
+	A13N_ENVD_TEST_BINARY="$(CURDIR)/target/debug/a13n-envd" bash dev/fixtures/linux-desktop/test-accessibility.sh uv run --locked --package a13n-harness --group test --no-default-groups pytest packages/a13n-harness/tests/test_accessibility_linux_native.py -q
+
 .PHONY: sync
 sync: ## Synchronize the locked Python workspace
 	@uv sync --quiet --locked --all-packages

@@ -132,6 +132,8 @@ Expand **Observe desktop** or **Inspect desktop region** in WebUI to inspect the
 
 ## Native accessibility
 
+Linux implements native AT-SPI reads and all 30 AT-SPI mutations on the inherited X11 desktop. Start Envd from the same logged-in graphical session with `DBUS_SESSION_BUS_ADDRESS` and a running AT-SPI accessibility bus. On Debian/Ubuntu, install `at-spi2-core` and `libatk-adaptor`; applications must expose their accessibility interfaces. Envd discovers the bus through `org.a11y.Bus` and does not select another user's bus. AT-SPI traverses the application's native hierarchy for all `view` values; `raw`, `control` and `content` do not apply UIA filters on Linux. Text spans use native character positions, independently of UTF-8 byte limits.
+
 The Computer toolset also exposes semantic desktop access. Begin with `computer_accessibility_describe` to check the backend, readiness and supported reads. Backend support, mount permissions and a particular control's capabilities are separate facts. A daemon without a native backend reports unsupported; enabling Computer use alone does not provide one.
 
 | Tool                                            | Purpose                                                                         |

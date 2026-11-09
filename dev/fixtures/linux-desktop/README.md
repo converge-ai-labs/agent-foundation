@@ -32,6 +32,22 @@ The test exercises:
 
 Xvfb tests do not validate physical display drivers, compositor-specific behavior, real user keyboard races, macOS permissions, or Wayland. The backend deliberately neither mutates keyboard maps nor uses the clipboard for text entry.
 
+## Native AT-SPI accessibility
+
+`make accessibility-linux-test` builds Envd, runs the Rust native-adapter tests, and exercises GTK through the Session helper, EIP and the Harness facade. On a Debian/Ubuntu development host, install `xvfb`, `xauth`, `dbus-daemon`, `dbus-x11`, `at-spi2-core`, `libatk-adaptor`, `python3-gi` and `gir1.2-gtk-3.0` first. The system `/usr/bin/python3` supplies GTK/GI; the uv environment supplies Harness.
+
+The wrapper creates a temporary home, runtime directory, Xvfb display and user D-Bus session. It removes inherited display/bus overrides and never connects to a personal desktop. The default test suite skips these opt-in native tests.
+
+The GTK fixture independently records button clicks, Unicode text, numeric values and selection changes. Tests cover character spans, protected controls, paginated traversal, call/byte limits, native hit testing, retained screenshot projection and Session-bound references. `atspi-provider.py` separately supplies controlled native D-Bus interfaces: all 30 mutation member/argument mappings, false/error/no-reply outcomes, exact owner/container rejection and cross-object Document selections. These wire-level checks complement the real GTK effects.
+
+The image includes the same desktop dependencies. To run the Harness acceptance test in the isolated image instead of the default physical-input test, keep the Docker restrictions above and replace its command with:
+
+```bash
+bash /app/dev/fixtures/linux-desktop/test-accessibility.sh \
+  /app/.venv/bin/python -m pytest -p no:cacheprovider -q \
+  packages/a13n-harness/tests/test_accessibility_linux_native.py
+```
+
 ## Service integration
 
 This opt-in test is excluded from the ordinary Service CI suite, which requires zero skipped cases. Run it explicitly with this disposable desktop; do not count an unconfigured or skipped run as native Computer Use validation.

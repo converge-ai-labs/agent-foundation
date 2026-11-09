@@ -12,6 +12,8 @@ on:
       - "Makefile"
       - "conftest.py"
       - "crates/a13n-envd/**"
+      - "dev/fixtures/linux-desktop/**"
+      - "packages/a13n-harness/tests/test_accessibility_linux_native.py"
       - "packages/a13n-envd-client/**"
       - "packages/a13n-harness/a13n_harness/providers/environment/eip/**"
       - "packages/a13n-harness/a13n_harness/providers/environment/local_envd/**"
@@ -47,6 +49,8 @@ on:
       - "Makefile"
       - "conftest.py"
       - "crates/a13n-envd/**"
+      - "dev/fixtures/linux-desktop/**"
+      - "packages/a13n-harness/tests/test_accessibility_linux_native.py"
       - "packages/a13n-envd-client/**"
       - "packages/a13n-harness/a13n_harness/providers/environment/eip/**"
       - "packages/a13n-harness/a13n_harness/providers/environment/local_envd/**"
@@ -111,6 +115,8 @@ jobs:
               - 'conftest.py'
               - '.github/workflows/release-a13n-envd.yml'
               - 'crates/a13n-envd/**'
+              - 'dev/fixtures/linux-desktop/**'
+              - 'packages/a13n-harness/tests/test_accessibility_linux_native.py'
               - 'spec/a13n-envd/01-daemon-lifecycle-and-configuration.md'
               - 'spec/a13n-envd/05-command-and-process-execution.md'
               - 'spec/a13n-envd/07-execution-isolation.md'
@@ -146,6 +152,8 @@ jobs:
               - 'crates/a13n-envd/src/**'
               - 'crates/a13n-envd/protocol/**'
               - 'crates/a13n-envd/tests/**'
+              - 'dev/fixtures/linux-desktop/**'
+              - 'packages/a13n-harness/tests/test_accessibility_linux_native.py'
               - 'packages/a13n-envd-client/**'
               - 'packages/a13n-harness/a13n_harness/providers/environment/eip/**'
               - 'packages/a13n-harness/a13n_harness/providers/environment/local_envd/**'
@@ -347,7 +355,8 @@ jobs:
         shell: bash
         run: |
           sudo apt-get update
-          sudo apt-get install --yes bubblewrap xvfb xauth xclip protobuf-compiler
+          sudo apt-get install --yes bubblewrap xvfb xauth xclip protobuf-compiler \
+            dbus-daemon dbus-x11 at-spi2-core libatk-adaptor python3-gi gir1.2-gtk-3.0
           if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
             sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           fi
@@ -423,6 +432,13 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
+
+      - name: Test native AT-SPI in an isolated desktop and user bus
+        if: matrix.linux
+        shell: bash
+        run: |
+          set -o pipefail
+          make accessibility-linux-test 2>&1 | tee test-results/accessibility-linux.log
 
       - name: Exercise native system information and metrics through every EIP carrier
         shell: bash
