@@ -936,6 +936,26 @@ export function NativeWorkspace({
   const activeView = nativeActive || !singleView ? tabs.active : "conversation";
   const splitLayout =
     isWorkspace && !singleView && !sidebarCollapsed && hasSupportingViews;
+  const panelToggle = isWorkspace && hasSupportingViews && (
+    <Button
+      variant="ghost"
+      size="icon"
+      aria-label={
+        supportingExpanded
+          ? t("Close supporting panel")
+          : t("Open supporting panel")
+      }
+      title={
+        supportingExpanded
+          ? t("Close supporting panel")
+          : t("Open supporting panel")
+      }
+      aria-expanded={supportingExpanded}
+      onClick={toggleSupportingPanel}
+    >
+      <SidebarSimple mirrored />
+    </Button>
+  );
   return (
     <ReturnToChat
       value={() => {
@@ -951,95 +971,6 @@ export function NativeWorkspace({
       <div
         className={`${styles.workarea} ${singleView ? styles.tabLayout : ""}`}
       >
-        <header
-          className={`${styles.workToolbar} ${!isWorkspace && !threadId ? styles.documentToolbar : ""}`}
-        >
-          {navigation}
-          {thread.data?.thread.role === "coordinator" && <CoordinatorMark />}
-          <div className={styles.workspaceHeading}>
-            {resolvedProject && (
-              <span className={styles.projectBreadcrumb}>
-                {resolvedProject.name}
-              </span>
-            )}
-            <ToolbarTitle className={styles.workspaceTitle}>
-              {title}
-            </ToolbarTitle>
-          </div>
-          {isWorkspace && threadId && status.data?.features?.browser && (
-            <BrowserActivity
-              key={threadId}
-              threadId={threadId}
-              occupied={
-                tabLayout ||
-                (!sidebarCollapsed && (pane !== null || view !== "page"))
-              }
-              visible={
-                !sidebarCollapsed &&
-                pane === "browser" &&
-                (!singleView || nativeActive)
-              }
-              reveal={() => revealTab({ kind: "browser" })}
-              open={() => show("browser")}
-            />
-          )}
-          {profile}
-          {threadId && !unavailableThread && (
-            <Menu>
-              <MenuTrigger
-                render={<Button variant="ghost" size="icon-sm" />}
-                aria-label={t("Chat actions")}
-                title={t("Chat actions")}
-              >
-                <DotsThree />
-              </MenuTrigger>
-              <MenuPopup align="end">
-                {(
-                  [
-                    ["rename", "Rename", PencilSimple],
-                    ["details", "Chat details", SlidersHorizontal],
-                    ["share", "Share", ShareNetwork],
-                  ] as const
-                ).map(([action, label, Icon]) => (
-                  <MenuItem
-                    key={action}
-                    onClick={() => {
-                      const search = new URLSearchParams(location.search);
-                      search.set("dialog", action);
-                      navigate({
-                        pathname: location.pathname,
-                        search: search.toString(),
-                      });
-                    }}
-                  >
-                    <Icon />
-                    {t(label)}
-                  </MenuItem>
-                ))}
-              </MenuPopup>
-            </Menu>
-          )}
-          {isWorkspace && hasSupportingViews && (
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label={
-                supportingExpanded
-                  ? t("Close supporting panel")
-                  : t("Open supporting panel")
-              }
-              title={
-                supportingExpanded
-                  ? t("Close supporting panel")
-                  : t("Open supporting panel")
-              }
-              aria-expanded={supportingExpanded}
-              onClick={toggleSupportingPanel}
-            >
-              <SidebarSimple mirrored />
-            </Button>
-          )}
-        </header>
         <div
           className={`${styles.layout} ${splitLayout ? styles.splitLayout : ""}`}
           style={{ "--panel-width": `${width}%` } as CSSProperties}
@@ -1070,6 +1001,76 @@ export function NativeWorkspace({
             setResizing(false);
           }}
         >
+          <header
+            className={`${styles.workToolbar} ${!isWorkspace && !threadId ? styles.documentToolbar : ""}`}
+          >
+            {navigation}
+            {thread.data?.thread.role === "coordinator" && <CoordinatorMark />}
+            <div className={styles.workspaceHeading}>
+              {resolvedProject && (
+                <span className={styles.projectBreadcrumb}>
+                  {resolvedProject.name}
+                </span>
+              )}
+              <ToolbarTitle className={styles.workspaceTitle}>
+                {title}
+              </ToolbarTitle>
+            </div>
+            {isWorkspace && threadId && status.data?.features?.browser && (
+              <BrowserActivity
+                key={threadId}
+                threadId={threadId}
+                occupied={
+                  tabLayout ||
+                  (!sidebarCollapsed && (pane !== null || view !== "page"))
+                }
+                visible={
+                  !sidebarCollapsed &&
+                  pane === "browser" &&
+                  (!singleView || nativeActive)
+                }
+                reveal={() => revealTab({ kind: "browser" })}
+                open={() => show("browser")}
+              />
+            )}
+            {profile}
+            {threadId && !unavailableThread && (
+              <Menu>
+                <MenuTrigger
+                  render={<Button variant="ghost" size="icon-sm" />}
+                  aria-label={t("Chat actions")}
+                  title={t("Chat actions")}
+                >
+                  <DotsThree />
+                </MenuTrigger>
+                <MenuPopup align="end">
+                  {(
+                    [
+                      ["rename", "Rename", PencilSimple],
+                      ["details", "Chat details", SlidersHorizontal],
+                      ["share", "Share", ShareNetwork],
+                    ] as const
+                  ).map(([action, label, Icon]) => (
+                    <MenuItem
+                      key={action}
+                      onClick={() => {
+                        const search = new URLSearchParams(location.search);
+                        search.set("dialog", action);
+                        navigate({
+                          pathname: location.pathname,
+                          search: search.toString(),
+                        });
+                      }}
+                    >
+                      <Icon />
+                      {t(label)}
+                    </MenuItem>
+                  ))}
+                </MenuPopup>
+              </Menu>
+            )}
+            {!splitLayout && panelToggle}
+          </header>
           {isWorkspace && hasSupportingViews && (
             <nav
               className={styles.workspaceTabs}
@@ -1164,6 +1165,7 @@ export function NativeWorkspace({
                 <DebugOnly>
                   <EnvironmentMonitor />
                 </DebugOnly>
+                {splitLayout && panelToggle}
               </div>
             </nav>
           )}
