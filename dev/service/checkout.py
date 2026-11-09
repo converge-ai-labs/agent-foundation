@@ -109,6 +109,8 @@ class Checkout:
             "encryption.keys": {"local": self._encryption_key()},
             # The scripted model and other local fixtures listen on loopback over plain HTTP.
             "providers": {"require_https": False},
+            # Native clients dial this checkout's loopback Console proxy.
+            "client_environments": {"allow_loopback_ws": True},
             # Development only: `local` environments are directories on this host, with no isolation boundary.
             "provisioning.local": {"enabled": True, "root": str(self.environments)},
             # Offer Docker browsers; allocation remains an explicit workspace operation.

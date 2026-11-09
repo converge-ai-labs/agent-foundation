@@ -27,6 +27,32 @@ export A13N_ENVD_EXECUTABLE="$PWD/target/debug/a13n-envd"
 
 使用已发布的 Local Envd 时，让原生版本与已安装的 `a13n-envd-client` 匹配；该客户端独立于 Harness 和 Harness UI 发版。Python RC 版本 `1.2.3rc1` 对应原生版本 `1.2.3-rc.1`。
 
+## 从 Console 连接这台电脑
+
+批准后，所选工作空间中拥有运行权限的用户和服务账号都能在已批准的操作权限内使用这台电脑。
+
+macOS 源码开发时，先按上文构建匹配的二进制，再安装可选的链接启动器：
+
+```bash
+make envd-app-install
+# 升级前先断开现有连接：
+make envd-app-install ENVD_APP_ARGS=--replace
+```
+
+安装需要 Xcode Command Line Tools。脚本生成原生 `~/Applications/A13N Envd.app`，注册 `a13n-envd://` 链接，并复制所选二进制（可用 `ENVD_BINARY` 指定路径）。更新时会把旧 App 备份到 `~/Applications/.a13n-envd-previous.*`。该开发 App 只做本地签名，不是经过公证的正式安装包，也不会添加登录启动服务。
+
+1. 打开 **Console → 环境 → 实例 → 连接我的电脑**。
+2. 如果浏览器询问是否打开外部应用，确认后继续。未自动打开时，点击**打开 A13N Envd**。
+3. 首次注册时，在 App 内核对服务地址和工作区，选择起始目录及是否允许桌面操作，然后点击**允许并连接**。文件和 Shell 使用当前操作系统用户权限，所选目录不限制对其他文件的访问。
+4. 首次注册时，将 App 显示的六位验证码填入 Console，核对电脑信息并批准。
+5. 等待**在线**，再在 Agent 或对话设置中选择该环境。批准本身不会启动任务。
+
+Envd 由 App 管理，不再打开 Terminal。关闭窗口后仍保持连接，可从菜单栏重新打开。点击**断开连接**或退出 App 会停止 Envd；App 异常退出也会停止它。运行中重复打开链接只会回到现有连接，不会再启动第二个进程。需要切换连接时，先断开，再打开新链接。App 会记住最后批准的 Service 配置名、目录和桌面选项，供下次点击**重新连接**；设备凭据不会复制到 App 偏好设置中。从旧启动器升级时，先在旧 Terminal 中按 Ctrl+C 停止进程。桌面功能还需要 macOS 的屏幕录制和辅助功能权限，出现系统提示时需先完成授权。
+
+其他系统或未安装启动器的 macOS，可以使用对话框中的**从终端连接**。复制的 `connect-service --pairing-id` 命令需要 PATH 中有兼容的二进制，并使用本机配置。需要任意 Shell 命令时，在本机设置 `A13N_ENVD_FULL_CONTROL=1`；需要桌面操作时再添加 `--computer-use true`。网页不会安装软件或授予本机权限。配对十分钟后过期，过期后重新发起即可。已保存的配置可以通过 `a13n-envd connect-service <保存的主机名>` 重连，无需 API key。
+
+刷新 Console 后，再点**连接我的电脑**会打开 Envd 检查已有注册。已注册的电脑直接复用，不需要新的验证码或 device ID。在线连接保持运行；离线时可在 Envd 中重新连接。已有凭据缺失或失效会报错，不会自动创建替代实例。
+
 ## 安装已发布的二进制文件
 
 独立脚本从 GitHub Releases 安装原生可执行文件。为 Python 应用选择版本时，先在将使用 Envd 的环境中安装 [Python 客户端](python-client.md#install)。下方命令读取该环境中已安装包的版本。
