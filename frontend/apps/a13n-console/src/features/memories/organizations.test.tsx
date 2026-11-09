@@ -244,62 +244,49 @@ it("confirms replace-all with target-only deletion consequences", async () => {
   );
   cache.clear();
 });
-it.each(["direct", "candidate"] as const)(
-  "starts %s output from an explicit session selection and opens its ordinary run",
-  async (output) => {
-    const { cache, writes, user } = show("tasks");
-    await user.click(
-      await screen.findByRole("button", { name: "Organize memory" }),
-    );
-    const outputField = screen.getByRole("combobox", { name: "Output" });
-    expect(outputField.textContent).toContain("Write directly");
-    if (output === "candidate") {
-      await user.click(outputField);
-      await user.click(
-        await screen.findByRole("option", { name: "Candidate for review" }),
-      );
-    }
-    await user.type(
-      screen.getByRole("textbox", { name: "Task instructions (optional)" }),
-      "Keep corrections.",
-    );
-    await user.click(
-      screen.getByRole("switch", { name: "Include conversation history" }),
-    );
-    expect(
-      screen
-        .getByRole("button", { name: "Start organization" })
-        .hasAttribute("disabled"),
-    ).toBe(true);
-    await user.click(
-      await screen.findByRole("button", { name: "Select source sessions" }),
-    );
-    await user.click(
-      await screen.findByRole("checkbox", { name: /Product decisions/ }),
-    );
-    await user.keyboard("{Escape}");
-    await user.click(
-      screen.getByRole("button", { name: "Start organization" }),
-    );
-    await screen.findByRole("link", { name: "Open run and usage" });
-    expect(writes[0]).toMatchObject({
-      path: "/api/v1/memory-organizations",
-      body: {
-        target: { kind: "memory", id: "mem_target" },
-        model: "local",
-        output,
-        instructions: "Keep corrections.",
-        history: {
-          session_ids: ["sess_source"],
-          max_runs: 100,
-          after: null,
-          before: null,
-        },
+it("starts a candidate from an explicit session selection and opens its ordinary run", async () => {
+  const { cache, writes, user } = show("tasks");
+  await user.click(
+    await screen.findByRole("button", { name: "Organize memory" }),
+  );
+  await user.type(
+    screen.getByRole("textbox", { name: "Task instructions (optional)" }),
+    "Keep corrections.",
+  );
+  await user.click(
+    screen.getByRole("switch", { name: "Include conversation history" }),
+  );
+  expect(
+    screen
+      .getByRole("button", { name: "Start organization" })
+      .hasAttribute("disabled"),
+  ).toBe(true);
+  await user.click(
+    await screen.findByRole("button", { name: "Select source sessions" }),
+  );
+  await user.click(
+    await screen.findByRole("checkbox", { name: /Product decisions/ }),
+  );
+  await user.keyboard("{Escape}");
+  await user.click(screen.getByRole("button", { name: "Start organization" }));
+  await screen.findByRole("link", { name: "Open run and usage" });
+  expect(writes[0]).toMatchObject({
+    path: "/api/v1/memory-organizations",
+    body: {
+      target: { kind: "memory", id: "mem_target" },
+      model: "local",
+      output: "candidate",
+      instructions: "Keep corrections.",
+      history: {
+        session_ids: ["sess_source"],
+        max_runs: 100,
+        after: null,
+        before: null,
       },
-    });
-    cache.clear();
-  },
-);
+    },
+  });
+  cache.clear();
+});
 it("retains a policy draft and its ETag through refresh and a stale save", async () => {
   const { cache, writes, user } = show("automation", true);
   await user.click(

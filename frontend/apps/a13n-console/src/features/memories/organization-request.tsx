@@ -76,7 +76,7 @@ function RequestForm({
     [history, setHistory] = useState<Schema["OrganizationHistory"] | null>(
       null,
     ),
-    [output, setOutput] = useState<"candidate" | "direct">("direct");
+    [output, setOutput] = useState<"candidate" | "direct">("candidate");
   const models = useQuery(workspaceModelsQuery(client, workspace.id));
   const create = useMutation({
     mutationFn: () =>
@@ -146,8 +146,8 @@ function RequestForm({
           label={t("Output")}
           value={output}
           options={[
-            { value: "direct", label: t("Write directly") },
             { value: "candidate", label: t("Candidate for review") },
+            { value: "direct", label: t("Write directly") },
           ]}
           onValueChange={(value) => setOutput(value as typeof output)}
           description={t(
