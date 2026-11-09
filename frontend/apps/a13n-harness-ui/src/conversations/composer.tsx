@@ -58,6 +58,10 @@ import styles from "./conversation.module.css";
 import { useResults } from "./results";
 import { useTrackUnsent } from "./unsent";
 import { previewInput, type LocalInput } from "./local-input";
+import {
+  AttachmentThumbnail,
+  LocalImageThumbnail,
+} from "./attachment-thumbnail";
 import type { OrderedInputPart } from "./inline-attachments";
 
 function beginInput(
@@ -576,6 +580,13 @@ export function Composer({
         ),
       staleTime: Infinity,
     })),
+  });
+  const imageSelections = selections.flatMap((selection, index) => {
+    const file = draft.uploads.get(selection.key)?.file;
+    const attachment = attachments[index]?.data;
+    const type = attachment?.media_type ?? file?.type;
+    if (selection.id === "failed" || !type?.startsWith("image/")) return [];
+    return [{ ...selection, file, attachment }];
   });
   useEffect(() => {
     if (local) return;
@@ -1245,6 +1256,58 @@ export function Composer({
             <Plus />
           </Button>
           <div inert={preparing} className={styles.composerEditor}>
+            {imageSelections.length > 0 && (
+              <div className={styles.imageTray}>
+                {imageSelections.map(
+                  ({ key, from, id, attachment, file }, index) => {
+                    const name =
+                      attachment?.name ?? file?.name ?? t("Attachment");
+                    return (
+                      <div key={key + ":" + index} className={styles.imageTile}>
+                        <button
+                          type="button"
+                          className={styles.imageTileOpen}
+                          aria-label={t("Preview {{name}}", { name })}
+                          title={name}
+                          onClick={() => {
+                            if (attachment && id)
+                              void showAttachment(id, attachment);
+                            else if (file)
+                              setPreview({
+                                name,
+                                image: true,
+                                text: "",
+                                url: URL.createObjectURL(file),
+                              });
+                          }}
+                        >
+                          {attachment ? (
+                            <AttachmentThumbnail
+                              threadId={threadId}
+                              attachment={attachment}
+                            />
+                          ) : (
+                            file && <LocalImageThumbnail file={file} />
+                          )}
+                          <span>{name}</span>
+                        </button>
+                        <button
+                          type="button"
+                          className={styles.imageTileRemove}
+                          aria-label={t("Remove {{name}}", { name })}
+                          onClick={() => {
+                            draft.removeAttachment(key, from);
+                            editor.current?.focus();
+                          }}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    );
+                  },
+                )}
+              </div>
+            )}
             <AnnotationChip />
             <ComposerEditor
               autoFocus={autoFocus}
@@ -1278,6 +1341,7 @@ export function Composer({
               submit={() => void submit(busy ? "steer" : "send")}
               editor={editor}
               attachments={{
+                imageKeys: new Set(imageSelections.map(({ key }) => key)),
                 transport,
                 threadId,
                 metadata: new Map(

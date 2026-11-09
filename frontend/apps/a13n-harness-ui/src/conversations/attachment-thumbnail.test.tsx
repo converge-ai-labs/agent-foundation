@@ -88,7 +88,7 @@ it("does not create a late object URL after cancellation or fetch non-image atta
   expect(fetch).toHaveBeenCalledTimes(1);
   noImage();
 });
-it("renders one thumbnail per authored occurrence and keeps hidden descriptions out of ordered echo", async () => {
+it("groups image previews above the message and keeps hidden descriptions out of the text", async () => {
   urls();
   const fetch = vi.fn().mockResolvedValue(new Response("png"));
   const metadata = (index: number) => ({
@@ -132,12 +132,12 @@ it("renders one thumbnail per authored occurrence and keeps hidden descriptions 
   expect(screen.getAllByText("photo.png")).toHaveLength(2);
   expect(screen.queryByText("hidden description")).toBeNull();
   const message = screen.getByText("before").parentElement!;
-  const visible = [
-    ...message.querySelectorAll(
-      ':scope > span, :scope > div > button[aria-label^="Preview "]',
-    ),
-  ].map((node) => node.textContent);
-  expect(visible).toEqual(["before ", "photo.png", " between ", "photo.png"]);
+  const previews = screen.getAllByRole("button", { name: "Preview photo.png" });
+  expect(previews).toHaveLength(2);
+  for (const preview of previews) {
+    expect(message.previousElementSibling?.contains(preview)).toBe(true);
+  }
+  expect(message.textContent).toBe("before  between ");
 });
 
 it("opens retained images in a full-screen dialog with fit, actual-size and download controls", async () => {

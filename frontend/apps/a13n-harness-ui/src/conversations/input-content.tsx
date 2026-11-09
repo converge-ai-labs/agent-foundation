@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "../i18n";
-import { Button } from "a13n-ui";
+import { Button, Popover, PopoverPopup, PopoverTrigger } from "a13n-ui";
 import { Link } from "react-router";
 import { ArrowUpRight, CaretDown, Chats } from "@phosphor-icons/react";
 import { CopyMessage } from "./copy-message";
@@ -78,33 +78,22 @@ function Attachment({
     },
     [url],
   );
-  return (
-    <div className={styles.inputAttachment}>
-      {image && (
-        <button
-          type="button"
-          className={styles.imageAttachment}
-          onClick={() => setPreview(true)}
-          aria-label={t("Preview {{name}}", { name: attachment.name })}
-        >
-          <AttachmentThumbnail threadId={threadId} attachment={attachment} />
-          <strong>{attachment.name}</strong>
-        </button>
-      )}
-      <details>
-        <summary>
-          {image ? (
-            t("Attachment details")
+  const details = (
+    <Popover>
+      <PopoverTrigger
+        render={
+          image ? (
+            <Button variant="ghost" size="sm" />
           ) : (
-            <>
-              <AttachmentThumbnail
-                threadId={threadId}
-                attachment={attachment}
-              />
-              <strong>{attachment.name}</strong>
-            </>
-          )}
-        </summary>
+            <button type="button" className={styles.inlineAttachmentOpen} />
+          )
+        }
+        title={attachment.name}
+      >
+        <span>{image ? t("Attachment details") : attachment.name}</span>
+      </PopoverTrigger>
+      <PopoverPopup align="start">
+        {" "}
         <div className={styles.inputAttachmentDetails}>
           <small>
             {attachment.media_type} -{" "}
@@ -165,11 +154,30 @@ function Attachment({
           </details>
           <ErrorNotice error={error} />
         </div>
-      </details>
+      </PopoverPopup>
+    </Popover>
+  );
+  return (
+    <div className={image ? styles.imageTile : styles.inlineAttachment}>
+      {image ? (
+        <button
+          type="button"
+          className={styles.imageTileOpen}
+          onClick={() => setPreview(true)}
+          aria-label={t("Preview {{name}}", { name: attachment.name })}
+          title={attachment.name}
+        >
+          <AttachmentThumbnail threadId={threadId} attachment={attachment} />
+          <span>{attachment.name}</span>
+        </button>
+      ) : (
+        details
+      )}
       {preview && (
         <RetainedImagePreview
           threadId={threadId}
           attachment={attachment}
+          actions={details}
           close={() => setPreview(false)}
         />
       )}
@@ -276,129 +284,138 @@ export function InputContent({
   const source = visible
     .map((part) => threadMessage(part.metadata))
     .find(Boolean);
-  const content = (!source || expanded) && (
-    <>
-      {visible.map((part, index) => {
-        const attachment = inputAttachment(part.metadata);
-        if (attachment && threadId) {
-          const identity = composerIdentity(part) ?? attachment.attachment_id;
-          if (seen.has(identity)) return null;
-          seen.add(identity);
-          const related = visible.filter(
-            (item) =>
-              (composerIdentity(item) ??
-                inputAttachment(item.metadata)?.attachment_id) === identity,
-          );
-          return (
-            <Attachment
-              key={`${threadId}:${identity}`}
-              threadId={threadId}
-              attachment={attachment}
-              related={related}
-            />
-          );
-        }
-        const text = part.text || "";
-        const spans = retainedSkillSpans(text, part.metadata?.harness_ui);
-        const points = [...text];
-        let end = 0;
-        const marked: ReactNode[] = [];
-        for (const span of spans) {
-          marked.push(points.slice(end, span.start).join(""));
-          marked.push(
-            <span
-              key={span.start}
-              className={skillStyles.chip}
-              title={t("Skill: {{name}}", { name: span.name })}
-              data-skill={span.name}
-            >
-              {points.slice(span.start, span.end).join("")}
-            </span>,
-          );
-          end = span.end;
-        }
-        marked.push(points.slice(end).join(""));
-        if ((composerIdentity(part) || spans.length) && part.kind !== "media")
-          return (
-            <span key={index} className={styles.inputText}>
-              {marked}
-            </span>
-          );
-        return part.kind === "media" ? (
-          <Media key={index} part={part} />
-        ) : (
-          <div key={index}>{renderText(part.text || "")}</div>
+  const attachments: ReactNode[] = [];
+  const body =
+    (!source || expanded) &&
+    visible.map((part, index) => {
+      const attachment = inputAttachment(part.metadata);
+      if (attachment && threadId) {
+        const identity = composerIdentity(part) ?? attachment.attachment_id;
+        if (seen.has(identity)) return null;
+        seen.add(identity);
+        const related = visible.filter(
+          (item) =>
+            (composerIdentity(item) ??
+              inputAttachment(item.metadata)?.attachment_id) === identity,
         );
-      })}
-    </>
-  );
+        attachments.push(
+          <Attachment
+            key={`${threadId}:${identity}`}
+            threadId={threadId}
+            attachment={attachment}
+            related={related}
+          />,
+        );
+        return null;
+      }
+      const text = part.text || "";
+      if (part.kind !== "media" && !text) return null;
+      const spans = retainedSkillSpans(text, part.metadata?.harness_ui);
+      const points = [...text];
+      let end = 0;
+      const marked: ReactNode[] = [];
+      for (const span of spans) {
+        marked.push(points.slice(end, span.start).join(""));
+        marked.push(
+          <span
+            key={span.start}
+            className={skillStyles.chip}
+            title={t("Skill: {{name}}", { name: span.name })}
+            data-skill={span.name}
+          >
+            {points.slice(span.start, span.end).join("")}
+          </span>,
+        );
+        end = span.end;
+      }
+      marked.push(points.slice(end).join(""));
+      if ((composerIdentity(part) || spans.length) && part.kind !== "media")
+        return (
+          <span key={index} className={styles.inputText}>
+            {marked}
+          </span>
+        );
+      return part.kind === "media" ? (
+        <Media key={index} part={part} />
+      ) : (
+        <div key={index}>{renderText(part.text || "")}</div>
+      );
+    });
   return (
     <div className={styles.userInput}>
-      <div
-        className={`${styles.userMessage} ${source ? styles.threadMessage : ""}`}
-      >
-        {(source || status) && (
-          <header>
-            {source && guest ? (
-              <span className={styles.threadSource}>
-                {t("From thread")} - {source.title || source.id}
-              </span>
-            ) : source ? (
-              <Link
-                className={styles.threadSource}
-                to={`/threads/${encodeURIComponent(source.id)}`}
-                title={
-                  source.title ? `${source.title} - ${source.id}` : source.id
-                }
-                aria-label={t("From thread {{name}}", {
-                  name: source.title || source.id,
-                })}
-              >
-                <Chats size={16} aria-hidden="true" />
-                <span className={styles.threadSourceLabel}>
-                  {t("From thread")}
+      {attachments.length > 0 && (
+        <div className={styles.sentAttachments}>{attachments}</div>
+      )}
+      {(source || status || (body && body.some(Boolean))) && (
+        <div
+          className={`${styles.userMessage} ${source ? styles.threadMessage : ""}`}
+        >
+          {(source || status) && (
+            <header>
+              {source && guest ? (
+                <span className={styles.threadSource}>
+                  {t("From thread")} - {source.title || source.id}
                 </span>
-                <span className={styles.threadSourceName}>
-                  {source.title || source.id}
+              ) : source ? (
+                <Link
+                  className={styles.threadSource}
+                  to={`/threads/${encodeURIComponent(source.id)}`}
+                  title={
+                    source.title ? `${source.title} - ${source.id}` : source.id
+                  }
+                  aria-label={t("From thread {{name}}", {
+                    name: source.title || source.id,
+                  })}
+                >
+                  <Chats size={16} aria-hidden="true" />
+                  <span className={styles.threadSourceLabel}>
+                    {t("From thread")}
+                  </span>
+                  <span className={styles.threadSourceName}>
+                    {source.title || source.id}
+                  </span>
+                  <ArrowUpRight size={12} aria-hidden="true" />
+                </Link>
+              ) : null}
+              {status && (
+                <span role="status" className={styles.inputStatus}>
+                  {status}
                 </span>
-                <ArrowUpRight size={12} aria-hidden="true" />
-              </Link>
-            ) : null}
-            {status && (
-              <span role="status" className={styles.inputStatus}>
-                {status}
+              )}
+            </header>
+          )}
+          {source ? (
+            <div id={contentId} hidden={!expanded}>
+              {body}
+            </div>
+          ) : (
+            body
+          )}
+          {source && (
+            <button
+              type="button"
+              className={styles.threadMessageToggle}
+              aria-label={t("Message details")}
+              aria-expanded={expanded}
+              aria-controls={contentId}
+              onClick={() => setExpanded(!expanded)}
+            >
+              {!expanded && copyText.trim() && (
+                <span
+                  className={styles.threadMessagePreview}
+                  aria-hidden="true"
+                >
+                  {copyText}
+                </span>
+              )}
+              <span className={styles.threadMessageToggleLabel}>
+                {expanded ? t("Show less") : t("Show message")}
+                <CaretDown size={14} aria-hidden="true" />
               </span>
-            )}
-          </header>
-        )}
-        {source ? (
-          <div id={contentId} hidden={!expanded}>
-            {content}
-          </div>
-        ) : (
-          content
-        )}
-        {source && (
-          <button
-            type="button"
-            className={styles.threadMessageToggle}
-            aria-label={t("Message details")}
-            aria-expanded={expanded}
-            aria-controls={contentId}
-            onClick={() => setExpanded(!expanded)}
-          >
-            {!expanded && copyText.trim() && (
-              <span className={styles.threadMessagePreview} aria-hidden="true">
-                {copyText}
-              </span>
-            )}
-            <span className={styles.threadMessageToggleLabel}>
-              {expanded ? t("Show less") : t("Show message")}
-              <CaretDown size={14} aria-hidden="true" />
-            </span>
-          </button>
-        )}
-      </div>
+            </button>
+          )}
+        </div>
+      )}
       {(!source || expanded) && copyText.trim() && (
         <CopyMessage text={copyText} />
       )}
