@@ -32,7 +32,7 @@ a13n-envd
 
 ## 连接 Service
 
-使用运行 agent 的主体所持有的普通 Service API token，将它保存为私有文件，然后运行：
+使用拥有工作空间 `write` 权限的普通 Service API token 登记电脑。登记后，该工作空间中拥有 `run` 权限的用户和服务账号都能使用它，无需与登记账号相同。将 token 保存为私有文件，然后运行：
 
 ```sh
 a13n-envd connect-service https://control.example.com --host work \

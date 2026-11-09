@@ -20,11 +20,15 @@ export function FileMedia({
   revision,
   retry,
   kind,
+  svg = false,
+  svgText,
 }: {
   path: string;
   revision: string;
   retry: () => void;
   kind: MediaKind;
+  svg?: boolean;
+  svgText?: string;
 }) {
   const { t } = useTranslation();
   const transport = useTransport();
@@ -39,9 +43,32 @@ export function FileMedia({
   useEffect(() => {
     const controller = new AbortController();
     lifetime.current = controller;
-    void fileTransfer(transport, path, revision, "inline", controller.signal)
-      .then((access) => {
-        if (!controller.signal.aborted) setSrc(access.url);
+    // A data URL in an img uses the browser's isolated SVG image mode.
+    // Never insert file markup into the workbench DOM or serve an active SVG inline.
+    const source = async () => {
+      if (svgText !== undefined)
+        return (
+          "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svgText)
+        );
+      const access = await fileTransfer(
+        transport,
+        path,
+        revision,
+        svg ? "attachment" : "inline",
+        controller.signal,
+      );
+      if (!svg) return access.url;
+      const response = await transport.fetch(access.url, {
+        signal: controller.signal,
+      });
+      return (
+        "data:image/svg+xml;charset=utf-8," +
+        encodeURIComponent(await response.text())
+      );
+    };
+    void source()
+      .then((url) => {
+        if (!controller.signal.aborted) setSrc(url);
       })
       .catch((failure: unknown) => {
         if (!controller.signal.aborted) setError(failure);
@@ -49,7 +76,7 @@ export function FileMedia({
     return () => {
       controller.abort();
     };
-  }, [transport, path, revision, kind]);
+  }, [transport, path, revision, kind, svg, svgText]);
   useEffect(() => {
     const element = player.current;
     const picture = image.current;
@@ -67,7 +94,7 @@ export function FileMedia({
     kind === "image" ? t("image") : kind === "audio" ? t("audio") : t("video");
   const decodeError = () => {
     const failure = new PreviewError("decode");
-    if (!src) {
+    if (!src || svg) {
       setError(failure);
       return;
     }
@@ -100,7 +127,7 @@ export function FileMedia({
       }
     >
       {(!src || (kind === "image" ? !dimensions : !ready)) && !error && (
-        <p role="status">{t("Loading {{kind}}…", { kind: label })}</p>
+        <span hidden data-file-pending="" />
       )}
       <ErrorNotice
         error={

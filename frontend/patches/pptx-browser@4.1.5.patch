@@ -1,0 +1,25 @@
+diff --git a/src/index.js b/src/index.js
+index eddc206af12a1fbf1204a3509199bf0d8b12dc73..bde5fc271c67803974556d365ed6323615422946 100644
+--- a/src/index.js
++++ b/src/index.js
+@@ -23,7 +23,6 @@ import { readZip } from './zip.js';
+ import { parseXml, g1, gtn, attr, attrInt } from './utils.js';
+ import { parseTheme, parseClrMap, buildThemeColors } from './theme.js';
+ import {
+-  collectUsedFonts, loadGoogleFontsFor,
+   registerFont, registerFonts,
+   detectEmbeddedFonts, listRegisteredFonts,
+ } from './fonts.js';
+@@ -201,9 +200,7 @@ export default class PptxRenderer {
+     const allImages = { ...this.masterImages, ...layoutImages, ...slideImages };
+     const placeholderMap = buildPlaceholderMap([layoutDoc, this.masterDoc]);
+-
++
+-    // Load Google Font substitutes for MS fonts used in this slide
+-    const usedFonts = collectUsedFonts([slideDoc, layoutDoc, this.masterDoc]);
+-    await loadGoogleFontsFor(usedFonts, this.themeData);
++    // Host document previews use local font fallback only.
+-
++
+     // Canvas setup
+     const scale  = width / this.slideSize.cx;

@@ -32,7 +32,7 @@ Scalar settings cover identity, execution, discovery, metadata and lifetimes: `A
 
 ## Connect to Service
 
-Use a regular Service API token belonging to the principal that will run the agent. Save it in a private file, then run:
+Use a regular Service API token with workspace `write` permission to register the computer. Once registered, users and service accounts with `run` permission in that workspace can use it; they do not need to be the registering principal. Save it in a private file, then run:
 
 ```sh
 a13n-envd connect-service https://control.example.com --host work \

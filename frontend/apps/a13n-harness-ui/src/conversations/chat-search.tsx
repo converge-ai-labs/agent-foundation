@@ -222,7 +222,7 @@ function SearchResults({
             </strong>
             <small>
               {row.thread.coordinator_thread_id
-                ? t("{{project}} · Coordinator worker", {
+                ? t("{{project}} - Coordinator worker", {
                     project: row.project_name ?? t("Without a project"),
                   })
                 : (row.project_name ?? t("Without a project"))}

@@ -10,7 +10,7 @@ WebUI 是 Harness UI 的浏览器工作台，与 TUI 使用相同的 App 和已�
 | 得到第一个回答                      | [启动服务器](#start-the-server)                                                                                                                                                     |
 | 更换 Agent、Model 或工作目录        | [Agent 与 Model 设置](#agent-and-model-settings)                                                                                                                                    |
 | 补充指引或回答问题                  | [Steering](#tool-executions-and-immediate-steering) 与[待处理决策](#pending-questions-approvals-and-external-results)                                                               |
-| 与 Agent 一起审阅文件或 diff        | [Files 与 Changes](#read-edit-and-capture-host-files-and-git-changes)                                                                                                               |
+| 与 Agent 一起审阅文件或 diff        | [Files 与 Changes](#read-and-capture-host-files-and-git-changes)                                                                                                                    |
 | 让 Agent 浏览网页，或标注看到的画面 | [Host 浏览器](host-browser.md#browse-on-the-host)                                                                                                                                   |
 | 邀请他人或协调其他 Agent            | [分享](#share-a-thread-or-project)与 [Coordinator](#work-with-a-coordinator)                                                                                                        |
 | 从远程持续使用工作台                | [认证](running-webui.md#authentication-and-key-retention)、[代理设置](running-webui.md#reverse-proxies-and-public-addresses)与[重启](running-webui.md#restart-or-update-the-server) |
@@ -225,25 +225,27 @@ $$
 
 审批、选定上下文、消息确认和外部链接确认均留在 iframe 外的可信卡片中。打开不会重复原工具调用，关闭 View 会保留服务器连接。设置及远程部署所需独立沙箱 origin，见 [MCP Apps 指南](mcp-apps.md)。
 
-## 读取、编辑与捕获 Host 文件和 Git 变更
+## 读取和捕获 Host 文件和 Git 变更
 
 使用具有服务器目录的 Project，并保持计算机共享开启。查看 Git 还需要 Git。这些面板操作监听器 Host，即使 Agent 正在远程 Device 工作。
 
 1. 打开 **Files**，选择根目录、浏览文件夹并打开文件。调整大小或 **Expand drawer** 获得更多空间。
-2. Markdown 默认打开 **Preview**，选择 **Text** 编辑。预览包含未保存修改。Ctrl/Cmd+G 跳行，Ctrl/Cmd+S 保存。
+2. Markdown 默认打开 **Preview**，选择 **Text** 查看只读源码。Ctrl/Cmd+F 查找文字，Ctrl/Cmd+G 跳行。
 3. 选择源码行后点击 **Add to chat**；不选择行则捕获完整文件。
 4. 审阅共享草稿中的附件，加上问题，再发送或 steer。之后的 Host 编辑不会改变已捕获字节。
 
-Files 还支持上传、下载、创建、重命名/移动和确认删除。筛选只覆盖已加载路径，不递归搜索。**Back to files** 返回列表。切换文件或关闭抽屉保留标签页和未保存文字；重载或关闭浏览器标签页前请保存。
+通过条目菜单可重命名、移动、上传替换文件或确认删除。打开文件后可下载。筛选只覆盖已加载路径，不递归搜索。**Back to files** 返回列表。
 
 | 内容                       | 限制或行为                          |
 | -------------------------- | ----------------------------------- |
-| 可编辑文本                 | 完整、无 NUL 的 UTF-8，最多 512 KiB |
+| 文本预览                   | 完整、无 NUL 的 UTF-8，最多 512 KiB |
 | 上传、整文件捕获、图片预览 | 最多 10 MiB                         |
 | 更大下载或音视频           | 流式传输；按需开始播放              |
 | 字节访问链接               | 30 分钟过期，刷新后续期             |
 
-发生磁盘冲突时，对比最新文件，选择 **Use disk version** 或 **Keep local text** 后再保存。刷新保留未保存文字。结果不确定的写入应先检查，不自动重试。CRLF/LF 保留，混合换行统一为首次风格并提示。
+PDF 和 PPTX 可逐页预览。XLSX、XLS 和 ODS 可切换工作表，每张表最多显示 200 行、40 列的单元格值。文档预览上限为 16 MiB。SVG 默认显示图形，可切换到只读源码。代码预览沿用文档站的语法配色。ZIP、TAR 等压缩包及旧版 PPT 会进入内容页，提示不支持预览，可下载原文件。
+
+刷新可查看磁盘上的最新版本。
 
 审阅变更的步骤：
 

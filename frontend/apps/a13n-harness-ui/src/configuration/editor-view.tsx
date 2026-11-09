@@ -1,4 +1,13 @@
-import { useEffect, useImperativeHandle, useRef, type Ref } from "react";
+import {
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+  type Ref,
+} from "react";
+import { createPortal } from "react-dom";
+import { fileHighlighting } from "./file-highlighting";
+import { FileSearch } from "./file-search";
 import { useAppearance } from "../appearance/react";
 import { basicSetup, EditorView } from "codemirror";
 import {
@@ -8,11 +17,13 @@ import {
   type Extension,
 } from "@codemirror/state";
 import { keymap } from "@codemirror/view";
-import { gotoLine, openSearchPanel } from "@codemirror/search";
-import { javascript } from "@codemirror/lang-javascript";
-import { python } from "@codemirror/lang-python";
-import { json } from "@codemirror/lang-json";
-import { markdown } from "@codemirror/lang-markdown";
+import {
+  gotoLine,
+  openSearchPanel,
+  search,
+  getSearchQuery,
+  type SearchQuery,
+} from "@codemirror/search";
 import { yaml } from "@codemirror/lang-yaml";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
@@ -73,20 +84,6 @@ export type EditorPosition = {
   left: number;
 };
 
-function fileLanguage(path: string): Extension {
-  const extension = path.split(".").at(-1)?.toLowerCase();
-  if (["js", "jsx", "mjs", "cjs", "ts", "tsx"].includes(extension ?? ""))
-    return javascript({
-      typescript: extension === "ts" || extension === "tsx",
-      jsx: extension === "jsx" || extension === "tsx",
-    });
-  if (extension === "py" || extension === "pyi") return python();
-  if (extension === "json") return json();
-  if (extension === "md" || extension === "markdown") return markdown();
-  if (extension === "yaml" || extension === "yml") return yaml();
-  return [];
-}
-
 const externalValue = Annotation.define<boolean>();
 
 export function SourceEditor({
@@ -126,6 +123,11 @@ export function SourceEditor({
     range: { start_line: number; end_line: number } | undefined,
   ) => void;
 }) {
+  const [panel, setPanel] = useState<{
+    view: EditorView;
+    dom: HTMLElement;
+    query: SearchQuery;
+  } | null>(null);
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<EditorView | null>(null);
   const wrapMode = useRef(new Compartment());
@@ -174,8 +176,9 @@ export function SourceEditor({
       parent: host.current,
       doc: value,
       extensions: [
-        sourceHighlighting,
-        filename ? fileLanguage(filename) : language === "yaml" ? yaml() : [],
+        filename
+          ? fileHighlighting(filename)
+          : [sourceHighlighting, language === "yaml" ? yaml() : []],
         wrapMode.current.of(wrap ? EditorView.lineWrapping : []),
         keymap.of([
           {
@@ -188,6 +191,33 @@ export function SourceEditor({
           },
           { key: "Mod-g", run: gotoLine },
         ]),
+        filename
+          ? search({
+              top: true,
+              createPanel(view) {
+                const dom = document.createElement("div");
+                const publish = () =>
+                  setPanel({ view, dom, query: getSearchQuery(view.state) });
+                return {
+                  dom,
+                  top: true,
+                  mount: publish,
+                  update(update) {
+                    if (
+                      update.docChanged ||
+                      update.selectionSet ||
+                      getSearchQuery(update.startState) !==
+                        getSearchQuery(update.state)
+                    )
+                      publish();
+                  },
+                  destroy() {
+                    setPanel(null);
+                  },
+                };
+              },
+            })
+          : [],
         basicSetup,
         EditorView.editable.of(!readOnly),
         EditorState.readOnly.of(readOnly),
@@ -230,13 +260,15 @@ export function SourceEditor({
           "&": {
             fontSize: "var(--harness-code-size, 12px)",
             ...(fill
-              ? { height: "100%" }
+              ? { height: filename ? "auto" : "100%" }
               : {
                   border: "1px solid var(--a13n-border)",
                   borderRadius: "6px",
                   overflow: "hidden",
                 }),
-            backgroundColor: "var(--a13n-canvas)",
+            backgroundColor: filename
+              ? "var(--a13n-surface)"
+              : "var(--a13n-canvas)",
             color: "var(--a13n-text)",
           },
           "&.cm-focused": {
@@ -244,8 +276,8 @@ export function SourceEditor({
             outlineOffset: "1px",
           },
           ".cm-content": {
-            padding: "8px 0",
-            minHeight: fill ? "100%" : "160px",
+            padding: filename ? "12px 0" : "8px 0",
+            minHeight: filename ? "0" : fill ? "100%" : "160px",
           },
           ".cm-line": { padding: "0 12px" },
           ".cm-gutters": {
@@ -255,8 +287,12 @@ export function SourceEditor({
           },
           // The selection layer sits behind the text: an opaque active line
           // hides mouse/keyboard selections on that line.
-          ".cm-activeLine": { backgroundColor: "var(--a13n-hover)" },
-          ".cm-activeLineGutter": { backgroundColor: "var(--a13n-selected)" },
+          ".cm-activeLine": {
+            backgroundColor: filename ? "transparent" : "var(--a13n-hover)",
+          },
+          ".cm-activeLineGutter": {
+            backgroundColor: filename ? "transparent" : "var(--a13n-selected)",
+          },
           ".cm-cursor": { borderLeftColor: "var(--a13n-text)" },
           ".cm-selectionBackground": {
             backgroundColor:
@@ -306,7 +342,7 @@ export function SourceEditor({
           ".cm-scroller": {
             fontFamily: "var(--a13n-mono)",
             lineHeight: "1.65",
-            maxHeight: fill ? "none" : "min(400px, 50dvh)",
+            maxHeight: filename ? "72dvh" : fill ? "none" : "min(400px, 50dvh)",
             overflow: "auto",
             overscrollBehavior: "contain",
           },
@@ -387,9 +423,16 @@ export function SourceEditor({
       });
   }, [value]);
   return (
-    <div
-      ref={host}
-      style={fill ? { height: "100%", minHeight: 0 } : undefined}
-    />
+    <>
+      {panel &&
+        createPortal(
+          <FileSearch view={panel.view} query={panel.query} />,
+          panel.dom,
+        )}
+      <div
+        ref={host}
+        style={fill ? { height: "100%", minHeight: 0 } : undefined}
+      />
+    </>
   );
 }

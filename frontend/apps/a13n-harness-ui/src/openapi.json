@@ -2313,6 +2313,40 @@
         }
       }
     },
+    "/api/host/files/reveal": {
+      "post": {
+        "summary": "Reveal Host File",
+        "operationId": "reveal_host_file_api_host_files_reveal_post",
+        "parameters": [
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "title": "Path"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/host/files/metadata": {
       "get": {
         "summary": "Host File Metadata",
@@ -15496,6 +15530,21 @@
             "const": true,
             "title": "Page Presence",
             "default": true
+          },
+          "file_manager": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "finder",
+                  "explorer"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Manager"
           },
           "host_files": {
             "type": "boolean",

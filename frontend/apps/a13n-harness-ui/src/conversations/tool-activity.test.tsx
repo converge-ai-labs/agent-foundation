@@ -87,7 +87,7 @@ it("groups saved exploration across request/response entries without hiding an o
   expect(screen.getAllByRole("button", { name: /Explored/ })).toHaveLength(2);
   expect(screen.queryByText("Read content")).toBeNull();
   fireEvent.click(
-    screen.getByRole("button", { name: /Explored 1 file · 1 lookup/ }),
+    screen.getByRole("button", { name: /Explored 1 file - 1 lookup/ }),
   );
   expect(screen.getByText("Read content")).toBeTruthy();
   expect(document.querySelectorAll("[data-operation-id]")).toHaveLength(2);
@@ -238,13 +238,13 @@ it("groups web operations and preserves message and tool category boundaries in 
     />,
   );
   expect(
-    screen.getByRole("button", { name: "Browsed the web · 2 actions" }),
+    screen.getByRole("button", { name: "Browsed the web - 2 actions" }),
   ).toBeTruthy();
   expect(
     screen.getByRole("button", { name: "Ran 1 command check" }),
   ).toBeTruthy();
   expect(
-    screen.getByRole("button", { name: "File changes · 1 file /work/a" }),
+    screen.getByRole("button", { name: "File changes - 1 file /work/a" }),
   ).toBeTruthy();
   expect(document.querySelectorAll("[data-activity]")).toHaveLength(3);
 });
@@ -404,7 +404,7 @@ it("retains saved applied diffs and explicit omission without reconstructing req
   ] as Schema<"TranscriptEntry">[];
   render(<SavedEntry entry={entries[0]} />);
   fireEvent.click(
-    screen.getByRole("button", { name: "File changes · 2 files" }),
+    screen.getByRole("button", { name: "File changes - 2 files" }),
   );
   expect(screen.getByText("-observed before")).toBeTruthy();
   expect(screen.getByText("+observed after")).toBeTruthy();
@@ -472,7 +472,7 @@ it("groups execution controls in live and saved output and keeps waiting distinc
   ];
   const mounted = render(<LiveOutput gap={false} blocks={blocks} />);
   const group = screen.getByRole("button", {
-    name: /Tool calls · 2 operations/,
+    name: /Tool calls - 2 operations/,
   });
   expect(group.textContent).not.toContain("1 waiting");
   fireEvent.click(group);
@@ -519,7 +519,7 @@ it("groups execution controls in live and saved output and keeps waiting distinc
   const saved = savedToolGroups(entries).get(entries[0].parts[0])!;
   expect(saved).toHaveLength(2);
   expect(activitySummary(saved)).toMatchObject({
-    title: "Tool calls · 2 operations",
+    title: "Tool calls - 2 operations",
     status: "Running at last check",
   });
 });
@@ -577,13 +577,13 @@ it.each(["queued", "running"])(
       },
     };
     expect(activitySummary([tool])).toMatchObject({
-      title: "Shell · 1 operation",
+      title: "Shell - 1 operation",
       status: "Execution handed off",
     });
     expect(
       activitySummary([{ ...tool, result: { status: { phase: "running" } } }]),
     ).toMatchObject({
-      title: "Shell · 1 operation",
+      title: "Shell - 1 operation",
       status: "Running at last check",
     });
   },
@@ -644,7 +644,7 @@ it("renders saved Shell retrieval failures and output with exact receipt provena
   ] as Schema<"TranscriptEntry">[];
   const groups = savedToolGroups(entries);
   expect(describeTool(groups.get(entries[0].parts[0])![1]).summary).toBe(
-    "exec-one · pytest -q",
+    "exec-one - pytest -q",
   );
   const result = groups.get(entries[0].parts[4])![0];
   expect(describeTool(result)).toMatchObject({
@@ -734,7 +734,7 @@ it("retains another active command after one Shell reference completes", () => {
   expect(
     activitySummary([start("one"), start("two"), wait("one")]),
   ).toMatchObject({
-    title: "Shell · 3 operations",
+    title: "Shell - 3 operations",
     status: "Running at last check",
   });
   expect(

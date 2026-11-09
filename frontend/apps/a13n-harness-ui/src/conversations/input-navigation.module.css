@@ -95,14 +95,7 @@
   display: none;
 }
 .mobileTrigger {
-  color: var(--a13n-secondary);
-  background: var(--a13n-canvas);
-  border-color: var(--a13n-border);
-}
-.mobileTrigger:hover,
-.mobileTrigger[data-popup-open] {
-  color: var(--a13n-text);
-  background: var(--a13n-hover);
+  composes: action from "./floating-action.module.css";
 }
 .menu {
   width: min(340px, calc(100vw - 32px));

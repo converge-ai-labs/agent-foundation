@@ -277,7 +277,7 @@ export function AgentFields({
                   }
                 />
               ) : (
-                t("Markdown · inherits this Agent's model")
+                t("Markdown - inherits this Agent's model")
               )
             }
           >
@@ -327,8 +327,8 @@ export function AgentFields({
                     value: `${item.resource_kind === "agent" ? "agent" : "markdown"}:${id}`,
                     label:
                       item.resource_kind === "agent"
-                        ? t("Agent · {{name}}", { name: agentName(id) })
-                        : `Markdown · ${id}`,
+                        ? t("Agent - {{name}}", { name: agentName(id) })
+                        : `Markdown - ${id}`,
                   })),
               ),
           ]}
@@ -420,8 +420,8 @@ export function AgentFields({
                 )}
                 {proxy.data?.sources.map((item) => (
                   <p key={item.resource_id}>
-                    <span>{item.name}</span> · {item.presentation}
-                    {item.group ? ` · ${item.group}` : ""}
+                    <span>{item.name}</span> - {item.presentation}
+                    {item.group ? ` - ${item.group}` : ""}
                   </p>
                 ))}
               </>

@@ -7,7 +7,15 @@ const Editor = lazy(() =>
 export function SourceEditor(props: ComponentProps<typeof Editor>) {
   const { t } = useTranslation();
   return (
-    <Suspense fallback={<p role="status">{t("Loading source editor…")}</p>}>
+    <Suspense
+      fallback={
+        props.filename ? (
+          <span hidden data-file-pending="" />
+        ) : (
+          <p role="status">{t("Loading source editor…")}</p>
+        )
+      }
+    >
       <Editor {...props} />
     </Suspense>
   );

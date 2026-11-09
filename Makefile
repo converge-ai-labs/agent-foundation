@@ -315,6 +315,13 @@ eip-integration-test: sync ## Run EIP generation, runtime, cross-language, wire-
 eip-test: eip-integration-test ## Run complete EIP integration and daemon tests
 	@cargo test --locked --package a13n-envd
 
+.PHONY: envd-app-install envd-app-test
+envd-app-install: ## Install the macOS Envd app around ENVD_BINARY; pass ENVD_APP_ARGS=--replace to upgrade
+	@sh scripts/install-a13n-envd-launcher.sh $(ENVD_APP_ARGS) "$(if $(ENVD_BINARY),$(ENVD_BINARY),$(CURDIR)/target/debug/a13n-envd)"
+
+envd-app-test: ## Test the macOS Envd app process ownership and event framing
+	@uv run --locked pytest -q scripts/tests/test_envd_app.py
+
 .PHONY: local-envd-test
 local-envd-test: sync ## Build a13n-envd and run Local Envd provider tests
 	@cargo build --locked --package a13n-envd

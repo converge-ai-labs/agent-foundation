@@ -134,7 +134,7 @@ it("translates saved transcript chrome while preserving model content, backend p
   expect(
     screen.getByText("Saved preview truncated by the server."),
   ).toBeTruthy();
-  expect(screen.getByText("System updates · 2")).toBeTruthy();
+  expect(screen.getByText("System updates - 2")).toBeTruthy();
   expect(screen.getByText(/Content omitted by the server\./)).toBeTruthy();
 
   await act(() => i18n.changeLanguage("zh-CN"));
@@ -145,7 +145,7 @@ it("translates saved transcript chrome while preserving model content, backend p
   expect(screen.getByText("Visible reply")).toBe(reply);
   expect(screen.getByText("用时 3s")).toBeTruthy();
   expect(screen.getByText("服务端已截断已保存的预览。")).toBeTruthy();
-  expect(screen.getByText("系统更新 · 2")).toBeTruthy();
+  expect(screen.getByText("系统更新 - 2")).toBeTruthy();
   expect(screen.getByText(/服务端已省略内容。/)).toBeTruthy();
   // Backend part kinds and notice text stay verbatim in both languages.
   expect(screen.getAllByText("other").length).toBeGreaterThan(0);
@@ -180,7 +180,7 @@ it("applies each language's plural rules to model reconnection counts", async ()
     />,
   );
   expect(screen.getByRole("status").textContent).toBe(
-    "Reconnecting to model… · 1 retry",
+    "Reconnecting to model… - 1 retry",
   );
   view.rerender(
     <RecoveryNotice
@@ -188,13 +188,13 @@ it("applies each language's plural rules to model reconnection counts", async ()
     />,
   );
   expect(screen.getByRole("status").textContent).toBe(
-    "Model connection restored · 2 retries",
+    "Model connection restored - 2 retries",
   );
 
   await act(() => i18n.changeLanguage("zh-CN"));
 
   expect(screen.getByRole("status").textContent).toBe(
-    "模型连接已恢复 · 重试 2 次",
+    "模型连接已恢复 - 重试 2 次",
   );
   view.rerender(
     <RecoveryNotice
@@ -202,7 +202,7 @@ it("applies each language's plural rules to model reconnection counts", async ()
     />,
   );
   expect(screen.getByRole("status").textContent).toBe(
-    "正在重新连接模型… · 重试 1 次",
+    "正在重新连接模型… - 重试 1 次",
   );
 });
 
@@ -276,7 +276,7 @@ it("translates live context states from the reducer and keeps their backend diag
   // The state is translated while the backend diagnostics stay verbatim.
   expect(
     screen.getByText(
-      "失败 · model_rate_limited · summarize · upstream quota exhausted",
+      "失败 - model_rate_limited - summarize - upstream quota exhausted",
     ),
   ).toBeTruthy();
   const ready = replay([
@@ -389,7 +389,7 @@ it("translates generated execution outcomes and subagent states while preserving
   ];
   view.rerender(<LiveOutput blocks={child} gap={false} threadId="one" />);
   // The subagent label is composed at display time around its backend name.
-  expect(screen.getByText("子智能体 · Media understanding")).toBeTruthy();
+  expect(screen.getByText("子智能体 - Media understanding")).toBeTruthy();
   expect(screen.getByText("运行中")).toBeTruthy();
 });
 

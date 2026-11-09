@@ -45,20 +45,20 @@ it("localizes exact backend summaries without guessing provider capability or lo
   expect(modelControlMessage("Thinking level; not disabled", t)).toBe(
     "思考级别；未关闭思考",
   );
-  expect(modelControlMessage("Adaptive · High", t)).toBe("自适应 · 高");
-  expect(modelControlMessage("Effort · Custom", t)).toBe("强度 · 自定义");
-  expect(modelControlMessage("Budget · 8,192 tokens", t)).toBe(
-    "预算 · 8,192 token",
+  expect(modelControlMessage("Adaptive - High", t)).toBe("自适应 - 高");
+  expect(modelControlMessage("Effort - Custom", t)).toBe("强度 - 自定义");
+  expect(modelControlMessage("Budget - 8,192 tokens", t)).toBe(
+    "预算 - 8,192 token",
   );
   expect(modelControlMessage("Thinking budget: 16,384 tokens", t)).toBe(
     "思考预算：16,384 token",
   );
-  expect(modelControlMessage("Budget · -2 tokens", t)).toBe("预算 · -2 token");
+  expect(modelControlMessage("Budget - -2 tokens", t)).toBe("预算 - -2 token");
   expect(
-    modelControlMessage("Budget · 8,192 tokens", i18n.getFixedT("en")),
-  ).toBe("Budget · 8,192 tokens");
-  expect(modelControlMessage("Budget · 1 tokens", i18n.getFixedT("en"))).toBe(
-    "Budget · 1 token",
+    modelControlMessage("Budget - 8,192 tokens", i18n.getFixedT("en")),
+  ).toBe("Budget - 8,192 tokens");
+  expect(modelControlMessage("Budget - 1 tokens", i18n.getFixedT("en"))).toBe(
+    "Budget - 1 token",
   );
   expect(modelControlMessage("Thinking budget: 1 tokens", t)).toBe(
     "思考预算：1 token",
@@ -70,10 +70,10 @@ it("leaves unknown labels, opaque diagnostics and unrecognized summary formats v
     "vendor_id=42: quota exceeded 原文",
     "Quick",
     "Deep",
-    "Adaptive · provider/custom",
-    "Budget · 8,192 tokens: raw detail",
-    "Budget · 9007199254740993 tokens",
-    "Budget · 9,007,199,254,740,993 tokens",
+    "Adaptive - provider/custom",
+    "Budget - 8,192 tokens: raw detail",
+    "Budget - 9007199254740993 tokens",
+    "Budget - 9,007,199,254,740,993 tokens",
     "Thinking budget: 1,23 tokens",
     "Search models",
   ])

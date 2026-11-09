@@ -188,7 +188,7 @@ export function TerminalPanel({
       <header className={styles.header}>
         <strong>
           {t("Terminal")}
-          {projectName ? ` · ${projectName}` : ""}
+          {projectName ? ` - ${projectName}` : ""}
         </strong>
         <div className={styles.actions}>
           <TerminalAction
@@ -242,7 +242,7 @@ export function TerminalPanel({
             variant={selected === item.terminal_id ? "outline" : "ghost"}
             aria-pressed={selected === item.terminal_id}
             title={t(
-              "{{cwd}} · {{id}} · Switch sessions: {{previous}} / {{next}}",
+              "{{cwd}} - {{id}} - Switch sessions: {{previous}} / {{next}}",
               {
                 cwd: item.cwd,
                 id: item.terminal_id,
@@ -255,9 +255,9 @@ export function TerminalPanel({
             {item.cwd.split(/[\\/]/).filter(Boolean).at(-1) || t("Terminal")}
             {projectSessions.filter((session) => session.cwd === item.cwd)
               .length > 1
-              ? ` · ${index + 1}`
+              ? ` - ${index + 1}`
               : ""}
-            {item.state === "exited" ? ` · ${t("Exited")}` : ""}
+            {item.state === "exited" ? ` - ${t("Exited")}` : ""}
           </Button>
         ))}
       </div>

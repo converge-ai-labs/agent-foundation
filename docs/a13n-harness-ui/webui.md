@@ -10,7 +10,7 @@ WebUI is the browser workbench for Harness UI. It uses the same App and saved co
 | Get a first answer                              | [Start the server](#start-the-server)                                                                                                                                                                   |
 | Change the Agent, Model, or working directories | [Agent and Model settings](#agent-and-model-settings)                                                                                                                                                   |
 | Give more guidance or answer a question         | [Steering](#tool-executions-and-immediate-steering) and [pending decisions](#pending-questions-approvals-and-external-results)                                                                          |
-| Review a file or diff with the Agent            | [Files and Changes](#read-edit-and-capture-host-files-and-git-changes)                                                                                                                                  |
+| Review a file or diff with the Agent            | [Files and Changes](#read-and-capture-host-files-and-git-changes)                                                                                                                                       |
 | Let the Agent browse, or annotate what I see    | [Host browser](host-browser.md#browse-on-the-host)                                                                                                                                                      |
 | Invite a person or coordinate other Agents      | [Sharing](#share-a-thread-or-project) and [Coordinator](#work-with-a-coordinator)                                                                                                                       |
 | Keep the workbench available remotely           | [Authentication](running-webui.md#authentication-and-key-retention), [proxy setup](running-webui.md#reverse-proxies-and-public-addresses), and [restart](running-webui.md#restart-or-update-the-server) |
@@ -91,7 +91,7 @@ Wait for attachment uploads before sending. Click an attachment to inspect it; r
 
 Live output is provisional until saved history arrives. Existing saved history stays visible during replacement loading. A failure shows a short reason and expandable details. **Retry** starts a new turn with `Continue completing the previous task.` followed by the current draft text and attachments. Inspect that draft before retrying. Acceptance removes the submitted snapshot and retains concurrent edits; it does not restore the failed Run. It is unavailable during pending or uncertain submission.
 
-Expand **Execution details**, **Explored**, Shell, browsing, or **File changes** to inspect arguments, results, and observed edits. **Awaiting result** identifies a missing result; **Requested replacement** identifies a requested edit rather than an applied diff. Omitted historical content remains unavailable. **Open on host** opens an absolute server/container path and preserves dirty buffers; current disk content can differ from the recorded result.
+Expand **Execution details**, **Explored**, Shell, browsing, or **File changes** to inspect arguments, results, and observed edits. **Awaiting result** identifies a missing result; **Requested replacement** identifies a requested edit rather than an applied diff. Omitted historical content remains unavailable. **Open on host** opens an absolute server/container path in a read-only preview; current disk content can differ from the recorded result.
 
 Open **Details** for operation status, child executions, tasks, notes, usage, and configuration. Execution, continuation saving, and Environment cleanup have separate outcomes. Child controls address the exact parent execution. Applying Project defaults requires a before/after review; competing changes retain your edits for renewed review.
 
@@ -225,25 +225,27 @@ Opted-in [MCP Apps](mcp-apps.md) appear beside actual tool results. In saved his
 
 Approvals, selected context, message confirmation, and external-link confirmation stay in the trusted card outside the iframe. Opening does not repeat the original tool call; closing the View retains its server connection. Follow the [MCP Apps guide](mcp-apps.md) for setup and the separate sandbox origin required by remote deployments.
 
-## Read, edit and capture Host files and Git changes
+## Read and capture Host files and Git changes
 
 Use a Project with a server directory and leave computer sharing enabled. Git viewing also requires Git. These panels operate on the listener Host, even when the Agent works on a remote Device.
 
 1. Open **Files**, select a root, browse folders, and choose a file. Resize or **Expand drawer** for more space.
-2. Markdown opens in **Preview**; choose **Text** to edit. Preview includes your unsaved edits. Ctrl/Cmd+G goes to a line; Ctrl/Cmd+S saves.
+2. Markdown opens in **Preview**; choose **Text** to inspect the source. Ctrl/Cmd+F finds text; Ctrl/Cmd+G goes to a line.
 3. Select source lines and choose **Add to chat**, or select nothing to capture the complete file.
 4. Review the attachment in the shared draft, add a question, and send or steer. The captured bytes stay fixed after later Host edits.
 
-Files also supports uploads, downloads, creation, rename/move, and confirmed deletion. Filters cover loaded paths, not recursive search. **Back to files** returns to the list. Tabs and dirty text survive file switches and drawer closure; save before reloading or closing the browser tab.
+The entry menu supports rename/move, upload replacement, and confirmed deletion. Open a file to download it. Filters cover loaded paths, not recursive search. **Back to files** returns to the list.
 
 | Content                                   | Limit or behavior                          |
 | ----------------------------------------- | ------------------------------------------ |
-| Editable text                             | Complete NUL-free UTF-8, up to 512 KiB     |
+| Text preview                              | Complete NUL-free UTF-8, up to 512 KiB     |
 | Upload, whole-file capture, image preview | Up to 10 MiB                               |
 | Larger download or audio/video            | Streamed; playback starts only on request  |
 | Byte-access link                          | Expires after 30 minutes; refresh to renew |
 
-On disk conflict, compare the latest file and choose **Use disk version** or **Keep local text** before saving. Refresh preserves dirty text. Uncertain writes require inspection rather than automatic retry. CRLF/LF are retained; mixed endings normalize to the first style with a notice.
+PDF and PPTX previews show one page or slide at a time. XLSX, XLS and ODS previews show cell values by worksheet (up to 200 rows and 40 columns). Document previews accept files up to 16 MiB. SVG opens as an image with a read-only Text view for its source. Code previews share the documentation syntax colors. Unsupported files, including ZIP, TAR and legacy PPT, open a detail page with a preview notice and a download action.
+
+Refresh to read the latest disk revision.
 
 To review a change:
 

@@ -62,7 +62,7 @@ it("shows Codex windows, weekly reset, and expiring vouchers outside management"
       .getAttribute("value"),
   ).toBe("40");
   expect(screen.getAllByText(/^Resets /)).toHaveLength(2);
-  expect(screen.getByText("Reset vouchers · 1 available")).toBeTruthy();
+  expect(screen.getByText("Reset vouchers - 1 available")).toBeTruthy();
   expect(screen.getByText(/^Expires /)).toBeTruthy();
 });
 
@@ -134,12 +134,12 @@ it("refreshes Copilot independently and retains its last quota after a failed re
       </TransportContext>
     </QueryClientProvider>,
   );
-  await screen.findByText("Premium models · 35% left");
-  expect(screen.getByText("Chat · Unlimited")).toBeTruthy();
+  await screen.findByText("Premium models - 35% left");
+  expect(screen.getByText("Chat - Unlimited")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Refresh allowance" }));
   await screen.findByRole("alert");
   expect(calls).toBe(2);
-  expect(screen.getByText("Premium models · 35% left")).toBeTruthy();
+  expect(screen.getByText("Premium models - 35% left")).toBeTruthy();
 });
 
 it("shows ChatGPT's own settings without fetching Codex or fabricating quota", () => {
