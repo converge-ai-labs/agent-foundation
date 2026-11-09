@@ -88,6 +88,25 @@ async def test_candidate_worker_isolated_then_apply_preserves_unchanged_identity
     assert (await service.client.post(f"{endpoint(service, organization)}/discard")).status_code == 409
 
 
+async def test_candidate_diff_preserves_unterminated_lines_and_newline_only_changes(service, scripted_model, runs_kit):
+    memory = await team_memory(service)
+    cases = [
+        ("replace.md", "old", "new", "-old\n\\ No newline at end of file\n+new\n\\ No newline at end of file\n"),
+        ("add-newline.md", "same", "same\n", "-same\n\\ No newline at end of file\n+same\n"),
+        ("remove-newline.md", "same\n", "same", "-same\n+same\n\\ No newline at end of file\n"),
+    ]
+    for path, before, _, _ in cases:
+        await write_file(service, memory, path, before)
+    _, organization = await candidate(service, scripted_model, runs_kit, target=memory)
+    for path, _, after, expected in cases:
+        await edit_file(service, organization["candidate_memory_id"], path, after)
+        response = await service.client.get(f"{endpoint(service, organization)}/diff", params={"path": path})
+        assert response.status_code == 200, response.text
+        value = response.json()
+        assert value["diff"] == f"--- baseline/{path}\n+++ candidate/{path}\n@@ -1 +1 @@\n{expected}"
+        assert not value["truncated"]
+
+
 async def test_checked_conflict_and_explicit_replace_all_require_current_review(service, scripted_model, runs_kit):
     memory, organization = await candidate(service, scripted_model, runs_kit)
     await complete(service, scripted_model, runs_kit)

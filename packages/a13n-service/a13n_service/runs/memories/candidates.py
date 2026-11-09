@@ -146,8 +146,14 @@ async def diff(runtime: Runtime, actor: Principal, workspace_id: str, identifier
             fromfile=f"baseline/{path}",
             tofile=f"candidate/{path}",
         )
-        # Bound output while preserving an explicit truncation signal.
-        preview = list(islice(lines, 2001))
+        # Separate unterminated content records and make final-newline changes visible.
+        display_lines = (
+            record
+            for line in lines
+            for record in ([line] if line.endswith("\n") else [f"{line}\n", "\\ No newline at end of file\n"])
+        )
+        # Bound normalized display output, including newline markers.
+        preview = list(islice(display_lines, 2001))
         text = "".join(preview[:2000])
         return CandidateDiff(path=path, diff=text[:65536], truncated=len(text) > 65536 or len(preview) > 2000)
 
