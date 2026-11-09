@@ -70,7 +70,13 @@ async def test_memories_are_configured_with_preconditions_and_guides(service) ->
     memory = await create_memory(service, always_load=["README.md"], labels={"team": "a"})
     assert (memory["kind"], memory["type"], memory["guide"]) == ("file", "postgres", None)
     assert memory["inherited_guide"] is None
-    assert memory["guidance"] == {"system_preset": "general", "system_override": None, "custom": "", "timezone": "UTC"}
+    assert memory["guidance"] == {
+        "system_preset": "general",
+        "modules": None,
+        "system_override": None,
+        "custom": "",
+        "timezone": "UTC",
+    }
     assert (memory["file_count"], memory["content_bytes"], memory["history_bytes"]) == (0, 0, 0)
     assert memory["always_load"] == ["README.md"]
     for always_load, field in ((["../x"], "always_load.0"), (["a.md", "a.md"], "always_load")):
@@ -82,6 +88,7 @@ async def test_memories_are_configured_with_preconditions_and_guides(service) ->
     item = f"{base}/{memory['id']}"
     rules = {
         "system_preset": "journal",
+        "modules": None,
         "system_override": "Keep it short.",
         "custom": "Team decisions",
         "timezone": "Asia/Taipei",

@@ -206,6 +206,7 @@ it("creates a memory identified by its ID", async () => {
       system_preset: "general",
       system_override: null,
       custom: "One topic per file.",
+      modules: null,
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     },
     always_load: ["README.md"],
