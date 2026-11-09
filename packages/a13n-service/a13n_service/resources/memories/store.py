@@ -308,6 +308,48 @@ async def move_file(
     return row
 
 
+async def replace_files(
+    session: AsyncSession,
+    settings: MemorySettings,
+    memory_id: str,
+    files: Mapping[str, str],
+    *,
+    expected_seq: int,
+    origin: Origin,
+    count_change: bool = False,
+) -> int:
+    """Publish one complete tree in the caller's transaction, preserving unchanged file identities."""
+    fmt = file_format(settings)
+    descriptions = {validate_path(path, fmt): describe(content, fmt) for path, content in files.items()}
+    total = sum(_size(content) for content in files.values())
+    if total > settings.max_total_bytes:
+        raise MemoryStoreError("memory_full", "The replacement exceeds the memory byte limit.")
+    change = await _change(session, memory_id, origin)
+    if change.store.seq != expected_seq:
+        raise MemoryStoreError("read_conflict", "The memory changed since the reviewed snapshot.")
+    rows = {
+        row.path: row
+        for row in await session.scalars(select(MemoryFileRow).where(MemoryFileRow.memory_id == memory_id))
+    }
+    for path in sorted(rows.keys() - files.keys()):
+        row = rows[path]
+        change.revise(path, "delete", row.content)
+        await session.delete(row)
+    for path, content in sorted(files.items()):
+        row = rows.get(path)
+        if row is not None and row.content == content:
+            continue
+        version = change.revise(path, "create" if row is None else "update", None if row is None else row.content)
+        if row is None:
+            row = MemoryFileRow(id=new_object_id("mfile"), memory_id=memory_id, path=path, created_at=change.at)
+            session.add(row)
+        row.content, row.size, row.description = content, _size(content), descriptions[path]
+        change.stamp(row, version)
+    change.store.content_bytes, change.store.file_count = total, len(files)
+    await change.settle(settings, count_change=count_change and bool(change.paths))
+    return change.store.seq
+
+
 async def list_entries(session: AsyncSession, memory_id: str) -> list[FileEntry]:
     await store_row(session, memory_id)
     rows = await session.execute(

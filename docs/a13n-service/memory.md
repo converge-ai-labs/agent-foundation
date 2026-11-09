@@ -114,6 +114,18 @@ Select 1–100 unique conversation Sessions in the same workspace. The optional 
 
 The organizer has bounded source discovery and content reading/search tools limited to that selection. It treats transcripts as evidence, preserves corrections and disagreements, and distinguishes user statements from agent claims. Omitting `history` organizes saved files only. Upgrading does not scan old conversations or spend model tokens automatically.
 
+### Review a candidate before publishing
+
+Set `"output": "candidate"` on a custom organization request to keep live files unchanged during generation. The response's `candidate_memory_id` names an independent file memory copied from the target. Inspect or edit its files through ordinary memory APIs. This also works with selected conversation history.
+
+1. Wait for the ordinary run to complete and seal. Read `GET /memory-organizations/{id}/candidate` for status, changed paths, `candidate_seq` and `target_seq`.
+2. Inspect `GET /memory-organizations/{id}/candidate/diff?path=...`. It compares the admission baseline with the candidate. A `truncated` preview requires opening the full files. Inspect the current target separately when it has changed.
+3. Publish with `POST /memory-organizations/{id}/candidate/apply`, using `{"mode": "checked", "candidate_seq": 7, "target_seq": 4}` with the actual reviewed sequences. The complete tree publishes atomically. Unchanged target files retain their IDs and versions.
+
+`review_changed` means the candidate or target changed after review. Reload both before deciding. `baseline_changed` means the target changed since generation began. Generate a fresh candidate, or explicitly choose `replace_all` after reviewing the current target. `replace_all` overwrites the complete target tree and deletes target-only files; it does not merge concurrent edits. The same exact apply request can be retried safely using its stored receipt.
+
+To reject a settled candidate, call `POST /memory-organizations/{id}/candidate/discard`. Cancel an active run first through the run API. Failed and cancelled generation cannot publish. Apply requires current write permission and an enabled target Space. Discard and apply retain the independent candidate memory for inspection; delete it separately when no longer needed. Removing the target or candidate makes publication unavailable. Publication changes file content, not target guidance or Session bindings.
+
 ### Write from current knowledge
 
 Agents and organizers track the file versions their conversation has read. Each file mutation checks those observations within the same memory, atomically with the write. A changed source or target returns `read_conflict` and names the file to reread.

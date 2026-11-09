@@ -29,7 +29,7 @@ async def test_standalone_organization_freezes_request_and_uses_ordinary_worker(
     response = await service.client.post(f"{service.api}/memory-organizations", json=request)
     assert response.status_code == 202, response.text
     organization = response.json()
-    assert organization["request"] == {**request, "history": None}
+    assert organization["request"] == {**request, "history": None, "output": "direct"}
     assert organization["sources"] == []
     run = await runs_kit.get_run(service, organization["run_id"])
     assert run["memory_mounts"][0]["memory_id"] == memory["id"]

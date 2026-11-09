@@ -58,6 +58,7 @@ class OrganizationRequest(BaseModel):
     model: str = Field(min_length=1, max_length=256)
     instructions: str = Field(default="Organize the saved memory files.", min_length=1, max_length=16384)
     history: OrganizationHistory | None = None
+    output: Literal["direct", "candidate"] = "direct"
 
 
 class MemoryOrganization(BaseModel):
@@ -65,11 +66,49 @@ class MemoryOrganization(BaseModel):
     workspace_id: str
     request: OrganizationRequest
     sources: list[OrganizationSource]
+    candidate_memory_id: str | None = None
     session_id: str
     thread_id: str
     run_id: str
     created_by_id: str
     created_at: datetime
+
+
+class CandidateApply(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    mode: Literal["checked", "replace_all"] = "checked"
+    candidate_seq: int = Field(ge=0)
+    target_seq: int = Field(ge=0)
+
+
+class CandidateChange(BaseModel):
+    path: str
+    operation: Literal["create", "update", "delete"]
+
+
+class CandidateApplication(BaseModel):
+    request: CandidateApply
+    result_seq: int
+    applied_by_id: str
+    applied_at: datetime
+
+
+class OrganizationCandidate(BaseModel):
+    organization_id: str
+    memory_id: str
+    target_memory_id: str
+    status: Literal["generating", "ready", "failed", "applied", "discarded", "unavailable"]
+    baseline_seq: int
+    candidate_seq: int | None
+    target_seq: int | None
+    changes: list[CandidateChange]
+    application: CandidateApplication | None = None
+
+
+class CandidateDiff(BaseModel):
+    path: str
+    diff: str
+    truncated: bool
 
 
 class MemoryOrganizationPage(BaseModel):

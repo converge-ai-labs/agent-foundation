@@ -11,7 +11,7 @@ from a13n_service.resources.memories.tables import MemoryRow, MemorySpaceRow
 from a13n_service.resources.rows import audit_row, find_row
 from a13n_service.runs.accept import Source, start_run
 from a13n_service.runs.inbox import append_message
-from a13n_service.runs.memories import organization_history, organizer
+from a13n_service.runs.memories import candidates, organization_history, organizer
 from a13n_service.runs.memories.organization_schemas import (
     MemoryOrganization,
     MemoryOrganizationPage,
@@ -37,6 +37,7 @@ def view(row: OrganizationRow) -> MemoryOrganization:
         workspace_id=row.workspace_id,
         request=OrganizationRequest.model_validate(row.request),
         sources=[OrganizationSource.model_validate(item) for item in row.sources],
+        candidate_memory_id=row.candidate_memory_id,
         session_id=row.session_id,
         thread_id=row.thread_id,
         run_id=row.run_id,
@@ -72,6 +73,10 @@ async def admit(
         if managed is not None:
             raise conflict(MemoryRow.KIND, memory.id, "managed_memory", space_id=managed)
         memory_id = memory.id
+    candidate_memory_id, baseline = None, None
+    if request.output == "candidate":
+        target = await find_row(session, actor, MemoryRow, scope, memory_id, "read")
+        candidate_memory_id, baseline = await candidates.prepare(session, runtime, actor, scope, target)
     sources = await organization_history.select_sources(session, actor, scope, request.history)
     agent_id, revision_id = await organizer.revision(
         session, runtime, actor, scope, request.model, history=request.history is not None
@@ -93,6 +98,10 @@ async def admit(
         sources=[item.model_dump(mode="json") for item in sources],
         memory_id=memory_id,
         space_id=space_id,
+        candidate_memory_id=candidate_memory_id,
+        baseline=baseline,
+        application=None,
+        discarded_at=None,
         session_id=owner.id,
         thread_id=thread.id,
         run_id=None,

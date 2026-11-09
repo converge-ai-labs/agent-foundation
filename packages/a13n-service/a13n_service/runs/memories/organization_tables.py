@@ -24,6 +24,11 @@ class OrganizationRow(Base):
     workspace_id: Mapped[str]
     request: Mapped[dict] = mapped_column(JSONB)
     sources: Mapped[list[dict]] = mapped_column(JSONB, default=list, server_default=text("'[]'::jsonb"))
+    # Optional isolated file memory output; identities remain after resource deletion.
+    candidate_memory_id: Mapped[str | None]
+    baseline: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
+    application: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
+    discarded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Historical identities survive deletion of the target, like a Run's frozen mounts.
     memory_id: Mapped[str]
     space_id: Mapped[str | None]

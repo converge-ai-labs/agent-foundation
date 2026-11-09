@@ -122,7 +122,7 @@ async def _select_memories(
         return [
             FrozenMemoryMount(
                 name="space" if organization.space_id else "memory",
-                memory_id=organization.memory_id,
+                memory_id=organization.candidate_memory_id or organization.memory_id,
                 space_id=organization.space_id,
                 access="write",
                 roots=("global/", "sessions/") if organization.space_id else (),

@@ -114,6 +114,18 @@ API 字段 `guidance.modules` 可以独立组合 `topics`、`journal` 和 `sessi
 
 整理器通过有界来源查询与内容读取、搜索工具读取选定范围。它将对话视为证据，保留更正与分歧，并区分用户陈述和 agent 推断。省略 `history` 时仅整理已保存文件。升级不会自动扫描旧对话或消耗模型 token。
 
+### 审阅候选后再发布
+
+在自定义整理请求中设置 `"output": "candidate"`，生成期间保持正式文件不变。响应中的 `candidate_memory_id` 标识从目标复制出的独立文件型记忆。使用普通记忆 API 检查或编辑候选文件，也可以同时选择对话历史来源。
+
+1. 等待普通运行完成并封存。通过 `GET /memory-organizations/{id}/candidate` 查看状态、变更路径、`candidate_seq` 和 `target_seq`。
+2. 检查 `GET /memory-organizations/{id}/candidate/diff?path=...`。它比较受理时基线与候选内容。预览标记 `truncated` 时，需要打开完整文件。目标已变化时，还应单独审阅当前目标。
+3. 通过 `POST /memory-organizations/{id}/candidate/apply` 发布，例如 `{"mode": "checked", "candidate_seq": 7, "target_seq": 4}`，填写实际审阅的序列号。完整文件树原子发布。未变化的目标文件保留 ID 和版本。
+
+`review_changed` 表示候选或目标在审阅后变化，需要重新加载两者再决定。`baseline_changed` 表示目标在生成开始后发生变化。可以重新生成候选，或审阅当前目标后显式选择 `replace_all`。`replace_all` 覆盖完整目标文件树并删除仅存在于目标中的文件，不会合并并发编辑。同一个完整应用请求可以安全重试，并返回已存储的回执。
+
+通过 `POST /memory-organizations/{id}/candidate/discard` 放弃已结束的候选。活动运行需要先通过运行 API 取消。失败或取消的生成不能发布。应用需要当前写权限，目标空间也必须处于启用状态。放弃与应用均保留独立候选记忆供检查，不再需要时单独删除。删除目标或候选后无法发布。发布仅更改文件内容，不改变目标指南或 Session 绑定。
+
 ### 基于当前知识写入
 
 Agent 与整理器会跟踪对话已读取的文件版本。每次文件修改都会原子校验同一份记忆中的这些观察记录，并执行写入。源文件或目标文件变化时返回 `read_conflict`，指出需要重读的文件。
