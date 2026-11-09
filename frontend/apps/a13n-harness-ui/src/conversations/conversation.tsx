@@ -792,6 +792,11 @@ function ConversationContent({
                       : undefined
                   }
                   entries={entries}
+                  running={
+                    operation?.state === "running" &&
+                    presentation === display &&
+                    operation.run_id === presentation.runId
+                  }
                   blocks={showLive ? liveBlocks : []}
                   localInputs={hasLater ? [] : draft.localInputs}
                   turns={turns}

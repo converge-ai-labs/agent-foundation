@@ -27,10 +27,12 @@ export const PauseConversationFollowing = createContext<
 export function ExecutionDetails({
   complete,
   preview,
+  running,
   children,
 }: {
   complete: boolean;
   preview: string;
+  running?: boolean;
   children: (open: boolean) => ReactNode;
 }) {
   const { t } = useTranslation();
@@ -61,7 +63,11 @@ export function ExecutionDetails({
             }}
           >
             {preview && (
-              <span className={conversation.executionPreview} title={preview}>
+              <span
+                className={conversation.executionPreview}
+                data-running-label={running || undefined}
+                title={preview}
+              >
                 {preview}
               </span>
             )}
@@ -89,7 +95,12 @@ export function ExecutionDetails({
     >
       <DialogTrigger className={styles.preview}>
         <span className={styles.previewHeading}>
-          <span className={styles.excerpt}>{preview}</span>
+          <span
+            className={styles.excerpt}
+            data-running-label={running || undefined}
+          >
+            {preview}
+          </span>
           <span className={conversation.srOnly}>{t("Work log")}</span>
           <ArrowRight aria-hidden="true" />
         </span>

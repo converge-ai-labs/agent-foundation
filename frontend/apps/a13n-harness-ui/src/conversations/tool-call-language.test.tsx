@@ -98,12 +98,12 @@ it("keeps an unknown tool name and an unknown process phase verbatim", async () 
       />
     </>,
   );
-  expect(screen.getByText("Awaiting result")).toBeTruthy();
+  expect(screen.queryByText("Awaiting result")).toBeNull();
   expect(screen.getByText("Paused at last check")).toBeTruthy();
   await language("简体中文");
   expect(screen.getByText("notion__search_pages")).toBeTruthy();
   expect(screen.getByText("Paused at last check")).toBeTruthy();
-  expect(screen.getByText("等待结果")).toBeTruthy();
+  expect(screen.queryByText("等待结果")).toBeNull();
   expect(screen.getByText("查看进程")).toBeTruthy();
 });
 

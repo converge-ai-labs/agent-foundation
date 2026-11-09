@@ -22,6 +22,7 @@
   height: auto;
   margin: 0;
   padding: 4px 8px;
+  padding-inline-start: 0;
   border: 0;
   border-radius: 8px;
   line-height: 20px;
@@ -103,34 +104,10 @@
   color: var(--muted-foreground);
   font-variant-numeric: tabular-nums;
 }
-.phase:not(:empty)::before {
-  content: "";
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-  opacity: 0.6;
-}
-.tool[data-state="running"] .phase::before,
-.group[data-state="running"] .phase::before {
-  background: var(--a13n-accent, #3b82f6);
-  opacity: 1;
-  animation: toolPulse 1.2s ease-in-out infinite;
-}
-@keyframes toolPulse {
-  50% {
-    opacity: 0.35;
-    transform: scale(0.8);
-  }
-}
 @media (prefers-reduced-motion: reduce) {
   .tool [data-slot="disclosure-surface"] > button,
   .tool [data-slot="disclosure-surface"] > button > svg:first-child {
     transition: none;
-  }
-  .tool[data-state="running"] .phase::before,
-  .group[data-state="running"] .phase::before {
-    animation: none;
   }
 }
 .tool[data-state="failed"] .phase {

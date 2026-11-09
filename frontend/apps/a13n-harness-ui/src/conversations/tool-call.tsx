@@ -583,11 +583,16 @@ function ToolOperation({ tool }: { tool: ToolView }) {
       data-state={toolState(detail.phase)}
     >
       <header>
-        <span className={styles.operationName}>{toolLabel(detail, t)}</span>
+        <span
+          className={styles.operationName}
+          data-running-label={detail.running || undefined}
+        >
+          {toolLabel(detail, t)}
+        </span>
         <span className={styles.operationSummary} title={detail.summary}>
           {toolSummary(detail, t)}
         </span>
-        {detail.phase !== "Result received" && (
+        {detail.showPhase && (
           <small className={styles.phase}>{toolPhase(detail.phase, t)}</small>
         )}
         <ToolActions tool={tool} />
@@ -776,14 +781,16 @@ export const ToolCall = memo(function ToolCall({ tool }: { tool: ToolView }) {
         onOpenChange={setExpanded}
         title={
           <span className={styles.title}>
-            <strong>{toolLabel(info, t)}</strong>{" "}
+            <strong data-running-label={info.running || undefined}>
+              {toolLabel(info, t)}
+            </strong>{" "}
             {info.summary && (
               <span title={info.summary}>{toolSummary(info, t)}</span>
             )}
           </span>
         }
         summary={
-          info.phase !== "Result received" ? (
+          info.showPhase ? (
             <span className={styles.phase}>{toolPhase(info.phase, t)}</span>
           ) : undefined
         }
@@ -941,7 +948,7 @@ export const ToolActivity = memo(function ToolActivity({
         onOpenChange={setExpanded}
         title={
           <span className={styles.title}>
-            <strong>
+            <strong data-running-label={info.running || undefined}>
               {kind === "work" && single
                 ? toolLabel(single, t)
                 : activityText(info.title, t)}

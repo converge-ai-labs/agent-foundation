@@ -611,7 +611,7 @@
   overflow-anchor: none;
 }
 .transcript {
-  max-width: var(--harness-reading-width);
+  width: min(var(--harness-reading-width), 100cqw - 84px);
   margin: 0 auto;
 }
 .entry {
@@ -636,7 +636,6 @@
 .assistantMessage {
   position: relative;
   margin: 12px 0 16px;
-  padding-inline: 12px;
   line-height: var(--harness-prose-leading);
 }
 .messageActions {
@@ -655,9 +654,6 @@
   margin-inline: 0;
 }
 @container conversation-page (max-width: 600px) {
-  .assistantMessage {
-    padding-inline: 8px;
-  }
   .userInput {
     max-width: 90%;
   }
@@ -826,6 +822,7 @@
   width: fit-content;
   min-height: 28px;
   padding: 4px 8px;
+  padding-inline-start: 0;
   line-height: 20px;
   cursor: pointer;
   list-style: none;
@@ -974,8 +971,7 @@
 
   --composer-content-height: 32px;
   flex-shrink: 0;
-  /* Match the transcript column: reader inset (36px) plus scrollbar gutter on
-     each side. */
+  /* Reserve room for the input timeline rail beside the reading column. */
   width: min(var(--harness-reading-width), 100% - 84px);
   margin: 0 auto;
 }
@@ -1838,9 +1834,8 @@ dl.detailGrid > .detailLongRow dd {
   container-name: conversation-reader;
 }
 .readerFrame .reading {
-  /* Symmetric insets keep the transcript on the composer's axis; the input
-     timeline rail lives in the start inset. */
-  padding-inline: 36px;
+  /* The transcript reserves rail space using the same width as the composer. */
+  padding-inline: 0;
   scrollbar-gutter: stable both-edges;
   /* Match the fade depth so the first message stays fully legible
      at scroll origin, then dissolves as it approaches the titlebar. */
@@ -1923,7 +1918,7 @@ dl.detailGrid > .detailLongRow dd {
   border-radius: 8px;
 }
 .execution {
-  margin: 8px 4px 16px;
+  margin: 8px 0 16px;
 }
 .executionHeading {
   display: flex;
@@ -1946,6 +1941,7 @@ dl.detailGrid > .detailLongRow dd {
   color: var(--harness-log-text);
   font-size: var(--a13n-text-body);
   padding: 4px 8px;
+  padding-inline-start: 0;
   cursor: pointer;
   transition:
     background-color 120ms ease,
@@ -1961,6 +1957,28 @@ dl.detailGrid > .detailLongRow dd {
   color: inherit;
   font-size: var(--a13n-text-body);
   line-height: 20px;
+}
+@media (prefers-reduced-motion: no-preference) and (forced-colors: none) {
+  [data-running-label="true"] {
+    background-image: linear-gradient(
+      105deg,
+      var(--harness-log-text) 36%,
+      light-dark(#ccc, #dedede) 50%,
+      var(--harness-log-text) 64%
+    );
+    background-size: 250% 100%;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: executionSweep 1.9s linear infinite;
+  }
+}
+@keyframes executionSweep {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0% 0;
+  }
 }
 .executionDuration {
   color: var(--a13n-text-muted);
@@ -2008,7 +2026,6 @@ dl.detailGrid > .detailLongRow dd {
 }
 .executionContent .assistantMessage {
   margin-block: 8px 12px;
-  padding-inline: 8px;
   font-size: var(--a13n-text-body);
   line-height: 1.6;
   color: var(--a13n-text);
@@ -2028,12 +2045,13 @@ dl.detailGrid > .detailLongRow dd {
 }
 @container conversation-reader (max-width: 600px) {
   .readerFrame .reading {
-    padding-inline: 0;
+    scrollbar-gutter: auto;
     padding-block-start: 36px;
   }
 }
 
 @container conversation-page (max-width: 600px) {
+  .transcript,
   .composer {
     width: 100%;
   }

@@ -6,6 +6,7 @@ import { ProcessObservations } from "./process-observations";
 
 export type AppliedEdit = { file_path: string; before: string; after: string };
 export type ToolView = {
+  live?: boolean;
   durationMs?: number;
   id: string;
   toolCallId?: string;
@@ -141,6 +142,8 @@ export function describeTool(tool: ToolView) {
               : tool.inputComplete
                 ? "Awaiting result"
                 : "Receiving input";
+  const running =
+    !!tool.live && (phase === "Receiving input" || phase === "Awaiting result");
   let label = tool.name || "Tool";
   let generatedLabel = true;
   let summary = path;
@@ -473,6 +476,8 @@ export function describeTool(tool: ToolView) {
     path,
     label,
     generatedLabel,
+    showPhase: phase !== "Awaiting result" && phase !== "Result received",
+    running,
     generatedSummary,
     summary,
     kind,
@@ -800,6 +805,7 @@ export function activitySummary(tools: ToolView[]) {
   return {
     title,
     issue: issues.length > 0,
+    running: infos.some((info) => info.running),
     status: [
       !pending && !issues.length ? shellStatus : "",
       waiting ? `${waiting} waiting` : "",
