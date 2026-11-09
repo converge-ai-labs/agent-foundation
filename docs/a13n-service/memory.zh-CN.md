@@ -88,7 +88,7 @@ API 客户端通过 `GET /memory-spaces/{id}/organization` 读取状态，通过
 }
 ```
 
-整理空间时，使用 `{"kind": "space", "id": "mspace_..."}`。不能直接选择空间托管的底层记忆。响应标识整理请求及其普通运行。通过 `GET /memory-organizations/{id}` 读取请求，使用运行 API 查看状态、取消、用量和追踪。每个任务保留独立指令与调用者权限。失败或取消的运行保留已提交的修改。
+整理空间时，使用 `{"kind": "space", "id": "mspace_..."}`。不能直接选择空间托管的底层记忆。响应标识整理请求及其普通运行。通过 `GET /memory-organizations/{id}` 读取请求，使用运行 API 查看状态、取消、用量和追踪。每次提交接受独立任务，包括响应结果不明后的重试；不同任务可以并发整理同一目标，文件写入仍执行常规冲突检查。每个任务保留独立指令与调用者权限。失败或取消的运行保留已提交的修改。
 
 API 字段 `guidance.modules` 可以独立组合 `topics`、`journal` 和 `session_notes`。例如，`{"modules": ["topics", "session_notes"], "timezone": "UTC"}` 同时保留可复用知识和当前交接状态。省略 `modules` 时使用选定预设；`[]` 仅保留共用维护规则。系统覆盖文本替换完整的组合指南。通过 `GET /memories/guidance-presets` 读取可用模块文本。
 

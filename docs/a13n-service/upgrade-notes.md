@@ -5,6 +5,12 @@ description: Check version-specific cutovers and convert retained data before re
 
 Use this page when upgrading an existing Service deployment, not for a new installation. Select the cutovers that apply to the source and target releases, follow the [backup and migration procedure](operations.md), and keep admission closed until data, workers and clients are compatible. Preserve unknown external-operation outcomes for reconciliation.
 
+## Composable memory guidance rollout
+
+Default and preset-following file guidance omit the optional `modules` key in stored configuration, and frozen memory mounts retain their previous shape. Existing memory-mounted Runs remain readable during a rolling upgrade. Upgrade every control and worker replica before saving an explicit module selection or launching the new organization workflows. Older processes cannot interpret explicit module configuration or execute newly introduced tools.
+
+Before rolling back to a build without composable guidance, reset explicit selections to `modules: null` through the current API and drain the new organization tasks. Keep compatible readers for already accepted Runs; schema rollback does not convert accepted execution history. Automatic organization requires the policy owner's current and captured `read`, `write` and `run` authority; a revoked grant is recorded as an admission failure and follows the configured retry cooldown.
+
 ## Run search rollout
 
 For upgrades that introduce run search, the migration adds an empty-default search column and builds its GIN index concurrently. It does not backfill historical content. Column and trigger changes still need brief table locks; configured migration timeouts bound the work. A failed index build can be rerun: invalid indexes are removed and completed valid indexes are retained.

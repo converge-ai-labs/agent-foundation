@@ -35,6 +35,23 @@ async def test_standalone_organization_freezes_request_and_uses_ordinary_worker(
     assert run["memory_mounts"][0]["memory_id"] == memory["id"]
     assert run["memory_mounts"][0]["roots"] == []
     assert "organization" not in run["memory_mounts"][0]
+    # The persisted snapshot retains exactly the pre-feature field set, including for organizers.
+    from a13n_service.runs.memories.execution import resolve_memories
+    from a13n_service.runs.tables import RunRow
+
+    async with short_session(service.runtime.storage) as session:
+        stored = await session.get_one(RunRow, organization["run_id"])
+        assert set(stored.memory_mounts[0]) == {
+            "name",
+            "memory_id",
+            "access",
+            "recall",
+            "space_id",
+            "roots",
+            "file_guide",
+            "timezone",
+        }
+        assert (await resolve_memories(session, stored))[0].organizing
     scripted_model.say("No changes needed.")
     await (await runs_kit.attempt(service))
     seen = await scripted_model.request()
@@ -265,6 +282,5 @@ def test_historical_organization_mount_decodes_without_rewriting_snapshot():
         "space_id": "msp_old",
         "roots": ["global/", "sessions/"],
     }
-    assert FrozenMemoryMount.model_validate(historical).organizing
-    assert not FrozenMemoryMount.model_validate({**historical, "organization": False}).organizing
-    assert FrozenMemoryMount.model_validate({**historical, "organization": True}).organizing
+    assert FrozenMemoryMount.model_validate(historical).model_dump(mode="json")["roots"] == historical["roots"]
+    assert "organization" not in FrozenMemoryMount.model_validate(historical).model_dump(mode="json")
