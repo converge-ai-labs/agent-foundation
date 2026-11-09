@@ -252,7 +252,9 @@ class EIPAccessibilityOperations:
         self._session = session
         self._execution_id = execution_id
         self._generation = generation
-        minimal = eip.AccessibilityNodeReference(backend="ax", backend_epoch="x", node_handle="x")
+        minimal = eip.AccessibilityNodeReference(
+            backend=eip.AccessibilityDescriptionBackend.AX, backend_epoch="x", node_handle="x"
+        )
         self._reference_bytes = len(minimal.model_dump_json().encode("utf-8"))
         bound = AccessibilityNodeReference(
             **minimal.model_dump(), execution_id=execution_id, observed_generation=generation
