@@ -1,6 +1,7 @@
 """Isolated file-memory output and atomic, explicitly reviewed publication."""
 
 import difflib
+from io import StringIO
 from itertools import islice
 
 from a13n_harness.providers.memory import Origin, validate_path
@@ -141,8 +142,8 @@ async def diff(runtime: Runtime, actor: Principal, workspace_id: str, identifier
         files = await contents(session, row.candidate_memory_id)
         before, after = row.baseline["files"].get(path, ""), files.get(path, "")
         lines = difflib.unified_diff(
-            before.splitlines(keepends=True),
-            after.splitlines(keepends=True),
+            StringIO(before).readlines(),
+            StringIO(after).readlines(),
             fromfile=f"baseline/{path}",
             tofile=f"candidate/{path}",
         )
