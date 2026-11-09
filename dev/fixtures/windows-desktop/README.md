@@ -47,3 +47,25 @@ Run this check separately for the lock screen and the UAC prompt: they are disti
 This verifies describe/capture denial and pre-dispatch rejection of text and keys. Restore the desktop through the normal VM console and rerun the ordinary tests to check recovery; do not disable UAC, switch the daemon to the secure desktop, or treat console input as computer-use test evidence.
 
 The fixed-resolution VM tests do not establish physical multi-monitor, mixed-DPI, RDP reconnect, protected-content or raw-input-application behavior. Inspect those on suitable native hardware separately. Remove only the VM, volumes, images and installation/build media created for the test; preserve code and evidence and leave unrelated containers/caches alone.
+
+## Native accessibility acceptance
+
+`accessibility.ps1` is a separate WPF fixture. It exposes stable UIA names for an editable field, a read-only field, a password field, a button, a disabled button, a toggle, a numeric slider, an expander, a multi-selection list and a TextPattern document. Its timer records application state without injecting input. The Session starts and owns the fixture process; no existing desktop fixture coordinates or state files change.
+
+Build the Windows daemon from the Windows accessibility branch. Use the same ordinary-user VM, daemon configuration and `A13N_WINDOWS_*` connection variables above. Run serially:
+
+```bash
+A13N_UIA_TEST=1 uv run pytest \
+  packages/a13n-harness/tests/test_accessibility_windows_native.py -v
+```
+
+The test goes through the production HTTP transport, Session helper and Harness accessibility facade. It checks native tree traversal, pattern capabilities, Unicode ValuePattern writes, Invoke/Toggle/RangeValue/ExpandCollapse/SelectionItem effects, read-only/protected/disabled/numeric preflight, protected-content omission, opaque TextPattern acquisition and derivation, range selection, owner mismatch and byte-budget recovery. WPF reports application events separately from the returned native acknowledgement.
+
+On the Windows machine, run the Rust checks and the opt-in registry test as well:
+
+```powershell
+cargo test --locked --package a13n-envd --lib accessibility
+cargo test --locked --package a13n-envd --lib native_cursor_dependencies -- --ignored --test-threads=1
+```
+
+Regular Rust checks cover the closed 39-method inventory, selection-support preflight rules, native point frames, Unicode case folding, call and wire budgets, BSTR/VARIANT ownership and SAFEARRAY type/rectangle boundaries. Cross-compiling these tests establishes type correctness; executing the WPF acceptance establishes native behavior. The fixture covers the patterns it actually exposes. Validate docking, virtualization, spreadsheet/item-container, alternate views, transform/zoom and legacy-only applications against native providers that expose those interfaces. Keep lock/UAC denial checks separate from the unlocked acceptance run.
