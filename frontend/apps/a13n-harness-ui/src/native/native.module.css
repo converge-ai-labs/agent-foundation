@@ -575,6 +575,21 @@
   font-size: var(--a13n-text-body);
   color: var(--a13n-secondary);
 }
+@keyframes fileReturn {
+  from {
+    background-color: var(--a13n-border);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .returnedFile {
+    animation: fileReturn 900ms ease-out;
+  }
+}
+
 .fileList {
   min-height: 48px;
 }

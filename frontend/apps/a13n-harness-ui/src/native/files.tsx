@@ -1,5 +1,12 @@
 import { useTranslation } from "../i18n";
-import { Fragment, type ReactNode, useContext, useRef, useState } from "react";
+import {
+  Fragment,
+  type ReactNode,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   keepPreviousData,
   useInfiniteQuery,
@@ -52,12 +59,14 @@ import { unavailablePreview } from "./document-kind";
 import { downloadFile, fileTransfer } from "./file-transfer";
 import { copyText } from "../platform";
 
+import type { FileListPosition } from "./workspace-tabs";
+
 type Operation = {
   kind: "move" | "delete" | "replace";
   entry: Schema<"FileEntry">;
 };
 type DirectoryCursor = { offset: number; revision?: string };
-function useDirectoryListing(directory: string) {
+function useDirectoryListing(directory: string, target?: string) {
   const { client } = useTransport();
   const listing = useInfiniteQuery({
     queryKey: ["native", "directory", directory],
@@ -87,6 +96,29 @@ function useDirectoryListing(directory: string) {
         sensitivity: "base",
       }),
   );
+  const missingBranch =
+    !!target &&
+    withinRoot(target, directory) &&
+    !entries.some((entry) => withinRoot(target, entry.path));
+  const { hasNextPage, isFetching, isError, isPlaceholderData, fetchNextPage } =
+    listing;
+  useEffect(() => {
+    if (
+      missingBranch &&
+      hasNextPage &&
+      !isFetching &&
+      !isError &&
+      !isPlaceholderData
+    )
+      void fetchNextPage();
+  }, [
+    missingBranch,
+    hasNextPage,
+    isFetching,
+    isError,
+    isPlaceholderData,
+    fetchNextPage,
+  ]);
   return { listing, entries };
 }
 type RenderEntry = (entry: Schema<"FileEntry">) => ReactNode;
@@ -94,12 +126,14 @@ type RenderEntry = (entry: Schema<"FileEntry">) => ReactNode;
 function DirectoryChildren({
   directory,
   renderEntry,
+  target,
 }: {
   directory: string;
+  target?: string;
   renderEntry: RenderEntry;
 }) {
   const { t } = useTranslation();
-  const { listing, entries } = useDirectoryListing(directory);
+  const { listing, entries } = useDirectoryListing(directory, target);
   const queries = useQueryClient();
   return (
     <div
@@ -147,13 +181,19 @@ export function Files({
   roots,
   openTerminal,
   fileManager,
+  position,
 }: {
+  position?: FileListPosition;
   fileManager?: Schema<"ListenerFeatures">["file_manager"];
   directory: string;
   roots?: string[];
   openTerminal?: (directory: string) => void;
   path: string;
-  open: (path: string, kind?: Schema<"FileEntry">["kind"]) => void;
+  open: (
+    path: string,
+    kind?: Schema<"FileEntry">["kind"],
+    position?: FileListPosition,
+  ) => void;
   refresh: () => void;
 }) {
   const { t } = useTranslation();
@@ -184,8 +224,12 @@ export function Files({
   const queries = useQueryClient();
   const buffers = useContext(FileBuffers);
   const [operation, setOperation] = useState<Operation | null>(null);
-  const [hideIgnored, setHideIgnored] = useState(false);
-  const [filter, setFilter] = useState("");
+  const [hideIgnored, setHideIgnored] = useState(
+    position?.hideIgnored ?? false,
+  );
+  const [filter, setFilter] = useState(position?.filter ?? "");
+  const restored = useRef(false);
+  const target = restored.current ? undefined : position?.path;
   const [copyError, setCopyError] = useState(false);
   const copyPath = (path: string) => {
     void copyText(path).then(
@@ -194,14 +238,16 @@ export function Files({
     );
   };
   const git = useGitStatus(directory, true);
-  const { listing, entries } = useDirectoryListing(directory);
+  const { listing, entries } = useDirectoryListing(directory, target);
   const repo = git.status.data?.pages[0]?.repository;
   const dirty = [...buffers.entries()].filter(
     ([path, buffer]) =>
       (!roots || roots.some((root) => withinRoot(path, root))) &&
       (buffer.dirty || buffer.uncertain || buffer.saving),
   );
-  const [expandedPaths, setExpandedPaths] = useState(() => new Set<string>());
+  const [expandedPaths, setExpandedPaths] = useState(
+    () => new Set(position?.expandedPaths),
+  );
   function toggleFolder(path: string) {
     setExpandedPaths((previous) => {
       const next = new Set(previous);
@@ -279,9 +325,43 @@ export function Files({
               className={styles.fileLink}
               title={entry.path}
               aria-expanded={folder ? expanded : undefined}
-              onClick={() =>
-                folder ? toggleFolder(entry.path) : open(entry.path, entry.kind)
-              }
+              ref={(button: HTMLElement | null) => {
+                if (
+                  !button ||
+                  !position ||
+                  restored.current ||
+                  entry.path !== position.path
+                )
+                  return;
+                const body = button.closest<HTMLElement>("[data-pane]");
+                if (!body || body.hidden || button.closest("[inert]")) return;
+                restored.current = true;
+                if (position.rowOffset !== undefined) {
+                  body.scrollTop +=
+                    button.getBoundingClientRect().top -
+                    body.getBoundingClientRect().top -
+                    position.rowOffset;
+                }
+                button.scrollIntoView?.({ block: "nearest" });
+                button.focus({ preventScroll: true });
+                button.parentElement?.classList.add(styles.returnedFile!);
+              }}
+              onClick={(event) => {
+                if (folder) return toggleFolder(entry.path);
+                const button = event.currentTarget;
+                const body = button.closest("[data-pane]");
+                open(entry.path, entry.kind, {
+                  directory,
+                  path: entry.path,
+                  expandedPaths: [...expandedPaths],
+                  filter,
+                  hideIgnored,
+                  rowOffset: body
+                    ? button.getBoundingClientRect().top -
+                      body.getBoundingClientRect().top
+                    : undefined,
+                });
+              }}
             >
               <FileTypeIcon name={entry.path} kind={entry.kind} />
               <span>{basename(entry.path)}</span>
@@ -318,7 +398,11 @@ export function Files({
           </Menu>
         </div>
         {expanded && (
-          <DirectoryChildren directory={entry.path} renderEntry={renderEntry} />
+          <DirectoryChildren
+            directory={entry.path}
+            renderEntry={renderEntry}
+            target={target}
+          />
         )}
       </Fragment>
     );

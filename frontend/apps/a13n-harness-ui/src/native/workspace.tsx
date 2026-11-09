@@ -66,6 +66,7 @@ import {
   workspaceTabs,
   type WorkspaceTabs,
   type WorkspaceTab,
+  type FileListPosition,
   type TabContent,
 } from "./workspace-tabs";
 import { ReturnToChat } from "./capture";
@@ -483,7 +484,12 @@ export function NativeWorkspace({
         content: { ...activeTab, selection, choices },
       });
   };
-  const open = async (target: string, line?: number, listedFile = false) => {
+  const open = async (
+    target: string,
+    line?: number,
+    listedFile = false,
+    position?: FileListPosition,
+  ) => {
     setSidebarCollapsed(false);
     openingRequest.current?.abort();
     if (!pane) setPane("files");
@@ -531,7 +537,7 @@ export function NativeWorkspace({
         navigateTab({ kind: "files", directory: target, root: nextRoot });
       else
         revealTab(
-          { kind: "file", path: target, root: nextRoot },
+          { kind: "file", path: target, root: nextRoot, position },
           activeTab.kind === "new" || activeTab.kind === "files",
         );
       setFileLine(line);
@@ -1331,7 +1337,14 @@ export function NativeWorkspace({
                         title={pane === "files" ? directory : root}
                         onClick={() => {
                           if (pane === "files") {
-                            navigateTab({ kind: "files", directory, root });
+                            const position = (activeTab.kind === "file" &&
+                              activeTab.position) || { directory, path };
+                            navigateTab({
+                              kind: "files",
+                              directory: position.directory,
+                              root,
+                              position,
+                            });
                           } else {
                             cancelOpening();
                             select(null);
@@ -1494,12 +1507,23 @@ export function NativeWorkspace({
                   >
                     {pane === "files" ? (
                       <Files
+                        key={JSON.stringify([tabs.active, directory, view])}
+                        position={
+                          activeTab.kind === "files"
+                            ? activeTab.position
+                            : undefined
+                        }
                         fileManager={status.data?.features?.file_manager}
                         directory={directory}
                         roots={localRoots}
                         path={path}
-                        open={(target, kind) =>
-                          void open(target, undefined, kind === "file")
+                        open={(target, kind, position) =>
+                          void open(
+                            target,
+                            undefined,
+                            kind === "file",
+                            position,
+                          )
                         }
                         refresh={refresh}
                         openTerminal={
