@@ -70,6 +70,7 @@ async def test_management_fidelity_and_audit(service: SimpleNamespace) -> None:
         )
         assert cleared["status"] == 200 and cleared["body"]["guidance"] == {
             "system_preset": "general",
+            "modules": None,
             "system_override": None,
             "custom": "",
             "timezone": "UTC",
@@ -287,6 +288,8 @@ def test_worker_has_no_mcp_and_unmarked_routes_are_absent() -> None:
         ("/api/v1/memory-spaces/{space_id}/organization", "get"),
         ("/api/v1/memory-spaces/{space_id}/organizations", "get"),
         ("/api/v1/memory-spaces/{space_id}/sessions", "get"),
+        ("/api/v1/memory-organizations", "get"),
+        ("/api/v1/memory-organizations/{organization_id}", "get"),
     } <= selected
     assert {
         ("/api/v1/findings", "get"),

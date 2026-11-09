@@ -171,14 +171,15 @@ def file_memory(
                         memory.mount.memory_id,
                         settings,
                         gate=gate,
-                        # Only the host-resolved organizer view includes every Session folder.
-                        count_changes="sessions/" not in memory.mount.roots,
+                        count_changes=not memory.mount.organizing,
                     ),
                     memory.mount.roots,
                     file_format(settings),
                 )
                 if memory.mount.space_id is not None
-                else PostgresFileStore(storage, memory.mount.memory_id, settings, gate=gate)
+                else PostgresFileStore(
+                    storage, memory.mount.memory_id, settings, gate=gate, count_changes=not memory.mount.organizing
+                )
             ),
             access=memory.mount.access,
             guide=_guide(memory, settings),

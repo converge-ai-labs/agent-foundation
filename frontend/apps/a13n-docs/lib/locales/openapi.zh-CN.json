@@ -1,4 +1,7 @@
 {
+  "Create Memory Organization": "创建记忆整理任务",
+  "List Memory Organizations": "列出记忆整理任务",
+  "Get Memory Organization": "获取记忆整理任务",
   "Get Session Binding": "获取 Envd 会话绑定",
   "Update Session Binding": "更新 Envd 会话绑定",
   "Tenant-authored Session policy; Service credentials are not process-environment references.": "租户编写的 Envd 会话策略；Service 凭据不是进程环境变量引用。",

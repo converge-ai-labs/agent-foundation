@@ -2032,6 +2032,41 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/memory-organizations": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Memory Organizations */
+    get: operations["list_memory_organizations"];
+    put?: never;
+    /** Create Memory Organization */
+    post: operations["create_memory_organization"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/memory-organizations/{organization_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Memory Organization */
+    get: operations["get_memory_organization"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/memory-providers": {
     parameters: {
       query?: never;
@@ -8182,6 +8217,8 @@ export interface components {
        * @default
        */
       custom?: string;
+      /** Modules */
+      modules?: components["schemas"]["GuideModule"][] | null;
       /** System Override */
       system_override?: string | null;
       /** @default general */
@@ -8191,6 +8228,16 @@ export interface components {
        * @default UTC
        */
       timezone?: string;
+    };
+    /** FileMemoryTarget */
+    FileMemoryTarget: {
+      /** Id */
+      id: string;
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      kind: "memory";
     };
     /** FilesystemInventory */
     FilesystemInventory: {
@@ -8531,6 +8578,8 @@ export interface components {
       /** Workspace Id */
       workspace_id: string | null;
     };
+    /** @enum {string} */
+    GuideModule: "topics" | "journal" | "session_notes";
     /**
      * HarnessModelCharacteristics
      * @description Resolved Harness characteristics of the active Agent model.
@@ -9377,6 +9426,16 @@ export interface components {
       /** Path */
       path: string;
     };
+    /** MemoryGuidanceModule */
+    MemoryGuidanceModule: {
+      /** Description */
+      description: string;
+      /** Guide */
+      guide: string;
+      id: components["schemas"]["GuideModule"];
+      /** Name */
+      name: string;
+    };
     /** MemoryGuidancePreset */
     MemoryGuidancePreset: {
       /** Description */
@@ -9391,6 +9450,8 @@ export interface components {
     MemoryGuidancePresets: {
       /** Items */
       items: components["schemas"]["MemoryGuidancePreset"][];
+      /** Modules */
+      modules: components["schemas"]["MemoryGuidanceModule"][];
     };
     /** @enum {string} */
     MemoryKind: "file" | "record";
@@ -9429,6 +9490,34 @@ export interface components {
       access?: components["schemas"]["MemoryAccess"] | null;
       /** Recall */
       recall?: boolean | null;
+    };
+    /** MemoryOrganization */
+    MemoryOrganization: {
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Created By Id */
+      created_by_id: string;
+      /** Id */
+      id: string;
+      request: components["schemas"]["OrganizationRequest"];
+      /** Run Id */
+      run_id: string;
+      /** Session Id */
+      session_id: string;
+      /** Thread Id */
+      thread_id: string;
+      /** Workspace Id */
+      workspace_id: string;
+    };
+    /** MemoryOrganizationPage */
+    MemoryOrganizationPage: {
+      /** Items */
+      items: components["schemas"]["MemoryOrganization"][];
+      /** Next Cursor */
+      next_cursor?: string | null;
     };
     /** MemoryPage */
     MemoryPage: {
@@ -10589,6 +10678,20 @@ export interface components {
         | components["schemas"]["AnyChangeTrigger"]
         | components["schemas"]["ChangeCountTrigger"];
     };
+    /** OrganizationRequest */
+    OrganizationRequest: {
+      /**
+       * Instructions
+       * @default Organize the saved memory files.
+       */
+      instructions?: string;
+      /** Model */
+      model: string;
+      target: components["schemas"]["OrganizationTarget"];
+    };
+    OrganizationTarget:
+      | components["schemas"]["FileMemoryTarget"]
+      | components["schemas"]["SpaceTarget"];
     /** OrganizationUpdate */
     OrganizationUpdate: {
       /** Name */
@@ -12763,6 +12866,16 @@ export interface components {
       processed_seq?: number;
       /** Session Id */
       session_id?: string | null;
+    };
+    /** SpaceTarget */
+    SpaceTarget: {
+      /** Id */
+      id: string;
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      kind: "space";
     };
     /**
      * Span
@@ -18803,6 +18916,90 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["MemoryFileState"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  list_memory_organizations: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryOrganizationPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  create_memory_organization: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["OrganizationRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryOrganization"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_memory_organization: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryOrganization"];
         };
       };
       400: components["responses"]["Error"];

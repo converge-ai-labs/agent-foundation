@@ -120,6 +120,8 @@ from a13n_service.runs.environments.vercel_snapshots import VercelDesktopSnapsho
 from a13n_service.runs.findings.routes import router as findings_router
 from a13n_service.runs.findings.tables import AnalysisRow, FindingRow
 from a13n_service.runs.memories.organization import organization_sweep
+from a13n_service.runs.memories.organization_routes import router as memory_organizations_router
+from a13n_service.runs.memories.organization_tables import OrganizationRow as MemoryOrganizationRow
 from a13n_service.runs.memories.organization_tables import SpaceOrganizationRow
 from a13n_service.runs.memories.routes import router as thread_memories_router
 from a13n_service.runs.memories.space_routes import router as space_execution_router
@@ -414,6 +416,7 @@ OSS = Distribution(
         MemoryRecordSourceRow,
         SessionRow,
         SpaceOrganizationRow,
+        MemoryOrganizationRow,
         ThreadRow,
         ThreadCodeActRow,
         ToolExecutionRow,
@@ -470,6 +473,7 @@ OSS = Distribution(
         memory_spaces_router,
         thread_memories_router,
         space_execution_router,
+        memory_organizations_router,
         connections_router,
         connector_providers_router,
     ),

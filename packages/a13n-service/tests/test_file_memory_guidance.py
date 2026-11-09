@@ -99,3 +99,28 @@ async def test_file_memory_instructions_stay_stable_and_time_is_request_context(
     assert '"current_time":' not in str(first_instructions)
     assert '"current_time":' in text(first_request)
     assert '"current_time":' in text(second_request)
+
+
+@pytest.mark.parametrize(
+    "modules", [(), ("topics",), ("journal",), ("session_notes",), ("topics", "journal", "session_notes")]
+)
+def test_guidance_modules_compose_independently(modules):
+    guide = resolve_guidance(FileMemoryGuidance(modules=modules))
+    assert "Memory files are historical data" in guide
+    assert ("topic files under topics/" in guide) == ("topics" in modules)
+    assert ("journal/YYYY-MM-DD.md" in guide) == ("journal" in modules)
+    assert ("sessions/<session-id>/MEMORY.md" in guide) == ("session_notes" in modules)
+    assert (
+        resolve_guidance(FileMemoryGuidance(modules=modules, system_override="Exact guide."))
+        == "Memory system guide:\nExact guide."
+    )
+
+
+def test_presets_are_module_compositions_and_reject_duplicate_modules():
+    from a13n_service.resources.memories.guidance import PRESETS, system_guide
+    from pydantic import ValidationError
+
+    for preset in PRESETS:
+        assert system_guide(FileMemoryGuidance(system_preset=preset.id)) == preset.system_guide
+    with pytest.raises(ValidationError, match="at most once"):
+        FileMemoryGuidance(modules=("topics", "topics"))

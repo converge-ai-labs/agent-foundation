@@ -9208,6 +9208,20 @@
             "title": "Custom",
             "type": "string"
           },
+          "modules": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/GuideModule"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modules"
+          },
           "system_override": {
             "anyOf": [
               {
@@ -9233,6 +9247,28 @@
           }
         },
         "title": "FileMemoryGuidance",
+        "type": "object"
+      },
+      "FileMemoryTarget": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "maxLength": 72,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "memory",
+            "default": "memory",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "FileMemoryTarget",
         "type": "object"
       },
       "FilesystemInventory": {
@@ -10063,6 +10099,14 @@
         ],
         "title": "GrantView",
         "type": "object"
+      },
+      "GuideModule": {
+        "enum": [
+          "topics",
+          "journal",
+          "session_notes"
+        ],
+        "type": "string"
       },
       "HarnessModelCharacteristics-Input": {
         "additionalProperties": false,
@@ -12436,6 +12480,33 @@
         "title": "MemoryFileState",
         "type": "object"
       },
+      "MemoryGuidanceModule": {
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "guide": {
+            "title": "Guide",
+            "type": "string"
+          },
+          "id": {
+            "$ref": "#/components/schemas/GuideModule"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "guide"
+        ],
+        "title": "MemoryGuidanceModule",
+        "type": "object"
+      },
       "MemoryGuidancePreset": {
         "properties": {
           "description": {
@@ -12471,10 +12542,18 @@
             },
             "title": "Items",
             "type": "array"
+          },
+          "modules": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryGuidanceModule"
+            },
+            "title": "Modules",
+            "type": "array"
           }
         },
         "required": [
-          "items"
+          "items",
+          "modules"
         ],
         "title": "MemoryGuidancePresets",
         "type": "object"
@@ -12589,6 +12668,81 @@
           }
         },
         "title": "MemoryMountUpdate",
+        "type": "object"
+      },
+      "MemoryOrganization": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by_id": {
+            "title": "Created By Id",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "request": {
+            "$ref": "#/components/schemas/OrganizationRequest"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "thread_id": {
+            "title": "Thread Id",
+            "type": "string"
+          },
+          "workspace_id": {
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "workspace_id",
+          "request",
+          "session_id",
+          "thread_id",
+          "run_id",
+          "created_by_id",
+          "created_at"
+        ],
+        "title": "MemoryOrganization",
+        "type": "object"
+      },
+      "MemoryOrganizationPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryOrganization"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "MemoryOrganizationPage",
         "type": "object"
       },
       "MemoryPage": {
@@ -16309,6 +16463,50 @@
         },
         "title": "OrganizationPolicy",
         "type": "object"
+      },
+      "OrganizationRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "instructions": {
+            "default": "Organize the saved memory files.",
+            "maxLength": 16384,
+            "minLength": 1,
+            "title": "Instructions",
+            "type": "string"
+          },
+          "model": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Model",
+            "type": "string"
+          },
+          "target": {
+            "$ref": "#/components/schemas/OrganizationTarget"
+          }
+        },
+        "required": [
+          "target",
+          "model"
+        ],
+        "title": "OrganizationRequest",
+        "type": "object"
+      },
+      "OrganizationTarget": {
+        "discriminator": {
+          "mapping": {
+            "memory": "#/components/schemas/FileMemoryTarget",
+            "space": "#/components/schemas/SpaceTarget"
+          },
+          "propertyName": "kind"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/FileMemoryTarget"
+          },
+          {
+            "$ref": "#/components/schemas/SpaceTarget"
+          }
+        ]
       },
       "OrganizationUpdate": {
         "additionalProperties": false,
@@ -22725,6 +22923,28 @@
           }
         },
         "title": "SpaceOrganizationStatus",
+        "type": "object"
+      },
+      "SpaceTarget": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "maxLength": 72,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "space",
+            "default": "space",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "SpaceTarget",
         "type": "object"
       },
       "Span": {
@@ -39839,6 +40059,225 @@
         "summary": "Restore Memory Revision",
         "tags": [
           "memories"
+        ],
+        "x-a13n-mcp": true
+      }
+    },
+    "/api/v1/memory-organizations": {
+      "get": {
+        "operationId": "list_memory_organizations",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryOrganizationPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "List Memory Organizations",
+        "tags": [
+          "memory organizations"
+        ],
+        "x-a13n-mcp": true
+      },
+      "post": {
+        "operationId": "create_memory_organization",
+        "parameters": [
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrganizationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryOrganization"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Create Memory Organization",
+        "tags": [
+          "memory organizations"
+        ]
+      }
+    },
+    "/api/v1/memory-organizations/{organization_id}": {
+      "get": {
+        "operationId": "get_memory_organization",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryOrganization"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Get Memory Organization",
+        "tags": [
+          "memory organizations"
         ],
         "x-a13n-mcp": true
       }

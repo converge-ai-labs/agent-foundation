@@ -20,7 +20,7 @@ from a13n_service.resources.memories.guidance import FileMemoryGuidance, resolve
 from a13n_service.resources.memories.schemas import MemoryMount, SessionMemorySettings
 from a13n_service.resources.memories.tables import MemoryRow, MemorySpaceRow
 from a13n_service.resources.rows import given
-from a13n_service.runs.memories.organization_tables import SpaceOrganizationRow
+from a13n_service.runs.memories.organization_tables import OrganizationRow
 from a13n_service.runs.memories.schemas import FrozenMemoryMount, MemoryMountPage, MemoryMountUpdate
 from a13n_service.runs.memories.tables import ThreadMemoryRow
 from a13n_service.runs.tables import RunRow, SessionRow, ThreadRow
@@ -116,24 +116,17 @@ async def _select_memories(
     """The mount set a new run uses. At the thread's first acceptance the agent's `defaults` join first; a
     default whose memory is gone refuses the run. The caller holds the thread lock."""
     if thread.purpose == "memory_organization":
-        space = await session.scalar(
-            select(MemorySpaceRow)
-            .join(
-                SpaceOrganizationRow,
-                SpaceOrganizationRow.space_id == MemorySpaceRow.id,
-            )
-            .where(SpaceOrganizationRow.session_id == thread.session_id)
-            .with_for_update(of=MemorySpaceRow, read=True)
-        )
-        if space is None or not space.enabled:
-            return []
+        organization = await session.scalar(select(OrganizationRow).where(OrganizationRow.thread_id == thread.id))
+        if organization is None or organization.run_id is not None:
+            raise conflict("thread", thread.id, "organization_request_required")
         return [
             FrozenMemoryMount(
-                name="space",
-                memory_id=space.memory_id,
-                space_id=space.id,
+                name="space" if organization.space_id else "memory",
+                memory_id=organization.memory_id,
+                space_id=organization.space_id,
                 access="write",
-                roots=("global/", "sessions/"),
+                roots=("global/", "sessions/") if organization.space_id else (),
+                organization=True,
             ).model_dump(mode="json")
         ]
     if thread.last_run_id is None and defaults:

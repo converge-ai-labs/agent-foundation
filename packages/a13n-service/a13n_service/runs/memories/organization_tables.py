@@ -1,12 +1,37 @@
 """One durable organization lifecycle per Memory Space."""
 
 from datetime import datetime
+from typing import ClassVar
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, text
+from sqlalchemy import BigInteger, DateTime, ForeignKey, ForeignKeyConstraint, Index, String, func, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from a13n_service.infra.db import Base
+
+
+class OrganizationRow(Base):
+    """Accepted inputs and resolved target; Run owns all execution state."""
+
+    __tablename__ = "memory_organizations"
+    KIND: ClassVar[str] = "memory_organization"
+    __table_args__ = (
+        ForeignKeyConstraint(["organization_id", "workspace_id"], ["workspaces.organization_id", "workspaces.id"]),
+        Index("ix_memory_organizations_workspace_created", "workspace_id", "created_at", "id"),
+    )
+    id: Mapped[str] = mapped_column(String(72), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"))
+    workspace_id: Mapped[str]
+    request: Mapped[dict] = mapped_column(JSONB)
+    # Historical identities survive deletion of the target, like a Run's frozen mounts.
+    memory_id: Mapped[str]
+    space_id: Mapped[str | None]
+    session_id: Mapped[str] = mapped_column(ForeignKey("sessions.id"))
+    thread_id: Mapped[str] = mapped_column(ForeignKey("threads.id"), unique=True)
+    # Populated in the same admission transaction, after the target has been frozen.
+    run_id: Mapped[str | None] = mapped_column(ForeignKey("runs.id"), unique=True)
+    created_by_id: Mapped[str] = mapped_column(ForeignKey("principals.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class SpaceOrganizationRow(Base):

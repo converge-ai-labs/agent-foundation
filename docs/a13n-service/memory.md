@@ -76,6 +76,22 @@ The **Organization** tab shows status, costs, traces and revisions separately fr
 
 For API clients, `GET /memory-spaces/{id}/organization` reads status; `POST /memory-spaces/{id}/organizations` requests a round; `GET` on that path lists rounds. `/memory-spaces/{id}/sessions` lists associated business sessions. Lists use `limit` and `cursor`. File and revision APIs use the Space's `memory_id` under `/memories/{memory_id}`. Manage the backing store through the Space; it stays out of standalone memory lists and cannot be mounted directly.
 
+### Run a custom organization task
+
+Use `POST /memory-organizations` to organize a standalone file memory or an enabled Space with your own model and instructions. This needs workspace `read`, `write` and `run` permissions. It works without an automatic policy, including on an empty store:
+
+```json
+{
+  "target": {"kind": "memory", "id": "mem_..."},
+  "model": "your-model-key",
+  "instructions": "Consolidate supported product decisions and preserve unresolved disagreements."
+}
+```
+
+For a Space, use `{"kind": "space", "id": "mspace_..."}`. The managed backing memory cannot be selected directly. The response identifies the organization request and its ordinary run. Read it with `GET /memory-organizations/{id}`; use the run API for status, cancellation, usage and traces. Each submitted task keeps its own instructions and caller authority. Failed or cancelled runs retain committed edits.
+
+The `guidance.modules` API field combines `topics`, `journal` and `session_notes` independently. For example, `{"modules": ["topics", "session_notes"], "timezone": "UTC"}` keeps reusable knowledge and current handoff state. Omit `modules` to use the selected preset; `[]` keeps only common maintenance rules. A system override replaces the complete composed guide. Read the available module text with `GET /memories/guidance-presets`.
+
 ### Write from current knowledge
 
 Agents and organizers track the file versions their conversation has read. Each file mutation checks those observations within the same memory, atomically with the write. A changed source or target returns `read_conflict` and names the file to reread.

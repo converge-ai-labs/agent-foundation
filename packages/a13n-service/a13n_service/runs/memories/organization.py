@@ -11,16 +11,12 @@ from a13n_service.infra.errors import ServiceError, conflict
 from a13n_service.infra.sweeps import Sweep
 from a13n_service.resources.memories.schemas import ChangeCountTrigger, OrganizationPolicy
 from a13n_service.resources.memories.tables import MemoryFileRevisionRow, MemoryFileStoreRow, MemorySpaceRow
-from a13n_service.runs.accept import Source, start_run
-from a13n_service.runs.inbox import append_message
-from a13n_service.runs.memories import organizer
+from a13n_service.runs.memories import organizations
+from a13n_service.runs.memories.organization_schemas import OrganizationRequest, SpaceTarget
 from a13n_service.runs.memories.organization_tables import SpaceOrganizationRow
 from a13n_service.runs.runtime import Runtime
-from a13n_service.runs.schemas import Failure, Message, MessagePayload, RunOptions, TextPart, UsageLimit
-from a13n_service.runs.sessions import new_session
-from a13n_service.runs.submit import validate_message
+from a13n_service.runs.schemas import Failure
 from a13n_service.runs.tables import RunRow, SessionRow
-from a13n_service.runs.threads import new_thread
 from a13n_service.tenancy.access import principal_for, require_active_workspace
 from a13n_service.tenancy.authorize import ExecutionAuthority, WorkspaceScope, authorize
 
@@ -74,42 +70,18 @@ async def _admit(session: AsyncSession, runtime: Runtime, space: MemorySpaceRow,
     await require_active_workspace(session, scope.workspace_id)
     authorize(actor, scope, "run", authority=authority)
     authorize(actor, scope, "read", authority=authority)
-    agent_id, revision_id = await organizer.revision(session, runtime, actor, scope, policy.model)
-    if state.session_id is None:
-        owner = new_session(space.organization_id, space.workspace_id, actor.id)
-        owner.purpose = "memory_organization"
-        session.add(owner)
-        await session.flush()
-        state.session_id = owner.id
-        await session.flush()
-    else:
-        owner = await session.get_one(SessionRow, state.session_id)
-    thread = new_thread(owner, mcp_headers={})
-    thread.purpose = "memory_organization"
-    message = Message(
-        agent_id=agent_id,
-        agent_revision_id=revision_id,
-        payload=MessagePayload(content=(TextPart(type="text", text="Organize the saved files in this Memory Space."),)),
-        options=RunOptions(max_usage=UsageLimit(requests=200)),
-    )
-    revision, overrides, options = await validate_message(
-        session, runtime, actor, scope, thread, message, authority=authority
-    )
-    session.add(thread)
-    await session.flush()
-    entry = await append_message(
+    owner = await session.get_one(SessionRow, state.session_id) if state.session_id is not None else None
+    accepted = await organizations.admit(
         session,
-        thread,
-        message,
-        principal_id=actor.id,
+        runtime,
+        actor,
+        scope,
+        OrganizationRequest(target=SpaceTarget(id=space.id), model=policy.model),
         authority=authority,
-        request=None,
-        control=runtime.settings.control,
+        owner=owner,
     )
-    run = await start_run(
-        session, runtime, thread, Source.message(entry, "input", actor, revision, overrides, options=options)
-    )
-    state.active_run_id = run.id
+    state.session_id = accepted.session_id
+    state.active_run_id = accepted.run_id
     state.pending = False
     state.failure = None
     state.history_gap = False
@@ -120,10 +92,11 @@ def _candidates():
     state = SpaceOrganizationRow
     automatic = and_(MemorySpaceRow.enabled, MemorySpaceRow.organization["enabled"].as_boolean())
     changed = or_(
-        MemoryFileStoreRow.seq > func.coalesce(state.observed_seq, 0),
+        MemoryFileStoreRow.change_count > func.coalesce(state.observed_change_count, 0),
         and_(
             MemorySpaceRow.version > func.coalesce(state.configuration_version, 0),
             MemoryFileStoreRow.seq > func.coalesce(state.processed_seq, 0),
+            MemoryFileStoreRow.change_count > 0,
         ),
     )
     return (
@@ -187,8 +160,10 @@ async def organize(runtime: Runtime) -> None:
             )
             assert store is not None
             automatic = policy.enabled
-            changed = store.seq > state.observed_seq or (
-                space.version > state.configuration_version and store.seq > state.processed_seq
+            changed = store.change_count > state.observed_change_count or (
+                space.version > state.configuration_version
+                and store.seq > state.processed_seq
+                and store.change_count > 0
             )
             if not state.pending and not (automatic and changed):
                 continue

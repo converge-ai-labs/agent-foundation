@@ -76,6 +76,22 @@ description: 保存知识，在另一段对话中复用，并检查 agent 做过
 
 API 客户端通过 `GET /memory-spaces/{id}/organization` 读取状态，通过 `POST /memory-spaces/{id}/organizations` 请求整理，用同一路径的 `GET` 列出轮次。`/memory-spaces/{id}/sessions` 列出关联业务会话。列表使用 `limit` 和 `cursor`。文件和修订 API 使用空间的 `memory_id`，位于 `/memories/{memory_id}` 下。通过空间管理底层存储；它不出现在独立记忆列表中，也不能直接挂载。
 
+### 运行自定义整理任务
+
+通过 `POST /memory-organizations` 使用自己选择的模型和指令，整理独立文件型记忆或已启用的空间。需要工作区 `read`、`write` 和 `run` 权限。无需配置自动策略，空存储也可以使用：
+
+```json
+{
+  "target": {"kind": "memory", "id": "mem_..."},
+  "model": "your-model-key",
+  "instructions": "Consolidate supported product decisions and preserve unresolved disagreements."
+}
+```
+
+整理空间时，使用 `{"kind": "space", "id": "mspace_..."}`。不能直接选择空间托管的底层记忆。响应标识整理请求及其普通运行。通过 `GET /memory-organizations/{id}` 读取请求，使用运行 API 查看状态、取消、用量和追踪。每个任务保留独立指令与调用者权限。失败或取消的运行保留已提交的修改。
+
+API 字段 `guidance.modules` 可以独立组合 `topics`、`journal` 和 `session_notes`。例如，`{"modules": ["topics", "session_notes"], "timezone": "UTC"}` 同时保留可复用知识和当前交接状态。省略 `modules` 时使用选定预设；`[]` 仅保留共用维护规则。系统覆盖文本替换完整的组合指南。通过 `GET /memories/guidance-presets` 读取可用模块文本。
+
 ### 基于当前知识写入
 
 Agent 与整理器会跟踪对话已读取的文件版本。每次文件修改都会原子校验同一份记忆中的这些观察记录，并执行写入。源文件或目标文件变化时返回 `read_conflict`，指出需要重读的文件。
