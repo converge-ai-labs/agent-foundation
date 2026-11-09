@@ -416,6 +416,17 @@ button.metric {
   height: 14px;
   flex-shrink: 0;
 }
+.contextRing {
+  flex: none;
+  width: 1em;
+  height: 1em;
+  fill: none;
+  stroke: var(--a13n-border);
+  stroke-width: 2.5;
+}
+.contextRing circle + circle {
+  stroke: var(--signal);
+}
 button.metric {
   border-radius: 5px;
 }

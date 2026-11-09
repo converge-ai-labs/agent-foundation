@@ -96,7 +96,10 @@ it("ticks the exact current receipt and paints live context and speed without wa
     </QueryClientProvider>
   );
   const view = render(content(250, true));
-  expect(screen.getByText("(25%)")).toBeTruthy();
+  expect(
+    screen.getByRole("button", { name: "Context details" }).title,
+  ).toContain("25%");
+  expect(screen.queryByText("(25%)")).toBeNull();
   expect(screen.queryByRole("button", { name: "Tokens details" })).toBeNull();
   expect(
     screen.getByRole("button", { name: "Cost details" }).textContent,
@@ -176,7 +179,10 @@ it("ticks the exact current receipt and paints live context and speed without wa
   expect(screen.queryByText("Time")).toBeNull();
   expect(screen.queryByText("Speed")).toBeNull();
   expect(screen.getByText("0.4k")).toBeTruthy();
-  expect(screen.getByText("(40%)")).toBeTruthy();
+  expect(
+    screen.getByRole("button", { name: "Context details" }).title,
+  ).toContain("40%");
+  expect(screen.queryByText("(40%)")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Context details" }));
   expect(screen.getByText("45.0%")).toBeTruthy();
   view.unmount();

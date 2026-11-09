@@ -69,9 +69,9 @@ Input, output, commands, changes and errors remain inspectable in ordinary mode;
 
 ### Composer and Usage
 
-The empty desktop composer aligns attachment, editor, options, Model and Send on one line. Content or limited pane width moves text above one stable action row. Avoid accumulated editor gutters, oversized action backgrounds and a disproportionately large Send button.
+Keep the editor above a single row of attachment, options, Model and Send controls. Reserve one line for input even when the draft is empty. Avoid accumulated editor gutters, oversized action backgrounds and a disproportionately large Send button.
 
-One compact row immediately above the composer holds Activity at the left and context/cost at the right. Sustained live connection status uses quiet, unboxed text between them, collapsing to an accessible connection icon when space is limited; activation opens details on keyboard and touch as well as pointer. Its appearance does not shift the composer or usage controls. Narrow rows consolidate Activity shortcuts into their existing menu before crowding status and usage. There is no second routine footer row. Context uses an icon, compact token value and occupancy; cost retains `$`; cache belongs inside the context popover. Units and unavailable values follow the conversation contract.
+One compact row immediately above the composer holds Activity at the left and context/cost at the right. Sustained live connection status uses quiet, unboxed text between them, collapsing to an accessible connection icon when space is limited; activation opens details on keyboard and touch as well as pointer. Its appearance does not shift the composer or usage controls. Narrow rows consolidate Activity shortcuts into their existing menu before crowding status and usage. There is no second routine footer row. Context shows a compact token count preceded by a brand-purple occupancy ring, or the context icon when occupancy is unknown; cost retains `$`; cache belongs inside the context popover. Units and unavailable values follow the conversation contract.
 
 Usage popovers lead with the requested figure and unit, then aligned supporting rows. Breakdowns expand inside one bounded reader; help carries accounting explanations. Avoid a card, subtitle or large gap for every metric. Scope changes preserve position and alignment.
 
