@@ -97,6 +97,8 @@ Standalone file memories use the same policy without requiring a Space. Read `GE
 
 ### Run a custom organization task
 
+Open a file collection or Space and choose **Organization → Organize memory**. Select an organizer model and optional task instructions. Console starts with **Candidate for review**; choose **Write directly** only when saved partial edits are acceptable. Turn on **Include conversation history** to select source sessions, local seal-time bounds and a run limit. After acceptance, open **Task details** for frozen source runs and **Open run and usage** for execution, cancellation and cost.
+
 Use `POST /memory-organizations` to organize a standalone file memory or an enabled Space with your own model and instructions. This needs workspace `read`, `write` and `run` permissions. It works without an automatic policy, including on an empty store:
 
 ```json
@@ -135,6 +137,8 @@ The organizer has bounded source discovery and content reading/search tools limi
 
 ### Review a candidate before publishing
 
+In Console, open an accepted task and inspect **Candidate review**. Choose each changed file and read its diff. **Reload review** explicitly replaces the displayed sequence pair. **Apply candidate** confirms checked publication. To replace a changed target, choose **Replace entire target**, inspect the current target, and confirm the stated deletion of target-only files. A conflict leaves the review visible; reload before deciding again. **Discard candidate** prevents publication while preserving its inspectable files.
+
 Set `"output": "candidate"` on a custom organization request to keep live files unchanged during generation. The response's `candidate_memory_id` names an independent file memory copied from the target. Inspect or edit its files through ordinary memory APIs. This also works with selected conversation history.
 
 1. Wait for the ordinary run to complete and seal. Read `GET /memory-organizations/{id}/candidate` for status, changed paths, `candidate_seq` and `target_seq`.
@@ -144,6 +148,17 @@ Set `"output": "candidate"` on a custom organization request to keep live files 
 `review_changed` means the candidate or target changed after review. Reload both before deciding. `baseline_changed` means the target changed since generation began. Generate a fresh candidate, or explicitly choose `replace_all` after reviewing the current target. `replace_all` overwrites the complete target tree and deletes target-only files; it does not merge concurrent edits. The same exact apply request can be retried safely using its stored receipt.
 
 To reject a settled candidate, call `POST /memory-organizations/{id}/candidate/discard`. Cancel an active run first through the run API. Failed and cancelled generation cannot publish. Apply requires current write permission and an enabled target Space. Discard and apply retain the independent candidate memory for inspection; delete it separately when no longer needed. Removing the target or candidate makes publication unavailable. Publication changes file content, not target guidance or Session bindings.
+
+### Compose a Dreams-style workflow
+
+A Dreams-style workflow combines conversation extraction, reusable knowledge and current handoff state:
+
+1. Create an empty file collection or a Space. Select **Topic knowledge** and **Session notes** under **Guidance modules**; add **Event journal** when dated events matter. Keep domain priorities in **Custom guide**.
+2. Start **Organize memory** with candidate output. Select the relevant conversations and a bounded seal-time window. Ask the organizer to preserve supported decisions, corrections, unresolved disagreements and source run identities.
+3. Review the generated files and apply the candidate. Reuse the published memory in later conversations through ordinary mounts or Space selections.
+4. For continuing extraction, configure the same sources and instructions in **Automatic policy** for a collection, or **Configuration → Organization** for a Space. Choose an explicit start time and enable automatic organization. Automatic rounds write directly; successful rounds consume sources once, while failed rounds leave sources eligible after cooldown.
+
+This composition uses ordinary organization runs, file guidance and automatic history progress. There is no separate Dreams resource or implicit historical scan. Disabling a policy preserves files and progress; changing source selections does not replay successfully consumed runs.
 
 ### Write from current knowledge
 

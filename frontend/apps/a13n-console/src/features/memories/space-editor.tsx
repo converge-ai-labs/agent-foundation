@@ -1,12 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  ChoiceField,
-  FormField,
-  Input,
-  Label,
-  SearchPicker,
-  Switch,
-} from "a13n-ui";
+import { FormField, Input, Label, Switch } from "a13n-ui";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router";
@@ -18,7 +11,7 @@ import { ErrorNotice } from "../../shared/feedback";
 import { TextAreaField } from "../../shared/forms";
 import { FormSection } from "../../shared/forms";
 import { SaveBar } from "../../shared/page";
-import { workspaceModelsQuery } from "../models/api";
+import { OrganizationPolicyFields } from "./organization-policy-fields";
 import { isStale, memoryQueries } from "./api";
 import { AlwaysLoadField } from "./fields";
 import {
@@ -47,7 +40,6 @@ export function SpaceConfiguration({ resource }: { resource: SpaceResource }) {
     space = base.value,
     draft = edit?.draft ?? spaceDraft(space);
   const readOnly = !can("write");
-  const models = useQuery(workspaceModelsQuery(client, workspace.id));
   const files = useQuery(
     memoryQueries(client, workspace.id).files(space.memory_id),
   );
@@ -147,138 +139,11 @@ export function SpaceConfiguration({ resource }: { resource: SpaceResource }) {
             "An organizer reads all session notes and curates shared knowledge using only this space's memory tools.",
           )}
         >
-          <div className="grid gap-4">
-            <div className={styles.participation}>
-              <div>
-                <Label htmlFor="space-automatic">
-                  {t("Automatic organization")}
-                </Label>
-                <p>
-                  {t(
-                    "Organize after new memory changes. Each round starts with a fresh thread.",
-                  )}
-                </p>
-              </div>
-              <Switch
-                id="space-automatic"
-                checked={draft.automatic}
-                disabled={readOnly}
-                onCheckedChange={(automatic) => change({ automatic })}
-              />
-            </div>
-            <FormField label={t("Organizer model")}>
-              <SearchPicker
-                label={t("Organizer model")}
-                placeholder={t("Choose a model…")}
-                emptyMessage={t(
-                  "No models available. Configure a provider and model first.",
-                )}
-                value={draft.model}
-                onValueChange={(model) => change({ model })}
-                disabled={readOnly}
-                groups={[
-                  {
-                    label: t("Available models"),
-                    options: (models.data ?? []).map((model) => ({
-                      value: model.key,
-                      label: model.name,
-                      disabled: !model.enabled,
-                    })),
-                  },
-                ]}
-              />
-            </FormField>
-            <p className="text-muted-foreground text-xs">
-              {t("A model is required for automatic and manual organization.")}
-            </p>
-            <div className="grid gap-4 pt-2">
-              <ChoiceField
-                label={t("Automatic trigger")}
-                value={draft.trigger}
-                readOnly={readOnly}
-                options={[
-                  { value: "any_change", label: t("Any saved change") },
-                  {
-                    value: "change_count",
-                    label: t("After a number of changes"),
-                  },
-                ]}
-                onValueChange={(trigger) =>
-                  change({ trigger: trigger as SpaceDraft["trigger"] })
-                }
-              />
-              {draft.trigger === "change_count" && (
-                <FormField
-                  label={t("Changes per round")}
-                  readOnly={readOnly}
-                  description={t(
-                    "Count saved file changes from agents, Console and API. A rename counts once; organizer edits do not count.",
-                  )}
-                >
-                  <Input
-                    type="number"
-                    min={1}
-                    max={1000000}
-                    step={1}
-                    required
-                    value={draft.changeCount}
-                    onChange={(event) =>
-                      change({ changeCount: event.target.value })
-                    }
-                  />
-                </FormField>
-              )}
-              <div className="grid gap-4 sm:grid-cols-2">
-                <FormField
-                  label={t("Check interval (seconds)")}
-                  readOnly={readOnly}
-                  description={t(
-                    "How often to check for eligible changes. Minimum 10 seconds.",
-                  )}
-                >
-                  <Input
-                    type="number"
-                    min={10}
-                    max={86400}
-                    step={1}
-                    required
-                    value={draft.checkInterval}
-                    onChange={(event) =>
-                      change({ checkInterval: event.target.value })
-                    }
-                  />
-                </FormField>
-                <FormField
-                  label={t("Cooldown (seconds)")}
-                  readOnly={readOnly}
-                  description={t(
-                    "Wait after a round ends before starting another. Use 0 for no cooldown.",
-                  )}
-                >
-                  <Input
-                    type="number"
-                    min={0}
-                    max={604800}
-                    step={1}
-                    required
-                    value={draft.cooldown}
-                    onChange={(event) =>
-                      change({ cooldown: event.target.value })
-                    }
-                  />
-                </FormField>
-              </div>
-              <p className="text-muted-foreground text-xs">
-                {t(
-                  "Automatic organization waits for both the trigger and cooldown. Organize now bypasses these limits and the check interval.",
-                )}
-              </p>
-            </div>
-            <ErrorNotice
-              error={models.error}
-              retry={() => void models.refetch()}
-            />
-          </div>
+          <OrganizationPolicyFields
+            draft={draft}
+            change={change}
+            readOnly={readOnly}
+          />
         </FormSection>
         <FormSection
           title={t("Memory instructions")}
