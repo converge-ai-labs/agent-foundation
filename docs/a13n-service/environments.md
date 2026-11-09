@@ -136,7 +136,7 @@ Create the first workspace through Console:
 
 The agent field is `default_environment_template_id`. On acceptance of a root-thread run without a `workspace` mount, Service reserves an instance and mounts it as `workspace`. A `reserved` instance has an ID but no vendor resource yet. First use prepares it. Reservations count toward the managed-environment quota.
 
-To reuse an existing environment, set `agent.config.default_environment_id` instead. The two fields are mutually exclusive. A thread's explicit `workspace` mount takes precedence; changing the Agent default does not replace it or affect accepted runs. Client environments may be selected while offline. The execution principal must still be allowed to use the environment; this setting does not share a private computer with other users. Child runs keep the spawning edge's environment policy.
+To reuse an existing environment, set `agent.config.default_environment_id` instead. The two fields are mutually exclusive. A thread's explicit `workspace` mount takes precedence; changing the Agent default does not replace it or affect accepted runs. Client environments may be selected while offline. Client environments are usable by users and service accounts with `run` permission in the same workspace. External HTTP targets remain restricted to their registering principal. Child runs keep the spawning edge's environment policy.
 
 For API setup, use the URL and workspace API key from [direct HTTP integration](connect-application.md#direct-http-integration). Replace `eprov_...` with your Docker provider ID. Creating or editing a template requires `write`:
 
@@ -236,6 +236,10 @@ Before this schema cutover, finish or cancel and settle every admitted Run using
 
 ### Connect a client computer
 
+Users and service accounts with `run` permission in this workspace can use both existing and newly registered client computers. Registration requires `write`; credential rotation, revocation and status changes still require the owner or a workspace administrator with `write`. File, Shell and desktop permissions remain limited by the registration, the Run and local Envd configuration.
+
+Use **Environments → Instances → Connect my computer** to pair through your signed-in Console session. [Install the macOS launcher](../a13n-envd/installation.md#connect-this-computer-from-console), open it from the dialog, then enter the app verification code and approve. A terminal command is also available. No ordinary API key is needed for this flow. Once online, choose the registered environment in your Agent or conversation settings. The API-token workflow below remains available for automated setup.
+
 Use this path when Envd can make an outbound connection to Control but Workers cannot dial the computer. You can register the environment and mount it on a thread before starting Envd.
 
 When upgrading to the client-environment schema, drain active work and stop all old Controls and Workers before applying the migration. Existing managed and HTTP environments are preserved, but old versions cannot write the new schema. After any client registration exists, including a deleted one, use forward repair instead of downgrading the schema.
@@ -244,7 +248,7 @@ For automatic first registration, run `a13n-envd connect-service` with an ordina
 
 To register while the computer is offline or set a narrower permission ceiling before connecting:
 
-1. As the workspace principal that will run the agent, send `POST /api/v1/client-environments?workspace_id=…` with the installation's persistent device ID, an existing directory and the permitted actions. For example:
+1. As a principal with workspace `write` permission, send `POST /api/v1/client-environments?workspace_id=…` with the installation's persistent device ID, an existing directory and the permitted actions. For example:
 
    ```json
    {

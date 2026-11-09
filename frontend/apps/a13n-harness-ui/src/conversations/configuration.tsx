@@ -276,7 +276,7 @@ export function ConversationConfiguration({
                   <div className={styles.detailGrid}>
                     <section>
                       <h4>
-                        {t("Before · version {{version}}", {
+                        {t("Before - version {{version}}", {
                           version: reviewed.expected_version,
                         })}
                       </h4>
@@ -591,7 +591,7 @@ export function ThreadSelections({
                             )
                             ?.tool_search_mcp_servers?.includes(
                               option.resource_id,
-                            ) && t(" · On demand")}
+                            ) && t(" - On demand")}
                         </>
                       ) : undefined
                     }
@@ -634,7 +634,7 @@ export function ThreadSelections({
             )}
           </p>
           <h4>
-            {t("Latest selections · version {{version}}", {
+            {t("Latest selections - version {{version}}", {
               version: latest.version,
             })}
           </h4>

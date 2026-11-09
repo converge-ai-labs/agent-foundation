@@ -230,7 +230,7 @@ export function UsageDetails({ usage }: { usage?: ThreadUsage }) {
         <dl className={styles.usageOverview}>
           <dt>{t("Total tokens")}</dt>
           <dd>{totals.model_requests ? count(total) : "—"}</dd>
-          <dt>{t("Model cost · USD")}</dt>
+          <dt>{t("Model cost - USD")}</dt>
           <dd>
             <CostValue totals={totals} />
           </dd>
@@ -321,7 +321,7 @@ export function UsageDetails({ usage }: { usage?: ThreadUsage }) {
                               key={`${group.agent_instance_id}:${group.descendant}:${group.source}`}
                             >
                               <div>
-                                {t("{{scope}} · {{source}}", {
+                                {t("{{scope}} - {{source}}", {
                                   scope: group.descendant
                                     ? t("Subagent")
                                     : t("Root"),
@@ -330,7 +330,7 @@ export function UsageDetails({ usage }: { usage?: ThreadUsage }) {
                                       ? t("Agent requests")
                                       : group.source ===
                                           "files.media_understanding"
-                                        ? t("Media understanding · view")
+                                        ? t("Media understanding - view")
                                         : group.source || t("Unattributed"),
                                 })}
                               </div>
@@ -344,7 +344,7 @@ export function UsageDetails({ usage }: { usage?: ThreadUsage }) {
                                 {t("{{count, number}} requests", {
                                   count: group.totals.model_requests,
                                 })}{" "}
-                                · <CostValue totals={group.totals} />
+                                - <CostValue totals={group.totals} />
                               </div>
                               <TokenRows totals={group.totals} />
                             </div>
@@ -371,7 +371,7 @@ export function UsageDetails({ usage }: { usage?: ThreadUsage }) {
       {totals.provider_receipts > 0 && (
         <details className={styles.attribution}>
           <summary>
-            {t("Non-model providers · {{count, number}} receipts", {
+            {t("Non-model providers - {{count, number}} receipts", {
               count: totals.provider_receipts,
             })}
           </summary>

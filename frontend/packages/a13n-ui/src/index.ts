@@ -56,3 +56,5 @@ export * from "./components/fieldset";
 export { ReadOnlyField } from "./patterns/read-only-field";
 
 export { modelBrand } from "./brand/model-brand";
+
+export { FileTypeIcon } from "./components/file-type-icon";

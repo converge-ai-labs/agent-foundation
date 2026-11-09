@@ -27,6 +27,32 @@ The build produces `target/debug/a13n-envd`. Your Provider or Host launches it a
 
 For a published Local Envd installation, match the native release to the installed `a13n-envd-client`, which is versioned independently of Harness and Harness UI. Python RC version `1.2.3rc1` maps to native `1.2.3-rc.1`.
 
+## Connect this computer from Console
+
+After approval, users and service accounts with Run permission in the selected workspace can use this computer within the approved operation limits.
+
+For a source checkout on macOS, build the matching binary above, then install the optional link launcher:
+
+```bash
+make envd-app-install
+# To upgrade an existing app after disconnecting:
+make envd-app-install ENVD_APP_ARGS=--replace
+```
+
+This requires Xcode Command Line Tools and installs a native app at `~/Applications/A13N Envd.app`, registers `a13n-envd://` links, and copies the selected binary (`ENVD_BINARY` overrides the default debug build). Replacement is explicit and saves the previous app in a hidden `.a13n-envd-previous.*` directory under `~/Applications`. The development app is locally signed, not a published notarized installer, and adds no login service.
+
+1. Open **Console → Environments → Instances → Connect my computer** .
+2. Accept the browser's external-app prompt if shown. If the app did not open automatically, choose **Open A13N Envd**.
+3. For a new registration, in the app check the Service address and workspace, choose a starting directory and whether to include desktop access, then click **Allow and connect**. Files and Shell run as your operating-system user; the directory does not restrict access to other files.
+4. For a new registration, enter the six-digit code shown in the app into Console, check the computer details, and approve.
+5. Wait for **Online**, then select this environment in your Agent or conversation settings. Approval alone does not start a task.
+
+Envd runs as an app-owned process without opening Terminal. Closing the window keeps it connected; use the menu bar to reopen it. **Disconnect** or quitting the app stops Envd, including if the app crashes. Repeated links while running bring the current connection forward instead of starting another daemon. To switch connections, disconnect first and reopen the new link. The app remembers the last approved Service profile, directory and desktop choice for an explicit **Reconnect**, but never copies the device credential into app preferences. If upgrading from the Terminal launcher, stop its old process with Ctrl+C before connecting in the app. Desktop access additionally requires macOS Screen Recording and Accessibility permission. Complete any system prompts before expecting the computer to appear online.
+
+Other systems, or macOS without the launcher, can use **Connect from a terminal** in the dialog. The copied `connect-service --pairing-id` command requires a compatible binary on PATH and uses your local configuration. Set `A13N_ENVD_FULL_CONTROL=1` locally to allow arbitrary Shell commands; add `--computer-use true` only when desktop access is intended. The webpage does not install software or grant native permissions. Pairing expires after ten minutes; create a new request if it expires. Saved host profiles reconnect without an API key using `a13n-envd connect-service <saved-host-name>`.
+
+After refreshing Console, **Connect my computer** opens Envd to check the saved registration again. An existing registration is reused without a new code or device ID. Online connections keep running; offline computers can reconnect in Envd. A missing or rejected saved credential is an error and does not create a replacement registration.
+
 ## Install a published binary
 
 The standalone scripts install the native executable from GitHub Releases. To select a version for a Python application, first install the [Python client](python-client.md#install) in the environment that will use Envd. The commands below read that installed package's version.

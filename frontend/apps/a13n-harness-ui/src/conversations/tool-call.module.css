@@ -332,7 +332,7 @@
   height: 0.875rem;
   flex-shrink: 0;
 }
-/* Each grouped call is one compact row (verb · target · state · data); its
+/* Each grouped call is one compact row (verb - target - state - data); its
    semantic details, when it has any, follow directly beneath. */
 .operations {
   display: grid;

@@ -158,7 +158,7 @@ it("selects a Copilot source explicitly and confirms shared logout even when exp
         return json([
           {
             selection: { source: "native", account_id: "other-user" },
-            label: "other-user · Host login",
+            label: "other-user - Host login",
             selected: false,
           },
         ]);
@@ -194,7 +194,7 @@ it("selects a Copilot source explicitly and confirms shared logout even when exp
   fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   fireEvent.click(screen.getByText("Account source"));
   fireEvent.click(
-    await screen.findByRole("button", { name: "other-user · Host login" }),
+    await screen.findByRole("button", { name: "other-user - Host login" }),
   );
   await waitFor(() =>
     expect(selected).toHaveBeenCalledWith({
@@ -202,7 +202,7 @@ it("selects a Copilot source explicitly and confirms shared logout even when exp
       account_id: "other-user",
     }),
   );
-  await screen.findByText("Account: other-user · Host account");
+  await screen.findByText("Account: other-user - Host account");
 });
 
 it("defaults ChatGPT to automatic callback and posts a private full-URL fallback without persistence", async () => {

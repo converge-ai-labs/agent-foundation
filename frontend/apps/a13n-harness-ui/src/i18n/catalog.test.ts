@@ -81,13 +81,13 @@ const untranslatedExceptions: Record<string, string[]> = {
   "shell/debug.tsx": ["undefined"],
   "configuration/fields.tsx": ["Sidekick"],
   "configuration/project-folders.tsx": ["/path/to/project"],
-  "conversations/composer.tsx": ["· HEAD"],
+  "conversations/composer.tsx": ["- HEAD"],
   "conversations/markdown-block.tsx": ["mermaid", "text"],
-  "mcp-apps/app-card.tsx": ["· MCP App"],
+  "mcp-apps/app-card.tsx": ["- MCP App"],
   "setup/subscriptions.tsx": ["Codex", "Grok"],
   "shell/startup.tsx": ["Harness"],
-  "shell/workbench.tsx": ["Harness UI ·", "Harness", "Harness UI"],
-  "usage/page.tsx": ["USD ·"],
+  "shell/workbench.tsx": ["Harness UI -", "Harness", "Harness UI"],
+  "usage/page.tsx": ["USD -"],
 };
 const displayAttributes = new Set([
   "title",

@@ -21,7 +21,7 @@ ctx.fillStyle = "#0f172a";
 ctx.fillRect(0, 0, 1600, 80);
 ctx.fillStyle = "#ffffff";
 ctx.font = "24px sans-serif";
-ctx.fillText("Browser screenshot · local annotation", 32, 49);
+ctx.fillText("Browser screenshot - local annotation", 32, 49);
 ctx.fillStyle = "#2563eb";
 ctx.fillRect(100, 180, 380, 220);
 ctx.fillStyle = "#16a34a";

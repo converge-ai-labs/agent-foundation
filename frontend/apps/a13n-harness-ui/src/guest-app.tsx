@@ -280,7 +280,7 @@ function GuestShell({
           <div>
             <h1 title={access.title}>{access.title}</h1>
             <p>
-              {project ? t("Shared project") : t("Shared chat")} ·{" "}
+              {project ? t("Shared project") : t("Shared chat")} -{" "}
               <span>{canPrompt ? t("Can send messages") : t("View only")}</span>
             </p>
           </div>

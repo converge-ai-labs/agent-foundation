@@ -98,7 +98,7 @@ vi.mock("./changes", () => ({
   }) => (
     <div>
       <p>
-        Repository {path} · Diff {selected?.path}
+        Repository {path} - Diff {selected?.path}
       </p>
       <button
         onClick={() =>
@@ -140,11 +140,11 @@ vi.mock("./terminal", () => ({
     return (
       <section aria-label="Terminal panel" hidden={!visible}>
         <p>
-          Terminal context {projectId} · {directory}
+          Terminal context {projectId} - {directory}
         </p>
         {request && (
           <p>
-            New terminal request {request.projectId} · {request.cwd}
+            New terminal request {request.projectId} - {request.cwd}
           </p>
         )}
         <button onClick={() => select("")}>Close selected terminal</button>
@@ -374,7 +374,7 @@ it("adds files through the new-tab picker in one strip and closes views without 
   expect(
     screen.getByRole("tab", { name: "second.txt", selected: true }),
   ).toBeTruthy();
-  fireEvent.click(screen.getByRole("tab", { name: "first.txt · Unsaved" }));
+  fireEvent.click(screen.getByRole("tab", { name: "first.txt - Unsaved" }));
   const editor = await screen.findByText("Editor /native/first.txt");
   fireEvent.click(
     screen.getByRole("button", { name: "Close tab: second.txt" }),
@@ -384,7 +384,7 @@ it("adds files through the new-tab picker in one strip and closes views without 
     screen.getByRole("button", { name: "Close supporting panel" }),
   ).toBeTruthy();
   fireEvent.click(
-    screen.getByRole("button", { name: "Close tab: first.txt · Unsaved" }),
+    screen.getByRole("button", { name: "Close tab: first.txt - Unsaved" }),
   );
   expect(screen.queryByRole("tablist", { name: "Workspace views" })).toBeNull();
   fireEvent.click(
@@ -655,8 +655,8 @@ it("cross-project file links use the destination root and preserve its restored 
   await screen.findByText("Editor /other/first.txt");
   expect(screen.getAllByRole("tab")).toHaveLength(1);
   await chooseView("Changes");
-  expect(screen.getByText(/Repository .* · Diff/).textContent).toBe(
-    "Repository /other · Diff ",
+  expect(screen.getByText(/Repository .* - Diff/).textContent).toBe(
+    "Repository /other - Diff ",
   );
   fireEvent.click(screen.getByRole("button", { name: "Current chat" }));
   await screen.findByText("Editor /native/first.txt");
@@ -664,8 +664,8 @@ it("cross-project file links use the destination root and preserve its restored 
   await screen.findByText("Editor /other/first.txt");
   expect(screen.getAllByRole("tab")).toHaveLength(2);
   await chooseView("Changes");
-  expect(screen.getByText(/Repository .* · Diff/).textContent).toBe(
-    "Repository /other · Diff ",
+  expect(screen.getByText(/Repository .* - Diff/).textContent).toBe(
+    "Repository /other - Diff ",
   );
 });
 
@@ -1124,7 +1124,7 @@ it.each(["file", "diff"])(
     fireEvent.click(
       screen.getByRole("button", { name: "Open peer repository" }),
     );
-    await screen.findByText("Repository /other-repository · Diff");
+    await screen.findByText("Repository /other-repository - Diff");
     expect(screen.queryByText("Editor /native/first.txt")).toBeNull();
     expect(screen.queryByText("Patch first.txt")).toBeNull();
     await waitFor(() =>
@@ -1189,7 +1189,7 @@ it("shows pending and failed file opens beside the retained diff instead of hidi
   expect(screen.getByText("Patch deleted.txt")).toBeTruthy();
   expect(
     screen
-      .getByRole("tab", { name: "deleted.txt · Changes" })
+      .getByRole("tab", { name: "deleted.txt - Changes" })
       .getAttribute("aria-selected"),
   ).toBe("true");
   expect(screen.queryByText("Opening…")).toBeNull();
@@ -1203,14 +1203,14 @@ it("Files, Changes and new-terminal context follow Thread roots instead of chang
   expect(screen.queryByLabelText("Folder or file path")).toBeNull();
   expect(screen.queryByLabelText("Project root")).toBeNull();
   await chooseView("Changes");
-  await screen.findByText("Repository /native · Diff");
+  await screen.findByText("Repository /native - Diff");
   await chooseView("Terminal");
-  await screen.findByText("Terminal context project-one · /native");
+  await screen.findByText("Terminal context project-one - /native");
   fireEvent.click(screen.getByRole("button", { name: "Another chat" }));
   await chooseView("Changes");
-  await screen.findByText("Repository /other · Diff");
+  await screen.findByText("Repository /other - Diff");
   await chooseView("Terminal");
-  await screen.findByText("Terminal context project-two · /other");
+  await screen.findByText("Terminal context project-two - /other");
   await chooseView("Files");
   await screen.findByText("Folder /other");
 });
@@ -1251,7 +1251,7 @@ it.each(["directory", "file", "repository", "diff"])(
     await screen.findByText(
       target === "directory" || target === "file"
         ? "Folder /native"
-        : "Repository /native · Diff",
+        : "Repository /native - Diff",
     );
     expect(screen.queryByLabelText("Folder or file path")).toBeNull();
   },
@@ -1287,10 +1287,8 @@ it.each(["/native", "C:\\native", "\\\\server\\share\\native"])(
     await chooseView("Files");
     await screen.findByText(`Folder ${root}`);
     expect(
-      screen
-        .getByRole("button", { name: "Up one level" })
-        .hasAttribute("disabled"),
-    ).toBe(true);
+      screen.queryByRole("navigation", { name: "Current folder" }),
+    ).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Open child folder" }));
     await screen.findByText(`Folder ${first}`);
     fireEvent.click(screen.getByRole("button", { name: "Open child folder" }));
@@ -1299,24 +1297,22 @@ it.each(["/native", "C:\\native", "\\\\server\\share\\native"])(
     expect(
       trail.querySelector('[aria-current="location"]')?.getAttribute("title"),
     ).toBe(second);
-    fireEvent.click(screen.getByRole("button", { name: "Up one level" }));
+    fireEvent.click(within(trail).getByRole("button", { name: "nested" }));
     await screen.findByText(`Folder ${first}`);
     fireEvent.click(
       within(trail).getByRole("button", { name: "Current project" }),
     );
     await screen.findByText(`Folder ${root}`);
     expect(
-      screen
-        .getByRole("button", { name: "Up one level" })
-        .hasAttribute("disabled"),
-    ).toBe(true);
+      screen.queryByRole("navigation", { name: "Current folder" }),
+    ).toBeNull();
     await waitFor(() =>
       expect(focus).toHaveBeenLastCalledWith({ kind: "file", path: root }),
     );
   },
 );
 
-it.each(["Up", "breadcrumb", "working folder"])(
+it.each(["breadcrumb", "working folder"])(
   "%s navigation from a file stays in its current tab even when the destination is already open",
   async (action) => {
     setup(
@@ -1338,14 +1334,17 @@ it.each(["Up", "breadcrumb", "working folder"])(
           screen.getByRole("navigation", { name: "Working folders" }),
         ).getByRole("button", { name: "other" }),
       );
-    else fireEvent.click(screen.getByRole("button", { name: "Up one level" }));
+    else
+      fireEvent.click(
+        within(
+          screen.getByRole("navigation", { name: "Current folder" }),
+        ).getByRole("button", { name: "native" }),
+      );
     const destination = action === "working folder" ? "/other" : "/native";
     await screen.findByText(`Folder ${destination}`);
     const otherTab = screen.getByRole("tab", { name: "Files", selected: true });
     fireEvent.click(fileTab);
-    if (action === "Up")
-      fireEvent.click(screen.getByRole("button", { name: "Up one level" }));
-    else if (action === "breadcrumb")
+    if (action === "breadcrumb")
       fireEvent.click(
         within(
           screen.getByRole("navigation", { name: "Current folder" }),
@@ -1386,14 +1385,12 @@ it("Back to files navigates within the current tab even when that folder is alre
     buffers,
   );
   await screen.findByText("Editor /native/src/first.txt");
-  const fileTab = screen.getByRole("tab", { name: "first.txt · Unsaved" });
+  const fileTab = screen.getByRole("tab", { name: "first.txt - Unsaved" });
   const id = fileTab.id;
   const trail = screen.getByRole("navigation", { name: "Current folder" });
-  expect(
-    within(trail)
-      .getByRole("button", { name: "src" })
-      .getAttribute("aria-current"),
-  ).toBe("location");
+  expect(within(trail).getByText("src").getAttribute("aria-current")).toBe(
+    "location",
+  );
   fireEvent.click(screen.getByRole("button", { name: "New tab" }));
   fireEvent.click(screen.getByRole("button", { name: "Files" }));
   const otherFolderTab = screen.getByRole("tab", {
@@ -1412,7 +1409,7 @@ it("Back to files navigates within the current tab even when that folder is alre
   fireEvent.click(screen.getByRole("link", { name: "Reopen file" }));
   await screen.findByText("Editor /native/src/first.txt");
   expect(
-    screen.getByRole("tab", { name: "first.txt · Unsaved", selected: true }).id,
+    screen.getByRole("tab", { name: "first.txt - Unsaved", selected: true }).id,
   ).toBe(id);
   expect(screen.getAllByRole("tab")).toHaveLength(2);
   expect(buffers.get("/native/src/first.txt")).toBe(dirty);
@@ -1424,7 +1421,11 @@ it("a failed parent open keeps the actual location and a late child response can
   );
   await screen.findByText("Folder /native/src");
   get.mockRejectedValueOnce(new Error("Folder unavailable"));
-  fireEvent.click(screen.getByRole("button", { name: "Up one level" }));
+  fireEvent.click(
+    within(
+      screen.getByRole("navigation", { name: "Current folder" }),
+    ).getByTitle("/native"),
+  );
   await screen.findByText("Folder unavailable");
   expect(screen.getByText("Folder /native/src")).toBeTruthy();
   let finish!: (value: { data: { kind: string } }) => void;
@@ -1436,7 +1437,11 @@ it("a failed parent open keeps the actual location and a late child response can
   );
   fireEvent.click(screen.getByRole("button", { name: "Open child folder" }));
   await screen.findByText("Opening…");
-  fireEvent.click(screen.getByRole("button", { name: "Up one level" }));
+  fireEvent.click(
+    within(
+      screen.getByRole("navigation", { name: "Current folder" }),
+    ).getByTitle("/native"),
+  );
   await screen.findByText("Folder /native");
   finish({ data: { kind: "directory" } });
   await waitFor(() => expect(screen.queryByText("Opening…")).toBeNull());
@@ -1450,15 +1455,13 @@ it("explicit external native links keep usable ancestry rather than an empty Pro
   expect(
     within(trail).queryByRole("button", { name: "Current project" }),
   ).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Up one level" }));
+  fireEvent.click(within(trail).getByTitle("/external"));
   await screen.findByText("Folder /external");
   fireEvent.click(within(trail).getByRole("button", { name: "/" }));
   await screen.findByText("Folder /");
   expect(
-    screen
-      .getByRole("button", { name: "Up one level" })
-      .hasAttribute("disabled"),
-  ).toBe(true);
+    screen.queryByRole("navigation", { name: "Current folder" }),
+  ).toBeNull();
 });
 
 it("switching configured roots from a file view returns to the selected folder instead of leaving a stale editor", async () => {
@@ -1479,10 +1482,8 @@ it("switching configured roots from a file view returns to the selected folder i
   await screen.findByText("Folder /second-root");
   expect(screen.queryByText("Editor /native/first.txt")).toBeNull();
   expect(
-    screen
-      .getByRole("button", { name: "Up one level" })
-      .hasAttribute("disabled"),
-  ).toBe(true);
+    screen.queryByRole("navigation", { name: "Current folder" }),
+  ).toBeNull();
 });
 
 it("opens tool paths through existing private buffers without re-reading or replacing dirty text", async () => {
@@ -1542,9 +1543,9 @@ it.each(["/?project=project-one", "/new?project=project-one"])(
     await chooseView("Files");
     await screen.findByText("Folder /native");
     await chooseView("Changes");
-    await screen.findByText("Repository /native · Diff");
+    await screen.findByText("Repository /native - Diff");
     await chooseView("Terminal");
-    await screen.findByText("Terminal context project-one · /native");
+    await screen.findByText("Terminal context project-one - /native");
   },
 );
 
@@ -1606,7 +1607,7 @@ it("terminal shortcuts toggle the panel, ignore repeat/modal/composition, and cr
   fireEvent.keyDown(window, { ...chord, shiftKey: true });
   expect(terminalVisible()).toBe(true);
   expect(
-    screen.getByText("New terminal request project-one · /native"),
+    screen.getByText("New terminal request project-one - /native"),
   ).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Open peer resource" }));
   await screen.findByText(/Chat remains mounted \/settings/);
@@ -1898,7 +1899,7 @@ it("explicit native links reopen only their destination chat's saved closed pane
   setup("/threads/other");
   await screen.findByRole("button", { name: "Open supporting panel" });
   fireEvent.click(screen.getByRole("button", { name: "Open peer repository" }));
-  await screen.findByText("Repository /other-repository · Diff");
+  await screen.findByText("Repository /other-repository - Diff");
   expect(
     screen.getByRole("button", { name: "Close supporting panel" }),
   ).toBeTruthy();

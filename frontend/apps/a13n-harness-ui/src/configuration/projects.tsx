@@ -77,7 +77,7 @@ export function ProjectsPage() {
                         count: project.roots.length,
                       })}
                       {!!project.defaults?.environment_bindings?.length &&
-                        ` · ${t("{{count}} remote environments", { count: project.defaults.environment_bindings.length })}`}
+                        ` - ${t("{{count}} remote environments", { count: project.defaults.environment_bindings.length })}`}
                     </small>
                   )}
                 </div>

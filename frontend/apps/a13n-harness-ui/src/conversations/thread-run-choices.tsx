@@ -200,7 +200,7 @@ export function ThreadRunChoices(props: RunChoiceProps) {
         agent: agent?.name ?? t("Default agent"),
         model: modelName,
       })}
-      title={`${agent?.name ?? t("Default agent")} · ${modelName}`}
+      title={`${agent?.name ?? t("Default agent")} - ${modelName}`}
     >
       <ComposerSettings
         label={<ModelIdentity model={model} name={modelName} />}

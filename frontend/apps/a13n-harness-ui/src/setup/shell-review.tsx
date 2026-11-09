@@ -55,7 +55,7 @@ export function ShellReviewModel({
         onValueChange={onChange}
         groups={[
           {
-            label: t("Lightweight models first · same family preferred"),
+            label: t("Lightweight models first - same family preferred"),
             options: candidates.map((item) => ({
               value: item.value,
               label: item.label,

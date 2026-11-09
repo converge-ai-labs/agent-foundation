@@ -148,7 +148,7 @@ it("checks without saving and keeps a rejected draft available for repair", asyn
   const { client, drafts, path, content, user } = mountEditor("model");
   await user.click(screen.getByText("Advanced configuration"));
   await user.click(screen.getByRole("button", { name: "Check settings" }));
-  await screen.findByText("Configuration valid · not saved");
+  await screen.findByText("Configuration valid - not saved");
   expect(client.POST).toHaveBeenCalledWith("/api/configuration/validate", {
     params: { query: { path } },
     body: { content },

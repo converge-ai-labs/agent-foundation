@@ -74,10 +74,10 @@ export function DeviceFields({
           })
         }
         options={[
-          { value: "http", label: t("HTTP · connect to envd") },
+          { value: "http", label: t("HTTP - connect to envd") },
           {
             value: "websocket",
-            label: t("WebSocket · envd connects to this server"),
+            label: t("WebSocket - envd connects to this server"),
           },
         ]}
       />

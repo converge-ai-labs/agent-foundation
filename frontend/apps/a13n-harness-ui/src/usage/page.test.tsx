@@ -140,7 +140,7 @@ it("retains results on refresh failure and recovers explicitly", async () => {
   await screen.findByText("Usage unavailable");
   expect(screen.getByRole("button", { name: "Example project" })).toBeTruthy();
   expect(
-    screen.getByText("Update failed · showing previous results"),
+    screen.getByText("Update failed - showing previous results"),
   ).toBeTruthy();
   fail = false;
   fireEvent.click(screen.getByRole("button", { name: "Retry" }));
@@ -188,7 +188,7 @@ it("abbreviates large totals while keeping exact counts and costs accessible", a
     "$17047.94+",
   );
   expect(
-    screen.getByRole("button", { name: "2026-09-07 · 11,931,980,116 tokens" }),
+    screen.getByRole("button", { name: "2026-09-07 - 11,931,980,116 tokens" }),
   ).toBeTruthy();
 });
 
@@ -224,11 +224,11 @@ it("keeps daily bars in one tab stop while arrow keys and Home/End move between 
   );
   mount();
   const last = await screen.findByRole("button", {
-    name: "2026-09-08 · 120 tokens",
+    name: "2026-09-08 - 120 tokens",
   });
-  const first = screen.getByRole("button", { name: "2026-09-06 · 120 tokens" });
+  const first = screen.getByRole("button", { name: "2026-09-06 - 120 tokens" });
   const middle = screen.getByRole("button", {
-    name: "2026-09-07 · 120 tokens",
+    name: "2026-09-07 - 120 tokens",
   });
   expect(
     [first, middle, last].filter((button) => button.tabIndex === 0),

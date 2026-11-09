@@ -129,15 +129,15 @@ it("relocalizes a retained suspended notice without replaying it", async () => {
   mount("/threads/thread-other");
   event = notice("retained", "suspended");
   fireEvent.click(screen.getByText("Emit"));
-  const title = await screen.findByText("Your input is needed · UI polish");
+  const title = await screen.findByText("Your input is needed - UI polish");
   const action = screen.getByRole("button", { name: "Open chat" });
   try {
     await act(() => i18n.changeLanguage("zh-CN"));
-    expect(screen.getByText("需要你的输入 · UI polish")).toBe(title);
+    expect(screen.getByText("需要你的输入 - UI polish")).toBe(title);
     expect(screen.getByRole("button", { name: "打开聊天" })).toBe(action);
     expect(screen.getByText("Which project should I update?")).toBeTruthy();
     fireEvent.click(screen.getByText("Emit"));
-    expect(screen.getAllByText("需要你的输入 · UI polish")).toHaveLength(1);
+    expect(screen.getAllByText("需要你的输入 - UI polish")).toHaveLength(1);
     fireEvent.click(action);
     expect(screen.getByText("/threads/thread-1")).toBeTruthy();
   } finally {
@@ -597,8 +597,8 @@ it.each([
     mount("/threads/thread-other");
     event = notice("goal-receipt", status);
     fireEvent.click(screen.getByText("Emit"));
-    expect(await screen.findByText(`${title} · UI polish`)).toBeTruthy();
-    expect(screen.queryByText("Task completed · UI polish")).toBeNull();
+    expect(await screen.findByText(`${title} - UI polish`)).toBeTruthy();
+    expect(screen.queryByText("Task completed - UI polish")).toBeNull();
   },
 );
 
@@ -607,11 +607,11 @@ it("suppresses a viewed Goal success but keeps incomplete Goal warnings", async 
   event = notice("verified", "goal_verified");
   fireEvent.click(screen.getByText("Emit"));
   expect(
-    screen.queryByText("Goal verified by the Agent · UI polish"),
+    screen.queryByText("Goal verified by the Agent - UI polish"),
   ).toBeNull();
   event = notice("incomplete", "goal_incomplete");
   fireEvent.click(screen.getByText("Emit"));
-  expect(await screen.findByText("Goal not verified · UI polish")).toBeTruthy();
+  expect(await screen.findByText("Goal not verified - UI polish")).toBeTruthy();
 });
 
 it("retranslates local push failures without retrying and preserves browser details", async () => {
