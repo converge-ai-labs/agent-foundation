@@ -513,6 +513,10 @@
   font-size: var(--a13n-text-body);
   padding-inline: 8px;
 }
+.breadcrumbs button .folderCaret {
+  width: 10px;
+  height: 10px;
+}
 .breadcrumbs button span {
   overflow: hidden;
   text-overflow: ellipsis;
