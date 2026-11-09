@@ -109,7 +109,7 @@ fn traversal_reserve_uses_the_typed_wire_envelope() {
 #[test]
 fn projected_pages_use_the_actual_private_helper_reserve() {
     let mut result = tree_result();
-    result["nodes"] = json!([{"reference":reference(),"sampled_at":now(),"name":"editor"}]);
+    result["nodes"] = json!([{"reference":reference(),"native_role":"AXTextArea","sampled_at":now(),"name":"editor"}]);
     let p = json!({"limits":{"max_result_bytes":4096},"_projection_bytes":8192});
     let projected = Budget::new(&p).unwrap();
     assert_eq!(projected.projection, 8192);
