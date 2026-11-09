@@ -24,7 +24,7 @@ from a13n_service.runs.environments.clients.tables import ClientSettingsRow
 from a13n_service.runs.environments.read_views import environment_view
 from a13n_service.runs.environments.tables import CLIENT_IDENTITY, EnvironmentRow
 from a13n_service.runs.runtime import Runtime
-from a13n_service.tenancy.access import principal_for, workspace_scope
+from a13n_service.tenancy.access import require_active_workspace, workspace_scope
 from a13n_service.tenancy.authorize import Principal, WorkspaceScope
 from a13n_service.tenancy.credentials import new_secret
 
@@ -71,7 +71,14 @@ async def register(runtime: Runtime, actor: Principal, workspace_id: str, body: 
         return await _register(session, actor, scope, body)
 
 
-async def connect(runtime: Runtime, actor: Principal, workspace_id: str, body: ConnectionRequest) -> Registered:
+async def connect(
+    runtime: Runtime,
+    actor: Principal,
+    workspace_id: str,
+    body: ConnectionRequest,
+    *,
+    pairing_token_hash: str | None = None,
+) -> Registered:
     """Resolve or create a registration using ordinary API authority, never rotate it."""
     async with transaction(runtime.storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "write")
@@ -98,16 +105,20 @@ async def connect(runtime: Runtime, actor: Principal, workspace_id: str, body: C
                 .with_for_update()
             )
             if environment is None:
-                return await _register(session, actor, scope, body)
+                return await _register(session, actor, scope, body, token_hash=pairing_token_hash)
         if environment.status != "ready":
             raise conflict("environment", environment.id, f"client_environment_{environment.status}")
         config = await settings(session, environment)
         if config.token_hash is None:
             raise conflict("environment", environment.id, "client_credential_revoked")
+        if pairing_token_hash is not None and not secrets.compare_digest(config.token_hash, pairing_token_hash):
+            raise conflict("environment", environment.id, "client_credential_required")
         return registered(environment, config)
 
 
-async def _register(session: AsyncSession, actor: Principal, scope: WorkspaceScope, body: Registration) -> Registered:
+async def _register(
+    session: AsyncSession, actor: Principal, scope: WorkspaceScope, body: Registration, *, token_hash: str | None = None
+) -> Registered:
     environment = await session.scalar(
         insert(EnvironmentRow)
         .values(
@@ -147,10 +158,13 @@ async def _register(session: AsyncSession, actor: Principal, scope: WorkspaceSco
         if existing is None:
             raise conflict("workspace", scope.workspace_id, "client_registration_changed")
         return registered(existing[0], existing[1])
-    token = new_secret()
+    token = None
+    if token_hash is None:
+        token = new_secret()
+        token_hash = secret_hash(token)
     config = ClientSettingsRow(
         environment_id=environment.id,
-        token_hash=secret_hash(token),
+        token_hash=token_hash,
         credential_version=1,
         default_working_directory=body.default_working_directory,
         permission_ceiling=body.permission_ceiling.model_dump(mode="json"),
@@ -260,9 +274,8 @@ async def authenticate(runtime: Runtime, environment_id: str, token: str) -> Att
         environment, config = registration
         if config.token_hash is None or not secrets.compare_digest(config.token_hash, secret_hash(token)):
             raise ServiceError("unauthenticated", "Invalid client environment credential")
-        assert environment.owner_principal_id is not None and environment.device_id is not None
-        owner = await principal_for(session, runtime.access, environment.owner_principal_id)
-        await workspace_scope(session, owner, environment.workspace_id, "write")
+        assert environment.device_id is not None
+        await require_active_workspace(session, environment.workspace_id)
         return Attachment(environment_id, environment.device_id, config.credential_version)
 
 
@@ -281,6 +294,4 @@ async def validate_attachment(runtime: Runtime, attachment: Attachment) -> None:
         if registration is None:
             raise ServiceError("unauthenticated", "Client environment connection is no longer authorized")
         environment, _ = registration
-        assert environment.owner_principal_id is not None
-        owner = await principal_for(session, runtime.access, environment.owner_principal_id)
-        await workspace_scope(session, owner, environment.workspace_id, "write")
+        await require_active_workspace(session, environment.workspace_id)

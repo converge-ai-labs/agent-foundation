@@ -136,7 +136,7 @@ Kubernetes 支持创建、复用和删除。回收设置在预留实例时复制
 
 agent 字段为 `default_environment_template_id`。根线程没有 `workspace` 挂载时，Service 在接收运行时预留实例，并以 `workspace` 挂载。`reserved` 实例有 ID，但还没有厂商资源，首次使用才准备环境。预留记录计入托管环境额度。
 
-要复用已有环境，可以改为设置 `agent.config.default_environment_id`，两个字段只能选择一个。线程已有的 `workspace` 挂载优先；修改 Agent 默认值不会替换它，也不会改变已接收的运行。客户端环境离线时也可以选择。执行身份仍须有权使用该环境，此设置不会将私有电脑共享给其他用户。子运行仍使用创建它的子 Agent 配置项中的环境策略。
+要复用已有环境，可以改为设置 `agent.config.default_environment_id`，两个字段只能选择一个。线程已有的 `workspace` 挂载优先；修改 Agent 默认值不会替换它，也不会改变已接收的运行。客户端环境离线时也可以选择。同一工作空间中拥有 `run` 权限的用户和服务账号都能使用客户端环境。外部 HTTP 目标仍只允许注册主体使用。子运行仍使用创建它的子 Agent 配置项中的环境策略。
 
 API 配置使用[直接 HTTP 集成](connect-application.md#direct-http-integration)中的 URL 和工作空间 API Key。将 `eprov_...` 替换为 Docker provider ID。创建或编辑模板需要 `write`：
 
@@ -236,6 +236,10 @@ Service 验证设备，加密保存 token，并返回 `ready` 实例。使用注
 
 ### 连接客户端电脑
 
+此工作空间中拥有 `run` 权限的用户和服务账号都能使用客户端电脑，包括已有登记和新登记。登记仍要求 `write`；轮换或撤销凭据、修改状态仍要求所有者或拥有 `write` 权限的工作空间管理员操作。文件、Shell 和桌面操作仍受登记、运行以及本机 Envd 配置的权限限制。
+
+在**环境 → 实例 → 连接我的电脑**中，可以使用当前 Console 登录状态完成配对。先[安装 macOS 启动器](../a13n-envd/installation.md)，从对话框打开它，再填入 App 显示的验证码并批准。对话框也提供终端连接命令，此流程不需要普通 API key。环境在线后，在 Agent 或对话设置中选择它。自动化配置仍可使用下方的 API token 流程。
+
 当 Envd 能主动连接 Control，但 Worker 无法直接访问这台电脑时，使用客户端环境。设备离线时也可以登记环境并挂载到线程。
 
 升级到客户端环境 schema 时，先等待活跃任务结束并停止全部旧 Control 和 Worker，再执行迁移。已有托管环境和 HTTP 环境会保留，但旧版本不能写入新 schema。一旦创建过客户端注册（包括已删除的注册），应向前修复，不能降级 schema。
@@ -244,7 +248,7 @@ Service 验证设备，加密保存 token，并返回 `ready` 实例。使用注
 
 如果要在电脑离线时登记，或在连接前限制操作权限，可按以下步骤：
 
-1. 使用将来执行 run 的工作空间账号调用 `POST /api/v1/client-environments?workspace_id=…`。传入安装时保存在本地的设备 ID、电脑上已有的目录，以及允许的操作。例如：
+1. 使用拥有工作空间 `write` 权限的账号调用 `POST /api/v1/client-environments?workspace_id=…`。传入安装时保存在本地的设备 ID、电脑上已有的目录，以及允许的操作。例如：
 
    ```json
    {

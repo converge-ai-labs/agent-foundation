@@ -3949,6 +3949,50 @@
         "title": "ChildEnvironmentPolicy",
         "type": "object"
       },
+      "ClaimResult": {
+        "properties": {
+          "connection_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connection Path"
+          },
+          "environment_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment Id"
+          },
+          "state": {
+            "enum": [
+              "pending",
+              "approved"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "verification_code": {
+            "title": "Verification Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "verification_code"
+        ],
+        "title": "ClaimResult",
+        "type": "object"
+      },
       "ClientAuthentication": {
         "enum": [
           "none",
@@ -6546,6 +6590,56 @@
           "updated_at"
         ],
         "title": "Device",
+        "type": "object"
+      },
+      "DeviceClaim": {
+        "additionalProperties": false,
+        "properties": {
+          "computer_use": {
+            "default": false,
+            "title": "Computer Use",
+            "type": "boolean"
+          },
+          "default_working_directory": {
+            "title": "Default Working Directory",
+            "type": "string"
+          },
+          "device_id": {
+            "minLength": 1,
+            "title": "Device Id",
+            "type": "string"
+          },
+          "environment_id": {
+            "anyOf": [
+              {
+                "maxLength": 72,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment Id"
+          },
+          "full_control": {
+            "default": false,
+            "title": "Full Control",
+            "type": "boolean"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "device_id",
+          "name",
+          "default_working_directory"
+        ],
+        "title": "DeviceClaim",
         "type": "object"
       },
       "DeviceCreate": {
@@ -16488,6 +16582,203 @@
         "title": "OutputVariant",
         "type": "object"
       },
+      "Pairing": {
+        "additionalProperties": false,
+        "properties": {
+          "device": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DeviceClaim"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "environment_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment Id"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "host_name": {
+            "title": "Host Name",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "owner_id": {
+            "title": "Owner Id",
+            "type": "string"
+          },
+          "reused": {
+            "default": false,
+            "title": "Reused",
+            "type": "boolean"
+          },
+          "service_url": {
+            "title": "Service Url",
+            "type": "string"
+          },
+          "state": {
+            "default": "waiting",
+            "enum": [
+              "waiting",
+              "claimed",
+              "approving",
+              "approved",
+              "cancelled"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "verification_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verification Code"
+          },
+          "workspace_id": {
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "workspace_id",
+          "owner_id",
+          "expires_at",
+          "service_url",
+          "host_name"
+        ],
+        "title": "Pairing",
+        "type": "object"
+      },
+      "PairingApproval": {
+        "additionalProperties": false,
+        "properties": {
+          "verification_code": {
+            "title": "Verification Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "verification_code"
+        ],
+        "title": "PairingApproval",
+        "type": "object"
+      },
+      "PairingCreated": {
+        "additionalProperties": false,
+        "properties": {
+          "device": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DeviceClaim"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "environment_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment Id"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "host_name": {
+            "title": "Host Name",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "launcher_url": {
+            "title": "Launcher Url",
+            "type": "string"
+          },
+          "owner_id": {
+            "title": "Owner Id",
+            "type": "string"
+          },
+          "reused": {
+            "default": false,
+            "title": "Reused",
+            "type": "boolean"
+          },
+          "service_url": {
+            "title": "Service Url",
+            "type": "string"
+          },
+          "state": {
+            "default": "waiting",
+            "enum": [
+              "waiting",
+              "claimed",
+              "approving",
+              "approved",
+              "cancelled"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "verification_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verification Code"
+          },
+          "workspace_id": {
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "workspace_id",
+          "owner_id",
+          "expires_at",
+          "service_url",
+          "host_name",
+          "launcher_url"
+        ],
+        "title": "PairingCreated",
+        "type": "object"
+      },
       "Panel": {
         "additionalProperties": false,
         "properties": {
@@ -18296,6 +18587,27 @@
           }
         },
         "title": "Reclamation",
+        "type": "object"
+      },
+      "Recognition": {
+        "additionalProperties": false,
+        "properties": {
+          "device_id": {
+            "minLength": 1,
+            "title": "Device Id",
+            "type": "string"
+          },
+          "environment_id": {
+            "minLength": 1,
+            "title": "Environment Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "environment_id",
+          "device_id"
+        ],
+        "title": "Recognition",
         "type": "object"
       },
       "Registered": {
@@ -31289,6 +31601,376 @@
           }
         ],
         "summary": "Connect Client Environment",
+        "tags": [
+          "client-environments"
+        ],
+        "x-a13n-mcp": false
+      }
+    },
+    "/api/v1/client-environments/pairings": {
+      "post": {
+        "operationId": "create_client_pairing",
+        "parameters": [
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PairingCreated"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Create Client Pairing",
+        "tags": [
+          "client-environments"
+        ],
+        "x-a13n-mcp": false
+      }
+    },
+    "/api/v1/client-environments/pairings/{pairing_id}": {
+      "get": {
+        "operationId": "get_client_pairing",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pairing_id",
+            "required": true,
+            "schema": {
+              "title": "Pairing Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Pairing"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Get Client Pairing",
+        "tags": [
+          "client-environments"
+        ],
+        "x-a13n-mcp": false
+      }
+    },
+    "/api/v1/client-environments/pairings/{pairing_id}/approve": {
+      "post": {
+        "operationId": "approve_client_pairing",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pairing_id",
+            "required": true,
+            "schema": {
+              "title": "Pairing Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PairingApproval"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Pairing"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Approve Client Pairing",
+        "tags": [
+          "client-environments"
+        ],
+        "x-a13n-mcp": false
+      }
+    },
+    "/api/v1/client-environments/pairings/{pairing_id}/cancel": {
+      "post": {
+        "operationId": "cancel_client_pairing",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pairing_id",
+            "required": true,
+            "schema": {
+              "title": "Pairing Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Pairing"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Cancel Client Pairing",
+        "tags": [
+          "client-environments"
+        ],
+        "x-a13n-mcp": false
+      }
+    },
+    "/api/v1/client-environments/pairings/{pairing_id}/claim": {
+      "post": {
+        "operationId": "claim_client_pairing",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pairing_id",
+            "required": true,
+            "schema": {
+              "title": "Pairing Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceClaim"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClaimResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Claim Client Pairing",
+        "tags": [
+          "client-environments"
+        ],
+        "x-a13n-mcp": false
+      }
+    },
+    "/api/v1/client-environments/pairings/{pairing_id}/recognize": {
+      "post": {
+        "operationId": "recognize_client_pairing",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pairing_id",
+            "required": true,
+            "schema": {
+              "title": "Pairing Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Recognition"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Pairing"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Recognize Client Pairing",
         "tags": [
           "client-environments"
         ],

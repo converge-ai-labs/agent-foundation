@@ -745,6 +745,108 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/client-environments/pairings": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Create Client Pairing */
+    post: operations["create_client_pairing"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/client-environments/pairings/{pairing_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Client Pairing */
+    get: operations["get_client_pairing"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/client-environments/pairings/{pairing_id}/approve": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Approve Client Pairing */
+    post: operations["approve_client_pairing"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/client-environments/pairings/{pairing_id}/cancel": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Cancel Client Pairing */
+    post: operations["cancel_client_pairing"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/client-environments/pairings/{pairing_id}/claim": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Claim Client Pairing */
+    post: operations["claim_client_pairing"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/client-environments/pairings/{pairing_id}/recognize": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Recognize Client Pairing */
+    post: operations["recognize_client_pairing"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/client-environments/{environment_id}": {
     parameters: {
       query?: never;
@@ -6197,6 +6299,20 @@ export interface components {
       /** Template Id */
       template_id?: string | null;
     };
+    /** ClaimResult */
+    ClaimResult: {
+      /** Connection Path */
+      connection_path?: string | null;
+      /** Environment Id */
+      environment_id?: string | null;
+      /**
+       * State
+       * @enum {string}
+       */
+      state: "pending" | "approved";
+      /** Verification Code */
+      verification_code: string;
+    };
     /** @enum {string} */
     ClientAuthentication: "none" | "client_secret_post" | "client_secret_basic";
     /** ClientConnectionObservation */
@@ -7153,6 +7269,27 @@ export interface components {
       version: number;
       /** Workspace Id */
       workspace_id: string;
+    };
+    /** DeviceClaim */
+    DeviceClaim: {
+      /**
+       * Computer Use
+       * @default false
+       */
+      computer_use?: boolean;
+      /** Default Working Directory */
+      default_working_directory: string;
+      /** Device Id */
+      device_id: string;
+      /** Environment Id */
+      environment_id?: string | null;
+      /**
+       * Full Control
+       * @default false
+       */
+      full_control?: boolean;
+      /** Name */
+      name: string;
     };
     /** DeviceCreate */
     DeviceCreate: {
@@ -10646,6 +10783,81 @@ export interface components {
         [key: string]: components["schemas"]["JsonValue"];
       };
     };
+    /** Pairing */
+    Pairing: {
+      device?: components["schemas"]["DeviceClaim"] | null;
+      /** Environment Id */
+      environment_id?: string | null;
+      /**
+       * Expires At
+       * Format: date-time
+       */
+      expires_at: string;
+      /** Host Name */
+      host_name: string;
+      /** Id */
+      id: string;
+      /** Owner Id */
+      owner_id: string;
+      /**
+       * Reused
+       * @default false
+       */
+      reused?: boolean;
+      /** Service Url */
+      service_url: string;
+      /**
+       * State
+       * @default waiting
+       * @enum {string}
+       */
+      state?: "waiting" | "claimed" | "approving" | "approved" | "cancelled";
+      /** Verification Code */
+      verification_code?: string | null;
+      /** Workspace Id */
+      workspace_id: string;
+    };
+    /** PairingApproval */
+    PairingApproval: {
+      /** Verification Code */
+      verification_code: string;
+    };
+    /** PairingCreated */
+    PairingCreated: {
+      device?: components["schemas"]["DeviceClaim"] | null;
+      /** Environment Id */
+      environment_id?: string | null;
+      /**
+       * Expires At
+       * Format: date-time
+       */
+      expires_at: string;
+      /** Host Name */
+      host_name: string;
+      /** Id */
+      id: string;
+      /** Launcher Url */
+      launcher_url: string;
+      /** Owner Id */
+      owner_id: string;
+      /**
+       * Reused
+       * @default false
+       */
+      reused?: boolean;
+      /** Service Url */
+      service_url: string;
+      /**
+       * State
+       * @default waiting
+       * @enum {string}
+       */
+      state?: "waiting" | "claimed" | "approving" | "approved" | "cancelled";
+      /** Verification Code */
+      verification_code?: string | null;
+      /** Workspace Id */
+      workspace_id: string;
+    };
     /** Panel */
     Panel: {
       /**
@@ -11263,6 +11475,13 @@ export interface components {
        * @default 600
        */
       preparation_seconds?: number;
+    };
+    /** Recognition */
+    Recognition: {
+      /** Device Id */
+      device_id: string;
+      /** Environment Id */
+      environment_id: string;
     };
     /** Registered */
     Registered: {
@@ -15875,6 +16094,172 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["Registered"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  create_client_pairing: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["PairingCreated"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_client_pairing: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        pairing_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Pairing"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  approve_client_pairing: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        pairing_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["PairingApproval"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Pairing"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  cancel_client_pairing: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        pairing_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Pairing"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  claim_client_pairing: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        pairing_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["DeviceClaim"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ClaimResult"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  recognize_client_pairing: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        pairing_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["Recognition"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Pairing"];
         };
       };
       400: components["responses"]["Error"];
