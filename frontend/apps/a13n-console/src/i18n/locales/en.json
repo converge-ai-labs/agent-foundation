@@ -4089,6 +4089,8 @@
   "Event journal": "Event journal",
   "Preserve important events by date.": "Preserve important events by date.",
   "Keep current session handoff state.": "Keep current session handoff state.",
+  "Session notes": "Session notes",
+  "The target has changed since this candidate started. Start a new organization task or explicitly replace the entire target.": "The target has changed since this candidate started. Start a new organization task or explicitly replace the entire target.",
   "Connect my computer": "Connect my computer",
   "Give an agent access to this computer through Envd.": "Give an agent access to this computer through Envd.",
   "Install Envd on your computer first. The macOS app shows the verification code and connection status; keep the app running while the agent uses your computer.": "Install Envd on your computer first. The macOS app shows the verification code and connection status; keep the app running while the agent uses your computer.",

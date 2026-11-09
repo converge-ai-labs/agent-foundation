@@ -167,6 +167,14 @@ function CandidateSnapshot({
                   : "Replace the entire target tree with this candidate, deleting target-only files. No automatic merge.",
               )}
             />
+            {mode === "checked" &&
+              candidate.target_seq !== candidate.baseline_seq && (
+                <p role="status" className="text-xs text-muted-foreground">
+                  {t(
+                    "The target has changed since this candidate started. Start a new organization task or explicitly replace the entire target.",
+                  )}
+                </p>
+              )}
             <div className="flex flex-wrap gap-2">
               <Confirm
                 key={`${candidate.candidate_seq}:${candidate.target_seq}:${mode}`}
@@ -182,7 +190,18 @@ function CandidateSnapshot({
                     : "All current target files will be replaced by the reviewed candidate. Target-only files will be deleted.",
                 )}
                 danger={mode === "replace_all"}
-                trigger={t("Apply candidate")}
+                triggerElement={
+                  <Button
+                    size="sm"
+                    variant={mode === "replace_all" ? "destructive" : "outline"}
+                    disabled={
+                      mode === "checked" &&
+                      candidate.target_seq !== candidate.baseline_seq
+                    }
+                  >
+                    {t("Apply candidate")}
+                  </Button>
+                }
                 action={() =>
                   client
                     .workspace(workspace.id)

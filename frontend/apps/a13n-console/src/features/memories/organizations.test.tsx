@@ -54,9 +54,13 @@ const policy: Schema["OrganizationPolicy"] = {
   cooldown_seconds: 300,
   trigger: { type: "any_change" },
 };
-function show(view: "candidate" | "tasks" | "automation", conflict = false) {
+function show(
+  view: "candidate" | "tasks" | "automation",
+  conflict = false,
+  snapshot = candidate,
+) {
   const writes: { path: string; body: unknown; etag: string | null }[] = [];
-  let current = { ...candidate },
+  let current = { ...snapshot },
     automation = {
       id: "mem_target",
       version: 1,
@@ -200,7 +204,18 @@ it("publishes only reviewed sequences, preserves a conflict and explicitly reloa
   cache.clear();
 });
 it("confirms replace-all with target-only deletion consequences", async () => {
-  const { cache, writes, user } = show("candidate");
+  const { cache, writes, user } = show("candidate", false, {
+    ...candidate,
+    target_seq: 4,
+  });
+  await screen.findByText(
+    "The target has changed since this candidate started. Start a new organization task or explicitly replace the entire target.",
+  );
+  const checked = screen.getByRole("button", { name: "Apply candidate" });
+  expect(checked.hasAttribute("disabled")).toBe(true);
+  await user.click(checked);
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(writes).toHaveLength(0);
   await user.click(
     await screen.findByRole("combobox", { name: "Publication mode" }),
   );
@@ -224,7 +239,7 @@ it("confirms replace-all with target-only deletion consequences", async () => {
     expect(writes[0]?.body).toEqual({
       mode: "replace_all",
       candidate_seq: 2,
-      target_seq: 1,
+      target_seq: 4,
     }),
   );
   cache.clear();

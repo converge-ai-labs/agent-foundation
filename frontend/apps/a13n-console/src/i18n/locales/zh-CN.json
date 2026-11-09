@@ -4089,6 +4089,8 @@
   "Event journal": "事件日志",
   "Preserve important events by date.": "按日期保留重要事件。",
   "Keep current session handoff state.": "保留当前会话交接状态。",
+  "Session notes": "会话笔记",
+  "The target has changed since this candidate started. Start a new organization task or explicitly replace the entire target.": "目标内容在此候选任务开始后已发生变化。请发起新的整理任务，或明确选择替换整个目标。",
   "Connect my computer": "连接我的电脑",
   "Give an agent access to this computer through Envd.": "通过 Envd 让 Agent 使用这台电脑。",
   "Install Envd on your computer first. The macOS app shows the verification code and connection status; keep the app running while the agent uses your computer.": "请先在电脑上安装 Envd。macOS App 会显示验证码和连接状态；Agent 使用电脑期间，请保持 App 运行。",
