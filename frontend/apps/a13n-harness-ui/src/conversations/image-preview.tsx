@@ -8,10 +8,12 @@ export function RetainedImagePreview({
   threadId,
   attachment,
   close,
+  actions,
 }: {
   threadId: string;
   attachment: Schema<"ThreadAttachment">;
   close: () => void;
+  actions?: import("react").ReactNode;
 }) {
   const transport = useTransport();
   const [src, setSrc] = useState<string>();
@@ -44,6 +46,7 @@ export function RetainedImagePreview({
     <ImagePreview
       src={src}
       name={attachment.name}
+      actions={actions}
       close={close}
       loading={!src && !error}
       error={error}

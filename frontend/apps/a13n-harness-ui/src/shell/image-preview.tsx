@@ -1,10 +1,11 @@
 import { useTranslation } from "../i18n";
 import { useState } from "react";
-import { Button, Dialog, DialogPopup, DialogTitle } from "a13n-ui";
+import { Button, Dialog, DialogClose, DialogPopup, DialogTitle } from "a13n-ui";
 import {
   ArrowsOut,
   MagnifyingGlassPlus,
   DownloadSimple,
+  X,
 } from "@phosphor-icons/react";
 import { ErrorNotice } from "./ui";
 import styles from "./image-preview.module.css";
@@ -13,6 +14,7 @@ export function ImagePreview({
   src,
   name,
   close,
+  actions,
   loading = false,
   error,
   retry,
@@ -20,6 +22,7 @@ export function ImagePreview({
   src?: string;
   name: string;
   close: () => void;
+  actions?: import("react").ReactNode;
   loading?: boolean;
   error?: unknown;
   retry?: () => void;
@@ -35,28 +38,35 @@ export function ImagePreview({
         if (!open) close();
       }}
     >
-      <DialogPopup
-        className={styles.viewer}
-        closeProps={{ "aria-label": t("Close image preview") }}
-      >
+      <DialogPopup className={styles.viewer} showCloseButton={false}>
         <header className={styles.header}>
           <DialogTitle className={styles.title}>{name}</DialogTitle>
           <div className={styles.actions}>
+            {actions}
             <Button
               variant="ghost"
               size="sm"
+              aria-label={actualSize ? t("Fit to screen") : t("Actual size")}
               disabled={!src || imageError}
               onClick={() => setActualSize(!actualSize)}
             >
               {actualSize ? <ArrowsOut /> : <MagnifyingGlassPlus />}
-              {actualSize ? t("Fit to screen") : t("Actual size")}
+              <span className={styles.actionLabel}>
+                {actualSize ? t("Fit to screen") : t("Actual size")}
+              </span>
             </Button>
             {src && (
               <a href={src} download={name} aria-label={t("Download image")}>
                 <DownloadSimple />
-                {t("Download")}
+                <span className={styles.actionLabel}>{t("Download")}</span>
               </a>
             )}
+            <DialogClose
+              aria-label={t("Close image preview")}
+              render={<Button size="icon-sm" variant="ghost" />}
+            >
+              <X />
+            </DialogClose>
           </div>
         </header>
         <div className={styles.canvas} data-actual-size={actualSize}>

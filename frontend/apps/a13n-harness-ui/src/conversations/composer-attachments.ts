@@ -20,6 +20,7 @@ import styles from "./conversation.module.css";
 import type { TFunction } from "i18next";
 
 export type ComposerAttachmentView = {
+  imageKeys?: ReadonlySet<string>;
   transport: Transport;
   threadId: string;
   metadata: Map<string, Schema<"ThreadAttachment">>;
@@ -136,6 +137,13 @@ class AttachmentWidget extends WidgetType {
     widgets.set(chip, this);
     return chip;
   }
+  coordsAt(dom: HTMLElement, pos: number) {
+    const bounds = dom.getBoundingClientRect();
+    const after = pos > 0;
+    const rtl = getComputedStyle(dom).direction === "rtl";
+    const x = after !== rtl ? bounds.right + 1 : bounds.left - 1;
+    return { left: x, right: x, top: bounds.top, bottom: bounds.bottom };
+  }
   destroy(dom: HTMLElement) {
     imageDisposers.get(dom)?.();
     imageDisposers.delete(dom);
@@ -167,25 +175,42 @@ export function composerAttachments(
     text.replace(inlinePattern, (_match, key: string) => `[${label(key)}]`);
   const decorations = (view: EditorView) => {
     const t = translate();
-    return Decoration.set(
-      [...view.state.doc.toString().matchAll(inlinePattern)].map((match) =>
-        Decoration.replace({
-          widget: new AttachmentWidget(
-            match[1],
-            draft.doc.getMap<string>("attachments").get(match[1]),
-            label(match[1]),
-            draft,
-            context(),
-            t("Remove {{name}}", { name: label(match[1]) }),
-            draft.uploads.get(match[1])?.status === "staged"
-              ? t("{{name}} - Uploads when you send", {
-                  name: draft.uploads.get(match[1])!.file.name,
-                })
-              : label(match[1]),
-          ),
-        }).range(match.index, match.index + match[0].length),
-      ),
+    const text = view.state.doc.toString();
+    const tokens = [...text.matchAll(inlinePattern)];
+    const ranges = tokens.map((match) =>
+      (context().imageKeys?.has(match[1])
+        ? Decoration.replace({})
+        : Decoration.replace({
+            widget: new AttachmentWidget(
+              match[1],
+              draft.doc.getMap<string>("attachments").get(match[1]),
+              label(match[1]),
+              draft,
+              context(),
+              t("Remove {{name}}", { name: label(match[1]) }),
+              draft.uploads.get(match[1])?.status === "staged"
+                ? t("{{name}} - Uploads when you send", {
+                    name: draft.uploads.get(match[1])!.file.name,
+                  })
+                : label(match[1]),
+            ),
+          })
+      ).range(match.index, match.index + match[0].length),
     );
+    if (
+      tokens.length &&
+      tokens.every((match) => context().imageKeys?.has(match[1])) &&
+      !text.replace(inlinePattern, "")
+    ) {
+      ranges.unshift(
+        Decoration.line({
+          attributes: {
+            "data-image-placeholder": t("Ask anything, or describe a task…"),
+          },
+        }).range(0),
+      );
+    }
+    return Decoration.set(ranges, true);
   };
   const plugin = ViewPlugin.fromClass(
     class {
