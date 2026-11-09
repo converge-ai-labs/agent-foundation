@@ -126,7 +126,6 @@ async def _select_memories(
                 space_id=organization.space_id,
                 access="write",
                 roots=("global/", "sessions/") if organization.space_id else (),
-                organization=True,
             ).model_dump(mode="json")
         ]
     if thread.last_run_id is None and defaults:
