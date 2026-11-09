@@ -479,7 +479,7 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                     <div
                       className={styles.environments}
                       role="group"
-                      aria-label={t("Local mode · Harness server")}
+                      aria-label={t("Local mode - Harness server")}
                     >
                       {(
                         [
@@ -645,7 +645,7 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                     <div className={styles.summary}>
                       <strong>{selection.model?.route}</strong>
                       <span>
-                        {sandbox ? t("Sandbox") : t("Full Control")} ·{" "}
+                        {sandbox ? t("Sandbox") : t("Full Control")} -{" "}
                         {selection.project_path || t("Without a project")}
                       </span>
                     </div>

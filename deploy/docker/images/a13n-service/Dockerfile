@@ -10,6 +10,7 @@ RUN --mount=type=cache,id=a13n-console-npm,target=/root/.npm \
 # Only these workspace packages are needed by Console. Keep source changes out
 # of the dependency layer and retain downloaded packages when manifests change.
 COPY frontend/pnpm-lock.yaml frontend/pnpm-workspace.yaml ./
+COPY frontend/patches/ ./patches/
 COPY frontend/apps/a13n-console/package.json ./apps/a13n-console/package.json
 COPY frontend/packages/a13n-ui/package.json ./packages/a13n-ui/package.json
 RUN --mount=type=cache,id=a13n-console-pnpm,target=/pnpm/store \

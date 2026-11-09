@@ -44,7 +44,7 @@ export function SelectionField({
         controlId={id}
         description={
           mode === "custom"
-            ? t("{{count}} selected · replaces the inherited list", {
+            ? t("{{count}} selected - replaces the inherited list", {
                 count: selected.length,
               })
             : mode === "default"

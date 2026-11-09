@@ -24,7 +24,12 @@
 }
 .shortcuts > button {
   flex-shrink: 0;
-  padding-inline: 8px;
+}
+.shortcuts .shortcut {
+  width: auto;
+  min-width: 28px;
+  gap: 3px;
+  padding-inline: 5px;
 }
 .shortcuts button:is(:hover, [data-popup-open]) {
   color: var(--a13n-text);
@@ -37,23 +42,6 @@
   align-items: center;
   gap: 4px;
   font-variant-numeric: tabular-nums;
-}
-@container activity-strip (max-width: 600px) {
-  .shortcuts .secondaryShortcut {
-    display: none;
-  }
-  .shortcuts .more {
-    display: inline-flex;
-  }
-}
-@container activity-strip (max-width: 360px) {
-  .shortcuts > button {
-    gap: 4px;
-    padding-inline: 4px;
-  }
-  .shortcuts > button > svg {
-    display: none;
-  }
 }
 @media (pointer: coarse) {
   .shortcuts > button {
@@ -380,7 +368,7 @@
     min-width: 44px;
   }
 }
-@container activity-strip (max-width: 680px) {
+@container activity-strip (max-width: 460px) {
   .shortcuts > button:not(.more) {
     display: none;
   }

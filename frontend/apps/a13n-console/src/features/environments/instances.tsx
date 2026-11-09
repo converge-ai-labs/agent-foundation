@@ -55,6 +55,7 @@ import {
 import { EnvironmentPanel } from "./instance-details";
 import { EnvironmentStatus } from "./instance-status";
 import { MetricsSourcePicker } from "../monitoring/environment";
+import { ConnectComputer } from "./connect-computer";
 
 const STATUSES = [
   "reserved",
@@ -158,6 +159,7 @@ export function EnvironmentInstances() {
       }
     >
       <PageActions secondary>
+        {can("write") && <ConnectComputer />}
         <ManageProvidersLink category="environments" />
       </PageActions>
       <PageActions>

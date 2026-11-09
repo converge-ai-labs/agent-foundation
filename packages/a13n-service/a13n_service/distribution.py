@@ -94,6 +94,7 @@ from a13n_service.runs.children import child_results
 from a13n_service.runs.compactions import sweep as compaction_sweep
 from a13n_service.runs.devices.routes import router as devices_router
 from a13n_service.runs.devices.tables import DeviceRow
+from a13n_service.runs.environments.clients.pairing_routes import router as client_pairing_router
 from a13n_service.runs.environments.clients.routes import router as client_environments_router
 from a13n_service.runs.environments.clients.tables import ClientSettingsRow
 from a13n_service.runs.environments.daytona_snapshots import DaytonaDesktopSnapshotRow
@@ -472,6 +473,7 @@ OSS = Distribution(
         findings_router,
         environment_templates_router,
         environments_router,
+        client_pairing_router,
         client_environments_router,
         browsers_router,
         desktop_control_router,

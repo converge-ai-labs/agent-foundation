@@ -126,7 +126,7 @@ export function ParticipantAvatars({
                     className={styles.statusDot}
                     data-away={!participant.foreground || undefined}
                   />
-                  {t(participant.foreground ? "Active" : "Away")} ·{" "}
+                  {t(participant.foreground ? "Active" : "Away")} -{" "}
                   {t(
                     participant.focus?.target.kind === "conversation"
                       ? "Chat"

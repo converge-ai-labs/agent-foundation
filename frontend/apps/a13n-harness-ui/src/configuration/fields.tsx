@@ -151,7 +151,7 @@ export function ResourceFields({
         inherited={
           kind === "agent"
             ? root.configuration
-              ? t("{{items}} · Instance defaults for new chats", {
+              ? t("{{items}} - Instance defaults for new chats", {
                   items:
                     (root.configuration.defaults?.[path[0]] ?? [])
                       .map(

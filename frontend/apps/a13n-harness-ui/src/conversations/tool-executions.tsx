@@ -109,20 +109,16 @@ function Execution({
   );
 }
 
-export function ToolExecutions({
-  threadId,
-  rootThreadId = threadId,
-}: {
-  threadId: string;
-  rootThreadId?: string;
-}) {
-  const { t } = useTranslation();
+export function useToolExecutionsPage(
+  threadId: string,
+  rootThreadId: string,
+  offset: number,
+  enabled = true,
+) {
   const { client } = useTransport();
-  const queries = useQueryClient();
-  const [offset, setOffset] = useState(0);
-  const key = ["thread", rootThreadId, "tool-executions", threadId];
-  const page = useQuery({
-    queryKey: [...key, offset],
+  return useQuery({
+    enabled,
+    queryKey: ["thread", rootThreadId, "tool-executions", threadId, offset],
     queryFn: ({ signal }) =>
       result(
         client.GET("/api/threads/{thread_id}/tool-executions", {
@@ -134,6 +130,20 @@ export function ToolExecutions({
         }),
       ),
   });
+}
+
+export function ToolExecutions({
+  threadId,
+  rootThreadId = threadId,
+}: {
+  threadId: string;
+  rootThreadId?: string;
+}) {
+  const { t } = useTranslation();
+  const queries = useQueryClient();
+  const [offset, setOffset] = useState(0);
+  const key = ["thread", rootThreadId, "tool-executions", threadId];
+  const page = useToolExecutionsPage(threadId, rootThreadId, offset);
   const refresh = () => {
     void queries.invalidateQueries({ queryKey: key });
   };

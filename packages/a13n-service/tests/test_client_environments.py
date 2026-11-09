@@ -360,7 +360,7 @@ async def test_agent_default_uses_offline_client_and_preserves_explicit_thread_m
     assert allowed["run"]["environment_mounts"][0]["environment_id"] == other
 
 
-async def test_agent_default_cannot_use_another_principals_device(service, scripted_model, runs_kit):
+async def test_agent_default_can_use_another_principals_client_device(service, scripted_model, runs_kit):
     from a13n_service.resources.agents.schemas import AgentConfigurationChanges
     from a13n_service.resources.agents.service import change_configuration
 
@@ -374,15 +374,16 @@ async def test_agent_default_cannot_use_another_principals_device(service, scrip
         Registration(device_id="private-default", name="Private", default_working_directory="/work"),
     )
     agent = await runs_kit.create_agent(service, scripted_model)
-    with pytest.raises(ServiceError) as error:
-        await change_configuration(
-            service.runtime.storage,
-            actor(service),
-            service.tenant.workspace_id,
-            agent["id"],
-            AgentConfigurationChanges(default_environment_id=registered.client.environment.id),
-            expected_version=etag(agent),
-            registry=service.runtime.registry,
-            plugins=service.runtime.plugins,
-        )
-    assert error.value.code == "forbidden"
+    await runs_kit.pause_sweeps(service)
+    await change_configuration(
+        service.runtime.storage,
+        actor(service),
+        service.tenant.workspace_id,
+        agent["id"],
+        AgentConfigurationChanges(default_environment_id=registered.client.environment.id),
+        expected_version=etag(agent),
+        registry=service.runtime.registry,
+        plugins=service.runtime.plugins,
+    )
+    started = await runs_kit.start_thread(service, agent, "Use the shared client default")
+    assert started["run"]["environment_mounts"][0]["environment_id"] == registered.client.environment.id

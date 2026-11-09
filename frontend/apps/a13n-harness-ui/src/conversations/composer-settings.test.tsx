@@ -309,7 +309,7 @@ it.each([false, true])(
     });
     expect(
       screen.getByRole("button", { name: "推理模式" }).textContent,
-    ).toContain("Pro · 模型默认");
+    ).toContain("Pro - 模型默认");
     await user.click(screen.getByRole("button", { name: "速度" }));
     await user.click(screen.getByRole("button", { name: "使用模型速度设置" }));
     expect(draft.controls).toEqual({
@@ -434,7 +434,7 @@ it.each([
     await user.click(screen.getByRole("button", { name: "Speed" }));
     expect(
       screen.getByRole("button", { name: "Use model speed" }).textContent,
-    ).toBe(`Model setting · ${label}`);
+    ).toBe(`Model setting - ${label}`);
     await user.click(screen.getByRole("button", { name: "Standard mode" }));
     expect(change).toHaveBeenLastCalledWith({ fast: false });
   },

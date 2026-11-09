@@ -103,7 +103,7 @@ export function ModelControlPanel({
             controls.reasoning_mode == null
               ? reasoning?.state === "default"
                 ? modelControlMessage(reasoningModeLabel(reasoning.state), t)
-                : t("{{mode}} · Model default", {
+                : t("{{mode}} - Model default", {
                     mode: modelControlMessage(
                       reasoningModeLabel(reasoning?.state),
                       t,

@@ -182,7 +182,7 @@ it("shares zoom and cursor across charts, pins history through refresh and retur
     screen.getByRole<HTMLSelectElement>("combobox", { name: "Time range" })
       .value,
   ).toBe("15");
-  expect(screen.getByText("Live · auto-refreshing")).toBeTruthy();
+  expect(screen.getByText("Live - auto-refreshing")).toBeTruthy();
   fireEvent.change(screen.getByRole("combobox", { name: "Time range" }), {
     target: { value: "60" },
   });

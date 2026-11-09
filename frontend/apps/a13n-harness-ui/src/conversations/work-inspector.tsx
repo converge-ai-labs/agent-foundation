@@ -21,7 +21,7 @@ import {
   Terminal,
   Wrench,
   X,
-  CaretDown,
+  DotsThree,
 } from "@phosphor-icons/react";
 import { type Schema } from "../transport/client";
 import { useGuestAccess } from "../transport/context";
@@ -32,7 +32,7 @@ import { TaskIcon, TaskList, NoteList } from "./work-lists";
 import { Children } from "./details";
 import type { FocusDisplay } from "./stream";
 import { Processes } from "./processes";
-import { ToolExecutions } from "./tool-executions";
+import { ToolExecutions, useToolExecutionsPage } from "./tool-executions";
 import { GoalStatus } from "./goal-status";
 import styles from "./work-inspector.module.css";
 
@@ -108,11 +108,14 @@ export function WorkInspector({
     !connected ||
     display.gap ||
     [...display.children.values()].some((child) => child.display.gap);
+  const toolsPage = useToolExecutionsPage(threadId, threadId, 0, !guest);
+  const toolCount = toolsPage.data?.length;
   const counts: Partial<Record<ActivityView, number | string>> = {
     tasks: total ? `${complete}/${total}` : undefined,
     notes: summary?.notes.total,
     children: childActive,
     processes: running,
+    tools: toolCount === 20 ? "20+" : toolCount,
   };
   const tabs = (
     ["tasks", "notes", "children", "processes", "tools"] as const
@@ -159,29 +162,17 @@ export function WorkInspector({
             return (
               <DialogTrigger
                 key={item}
-                render={<Button variant="ghost" size="sm" />}
-                className={
-                  item === "tasks" || item === "children"
-                    ? undefined
-                    : styles.secondaryShortcut
-                }
+                render={<Button variant="ghost" size="icon-sm" />}
+                className={styles.shortcut}
                 aria-label={t("Inspect {{activity}}", {
                   activity: label.toLowerCase(),
                 })}
-                title={
-                  item === "children"
-                    ? t("Subagents · active executions")
-                    : item === "processes"
-                      ? t("Processes · observed running processes")
-                      : undefined
-                }
                 onClick={(event) => {
                   returnFocus.current = event.currentTarget;
                   setTab(item);
                 }}
               >
                 <Icon />
-                {label}
                 {!!counts[item] && (
                   <span className={styles.count}>{counts[item]}</span>
                 )}
@@ -195,7 +186,7 @@ export function WorkInspector({
               className={styles.more}
               aria-label={t("More activity")}
             >
-              {t("Activity")}
+              <DotsThree />
               {!guest && running > 0 && (
                 <span
                   className={styles.backgroundActivity}
@@ -210,7 +201,6 @@ export function WorkInspector({
                   <span>{running}</span>
                 </span>
               )}
-              <CaretDown />
             </MenuTrigger>
             <MenuPopup
               align="end"
@@ -344,7 +334,7 @@ export function WorkInspector({
                     ((summary.children.active ?? 0) > 0 ||
                       (summary.children.unavailable ?? 0) > 0) && (
                       <p className={styles.caption}>
-                        {t("{{active}} active · {{unavailable}} unavailable", {
+                        {t("{{active}} active - {{unavailable}} unavailable", {
                           active: summary.children.active ?? 0,
                           unavailable: summary.children.unavailable ?? 0,
                         })}

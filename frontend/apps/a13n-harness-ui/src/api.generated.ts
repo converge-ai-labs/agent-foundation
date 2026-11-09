@@ -922,6 +922,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/host/files/reveal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reveal Host File */
+        post: operations["reveal_host_file_api_host_files_reveal_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/host/files/metadata": {
         parameters: {
             query?: never;
@@ -5295,6 +5312,8 @@ export interface components {
              * @constant
              */
             page_presence?: true;
+            /** File Manager */
+            file_manager?: ("finder" | "explorer") | null;
             /**
              * Host Files
              * @default false
@@ -11369,6 +11388,35 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["TerminalView"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reveal_host_file_api_host_files_reveal_post: {
+        parameters: {
+            query: {
+                path: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

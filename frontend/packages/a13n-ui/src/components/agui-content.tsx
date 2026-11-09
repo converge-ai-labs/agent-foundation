@@ -41,7 +41,7 @@ export function AguiContent({
           return (
             <p key={index} className="text-sm text-muted-foreground">
               {part.type} preview unavailable
-              {source.type === "file" ? ` · ${source.value}` : ""}
+              {source.type === "file" ? ` - ${source.value}` : ""}
             </p>
           );
         if (part.type === "image")
@@ -84,7 +84,7 @@ export function AguiContent({
             rel="noreferrer"
             className="break-all text-sm underline underline-offset-4"
           >
-            Open document{source.mimeType ? ` · ${source.mimeType}` : ""}
+            Open document{source.mimeType ? ` - ${source.mimeType}` : ""}
           </a>
         );
       })}

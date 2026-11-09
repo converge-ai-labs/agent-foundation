@@ -360,7 +360,7 @@ it("distinguishes an unavailable listener from rejected credentials and retries 
   await userEvent.click(
     await screen.findByRole("button", { name: "Workspace menu" }),
   );
-  await screen.findByText("Harness UI · 1.2.3rc2");
+  await screen.findByText("Harness UI - 1.2.3rc2");
   expect(localStorage.getItem("a13n-harness-ui.api-key")).toBe("retained-key");
 });
 
@@ -377,7 +377,7 @@ it("consumes the fragment before all network requests and retains only an accept
   await userEvent.click(
     await screen.findByRole("button", { name: "Workspace menu" }),
   );
-  await screen.findByText("Harness UI · 1.2.3rc2");
+  await screen.findByText("Harness UI - 1.2.3rc2");
   expect(localStorage.getItem("a13n-harness-ui.api-key")).toBe("generated+key");
   expect(document.body.textContent).not.toContain("generated+key");
 });
@@ -427,7 +427,7 @@ it("accepts a replacement key after authentication failure without replaying mut
   await userEvent.click(
     await screen.findByRole("button", { name: "Workspace menu" }),
   );
-  await screen.findByText("Harness UI · 1.2.3rc2");
+  await screen.findByText("Harness UI - 1.2.3rc2");
   expect(localStorage.getItem("a13n-harness-ui.api-key")).toBe("new-key");
 });
 
@@ -447,7 +447,7 @@ it("supports explicit server bypass without inventing a frontend version", async
   await userEvent.click(
     await screen.findByRole("button", { name: "Workspace menu" }),
   );
-  await screen.findByText("Harness UI · 0.0.0");
+  await screen.findByText("Harness UI - 0.0.0");
   expect(screen.getByText(/Server login is disabled/)).toBeTruthy();
 });
 
@@ -530,7 +530,7 @@ it("forgets the retained credential and closes protected views", async () => {
   await userEvent.click(
     await screen.findByRole("button", { name: "Workspace menu" }),
   );
-  await screen.findByText("Harness UI · 1.2.3rc2");
+  await screen.findByText("Harness UI - 1.2.3rc2");
   fireEvent.click(screen.getByRole("menuitem", { name: "Log out" }));
   await screen.findByRole("heading", { name: "Log in to Harness UI" });
   expect(screen.queryByRole("alert")).toBeNull();
@@ -571,7 +571,7 @@ it("keeps logout cleanup authenticated and warns when background delivery cannot
   await userEvent.click(
     await screen.findByRole("button", { name: "Workspace menu" }),
   );
-  await screen.findByText("Harness UI · 1.2.3rc2");
+  await screen.findByText("Harness UI - 1.2.3rc2");
   fireEvent.click(screen.getByRole("menuitem", { name: "Log out" }));
   await screen.findByRole("heading", { name: "Log in to Harness UI" });
   expect(await screen.findByRole("alert")).toHaveProperty(

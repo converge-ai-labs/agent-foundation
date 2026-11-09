@@ -255,7 +255,7 @@ export function MemoryFiles({ projectId }: { projectId?: string }) {
               ]}
             />
           </div>
-          <span>{t("Current files \u00b7 read only")}</span>
+          <span>{t("Current files - read only")}</span>
         </div>
       )}
       {file.isFetching && !file.data && path && (

@@ -77,8 +77,8 @@ async def check_client_revocation(service, worker, origin, created, identity):
     from websockets.exceptions import InvalidStatus
 
     path = f"{service.api}/client-environments/{identity}"
-    socket_url = origin.replace("http://", "ws://") + created.json()["connection_path"]
-    auth = {"authorization": f"Bearer {created.json()['token']}"}
+    socket_url = origin.replace("http://", "ws://") + created.connection_path
+    auth = {"authorization": f"Bearer {created.token}"}
     owner = service.runtime.client_connections.entries[identity]
     assert owner.carrier is not None
     with pytest.raises(InvalidStatus):

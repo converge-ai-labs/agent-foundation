@@ -39,7 +39,7 @@ export function FastPicker({
         onClick={() => onChange(null)}
       >
         <span>
-          {t("Model setting · {{speed}}", {
+          {t("Model setting - {{speed}}", {
             speed: modelControlMessage(speedLabel(control?.state), t),
           })}
         </span>

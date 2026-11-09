@@ -24,6 +24,7 @@ use url::Url;
 
 use crate::config::{Config, ConnectionBootstrap, ReverseWebSocketConfig, TransportConfig};
 
+pub(crate) mod launcher;
 pub(crate) mod service;
 
 const PAIRING_TIMEOUT: Duration = Duration::from_secs(10 * 60);
@@ -348,6 +349,16 @@ async fn post(
     body: &[u8],
     tls: Option<std::sync::Arc<rustls::ClientConfig>>,
 ) -> io::Result<Vec<u8>> {
+    post_with_header(url, credential, body, tls, "authorization").await
+}
+
+async fn post_with_header(
+    url: &Url,
+    credential: &str,
+    body: &[u8],
+    tls: Option<std::sync::Arc<rustls::ClientConfig>>,
+    credential_header: &'static str,
+) -> io::Result<Vec<u8>> {
     let host = match url
         .host()
         .ok_or_else(|| invalid("Host URL has no hostname"))?
@@ -364,9 +375,9 @@ async fn post(
         let stream = tokio_rustls::TlsConnector::from(tls)
             .connect(name, stream)
             .await?;
-        exchange(stream, url, credential, body).await
+        exchange(stream, url, credential, body, credential_header).await
     } else {
-        exchange(stream, url, credential, body).await
+        exchange(stream, url, credential, body, credential_header).await
     }
 }
 
@@ -375,6 +386,7 @@ async fn exchange<S: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
     url: &Url,
     credential: &str,
     body: &[u8],
+    credential_header: &'static str,
 ) -> io::Result<Vec<u8>> {
     let (mut sender, connection) = hyper::client::conn::http1::handshake(TokioIo::new(stream))
         .await
@@ -389,7 +401,7 @@ async fn exchange<S: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
             header::HOST,
             &url[url::Position::BeforeHost..url::Position::AfterPort],
         )
-        .header(header::AUTHORIZATION, authorization)
+        .header(credential_header, authorization)
         .header(header::CONTENT_TYPE, "application/json")
         .body(Full::new(Bytes::copy_from_slice(body)))
         .map_err(io::Error::other)?;

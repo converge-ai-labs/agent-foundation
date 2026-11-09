@@ -37,7 +37,7 @@ it.each([
     ).toBe("true");
     expect(
       screen.getByRole("button", { name: "Use model speed" }).textContent,
-    ).toBe(`Model setting · ${label}`);
+    ).toBe(`Model setting - ${label}`);
     expect(change).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Fast mode" }));
     expect(change).toHaveBeenLastCalledWith(true);
@@ -49,7 +49,7 @@ it("follows changed model settings without overriding explicit Off", () => {
   const view = render(<FastPicker model={model} onChange={change} />);
   expect(
     screen.getByRole("button", { name: "Use model speed" }).textContent,
-  ).toBe("Model setting · Fast");
+  ).toBe("Model setting - Fast");
   view.rerender(
     <FastPicker
       model={{ ...model, fast: { supported: true, state: "off" } }}
@@ -58,7 +58,7 @@ it("follows changed model settings without overriding explicit Off", () => {
   );
   expect(
     screen.getByRole("button", { name: "Use model speed" }).textContent,
-  ).toBe("Model setting · Standard");
+  ).toBe("Model setting - Standard");
   view.rerender(<FastPicker model={model} value={false} onChange={change} />);
   expect(
     screen

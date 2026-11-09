@@ -3,8 +3,11 @@ import { cossLicense } from "a13n-ui/vite";
 import { defineConfig } from "vite";
 import { novncLicense } from "./novnc-license";
 
+import { pdfResources } from "./pdf-resources";
+
 export default defineConfig({
-  plugins: [tailwindcss(), cossLicense(), novncLicense()],
+  worker: { format: "es" },
+  plugins: [tailwindcss(), cossLicense(), novncLicense(), pdfResources()],
   server: {
     host: "127.0.0.1",
     port: 5174,

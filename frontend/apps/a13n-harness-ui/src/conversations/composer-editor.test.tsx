@@ -443,7 +443,7 @@ it("previews staged images locally and releases the thumbnail when removed", asy
       draft.notify();
     });
     const chip = await screen.findByRole("button", {
-      name: "draft.png · ready to upload",
+      name: "draft.png - ready to upload",
     });
     expect(chip.textContent).toBe("draft.png");
     expect(chip.querySelector("img")?.src).toBe("blob:staged-image");
