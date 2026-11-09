@@ -92,6 +92,8 @@ export function ComposerStatus({
       ? { ...context.data, latest_request_tokens: tokens }
       : undefined,
   );
+  const percent = summary.contextPercent;
+  const contextLabel = percent == null ? "—" : `${Math.round(percent)}%`;
   const stale = !!(
     usage.error ||
     inspection.error ||
@@ -114,7 +116,7 @@ export function ComposerStatus({
           [
             // The first element identifies the metric; the last is its label.
             ["Tokens", summary.tokens, t("Chat usage"), t("Tokens")],
-            ["Context", summary.context, t("Context usage"), t("Context")],
+            ["Context", contextLabel, t("Context usage"), t("Context")],
             ["Cost", summary.cost, t("Chat usage"), t("Cost")],
           ] as const
         )
@@ -137,11 +139,32 @@ export function ComposerStatus({
                 {debug ? (
                   name
                 ) : label === "Context" ? (
-                  <CircleHalf aria-hidden />
+                  percent == null ? (
+                    <CircleHalf aria-hidden />
+                  ) : (
+                    <svg
+                      aria-hidden="true"
+                      className={styles.contextRing}
+                      viewBox="0 0 16 16"
+                    >
+                      <circle cx="8" cy="8" r="6" />
+                      <circle
+                        cx="8"
+                        cy="8"
+                        r="6"
+                        pathLength="100"
+                        strokeDasharray="100"
+                        strokeDashoffset={
+                          100 - Math.min(100, Math.max(0, percent))
+                        }
+                        transform="rotate(-90 8 8)"
+                      />
+                    </svg>
+                  )
                 ) : (
                   <CurrencyDollar aria-hidden />
                 )}{" "}
-                {label === "Context" && !debug && tokens != null && (
+                {label === "Context" && !debug && tokens != null ? (
                   <span>
                     {Intl.NumberFormat(i18n.resolvedLanguage, {
                       minimumFractionDigits: 1,
@@ -149,14 +172,13 @@ export function ComposerStatus({
                     }).format(tokens / 1000)}
                     k
                   </span>
-                )}
-                <strong>
-                  {label === "Context" && !debug && tokens != null
-                    ? `(${value})`
-                    : label === "Cost" && !debug
+                ) : (
+                  <strong>
+                    {label === "Cost" && !debug
                       ? value.replace(/^\$/, "")
                       : value}
-                </strong>
+                  </strong>
+                )}
               </PopoverTrigger>
               <PopoverPopup
                 side="top"

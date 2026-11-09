@@ -61,37 +61,41 @@ it("observes closed badges and lazily reads current tasks and notes across Runs"
       _path: string,
       options: { params: { query: { include: string[] } } },
     ) => ({
-      data: {
-        thread_id: "root",
-        epoch: "epoch",
-        sequence: 1,
-        run_id: run,
-        revision: 1,
-        source: "live",
-        tasks: {
-          total: 2,
-          completed: 1,
-          active,
-          page: options.params.query.include.includes("tasks")
-            ? {
-                tasks: [
-                  active,
-                  { ...task, task_id: "done", status: "completed" },
-                ],
-              }
-            : null,
-        },
-        notes: {
-          total: 3,
-          page: options.params.query.include.includes("notes")
-            ? {
-                notes: [{ key: "Decision", value: "Keep the user's draft" }],
-                omitted: 2,
-              }
-            : null,
-        },
-        children: { running: 1, succeeded: 4, active: 1 },
-      },
+      data: _path.endsWith("/tool-executions")
+        ? []
+        : {
+            thread_id: "root",
+            epoch: "epoch",
+            sequence: 1,
+            run_id: run,
+            revision: 1,
+            source: "live",
+            tasks: {
+              total: 2,
+              completed: 1,
+              active,
+              page: options.params.query.include.includes("tasks")
+                ? {
+                    tasks: [
+                      active,
+                      { ...task, task_id: "done", status: "completed" },
+                    ],
+                  }
+                : null,
+            },
+            notes: {
+              total: 3,
+              page: options.params.query.include.includes("notes")
+                ? {
+                    notes: [
+                      { key: "Decision", value: "Keep the user's draft" },
+                    ],
+                    omitted: 2,
+                  }
+                : null,
+            },
+            children: { running: 1, succeeded: 4, active: 1 },
+          },
     }),
   );
   const setup = harness(GET);
@@ -112,9 +116,9 @@ it("observes closed badges and lazily reads current tasks and notes across Runs"
     screen.getByRole("button", { name: "Inspect subagents" }).textContent,
   ).toContain("1");
   expect(
-    GET.mock.calls.every(
-      ([, options]) => options.params.query.include.length === 0,
-    ),
+    GET.mock.calls
+      .filter(([path]) => !path.endsWith("/tool-executions"))
+      .every(([, options]) => options.params.query.include.length === 0),
   ).toBe(true);
   const user = userEvent.setup();
   await user.click(
@@ -178,20 +182,22 @@ it.each([false, true])(
         _path: string,
         options: { params: { query: { include: string[] } } },
       ) => ({
-        data: {
-          thread_id: "root",
-          epoch: "epoch",
-          revision: 1,
-          source: "saved",
-          tasks: { total: 0 },
-          notes: {
-            total: 1,
-            page: options.params.query.include.includes("notes")
-              ? { notes: [{ key: "Decision", value: "Keep the draft" }] }
-              : null,
-          },
-          children: { active: 0, succeeded: 5 },
-        },
+        data: _path.endsWith("/tool-executions")
+          ? []
+          : {
+              thread_id: "root",
+              epoch: "epoch",
+              revision: 1,
+              source: "saved",
+              tasks: { total: 0 },
+              notes: {
+                total: 1,
+                page: options.params.query.include.includes("notes")
+                  ? { notes: [{ key: "Decision", value: "Keep the draft" }] }
+                  : null,
+              },
+              children: { active: 0, succeeded: 5 },
+            },
       }),
     );
     const display = new FocusDisplay();
@@ -232,9 +238,9 @@ it.each([false, true])(
     );
     expect(
       screen.getByRole("button", { name: "Inspect subagents" }).textContent,
-    ).toBe("Subagents");
+    ).toBe("");
     expect(more.textContent.includes("1")).toBe(!guest);
-    expect(GET).toHaveBeenCalledTimes(1);
+    expect(GET).toHaveBeenCalledTimes(guest ? 1 : 2);
     more.focus();
     await user.keyboard("{Enter}");
     await screen.findByRole("menuitem", { name: /Notes/ });
@@ -252,7 +258,7 @@ it.each([false, true])(
     ).toBe("true");
     expect(
       GET.mock.calls.some(([, options]) =>
-        options.params.query.include.includes("tasks"),
+        options.params.query.include?.includes("tasks"),
       ),
     ).toBe(false);
     if (guest) {

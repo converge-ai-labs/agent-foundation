@@ -1222,10 +1222,7 @@ export function Composer({
                   : null)}
           </div>
         )}
-        <div
-          className={styles.composerInput}
-          data-filled={hasInput || undefined}
-        >
+        <div className={styles.composerInput}>
           <input
             ref={upload}
             type="file"
