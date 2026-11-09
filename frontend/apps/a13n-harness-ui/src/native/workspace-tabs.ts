@@ -1,9 +1,23 @@
 import type { DiffSelection } from "./changes";
 
+export type FileListPosition = {
+  directory: string;
+  path: string;
+  expandedPaths?: string[];
+  filter?: string;
+  hideIgnored?: boolean;
+  rowOffset?: number;
+};
+
 export type TabContent =
   | { kind: "new" }
-  | { kind: "files"; directory: string; root: string }
-  | { kind: "file"; path: string; root: string }
+  | {
+      kind: "files";
+      directory: string;
+      root: string;
+      position?: FileListPosition;
+    }
+  | { kind: "file"; path: string; root: string; position?: FileListPosition }
   | {
       kind: "changes";
       root: string;
