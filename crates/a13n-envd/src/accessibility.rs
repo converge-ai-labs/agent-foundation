@@ -45,7 +45,11 @@ pub(crate) fn supports(method: &str) -> bool {
     {
         windows::METHODS.contains(&method)
     }
-    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+    #[cfg(target_os = "macos")]
+    {
+        macos::METHODS.contains(&method)
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
     {
         let _ = method;
         false
@@ -59,6 +63,10 @@ mod linux;
 #[cfg(target_os = "windows")]
 #[path = "accessibility_windows.rs"]
 mod windows;
+
+#[cfg(target_os = "macos")]
+#[path = "accessibility_macos.rs"]
+mod macos;
 
 pub(crate) fn is_method(method: &str) -> bool {
     [
@@ -485,7 +493,11 @@ fn native_backend(epoch: &str) -> Result<Box<dyn Backend>, EIPError> {
     {
         windows::new(epoch)
     }
-    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+    #[cfg(target_os = "macos")]
+    {
+        macos::new(epoch)
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
     {
         let _ = epoch;
         Err(error(

@@ -132,6 +132,8 @@ Zoom 结果包含 `source_observation_id`，以及按原图像素表示的 `regi
 
 ## 原生无障碍访问
 
+macOS 在继承的登录会话中，通过 Session 所有的 helper 实现全部七种语义读取及 19 种封闭的 AX 修改操作。在系统设置中为 daemon 或负责启动它的应用授予辅助功能权限；就绪检查不会弹出授权提示。AX 对所有 `view` 值公开同一原生层级。属性元数据保留观测到的可写性，动作保留确切的所有者，原生文本范围保留 AX 位置（AppKit 文本采用 UTF-16 位置）。派生范围保持应用选区不变，直到显式执行选择修改。原生边界使用逻辑 `ax_screen` 坐标；截图映射将所选显示器与保留的观测进行验证，再按该图像缩放。跨显示器矩形可能报告投影不可用。不支持的原生范围操作会明确报告。
+
 Windows 在继承的已解锁交互桌面上实现全部七种语义读取及 32 种封闭的 UIA 修改操作。UIA 对象保留在 Session 所有的 COM helper 中。`raw`、`control` 和 `content` 使用对应的 UIA 树遍历器。`applications` 返回原生顶层窗口；`application` 按 `process_id` 过滤这些窗口，因为 UIA 没有定义应用容器。TextPattern 范围保留不透明的原生端点；派生范围会克隆源范围，并保持应用选区不变。要改变选区，请显式调用选择修改操作。不支持的整数偏移和行索引会返回不支持。原生边界使用 `uia_physical_screen` 坐标框架，保留显示器的负坐标原点。控件公开实际模式和观测到的可写性；依赖操作数的支持状态保留为候选，并在派发前验证。
 
 Linux 在继承的 X11 桌面上实现原生 AT-SPI 读取及全部 30 种 AT-SPI 修改操作。从同一已登录图形会话启动 Envd，保留 `DBUS_SESSION_BUS_ADDRESS`，并确保 AT-SPI 无障碍总线正在运行。Debian/Ubuntu 需要安装 `at-spi2-core` 和 `libatk-adaptor`；应用必须公开无障碍接口。Envd 通过 `org.a11y.Bus` 发现总线，不会选择其他用户的总线。AT-SPI 对所有 `view` 值遍历应用的原生层级；Linux 上的 `raw`、`control` 和 `content` 不应用 UIA 过滤器。文本范围采用原生字符位置，与 UTF-8 字节限额分别计算。

@@ -418,6 +418,12 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
+      - name: Compile native AppKit accessibility fixture
+        if: matrix.name == 'macOS'
+        shell: bash
+        run: |
+          xcrun clang -fobjc-arc -framework AppKit dev/fixtures/macos-desktop/accessibility.m -o "$RUNNER_TEMP/accessibility-fixture"
+
       - name: Test native X11 clipboard under Xvfb
         if: matrix.linux
         shell: bash
