@@ -37,7 +37,7 @@ Placeholder text uses a quieter theme tone than secondary labels across composer
 
 Ordinary rows, cards and buttons stay flat on hover and press: no elevation, scaling, movement, weight jump or changing hit-area dimensions. Feedback uses light fill or color. A row has one background; nested overflow controls do not add another filled rectangle. Transcript disclosures use text emphasis only.
 
-Floating menus, popovers and dialogs retain shared overlay shadows. Borders identify controls, floating boundaries or dense row separation; ordinary grouping uses space and tone. Avoid nested frames. Where rounded surfaces are nested, inner radius is outer radius minus inset, bounded at zero.
+Floating menus, popovers and dialogs retain shared overlay shadows. When the floating surface is a single action, the button owns the full face, hit area and shadow. Hover emphasizes its label or icon without an inset fill; keyboard focus outlines the whole button. Borders identify controls, floating boundaries or dense row separation; ordinary grouping uses space and tone. Avoid nested frames. Where rounded surfaces are nested, inner radius is outer radius minus inset, bounded at zero.
 
 ## Alignment and Identity
 
