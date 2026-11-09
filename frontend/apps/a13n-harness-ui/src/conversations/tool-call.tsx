@@ -61,11 +61,11 @@ function activityText(
   t: (key: string, options?: Record<string, unknown>) => string,
 ): string {
   if (
-    text === "Message accepted · new turn" ||
-    text === "Message accepted · instruction"
+    text === "Message accepted - new turn" ||
+    text === "Message accepted - instruction"
   )
     return t(text);
-  const segments = text.split(" · ");
+  const segments = text.split(" - ");
   return segments
     .map((segment) => {
       const counted =
@@ -103,7 +103,7 @@ function activityText(
       }
       return toolPhase(segment, t);
     })
-    .join(" · ");
+    .join(" - ");
 }
 
 // Human lookup on the WebUI Host, not an Environment-to-Host path mapping.
@@ -416,7 +416,7 @@ function ToolDetails({ tool }: { tool: ToolView }) {
       )}
       {tool.provider && (
         <small>
-          {t("Provider-run tool · {{provider}}", { provider: tool.provider })}
+          {t("Provider-run tool - {{provider}}", { provider: tool.provider })}
         </small>
       )}
       {tool.resultParts && <AguiContent parts={tool.resultParts} />}
@@ -523,7 +523,7 @@ function ToolDetails({ tool }: { tool: ToolView }) {
                   : "",
               ]
                 .filter(Boolean)
-                .join(" · ")}
+                .join(" - ")}
             </small>
           )}
           {info.outputIncomplete && (
@@ -739,7 +739,7 @@ function CollaborationDetails({ tool }: { tool: ToolView }) {
                         resource.route,
                       ]
                         .filter((value) => typeof value === "string" && value)
-                        .join(" · ")}
+                        .join(" - ")}
                     </small>
                   </li>
                 );

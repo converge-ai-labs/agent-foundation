@@ -32,7 +32,6 @@ import {
   ArrowClockwise,
   TerminalWindow,
   ArrowLeft,
-  ArrowUp,
   CaretRight,
   SidebarSimple,
   PencilSimple,
@@ -231,7 +230,6 @@ export function NativeWorkspace({
     kind: ReturnType<typeof panelResize>["kind"];
   } | null>(null);
   const [resizing, setResizing] = useState(false);
-  const [, renderBuffers] = useReducer((n: number) => n + 1, 0);
   const [fileLine, setFileLine] = useState<number>();
   const [terminalRequest, setTerminalRequest] = useState<TerminalRequest>();
   const [view, setView] = useState<"page" | "file" | "diff">("page");
@@ -243,6 +241,9 @@ export function NativeWorkspace({
   const [terminalOpened, setTerminalOpened] = useState(false);
   const pageElement = useRef<HTMLDivElement>(null);
   const paneElement = useRef<HTMLElement>(null);
+  const [fileActionsHost, setFileActionsHost] = useState<HTMLDivElement | null>(
+    null,
+  );
   const editorElement = useRef<HTMLDivElement>(null);
   const folderTrail = useRef<HTMLElement>(null);
   const [pane, setPane] = useState<
@@ -330,9 +331,6 @@ export function NativeWorkspace({
     localRoots.includes(root) && withinRoot(directory, root)
       ? root
       : localRoots.find((folder) => withinRoot(directory, folder));
-  const parentDirectory = parentPath(directory);
-  const canGoUp =
-    !!directory && directory !== fileRoot && parentDirectory !== directory;
   const directoryTrail = breadcrumbs(directory).filter(
     (part) => !fileRoot || withinRoot(part, fileRoot),
   );
@@ -485,19 +483,19 @@ export function NativeWorkspace({
         content: { ...activeTab, selection, choices },
       });
   };
-  const open = async (target: string, line?: number) => {
+  const open = async (target: string, line?: number, listedFile = false) => {
     setSidebarCollapsed(false);
     openingRequest.current?.abort();
     if (!pane) setPane("files");
     setNativeActive(true);
     const controller = new AbortController();
     openingRequest.current = controller;
-    setOpening(true);
+    setOpening(!listedFile);
     setError(null);
     try {
       let isDirectory = false;
       // A deleted/moved dirty file still has recoverable private text.
-      if (!buffers.get(target)?.dirty) {
+      if (!listedFile && !buffers.get(target)?.dirty) {
         const entry = await result(
           client.GET("/api/host/files/metadata", {
             params: { query: { path: target } },
@@ -700,7 +698,7 @@ export function NativeWorkspace({
         : t("Page not found");
   const ToolbarTitle = isWorkspace || threadId ? "h1" : "span";
   useEffect(() => {
-    document.title = `${title} · Harness UI`;
+    document.title = `${title} - Harness UI`;
     return () => {
       document.title = "Harness UI";
     };
@@ -799,6 +797,47 @@ export function NativeWorkspace({
     );
   };
   // Conversation and navigation own their query failures; this slot only owns pane actions.
+  const folderBreadcrumbs =
+    !projectLoading &&
+    directory &&
+    pane === "files" &&
+    directoryTrail.length > 1 ? (
+      <nav
+        ref={folderTrail}
+        className={styles.breadcrumbs}
+        aria-label={t("Current folder")}
+        onScroll={(event) => {
+          const trail = event.currentTarget;
+          trail.dataset.clipped = String(trail.scrollLeft > 0);
+        }}
+      >
+        <ol>
+          {directoryTrail.map((part, index) => (
+            <li key={part}>
+              {index > 0 && <CaretRight aria-hidden="true" />}
+              {part === directory ? (
+                <span title={part} aria-current="location">
+                  {basename(part)}
+                </span>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  title={part}
+                  onClick={() => void open(part)}
+                >
+                  <span>
+                    {part === fileRoot && localRoots.length === 1 && project
+                      ? project.name
+                      : basename(part)}
+                  </span>
+                </Button>
+              )}
+            </li>
+          ))}
+        </ol>
+      </nav>
+    ) : null;
   const nativeFeedback = !!error && (
     <div className={styles.paneFeedback}>
       <ErrorNotice error={error} inline />
@@ -852,7 +891,7 @@ export function NativeWorkspace({
           ? t("New tab")
           : tab.kind === "file"
             ? buffers.get(tab.path)?.dirty
-              ? t("{{path}} · Unsaved", {
+              ? t("{{path}} - Unsaved", {
                   path: tabs.items.some(
                     (other) =>
                       other.kind === "file" &&
@@ -871,7 +910,7 @@ export function NativeWorkspace({
                 ? tab.path
                 : basename(tab.path)
             : tab.kind === "changes" && tab.selection
-              ? t("{{path}} · Changes", { path: basename(tab.selection.path) })
+              ? t("{{path}} - Changes", { path: basename(tab.selection.path) })
               : tab.kind === "files"
                 ? t("Files")
                 : tab.kind === "changes"
@@ -1279,35 +1318,44 @@ export function NativeWorkspace({
               aria-label={t("File explorer")}
             >
               <header className={styles.paneHeader}>
-                <div className={styles.panelTools}>
-                  {view !== "page" ? (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      title={pane === "files" ? directory : root}
-                      onClick={() => {
-                        if (pane === "files") {
-                          navigateTab({ kind: "files", directory, root });
-                        } else {
-                          cancelOpening();
-                          select(null);
-                          setView("page");
-                          setFocusedArea("explorer");
-                        }
-                      }}
-                    >
-                      <ArrowLeft />
-                      {pane === "files"
-                        ? t("Back to files")
-                        : t("Back to changes")}
-                    </Button>
-                  ) : (
-                    <strong>
-                      {pane === "files" ? t("Files") : t("Changes")}
-                    </strong>
-                  )}
-                </div>
-                <div className={styles.actions}>
+                {view === "page" && folderBreadcrumbs ? (
+                  folderBreadcrumbs
+                ) : (
+                  <div className={styles.panelTools}>
+                    {view !== "page" ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        title={pane === "files" ? directory : root}
+                        onClick={() => {
+                          if (pane === "files") {
+                            navigateTab({ kind: "files", directory, root });
+                          } else {
+                            cancelOpening();
+                            select(null);
+                            setView("page");
+                            setFocusedArea("explorer");
+                          }
+                        }}
+                      >
+                        <ArrowLeft />
+                        {pane === "files"
+                          ? t("Back to files")
+                          : t("Back to changes")}
+                      </Button>
+                    ) : (
+                      <strong>
+                        {pane === "files" ? t("Files") : t("Changes")}
+                      </strong>
+                    )}
+                  </div>
+                )}
+                <div
+                  className={
+                    view === "file" ? styles.fileHeaderActions : styles.actions
+                  }
+                >
+                  {view === "file" && <div ref={setFileActionsHost} />}
                   <ViewLink
                     getLink={() => {
                       const target = nativeTarget();
@@ -1339,10 +1387,9 @@ export function NativeWorkspace({
               )}
               {!projectLoading &&
                 directory &&
-                ((view === "page" &&
-                  (pane === "files" || localRoots.length > 1)) ||
-                  (pane === "files" &&
-                    (localRoots.length > 1 || directory !== fileRoot))) && (
+                ((view !== "page" && folderBreadcrumbs) ||
+                  (localRoots.length > 1 &&
+                    (view === "page" || pane === "files"))) && (
                   <div className={styles.location}>
                     {localRoots.length > 1 && (
                       <nav
@@ -1379,64 +1426,7 @@ export function NativeWorkspace({
                         ))}
                       </nav>
                     )}
-                    {pane === "files" && (
-                      <div className={styles.folderNavigation}>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          aria-label={t("Up one level")}
-                          title={
-                            canGoUp
-                              ? t("Up to {{path}}", { path: parentDirectory })
-                              : fileRoot
-                                ? t("At the project root")
-                                : t("At the filesystem root")
-                          }
-                          disabled={!canGoUp}
-                          onClick={() => void open(parentDirectory)}
-                        >
-                          <ArrowUp />
-                          {t("Up")}
-                        </Button>
-                        <nav
-                          ref={folderTrail}
-                          className={styles.breadcrumbs}
-                          aria-label={t("Current folder")}
-                          onScroll={(event) => {
-                            const trail = event.currentTarget;
-                            trail.dataset.clipped = String(
-                              trail.scrollLeft > 0,
-                            );
-                          }}
-                        >
-                          <ol>
-                            {directoryTrail.map((part, index) => (
-                              <li key={part}>
-                                {index > 0 && <CaretRight aria-hidden="true" />}
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  title={part}
-                                  aria-current={
-                                    part === directory ? "location" : undefined
-                                  }
-                                  onClick={() => void open(part)}
-                                >
-                                  {index === 0 && <Folder aria-hidden="true" />}
-                                  <span>
-                                    {part === fileRoot &&
-                                    localRoots.length === 1 &&
-                                    project
-                                      ? project.name
-                                      : basename(part)}
-                                  </span>
-                                </Button>
-                              </li>
-                            ))}
-                          </ol>
-                        </nav>
-                      </div>
-                    )}
+                    {view !== "page" && folderBreadcrumbs}
                   </div>
                 )}
               {view !== "page" && (
@@ -1450,12 +1440,11 @@ export function NativeWorkspace({
                   {view === "file" && path && (
                     <OpenHostFile value={(target) => void open(target)}>
                       <FileView
+                        toolbarHost={fileActionsHost}
                         key={path}
                         path={path}
                         line={fileLine}
-                        onBufferChange={renderBuffers}
                         threadId={threadId}
-                        refresh={refresh}
                         open={(target) => void open(target)}
                       />
                     </OpenHostFile>
@@ -1498,14 +1487,18 @@ export function NativeWorkspace({
                 <>
                   <div
                     hidden={view !== "page"}
+                    data-pane={pane}
                     className={`${styles.paneBody} a13n-scrollbar`}
                   >
                     {pane === "files" ? (
                       <Files
+                        fileManager={status.data?.features?.file_manager}
                         directory={directory}
                         roots={localRoots}
                         path={path}
-                        open={(target) => void open(target)}
+                        open={(target, kind) =>
+                          void open(target, undefined, kind === "file")
+                        }
                         refresh={refresh}
                         openTerminal={
                           status.data?.features?.host_terminal && projectId

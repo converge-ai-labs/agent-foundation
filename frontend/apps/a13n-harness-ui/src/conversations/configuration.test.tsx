@@ -86,7 +86,7 @@ it("previews Project environments without applying until the reviewed action is 
   await act(async () => {
     await i18n.changeLanguage("zh-CN");
   });
-  expect(screen.getByText("更改前 · 版本 3")).toBeTruthy();
+  expect(screen.getByText("更改前 - 版本 3")).toBeTruthy();
   await user.click(screen.getByRole("button", { name: "应用环境" }));
   await act(async () => {
     await i18n.changeLanguage("en");

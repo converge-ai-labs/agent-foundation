@@ -76,7 +76,7 @@ export function DevicesSection() {
                 </small>
                 {device.registration === "revoked" ? (
                   <p className="text-sm text-muted-foreground">
-                    {t("Revoked · connections are blocked")}
+                    {t("Revoked - connections are blocked")}
                   </p>
                 ) : (
                   <DeviceStatus deviceId={device.id} />

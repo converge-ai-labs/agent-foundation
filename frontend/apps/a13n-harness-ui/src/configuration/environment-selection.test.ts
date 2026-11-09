@@ -93,9 +93,9 @@ const remote: EnvironmentBinding = {
 
 it("counts working environments independently of directories and auxiliary files", () => {
   expect(environmentSummary({ local_roots: ["/one", "/two"] })).toBe(
-    "Local · 2 directories",
+    "Local - 2 directories",
   );
-  expect(environmentSummary({})).toBe("Local · Chat files");
+  expect(environmentSummary({})).toBe("Local - Chat files");
   const bindings = [
     remote,
     { ...remote, alias: "notes", working_directory: "/notes" },
@@ -105,9 +105,9 @@ it("counts working environments independently of directories and auxiliary files
       local_roots: ["/one", "/two"],
       environment_bindings: bindings,
     }),
-  ).toBe("2 environments · 4 directories");
+  ).toBe("2 environments - 4 directories");
   expect(environmentSummary({ environment_bindings: bindings })).toBe(
-    "1 environment · 2 directories",
+    "1 environment - 2 directories",
   );
 });
 
@@ -182,10 +182,10 @@ it("shows readable directory choices while keeping routing identities internal",
     [{ id: "device-build", name: "Build machine" }],
   );
   expect(choices).toEqual([
-    { value: "workspace", label: "Local · /one" },
-    { value: "workspace-2", label: "Local · /two" },
-    { value: "thread-files", label: "Local · Chat files" },
-    { value: "build", label: "Build machine · /work" },
+    { value: "workspace", label: "Local - /one" },
+    { value: "workspace-2", label: "Local - /two" },
+    { value: "thread-files", label: "Local - Chat files" },
+    { value: "build", label: "Build machine - /work" },
   ]);
   expect(changeLocalRoots({ local_roots: ["/one", "/two"] }, ["/two"])).toEqual(
     { local_roots: ["/two"], default_environment: "workspace-0" },
@@ -199,13 +199,13 @@ it("localizes environment summaries and directory choices without changing paths
       environmentSummary({
         local_roots: Array.from({ length: 12 }, (_, i) => `/path/${i}`),
       }),
-    ).toBe("本地 · 12 个目录");
+    ).toBe("本地 - 12 个目录");
     expect(environmentSummary({ environment_bindings: [remote] })).toBe(
-      "1 个环境 · 1 个目录",
+      "1 个环境 - 1 个目录",
     );
     expect(workingDirectories({ local_roots: ["/home/example"] })).toEqual([
-      { value: "workspace", label: "本地 · /home/example" },
-      { value: "thread-files", label: "本地 · 聊天文件" },
+      { value: "workspace", label: "本地 - /home/example" },
+      { value: "thread-files", label: "本地 - 聊天文件" },
     ]);
   } finally {
     await i18n.changeLanguage("en");

@@ -6,6 +6,8 @@ import json
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from urllib.parse import urlsplit
 
 import httpx
@@ -31,7 +33,14 @@ def configuration(tmp_path: Path, origins: list[str]) -> Path:
 
 
 @asynccontextmanager
-async def webui(tmp_path: Path, origins: list[str], *, api_key: str | None = "test-only-key", host: str = "127.0.0.1"):
+async def webui(
+    tmp_path: Path,
+    origins: list[str],
+    *,
+    api_key: str | None = "test-only-key",
+    host: str = "127.0.0.1",
+    share_computer: bool = False,
+):
     path = configuration(tmp_path, origins)
     opened = None
 
@@ -40,7 +49,7 @@ async def webui(tmp_path: Path, origins: list[str], *, api_key: str | None = "te
         nonlocal opened
         settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"), pricing_auto_update=False)
         async with open_harness_ui_app(
-            settings, configuration_path=path, host_mode="webui", instrumentation=None
+            settings, configuration_path=path, host_mode="webui", instrumentation=None, share_computer=share_computer
         ) as app:
             opened = app
             yield app
@@ -194,3 +203,35 @@ async def test_browser_lease_routes_parse_and_forward_requests(tmp_path: Path, m
             handback.assert_awaited_once_with(
                 "thread-a", BrowserHandbackRequest(session_id="session", control_episode=7), human=False
             )
+
+
+@pytest.mark.parametrize("is_folder", [False, True], ids=["file", "folder"])
+async def test_reveal_uses_host_manager_only_for_local_shared_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, is_folder: bool
+) -> None:
+    import a13n_harness_ui.webui as transport
+
+    target = tmp_path / "two words"
+    if is_folder:
+        target.mkdir()
+    else:
+        target.touch()
+    async with webui(tmp_path, [PUBLIC], share_computer=True) as (server, _):
+        monkeypatch.setattr(transport, "sys", SimpleNamespace(platform="win32"))
+        monkeypatch.setenv("SystemRoot", str(tmp_path))
+        launch = AsyncMock()
+        monkeypatch.setattr(transport.asyncio, "create_subprocess_exec", launch)
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=server), base_url="http://localhost", headers=AUTH
+        ) as client:
+            for address, headers in [(PUBLIC, {}), ("http://localhost", {"X-Forwarded-For": "192.0.2.1"})]:
+                assert (await client.get(address + "/api/status", headers=headers)).json()["features"][
+                    "file_manager"
+                ] is None
+                assert (
+                    await client.post(address + "/api/host/files/reveal", params={"path": str(target)}, headers=headers)
+                ).status_code == 403
+            launch.assert_not_called()
+            assert (await client.get("/api/status")).json()["features"]["file_manager"] == "explorer"
+            assert (await client.post("/api/host/files/reveal", params={"path": str(target)})).status_code == 204
+            launch.assert_awaited_once_with(str(tmp_path / "explorer.exe"), "/select,", str(target))

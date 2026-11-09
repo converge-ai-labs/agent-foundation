@@ -52,7 +52,7 @@ export function EnvironmentMonitor() {
       }
       title={t("Environment monitor")}
       closeLabel={t("Close environment monitor")}
-      description={t("Device resources · one hour of temporary history")}
+      description={t("Device resources - one hour of temporary history")}
     >
       {open && <MonitorContent />}
     </ModalFrame>
@@ -110,7 +110,7 @@ export function MonitorContent() {
                 )}
                 {environments.map((item) => (
                   <option key={item.id} value={item.id}>
-                    {item.name} · {item.transport} · {item.id.slice(-8)}
+                    {item.name} - {item.transport} - {item.id.slice(-8)}
                   </option>
                 ))}
               </select>
@@ -177,7 +177,7 @@ export function MonitorContent() {
       )}
       <p className={styles.note}>
         {t(
-          "Last hour · History clears on restart. Gaps mean missing samples; — means unavailable.",
+          "Last hour - History clears on restart. Gaps mean missing samples; — means unavailable.",
         )}
       </p>
     </div>
@@ -236,7 +236,7 @@ function Observation({
         <details className={styles.deviceInfo}>
           <summary>{t("Device")}</summary>
           <p>
-            {env.name} · {env.transport} · {env.id}
+            {env.name} - {env.transport} - {env.id}
           </p>
           {info && (
             <p>
@@ -248,7 +248,7 @@ function Observation({
                 info.kernel_version,
               ]
                 .filter(Boolean)
-                .join(" · ")}
+                .join(" - ")}
             </p>
           )}
           <p>
@@ -258,7 +258,7 @@ function Observation({
           </p>
           <p>
             {t(
-              "App collection: every {{collection}}s · native sampling: {{sampling}}",
+              "App collection: every {{collection}}s - native sampling: {{sampling}}",
               {
                 collection: env.collection_interval_seconds ?? 60,
                 sampling:
@@ -386,16 +386,16 @@ function Observation({
               {fixedRange
                 ? t("Historical range")
                 : refreshing
-                  ? t("Live · auto-refreshing")
+                  ? t("Live - auto-refreshing")
                   : t("Refresh paused")}
             </span>
           </div>
           <div className={styles.chartHint}>
             <span>
-              {timeLabel(range.start)} – {timeLabel(range.end)} ·{" "}
+              {timeLabel(range.start)} – {timeLabel(range.end)} -{" "}
               {Intl.DateTimeFormat().resolvedOptions().timeZone}
             </span>
-            <span>{t("Drag to zoom · observed minute averages / peaks")}</span>
+            <span>{t("Drag to zoom - observed minute averages / peaks")}</span>
           </div>
         </>
       )}

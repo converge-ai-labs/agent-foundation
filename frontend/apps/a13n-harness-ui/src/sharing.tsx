@@ -295,7 +295,7 @@ function ShareContents({
           onClick={() => setLinksOpen(!linksOpen)}
         >
           {grants.data
-            ? t("Manage links · {{count, number}}", {
+            ? t("Manage links - {{count, number}}", {
                 count: grants.data.length,
               })
             : t("Manage links")}

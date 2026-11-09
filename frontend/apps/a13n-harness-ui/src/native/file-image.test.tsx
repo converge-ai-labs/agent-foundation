@@ -100,11 +100,7 @@ function fixture(initial = metadata()) {
     <QueryClientProvider client={queries}>
       <TransportContext value={transport}>
         <FileBuffers value={buffers}>
-          <FileView
-            path={current.entry.path}
-            open={vi.fn()}
-            refresh={vi.fn()}
-          />
+          <FileView path={current.entry.path} open={vi.fn()} />
         </FileBuffers>
       </TransportContext>
     </QueryClientProvider>
@@ -229,14 +225,16 @@ it("does not preview oversize images or unsupported binary formats but still all
       }),
     ),
   );
-  f.update(metadata("/code/document.pdf", 88_047, "application/pdf"));
+  f.update(metadata("/code/model.bin", 88_047, "application/octet-stream"));
   view.rerender(f.tree());
-  await screen.findByText("Binary file");
+  await screen.findByText("Preview not supported");
   const svg = metadata("/code/icon.svg", 88_047, "image/svg+xml");
   f.update({ ...svg, presentation: "text", text: "<svg />" });
   view.rerender(f.tree());
+  const img = await screen.findByAltText("icon.svg");
+  expect(img.getAttribute("src")).toMatch(/^data:image\/svg\+xml/);
+  fireEvent.click(screen.getByRole("button", { name: "Text" }));
   await screen.findByRole("textbox");
-  expect(screen.queryByRole("region", { name: "Image preview" })).toBeNull();
   expect(f.post).toHaveBeenCalledTimes(1);
   expect(f.fetch).not.toHaveBeenCalled();
 });

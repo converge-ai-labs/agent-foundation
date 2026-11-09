@@ -209,7 +209,7 @@ function Operation({
                   </SettingsRow>
                   <SettingsRow label={t("Environment changes")}>
                     <span>
-                      {t("{{published}} published · {{failed}} failed", {
+                      {t("{{published}} published - {{failed}} failed", {
                         published: data.outcome.environment.published,
                         failed: data.outcome.environment.failed,
                       })}
@@ -382,10 +382,10 @@ export function Child({
       onToggle={(event) => setOpen(event.currentTarget.open)}
     >
       <summary>
-        {child.subagent_name} · {childStatuses[child.persisted_status]}
+        {child.subagent_name} - {childStatuses[child.persisted_status]}
         {child.persisted_status === "running" &&
         child.local_status === "unavailable"
-          ? ` · ${t("control unavailable")}`
+          ? ` - ${t("control unavailable")}`
           : ""}
       </summary>
       {open && (
@@ -568,7 +568,7 @@ function ChildPresentation({
     />
   ) : activity?.output_preview ? (
     <section>
-      <small>{t("Activity preview · not a saved result")}</small>
+      <small>{t("Activity preview - not a saved result")}</small>
       <MessageText text={activity?.output_preview} />
       {activity?.output_truncated && (
         <p>{t("Some activity is outside this preview.")}</p>
@@ -641,7 +641,7 @@ function ContextDetails({ threadId }: { threadId: string }) {
           <span>
             {t("Tasks")}{" "}
             <span className={styles.settingsHint}>
-              ·{" "}
+              -{" "}
               {work.stale
                 ? t("Stale")
                 : tasks.isPending
@@ -670,7 +670,7 @@ function ContextDetails({ threadId }: { threadId: string }) {
           <span>
             {t("Notes")}{" "}
             <span className={styles.settingsHint}>
-              ·{" "}
+              -{" "}
               {work.stale
                 ? t("Stale")
                 : notes.isPending

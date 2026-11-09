@@ -107,7 +107,7 @@ function Attachment({
         </summary>
         <div className={styles.inputAttachmentDetails}>
           <small>
-            {attachment.media_type} ·{" "}
+            {attachment.media_type} -{" "}
             {t("{{size}} bytes", {
               size: attachment.size.toLocaleString(i18n.language),
             })}
@@ -341,14 +341,14 @@ export function InputContent({
           <header>
             {source && guest ? (
               <span className={styles.threadSource}>
-                {t("From thread")} · {source.title || source.id}
+                {t("From thread")} - {source.title || source.id}
               </span>
             ) : source ? (
               <Link
                 className={styles.threadSource}
                 to={`/threads/${encodeURIComponent(source.id)}`}
                 title={
-                  source.title ? `${source.title} · ${source.id}` : source.id
+                  source.title ? `${source.title} - ${source.id}` : source.id
                 }
                 aria-label={t("From thread {{name}}", {
                   name: source.title || source.id,

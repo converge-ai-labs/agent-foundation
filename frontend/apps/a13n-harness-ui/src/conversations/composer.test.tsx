@@ -124,7 +124,7 @@ it("reserves an upload before joining and resolves it after the initial draft id
     },
   });
   await screen.findByRole("button", {
-    name: "notes.txt · not ready",
+    name: "notes.txt - not ready",
   });
   expect(
     (
@@ -523,7 +523,7 @@ it.each([false, true])(
       });
       await act(() => vi.advanceTimersByTimeAsync(700));
       expect(
-        screen.queryByText("Disconnected · your edits are still in this tab"),
+        screen.queryByText("Disconnected - your edits are still in this tab"),
       ).toBeNull();
     } finally {
       view.unmount();

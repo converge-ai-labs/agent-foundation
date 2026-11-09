@@ -53,12 +53,12 @@ export function environmentSummary(value: EnvironmentSelection) {
   const directories = roots.length + bindings.length;
   if (!bindings.length)
     return roots.length
-      ? i18n.t("Local · {{directories}}", {
+      ? i18n.t("Local - {{directories}}", {
           directories: directoryCount(roots.length),
         })
-      : i18n.t("Local · Chat files");
+      : i18n.t("Local - Chat files");
   const count = deviceEnvironments(bindings).length + (roots.length ? 1 : 0);
-  return i18n.t("{{environments}} · {{directories}}", {
+  return i18n.t("{{environments}} - {{directories}}", {
     environments: i18n.t("{{count}} environment", { count }),
     directories: directoryCount(directories),
   });
@@ -74,21 +74,21 @@ export function workingDirectories(
 ) {
   const bindings = value.environment_bindings ?? [];
   const deviceLabel = (binding: EnvironmentBinding) =>
-    `${devices.find((device) => device.id === binding.device_id)?.name ?? binding.device_id} · ${binding.working_directory}`;
+    `${devices.find((device) => device.id === binding.device_id)?.name ?? binding.device_id} - ${binding.working_directory}`;
   return [
     ...(value.local_roots ?? []).map((path, index) => ({
       value: localAlias(index),
-      label: i18n.t("Local · {{path}}", {
+      label: i18n.t("Local - {{path}}", {
         path: path || i18n.t("Empty directory"),
       }),
     })),
-    { value: "thread-files", label: i18n.t("Local · Chat files") },
+    { value: "thread-files", label: i18n.t("Local - Chat files") },
     ...bindings.map((binding) => ({
       value: binding.alias,
       label:
         bindings.filter((item) => deviceLabel(item) === deviceLabel(binding))
           .length > 1
-          ? `${deviceLabel(binding)} · ${binding.alias}`
+          ? `${deviceLabel(binding)} - ${binding.alias}`
           : deviceLabel(binding),
     })),
   ];

@@ -150,7 +150,7 @@ afterEach(() => {
 
 it("opens a thread guest directly without owner queries or a draft socket", async () => {
   render(<BrowserApp />);
-  await screen.findByText("View-only link · Following this chat live.");
+  await screen.findByText("View-only link - Following this chat live.");
   expect(screen.queryByRole("textbox")).toBeNull();
   expect(screen.queryByRole("button", { name: "Start voice" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Share" })).toBeNull();
@@ -191,7 +191,7 @@ it("keeps Project navigation inside the sharing basename", async () => {
   expect(link.getAttribute("href")).toBe("/share/share-one/threads/thread-one");
   expect(screen.queryByRole("button", { name: "New chat" })).toBeNull();
   fireEvent.click(link);
-  await screen.findByText("View-only link · Following this chat live.");
+  await screen.findByText("View-only link - Following this chat live.");
   expect(window.location.pathname).toBe("/share/share-one/threads/thread-one");
 });
 
