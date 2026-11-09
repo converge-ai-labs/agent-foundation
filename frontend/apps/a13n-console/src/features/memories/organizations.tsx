@@ -1,3 +1,4 @@
+import { ArrowLeftIcon, ArrowRightIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { Button, DisclosureSection } from "a13n-ui";
 import { useState } from "react";
@@ -40,6 +41,65 @@ export function MemoryOrganizations({
     organizationQueries(client, workspace.id).page(target, page.cursor),
   );
   const [selected, setSelected] = useState<Schema["MemoryOrganization"]>();
+  if (selected)
+    return (
+      <div className="grid min-w-0 gap-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setSelected(undefined)}
+          >
+            <ArrowLeftIcon size={14} />
+            {t("Back to organization tasks")}
+          </Button>
+          <Link
+            className="text-xs underline"
+            to={runPath(basePath, selected, "debug")}
+          >
+            {t("Open run and usage")}
+          </Link>
+        </div>
+        <p className="whitespace-pre-wrap break-words text-sm text-muted-foreground">
+          {selected.request.instructions}
+        </p>
+        {selected.candidate_memory_id ? (
+          <OrganizationCandidate key={selected.id} id={selected.id} />
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            {t(
+              "This task writes directly. Inspect file history for committed changes.",
+            )}
+          </p>
+        )}
+        <DisclosureSection title={t("Task context")}>
+          <dl className="grid gap-2 text-xs sm:grid-cols-2">
+            <div>
+              <dt className="text-muted-foreground">{t("Organizer model")}</dt>
+              <dd>{selected.request.model}</dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">
+                {t("Frozen source runs")}
+              </dt>
+              <dd>{selected.sources.length}</dd>
+            </div>
+          </dl>
+          {selected.sources.length > 0 && (
+            <ul className="mt-4 grid gap-2 text-xs">
+              {selected.sources.map((source) => (
+                <li key={source.run_id}>
+                  <Link to={runPath(basePath, source, "debug")}>
+                    {source.run_id}
+                  </Link>{" "}
+                  · <Timestamp value={source.sealed_at} />
+                </li>
+              ))}
+            </ul>
+          )}
+        </DisclosureSection>
+      </div>
+    );
   return (
     <div className="grid gap-8">
       <Section
@@ -74,7 +134,7 @@ export function MemoryOrganizations({
                   render: (item) => (
                     <button
                       type="button"
-                      className="block w-full truncate text-left hover:underline"
+                      className="block max-w-[48ch] truncate text-left hover:underline"
                       onClick={() => setSelected(item)}
                     >
                       {item.request.instructions}
@@ -90,6 +150,23 @@ export function MemoryOrganizations({
                   label: t("Created"),
                   tone: "muted",
                   render: (item) => <Timestamp value={item.created_at} />,
+                },
+                {
+                  label: t("Review"),
+                  render: (item) => (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setSelected(item)}
+                    >
+                      {t(
+                        item.candidate_memory_id
+                          ? "Review candidate"
+                          : "View task",
+                      )}
+                      <ArrowRightIcon size={14} />
+                    </Button>
+                  ),
                 },
               ]}
             />
@@ -108,67 +185,6 @@ export function MemoryOrganizations({
           )
         )}
       </Section>
-      {selected && (
-        <Section
-          title={t("Task details")}
-          description={selected.request.instructions}
-          actions={
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setSelected(undefined)}
-            >
-              {t("Close")}
-            </Button>
-          }
-        >
-          <div className="grid gap-5">
-            <Link
-              className="text-xs underline"
-              to={runPath(basePath, selected, "debug")}
-            >
-              {t("Open run and usage")}
-            </Link>
-            <dl className="grid gap-2 text-xs sm:grid-cols-2">
-              <div>
-                <dt className="text-muted-foreground">
-                  {t("Organizer model")}
-                </dt>
-                <dd>{selected.request.model}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">
-                  {t("Frozen source runs")}
-                </dt>
-                <dd>{selected.sources.length}</dd>
-              </div>
-            </dl>
-            {selected.sources.length > 0 && (
-              <DisclosureSection title={t("Conversation sources")}>
-                <ul className="grid gap-2 text-xs">
-                  {selected.sources.map((source) => (
-                    <li key={source.run_id}>
-                      <Link to={runPath(basePath, source, "debug")}>
-                        {source.run_id}
-                      </Link>{" "}
-                      · <Timestamp value={source.sealed_at} />
-                    </li>
-                  ))}
-                </ul>
-              </DisclosureSection>
-            )}
-            {selected.candidate_memory_id ? (
-              <OrganizationCandidate key={selected.id} id={selected.id} />
-            ) : (
-              <p className="text-xs text-muted-foreground">
-                {t(
-                  "This task writes directly. Inspect file history for committed changes.",
-                )}
-              </p>
-            )}
-          </div>
-        </Section>
-      )}
     </div>
   );
 }

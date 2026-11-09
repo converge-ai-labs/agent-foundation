@@ -22,7 +22,8 @@ vi.mock("../../layout/workspace", () => ({
 }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
-    t: (key: string) => key,
+    t: (key: string, values: Record<string, unknown> = {}) =>
+      key.replace(/\{\{(\w+)\}\}/g, (_, name) => String(values[name] ?? name)),
     i18n: { resolvedLanguage: "en" },
   }),
 }));
@@ -58,6 +59,7 @@ function show(
   view: "candidate" | "tasks" | "automation",
   conflict = false,
   snapshot = candidate,
+  cached?: Schema["OrganizationCandidate"],
 ) {
   const writes: { path: string; body: unknown; etag: string | null }[] = [];
   let current = { ...snapshot },
@@ -146,6 +148,11 @@ function show(
   const cache = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
+  if (cached)
+    cache.setQueryData(
+      organizationQueries(client, "ws_test").candidate("morg_test").queryKey,
+      cached,
+    );
   render(
     <QueryClientProvider client={cache}>
       <MemoryRouter>
@@ -164,68 +171,85 @@ function show(
   );
   return { cache, writes, user: userEvent.setup() };
 }
-it("publishes only reviewed sequences, preserves a conflict and explicitly reloads before replacement", async () => {
+it("starts a reopened review from fresh metadata instead of a cached ready snapshot", async () => {
+  const { cache, user } = show(
+    "candidate",
+    false,
+    { ...candidate, candidate_seq: 5, target_seq: 4 },
+    candidate,
+  );
+  await screen.findByText("Target memory has changed");
+  await user.click(screen.getByRole("button", { name: /Review details/ }));
+  expect(screen.getByText("5")).toBeTruthy();
+  expect(
+    screen
+      .getByRole("button", { name: "Apply all changes" })
+      .hasAttribute("disabled"),
+  ).toBe(true);
+  cache.clear();
+});
+it("preserves a refused review, blocks blind retry, and reloads only explicitly", async () => {
   const { cache, writes, user } = show("candidate", true);
   await screen.findByText(
     "Diff truncated. Inspect the complete candidate file before applying.",
   );
-  await user.click(screen.getByRole("button", { name: "Apply candidate" }));
+  await user.click(screen.getByRole("button", { name: "Mark as reviewed" }));
+  await user.click(screen.getByRole("button", { name: "Apply all changes" }));
   await user.click(
     within(screen.getByRole("dialog")).getByRole("button", {
-      name: "Apply candidate",
+      name: "Apply all changes",
     }),
   );
-  await screen.findByText("This resource changed");
+  await screen.findByText("Review needs attention");
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(writes[0].body).toEqual({
     mode: "checked",
     candidate_seq: 2,
     target_seq: 1,
   });
-  // Background metadata must not silently advance the frozen review.
   cache.setQueryData(
     organizationQueries(client, "ws_test").candidate("morg_test").queryKey,
     { ...candidate, candidate_seq: 3, target_seq: 4 },
   );
-  await user.click(
-    within(screen.getByRole("dialog")).getByRole("button", {
-      name: "Apply candidate",
-    }),
-  );
-  await waitFor(() => expect(writes).toHaveLength(2));
-  expect(writes[1].body).toEqual(writes[0].body);
-  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(
+    screen
+      .getByRole("button", { name: "Apply all changes" })
+      .hasAttribute("disabled"),
+  ).toBe(true);
+  expect(
+    screen
+      .getByRole("button", { name: "Reviewed" })
+      .getAttribute("aria-pressed"),
+  ).toBe("true");
+  expect(writes).toHaveLength(1);
   await user.click(screen.getByRole("button", { name: "Reload review" }));
-  // The successful publication is now read-only.
-  await waitFor(() =>
-    expect(
-      screen.queryByRole("button", { name: "Apply candidate" }),
-    ).toBeNull(),
-  );
+  await screen.findByText("Target memory has changed");
+  expect(
+    screen
+      .getByRole("button", { name: "Mark as reviewed" })
+      .getAttribute("aria-pressed"),
+  ).toBe("false");
+  expect(screen.queryByText("Review needs attention")).toBeNull();
   cache.clear();
 });
-it("confirms replace-all with target-only deletion consequences", async () => {
+it("keeps full replacement out of the main path and confirms deletion consequences", async () => {
   const { cache, writes, user } = show("candidate", false, {
     ...candidate,
     target_seq: 4,
   });
-  await screen.findByText(
-    "The target has changed since this candidate started. Start a new organization task or explicitly replace the entire target.",
-  );
-  const checked = screen.getByRole("button", { name: "Apply candidate" });
-  expect(checked.hasAttribute("disabled")).toBe(true);
-  await user.click(checked);
-  expect(screen.queryByRole("dialog")).toBeNull();
-  expect(writes).toHaveLength(0);
+  await screen.findByText("Target memory has changed");
+  expect(
+    screen
+      .getByRole("button", { name: "Apply all changes" })
+      .hasAttribute("disabled"),
+  ).toBe(true);
+  expect(
+    screen.queryByRole("button", { name: "Replace entire target" }),
+  ).toBeNull();
+  await user.click(screen.getByRole("button", { name: /Other actions/ }));
   await user.click(
-    await screen.findByRole("combobox", { name: "Publication mode" }),
+    screen.getByRole("button", { name: "Replace entire target" }),
   );
-  await user.click(
-    await screen.findByRole("option", { name: "Replace entire target" }),
-  );
-  await screen.findByText(
-    "Replace the entire target tree with this candidate, deleting target-only files. No automatic merge.",
-  );
-  await user.click(screen.getByRole("button", { name: "Apply candidate" }));
   const dialog = within(screen.getByRole("dialog"));
   expect(
     dialog.getByText(
@@ -242,6 +266,53 @@ it("confirms replace-all with target-only deletion consequences", async () => {
       target_seq: 4,
     }),
   );
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("button", { name: "Apply all changes" }),
+    ).toBeNull(),
+  );
+  cache.clear();
+});
+it("navigates changed files and keeps review marks separate from whole-candidate application", async () => {
+  const { cache, writes, user } = show("candidate", false, {
+    ...candidate,
+    changes: [
+      ...candidate.changes,
+      { path: "notes/decisions.md", operation: "create" },
+    ],
+  });
+  await screen.findByRole("navigation", { name: "Changed files" });
+  await user.click(
+    await screen.findByRole("button", { name: "Mark as reviewed" }),
+  );
+  expect(screen.getByText("1 of 2 files reviewed")).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "Next file" }));
+  expect(
+    screen.getByRole("region", { name: "notes/decisions.md" }),
+  ).toBeTruthy();
+  expect(
+    await screen.findByRole("button", { name: "Mark as reviewed" }),
+  ).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "Apply all changes" }));
+  const dialog = within(screen.getByRole("dialog"));
+  expect(dialog.getByText("All 2 changed files")).toBeTruthy();
+  expect(dialog.getByText("1 of 2 files reviewed")).toBeTruthy();
+  await user.click(dialog.getByRole("button", { name: "Back to review" }));
+  expect(writes).toHaveLength(0);
+  cache.clear();
+});
+it.each([
+  "generating",
+  "failed",
+  "applied",
+  "discarded",
+  "unavailable",
+] as const)("does not offer publication for %s candidates", async (status) => {
+  const { cache } = show("candidate", false, { ...candidate, status });
+  await screen.findByText("Candidate review");
+  expect(
+    screen.queryByRole("button", { name: "Apply all changes" }),
+  ).toBeNull();
   cache.clear();
 });
 it("starts a candidate from an explicit session selection and opens its ordinary run", async () => {
@@ -314,7 +385,9 @@ it("keeps read-only review inspectable without publication controls", async () =
   writable = false;
   const { cache } = show("candidate");
   await screen.findByRole("link", { name: "Inspect candidate files" });
-  expect(screen.queryByRole("button", { name: "Apply candidate" })).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "Apply all changes" }),
+  ).toBeNull();
   expect(
     screen.queryByRole("button", { name: "Discard candidate" }),
   ).toBeNull();
