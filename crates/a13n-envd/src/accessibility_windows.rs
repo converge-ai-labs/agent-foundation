@@ -577,7 +577,7 @@ impl Native {
                 if method == "computer.a11y_find"
                     && result["nodes"].as_array().unwrap().len() >= b.limit("max_matches")
                 {
-                    b.mark("match_limit");
+                    b.mark("total_limit");
                     break;
                 }
                 match item {
@@ -833,7 +833,7 @@ fn matches_query(n: &Value, q: &Value) -> bool {
 // shorter handle; no result-size error may consume the caller's old cursor.
 fn page_fits(method: &str, result: &Value, root: &Value, b: &Budget) -> Result<bool, EIPError> {
     let mut page = result.clone();
-    page["completeness"] = json!({"complete":false,"reason":"match_limit","continuation":{"root":root,"cursor_handle":"x".repeat(128)}});
+    page["completeness"] = json!({"complete":false,"reason":"total_limit","continuation":{"root":root,"cursor_handle":"x".repeat(128)}});
     b.fits(method, &page)
 }
 fn fit_result(result: &mut Value, method: &str, b: &Budget) -> Result<(), EIPError> {
