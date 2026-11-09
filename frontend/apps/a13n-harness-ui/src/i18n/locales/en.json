@@ -3154,5 +3154,16 @@
   "Make room for your ideas": "Make room for your ideas",
   "Read, write and explore at a size that feels right.": "Read, write and explore at a size that feels right.",
   "What would you like to work on?": "What would you like to work on?",
-  "Reset appearance": "Reset appearance"
+  "Reset appearance": "Reset appearance",
+  "Annotation": "Annotation",
+  "Annotations": "Annotations",
+  "Add annotation": "Add annotation",
+  "Edit annotation {{number}}": "Edit annotation {{number}}",
+  "Delete annotation {{number}}": "Delete annotation {{number}}",
+  "Annotation comment": "Annotation comment",
+  "Optional comment…": "Optional comment…",
+  "Selected text": "Selected text",
+  "Your comment": "Your comment",
+  "Annotation count_one": "{{count}} annotation",
+  "Annotation count_other": "{{count}} annotations"
 }

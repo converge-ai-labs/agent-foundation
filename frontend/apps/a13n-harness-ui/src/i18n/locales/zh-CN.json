@@ -3128,5 +3128,15 @@
   "Make room for your ideas": "让想法清晰呈现",
   "Read, write and explore at a size that feels right.": "用舒适的字号阅读、写作和探索。",
   "What would you like to work on?": "你想做些什么？",
-  "Reset appearance": "重置外观"
+  "Reset appearance": "重置外观",
+  "Annotation": "批注",
+  "Annotations": "批注",
+  "Add annotation": "添加批注",
+  "Edit annotation {{number}}": "编辑第 {{number}} 条批注",
+  "Delete annotation {{number}}": "删除第 {{number}} 条批注",
+  "Annotation comment": "批注内容",
+  "Optional comment…": "写下备注（可选）…",
+  "Selected text": "选中的文字",
+  "Your comment": "你的备注",
+  "Annotation count_other": "{{count}} 条批注"
 }

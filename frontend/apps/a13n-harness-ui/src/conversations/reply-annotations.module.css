@@ -1,0 +1,221 @@
+::highlight(reply-annotation) {
+  background: color-mix(in srgb, var(--a13n-signal) 22%, transparent);
+  color: var(--a13n-text);
+}
+.reply {
+  position: relative;
+}
+[data-execution-reader] .reply[data-marked] {
+  padding-block-start: 20px;
+}
+.marker {
+  position: absolute;
+  translate: -50% -100%;
+  display: grid;
+  place-items: center;
+  height: 18px;
+  min-width: 18px;
+  padding-inline: 3px;
+  border-radius: 9px 9px 9px 3px;
+  background: var(--a13n-signal);
+  color: var(--a13n-canvas);
+  box-shadow: 0 0 0 1px var(--a13n-canvas);
+  font: 500 var(--a13n-text-2xs)/1 var(--a13n-font);
+  font-variant-numeric: tabular-nums;
+}
+.marker:is(:hover, :focus-visible, [data-active]) {
+  outline: 2px solid var(--a13n-signal-soft);
+  outline-offset: 1px;
+}
+
+/* The shared positioner normally interpolates between triggers. A text range
+   can move between any two words; place its controls at the new anchor in one paint. */
+[data-slot="popover-positioner"]:has(> :is(.selection, .editor, .preview)),
+:is(.selection, .editor, .preview)[data-slot] {
+  transition: none;
+}
+:is(.selection, .editor, .preview)[data-slot] {
+  scale: none;
+}
+:is(.selection, .editor, .preview) [data-slot="popover-viewport"] {
+  padding: 0;
+}
+
+.selection [data-slot="popover-viewport"] {
+  padding: 4px;
+}
+.add[data-slot] {
+  height: 24px;
+  padding-inline: 7px;
+  font-size: var(--a13n-text-sm);
+  font-weight: 400;
+}
+.chip svg {
+  color: var(--a13n-secondary);
+}
+.editor[data-slot] {
+  width: min(248px, calc(100vw - 24px));
+}
+.form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 4px;
+  padding: 6px;
+}
+.form textarea {
+  display: block;
+  min-width: 0;
+  margin: 0;
+  padding: 2px 6px;
+  resize: none;
+  background: transparent;
+  color: var(--a13n-text);
+  font: inherit;
+  font-size: var(--a13n-text-sm);
+  line-height: 20px;
+  field-sizing: content;
+  min-height: 24px;
+  max-height: 120px;
+  outline: none;
+}
+.form:has(.actions) textarea,
+.actions,
+.fallbackQuote {
+  grid-column: 1 / -1;
+}
+.actions {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+.actions > :first-child {
+  margin-inline-end: auto;
+  color: var(--a13n-secondary);
+}
+.form [data-slot="button"] {
+  height: 24px;
+  padding-inline: 8px;
+  border-radius: var(--harness-radius-control);
+  font-size: var(--a13n-text-sm);
+  line-height: 18px;
+}
+.form [data-size="icon-xs"],
+.itemHeading [data-size="icon-xs"] {
+  height: 24px;
+  width: 24px;
+  padding: 0;
+}
+.form [data-slot="button"] svg,
+.itemHeading [data-slot="button"] svg,
+.chip svg {
+  width: 14px;
+  height: 14px;
+}
+.chipRow {
+  padding: 2px var(--composer-text-inset, 8px) 0;
+}
+.chip[data-slot] {
+  height: 24px;
+  padding-inline: 7px;
+  gap: 6px;
+  border-color: var(--a13n-border);
+  border-radius: var(--harness-radius-control);
+  font-size: var(--a13n-text-xs);
+  font-weight: 400;
+  color: var(--a13n-secondary);
+}
+.chip[aria-expanded="true"] {
+  background: var(--a13n-hover);
+  color: var(--a13n-text);
+}
+
+.preview[data-slot] {
+  width: min(304px, calc(100vw - 24px));
+}
+.preview ol {
+  overflow: auto;
+  max-height: min(44dvh, 320px);
+  list-style: none;
+  padding: 0 12px;
+  margin: 0;
+  overscroll-behavior: contain;
+}
+.preview li {
+  padding-block: 6px 10px;
+}
+.preview li + li {
+  border-top: 1px solid var(--a13n-border);
+}
+.itemHeading {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--a13n-text-xs);
+  color: var(--a13n-secondary);
+}
+.ordinal {
+  font-variant-numeric: tabular-nums;
+}
+.itemHeading > button:first-of-type {
+  margin-inline-start: auto;
+}
+.itemHeading [data-slot="button"] {
+  color: var(--a13n-secondary);
+}
+.preview blockquote,
+.preview p,
+.fallbackQuote {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: var(--a13n-text-sm);
+  line-height: 1.5;
+}
+.preview blockquote,
+.fallbackQuote {
+  border-inline-start: 2px solid var(--a13n-border);
+  padding-inline-start: 8px;
+  color: var(--a13n-secondary);
+}
+.preview p {
+  margin-top: 8px;
+}
+.fallbackQuote {
+  max-height: 72px;
+  overflow: auto;
+}
+@media (hover: hover) and (pointer: fine) {
+  .preview li:not(:hover, :focus-within) .itemHeading button {
+    opacity: 0;
+  }
+}
+@media (pointer: coarse) {
+  /* Shared buttons extend their pointer targets to 44px. Leave those targets
+     room without enlarging the visible button faces. */
+  .selection [data-slot="popover-viewport"] {
+    padding: 10px;
+  }
+  .form {
+    padding: 10px;
+    gap: 8px;
+  }
+  .form textarea {
+    font-size: max(16px, var(--a13n-text-body));
+  }
+  .preview li {
+    padding-block: 10px 12px;
+  }
+  .itemHeading > button + button {
+    margin-inline-start: 16px;
+  }
+  .itemHeading {
+    margin-block-end: 8px;
+  }
+  .marker::after {
+    content: "";
+    position: absolute;
+    width: 44px;
+    height: 44px;
+  }
+}

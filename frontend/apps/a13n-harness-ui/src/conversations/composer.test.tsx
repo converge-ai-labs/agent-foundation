@@ -1730,3 +1730,40 @@ it("retains input and translates a pending selected App context rejection on lan
     await i18n.changeLanguage("en");
   }
 });
+
+it("keeps private quotations on rejection and clears only their accepted versions", async () => {
+  const draft = new ThreadDraft();
+  const first = {
+    source: "a",
+    start: 0,
+    raw: "same",
+    text: "same",
+    id: "1",
+    comment: "Rework this",
+  };
+  const second = { ...first, id: "2", comment: "Compare this" };
+  draft.setAnnotations([first, second]);
+  draft.receive({
+    draft_id: "draft-one",
+    participant_id: "me",
+    participants: {},
+    update_base64: encode(Y.encodeStateAsUpdate(draft.doc)),
+  });
+  const POST = vi
+    .fn()
+    .mockRejectedValueOnce(new ApiError("Not ready", 409))
+    .mockImplementationOnce(async () => {
+      draft.setAnnotations([first, { ...second, comment: "Later edit" }]);
+      return { data: { thread_id: "thread-one", receipt_id: "r" } };
+    });
+  const transport = { client: { POST } } as unknown as Transport;
+  await submitDraft(draft, transport, "thread-one", "send");
+  expect(draft.annotations).toEqual([first, second]);
+  await submitDraft(draft, transport, "thread-one", "send");
+  expect(POST.mock.calls[1][1].body.parts).toEqual([
+    "> same\n\nRework this\n\n> same\n\nCompare this",
+  ]);
+  expect(draft.annotations.map((n) => n.comment)).toEqual(["Later edit"]);
+  expect(values(draft.doc).prompt).toBe("");
+  draft.doc.destroy();
+});

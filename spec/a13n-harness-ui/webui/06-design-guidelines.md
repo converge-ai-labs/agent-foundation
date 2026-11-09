@@ -33,6 +33,8 @@ Labels sit closer to their content than the preceding group. Group insets accomm
 
 Light-theme baselines: canvas `#fefefe`, text `#333333`, sidebar `#fafafa`, muted surface `#f9f9f9`, hover 2.5% black, selected 4% black. Use theme tokens, including their dark equivalents, rather than local shades.
 
+Placeholder text uses a quieter theme tone than secondary labels across composer, form and search inputs. Entered text retains normal contrast; increased-contrast settings strengthen placeholders.
+
 Ordinary rows, cards and buttons stay flat on hover and press: no elevation, scaling, movement, weight jump or changing hit-area dimensions. Feedback uses light fill or color. A row has one background; nested overflow controls do not add another filled rectangle. Transcript disclosures use text emphasis only.
 
 Floating menus, popovers and dialogs retain shared overlay shadows. Borders identify controls, floating boundaries or dense row separation; ordinary grouping uses space and tone. Avoid nested frames. Where rounded surfaces are nested, inner radius is outer radius minus inset, bounded at zero.

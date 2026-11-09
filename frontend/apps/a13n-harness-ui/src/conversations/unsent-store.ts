@@ -33,7 +33,9 @@ export class UnsentStore {
       // Unsynchronized local edits (including deletion) still take precedence.
       const override = draft.replacement
         ? nonempty
-        : draft.status === "Connected" || draft.hasUnacknowledgedEdits;
+        : draft.annotations.length > 0 ||
+          draft.status === "Connected" ||
+          draft.hasUnacknowledgedEdits;
       if (
         previous?.nonempty === nonempty &&
         previous.override === override &&

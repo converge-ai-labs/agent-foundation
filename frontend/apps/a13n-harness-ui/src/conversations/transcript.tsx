@@ -34,6 +34,7 @@ import {
   savedToolGroups,
   type ToolView,
 } from "./tool-presentation";
+import { AnnotatedReply } from "./annotated-reply";
 import { MessageText } from "./message-text";
 import { CopyMessage } from "./copy-message";
 import { ContextActivity } from "./context-activity";
@@ -122,6 +123,8 @@ type Row = {
   anchor?: string;
   position?: number;
   readingAnchor?: string;
+  replySlot?: string;
+  savedReplyAnchor?: string;
   turnId?: string;
 } & (
   | { kind: "input"; parts: InputPart[]; status?: string }
@@ -593,7 +596,17 @@ function Rows({
         <ToolActivity tools={row.tools} />
       ) : row.kind === "assistant" ? (
         <section className={styles.assistantMessage}>
-          <MessageText text={row.text} />
+          <AnnotatedReply
+            source={
+              row.savedReplyAnchor ??
+              row.replySlot ??
+              row.readingAnchor ??
+              row.id
+            }
+            slot={row.replySlot}
+          >
+            <MessageText text={row.text} />
+          </AnnotatedReply>
           {row.truncated && (
             <small>{t("Saved preview truncated by the server.")}</small>
           )}
@@ -1041,7 +1054,11 @@ function usePresentedRows(rows: Row[], complete: boolean) {
         }
       : row;
     next.set(slot, { source: row, presented: result });
-    return result;
+    // A live quotation can still find the same input-relative slot after the
+    // turn is saved and remounted. Saved selections prefer exact entry offsets.
+    return row.kind === "assistant" && boundary !== "turn"
+      ? { ...result, replySlot: slot, savedReplyAnchor: row.readingAnchor }
+      : result;
   });
   useLayoutEffect(() => {
     previous.current = next;
