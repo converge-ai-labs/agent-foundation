@@ -1,4 +1,5 @@
 {
+  "Explicit Sessions and a bounded, inclusive seal-time window.": "显式选择 Session，并限定包含端点的运行封存时间范围。",
   "Create Memory Organization": "创建记忆整理任务",
   "List Memory Organizations": "列出记忆整理任务",
   "Get Memory Organization": "获取记忆整理任务",

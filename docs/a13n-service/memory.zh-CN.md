@@ -92,6 +92,28 @@ API 客户端通过 `GET /memory-spaces/{id}/organization` 读取状态，通过
 
 API 字段 `guidance.modules` 可以独立组合 `topics`、`journal` 和 `session_notes`。例如，`{"modules": ["topics", "session_notes"], "timezone": "UTC"}` 同时保留可复用知识和当前交接状态。省略 `modules` 时使用选定预设；`[]` 仅保留共用维护规则。系统覆盖文本替换完整的组合指南。通过 `GET /memories/guidance-presets` 读取可用模块文本。
 
+### 从选定对话中提炼知识
+
+在自定义整理请求中加入 `history`，即可从一个或多个对话 Session 提炼知识，也可写入空记忆：
+
+```json
+{
+  "target": {"kind": "memory", "id": "mem_..."},
+  "model": "your-model-key",
+  "instructions": "Extract supported product decisions, cite source Runs and retain conflicting statements.",
+  "history": {
+    "session_ids": ["ses_first", "ses_second"],
+    "after": "2026-01-01T00:00:00Z",
+    "before": "2026-02-01T00:00:00Z",
+    "max_runs": 100
+  }
+}
+```
+
+选择同一工作区内 1–100 个不重复的对话 Session。可选时间边界包含端点，按运行封存时间筛选，而非消息时间。受理时，Service 冻结匹配的已封存运行，并在 `sources` 中返回来源 Session、Thread 和 Run 标识。此后新增的对话不会改变选择。`max_runs` 默认为 100，最高 1000；超出上限会拒绝请求，需要缩小时间范围或拆分 Session。空选择不提供历史事实。
+
+整理器通过有界来源查询与内容读取、搜索工具读取选定范围。它将对话视为证据，保留更正与分歧，并区分用户陈述和 agent 推断。省略 `history` 时仅整理已保存文件。升级不会自动扫描旧对话或消耗模型 token。
+
 ### 基于当前知识写入
 
 Agent 与整理器会跟踪对话已读取的文件版本。每次文件修改都会原子校验同一份记忆中的这些观察记录，并执行写入。源文件或目标文件变化时返回 `read_conflict`，指出需要重读的文件。

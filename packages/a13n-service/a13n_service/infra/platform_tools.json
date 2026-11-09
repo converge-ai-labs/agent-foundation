@@ -524,6 +524,12 @@
   {
     "effect": "read",
     "group": "execution",
+    "key": "list_organization_sources",
+    "summary": "List this organization's frozen source Runs with Session and Thread provenance, oldest seal first.\n\nRead selected Runs with get_run and list_run_items, then read/search their returned content references.\nAn empty page supplies no conversation evidence. Continue with next_offset when present."
+  },
+  {
+    "effect": "read",
+    "group": "execution",
     "key": "list_run_attempts",
     "summary": "List execution attempts for a run, including their status and worker ownership metadata."
   },

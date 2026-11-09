@@ -23,6 +23,7 @@ class OrganizationRow(Base):
     organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"))
     workspace_id: Mapped[str]
     request: Mapped[dict] = mapped_column(JSONB)
+    sources: Mapped[list[dict]] = mapped_column(JSONB, default=list, server_default=text("'[]'::jsonb"))
     # Historical identities survive deletion of the target, like a Run's frozen mounts.
     memory_id: Mapped[str]
     space_id: Mapped[str | None]

@@ -12696,6 +12696,13 @@
             "title": "Session Id",
             "type": "string"
           },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/OrganizationSource"
+            },
+            "title": "Sources",
+            "type": "array"
+          },
           "thread_id": {
             "title": "Thread Id",
             "type": "string"
@@ -12709,6 +12716,7 @@
           "id",
           "workspace_id",
           "request",
+          "sources",
           "session_id",
           "thread_id",
           "run_id",
@@ -16380,6 +16388,57 @@
         "title": "Organization",
         "type": "object"
       },
+      "OrganizationHistory": {
+        "additionalProperties": false,
+        "description": "Explicit Sessions and a bounded, inclusive seal-time window.",
+        "properties": {
+          "after": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After"
+          },
+          "before": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before"
+          },
+          "max_runs": {
+            "default": 100,
+            "maximum": 1000.0,
+            "minimum": 1.0,
+            "title": "Max Runs",
+            "type": "integer"
+          },
+          "session_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Session Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "session_ids"
+        ],
+        "title": "OrganizationHistory",
+        "type": "object"
+      },
       "OrganizationPage": {
         "properties": {
           "items": {
@@ -16467,6 +16526,16 @@
       "OrganizationRequest": {
         "additionalProperties": false,
         "properties": {
+          "history": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OrganizationHistory"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "instructions": {
             "default": "Organize the saved memory files.",
             "maxLength": 16384,
@@ -16489,6 +16558,36 @@
           "model"
         ],
         "title": "OrganizationRequest",
+        "type": "object"
+      },
+      "OrganizationSource": {
+        "additionalProperties": false,
+        "properties": {
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "sealed_at": {
+            "format": "date-time",
+            "title": "Sealed At",
+            "type": "string"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "thread_id": {
+            "title": "Thread Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "thread_id",
+          "run_id",
+          "sealed_at"
+        ],
+        "title": "OrganizationSource",
         "type": "object"
       },
       "OrganizationTarget": {

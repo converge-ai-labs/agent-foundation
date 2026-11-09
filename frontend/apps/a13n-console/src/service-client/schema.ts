@@ -9507,6 +9507,8 @@ export interface components {
       run_id: string;
       /** Session Id */
       session_id: string;
+      /** Sources */
+      sources: components["schemas"]["OrganizationSource"][];
       /** Thread Id */
       thread_id: string;
       /** Workspace Id */
@@ -10647,6 +10649,23 @@ export interface components {
       /** Version */
       version: number;
     };
+    /**
+     * OrganizationHistory
+     * @description Explicit Sessions and a bounded, inclusive seal-time window.
+     */
+    OrganizationHistory: {
+      /** After */
+      after?: string | null;
+      /** Before */
+      before?: string | null;
+      /**
+       * Max Runs
+       * @default 100
+       */
+      max_runs?: number;
+      /** Session Ids */
+      session_ids: string[];
+    };
     /** OrganizationPage */
     OrganizationPage: {
       /** Items */
@@ -10680,6 +10699,7 @@ export interface components {
     };
     /** OrganizationRequest */
     OrganizationRequest: {
+      history?: components["schemas"]["OrganizationHistory"] | null;
       /**
        * Instructions
        * @default Organize the saved memory files.
@@ -10688,6 +10708,20 @@ export interface components {
       /** Model */
       model: string;
       target: components["schemas"]["OrganizationTarget"];
+    };
+    /** OrganizationSource */
+    OrganizationSource: {
+      /** Run Id */
+      run_id: string;
+      /**
+       * Sealed At
+       * Format: date-time
+       */
+      sealed_at: string;
+      /** Session Id */
+      session_id: string;
+      /** Thread Id */
+      thread_id: string;
     };
     OrganizationTarget:
       | components["schemas"]["FileMemoryTarget"]

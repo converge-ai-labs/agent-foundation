@@ -7,7 +7,7 @@ from a13n_service.runs.tables import SessionRow
 from sqlalchemy import func, select
 
 from .test_memory_spaces import create_space, due, patch, save
-from .test_runs_memory import team_memory, text, tool_names
+from .test_runs_memory import team_memory, text, tool_names, tool_result
 
 pytestmark = pytest.mark.anyio
 
@@ -29,7 +29,8 @@ async def test_standalone_organization_freezes_request_and_uses_ordinary_worker(
     response = await service.client.post(f"{service.api}/memory-organizations", json=request)
     assert response.status_code == 202, response.text
     organization = response.json()
-    assert organization["request"] == request
+    assert organization["request"] == {**request, "history": None}
+    assert organization["sources"] == []
     run = await runs_kit.get_run(service, organization["run_id"])
     assert run["memory_mounts"][0]["memory_id"] == memory["id"]
     assert run["memory_mounts"][0]["roots"] == []
@@ -146,6 +147,112 @@ async def test_ad_hoc_writes_do_not_trigger_automation_but_external_changes_do(s
     await due(service, space)
     await organize(service.runtime)
     assert len(await history(service, space)) == 1
+
+
+async def test_history_selection_is_frozen_across_sessions_and_enforced_on_content(
+    service, scripted_model, runs_kit, listen
+):
+    from dataclasses import replace
+
+    from a13n_service.infra.errors import ServiceError
+    from a13n_service.platform_catalog import catalog
+    from a13n_service.runs import content_tools, platform_queries
+
+    from .test_platform_execution import context
+
+    model = await runs_kit.create_model(service, scripted_model)
+    agent = await runs_kit.add_agent(service, "Historian", model)
+    sources = []
+    for value in ("User prefers tea", "User corrects tea to coffee"):
+        created = await runs_kit.start_thread(service, agent, value)
+        scripted_model.say("Noted")
+        await (await runs_kit.attempt(service))
+        await scripted_model.request()
+        sources.append(created)
+    memory = (await service.client.post(f"{service.api}/memories", json={"name": "Empty"})).json()
+    request = {
+        "target": {"kind": "memory", "id": memory["id"]},
+        "model": model,
+        "instructions": "Extract preferences with source Run provenance.",
+        "history": {"session_ids": [item["thread"]["session_id"] for item in sources]},
+    }
+    accepted = await service.client.post(f"{service.api}/memory-organizations", json=request)
+    assert accepted.status_code == 202, accepted.text
+    organization = accepted.json()
+    assert [item["run_id"] for item in organization["sources"]] == [item["run"]["id"] for item in sources]
+    ctx = replace(context(service), origin=organization["run_id"])
+    tools = {tool.name: tool for tool in catalog()}
+    page = await tools["list_organization_sources"].handler(ctx, offset=0, limit=1)
+    assert len(page.items) == 1 and page.next_offset == 1
+    assert (await platform_queries.list_organization_sources(ctx, offset=1)).next_offset is None
+    selected = await tools["get_run"].handler(ctx, run_id=sources[0]["run"]["id"])
+    first = await content_tools.read_content(ctx, reference=selected.content["input"], limit=30)
+    assert first.continuation
+    assert (await content_tools.read_content(ctx, reference=first.continuation, limit=30)).fragment.offset == 30
+    # Integrity of a reference is not authority: even a host-encoded reference is checked against the snapshot.
+    forbidden = content_tools.value_reference(
+        ctx, content_tools.RunSource(run_id=organization["run_id"], section="input"), "anything"
+    )
+    for name, arguments in (("get_run", {"run_id": organization["run_id"]}), ("list_sessions", {})):
+        with pytest.raises(ServiceError):
+            await tools[name].handler(ctx, **arguments)
+    for name in ("read_content", "search_content"):
+        arguments = {"reference": forbidden, **({"query": "anything"} if name == "search_content" else {})}
+        with pytest.raises(ServiceError):
+            await tools[name].handler(ctx, **arguments)
+    # Run the real organizer with native platform tools and write useful facts into the initially empty store.
+    scripted_model.call("list_organization_sources", {}, call_id="sources")
+    scripted_model.call("get_run", {"run_id": sources[1]["run"]["id"]}, call_id="history")
+    scripted_model.call(
+        "memory_file_create",
+        {"memory": "memory", "path": "preferences.md", "content": "Prefers coffee"},
+        call_id="save",
+    )
+    scripted_model.say("Saved the correction with source provenance.")
+    async with listen(service.app) as url:
+        settings = service.runtime.settings
+        runtime = replace(
+            service.runtime,
+            settings=settings.model_copy(update={"server": settings.server.model_copy(update={"control_url": url})}),
+        )
+        await (await runs_kit.attempt(service, runtime=runtime))
+    assert (await runs_kit.get_run(service, organization["run_id"]))["status"] == "completed"
+    await scripted_model.request()
+    source_result = await scripted_model.request()
+    assert sources[0]["run"]["id"] in tool_result(source_result, "sources")
+    await runs_kit.start_thread(service, agent, "New facts", session_id=sources[0]["thread"]["session_id"])
+    scripted_model.say("Later")
+    await (await runs_kit.attempt(service))
+    assert (await service.client.get(f"{service.api}/memory-organizations/{organization['id']}")).json()[
+        "sources"
+    ] == organization["sources"]
+
+
+async def test_history_refuses_overflow_and_managed_sessions_atomically(service, scripted_model, runs_kit):
+    model = await runs_kit.create_model(service, scripted_model)
+    agent = await runs_kit.add_agent(service, "Historian", model)
+    created = await runs_kit.start_thread(service, agent, "First")
+    scripted_model.say("Done")
+    await (await runs_kit.attempt(service))
+    await scripted_model.request()
+    response = await runs_kit.submit(service, created["thread"]["id"], runs_kit.message(agent, "Second"))
+    assert response.status_code == 201, response.text
+    scripted_model.say("Done again")
+    await (await runs_kit.attempt(service))
+    await scripted_model.request()
+    memory = await team_memory(service)
+    base = {"target": {"kind": "memory", "id": memory["id"]}, "model": model}
+    overflow = await service.client.post(
+        f"{service.api}/memory-organizations",
+        json={**base, "history": {"session_ids": [created["thread"]["session_id"]], "max_runs": 1}},
+    )
+    assert overflow.status_code == 400, overflow.text
+    assert (await service.client.get(f"{service.api}/memory-organizations")).json()["items"] == []
+    accepted = (await service.client.post(f"{service.api}/memory-organizations", json=base)).json()
+    invalid = await service.client.post(
+        f"{service.api}/memory-organizations", json={**base, "history": {"session_ids": [accepted["session_id"]]}}
+    )
+    assert invalid.status_code == 400, invalid.text
 
 
 def test_historical_organization_mount_decodes_without_rewriting_snapshot():

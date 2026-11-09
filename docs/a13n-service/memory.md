@@ -92,6 +92,28 @@ For a Space, use `{"kind": "space", "id": "mspace_..."}`. The managed backing me
 
 The `guidance.modules` API field combines `topics`, `journal` and `session_notes` independently. For example, `{"modules": ["topics", "session_notes"], "timezone": "UTC"}` keeps reusable knowledge and current handoff state. Omit `modules` to use the selected preset; `[]` keeps only common maintenance rules. A system override replaces the complete composed guide. Read the available module text with `GET /memories/guidance-presets`.
 
+### Extract knowledge from selected conversations
+
+Add `history` to a custom organization request to extract knowledge from one or several conversation Sessions, including into an empty memory:
+
+```json
+{
+  "target": {"kind": "memory", "id": "mem_..."},
+  "model": "your-model-key",
+  "instructions": "Extract supported product decisions, cite source Runs and retain conflicting statements.",
+  "history": {
+    "session_ids": ["ses_first", "ses_second"],
+    "after": "2026-01-01T00:00:00Z",
+    "before": "2026-02-01T00:00:00Z",
+    "max_runs": 100
+  }
+}
+```
+
+Select 1–100 unique conversation Sessions in the same workspace. The optional time bounds apply inclusively to Run seal time, not message time. At acceptance, the Service freezes the matching sealed Runs and returns their Session, Thread and Run provenance in `sources`. Later conversation activity does not change that selection. `max_runs` defaults to 100 and supports up to 1000; an overfull selection is refused, so narrow the window or split the Sessions. An empty selection supplies no historical facts.
+
+The organizer has bounded source discovery and content reading/search tools limited to that selection. It treats transcripts as evidence, preserves corrections and disagreements, and distinguishes user statements from agent claims. Omitting `history` organizes saved files only. Upgrading does not scan old conversations or spend model tokens automatically.
+
 ### Write from current knowledge
 
 Agents and organizers track the file versions their conversation has read. Each file mutation checks those observations within the same memory, atomically with the write. A changed source or target returns `read_conflict` and names the file to reread.

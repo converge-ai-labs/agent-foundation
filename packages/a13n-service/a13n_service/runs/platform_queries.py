@@ -7,12 +7,15 @@ from pydantic import BaseModel, Field
 from pydantic import Field as Query
 
 from a13n_service.infra import reads
+from a13n_service.infra.errors import invalid
 from a13n_service.infra.http import PageLimit
 from a13n_service.platform_tools import ToolContext as PlatformContext
 from a13n_service.platform_tools import definition
 from a13n_service.resources.agents import read_views as agent_reads
 from a13n_service.runs import authors, entries, item_reads, listings, read_views, runs, sessions, threads
 from a13n_service.runs import content_tools as content
+from a13n_service.runs.memories import organization_history
+from a13n_service.runs.memories.organization_schemas import OrganizationSourcePage
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import (
     Attempts,
@@ -301,7 +304,26 @@ async def get_run_attempt(ctx: ToolContext, *, run_id: str, attempt_id: str) -> 
     return await runs.get_attempt(ctx.runtime.storage, ctx.actor, ctx.workspace_id, run_id, attempt_id)
 
 
+async def list_organization_sources(
+    ctx: ToolContext,
+    *,
+    offset: Annotated[int, Field(ge=0)] = 0,
+    limit: Annotated[int, Field(ge=1, le=100)] = 50,
+) -> OrganizationSourcePage:
+    """List this organization's frozen source Runs with Session and Thread provenance, oldest seal first.
+
+    Read selected Runs with get_run and list_run_items, then read/search their returned content references.
+    An empty page supplies no conversation evidence. Continue with next_offset when present.
+    """
+    selected = await organization_history.sources(ctx.runtime, ctx.actor, ctx.workspace_id, ctx.origin)
+    if selected is None:
+        raise invalid("origin", "This tool requires a memory organization Run")
+    end = offset + limit
+    return OrganizationSourcePage(items=selected[offset:end], next_offset=end if end < len(selected) else None)
+
+
 TOOLS = (
+    definition(list_organization_sources, group="execution", effect="read"),
     definition(list_sessions, group="execution", effect="read"),
     definition(get_session, group="execution", effect="read"),
     definition(get_message_authors, group="execution", effect="read"),
