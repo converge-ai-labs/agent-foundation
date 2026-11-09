@@ -12,7 +12,7 @@ Live 模式让你在切换 WebUI 页面时通过语音与 Harness UI 交谈。�
 1. 打开 **Settings → General → Live**。
 2. 启用 Live，选择已有的 Codex subscription Model。
 3. 首次测试保留默认音色 `cove`。选择是否允许 Live 执行器使用文件工具，然后保存。
-4. 在工作区顶部找到 **Start voice**，或从侧栏打开 **Live**。保存设置会显示这些控件，不会启动麦克风。
+4. 打开侧栏底部的工作区菜单，选择 **Live**。
 5. 点击 **Start voice**，允许麦克风访问，等待 **Connected**。
 6. 说一个简短请求，例如“告诉我你能协助协调哪些任务”。检查 **You**、**Assistant** 字幕及语音回复。
 7. 点击顶部的 **Stop** 或 Live 页面的 **Stop voice**，确认麦克风指示消失。

@@ -12,7 +12,7 @@ Before starting, configure and sign in to a [Codex subscription Model](models-an
 1. Open **Settings → General → Live**.
 2. Enable Live and select your existing Codex subscription Model.
 3. Choose a voice. Keep the default `cove` for the first test. Choose whether the Live executor may use file tools, then save.
-4. Find **Start voice** in the workspace header or open **Live** from the sidebar. Saving settings exposes these controls; it does not start the microphone.
+4. Open the workspace menu at the bottom of the sidebar and select **Live**.
 5. Press **Start voice** and allow microphone access. Wait for **Connected**.
 6. Say a short request, such as “Tell me what tasks you can help coordinate.” Check the **You** and **Assistant** captions and the spoken response.
 7. Press **Stop** in the header or **Stop voice** on the Live page. Confirm that the microphone indicator clears.

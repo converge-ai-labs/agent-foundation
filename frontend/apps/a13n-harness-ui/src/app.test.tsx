@@ -1441,17 +1441,20 @@ it("shows Live entries only after enabling and saving, and hides them again with
   await user.click(live);
   expectHidden();
   await user.click(screen.getByRole("button", { name: "Save" }));
+  await user.click(screen.getByRole("link", { name: "Back to chats" }));
+  expectHidden();
+  await user.click(screen.getByRole("button", { name: "Workspace menu" }));
+  await user.click(await screen.findByRole("menuitem", { name: "Live" }));
   expect(
     await screen.findByRole("button", { name: "Start voice" }),
   ).toBeTruthy();
-  await user.click(screen.getByRole("link", { name: "Back to chats" }));
-  expect(await screen.findByRole("link", { name: "Live" })).toBeTruthy();
-  await user.click(screen.getByRole("button", { name: "Workspace menu" }));
-  await user.click(await screen.findByRole("menuitem", { name: "Settings" }));
+  await user.click(screen.getByRole("link", { name: "Settings" }));
   await user.click(await screen.findByRole("switch", { name: "Live" }));
   await user.click(screen.getByRole("button", { name: "Save" }));
   await user.click(screen.getByRole("link", { name: "Back to chats" }));
   await waitFor(expectHidden);
+  await user.click(screen.getByRole("button", { name: "Workspace menu" }));
+  expect(screen.queryByRole("menuitem", { name: "Live" })).toBeNull();
   expect(writes).toBe(2);
   const writesToExecution = vi.mocked(fetch).mock.calls.filter(([input]) => {
     const request = input as Request;

@@ -8,7 +8,6 @@ import { VoicePage, VoiceIndicator, useVoiceSettings } from "../voice";
 import { useEffect, useRef, useState } from "react";
 import {
   Link,
-  NavLink,
   Navigate,
   Route,
   Routes,
@@ -210,11 +209,6 @@ function WorkbenchContent({
     writePreference("sidebar", sidebarCollapsed ? "collapsed" : "expanded");
   }, [sidebarCollapsed]);
   const updateProfile = (next: Profile) => setProfile(next);
-  const links = [
-    ...(voiceSettings.data?.enabled
-      ? [{ to: "/live", label: t("Live"), icon: Waveform }]
-      : []),
-  ];
   const navigation = (
     <>
       <div hidden={settingsMode} className={styles.navigationBody}>
@@ -229,26 +223,6 @@ function WorkbenchContent({
           />
         ) : (
           <ConversationNavigation />
-        )}
-        {links.length > 0 && (
-          <nav
-            aria-label={t("Workbench shortcuts")}
-            className={styles.supportingNav}
-          >
-            {links.map(({ to, label, icon: Icon }) => (
-              <NavLink
-                key={to}
-                to={to}
-                end={to === "/"}
-                className={({ isActive }) =>
-                  isActive ? styles.activeNav : styles.navLink
-                }
-              >
-                <Icon size={18} />
-                <span>{label}</span>
-              </NavLink>
-            ))}
-          </nav>
         )}
       </div>
       {settingsMode && <SettingsNavigation backTo={lastChat.current} />}
@@ -278,6 +252,12 @@ function WorkbenchContent({
               <Gear />
               {t("Settings")}
             </MenuItem>
+            {voiceSettings.data?.enabled && (
+              <MenuItem render={<Link to="/live" />}>
+                <Waveform />
+                {t("Live")}
+              </MenuItem>
+            )}
             {memoryEnabled && (
               <MenuItem render={<Link to="/memory" />}>
                 <Brain />

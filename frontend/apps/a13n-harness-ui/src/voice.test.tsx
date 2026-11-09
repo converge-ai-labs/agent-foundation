@@ -8,7 +8,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MemoryRouter, Route, Routes, useLocation } from "react-router";
+import { Link, MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { i18n } from "./i18n";
 import { createTransport } from "./transport/client";
@@ -57,6 +57,7 @@ function Workspace() {
     <>
       <h1>Workspace</h1>
       <p>{location.pathname}</p>
+      <Link to="/live">Live</Link>
       <VoiceIndicator />
     </>
   );
@@ -82,6 +83,7 @@ function mount(enabled = true, response?: () => Promise<Response>) {
         <MemoryRouter initialEntries={["/threads/thread-example"]}>
           <VoiceProvider>
             <Routes>
+              <Route path="/" element={<Workspace />} />
               <Route path="/threads/:id" element={<Workspace />} />
               <Route path="/live" element={<VoicePage />} />
             </Routes>
@@ -93,16 +95,19 @@ function mount(enabled = true, response?: () => Promise<Response>) {
   return client;
 }
 
-it("starts voice in place, retains the call on navigation, and hides pending captions after stop", async () => {
-  mount();
+async function startFromLivePage() {
+  fireEvent.click(screen.getByRole("link", { name: "Live" }));
   const start = await screen.findByRole("button", { name: "Start voice" });
-  await waitFor(() =>
-    expect((start as HTMLButtonElement).disabled).toBe(false),
-  );
+  await waitFor(() => expect(start.hasAttribute("disabled")).toBe(false));
   expect(voice.start).not.toHaveBeenCalled();
   fireEvent.click(start);
+  fireEvent.click(screen.getByRole("link", { name: "Workspace" }));
+}
+
+it("starts voice on the Live page, retains the call on navigation, and hides pending captions after stop", async () => {
+  mount();
+  await startFromLivePage();
   expect(voice.start).toHaveBeenCalledTimes(1);
-  expect(screen.getByText("/threads/thread-example")).toBeTruthy();
   expect(screen.getByRole("button", { name: "Stop voice" })).toBeTruthy();
   act(() =>
     publish({
@@ -135,11 +140,7 @@ it("starts voice in place, retains the call on navigation, and hides pending cap
 
 it("shows workspace connection errors and allows explicit retry or startup cancellation", async () => {
   mount();
-  const start = await screen.findByRole("button", { name: "Start voice" });
-  await waitFor(() =>
-    expect((start as HTMLButtonElement).disabled).toBe(false),
-  );
-  fireEvent.click(start);
+  await startFromLivePage();
   act(() =>
     publish({ status: "failed", error: "Microphone permission denied" }),
   );
@@ -147,17 +148,15 @@ it("shows workspace connection errors and allows explicit retry or startup cance
     "Microphone permission denied",
   );
   expect(voice.start).toHaveBeenCalledTimes(1);
-  fireEvent.click(screen.getByRole("button", { name: "Start voice" }));
+  fireEvent.click(screen.getByRole("button", { name: "Retry voice" }));
   expect(screen.queryByRole("alert")).toBeNull();
   expect(voice.start).toHaveBeenCalledTimes(2);
   fireEvent.click(screen.getByRole("button", { name: "Stop voice" }));
   expect(voice.stop).toHaveBeenCalledTimes(1);
-  expect(screen.getByText("/threads/thread-example")).toBeTruthy();
 });
 
 it("switches retained local voice errors while preserving provider messages", async () => {
   mount();
-  await screen.findByRole("button", { name: "Start voice" });
   act(() =>
     publish({
       status: "failed",
@@ -167,7 +166,9 @@ it("switches retained local voice errors while preserving provider messages", as
   );
   try {
     await act(() => i18n.changeLanguage("zh-CN"));
-    expect(screen.getByRole("alert").textContent).toBe("麦克风访问已结束。");
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "麦克风访问已结束。",
+    );
     act(() =>
       publish({ error: "Microphone access ended.", errorLocalizable: false }),
     );
@@ -179,9 +180,9 @@ it("switches retained local voice errors while preserving provider messages", as
   }
 });
 
-it("hides workspace voice controls until enabled settings arrive", async () => {
+it("keeps idle voice out of the header before and after settings arrive", async () => {
   let resolve!: (response: Response) => void;
-  mount(
+  const client = mount(
     true,
     () =>
       new Promise((done) => {
@@ -196,9 +197,8 @@ it("hides workspace voice controls until enabled settings arrive", async () => {
       headers: { "Content-Type": "application/json" },
     }),
   );
-  expect(
-    await screen.findByRole("button", { name: "Start voice" }),
-  ).toBeTruthy();
+  await waitFor(() => expect(client.isFetching()).toBe(0));
+  expect(screen.queryByRole("button", { name: "Start voice" })).toBeNull();
   expect(voice.start).not.toHaveBeenCalled();
 });
 
@@ -227,7 +227,6 @@ it.each(["starting", "connecting", "active"] as const)(
   "retains Stop when Live is disabled during a %s call",
   async (status) => {
     const client = mount();
-    await screen.findByRole("button", { name: "Start voice" });
     act(() => {
       publish({ status });
       client.setQueryData(["voice-status"], { enabled: false });
@@ -244,11 +243,7 @@ it.each(["starting", "connecting", "active"] as const)(
 
 it("changes language during a call without restarting it or changing captions", async () => {
   mount();
-  const start = await screen.findByRole("button", { name: "Start voice" });
-  await waitFor(() =>
-    expect((start as HTMLButtonElement).disabled).toBe(false),
-  );
-  fireEvent.click(start);
+  await startFromLivePage();
   act(() =>
     publish({
       status: "active",

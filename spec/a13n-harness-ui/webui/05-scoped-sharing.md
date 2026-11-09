@@ -36,7 +36,7 @@ Realtime subscriptions authorize the requested root and never expose the instanc
 
 ## Browser Experience
 
-The owner conversation header places Share beside the icon-only voice control. The share panel first selects the current conversation or its Project, permission and lifetime. Creating a link transitions to a copyable result with visible scope, permission and expiry. Existing links can be managed without generating new keys. Editing permission has a distinct save action; copy never silently changes access.
+The owner conversation header provides a Share action. The share panel first selects the current conversation or its Project, permission and lifetime. Creating a link transitions to a copyable result with visible scope, permission and expiry. Existing links can be managed without generating new keys. Editing permission has a distinct save action; copy never silently changes access.
 
 The owner Share entry and link-management panel provide English and Simplified Chinese. Changing display language preserves the open dialog, selected scope, permission and lifetime, the issued link and its selection, copy feedback, expanded link management and unsaved permission edits. In-flight creation, permission updates and revocation retain their existing identities and pending state; switching does not issue or retry requests. Creation and expiry dates and grant counts follow the display language. Authored Project names, share identifiers, keys and raw server diagnostics remain verbatim. Guest-page language coverage is a separate incremental workflow.
 

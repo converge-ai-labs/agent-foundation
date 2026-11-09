@@ -13,11 +13,6 @@
 .navigationBody[hidden] {
   display: none;
 }
-.supportingNav {
-  display: grid;
-  gap: 4px;
-  margin-top: 12px;
-}
 .sidebarHeader {
   display: flex;
   align-items: center;
