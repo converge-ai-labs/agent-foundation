@@ -46,7 +46,7 @@ from a13n_service.runs.attempts import Lease
 from a13n_service.runs.memories.schemas import FrozenMemoryMount
 from a13n_service.runs.memories.view import SpaceFileView
 from a13n_service.runs.runtime import Runtime
-from a13n_service.runs.tables import RunRow
+from a13n_service.runs.tables import RunRow, ThreadRow
 from a13n_service.runs.tool_executions.authority import prove
 from a13n_service.settings import MemorySettings
 from a13n_service.tenancy.authorize import ExecutionAuthority, Principal, Verb, WorkspaceScope, authorize
@@ -65,12 +65,14 @@ class PlannedMemory:
     always_load: tuple[str, ...]
     # A record memory with its enabled provider; None for a file memory.
     record: RecordMemory | None = None
+    organizing: bool = False
 
 
 async def resolve_memories(session: AsyncSession, run: RunRow) -> tuple[PlannedMemory, ...]:
     mounts = [FrozenMemoryMount.model_validate(mount) for mount in run.memory_mounts]
     if not mounts:
         return ()
+    purpose = await session.scalar(select(ThreadRow.purpose).where(ThreadRow.id == run.thread_id))
     rows = {
         row.id: row
         for row in await session.scalars(
@@ -99,7 +101,15 @@ async def resolve_memories(session: AsyncSession, run: RunRow) -> tuple[PlannedM
             own_index = f"sessions/{run.session_id}/MEMORY.md"
             if own_index.startswith(mount.roots) and own_index not in always_load:
                 always_load += (own_index,)
-        planned.append(PlannedMemory(mount, row.guide if record is not None else mount.file_guide, always_load, record))
+        planned.append(
+            PlannedMemory(
+                mount,
+                row.guide if record is not None else mount.file_guide,
+                always_load,
+                record,
+                organizing=purpose == "memory_organization",
+            )
+        )
     return tuple(planned)
 
 
@@ -171,14 +181,14 @@ def file_memory(
                         memory.mount.memory_id,
                         settings,
                         gate=gate,
-                        count_changes=not memory.mount.organizing,
+                        count_changes=not memory.organizing,
                     ),
                     memory.mount.roots,
                     file_format(settings),
                 )
                 if memory.mount.space_id is not None
                 else PostgresFileStore(
-                    storage, memory.mount.memory_id, settings, gate=gate, count_changes=not memory.mount.organizing
+                    storage, memory.mount.memory_id, settings, gate=gate, count_changes=not memory.organizing
                 )
             ),
             access=memory.mount.access,

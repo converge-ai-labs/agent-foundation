@@ -173,4 +173,7 @@ def resolve_guidance(guidance: FileMemoryGuidance) -> str:
 def validate_guidance(guidance: FileMemoryGuidance, *, max_bytes: int) -> dict:
     if len((guidance.system_override or "").encode()) + len(guidance.custom.encode()) > max_bytes:
         raise invalid("guidance", f"owner-authored system override and custom guidance exceeds {max_bytes} bytes")
-    return guidance.model_dump(mode="json")
+    values = guidance.model_dump(mode="json")
+    if guidance.modules is None:
+        values.pop("modules")
+    return values

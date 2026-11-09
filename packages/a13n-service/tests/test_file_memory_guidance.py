@@ -30,6 +30,11 @@ async def test_accepted_runs_freeze_guidance_while_new_runs_get_edits(service, s
     space = await create_space(
         service, guidance={"system_preset": "journal", "custom": "Keep milestones.", "timezone": "Asia/Taipei"}
     )
+    from a13n_service.resources.memories.tables import MemoryRow
+
+    async with short_session(service.runtime.storage) as session:
+        stored = await session.get_one(MemoryRow, space["memory_id"])
+        assert stored.guidance is not None and "modules" not in stored.guidance
     model = await runs_kit.create_model(service, scripted_model)
     agent = await runs_kit.add_agent(service, "Journal", model, memory={"enabled": True, "spaces": [binding(space)]})
     first = await runs_kit.start_thread(service, agent, "First")
@@ -66,7 +71,10 @@ async def frozen_mount(service, run_id):
 
 def test_builtin_presets_do_not_consume_the_owner_authored_budget():
     guidance = FileMemoryGuidance(system_preset="journal")
-    assert validate_guidance(guidance, max_bytes=256)["system_preset"] == "journal"
+    saved = validate_guidance(guidance, max_bytes=256)
+    assert saved["system_preset"] == "journal"
+    assert "modules" not in saved
+    assert FileMemoryGuidance.model_validate(saved).modules is None
     with pytest.raises(ServiceError, match="owner-authored"):
         validate_guidance(guidance.model_copy(update={"custom": "字" * 86}), max_bytes=256)
     with pytest.raises(ServiceError, match="owner-authored"):

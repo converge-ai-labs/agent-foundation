@@ -88,7 +88,7 @@ Use `POST /memory-organizations` to organize a standalone file memory or an enab
 }
 ```
 
-For a Space, use `{"kind": "space", "id": "mspace_..."}`. The managed backing memory cannot be selected directly. The response identifies the organization request and its ordinary run. Read it with `GET /memory-organizations/{id}`; use the run API for status, cancellation, usage and traces. Each submitted task keeps its own instructions and caller authority. Failed or cancelled runs retain committed edits.
+For a Space, use `{"kind": "space", "id": "mspace_..."}`. The managed backing memory cannot be selected directly. The response identifies the organization request and its ordinary run. Read it with `GET /memory-organizations/{id}`; use the run API for status, cancellation, usage and traces. Each submission accepts a distinct task, including a retry after an uncertain response; separate tasks may run concurrently against the same target with ordinary file conflict checks. Each keeps its own instructions and caller authority. Failed or cancelled runs retain committed edits.
 
 The `guidance.modules` API field combines `topics`, `journal` and `session_notes` independently. For example, `{"modules": ["topics", "session_notes"], "timezone": "UTC"}` keeps reusable knowledge and current handoff state. Omit `modules` to use the selected preset; `[]` keeps only common maintenance rules. A system override replaces the complete composed guide. Read the available module text with `GET /memories/guidance-presets`.
 

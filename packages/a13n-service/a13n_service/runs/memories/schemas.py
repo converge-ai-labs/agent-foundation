@@ -25,18 +25,6 @@ class FrozenMemoryMount(RunMemoryMount):
     model_config = ConfigDict(extra="forbid")
     file_guide: str | None = None
     timezone: str = "UTC"
-    # Host-owned provenance, never inferred from directory layout.
-    organization: bool = False
-
-    @property
-    def organizing(self) -> bool:
-        # Pre-request-core snapshots encoded this role solely through the full Space view.
-        # Decode that historical format without rewriting accepted Runs.
-        return self.organization or (
-            "organization" not in self.model_fields_set
-            and self.space_id is not None
-            and self.roots == ("global/", "sessions/")
-        )
 
 
 class MemoryMountUpdate(BaseModel):
