@@ -100,8 +100,8 @@ it("does not interpret provider default as Standard and locks changes when disab
 });
 
 it.each([
-  ["pro", "Pro · Model default"],
-  ["standard", "Standard · Model default"],
+  ["pro", "Pro - Model default"],
+  ["standard", "Standard - Model default"],
   ["default", "Provider default"],
 ] as const)(
   "shows inherited %s directly in the control row",

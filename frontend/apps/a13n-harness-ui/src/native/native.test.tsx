@@ -515,7 +515,7 @@ it.each(["/code", "C:\\code"])(
     fireEvent.change(screen.getByLabelText("Name"), {
       target: { value: "renamed.txt" },
     });
-    fireEvent.click(screen.getByText("Folder · code"));
+    fireEvent.click(screen.getByText("Folder - code"));
     fireEvent.change(screen.getByLabelText("Destination folder"), {
       target: { value: `${directory}${sep}archive` },
     });

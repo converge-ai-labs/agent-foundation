@@ -169,7 +169,7 @@ export function describeTool(tool: ToolView) {
     case "computer_scroll":
     case "computer_type_text":
     case "computer_press_keys":
-      label = `Desktop · ${tool.name.slice(9).replaceAll("_", " ")}`;
+      label = `Desktop - ${tool.name.slice(9).replaceAll("_", " ")}`;
       summary = text(args.observation_id) || text(args.alias);
       break;
     case "view":
@@ -246,7 +246,7 @@ export function describeTool(tool: ToolView) {
       kind = "shell";
       summary = [text(args.signal), text(args.process_id)]
         .filter(Boolean)
-        .join(" · ");
+        .join(" - ");
       break;
     case "web_search":
     case "websearch":
@@ -340,7 +340,7 @@ export function describeTool(tool: ToolView) {
       label = "Update task";
       summary = [text(args.task_id), text(args.status).replaceAll("_", " ")]
         .filter(Boolean)
-        .join(" · ");
+        .join(" - ");
       break;
     case "task_get":
     case "task_list":
@@ -391,7 +391,7 @@ export function describeTool(tool: ToolView) {
   }
 
   if (shell && command && tool.name !== "shell_exec")
-    summary = [summary, command].filter(Boolean).join(" · ");
+    summary = [summary, command].filter(Boolean).join(" - ");
   // An unfinished or omitted argument object cannot establish default targets.
   if (!record(input) && !hasResult && !tool.edit && !tool.editOmitted)
     summary = "";
@@ -422,8 +422,8 @@ export function describeTool(tool: ToolView) {
     )
       phase =
         result.mode === "run"
-          ? "Message accepted · new turn"
-          : "Message accepted · instruction";
+          ? "Message accepted - new turn"
+          : "Message accepted - instruction";
     else if (
       !failed &&
       tool.name === "steer_thread" &&
@@ -773,22 +773,22 @@ export function activitySummary(tools: ToolView[]) {
   );
   let title: string;
   if (kind === "executions")
-    title = `Tool calls · ${count(tools.length, "operation")}`;
+    title = `Tool calls - ${count(tools.length, "operation")}`;
   else if (kind === "work" || kind === "subagents")
-    title = `${kind === "work" ? "Tasks & notes" : "Subagents"} · ${count(tools.length, "operation")}`;
+    title = `${kind === "work" ? "Tasks & notes" : "Subagents"} - ${count(tools.length, "operation")}`;
   else if (kind === "edit")
-    title = `File changes · ${files ? count(files, "file") : count(tools.length, "operation")}`;
+    title = `File changes - ${files ? count(files, "file") : count(tools.length, "operation")}`;
   else if (kind === "shell") {
     const commands = tools.filter((tool) => tool.name === "shell_exec").length;
     title = `${pending ? "Running" : "Ran"} ${commands ? count(commands, "command") : count(tools.length, "process operation")}`;
     if (!pending && (issues.length || shellStatus))
-      title = `Shell · ${count(tools.length, "operation")}`;
+      title = `Shell - ${count(tools.length, "operation")}`;
   } else if (kind === "web")
-    title = `${pending ? "Browsing" : "Browsed"} the web · ${count(tools.length, "action")}`;
+    title = `${pending ? "Browsing" : "Browsed"} the web - ${count(tools.length, "action")}`;
   else {
     const reads = tools.filter((tool) => tool.name === "view").length;
     const searches = tools.length - reads;
-    title = `${pending ? "Exploring" : "Explored"} ${[reads && count(files || reads, "file"), searches && count(searches, "lookup")].filter(Boolean).join(" · ")}`;
+    title = `${pending ? "Exploring" : "Explored"} ${[reads && count(files || reads, "file"), searches && count(searches, "lookup")].filter(Boolean).join(" - ")}`;
   }
   const notices = issues.filter(
     (info) => info.phase !== "Failed" || kind === "executions",
@@ -820,6 +820,6 @@ export function activitySummary(tools: ToolView[]) {
           : "",
     ]
       .filter(Boolean)
-      .join(" · "),
+      .join(" - "),
   };
 }

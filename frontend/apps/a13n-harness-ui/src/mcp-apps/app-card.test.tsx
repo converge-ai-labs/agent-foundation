@@ -499,7 +499,7 @@ it("never mounts interactive App transport or frames for guests, including live 
     </GuestAccessContext>,
   );
   expect(
-    screen.getByText("Interactive app · available to the instance owner"),
+    screen.getByText("Interactive app - available to the instance owner"),
   ).toBeTruthy();
   expect(document.querySelector("iframe")).toBeNull();
 });

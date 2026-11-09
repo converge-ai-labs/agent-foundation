@@ -411,7 +411,7 @@ export default function TerminalScreen({
           {view && (
             <small
               title={t(
-                "Session {{id}} · {{columns}} × {{rows}} · control epoch {{epoch}}",
+                "Session {{id}} - {{columns}} × {{rows}} - control epoch {{epoch}}",
                 {
                   id,
                   columns: view.columns,
@@ -421,7 +421,7 @@ export default function TerminalScreen({
               )}
             >
               {view.state === "exited"
-                ? t("{{count}} connected · Exited ({{code}})", {
+                ? t("{{count}} connected - Exited ({{code}})", {
                     count: view.participants.length,
                     code: view.exit_code ?? t("unknown"),
                   })
@@ -590,7 +590,7 @@ export default function TerminalScreen({
         )}
       >
         {view?.controller && !session?.controls
-          ? t("Server terminal · Someone else has control")
+          ? t("Server terminal - Someone else has control")
           : t("Server terminal")}
       </small>
     </div>

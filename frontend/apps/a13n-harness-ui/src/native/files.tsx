@@ -123,7 +123,7 @@ export function Files({
     <div className={styles.stack}>
       {!!dirty.length && (
         <div className={styles.buffers} aria-label={t("Local unsaved files")}>
-          <small>{t("Private drafts · saved in this tab")}</small>
+          <small>{t("Private drafts - saved in this tab")}</small>
           {dirty.map(([name]) => (
             <Button
               key={name}
@@ -131,7 +131,7 @@ export function Files({
               size="sm"
               onClick={() => open(name)}
             >
-              {t("{{name}} · Unsaved", { name: basename(name) })}
+              {t("{{name}} - Unsaved", { name: basename(name) })}
             </Button>
           ))}
         </div>
@@ -610,7 +610,7 @@ export function FileOperation({
           />
           <details className={layout.details}>
             <summary>
-              {t("Folder · {{name}}", { name: basename(folder) })}
+              {t("Folder - {{name}}", { name: basename(folder) })}
             </summary>
             <div>
               <TextField

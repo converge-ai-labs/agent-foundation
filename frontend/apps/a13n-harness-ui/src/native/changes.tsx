@@ -48,7 +48,7 @@ export function gitChangeLabel(change: Schema<"GitChange">, t: TFunction) {
           .map((status) => labels[status])
           .filter(Boolean),
       ),
-    ].join(" · ") || t("Changed")
+    ].join(" - ") || t("Changed")
   );
 }
 export function useGitStatus(path: string, includeIgnored: boolean) {
@@ -213,7 +213,7 @@ export function Changes({
               <GitBranch size={14} aria-hidden />
               <span>
                 {repository.branch ?? t("Detached HEAD")}
-                {!repository.head_oid ? t(" · No commits yet") : ""}
+                {!repository.head_oid ? t(" - No commits yet") : ""}
               </span>
               <CaretRight size={12} aria-hidden />
             </summary>
@@ -330,7 +330,7 @@ export function Changes({
                             ? entry.worktree_status
                             : t("New")}
                       {entry.submodule && entry.submodule !== "N..."
-                        ? ` · ${entry.submodule}`
+                        ? ` - ${entry.submodule}`
                         : ""}
                     </small>
                   </button>

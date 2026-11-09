@@ -125,9 +125,9 @@ export function GeneralSettings() {
                   })
                 : t(memoryAvailability[memory.availability])}
               {memory.last_outcome &&
-                ` · ${t("Last outcome: {{outcome}}", { outcome: memory.last_outcome.replaceAll("_", " ") })}`}
-              {` · ${t("{{attempts}} attempts · {{requests}} model requests", { attempts: memory.attempts ?? 0, requests: memory.requests ?? 0 })}`}
-              {` · ${t("{{input}} input / {{output}} output tokens", { input: memory.input_tokens ?? 0, output: memory.output_tokens ?? 0 })}`}
+                ` - ${t("Last outcome: {{outcome}}", { outcome: memory.last_outcome.replaceAll("_", " ") })}`}
+              {` - ${t("{{attempts}} attempts - {{requests}} model requests", { attempts: memory.attempts ?? 0, requests: memory.requests ?? 0 })}`}
+              {` - ${t("{{input}} input / {{output}} output tokens", { input: memory.input_tokens ?? 0, output: memory.output_tokens ?? 0 })}`}
             </p>
           </SettingsSection>
         )}
@@ -440,7 +440,7 @@ export function InstalledCatalog({
                 {item.distribution_name ??
                   (item.source === "pydantic" ? t("Built-in") : item.source)}
                 {item.distribution_version
-                  ? ` · ${item.distribution_version}`
+                  ? ` - ${item.distribution_version}`
                   : ""}
               </small>
             </div>

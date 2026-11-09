@@ -700,7 +700,7 @@ export function NativeWorkspace({
         : t("Page not found");
   const ToolbarTitle = isWorkspace || threadId ? "h1" : "span";
   useEffect(() => {
-    document.title = `${title} · Harness UI`;
+    document.title = `${title} - Harness UI`;
     return () => {
       document.title = "Harness UI";
     };
@@ -852,7 +852,7 @@ export function NativeWorkspace({
           ? t("New tab")
           : tab.kind === "file"
             ? buffers.get(tab.path)?.dirty
-              ? t("{{path}} · Unsaved", {
+              ? t("{{path}} - Unsaved", {
                   path: tabs.items.some(
                     (other) =>
                       other.kind === "file" &&
@@ -871,7 +871,7 @@ export function NativeWorkspace({
                 ? tab.path
                 : basename(tab.path)
             : tab.kind === "changes" && tab.selection
-              ? t("{{path}} · Changes", { path: basename(tab.selection.path) })
+              ? t("{{path}} - Changes", { path: basename(tab.selection.path) })
               : tab.kind === "files"
                 ? t("Files")
                 : tab.kind === "changes"

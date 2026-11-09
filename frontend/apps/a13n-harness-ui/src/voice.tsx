@@ -183,7 +183,7 @@ export function VoicePage() {
         <p className={styles.hint}>
           {t(
             connected
-              ? "Microphone on · Speak naturally, interrupt anytime"
+              ? "Microphone on - Speak naturally, interrupt anytime"
               : running
                 ? "Preparing your microphone and audio connection…"
                 : "Start a continuous voice chat",

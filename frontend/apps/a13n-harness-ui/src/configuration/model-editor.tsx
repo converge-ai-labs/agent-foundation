@@ -136,7 +136,7 @@ function CredentialField({
           label={t("API key")}
           description={
             selected === "env" && value?.kind === "api_key"
-              ? t("Environment · {{name}}", { name: value.env })
+              ? t("Environment - {{name}}", { name: value.env })
               : keys.data?.some((key) => key.credential_ref === selected)
                 ? t("Stored API key")
                 : t("API key reference")
@@ -536,14 +536,14 @@ function LoadedModelEditor({
           item.released ?? "",
         ]
           .filter(Boolean)
-          .join(" · "),
+          .join(" - "),
       });
   if (currentDiscovery)
     for (const item of currentDiscovery)
       candidates.set(item.value, {
         value: item.value,
         label: item.label,
-        description: t("Account catalog · Chat Completions"),
+        description: t("Account catalog - Chat Completions"),
       });
   if (effectiveId && !candidates.has(effectiveId))
     candidates.set(effectiveId, {
@@ -572,7 +572,7 @@ function LoadedModelEditor({
       : null,
   ]
     .filter(Boolean)
-    .join(" · ");
+    .join(" - ");
   return (
     <div className={management.modelEditor}>
       <ErrorNotice error={options.error || prepare.error} />
@@ -904,7 +904,7 @@ function LoadedModelEditor({
                     )}
                     options={[
                       { value: "auto", label: t("Standard") },
-                      { value: "priority", label: t("Fast · priority usage") },
+                      { value: "priority", label: t("Fast - priority usage") },
                       ...(![undefined, "auto", "priority"].includes(
                         value.settings?.openai_service_tier as
                           string | undefined,
@@ -950,7 +950,7 @@ function LoadedModelEditor({
                       { value: "custom", label: t("Custom budget") },
                       ...contextChoices.map((choice) => ({
                         value: String(choice.value),
-                        label: t("{{label}} · {{count, number}} tokens", {
+                        label: t("{{label}} - {{count, number}} tokens", {
                           label: choice.label,
                           count: choice.value,
                         }),

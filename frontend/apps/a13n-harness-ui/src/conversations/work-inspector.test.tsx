@@ -327,7 +327,7 @@ it("updates an open child's actual observed output and fetches saved output sepa
   const view = render(<Child child={child} live={live} reconcile={vi.fn()} />, {
     wrapper,
   });
-  fireEvent.click(screen.getByText("Explorer · running"));
+  fireEvent.click(screen.getByText("Explorer - running"));
   await screen.findByText("Investigating");
   expect(screen.getByText("Current observed output")).toBeTruthy();
   await waitFor(() =>
@@ -378,7 +378,7 @@ it("retains pending and unknown child controls when inspection unmounts and reop
     available_actions: ["steer", "cancel"],
   } as Schema<"ChildExecutionView">;
   const view = render(<Child child={child} reconcile={vi.fn()} />, { wrapper });
-  fireEvent.click(screen.getByText("Worker · running"));
+  fireEvent.click(screen.getByText("Worker - running"));
   fireEvent.change(
     await screen.findByRole("textbox", { name: "Instruction for Worker" }),
     { target: { value: "Check once" } },
@@ -408,7 +408,7 @@ it("retains pending and unknown child controls when inspection unmounts and reop
   ]);
   view.rerender(<div>Closed</div>);
   view.rerender(<Child child={child} reconcile={vi.fn()} />);
-  fireEvent.click(screen.getByText("Worker · running"));
+  fireEvent.click(screen.getByText("Worker - running"));
   const input = await screen.findByRole("textbox", {
     name: "Instruction for Worker",
   });
@@ -424,7 +424,7 @@ it("retains pending and unknown child controls when inspection unmounts and reop
   await screen.findByText(/Couldn't confirm delivery/);
   view.rerender(<div>Closed again</div>);
   view.rerender(<Child child={child} reconcile={vi.fn()} />);
-  fireEvent.click(screen.getByText("Worker · running"));
+  fireEvent.click(screen.getByText("Worker - running"));
   await screen.findByText(/Couldn't confirm delivery/);
   expect(
     (
@@ -484,7 +484,7 @@ it("keeps completed output directly inspectable and tools collapsed without raw 
     available_actions: [],
   } as unknown as Schema<"ChildExecutionView">;
   render(<Child child={child} reconcile={vi.fn()} />, harness(GET));
-  await userEvent.setup().click(screen.getByText("Reviewer · succeeded"));
+  await userEvent.setup().click(screen.getByText("Reviewer - succeeded"));
   await screen.findByText("Final review paragraph.");
   expect(screen.queryByText("Short preview")).toBeNull();
   expect(screen.queryByText("Latest activity snapshot")).toBeNull();

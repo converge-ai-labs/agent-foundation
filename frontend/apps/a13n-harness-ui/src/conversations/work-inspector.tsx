@@ -170,9 +170,9 @@ export function WorkInspector({
                 })}
                 title={
                   item === "children"
-                    ? t("Subagents · active executions")
+                    ? t("Subagents - active executions")
                     : item === "processes"
-                      ? t("Processes · observed running processes")
+                      ? t("Processes - observed running processes")
                       : undefined
                 }
                 onClick={(event) => {
@@ -344,7 +344,7 @@ export function WorkInspector({
                     ((summary.children.active ?? 0) > 0 ||
                       (summary.children.unavailable ?? 0) > 0) && (
                       <p className={styles.caption}>
-                        {t("{{active}} active · {{unavailable}} unavailable", {
+                        {t("{{active}} active - {{unavailable}} unavailable", {
                           active: summary.children.active ?? 0,
                           unavailable: summary.children.unavailable ?? 0,
                         })}

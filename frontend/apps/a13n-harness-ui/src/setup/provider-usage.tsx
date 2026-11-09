@@ -131,7 +131,7 @@ export function CopilotAllowance({
     <div className={styles.usage}>
       <span className={styles.quotaLabel}>
         {t("Copilot allowance")}
-        {quota.data?.copilot_plan ? ` · ${quota.data.copilot_plan}` : ""}
+        {quota.data?.copilot_plan ? ` - ${quota.data.copilot_plan}` : ""}
       </span>
       <ErrorNotice error={quota.error} />
       {!ready ? (
@@ -147,7 +147,7 @@ export function CopilotAllowance({
           {buckets.map(([id, bucket]) => (
             <div key={id} className={styles.meter}>
               <span>
-                {copilotBucketLabel(id, t)} ·{" "}
+                {copilotBucketLabel(id, t)} -{" "}
                 {bucket.unlimited
                   ? t("Unlimited")
                   : bucket.percent_remaining != null
@@ -184,7 +184,7 @@ export function CopilotAllowance({
                     ? t("Additional usage enabled")
                     : t("Additional usage disabled")}
                   {bucket.overage_count != null
-                    ? ` · ${t("{{count}} used", { count: bucket.overage_count })}`
+                    ? ` - ${t("{{count}} used", { count: bucket.overage_count })}`
                     : ""}
                 </span>
               )}

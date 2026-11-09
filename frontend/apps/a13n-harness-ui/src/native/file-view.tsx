@@ -350,7 +350,7 @@ export function FileView({
           <details>
             <summary>{t("Show latest saved version")}</summary>
             <p>
-              {t("Revision: {{revision}} · {{presentation}}", {
+              {t("Revision: {{revision}} - {{presentation}}", {
                 revision: buffer.observed.entry.revision,
                 presentation: buffer.observed.presentation,
               })}
@@ -555,7 +555,7 @@ export function FileView({
                   column: cursor.column,
                 })}
                 {cursor.selected > 0 &&
-                  t(" · {{selected}} selected", {
+                  t(" - {{selected}} selected", {
                     selected: cursor.selected.toLocaleString(),
                   })}
               </Button>
@@ -571,7 +571,7 @@ export function FileView({
       <details className={styles.metadata}>
         <summary>{t("File details")}</summary>
         <p>
-          {t("{{size}} bytes · {{type}}", {
+          {t("{{size}} bytes - {{type}}", {
             size: buffer.base.entry.size.toLocaleString(),
             type:
               media ?? (buffer.base.presentation ?? "binary").replace("_", " "),
@@ -585,7 +585,7 @@ export function FileView({
         )}
         <DebugOnly>
           <p>
-            {t("Server file · version {{revision}}", {
+            {t("Server file - version {{revision}}", {
               revision: buffer.base.entry.revision,
             })}
           </p>

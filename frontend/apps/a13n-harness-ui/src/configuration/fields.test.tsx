@@ -176,7 +176,7 @@ it("keeps Project environment axes unspecified until explicitly edited", async (
   const user = userEvent.setup();
   await user.click(screen.getByRole("combobox", { name: "Default folder" }));
   await user.click(
-    await screen.findByRole("option", { name: "Local · Chat files" }),
+    await screen.findByRole("option", { name: "Local - Chat files" }),
   );
   let value = parse(screen.getByTestId("source").textContent ?? "");
   expect(value.defaults).toEqual({
@@ -248,7 +248,7 @@ it("removes a missing Device offline and saves its replacement default with the 
   await user.click(
     screen.getByRole("combobox", { name: "Replacement default" }),
   );
-  await user.click(await screen.findByRole("option", { name: "Local · /one" }));
+  await user.click(await screen.findByRole("option", { name: "Local - /one" }));
   await user.click(screen.getByRole("button", { name: "Remove selection" }));
   expect(
     parse(screen.getByTestId("source").textContent ?? "").defaults,
@@ -279,7 +279,7 @@ it("authors HTTP and reverse WebSocket Devices with credential references", asyn
   await user.click(screen.getByRole("combobox", { name: "Transport" }));
   await user.click(
     await screen.findByRole("option", {
-      name: "WebSocket · envd connects to this server",
+      name: "WebSocket - envd connects to this server",
     }),
   );
   expect(screen.queryByRole("textbox", { name: "Device endpoint" })).toBeNull();

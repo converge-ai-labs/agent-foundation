@@ -105,7 +105,7 @@ export function ComposerStatus({
         {debug && mainAccount && (
           <span
             className={styles.metric}
-            title={`${mainAccount.group_id} · ${mainAccount.reason.replaceAll("_", " ")}`}
+            title={`${mainAccount.group_id} - ${mainAccount.reason.replaceAll("_", " ")}`}
           >
             {t("Account")} <strong>{mainAccount.account_name}</strong>
           </span>

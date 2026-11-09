@@ -155,8 +155,8 @@ function VoucherSummary({
       <span className={styles.summaryItem}>
         <TicketIcon size={15} aria-hidden />
         {vouchers.count === null
-          ? t("Reset vouchers · Unavailable")
-          : t("Reset vouchers · {{count}} available", {
+          ? t("Reset vouchers - Unavailable")
+          : t("Reset vouchers - {{count}} available", {
               count: vouchers.count,
             })}
       </span>
@@ -205,7 +205,7 @@ export function AccountUsage({
           limits={limit.rate_limit}
           label={
             limit.normal_model_slug
-              ? `${limit.limit_name} · ${limit.normal_model_slug}`
+              ? `${limit.limit_name} - ${limit.normal_model_slug}`
               : limit.limit_name
           }
         />
@@ -214,7 +214,7 @@ export function AccountUsage({
         <div className={styles.quotaGroup}>
           <WindowUsage window={monthly} label={t("Monthly credit limit")} />
           <span>
-            {t("{{used}} / {{limit}} credits used · {{remaining}} remaining", {
+            {t("{{used}} / {{limit}} credits used - {{remaining}} remaining", {
               used: monthly.used,
               limit: monthly.limit,
               remaining: monthly.remaining,
@@ -267,7 +267,7 @@ function UsageFreshness({ snapshot }: { snapshot: Schema<"UsageSnapshot"> }) {
   const { t } = useTranslation();
   return (
     <span className={styles.quotaDetail}>
-      {snapshot.error ? t("Refresh failed · ") : ""}
+      {snapshot.error ? t("Refresh failed - ") : ""}
       {snapshot.observed_at
         ? t("Updated {{time}}", {
             time: quotaTime(snapshot.observed_at * 1000),
@@ -536,7 +536,7 @@ export function SubscriptionAccounts({
         (pendingAccount || pendingConnection) && (
           <div className={styles.row} role="status">
             <span>
-              {t("Sign-in in progress · {{name}}", {
+              {t("Sign-in in progress - {{name}}", {
                 name: pendingAccount?.name ?? pendingConnection?.label,
               })}
             </span>
@@ -767,7 +767,7 @@ export function SubscriptionAccounts({
           {Object.entries(catalog.data.adoption).map(([key, value]) => (
             <p key={key}>
               {key}: {value.status}
-              {value.message ? ` · ${value.message}` : ""}
+              {value.message ? ` - ${value.message}` : ""}
             </p>
           ))}
         </details>
@@ -964,13 +964,13 @@ export function AccountGroups() {
             <div className={styles.identity}>
               <strong>{item.name}</strong>
               <span>
-                {item.provider} ·{" "}
+                {item.provider} -{" "}
                 {item.strategy === "weighted" ? t("By weight") : t("In order")}{" "}
-                ·{" "}
+                -{" "}
                 {t("{{count}} accounts", { count: item.accounts?.length ?? 0 })}
                 {item.allow_credits
-                  ? ` · ${t("Credits allowed")}`
-                  : ` · ${t("Included allowance only")}`}
+                  ? ` - ${t("Credits allowed")}`
+                  : ` - ${t("Included allowance only")}`}
               </span>
               <div className={styles.members}>
                 {item.accounts?.map((member) => {
@@ -981,7 +981,7 @@ export function AccountGroups() {
                     <span key={member.account}>
                       {view?.account.name ?? t("Deleted account")}
                       {compactAllowance(view?.usage.usage) &&
-                        ` · ${compactAllowance(view?.usage.usage)}`}
+                        ` - ${compactAllowance(view?.usage.usage)}`}
                       {item.strategy === "weighted"
                         ? ` ×${member.weight ?? 1}`
                         : ""}
@@ -1065,10 +1065,10 @@ function ResetVoucher({
       }}
       title={
         redeem.isSuccess
-          ? t("Voucher result · {{name}}", { name: account.name })
+          ? t("Voucher result - {{name}}", { name: account.name })
           : selection
-            ? t("Use voucher · {{name}}?", { name: account.name })
-            : t("Reset vouchers · {{name}}", { name: account.name })
+            ? t("Use voucher - {{name}}?", { name: account.name })
+            : t("Reset vouchers - {{name}}", { name: account.name })
       }
       description={
         redeem.isSuccess
@@ -1150,7 +1150,7 @@ function ResetVoucher({
               <VoucherDetails voucher={selection.voucher} />
             </div>
             <p className={styles.quotaDetail}>
-              {t("Account: {{name}} · {{id}}", {
+              {t("Account: {{name}} - {{id}}", {
                 name: account.name,
                 id: selection.accountId,
               })}
@@ -1159,7 +1159,7 @@ function ResetVoucher({
         )}
         {redeem.isSuccess && (
           <p role="status">
-            {redeem.data.code.replaceAll("_", " ")} ·{" "}
+            {redeem.data.code.replaceAll("_", " ")} -{" "}
             {t("{{count}} windows reset", { count: redeem.data.windows_reset })}
           </p>
         )}

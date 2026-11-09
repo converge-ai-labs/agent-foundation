@@ -142,7 +142,7 @@ it("approves the matching Device and independently revokes its online registrati
     within(dialog).getByRole("button", { name: "Revoke connection" }),
   );
   expect(
-    await screen.findByText("Revoked · connections are blocked"),
+    await screen.findByText("Revoked - connections are blocked"),
   ).not.toBeNull();
   expect(requests).toContain("POST /api/devices/device-one/revoke");
   expect(screen.queryByRole("button", { name: "Check connection" })).toBeNull();
@@ -228,7 +228,7 @@ it("connects inline, waits for the approved resource ID, and saves a remote-only
     within(wizard).getByRole("button", { name: "Approve Device" }),
   );
   expect(
-    await within(wizard).findByText("Approved · waiting for Device connection"),
+    await within(wizard).findByText("Approved - waiting for Device connection"),
   ).not.toBeNull();
   expect(
     (
@@ -262,7 +262,7 @@ it("connects inline, waits for the approved resource ID, and saves a remote-only
   expect(savedContent).toBeUndefined();
   await user.click(screen.getByRole("combobox", { name: "Default folder" }));
   await user.click(
-    await screen.findByRole("option", { name: "My workstation · /work" }),
+    await screen.findByRole("option", { name: "My workstation - /work" }),
   );
   await user.click(screen.getByRole("button", { name: "Add project" }));
   await waitFor(() => expect(created).toHaveBeenCalled());

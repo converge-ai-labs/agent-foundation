@@ -564,7 +564,7 @@ export function SourceDocument({
           body: { content },
         }),
       ),
-    onSuccess: () => setNotice("Configuration valid · not saved"),
+    onSuccess: () => setNotice("Configuration valid - not saved"),
   });
   const save = useMutation({
     mutationFn: (content: string) =>

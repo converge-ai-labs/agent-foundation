@@ -116,8 +116,8 @@ function ConnectDeviceSteps({
                 value={shell}
                 onValueChange={(value) => setShell(value as typeof shell)}
                 options={[
-                  { value: "posix", label: t("macOS / Linux · POSIX shell") },
-                  { value: "powershell", label: t("Windows · PowerShell") },
+                  { value: "posix", label: t("macOS / Linux - POSIX shell") },
+                  { value: "powershell", label: t("Windows - PowerShell") },
                 ]}
               />
               <SettingsToggle
@@ -222,7 +222,7 @@ function ConnectDeviceSteps({
           <p role="status">
             {info.data?.available
               ? t("Device online")
-              : t("Approved · waiting for Device connection")}
+              : t("Approved - waiting for Device connection")}
           </p>
           <ErrorNotice error={info.error} />
           {info.data && !info.data.available && (
