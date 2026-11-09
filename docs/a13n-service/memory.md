@@ -97,7 +97,7 @@ Standalone file memories use the same policy without requiring a Space. Read `GE
 
 ### Run a custom organization task
 
-Open a file collection or Space and choose **Organization → Organize memory**. Select an organizer model and optional task instructions. Console starts with **Candidate for review**; choose **Write directly** only when saved partial edits are acceptable. Turn on **Include conversation history** to select source sessions, local seal-time bounds and a run limit. After acceptance, open **Task details** for frozen source runs and **Open run and usage** for execution, cancellation and cost.
+Open a file collection or Space and choose **Organization → Organize memory**. Select an organizer model and optional task instructions. Console defaults to **Write directly**, matching the API: committed file edits remain even if the run fails or is cancelled. Explicitly choose **Candidate for review** when you want to inspect changes before publishing. Turn on **Include conversation history** to select source sessions, local seal-time bounds and a run limit. After acceptance, open **Task details** for frozen source runs and **Open run and usage** for execution, cancellation and cost.
 
 Use `POST /memory-organizations` to organize a standalone file memory or an enabled Space with your own model and instructions. This needs workspace `read`, `write` and `run` permissions. It works without an automatic policy, including on an empty store:
 
