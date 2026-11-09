@@ -84,6 +84,10 @@ Choose the backend by how your processes share storage:
 
 The store needs ordinary reads, writes, listing and deletes. Service writes each object under a new key. `objects.max_bytes` limits one stored object; `upload_bytes`, `upload_limit` and `upload_window_seconds` control upload size and per-principal rate.
 
+Each S3 process uses `objects.max_pool_connections` (default 32) for ordinary object I/O. Control and all-role processes also open an independent pool for `checkpoint_cleanup`, sized by `objects.cleanup_max_pool_connections` (default 4). Workers do not open this second pool. Cleanup uses the same bucket, prefix, credentials and timeouts; unread foreground GET responses cannot occupy its connections. Its concurrent claims are limited to the smaller of this pool size and `outbox.policies.checkpoint_cleanup.parallel`, before claims acquire leases. This limits concurrency per process, not across replicas. The local backend continues to use one store.
+
+Set `A13N_OBJECTS__CLEANUP_MAX_POOL_CONNECTIONS` or Helm `objects.cleanupMaxPoolConnections` to override the cleanup pool. This reserves client connections; it does not isolate S3 server capacity or CPU. Cleanup retains its total I/O budget, persisted scan cursor and retry policy.
+
 For S3-compatible storage, choose `objects.addressing_style` to match the endpoint:
 
 | Value     | Address form          | Use                                                      |

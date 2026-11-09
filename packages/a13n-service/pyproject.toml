@@ -16,6 +16,7 @@ dependencies = [
     "a13n-stream-protocol",
     "ag-ui-protocol>=1.0.0,<2",
     "aiobotocore[httpx2]>=3.9,<4",
+    "aiohttp>=3.13,<4",
     "alembic>=1.17.1,<2",
     "anyio>=4,<5",
     "argon2-cffi>=25,<26",
