@@ -130,6 +130,31 @@ Zoom 结果包含 `source_observation_id`，以及按原图像素表示的 `regi
 
 在 WebUI 展开**观测桌面**或 **Inspect desktop region** 查看图像。临时显示副本可能过期。客户端集成应及时关闭截图 reader，释放传输容量。
 
+## 原生无障碍访问
+
+Computer 工具集也提供桌面语义访问。先调用 `computer_accessibility_describe` 检查后端、就绪状态和支持的读取。后端支持、挂载权限和具体控件的能力分别判断。没有原生后端的 daemon 会报告不支持；仅启用 Computer Use 不会提供原生后端。
+
+| 工具                                            | 用途                                                      |
+| ----------------------------------------------- | --------------------------------------------------------- |
+| `computer_accessibility_describe`               | 发现原生后端和就绪状态                                    |
+| `computer_accessibility_roots`                  | 定位桌面、应用、焦点或指定点的根节点                      |
+| `computer_accessibility_inspect`                | 读取有界树和各节点的原生能力                              |
+| `computer_accessibility_find`                   | 在保留的根节点内查找有界匹配                              |
+| `computer_accessibility_read`                   | 读取原生属性、文本、选区、表格和平台专用元数据            |
+| `computer_accessibility_range`                  | 获取或变换原生文本范围引用                                |
+| `computer_accessibility_range_read`             | 读取保留范围的文本、边界或元数据                          |
+| `computer_ax`, `computer_uia`, `computer_atspi` | 执行显式选择的 macOS AX、Windows UIA 或 Linux AT-SPI 修改 |
+
+分别授予语义读取权限，例如 `environment.computer.a11y_describe`、`environment.computer.a11y_roots` 和 `environment.computer.a11y_inspect`。修改需要精确动作权限，例如 `environment.computer.ax_perform_action`、`environment.computer.uia_invoke` 或 `environment.computer.atspi_do_action`。选择分组工具不会授权其中的全部操作。
+
+先检查目标，选择它实际报告的能力，执行原生操作，再回读或截图验证应用结果。限额约束节点数、深度、文本、条目、匹配数、原生调用、序列化字节和时间。判断未匹配前，检查完整性和字段错误。受保护值保持不可用。原生文本偏移保留声明的平台单位。
+
+节点和文本范围引用属于原环境执行及原生 helper 代次。保留返回的引用，不要根据标签或原生 ID 重建。Session 或 helper 替换后重新获取。过期引用会失败，不会改选相似控件。
+
+基于截图命中测试时，roots scope 使用 `kind: "screenshot_point"`，传入已有 `observation_id`，并按配置的截图坐标空间提供 `point`。Inspect 可以请求 `projection_observation_id`；各节点的 `image_projection` 报告原生边界能否映射到该图像。只使用返回的投影，不要将原生边界当作截图坐标。语义读取和投影不会捕获像素或刷新观测。
+
+原生修改结果分别记录原生确认和操作 receipt。`application_outcome: "unverified"` 要求随后观察结果。投递或完成状态不明时，先检查当前状态再决定是否重试；不能安全地自动重放。
+
 ## 剪贴板文本
 
 分别授予 `environment.computer.read_clipboard` 和 `environment.computer.write_clipboard`，供 `computer_read_clipboard` 和 `computer_write_clipboard` 使用。两者均支持 macOS、Windows 和 Linux X11。通过 `alias` 选择挂载；调用不需要观测引用。

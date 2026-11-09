@@ -1224,6 +1224,18 @@ def test_computer_tools_require_explicit_enablement_and_preserve_per_tool_choice
     assert projected.computer_enabled
     assert "computer_observe" in projected.computer_tools
     assert "computer_zoom" in projected.computer_tools
+    assert {
+        "computer_accessibility_describe",
+        "computer_accessibility_roots",
+        "computer_accessibility_inspect",
+        "computer_accessibility_find",
+        "computer_accessibility_read",
+        "computer_accessibility_range",
+        "computer_accessibility_range_read",
+        "computer_ax",
+        "computer_uia",
+        "computer_atspi",
+    } <= set(projected.computer_tools)
     assert "computer_click" not in projected.computer_tools
     assert selected.toolsets["computer"].tools["type_text"].permission == "ask"
     assert "computer_notify" not in projected.computer_tools  # Service owns this tool, not the provider.

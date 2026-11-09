@@ -7,6 +7,7 @@ import re
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from enum import StrEnum
+from functools import partial
 from types import MappingProxyType
 from typing import Annotated, Final, Literal
 
@@ -23,6 +24,18 @@ from pydantic import (
     StrictStr,
     model_validator,
 )
+
+
+def _validate_no_nul(value: str) -> str:
+    if "\x00" in value:
+        raise ValueError("text must not contain NUL")
+    return value
+
+
+def _validate_utf8_bytes(value: str, *, maximum: int) -> str:
+    if len(value.encode("utf-8")) > maximum:
+        raise ValueError("text exceeds its UTF-8 byte limit")
+    return value
 
 
 def _validate_absolute_eip_path(value: str) -> str:
@@ -117,11 +130,172 @@ class EIPModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
+class AccessibilityCapabilitySupported(StrEnum):
+    YES = "yes"
+    CANDIDATE = "candidate"
+
+
+class AccessibilityCompletenessReason(StrEnum):
+    NODE_LIMIT = "node_limit"
+    ITEM_LIMIT = "item_limit"
+    BYTE_LIMIT = "byte_limit"
+    CALL_LIMIT = "call_limit"
+    DEADLINE = "deadline"
+    TOTAL_LIMIT = "total_limit"
+
+
+class AccessibilityDescriptionBackend(StrEnum):
+    AX = "ax"
+    UIA = "uia"
+    ATSPI = "atspi"
+
+
+class AccessibilityDescriptionFrames(StrEnum):
+    AX_SCREEN = "ax_screen"
+    UIA_PHYSICAL_SCREEN = "uia_physical_screen"
+    ATSPI_SCREEN = "atspi_screen"
+    ATSPI_WINDOW = "atspi_window"
+    ATSPI_PARENT = "atspi_parent"
+
+
+class AccessibilityDescriptionReason(StrEnum):
+    READY = "ready"
+    PERMISSION_REQUIRED = "permission_required"
+    DESKTOP_UNAVAILABLE = "desktop_unavailable"
+    BUS_UNAVAILABLE = "bus_unavailable"
+    UNSUPPORTED = "unsupported"
+
+
+class AccessibilityFieldErrorReason(StrEnum):
+    UNSUPPORTED = "unsupported"
+    DENIED = "denied"
+    STALE = "stale"
+    UNAVAILABLE = "unavailable"
+    TIMEOUT = "timeout"
+    PROTECTED = "protected"
+
+
+class AccessibilityFindNameMatch(StrEnum):
+    EXACT = "exact"
+    SUBSTRING_CASEFOLD = "substring_casefold"
+
+
+class AccessibilityImageProjectionStatus(StrEnum):
+    PROJECTED = "projected"
+    UNAVAILABLE = "unavailable"
+
+
+class AccessibilityItemReadSource(StrEnum):
+    UIA_ITEM_CONTAINER = "uia_item_container"
+    UIA_SPREADSHEET = "uia_spreadsheet"
+
+
+class AccessibilityMutationResultNativeStatus(StrEnum):
+    RETURNED_SUCCESS = "returned_success"
+    RETURNED_FALSE = "returned_false"
+    ERROR = "error"
+    NO_REPLY = "no_reply"
+
+
+class AccessibilityNativeReadGroup(StrEnum):
+    AX_ATTRIBUTES = "ax_attributes"
+    AX_PARAMETERIZED_ATTRIBUTES = "ax_parameterized_attributes"
+    UIA_PATTERNS = "uia_patterns"
+    UIA_ANNOTATION = "uia_annotation"
+    UIA_STYLES = "uia_styles"
+    UIA_DRAG = "uia_drag"
+    UIA_DROP_TARGET = "uia_drop_target"
+    UIA_LEGACY = "uia_legacy"
+    UIA_TRANSFORM = "uia_transform"
+    UIA_VIEWS = "uia_views"
+    UIA_SPREADSHEET_ITEM = "uia_spreadsheet_item"
+    ATSPI_INTERFACES = "atspi_interfaces"
+    ATSPI_IMAGE = "atspi_image"
+    ATSPI_HYPERTEXT = "atspi_hypertext"
+    ATSPI_COMPONENT = "atspi_component"
+    ATSPI_ACTIONS = "atspi_actions"
+
+
+class AccessibilityNativeSpanUnit(StrEnum):
+    AX_NATIVE = "ax_native"
+    ATSPI_CHARACTER = "atspi_character"
+
+
+class AccessibilityNavigateReadDirection(StrEnum):
+    PARENT = "parent"
+    NEXT_SIBLING = "next_sibling"
+    PREVIOUS_SIBLING = "previous_sibling"
+    FIRST_CHILD = "first_child"
+    LAST_CHILD = "last_child"
+
+
+class AccessibilityPropertyReadGroups(StrEnum):
+    IDENTITY = "identity"
+    STATE = "state"
+    VALUE = "value"
+    WINDOW = "window"
+
+
+class AccessibilityRangeCompareEndpoint(StrEnum):
+    START = "start"
+    END = "end"
+
+
+class AccessibilityRangeMoveExpandUnit(StrEnum):
+    CHARACTER = "character"
+    FORMAT = "format"
+    WORD = "word"
+    LINE = "line"
+    PARAGRAPH = "paragraph"
+    PAGE = "page"
+    DOCUMENT = "document"
+
+
+class AccessibilityRangeReferenceUnit(StrEnum):
+    AX_NATIVE = "ax_native"
+    ATSPI_CHARACTER = "atspi_character"
+    UIA_OPAQUE = "uia_opaque"
+
+
+class AccessibilityRootScopeKind(StrEnum):
+    DESKTOP = "desktop"
+    APPLICATIONS = "applications"
+    WINDOWS = "windows"
+    FOCUSED = "focused"
+    APPLICATION = "application"
+    AT_POINT = "at_point"
+    SCREENSHOT_POINT = "screenshot_point"
+
+
+class AccessibilityTextContentStatus(StrEnum):
+    TEXT = "text"
+    EMPTY = "empty"
+    UNSUPPORTED = "unsupported"
+    PROTECTED = "protected"
+    UNAVAILABLE = "unavailable"
+
+
+class AtspiRangeScrollAlignment(StrEnum):
+    TOP_LEFT = "top_left"
+    BOTTOM_RIGHT = "bottom_right"
+    TOP_EDGE = "top_edge"
+    BOTTOM_EDGE = "bottom_edge"
+    LEFT_EDGE = "left_edge"
+    RIGHT_EDGE = "right_edge"
+    ANYWHERE = "anywhere"
+
+
 class CleanupOutcome(StrEnum):
     PENDING = "pending"
     COMPLETE = "complete"
     RESIDUAL_CONFINED = "residual_confined"
     FAILED = "failed"
+
+
+class ComputerA11yFindParamsView(StrEnum):
+    CONTROL = "control"
+    CONTENT = "content"
+    RAW = "raw"
 
 
 class ComputerButton(StrEnum):
@@ -330,6 +504,45 @@ class TerminationReason(StrEnum):
     BACKEND_LOST = "backend_lost"
 
 
+class UIADockPosition(StrEnum):
+    UIA_DOCK_POSITION_TOP = "top"
+    UIA_DOCK_POSITION_LEFT = "left"
+    UIA_DOCK_POSITION_BOTTOM = "bottom"
+    UIA_DOCK_POSITION_RIGHT = "right"
+    UIA_DOCK_POSITION_FILL = "fill"
+    UIA_DOCK_POSITION_NONE = "none"
+
+
+class UIALegacySelectSelection(StrEnum):
+    UIA_LEGACY_SELECT_SELECTION_NONE = "none"
+    UIA_LEGACY_SELECT_SELECTION_TAKE = "take"
+    UIA_LEGACY_SELECT_SELECTION_EXTEND = "extend"
+    UIA_LEGACY_SELECT_SELECTION_ADD = "add"
+    UIA_LEGACY_SELECT_SELECTION_REMOVE = "remove"
+
+
+class UIAScrollAmountHorizontal(StrEnum):
+    UIA_SCROLL_AMOUNT_HORIZONTAL_LARGE_DECREMENT = "large_decrement"
+    UIA_SCROLL_AMOUNT_HORIZONTAL_SMALL_DECREMENT = "small_decrement"
+    UIA_SCROLL_AMOUNT_HORIZONTAL_NO_AMOUNT = "no_amount"
+    UIA_SCROLL_AMOUNT_HORIZONTAL_LARGE_INCREMENT = "large_increment"
+    UIA_SCROLL_AMOUNT_HORIZONTAL_SMALL_INCREMENT = "small_increment"
+
+
+class UIAWindowStateState(StrEnum):
+    UIA_WINDOW_STATE_STATE_NORMAL = "normal"
+    UIA_WINDOW_STATE_STATE_MAXIMIZED = "maximized"
+    UIA_WINDOW_STATE_STATE_MINIMIZED = "minimized"
+
+
+class UIAZoomUnitUnit(StrEnum):
+    UIA_ZOOM_UNIT_UNIT_NO_AMOUNT = "no_amount"
+    UIA_ZOOM_UNIT_UNIT_LARGE_DECREMENT = "large_decrement"
+    UIA_ZOOM_UNIT_UNIT_SMALL_DECREMENT = "small_decrement"
+    UIA_ZOOM_UNIT_UNIT_LARGE_INCREMENT = "large_increment"
+    UIA_ZOOM_UNIT_UNIT_SMALL_INCREMENT = "small_increment"
+
+
 class VmBackend(StrEnum):
     BOXLITE = "boxlite"
     MICROSANDBOX = "microsandbox"
@@ -367,9 +580,545 @@ EIP_ERROR_CODES: Final[Mapping[ErrorType, int]] = MappingProxyType(
 )
 
 
+class AXBooleanDisclosingSet(EIPModel):
+    op: Literal["disclosing_set"] = "disclosing_set"
+    value: StrictBool
+
+
+class AXBooleanExpandedSet(EIPModel):
+    op: Literal["expanded_set"] = "expanded_set"
+    value: StrictBool
+
+
+class AXBooleanMainSet(EIPModel):
+    op: Literal["main_set"] = "main_set"
+    value: StrictBool
+
+
+class AXBooleanMinimizedSet(EIPModel):
+    op: Literal["minimized_set"] = "minimized_set"
+    value: StrictBool
+
+
+class AXBooleanSelectedSet(EIPModel):
+    op: Literal["selected_set"] = "selected_set"
+    value: StrictBool
+
+
+class AXFocus(EIPModel):
+    op: Literal["focus"] = "focus"
+
+
+class AXNumberValue(EIPModel):
+    op: Literal["value_number_set"] = "value_number_set"
+    value: Annotated[StrictFloat, Field(allow_inf_nan=False)]
+
+
+class AXPosition(EIPModel):
+    op: Literal["position_set"] = "position_set"
+    x: Annotated[StrictFloat, Field(allow_inf_nan=False)]
+    y: Annotated[StrictFloat, Field(allow_inf_nan=False)]
+
+
+class AXSelectedText(EIPModel):
+    op: Literal["selected_text_set"] = "selected_text_set"
+    text: Annotated[
+        StrictStr,
+        Field(json_schema_extra={"pattern": "^[^\\x00]*$", "x-max-utf8-bytes": 65536}),
+        AfterValidator(_validate_no_nul),
+        AfterValidator(partial(_validate_utf8_bytes, maximum=65536)),
+    ]
+
+
+class AXSize(EIPModel):
+    op: Literal["size_set"] = "size_set"
+    width: Annotated[StrictFloat, Field(allow_inf_nan=False, gt=0.0)]
+    height: Annotated[StrictFloat, Field(allow_inf_nan=False, gt=0.0)]
+
+
+class AXStringValue(EIPModel):
+    op: Literal["value_string_set"] = "value_string_set"
+    value: Annotated[
+        StrictStr,
+        Field(json_schema_extra={"pattern": "^[^\\x00]*$", "x-max-utf8-bytes": 65536}),
+        AfterValidator(_validate_no_nul),
+        AfterValidator(partial(_validate_utf8_bytes, maximum=65536)),
+    ]
+
+
+class AccessibilityAttributeMetadata(EIPModel):
+    name: Annotated[StrictStr, Field(min_length=1, max_length=1024)]
+    parameterized: StrictBool
+    writable: StrictBool | None = None
+
+
+class AccessibilityDocumentSelectionsRead(EIPModel):
+    kind: Literal["document_selections"] = "document_selections"
+
+
+class AccessibilityFieldError(EIPModel):
+    field: Annotated[StrictStr, Field(max_length=128)]
+    reason: AccessibilityFieldErrorReason
+    native_code: Annotated[StrictInt, Field(ge=-2147483648, le=2147483647)] | None = None
+
+
+class AccessibilityFind(EIPModel):
+    role: StrictStr | None = None
+    native_role: StrictStr | None = None
+    name: StrictStr | None = None
+    name_match: AccessibilityFindNameMatch = AccessibilityFindNameMatch("exact")
+    identifier: StrictStr | None = None
+    states: Annotated[dict[StrictStr, StrictBool | StrictStr], Field(max_length=128)] = Field(default_factory=dict)
+    operation: StrictStr | None = None
+
+
+class AccessibilityIdleRead(EIPModel):
+    kind: Literal["wait_for_input_idle"] = "wait_for_input_idle"
+    timeout_ms: Annotated[StrictInt, Field(ge=0, le=15000)] = 1000
+
+
+class AccessibilityImageProjection(EIPModel):
+    source_observation_id: Identifier
+    status: AccessibilityImageProjectionStatus
+    left: Annotated[StrictFloat, Field(allow_inf_nan=False)] | None = None
+    top: Annotated[StrictFloat, Field(allow_inf_nan=False)] | None = None
+    right: Annotated[StrictFloat, Field(allow_inf_nan=False)] | None = None
+    bottom: Annotated[StrictFloat, Field(allow_inf_nan=False)] | None = None
+
+
+class AccessibilityLimits(EIPModel):
+    depth: Annotated[StrictInt, Field(ge=0, le=12)] = 2
+    max_nodes: Annotated[StrictInt, Field(ge=1, le=2048)] = 256
+    max_matches: Annotated[StrictInt, Field(ge=1, le=256)] = 64
+    max_items: Annotated[StrictInt, Field(ge=1, le=512)] = 128
+    max_text_bytes: Annotated[StrictInt, Field(ge=1, le=65536)] = 16384
+    max_result_bytes: Annotated[StrictInt, Field(ge=1, le=1048576)] = 262144
+    max_native_calls: Annotated[StrictInt, Field(ge=1, le=8192)] = 1024
+    timeout_ms: Annotated[StrictInt, Field(ge=1, le=15000)] = 5000
+
+
+class AccessibilityNativeBounds(EIPModel):
+    frame: AccessibilityDescriptionFrames
+    x: Annotated[StrictFloat, Field(allow_inf_nan=False)]
+    y: Annotated[StrictFloat, Field(allow_inf_nan=False)]
+    width: Annotated[StrictFloat, Field(allow_inf_nan=False, ge=0.0)]
+    height: Annotated[StrictFloat, Field(allow_inf_nan=False, ge=0.0)]
+    display_id: StrictStr | None = None
+
+
+class AccessibilityNativePoint(EIPModel):
+    frame: AccessibilityDescriptionFrames
+    x: Annotated[StrictFloat, Field(allow_inf_nan=False)]
+    y: Annotated[StrictFloat, Field(allow_inf_nan=False)]
+
+
+class AccessibilityNativeRead(EIPModel):
+    kind: Literal["native_details"] = "native_details"
+    group: AccessibilityNativeReadGroup
+
+
+class AccessibilityNativeSpan(EIPModel):
+    unit: AccessibilityNativeSpanUnit
+    start: Annotated[StrictInt, Field(ge=0, le=4294967295)]
+    end: Annotated[StrictInt, Field(ge=0, le=4294967295)]
+
+
+class AccessibilityNavigateRead(EIPModel):
+    kind: Literal["navigate"] = "navigate"
+    direction: AccessibilityNavigateReadDirection
+
+
+class AccessibilityNodeReference(EIPModel):
+    backend: AccessibilityDescriptionBackend
+    backend_epoch: Annotated[StrictStr, Field(min_length=1, max_length=128)]
+    node_handle: Annotated[StrictStr, Field(min_length=1, max_length=128)]
+
+
+class AccessibilityNodesValue(EIPModel):
+    kind: Literal["nodes"] = "nodes"
+    values: Annotated[tuple[AccessibilityNodeReference, ...], Field(max_length=512)] = ()
+
+
+class AccessibilityPropertyRead(EIPModel):
+    kind: Literal["properties"] = "properties"
+    groups: Annotated[tuple[AccessibilityPropertyReadGroups, ...], Field(min_length=1, max_length=4)]
+
+
+class AccessibilityRangeAcquireActiveComposition(EIPModel):
+    kind: Literal["active_composition"] = "active_composition"
+
+
+class AccessibilityRangeAcquireCaret(EIPModel):
+    kind: Literal["caret"] = "caret"
+
+
+class AccessibilityRangeAcquireConversionTarget(EIPModel):
+    kind: Literal["conversion_target"] = "conversion_target"
+
+
+class AccessibilityRangeAcquireDocument(EIPModel):
+    kind: Literal["document"] = "document"
+
+
+class AccessibilityRangeAcquireSelection(EIPModel):
+    kind: Literal["selection"] = "selection"
+
+
+class AccessibilityRangeAcquireVisible(EIPModel):
+    kind: Literal["visible"] = "visible"
+
+
+class AccessibilityRangeChild(EIPModel):
+    kind: Literal["child"] = "child"
+    child: AccessibilityNodeReference
+
+
+class AccessibilityRangeFind(EIPModel):
+    kind: Literal["find_text"] = "find_text"
+    text: Annotated[
+        StrictStr,
+        Field(json_schema_extra={"pattern": "^[^\\x00]*$", "x-max-utf8-bytes": 65536}),
+        AfterValidator(_validate_no_nul),
+        AfterValidator(partial(_validate_utf8_bytes, maximum=65536)),
+    ]
+    backward: StrictBool = False
+    ignore_case: StrictBool = False
+
+
+class AccessibilityRangeIndexIndex(EIPModel):
+    kind: Literal["index"] = "index"
+    index: Annotated[StrictInt, Field(ge=0, le=4294967295)]
+
+
+class AccessibilityRangeIndexLine(EIPModel):
+    kind: Literal["line"] = "line"
+    index: Annotated[StrictInt, Field(ge=0, le=4294967295)]
+
+
+class AccessibilityRangeIndexLineForIndex(EIPModel):
+    kind: Literal["line_for_index"] = "line_for_index"
+    index: Annotated[StrictInt, Field(ge=0, le=4294967295)]
+
+
+class AccessibilityRangeMoveExpand(EIPModel):
+    kind: Literal["expand"] = "expand"
+    unit: AccessibilityRangeMoveExpandUnit
+    count: Annotated[StrictInt, Field(ge=-10000, le=10000)] = 0
+    endpoint: AccessibilityRangeCompareEndpoint | None = None
+
+
+class AccessibilityRangeMoveMove(EIPModel):
+    kind: Literal["move"] = "move"
+    unit: AccessibilityRangeMoveExpandUnit
+    count: Annotated[StrictInt, Field(ge=-10000, le=10000)] = 0
+    endpoint: AccessibilityRangeCompareEndpoint | None = None
+
+
+class AccessibilityRangeMoveMoveEndpoint(EIPModel):
+    kind: Literal["move_endpoint"] = "move_endpoint"
+    unit: AccessibilityRangeMoveExpandUnit
+    count: Annotated[StrictInt, Field(ge=-10000, le=10000)] = 0
+    endpoint: AccessibilityRangeCompareEndpoint | None = None
+
+
+class AccessibilityRangePoint(EIPModel):
+    kind: Literal["point"] = "point"
+    point: AccessibilityNativePoint
+
+
+class AccessibilityRangeReadAttributes(EIPModel):
+    kind: Literal["attributes"] = "attributes"
+    attribute_ids: Annotated[
+        tuple[Annotated[StrictInt, Field(ge=-2147483648, le=2147483647)], ...], Field(max_length=128)
+    ] = ()
+
+
+class AccessibilityRangeReadBounds(EIPModel):
+    kind: Literal["bounds"] = "bounds"
+    attribute_ids: Annotated[
+        tuple[Annotated[StrictInt, Field(ge=-2147483648, le=2147483647)], ...], Field(max_length=128)
+    ] = ()
+
+
+class AccessibilityRangeReadChildren(EIPModel):
+    kind: Literal["children"] = "children"
+    attribute_ids: Annotated[
+        tuple[Annotated[StrictInt, Field(ge=-2147483648, le=2147483647)], ...], Field(max_length=128)
+    ] = ()
+
+
+class AccessibilityRangeReadEnclosingElement(EIPModel):
+    kind: Literal["enclosing_element"] = "enclosing_element"
+    attribute_ids: Annotated[
+        tuple[Annotated[StrictInt, Field(ge=-2147483648, le=2147483647)], ...], Field(max_length=128)
+    ] = ()
+
+
+class AccessibilityRangeReadText(EIPModel):
+    kind: Literal["text"] = "text"
+    attribute_ids: Annotated[
+        tuple[Annotated[StrictInt, Field(ge=-2147483648, le=2147483647)], ...], Field(max_length=128)
+    ] = ()
+
+
+class AccessibilityRangeReference(EIPModel):
+    node: AccessibilityNodeReference
+    range_handle: Annotated[StrictStr, Field(min_length=1, max_length=128)]
+    unit: AccessibilityRangeReferenceUnit
+
+
+class AccessibilityRangeSpan(EIPModel):
+    kind: Literal["span"] = "span"
+    span: AccessibilityNativeSpan
+
+
+class AccessibilityRangesValue(EIPModel):
+    kind: Literal["ranges"] = "ranges"
+    values: Annotated[tuple[AccessibilityRangeReference, ...], Field(max_length=256)] = ()
+
+
+class AccessibilityRelationsRead(EIPModel):
+    kind: Literal["relations"] = "relations"
+    relations: Annotated[tuple[StrictStr, ...], Field(max_length=64)] = ()
+
+
+class AccessibilityScalar(EIPModel):
+    kind: Literal["scalar"] = "scalar"
+    value: StrictBool | StrictInt | Annotated[StrictFloat, Field(allow_inf_nan=False)] | StrictStr
+
+
+class AccessibilityScalarsValue(EIPModel):
+    kind: Literal["scalars"] = "scalars"
+    values: Annotated[
+        tuple[StrictBool | StrictInt | Annotated[StrictFloat, Field(allow_inf_nan=False)] | StrictStr, ...],
+        Field(max_length=512),
+    ] = ()
+
+
+class AccessibilitySimpleReadDocument(EIPModel):
+    kind: Literal["document"] = "document"
+
+
+class AccessibilitySimpleReadNumericValue(EIPModel):
+    kind: Literal["numeric_value"] = "numeric_value"
+
+
+class AccessibilitySimpleReadScroll(EIPModel):
+    kind: Literal["scroll"] = "scroll"
+
+
+class AccessibilitySimpleReadSelection(EIPModel):
+    kind: Literal["selection"] = "selection"
+
+
+class AccessibilitySpecialValueMixed(EIPModel):
+    kind: Literal["mixed"] = "mixed"
+
+
+class AccessibilitySpecialValueProtected(EIPModel):
+    kind: Literal["protected"] = "protected"
+
+
+class AccessibilitySpecialValueUnavailable(EIPModel):
+    kind: Literal["unavailable"] = "unavailable"
+
+
+class AccessibilitySpecialValueUnsupported(EIPModel):
+    kind: Literal["unsupported"] = "unsupported"
+
+
+class AccessibilityTableRead(EIPModel):
+    kind: Literal["table"] = "table"
+    row: Annotated[StrictInt, Field(ge=0, le=4294967295)] = 0
+    column: Annotated[StrictInt, Field(ge=0, le=4294967295)] = 0
+    rows: Annotated[StrictInt, Field(ge=1, le=512)] = 1
+    columns: Annotated[StrictInt, Field(ge=1, le=512)] = 1
+    include_headers: StrictBool = True
+    include_selection: StrictBool = False
+
+
+class AccessibilityTextContent(EIPModel):
+    status: AccessibilityTextContentStatus
+    source: Annotated[StrictStr, Field(max_length=128)]
+    text: StrictStr | None = None
+    span: AccessibilityNativeSpan | None = None
+
+
+class AccessibilityTextRead(EIPModel):
+    kind: Literal["text"] = "text"
+    span: AccessibilityNativeSpan | None = None
+
+
 class AllowlistDestinations(EIPModel):
     mode: Literal["allowlist"]
     hosts: Annotated[tuple[StrictStr, ...], Field(max_length=256)] = ()
+
+
+class AtspiChildSelectionSelectionAddChild(EIPModel):
+    op: Literal["selection_add_child"] = "selection_add_child"
+    child: AccessibilityNodeReference
+
+
+class AtspiChildSelectionSelectionRemoveChild(EIPModel):
+    op: Literal["selection_remove_child"] = "selection_remove_child"
+    child: AccessibilityNodeReference
+
+
+class AtspiChildSelectionSelectionRemoveSelected(EIPModel):
+    op: Literal["selection_remove_selected"] = "selection_remove_selected"
+    child: AccessibilityNodeReference
+
+
+class AtspiCommandFocus(EIPModel):
+    op: Literal["focus"] = "focus"
+
+
+class AtspiCommandSelectionAll(EIPModel):
+    op: Literal["selection_all"] = "selection_all"
+
+
+class AtspiCommandSelectionClear(EIPModel):
+    op: Literal["selection_clear"] = "selection_clear"
+
+
+class AtspiDocumentSelection(EIPModel):
+    start: AccessibilityNodeReference
+    start_offset: Annotated[StrictInt, Field(ge=0, le=4294967295)]
+    end: AccessibilityNodeReference
+    end_offset: Annotated[StrictInt, Field(ge=0, le=4294967295)]
+    start_is_active: StrictBool
+
+
+class AtspiDocumentSelections(EIPModel):
+    op: Literal["document_selections_set"] = "document_selections_set"
+    selections: Annotated[tuple[AtspiDocumentSelection, ...], Field(max_length=256)]
+
+
+class AtspiExtents(EIPModel):
+    op: Literal["component_extents_set"] = "component_extents_set"
+    point: AccessibilityNativePoint
+    width: Annotated[StrictInt, Field(ge=1, le=2147483647)]
+    height: Annotated[StrictInt, Field(ge=1, le=2147483647)]
+
+
+class AtspiRangeScroll(EIPModel):
+    op: Literal["range_scroll_to"] = "range_scroll_to"
+    range: AccessibilityRangeReference
+    alignment: AtspiRangeScrollAlignment
+
+
+class AtspiRangeScrollPoint(EIPModel):
+    op: Literal["range_scroll_to_point"] = "range_scroll_to_point"
+    range: AccessibilityRangeReference
+    point: AccessibilityNativePoint
+
+
+class AtspiScroll(EIPModel):
+    op: Literal["scroll_to"] = "scroll_to"
+    alignment: AtspiRangeScrollAlignment
+
+
+class AtspiScrollPointComponentPositionSet(EIPModel):
+    op: Literal["component_position_set"] = "component_position_set"
+    point: AccessibilityNativePoint
+
+
+class AtspiScrollPointScrollToPoint(EIPModel):
+    op: Literal["scroll_to_point"] = "scroll_to_point"
+    point: AccessibilityNativePoint
+
+
+class AtspiSelectionRemove(EIPModel):
+    op: Literal["text_selection_remove"] = "text_selection_remove"
+    index: Annotated[StrictInt, Field(ge=0, le=4294967295)]
+
+
+class AtspiSelectionSet(EIPModel):
+    op: Literal["text_selection_set"] = "text_selection_set"
+    index: Annotated[StrictInt, Field(ge=0, le=4294967295)]
+    range: AccessibilityRangeReference
+
+
+class AtspiSize(EIPModel):
+    op: Literal["component_size_set"] = "component_size_set"
+    width: Annotated[StrictInt, Field(ge=1, le=2147483647)]
+    height: Annotated[StrictInt, Field(ge=1, le=2147483647)]
+
+
+class AtspiTableSelectionTableColumnSelect(EIPModel):
+    op: Literal["table_column_select"] = "table_column_select"
+    index: Annotated[StrictInt, Field(ge=0, le=4294967295)]
+
+
+class AtspiTableSelectionTableColumnUnselect(EIPModel):
+    op: Literal["table_column_unselect"] = "table_column_unselect"
+    index: Annotated[StrictInt, Field(ge=0, le=4294967295)]
+
+
+class AtspiTableSelectionTableRowSelect(EIPModel):
+    op: Literal["table_row_select"] = "table_row_select"
+    index: Annotated[StrictInt, Field(ge=0, le=4294967295)]
+
+
+class AtspiTableSelectionTableRowUnselect(EIPModel):
+    op: Literal["table_row_unselect"] = "table_row_unselect"
+    index: Annotated[StrictInt, Field(ge=0, le=4294967295)]
+
+
+class AtspiTextContents(EIPModel):
+    op: Literal["text_contents_set"] = "text_contents_set"
+    text: Annotated[
+        StrictStr,
+        Field(json_schema_extra={"pattern": "^[^\\x00]*$", "x-max-utf8-bytes": 65536}),
+        AfterValidator(_validate_no_nul),
+        AfterValidator(partial(_validate_utf8_bytes, maximum=65536)),
+    ]
+
+
+class AtspiTextInsert(EIPModel):
+    op: Literal["text_insert"] = "text_insert"
+    position: Annotated[StrictInt, Field(ge=0, le=4294967295)]
+    text: Annotated[
+        StrictStr,
+        Field(json_schema_extra={"pattern": "^[^\\x00]*$", "x-max-utf8-bytes": 65536}),
+        AfterValidator(_validate_no_nul),
+        AfterValidator(partial(_validate_utf8_bytes, maximum=65536)),
+    ]
+
+
+class AtspiTextPositionCaretSet(EIPModel):
+    op: Literal["caret_set"] = "caret_set"
+    position: Annotated[StrictInt, Field(ge=0, le=4294967295)]
+
+
+class AtspiTextPositionTextPaste(EIPModel):
+    op: Literal["text_paste"] = "text_paste"
+    position: Annotated[StrictInt, Field(ge=0, le=4294967295)]
+
+
+class AtspiTextRangeTextCopy(EIPModel):
+    op: Literal["text_copy"] = "text_copy"
+    range: AccessibilityRangeReference
+
+
+class AtspiTextRangeTextCut(EIPModel):
+    op: Literal["text_cut"] = "text_cut"
+    range: AccessibilityRangeReference
+
+
+class AtspiTextRangeTextDelete(EIPModel):
+    op: Literal["text_delete"] = "text_delete"
+    range: AccessibilityRangeReference
+
+
+class AtspiTextRangeTextSelectionAdd(EIPModel):
+    op: Literal["text_selection_add"] = "text_selection_add"
+    range: AccessibilityRangeReference
+
+
+class AtspiValue(EIPModel):
+    op: Literal["value_set"] = "value_set"
+    value: Annotated[StrictFloat, Field(allow_inf_nan=False)]
 
 
 class CommandEnvironment(EIPModel):
@@ -1102,6 +1851,169 @@ class SystemInfo(EIPModel):
     cpu_model: Annotated[StrictStr, Field(max_length=256)] | None = None
 
 
+class UIACommandCollapse(EIPModel):
+    op: Literal["collapse"] = "collapse"
+
+
+class UIACommandExpand(EIPModel):
+    op: Literal["expand"] = "expand"
+
+
+class UIACommandFocus(EIPModel):
+    op: Literal["focus"] = "focus"
+
+
+class UIACommandInvoke(EIPModel):
+    op: Literal["invoke"] = "invoke"
+
+
+class UIACommandLegacyDefaultAction(EIPModel):
+    op: Literal["legacy_default_action"] = "legacy_default_action"
+
+
+class UIACommandRealize(EIPModel):
+    op: Literal["realize"] = "realize"
+
+
+class UIACommandScrollIntoView(EIPModel):
+    op: Literal["scroll_into_view"] = "scroll_into_view"
+
+
+class UIACommandSelectionAdd(EIPModel):
+    op: Literal["selection_add"] = "selection_add"
+
+
+class UIACommandSelectionRemove(EIPModel):
+    op: Literal["selection_remove"] = "selection_remove"
+
+
+class UIACommandSelectionSelect(EIPModel):
+    op: Literal["selection_select"] = "selection_select"
+
+
+class UIACommandShowContextMenu(EIPModel):
+    op: Literal["show_context_menu"] = "show_context_menu"
+
+
+class UIACommandToggle(EIPModel):
+    op: Literal["toggle"] = "toggle"
+
+
+class UIACommandWindowClose(EIPModel):
+    op: Literal["window_close"] = "window_close"
+
+
+class UIADock(EIPModel):
+    op: Literal["dock_set"] = "dock_set"
+    position: UIADockPosition
+
+
+class UIALegacySelect(EIPModel):
+    op: Literal["legacy_select"] = "legacy_select"
+    selection: UIALegacySelectSelection = UIALegacySelectSelection("none")
+    take_focus: StrictBool = False
+
+
+class UIAMove(EIPModel):
+    op: Literal["transform_move"] = "transform_move"
+    x: Annotated[StrictFloat, Field(allow_inf_nan=False)]
+    y: Annotated[StrictFloat, Field(allow_inf_nan=False)]
+
+
+class UIANumberValue(EIPModel):
+    op: Literal["range_value_set"] = "range_value_set"
+    value: Annotated[StrictFloat, Field(allow_inf_nan=False)]
+
+
+class UIARangeRangeAddSelection(EIPModel):
+    op: Literal["range_add_selection"] = "range_add_selection"
+    range: AccessibilityRangeReference
+
+
+class UIARangeRangeRemoveSelection(EIPModel):
+    op: Literal["range_remove_selection"] = "range_remove_selection"
+    range: AccessibilityRangeReference
+
+
+class UIARangeRangeSelect(EIPModel):
+    op: Literal["range_select"] = "range_select"
+    range: AccessibilityRangeReference
+
+
+class UIARangeRangeShowContextMenu(EIPModel):
+    op: Literal["range_show_context_menu"] = "range_show_context_menu"
+    range: AccessibilityRangeReference
+
+
+class UIARangeScroll(EIPModel):
+    op: Literal["range_scroll_into_view"] = "range_scroll_into_view"
+    range: AccessibilityRangeReference
+    align_top: StrictBool = True
+
+
+class UIAResize(EIPModel):
+    op: Literal["transform_resize"] = "transform_resize"
+    width: Annotated[StrictFloat, Field(allow_inf_nan=False, gt=0.0)]
+    height: Annotated[StrictFloat, Field(allow_inf_nan=False, gt=0.0)]
+
+
+class UIARotate(EIPModel):
+    op: Literal["transform_rotate"] = "transform_rotate"
+    degrees: Annotated[StrictFloat, Field(allow_inf_nan=False)]
+
+
+class UIAScrollAmount(EIPModel):
+    op: Literal["scroll_amount"] = "scroll_amount"
+    horizontal: UIAScrollAmountHorizontal = UIAScrollAmountHorizontal("no_amount")
+    vertical: UIAScrollAmountHorizontal = UIAScrollAmountHorizontal("no_amount")
+
+
+class UIAScrollPercent(EIPModel):
+    op: Literal["scroll_percent"] = "scroll_percent"
+    horizontal: Annotated[StrictFloat, Field(allow_inf_nan=False, ge=0.0, le=100.0)] | None = None
+    vertical: Annotated[StrictFloat, Field(allow_inf_nan=False, ge=0.0, le=100.0)] | None = None
+
+
+class UIAStringValueLegacyValueSet(EIPModel):
+    op: Literal["legacy_value_set"] = "legacy_value_set"
+    value: Annotated[
+        StrictStr,
+        Field(json_schema_extra={"pattern": "^[^\\x00]*$", "x-max-utf8-bytes": 65536}),
+        AfterValidator(_validate_no_nul),
+        AfterValidator(partial(_validate_utf8_bytes, maximum=65536)),
+    ]
+
+
+class UIAStringValueValueSet(EIPModel):
+    op: Literal["value_set"] = "value_set"
+    value: Annotated[
+        StrictStr,
+        Field(json_schema_extra={"pattern": "^[^\\x00]*$", "x-max-utf8-bytes": 65536}),
+        AfterValidator(_validate_no_nul),
+        AfterValidator(partial(_validate_utf8_bytes, maximum=65536)),
+    ]
+
+
+class UIAView(EIPModel):
+    op: Literal["view_set"] = "view_set"
+    view_id: Annotated[StrictInt, Field(ge=-2147483648, le=2147483647)]
+
+
+class UIAWindowState(EIPModel):
+    op: Literal["window_state_set"] = "window_state_set"
+    state: UIAWindowStateState
+
+
+class UIAZoom(EIPModel):
+    op: Literal["transform_zoom"] = "transform_zoom"
+    percent: Annotated[StrictFloat, Field(allow_inf_nan=False, gt=0.0)]
+
+
+class UIAZoomUnit(EIPModel):
+    op: Literal["transform_zoom_unit"] = "transform_zoom_unit"
+    unit: UIAZoomUnitUnit
+
+
 class UnlimitedCpuLimit(EIPModel):
     kind: Literal["unlimited"]
 
@@ -1116,10 +2028,204 @@ class VmMount(EIPModel):
     access: GrantAccess
 
 
+class AXChildrenSelectedChildrenSet(EIPModel):
+    op: Literal["selected_children_set"] = "selected_children_set"
+    children: Annotated[tuple[AccessibilityNodeReference, ...], Field(max_length=512)]
+
+
+class AXChildrenSelectedColumnsSet(EIPModel):
+    op: Literal["selected_columns_set"] = "selected_columns_set"
+    children: Annotated[tuple[AccessibilityNodeReference, ...], Field(max_length=512)]
+
+
+class AXChildrenSelectedRowsSet(EIPModel):
+    op: Literal["selected_rows_set"] = "selected_rows_set"
+    children: Annotated[tuple[AccessibilityNodeReference, ...], Field(max_length=512)]
+
+
+class AXFocusedWindow(EIPModel):
+    op: Literal["focused_window_set"] = "focused_window_set"
+    window: AccessibilityNodeReference
+
+
+class AXRangeTextRangeSelect(EIPModel):
+    op: Literal["text_range_select"] = "text_range_select"
+    range: AccessibilityRangeReference
+
+
+class AXRangeVisibleTextRangeSet(EIPModel):
+    op: Literal["visible_text_range_set"] = "visible_text_range_set"
+    range: AccessibilityRangeReference
+
+
+class AXRanges(EIPModel):
+    op: Literal["text_ranges_select"] = "text_ranges_select"
+    ranges: Annotated[tuple[AccessibilityRangeReference, ...], Field(max_length=256)]
+
+
+class AccessibilityActionReference(EIPModel):
+    node: AccessibilityNodeReference
+    action_handle: Annotated[StrictStr, Field(min_length=1, max_length=128)]
+    native_identifier: Annotated[StrictStr, Field(min_length=1, max_length=1024)]
+
+
+class AccessibilityBoundsValue(EIPModel):
+    kind: Literal["bounds"] = "bounds"
+    values: Annotated[tuple[AccessibilityNativeBounds, ...], Field(max_length=512)] = ()
+
+
+class AccessibilityCapability(EIPModel):
+    operation: Annotated[StrictStr, Field(min_length=1, max_length=128)]
+    supported: AccessibilityCapabilitySupported
+    source: Annotated[StrictStr, Field(max_length=128)]
+    action: AccessibilityActionReference | None = None
+    label: StrictStr | None = None
+    description: StrictStr | None = None
+
+
+class AccessibilityCursor(EIPModel):
+    root: AccessibilityNodeReference
+    cursor_handle: Annotated[StrictStr, Field(min_length=1, max_length=128)]
+
+
+class AccessibilityDescription(EIPModel):
+    backend: AccessibilityDescriptionBackend
+    backend_epoch: StrictStr | None = None
+    ready: StrictBool
+    reason: AccessibilityDescriptionReason
+    desktop_identity: Annotated[StrictStr, Field(max_length=1024)]
+    methods: Annotated[tuple[StrictStr, ...], Field(max_length=128)] = ()
+    frames: tuple[AccessibilityDescriptionFrames, ...] = ()
+    limits: AccessibilityLimits = Field(default_factory=AccessibilityLimits)
+
+
+class AccessibilityItemRead(EIPModel):
+    kind: Literal["item"] = "item"
+    source: AccessibilityItemReadSource
+    name: Annotated[StrictStr, Field(max_length=4096)]
+    after: AccessibilityNodeReference | None = None
+
+
+class AccessibilityNode(EIPModel):
+    reference: AccessibilityNodeReference
+    native_role: Annotated[StrictStr, Field(max_length=1024)]
+    role: StrictStr | None = None
+    name: StrictStr | None = None
+    description: StrictStr | None = None
+    identifier: StrictStr | None = None
+    states: Annotated[dict[StrictStr, StrictBool | StrictStr], Field(max_length=128)] = Field(default_factory=dict)
+    bounds: AccessibilityNativeBounds | None = None
+    parent: AccessibilityNodeReference | None = None
+    child_count: Annotated[StrictInt, Field(ge=0, le=4294967295)] | None = None
+    children: Annotated[tuple[AccessibilityNodeReference, ...], Field(max_length=2048)] = ()
+    capabilities: Annotated[tuple[AccessibilityCapability, ...], Field(max_length=128)] = ()
+    sampled_at: EIPTimestamp
+    field_errors: Annotated[tuple[AccessibilityFieldError, ...], Field(max_length=128)] = ()
+    image_projection: AccessibilityImageProjection | None = None
+
+
+class AccessibilityRangeCompare(EIPModel):
+    kind: Literal["compare"] = "compare"
+    other: AccessibilityRangeReference
+    endpoint: AccessibilityRangeCompareEndpoint | None = None
+    other_endpoint: AccessibilityRangeCompareEndpoint | None = None
+
+
+class AccessibilityRangeCompose(EIPModel):
+    kind: Literal["endpoint_by_range"] = "endpoint_by_range"
+    endpoint: AccessibilityRangeCompareEndpoint
+    other: AccessibilityRangeReference
+    other_endpoint: AccessibilityRangeCompareEndpoint
+
+
+class AccessibilityRangeFindAttribute(EIPModel):
+    kind: Literal["find_attribute"] = "find_attribute"
+    attribute_id: Annotated[StrictInt, Field(ge=0, le=4294967295)]
+    value: AccessibilityScalar
+    backward: StrictBool = False
+
+
+type AccessibilityRangeQuery = Annotated[
+    AccessibilityRangeAcquireActiveComposition
+    | AccessibilityRangeAcquireCaret
+    | AccessibilityRangeChild
+    | AccessibilityRangeAcquireConversionTarget
+    | AccessibilityRangeAcquireDocument
+    | AccessibilityRangeCompose
+    | AccessibilityRangeMoveExpand
+    | AccessibilityRangeFindAttribute
+    | AccessibilityRangeFind
+    | AccessibilityRangeIndexIndex
+    | AccessibilityRangeIndexLine
+    | AccessibilityRangeIndexLineForIndex
+    | AccessibilityRangeMoveMove
+    | AccessibilityRangeMoveMoveEndpoint
+    | AccessibilityRangePoint
+    | AccessibilityRangeAcquireSelection
+    | AccessibilityRangeSpan
+    | AccessibilityRangeAcquireVisible,
+    Field(discriminator="kind"),
+]
+
+type AccessibilityRangeReadRequest = Annotated[
+    AccessibilityRangeReadAttributes
+    | AccessibilityRangeReadBounds
+    | AccessibilityRangeReadChildren
+    | AccessibilityRangeCompare
+    | AccessibilityRangeReadEnclosingElement
+    | AccessibilityRangeReadText,
+    Field(discriminator="kind"),
+]
+
+type AccessibilityRead = Annotated[
+    AccessibilitySimpleReadDocument
+    | AccessibilityItemRead
+    | AccessibilityNativeRead
+    | AccessibilityNavigateRead
+    | AccessibilitySimpleReadNumericValue
+    | AccessibilityPropertyRead
+    | AccessibilityRelationsRead
+    | AccessibilitySimpleReadScroll
+    | AccessibilitySimpleReadSelection
+    | AccessibilityTableRead
+    | AccessibilityTextRead
+    | AccessibilityIdleRead
+    | AccessibilityDocumentSelectionsRead,
+    Field(discriminator="kind"),
+]
+
+
+class AccessibilityRootScope(EIPModel):
+    kind: AccessibilityRootScopeKind = AccessibilityRootScopeKind("windows")
+    process_id: Annotated[StrictInt, Field(ge=-2147483648, le=2147483647)] | None = None
+    point: AccessibilityNativePoint | None = None
+    observation_id: Identifier | None = None
+    image_point: ComputerPoint | None = None
+
+
+type AccessibilityValue = Annotated[
+    AccessibilityBoundsValue
+    | AccessibilitySpecialValueMixed
+    | AccessibilityNodesValue
+    | AccessibilitySpecialValueProtected
+    | AccessibilityRangesValue
+    | AccessibilityScalar
+    | AccessibilityScalarsValue
+    | AccessibilitySpecialValueUnavailable
+    | AccessibilitySpecialValueUnsupported,
+    Field(discriminator="kind"),
+]
+
+
 class ArgvCommand(EIPModel):
     kind: Literal["argv"]
     arguments: tuple[StrictStr, ...] = ()
     executable_spec: ExecutableSpec
+
+
+class AtspiAction(EIPModel):
+    op: Literal["do_action"] = "do_action"
+    action: AccessibilityActionReference
 
 
 type CommandSpec = Annotated[
@@ -1128,10 +2234,396 @@ type CommandSpec = Annotated[
 ]
 
 
+class ComputerA11yDescribeParams(EIPModel):
+    context: EIPCallContext
+
+
+class ComputerA11yFindParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    limits: AccessibilityLimits = Field(default_factory=AccessibilityLimits)
+    view: ComputerA11yFindParamsView = ComputerA11yFindParamsView("control")
+    cursor: AccessibilityCursor | None = None
+    query: AccessibilityFind
+
+
+class ComputerA11yInspectParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    limits: AccessibilityLimits = Field(default_factory=AccessibilityLimits)
+    view: ComputerA11yFindParamsView = ComputerA11yFindParamsView("control")
+    cursor: AccessibilityCursor | None = None
+    projection_observation_id: Identifier | None = None
+
+
+class ComputerA11yRangeParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    query: AccessibilityRangeQuery
+    source: AccessibilityRangeReference | None = None
+    limits: AccessibilityLimits = Field(default_factory=AccessibilityLimits)
+
+
+class ComputerA11yRangeReadParams(EIPModel):
+    context: EIPCallContext
+    reference: AccessibilityRangeReference
+    request: AccessibilityRangeReadRequest
+    limits: AccessibilityLimits = Field(default_factory=AccessibilityLimits)
+
+
+class ComputerA11yReadParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: AccessibilityRead
+    limits: AccessibilityLimits = Field(default_factory=AccessibilityLimits)
+
+
+class ComputerA11yRootsParams(EIPModel):
+    context: EIPCallContext
+    scope: AccessibilityRootScope
+    limits: AccessibilityLimits = Field(default_factory=AccessibilityLimits)
+
+
+class ComputerAXDisclosingSetParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: AXBooleanDisclosingSet
+    readback: StrictBool = False
+
+
+class ComputerAXExpandedSetParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: AXBooleanExpandedSet
+    readback: StrictBool = False
+
+
+class ComputerAXFocusParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: AXFocus
+    readback: StrictBool = False
+
+
+class ComputerAXFocusedWindowSetParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: AXFocusedWindow
+    readback: StrictBool = False
+
+
+class ComputerAXMainSetParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: AXBooleanMainSet
+    readback: StrictBool = False
+
+
+class ComputerAXMinimizedSetParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: AXBooleanMinimizedSet
+    readback: StrictBool = False
+
+
+class ComputerAXPositionSetParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: AXPosition
+    readback: StrictBool = False
+
+
+class ComputerAXSelectedChildrenSetParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: AXChildrenSelectedChildrenSet
+    readback: StrictBool = False
+
+
+class ComputerAXSelectedColumnsSetParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: AXChildrenSelectedColumnsSet
+    readback: StrictBool = False
+
+
+class ComputerAXSelectedRowsSetParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: AXChildrenSelectedRowsSet
+    readback: StrictBool = False
+
+
+class ComputerAXSelectedSetParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: AXBooleanSelectedSet
+    readback: StrictBool = False
+
+
+class ComputerAXSelectedTextSetParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: AXSelectedText
+    readback: StrictBool = False
+
+
+class ComputerAXSizeSetParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: AXSize
+    readback: StrictBool = False
+
+
+class ComputerAXTextRangeSelectParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: AXRangeTextRangeSelect
+    readback: StrictBool = False
+
+
+class ComputerAXTextRangesSelectParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: AXRanges
+    readback: StrictBool = False
+
+
+class ComputerAXValueNumberSetParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: AXNumberValue
+    readback: StrictBool = False
+
+
+class ComputerAXValueStringSetParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: AXStringValue
+    readback: StrictBool = False
+
+
+class ComputerAXVisibleTextRangeSetParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: AXRangeVisibleTextRangeSet
+    readback: StrictBool = False
+
+
 class ComputerActionResult(EIPModel):
     receipt: OperationReceipt
     effect: ComputerEffect
     input_cleanup_complete: StrictBool
+
+
+class ComputerAtspiCaretSetParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: AtspiTextPositionCaretSet
+    readback: StrictBool = False
+
+
+class ComputerAtspiComponentExtentsSetParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: AtspiExtents
+    readback: StrictBool = False
+
+
+class ComputerAtspiComponentPositionSetParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: AtspiScrollPointComponentPositionSet
+    readback: StrictBool = False
+
+
+class ComputerAtspiComponentSizeSetParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: AtspiSize
+    readback: StrictBool = False
+
+
+class ComputerAtspiDoActionParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: AtspiAction
+    readback: StrictBool = False
+
+
+class ComputerAtspiDocumentSelectionsSetParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: AtspiDocumentSelections
+    readback: StrictBool = False
+
+
+class ComputerAtspiFocusParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: AtspiCommandFocus
+    readback: StrictBool = False
+
+
+class ComputerAtspiRangeScrollToParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: AtspiRangeScroll
+    readback: StrictBool = False
+
+
+class ComputerAtspiRangeScrollToPointParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: AtspiRangeScrollPoint
+    readback: StrictBool = False
+
+
+class ComputerAtspiScrollToParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: AtspiScroll
+    readback: StrictBool = False
+
+
+class ComputerAtspiScrollToPointParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: AtspiScrollPointScrollToPoint
+    readback: StrictBool = False
+
+
+class ComputerAtspiSelectionAddChildParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: AtspiChildSelectionSelectionAddChild
+    readback: StrictBool = False
+
+
+class ComputerAtspiSelectionAllParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: AtspiCommandSelectionAll
+    readback: StrictBool = False
+
+
+class ComputerAtspiSelectionClearParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: AtspiCommandSelectionClear
+    readback: StrictBool = False
+
+
+class ComputerAtspiSelectionRemoveChildParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: AtspiChildSelectionSelectionRemoveChild
+    readback: StrictBool = False
+
+
+class ComputerAtspiSelectionRemoveSelectedParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: AtspiChildSelectionSelectionRemoveSelected
+    readback: StrictBool = False
+
+
+class ComputerAtspiTableColumnSelectParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: AtspiTableSelectionTableColumnSelect
+    readback: StrictBool = False
+
+
+class ComputerAtspiTableColumnUnselectParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: AtspiTableSelectionTableColumnUnselect
+    readback: StrictBool = False
+
+
+class ComputerAtspiTableRowSelectParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: AtspiTableSelectionTableRowSelect
+    readback: StrictBool = False
+
+
+class ComputerAtspiTableRowUnselectParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: AtspiTableSelectionTableRowUnselect
+    readback: StrictBool = False
+
+
+class ComputerAtspiTextContentsSetParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: AtspiTextContents
+    readback: StrictBool = False
+
+
+class ComputerAtspiTextCopyParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: AtspiTextRangeTextCopy
+    readback: StrictBool = False
+
+
+class ComputerAtspiTextCutParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: AtspiTextRangeTextCut
+    readback: StrictBool = False
+
+
+class ComputerAtspiTextDeleteParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: AtspiTextRangeTextDelete
+    readback: StrictBool = False
+
+
+class ComputerAtspiTextInsertParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: AtspiTextInsert
+    readback: StrictBool = False
+
+
+class ComputerAtspiTextPasteParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: AtspiTextPositionTextPaste
+    readback: StrictBool = False
+
+
+class ComputerAtspiTextSelectionAddParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: AtspiTextRangeTextSelectionAdd
+    readback: StrictBool = False
+
+
+class ComputerAtspiTextSelectionRemoveParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: AtspiSelectionRemove
+    readback: StrictBool = False
+
+
+class ComputerAtspiTextSelectionSetParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: AtspiSelectionSet
+    readback: StrictBool = False
+
+
+class ComputerAtspiValueSetParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: AtspiValue
+    readback: StrictBool = False
 
 
 class ComputerClickParams(EIPModel):
@@ -1203,6 +2695,230 @@ class ComputerScrollParams(EIPModel):
 class ComputerTypeTextParams(EIPModel):
     context: EIPCallContext
     text: StrictStr
+
+
+class ComputerUIACollapseParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: UIACommandCollapse
+    readback: StrictBool = False
+
+
+class ComputerUIADockSetParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: UIADock
+    readback: StrictBool = False
+
+
+class ComputerUIAExpandParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: UIACommandExpand
+    readback: StrictBool = False
+
+
+class ComputerUIAFocusParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: UIACommandFocus
+    readback: StrictBool = False
+
+
+class ComputerUIAInvokeParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: UIACommandInvoke
+    readback: StrictBool = False
+
+
+class ComputerUIALegacyDefaultActionParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: UIACommandLegacyDefaultAction
+    readback: StrictBool = False
+
+
+class ComputerUIALegacySelectParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: UIALegacySelect
+    readback: StrictBool = False
+
+
+class ComputerUIALegacyValueSetParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: UIAStringValueLegacyValueSet
+    readback: StrictBool = False
+
+
+class ComputerUIARangeAddSelectionParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: UIARangeRangeAddSelection
+    readback: StrictBool = False
+
+
+class ComputerUIARangeRemoveSelectionParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: UIARangeRangeRemoveSelection
+    readback: StrictBool = False
+
+
+class ComputerUIARangeScrollIntoViewParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: UIARangeScroll
+    readback: StrictBool = False
+
+
+class ComputerUIARangeSelectParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: UIARangeRangeSelect
+    readback: StrictBool = False
+
+
+class ComputerUIARangeShowContextMenuParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: UIARangeRangeShowContextMenu
+    readback: StrictBool = False
+
+
+class ComputerUIARangeValueSetParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: UIANumberValue
+    readback: StrictBool = False
+
+
+class ComputerUIARealizeParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: UIACommandRealize
+    readback: StrictBool = False
+
+
+class ComputerUIAScrollAmountParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: UIAScrollAmount
+    readback: StrictBool = False
+
+
+class ComputerUIAScrollIntoViewParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: UIACommandScrollIntoView
+    readback: StrictBool = False
+
+
+class ComputerUIAScrollPercentParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: UIAScrollPercent
+    readback: StrictBool = False
+
+
+class ComputerUIASelectionAddParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: UIACommandSelectionAdd
+    readback: StrictBool = False
+
+
+class ComputerUIASelectionRemoveParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: UIACommandSelectionRemove
+    readback: StrictBool = False
+
+
+class ComputerUIASelectionSelectParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: UIACommandSelectionSelect
+    readback: StrictBool = False
+
+
+class ComputerUIAShowContextMenuParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: UIACommandShowContextMenu
+    readback: StrictBool = False
+
+
+class ComputerUIAToggleParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: UIACommandToggle
+    readback: StrictBool = False
+
+
+class ComputerUIATransformMoveParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: UIAMove
+    readback: StrictBool = False
+
+
+class ComputerUIATransformResizeParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: UIAResize
+    readback: StrictBool = False
+
+
+class ComputerUIATransformRotateParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: UIARotate
+    readback: StrictBool = False
+
+
+class ComputerUIATransformZoomParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: UIAZoom
+    readback: StrictBool = False
+
+
+class ComputerUIATransformZoomUnitParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: UIAZoomUnit
+    readback: StrictBool = False
+
+
+class ComputerUIAValueSetParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: UIAStringValueValueSet
+    readback: StrictBool = False
+
+
+class ComputerUIAViewSetParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: UIAView
+    readback: StrictBool = False
+
+
+class ComputerUIAWindowCloseParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: UIACommandWindowClose
+    readback: StrictBool = False
+
+
+class ComputerUIAWindowStateSetParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: UIAWindowState
+    readback: StrictBool = False
 
 
 class ComputerWriteClipboardParams(EIPModel):
@@ -1468,6 +3184,40 @@ class VmIsolation(EIPModel):
     mounts: tuple[VmMount, ...] = ()
 
 
+class AXAction(EIPModel):
+    op: Literal["perform_action"] = "perform_action"
+    action: AccessibilityActionReference
+
+
+class AccessibilityCompleteness(EIPModel):
+    complete: StrictBool
+    reason: AccessibilityCompletenessReason | None = None
+    continuation: AccessibilityCursor | None = None
+    consistency: Literal["live"] = "live"
+
+
+class AccessibilityMutationResult(EIPModel):
+    receipt: OperationReceipt
+    effect: ComputerEffect
+    native_status: AccessibilityMutationResultNativeStatus
+    dispatch_complete: StrictBool
+    observation: AccessibilityNode | None = None
+    application_outcome: Literal["unverified"] = "unverified"
+
+
+class AccessibilityProperty(EIPModel):
+    name: Annotated[StrictStr, Field(min_length=1, max_length=128)]
+    source: Annotated[StrictStr, Field(max_length=128)]
+    value: AccessibilityValue
+
+
+class AccessibilityTree(EIPModel):
+    backend: AccessibilityDescriptionBackend
+    sampled_at: EIPTimestamp
+    nodes: Annotated[tuple[AccessibilityNode, ...], Field(max_length=2048)] = ()
+    completeness: AccessibilityCompleteness
+
+
 class CgroupMetrics(EIPModel):
     cpu_usage_usec: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
     cpu_user_usec: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
@@ -1493,6 +3243,13 @@ class CommandRequest(EIPModel):
     limits: CommandLimits = Field(default_factory=CommandLimits)
     initial_stdin: EncodedBytes | None = None
     keep_stdin_open: StrictBool = False
+
+
+class ComputerAXPerformActionParams(EIPModel):
+    context: EIPCallContext
+    node: AccessibilityNodeReference
+    request: AXAction
+    readback: StrictBool = False
 
 
 class ExecutionBoundary(EIPModel):
@@ -1593,6 +3350,40 @@ class SessionOpenResult(EIPModel):
 class ShellExecParams(EIPModel):
     context: EIPCallContext
     request: CommandRequest
+
+
+class AccessibilityAttributeRun(EIPModel):
+    range: AccessibilityRangeReference
+    properties: Annotated[tuple[AccessibilityProperty, ...], Field(max_length=128)] = ()
+
+
+class AccessibilityContent(EIPModel):
+    node: AccessibilityNodeReference
+    sampled_at: EIPTimestamp
+    completeness: AccessibilityCompleteness
+    text: AccessibilityTextContent | None = None
+    properties: Annotated[tuple[AccessibilityProperty, ...], Field(max_length=512)] = ()
+    nodes: Annotated[tuple[AccessibilityNode, ...], Field(max_length=512)] = ()
+    ranges: Annotated[tuple[AccessibilityRangeReference, ...], Field(max_length=256)] = ()
+    field_errors: Annotated[tuple[AccessibilityFieldError, ...], Field(max_length=128)] = ()
+    document_selections: Annotated[tuple[AtspiDocumentSelection, ...], Field(max_length=256)] = ()
+    attributes: Annotated[tuple[AccessibilityAttributeMetadata, ...], Field(max_length=512)] = ()
+
+
+class AccessibilityRangeResult(EIPModel):
+    node: AccessibilityNodeReference
+    sampled_at: EIPTimestamp
+    completeness: AccessibilityCompleteness
+    ranges: Annotated[tuple[AccessibilityRangeReference, ...], Field(max_length=256)] = ()
+    actual_movement: Annotated[StrictInt, Field(ge=-2147483648, le=2147483647)] | None = None
+    native_index: Annotated[StrictInt, Field(ge=-2147483648, le=2147483647)] | None = None
+    comparison: StrictBool | StrictInt | None = None
+    text: AccessibilityTextContent | None = None
+    bounds: Annotated[tuple[AccessibilityNativeBounds, ...], Field(max_length=512)] = ()
+    properties: Annotated[tuple[AccessibilityProperty, ...], Field(max_length=128)] = ()
+    attribute_runs: Annotated[tuple[AccessibilityAttributeRun, ...], Field(max_length=512)] = ()
+    nodes: Annotated[tuple[AccessibilityNode, ...], Field(max_length=512)] = ()
+    field_errors: Annotated[tuple[AccessibilityFieldError, ...], Field(max_length=128)] = ()
 
 
 class DeviceDescriptor(EIPModel):
@@ -1699,7 +3490,100 @@ class FileDiscoverDocumentsResult(EIPModel):
     omitted_unrepresentable_entries: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)]
 
 
+AXBooleanDisclosingSet.model_rebuild()
+AXBooleanExpandedSet.model_rebuild()
+AXBooleanMainSet.model_rebuild()
+AXBooleanMinimizedSet.model_rebuild()
+AXBooleanSelectedSet.model_rebuild()
+AXFocus.model_rebuild()
+AXNumberValue.model_rebuild()
+AXPosition.model_rebuild()
+AXSelectedText.model_rebuild()
+AXSize.model_rebuild()
+AXStringValue.model_rebuild()
+AccessibilityAttributeMetadata.model_rebuild()
+AccessibilityDocumentSelectionsRead.model_rebuild()
+AccessibilityFieldError.model_rebuild()
+AccessibilityFind.model_rebuild()
+AccessibilityIdleRead.model_rebuild()
+AccessibilityImageProjection.model_rebuild()
+AccessibilityLimits.model_rebuild()
+AccessibilityNativeBounds.model_rebuild()
+AccessibilityNativePoint.model_rebuild()
+AccessibilityNativeRead.model_rebuild()
+AccessibilityNativeSpan.model_rebuild()
+AccessibilityNavigateRead.model_rebuild()
+AccessibilityNodeReference.model_rebuild()
+AccessibilityNodesValue.model_rebuild()
+AccessibilityPropertyRead.model_rebuild()
+AccessibilityRangeAcquireActiveComposition.model_rebuild()
+AccessibilityRangeAcquireCaret.model_rebuild()
+AccessibilityRangeAcquireConversionTarget.model_rebuild()
+AccessibilityRangeAcquireDocument.model_rebuild()
+AccessibilityRangeAcquireSelection.model_rebuild()
+AccessibilityRangeAcquireVisible.model_rebuild()
+AccessibilityRangeChild.model_rebuild()
+AccessibilityRangeFind.model_rebuild()
+AccessibilityRangeIndexIndex.model_rebuild()
+AccessibilityRangeIndexLine.model_rebuild()
+AccessibilityRangeIndexLineForIndex.model_rebuild()
+AccessibilityRangeMoveExpand.model_rebuild()
+AccessibilityRangeMoveMove.model_rebuild()
+AccessibilityRangeMoveMoveEndpoint.model_rebuild()
+AccessibilityRangePoint.model_rebuild()
+AccessibilityRangeReadAttributes.model_rebuild()
+AccessibilityRangeReadBounds.model_rebuild()
+AccessibilityRangeReadChildren.model_rebuild()
+AccessibilityRangeReadEnclosingElement.model_rebuild()
+AccessibilityRangeReadText.model_rebuild()
+AccessibilityRangeReference.model_rebuild()
+AccessibilityRangeSpan.model_rebuild()
+AccessibilityRangesValue.model_rebuild()
+AccessibilityRelationsRead.model_rebuild()
+AccessibilityScalar.model_rebuild()
+AccessibilityScalarsValue.model_rebuild()
+AccessibilitySimpleReadDocument.model_rebuild()
+AccessibilitySimpleReadNumericValue.model_rebuild()
+AccessibilitySimpleReadScroll.model_rebuild()
+AccessibilitySimpleReadSelection.model_rebuild()
+AccessibilitySpecialValueMixed.model_rebuild()
+AccessibilitySpecialValueProtected.model_rebuild()
+AccessibilitySpecialValueUnavailable.model_rebuild()
+AccessibilitySpecialValueUnsupported.model_rebuild()
+AccessibilityTableRead.model_rebuild()
+AccessibilityTextContent.model_rebuild()
+AccessibilityTextRead.model_rebuild()
 AllowlistDestinations.model_rebuild()
+AtspiChildSelectionSelectionAddChild.model_rebuild()
+AtspiChildSelectionSelectionRemoveChild.model_rebuild()
+AtspiChildSelectionSelectionRemoveSelected.model_rebuild()
+AtspiCommandFocus.model_rebuild()
+AtspiCommandSelectionAll.model_rebuild()
+AtspiCommandSelectionClear.model_rebuild()
+AtspiDocumentSelection.model_rebuild()
+AtspiDocumentSelections.model_rebuild()
+AtspiExtents.model_rebuild()
+AtspiRangeScroll.model_rebuild()
+AtspiRangeScrollPoint.model_rebuild()
+AtspiScroll.model_rebuild()
+AtspiScrollPointComponentPositionSet.model_rebuild()
+AtspiScrollPointScrollToPoint.model_rebuild()
+AtspiSelectionRemove.model_rebuild()
+AtspiSelectionSet.model_rebuild()
+AtspiSize.model_rebuild()
+AtspiTableSelectionTableColumnSelect.model_rebuild()
+AtspiTableSelectionTableColumnUnselect.model_rebuild()
+AtspiTableSelectionTableRowSelect.model_rebuild()
+AtspiTableSelectionTableRowUnselect.model_rebuild()
+AtspiTextContents.model_rebuild()
+AtspiTextInsert.model_rebuild()
+AtspiTextPositionCaretSet.model_rebuild()
+AtspiTextPositionTextPaste.model_rebuild()
+AtspiTextRangeTextCopy.model_rebuild()
+AtspiTextRangeTextCut.model_rebuild()
+AtspiTextRangeTextDelete.model_rebuild()
+AtspiTextRangeTextSelectionAdd.model_rebuild()
+AtspiValue.model_rebuild()
 CommandEnvironment.model_rebuild()
 CommandLimits.model_rebuild()
 ComputerObservation.model_rebuild()
@@ -1808,11 +3692,117 @@ SessionLifecyclePolicy.model_rebuild()
 ShellCommand.model_rebuild()
 ShellProfileDescriptor.model_rebuild()
 SystemInfo.model_rebuild()
+UIACommandCollapse.model_rebuild()
+UIACommandExpand.model_rebuild()
+UIACommandFocus.model_rebuild()
+UIACommandInvoke.model_rebuild()
+UIACommandLegacyDefaultAction.model_rebuild()
+UIACommandRealize.model_rebuild()
+UIACommandScrollIntoView.model_rebuild()
+UIACommandSelectionAdd.model_rebuild()
+UIACommandSelectionRemove.model_rebuild()
+UIACommandSelectionSelect.model_rebuild()
+UIACommandShowContextMenu.model_rebuild()
+UIACommandToggle.model_rebuild()
+UIACommandWindowClose.model_rebuild()
+UIADock.model_rebuild()
+UIALegacySelect.model_rebuild()
+UIAMove.model_rebuild()
+UIANumberValue.model_rebuild()
+UIARangeRangeAddSelection.model_rebuild()
+UIARangeRangeRemoveSelection.model_rebuild()
+UIARangeRangeSelect.model_rebuild()
+UIARangeRangeShowContextMenu.model_rebuild()
+UIARangeScroll.model_rebuild()
+UIAResize.model_rebuild()
+UIARotate.model_rebuild()
+UIAScrollAmount.model_rebuild()
+UIAScrollPercent.model_rebuild()
+UIAStringValueLegacyValueSet.model_rebuild()
+UIAStringValueValueSet.model_rebuild()
+UIAView.model_rebuild()
+UIAWindowState.model_rebuild()
+UIAZoom.model_rebuild()
+UIAZoomUnit.model_rebuild()
 UnlimitedCpuLimit.model_rebuild()
 UnlimitedMemoryLimit.model_rebuild()
 VmMount.model_rebuild()
+AXChildrenSelectedChildrenSet.model_rebuild()
+AXChildrenSelectedColumnsSet.model_rebuild()
+AXChildrenSelectedRowsSet.model_rebuild()
+AXFocusedWindow.model_rebuild()
+AXRangeTextRangeSelect.model_rebuild()
+AXRangeVisibleTextRangeSet.model_rebuild()
+AXRanges.model_rebuild()
+AccessibilityActionReference.model_rebuild()
+AccessibilityBoundsValue.model_rebuild()
+AccessibilityCapability.model_rebuild()
+AccessibilityCursor.model_rebuild()
+AccessibilityDescription.model_rebuild()
+AccessibilityItemRead.model_rebuild()
+AccessibilityNode.model_rebuild()
+AccessibilityRangeCompare.model_rebuild()
+AccessibilityRangeCompose.model_rebuild()
+AccessibilityRangeFindAttribute.model_rebuild()
+AccessibilityRootScope.model_rebuild()
 ArgvCommand.model_rebuild()
+AtspiAction.model_rebuild()
+ComputerA11yDescribeParams.model_rebuild()
+ComputerA11yFindParams.model_rebuild()
+ComputerA11yInspectParams.model_rebuild()
+ComputerA11yRangeParams.model_rebuild()
+ComputerA11yRangeReadParams.model_rebuild()
+ComputerA11yReadParams.model_rebuild()
+ComputerA11yRootsParams.model_rebuild()
+ComputerAXDisclosingSetParams.model_rebuild()
+ComputerAXExpandedSetParams.model_rebuild()
+ComputerAXFocusParams.model_rebuild()
+ComputerAXFocusedWindowSetParams.model_rebuild()
+ComputerAXMainSetParams.model_rebuild()
+ComputerAXMinimizedSetParams.model_rebuild()
+ComputerAXPositionSetParams.model_rebuild()
+ComputerAXSelectedChildrenSetParams.model_rebuild()
+ComputerAXSelectedColumnsSetParams.model_rebuild()
+ComputerAXSelectedRowsSetParams.model_rebuild()
+ComputerAXSelectedSetParams.model_rebuild()
+ComputerAXSelectedTextSetParams.model_rebuild()
+ComputerAXSizeSetParams.model_rebuild()
+ComputerAXTextRangeSelectParams.model_rebuild()
+ComputerAXTextRangesSelectParams.model_rebuild()
+ComputerAXValueNumberSetParams.model_rebuild()
+ComputerAXValueStringSetParams.model_rebuild()
+ComputerAXVisibleTextRangeSetParams.model_rebuild()
 ComputerActionResult.model_rebuild()
+ComputerAtspiCaretSetParams.model_rebuild()
+ComputerAtspiComponentExtentsSetParams.model_rebuild()
+ComputerAtspiComponentPositionSetParams.model_rebuild()
+ComputerAtspiComponentSizeSetParams.model_rebuild()
+ComputerAtspiDoActionParams.model_rebuild()
+ComputerAtspiDocumentSelectionsSetParams.model_rebuild()
+ComputerAtspiFocusParams.model_rebuild()
+ComputerAtspiRangeScrollToParams.model_rebuild()
+ComputerAtspiRangeScrollToPointParams.model_rebuild()
+ComputerAtspiScrollToParams.model_rebuild()
+ComputerAtspiScrollToPointParams.model_rebuild()
+ComputerAtspiSelectionAddChildParams.model_rebuild()
+ComputerAtspiSelectionAllParams.model_rebuild()
+ComputerAtspiSelectionClearParams.model_rebuild()
+ComputerAtspiSelectionRemoveChildParams.model_rebuild()
+ComputerAtspiSelectionRemoveSelectedParams.model_rebuild()
+ComputerAtspiTableColumnSelectParams.model_rebuild()
+ComputerAtspiTableColumnUnselectParams.model_rebuild()
+ComputerAtspiTableRowSelectParams.model_rebuild()
+ComputerAtspiTableRowUnselectParams.model_rebuild()
+ComputerAtspiTextContentsSetParams.model_rebuild()
+ComputerAtspiTextCopyParams.model_rebuild()
+ComputerAtspiTextCutParams.model_rebuild()
+ComputerAtspiTextDeleteParams.model_rebuild()
+ComputerAtspiTextInsertParams.model_rebuild()
+ComputerAtspiTextPasteParams.model_rebuild()
+ComputerAtspiTextSelectionAddParams.model_rebuild()
+ComputerAtspiTextSelectionRemoveParams.model_rebuild()
+ComputerAtspiTextSelectionSetParams.model_rebuild()
+ComputerAtspiValueSetParams.model_rebuild()
 ComputerClickParams.model_rebuild()
 ComputerDescribeParams.model_rebuild()
 ComputerDescribeResult.model_rebuild()
@@ -1824,6 +3814,38 @@ ComputerPressKeysParams.model_rebuild()
 ComputerReadClipboardParams.model_rebuild()
 ComputerScrollParams.model_rebuild()
 ComputerTypeTextParams.model_rebuild()
+ComputerUIACollapseParams.model_rebuild()
+ComputerUIADockSetParams.model_rebuild()
+ComputerUIAExpandParams.model_rebuild()
+ComputerUIAFocusParams.model_rebuild()
+ComputerUIAInvokeParams.model_rebuild()
+ComputerUIALegacyDefaultActionParams.model_rebuild()
+ComputerUIALegacySelectParams.model_rebuild()
+ComputerUIALegacyValueSetParams.model_rebuild()
+ComputerUIARangeAddSelectionParams.model_rebuild()
+ComputerUIARangeRemoveSelectionParams.model_rebuild()
+ComputerUIARangeScrollIntoViewParams.model_rebuild()
+ComputerUIARangeSelectParams.model_rebuild()
+ComputerUIARangeShowContextMenuParams.model_rebuild()
+ComputerUIARangeValueSetParams.model_rebuild()
+ComputerUIARealizeParams.model_rebuild()
+ComputerUIAScrollAmountParams.model_rebuild()
+ComputerUIAScrollIntoViewParams.model_rebuild()
+ComputerUIAScrollPercentParams.model_rebuild()
+ComputerUIASelectionAddParams.model_rebuild()
+ComputerUIASelectionRemoveParams.model_rebuild()
+ComputerUIASelectionSelectParams.model_rebuild()
+ComputerUIAShowContextMenuParams.model_rebuild()
+ComputerUIAToggleParams.model_rebuild()
+ComputerUIATransformMoveParams.model_rebuild()
+ComputerUIATransformResizeParams.model_rebuild()
+ComputerUIATransformRotateParams.model_rebuild()
+ComputerUIATransformZoomParams.model_rebuild()
+ComputerUIATransformZoomUnitParams.model_rebuild()
+ComputerUIAValueSetParams.model_rebuild()
+ComputerUIAViewSetParams.model_rebuild()
+ComputerUIAWindowCloseParams.model_rebuild()
+ComputerUIAWindowStateSetParams.model_rebuild()
 ComputerWriteClipboardParams.model_rebuild()
 ComputerWriteClipboardResult.model_rebuild()
 ComputerZoomParams.model_rebuild()
@@ -1859,8 +3881,14 @@ RestrictedSandbox.model_rebuild()
 ShellExecResult.model_rebuild()
 SystemMetrics.model_rebuild()
 VmIsolation.model_rebuild()
+AXAction.model_rebuild()
+AccessibilityCompleteness.model_rebuild()
+AccessibilityMutationResult.model_rebuild()
+AccessibilityProperty.model_rebuild()
+AccessibilityTree.model_rebuild()
 CgroupMetrics.model_rebuild()
 CommandRequest.model_rebuild()
+ComputerAXPerformActionParams.model_rebuild()
 ExecutionBoundary.model_rebuild()
 MetricsSample.model_rebuild()
 PortInspectResult.model_rebuild()
@@ -1874,6 +3902,9 @@ ProcessWaitResult.model_rebuild()
 SessionDescriptor.model_rebuild()
 SessionOpenResult.model_rebuild()
 ShellExecParams.model_rebuild()
+AccessibilityAttributeRun.model_rebuild()
+AccessibilityContent.model_rebuild()
+AccessibilityRangeResult.model_rebuild()
 DeviceDescriptor.model_rebuild()
 DeviceMetricsResult.model_rebuild()
 EIPErrorData.model_rebuild()
@@ -1888,15 +3919,216 @@ FileDiscoverDocumentsResult.model_rebuild()
 
 __all__ = [
     "EIP_ERROR_CODES",
+    "AXAction",
+    "AXBooleanDisclosingSet",
+    "AXBooleanExpandedSet",
+    "AXBooleanMainSet",
+    "AXBooleanMinimizedSet",
+    "AXBooleanSelectedSet",
+    "AXChildrenSelectedChildrenSet",
+    "AXChildrenSelectedColumnsSet",
+    "AXChildrenSelectedRowsSet",
+    "AXFocus",
+    "AXFocusedWindow",
+    "AXNumberValue",
+    "AXPosition",
+    "AXRangeTextRangeSelect",
+    "AXRangeVisibleTextRangeSet",
+    "AXRanges",
+    "AXSelectedText",
+    "AXSize",
+    "AXStringValue",
+    "AccessibilityActionReference",
+    "AccessibilityAttributeMetadata",
+    "AccessibilityAttributeRun",
+    "AccessibilityBoundsValue",
+    "AccessibilityCapability",
+    "AccessibilityCapabilitySupported",
+    "AccessibilityCompleteness",
+    "AccessibilityCompletenessReason",
+    "AccessibilityContent",
+    "AccessibilityCursor",
+    "AccessibilityDescription",
+    "AccessibilityDescriptionBackend",
+    "AccessibilityDescriptionFrames",
+    "AccessibilityDescriptionReason",
+    "AccessibilityDocumentSelectionsRead",
+    "AccessibilityFieldError",
+    "AccessibilityFieldErrorReason",
+    "AccessibilityFind",
+    "AccessibilityFindNameMatch",
+    "AccessibilityIdleRead",
+    "AccessibilityImageProjection",
+    "AccessibilityImageProjectionStatus",
+    "AccessibilityItemRead",
+    "AccessibilityItemReadSource",
+    "AccessibilityLimits",
+    "AccessibilityMutationResult",
+    "AccessibilityMutationResultNativeStatus",
+    "AccessibilityNativeBounds",
+    "AccessibilityNativePoint",
+    "AccessibilityNativeRead",
+    "AccessibilityNativeReadGroup",
+    "AccessibilityNativeSpan",
+    "AccessibilityNativeSpanUnit",
+    "AccessibilityNavigateRead",
+    "AccessibilityNavigateReadDirection",
+    "AccessibilityNode",
+    "AccessibilityNodeReference",
+    "AccessibilityNodesValue",
+    "AccessibilityProperty",
+    "AccessibilityPropertyRead",
+    "AccessibilityPropertyReadGroups",
+    "AccessibilityRangeAcquireActiveComposition",
+    "AccessibilityRangeAcquireCaret",
+    "AccessibilityRangeAcquireConversionTarget",
+    "AccessibilityRangeAcquireDocument",
+    "AccessibilityRangeAcquireSelection",
+    "AccessibilityRangeAcquireVisible",
+    "AccessibilityRangeChild",
+    "AccessibilityRangeCompare",
+    "AccessibilityRangeCompareEndpoint",
+    "AccessibilityRangeCompose",
+    "AccessibilityRangeFind",
+    "AccessibilityRangeFindAttribute",
+    "AccessibilityRangeIndexIndex",
+    "AccessibilityRangeIndexLine",
+    "AccessibilityRangeIndexLineForIndex",
+    "AccessibilityRangeMoveExpand",
+    "AccessibilityRangeMoveExpandUnit",
+    "AccessibilityRangeMoveMove",
+    "AccessibilityRangeMoveMoveEndpoint",
+    "AccessibilityRangePoint",
+    "AccessibilityRangeQuery",
+    "AccessibilityRangeReadAttributes",
+    "AccessibilityRangeReadBounds",
+    "AccessibilityRangeReadChildren",
+    "AccessibilityRangeReadEnclosingElement",
+    "AccessibilityRangeReadRequest",
+    "AccessibilityRangeReadText",
+    "AccessibilityRangeReference",
+    "AccessibilityRangeReferenceUnit",
+    "AccessibilityRangeResult",
+    "AccessibilityRangeSpan",
+    "AccessibilityRangesValue",
+    "AccessibilityRead",
+    "AccessibilityRelationsRead",
+    "AccessibilityRootScope",
+    "AccessibilityRootScopeKind",
+    "AccessibilityScalar",
+    "AccessibilityScalarsValue",
+    "AccessibilitySimpleReadDocument",
+    "AccessibilitySimpleReadNumericValue",
+    "AccessibilitySimpleReadScroll",
+    "AccessibilitySimpleReadSelection",
+    "AccessibilitySpecialValueMixed",
+    "AccessibilitySpecialValueProtected",
+    "AccessibilitySpecialValueUnavailable",
+    "AccessibilitySpecialValueUnsupported",
+    "AccessibilityTableRead",
+    "AccessibilityTextContent",
+    "AccessibilityTextContentStatus",
+    "AccessibilityTextRead",
+    "AccessibilityTree",
+    "AccessibilityValue",
     "AllowlistDestinations",
     "ArgvCommand",
+    "AtspiAction",
+    "AtspiChildSelectionSelectionAddChild",
+    "AtspiChildSelectionSelectionRemoveChild",
+    "AtspiChildSelectionSelectionRemoveSelected",
+    "AtspiCommandFocus",
+    "AtspiCommandSelectionAll",
+    "AtspiCommandSelectionClear",
+    "AtspiDocumentSelection",
+    "AtspiDocumentSelections",
+    "AtspiExtents",
+    "AtspiRangeScroll",
+    "AtspiRangeScrollAlignment",
+    "AtspiRangeScrollPoint",
+    "AtspiScroll",
+    "AtspiScrollPointComponentPositionSet",
+    "AtspiScrollPointScrollToPoint",
+    "AtspiSelectionRemove",
+    "AtspiSelectionSet",
+    "AtspiSize",
+    "AtspiTableSelectionTableColumnSelect",
+    "AtspiTableSelectionTableColumnUnselect",
+    "AtspiTableSelectionTableRowSelect",
+    "AtspiTableSelectionTableRowUnselect",
+    "AtspiTextContents",
+    "AtspiTextInsert",
+    "AtspiTextPositionCaretSet",
+    "AtspiTextPositionTextPaste",
+    "AtspiTextRangeTextCopy",
+    "AtspiTextRangeTextCut",
+    "AtspiTextRangeTextDelete",
+    "AtspiTextRangeTextSelectionAdd",
+    "AtspiValue",
     "CgroupMetrics",
     "CleanupOutcome",
     "CommandEnvironment",
     "CommandLimits",
     "CommandRequest",
     "CommandSpec",
+    "ComputerA11yDescribeParams",
+    "ComputerA11yFindParams",
+    "ComputerA11yFindParamsView",
+    "ComputerA11yInspectParams",
+    "ComputerA11yRangeParams",
+    "ComputerA11yRangeReadParams",
+    "ComputerA11yReadParams",
+    "ComputerA11yRootsParams",
+    "ComputerAXDisclosingSetParams",
+    "ComputerAXExpandedSetParams",
+    "ComputerAXFocusParams",
+    "ComputerAXFocusedWindowSetParams",
+    "ComputerAXMainSetParams",
+    "ComputerAXMinimizedSetParams",
+    "ComputerAXPerformActionParams",
+    "ComputerAXPositionSetParams",
+    "ComputerAXSelectedChildrenSetParams",
+    "ComputerAXSelectedColumnsSetParams",
+    "ComputerAXSelectedRowsSetParams",
+    "ComputerAXSelectedSetParams",
+    "ComputerAXSelectedTextSetParams",
+    "ComputerAXSizeSetParams",
+    "ComputerAXTextRangeSelectParams",
+    "ComputerAXTextRangesSelectParams",
+    "ComputerAXValueNumberSetParams",
+    "ComputerAXValueStringSetParams",
+    "ComputerAXVisibleTextRangeSetParams",
     "ComputerActionResult",
+    "ComputerAtspiCaretSetParams",
+    "ComputerAtspiComponentExtentsSetParams",
+    "ComputerAtspiComponentPositionSetParams",
+    "ComputerAtspiComponentSizeSetParams",
+    "ComputerAtspiDoActionParams",
+    "ComputerAtspiDocumentSelectionsSetParams",
+    "ComputerAtspiFocusParams",
+    "ComputerAtspiRangeScrollToParams",
+    "ComputerAtspiRangeScrollToPointParams",
+    "ComputerAtspiScrollToParams",
+    "ComputerAtspiScrollToPointParams",
+    "ComputerAtspiSelectionAddChildParams",
+    "ComputerAtspiSelectionAllParams",
+    "ComputerAtspiSelectionClearParams",
+    "ComputerAtspiSelectionRemoveChildParams",
+    "ComputerAtspiSelectionRemoveSelectedParams",
+    "ComputerAtspiTableColumnSelectParams",
+    "ComputerAtspiTableColumnUnselectParams",
+    "ComputerAtspiTableRowSelectParams",
+    "ComputerAtspiTableRowUnselectParams",
+    "ComputerAtspiTextContentsSetParams",
+    "ComputerAtspiTextCopyParams",
+    "ComputerAtspiTextCutParams",
+    "ComputerAtspiTextDeleteParams",
+    "ComputerAtspiTextInsertParams",
+    "ComputerAtspiTextPasteParams",
+    "ComputerAtspiTextSelectionAddParams",
+    "ComputerAtspiTextSelectionRemoveParams",
+    "ComputerAtspiTextSelectionSetParams",
+    "ComputerAtspiValueSetParams",
     "ComputerButton",
     "ComputerClickParams",
     "ComputerClipboardStatus",
@@ -1917,6 +4149,38 @@ __all__ = [
     "ComputerScrollUnit",
     "ComputerTarget",
     "ComputerTypeTextParams",
+    "ComputerUIACollapseParams",
+    "ComputerUIADockSetParams",
+    "ComputerUIAExpandParams",
+    "ComputerUIAFocusParams",
+    "ComputerUIAInvokeParams",
+    "ComputerUIALegacyDefaultActionParams",
+    "ComputerUIALegacySelectParams",
+    "ComputerUIALegacyValueSetParams",
+    "ComputerUIARangeAddSelectionParams",
+    "ComputerUIARangeRemoveSelectionParams",
+    "ComputerUIARangeScrollIntoViewParams",
+    "ComputerUIARangeSelectParams",
+    "ComputerUIARangeShowContextMenuParams",
+    "ComputerUIARangeValueSetParams",
+    "ComputerUIARealizeParams",
+    "ComputerUIAScrollAmountParams",
+    "ComputerUIAScrollIntoViewParams",
+    "ComputerUIAScrollPercentParams",
+    "ComputerUIASelectionAddParams",
+    "ComputerUIASelectionRemoveParams",
+    "ComputerUIASelectionSelectParams",
+    "ComputerUIAShowContextMenuParams",
+    "ComputerUIAToggleParams",
+    "ComputerUIATransformMoveParams",
+    "ComputerUIATransformResizeParams",
+    "ComputerUIATransformRotateParams",
+    "ComputerUIATransformZoomParams",
+    "ComputerUIATransformZoomUnitParams",
+    "ComputerUIAValueSetParams",
+    "ComputerUIAViewSetParams",
+    "ComputerUIAWindowCloseParams",
+    "ComputerUIAWindowStateSetParams",
     "ComputerWriteClipboardParams",
     "ComputerWriteClipboardResult",
     "ComputerZoomImage",
@@ -2111,6 +4375,43 @@ __all__ = [
     "SystemInfo",
     "SystemMetrics",
     "TerminationReason",
+    "UIACommandCollapse",
+    "UIACommandExpand",
+    "UIACommandFocus",
+    "UIACommandInvoke",
+    "UIACommandLegacyDefaultAction",
+    "UIACommandRealize",
+    "UIACommandScrollIntoView",
+    "UIACommandSelectionAdd",
+    "UIACommandSelectionRemove",
+    "UIACommandSelectionSelect",
+    "UIACommandShowContextMenu",
+    "UIACommandToggle",
+    "UIACommandWindowClose",
+    "UIADock",
+    "UIADockPosition",
+    "UIALegacySelect",
+    "UIALegacySelectSelection",
+    "UIAMove",
+    "UIANumberValue",
+    "UIARangeRangeAddSelection",
+    "UIARangeRangeRemoveSelection",
+    "UIARangeRangeSelect",
+    "UIARangeRangeShowContextMenu",
+    "UIARangeScroll",
+    "UIAResize",
+    "UIARotate",
+    "UIAScrollAmount",
+    "UIAScrollAmountHorizontal",
+    "UIAScrollPercent",
+    "UIAStringValueLegacyValueSet",
+    "UIAStringValueValueSet",
+    "UIAView",
+    "UIAWindowState",
+    "UIAWindowStateState",
+    "UIAZoom",
+    "UIAZoomUnit",
+    "UIAZoomUnitUnit",
     "UnlimitedCpuLimit",
     "UnlimitedMemoryLimit",
     "VmBackend",

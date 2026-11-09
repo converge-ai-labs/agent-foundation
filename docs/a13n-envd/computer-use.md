@@ -130,6 +130,31 @@ The zoom result includes `source_observation_id` and `region_pixels` in original
 
 Expand **Observe desktop** or **Inspect desktop region** in WebUI to inspect the image. Temporary display copies can expire. Client integrations should close screenshot readers promptly to release transfer capacity.
 
+## Native accessibility
+
+The Computer toolset also exposes semantic desktop access. Begin with `computer_accessibility_describe` to check the backend, readiness and supported reads. Backend support, mount permissions and a particular control's capabilities are separate facts. A daemon without a native backend reports unsupported; enabling Computer use alone does not provide one.
+
+| Tool                                            | Purpose                                                                         |
+| ----------------------------------------------- | ------------------------------------------------------------------------------- |
+| `computer_accessibility_describe`               | Discover the native backend and readiness                                       |
+| `computer_accessibility_roots`                  | Locate desktop, application, focused or point-selected roots                    |
+| `computer_accessibility_inspect`                | Read a bounded tree and per-node native capabilities                            |
+| `computer_accessibility_find`                   | Find bounded matches within a retained root                                     |
+| `computer_accessibility_read`                   | Read native properties, text, selections, tables and platform-specific metadata |
+| `computer_accessibility_range`                  | Obtain or transform a native text-range reference                               |
+| `computer_accessibility_range_read`             | Read text, bounds or metadata from a retained range                             |
+| `computer_ax`, `computer_uia`, `computer_atspi` | Perform an explicitly selected macOS AX, Windows UIA or Linux AT-SPI mutation   |
+
+Grant semantic reads individually, for example `environment.computer.a11y_describe`, `environment.computer.a11y_roots` and `environment.computer.a11y_inspect`. Mutations require their exact action, such as `environment.computer.ax_perform_action`, `environment.computer.uia_invoke` or `environment.computer.atspi_do_action`. Selecting a grouped tool does not grant all its operations.
+
+Inspect the target, choose a capability it actually reports, perform the native operation, then read back or capture a screenshot to verify the application result. Limits bound nodes, depth, text, items, matches, native calls, serialized bytes and time. Check completeness and field errors before interpreting an absent match. Protected values remain unavailable. Native text offsets keep their declared platform units.
+
+Node and text-range references belong to their originating environment execution and native helper epoch. Keep the returned reference; do not reconstruct it from labels or native IDs. Reacquire them after a Session or helper replacement. A stale reference fails rather than selecting a similar control.
+
+For screenshot-based hit testing, pass a roots scope with `kind: "screenshot_point"`, an existing `observation_id` and `point` in the configured screenshot coordinate space. Inspect can request `projection_observation_id`; each node's `image_projection` reports whether its native bounds map to that image. Use only a returned projection, never native bounds as screenshot coordinates. Semantic reads and projections do not capture pixels or refresh an observation.
+
+Native mutation results separate native acknowledgement from the operation receipt. `application_outcome: "unverified"` requires subsequent observation. If delivery or completion is unknown, inspect current state before deciding whether to retry; no automatic replay is safe.
+
 ## Clipboard text
 
 Grant `environment.computer.read_clipboard` and `environment.computer.write_clipboard` separately for `computer_read_clipboard` and `computer_write_clipboard`. Both work on macOS, Windows and Linux X11. Select the mount by `alias`; these calls need no observation reference.

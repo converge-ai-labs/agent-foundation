@@ -58,7 +58,7 @@ def test_generated_manifest_uses_portable_paths(tmp_path: Path) -> None:
 
 
 def test_generated_protocol_version_components_match_schema_identifier() -> None:
-    assert EIP_PROTOCOL_VERSION == f"{EIP_PROTOCOL_MAJOR}.{EIP_PROTOCOL_MINOR}" == "0.4"
+    assert EIP_PROTOCOL_VERSION == f"{EIP_PROTOCOL_MAJOR}.{EIP_PROTOCOL_MINOR}" == "0.5"
     openrpc = json.loads(OPENRPC_PATH.read_text(encoding="utf-8"))
     assert openrpc["info"]["version"] == EIP_PROTOCOL_VERSION
 
@@ -111,9 +111,9 @@ def test_checked_inspection_artifacts_follow_eip_json_profile() -> None:
     assert readiness_result["properties"]["device_id"]["minLength"] == 1
 
     methods = json.loads(METHODS_PATH.read_text(encoding="utf-8"))
-    assert methods["method_count"] == 58
-    assert sum(method["replay_class"] == "active_only" for method in methods["methods"]) == 26
-    assert sum(method["replay_class"] == "terminal_evidence" for method in methods["methods"]) == 22
+    assert methods["method_count"] == 146
+    assert sum(method["replay_class"] == "active_only" for method in methods["methods"]) == 33
+    assert sum(method["replay_class"] == "terminal_evidence" for method in methods["methods"]) == 103
     assert sum(method["replay_class"] == "ledger_external" for method in methods["methods"]) == 10
     assert {method["jsonrpc_method"] for method in methods["methods"] if method["device_scoped"]} == {
         "initialize",

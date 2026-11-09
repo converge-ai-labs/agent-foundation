@@ -10,6 +10,8 @@ from a13n_envd_client.eip import v1 as eip
 from a13n_harness.environment.attachments import EIPSessionSource
 from a13n_harness.environment.envd_policy import EnvdBoundaryRequirement
 from a13n_harness.environment.models import (
+    ACCESSIBILITY_MUTATION_ACTIONS,
+    ACCESSIBILITY_READ_ACTIONS,
     EnvironmentAction,
     EnvironmentAvailability,
     EnvironmentDescriptor,
@@ -20,6 +22,7 @@ from a13n_harness.environment.models import (
 from a13n_harness.environment.operations import EnvironmentOperations
 from a13n_harness.environment.session_recovery import SessionConfigurationSource
 from a13n_harness.providers.environment.eip._common import session_client
+from a13n_harness.providers.environment.eip.accessibility import EIPAccessibilityOperations
 from a13n_harness.providers.environment.eip.computer import EIPComputerOperations
 from a13n_harness.providers.environment.eip.files import EIPFileOperator
 from a13n_harness.providers.environment.eip.output import EIPOutputOperations, EIPOutputRegistry
@@ -32,6 +35,10 @@ from a13n_harness.providers.environment.eip.processes import (
 
 EIP_METHOD_ACTIONS = MappingProxyType(
     {
+        **{
+            action.value.removeprefix("environment."): (action,)
+            for action in ACCESSIBILITY_READ_ACTIONS | ACCESSIBILITY_MUTATION_ACTIONS
+        },
         "computer.describe": (EnvironmentAction.COMPUTER_DESCRIBE,),
         "computer.observe": (EnvironmentAction.COMPUTER_OBSERVE,),
         "computer.zoom": (EnvironmentAction.COMPUTER_ZOOM,),
@@ -167,7 +174,18 @@ class EIPEnvironmentSession:
             ports=EIPPortOperations(conversions) if {"port.inspect", "port.wait"} & methods else None,
             outputs=EIPOutputOperations(outputs) if "output.read" in methods else None,
             computer=EIPComputerOperations(session, execution_id=execution_id, generation=self._generation)
-            if any(method.startswith("computer.") for method in methods)
+            if any(
+                method in methods
+                for method, actions in EIP_METHOD_ACTIONS.items()
+                if any(action.value.startswith("environment.computer.") for action in actions)
+                and not set(actions) & (ACCESSIBILITY_READ_ACTIONS | ACCESSIBILITY_MUTATION_ACTIONS)
+            )
+            else None,
+            accessibility=EIPAccessibilityOperations(session, execution_id=execution_id, generation=self._generation)
+            if any(
+                action.value.removeprefix("environment.") in methods
+                for action in ACCESSIBILITY_READ_ACTIONS | ACCESSIBILITY_MUTATION_ACTIONS
+            )
             else None,
         )
         self._availability = EnvironmentAvailability(

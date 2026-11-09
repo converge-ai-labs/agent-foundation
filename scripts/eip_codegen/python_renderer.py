@@ -21,6 +21,7 @@ TOOLING_ENUMS = {
     "ReplayClass",
     "ErrorFamily",
     "EIPStringFormat",
+    "EIPJsonPrimitive",
     "TransferAction",
     "TransferDirection",
     "EIPDataFrameKind",
@@ -76,6 +77,21 @@ def _field_option(field: descriptor_pb2.FieldDescriptorProto, options: OptionRea
     return options.field(field)
 
 
+def _json_value_type(field_option: Any | None, options: OptionReader) -> str:
+    primitives = {
+        "EIP_JSON_PRIMITIVE_BOOLEAN": "StrictBool",
+        "EIP_JSON_PRIMITIVE_INTEGER": "StrictInt",
+        "EIP_JSON_PRIMITIVE_NUMBER": "Annotated[StrictFloat, Field(allow_inf_nan=False)]",
+        "EIP_JSON_PRIMITIVE_STRING": "StrictStr",
+        "EIP_JSON_PRIMITIVE_NULL": "None",
+    }
+    if field_option is None or not field_option.json_primitives:
+        return "JsonValue"
+    return " | ".join(
+        primitives[options.enum_name("EIPJsonPrimitive", value)] for value in field_option.json_primitives
+    )
+
+
 def _base_field_type(
     field: descriptor_pb2.FieldDescriptorProto,
     index: SchemaIndex,
@@ -86,11 +102,16 @@ def _base_field_type(
         if field.type_name == ".google.protobuf.Timestamp":
             return "EIPTimestamp"
         if field.type_name == ".google.protobuf.Value":
-            return "JsonValue"
+            return _json_value_type(field_option, options)
         if field.type_name in index.map_entries:
             entry = index.map_entries[field.type_name]
             key_type = _base_field_type(entry.field[0], index, options)
-            value_type = _base_field_type(entry.field[1], index, options)
+            value_field = entry.field[1]
+            value_type = (
+                _json_value_type(field_option, options)
+                if value_field.type_name == ".google.protobuf.Value"
+                else _base_field_type(value_field, index, options)
+            )
             return f"dict[{key_type}, {value_type}]"
         return short_name(field.type_name)
     if field.type == descriptor_pb2.FieldDescriptorProto.TYPE_ENUM:
@@ -153,7 +174,15 @@ def _base_field_type(
             }
             else 64
         )
-        return f"Annotated[StrictInt, Field(ge={-(2 ** (bits - 1))}, le={2 ** (bits - 1) - 1})]"
+        minimum, maximum = -(2 ** (bits - 1)), 2 ** (bits - 1) - 1
+        if field_option is not None:
+            if field_option.HasField("minimum"):
+                minimum = max(minimum, field_option.minimum)
+            if field_option.HasField("signed_minimum"):
+                minimum = max(minimum, field_option.signed_minimum)
+            if field_option.HasField("maximum"):
+                maximum = min(maximum, field_option.maximum)
+        return f"Annotated[StrictInt, Field(ge={minimum}, le={maximum})]"
     if field.type in {descriptor_pb2.FieldDescriptorProto.TYPE_FLOAT, descriptor_pb2.FieldDescriptorProto.TYPE_DOUBLE}:
         constraints = ["allow_inf_nan=False"]
         if field_option is not None:
@@ -161,6 +190,10 @@ def _base_field_type(
                 constraints.append(f"ge={field_option.minimum}.0")
             if field_option.HasField("maximum"):
                 constraints.append(f"le={field_option.maximum}.0")
+            if field_option.HasField("signed_minimum"):
+                constraints.append(f"ge={field_option.signed_minimum}.0")
+            if field_option.HasField("exclusive_minimum"):
+                constraints.append(f"gt={field_option.exclusive_minimum!r}")
         return f"Annotated[StrictFloat, Field({', '.join(constraints)})]"
     raise ValueError(f"unsupported field type for {field.name}: {field.type}")
 
@@ -188,20 +221,32 @@ def _field_annotation(
         field_option = _field_option(field, options)
         annotation = f"tuple[{base_type}, ...]"
         if field_option is not None and (constraint := _length_constraint(field_option)):
-            default = None if field_option.min_length > 0 else "()"
+            default = None if field_option.required or field_option.min_length > 0 else "()"
             return f"Annotated[{annotation}, {constraint}]", default
-        return annotation, "()"
+        return annotation, None if field_option is not None and field_option.required else "()"
     if is_map:
         field_option = _field_option(field, options)
         if field_option is not None and (constraint := _length_constraint(field_option)):
-            default = None if field_option.min_length > 0 else "Field(default_factory=dict)"
+            default = None if field_option.required or field_option.min_length > 0 else "Field(default_factory=dict)"
             return f"Annotated[{base_type}, {constraint}]", default
-        return base_type, "Field(default_factory=dict)"
+        return base_type, None if field_option is not None and field_option.required else "Field(default_factory=dict)"
 
     field_option = _field_option(field, options)
     if field.type == descriptor_pb2.FieldDescriptorProto.TYPE_STRING:
         if constraint := _length_constraint(field_option):
             base_type = f"Annotated[{base_type}, {constraint}]"
+        if field_option is not None:
+            validators: list[str] = []
+            schema: dict[str, Any] = {}
+            if field_option.no_nul:
+                validators.append("AfterValidator(_validate_no_nul)")
+                schema["pattern"] = "^[^\\x00]*$"
+            if field_option.HasField("max_utf8_bytes"):
+                maximum = field_option.max_utf8_bytes
+                validators.append(f"AfterValidator(partial(_validate_utf8_bytes, maximum={maximum}))")
+                schema["x-max-utf8-bytes"] = maximum
+            if validators:
+                base_type = f"Annotated[{base_type}, Field(json_schema_extra={schema!r}), {', '.join(validators)}]"
     if field_option is not None:
         if field_option.HasField("default_bool"):
             return base_type, repr(field_option.default_bool)
@@ -231,6 +276,7 @@ def render_models(index: SchemaIndex, options: OptionReader) -> str:
         "import re",
         "from datetime import datetime, timezone",
         "from enum import StrEnum",
+        "from functools import partial",
         "from types import MappingProxyType",
         "from typing import Annotated, Final, Literal, Mapping",
         "",
@@ -248,6 +294,18 @@ def render_models(index: SchemaIndex, options: OptionReader) -> str:
         "    StrictStr,",
         "    model_validator,",
         ")",
+        "",
+        "",
+        "def _validate_no_nul(value: str) -> str:",
+        "    if '\\x00' in value:",
+        "        raise ValueError('text must not contain NUL')",
+        "    return value",
+        "",
+        "",
+        "def _validate_utf8_bytes(value: str, *, maximum: int) -> str:",
+        "    if len(value.encode('utf-8')) > maximum:",
+        "        raise ValueError('text exceeds its UTF-8 byte limit')",
+        "    return value",
         "",
         "",
         "def _validate_absolute_eip_path(value: str) -> str:",
@@ -527,7 +585,7 @@ def method_records(index: SchemaIndex, options: OptionReader) -> list[dict[str, 
             raise ValueError(f"duplicate EIP JSON-RPC method: {name}")
         names.add(name)
         if record["kind"] != "request_response":
-            raise ValueError(f"EIP 0.4 method {name} must use correlated request-response")
+            raise ValueError(f"EIP 0.5 method {name} must use correlated request-response")
         if record["replay_class"] == "unspecified":
             raise ValueError(f"EIP method {name} has unspecified replay class")
         if record["error_family"] == "unspecified":
@@ -852,9 +910,9 @@ from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr, model_v
 
 from .models import EIPError, Identifier
 
-EIP_PROTOCOL_VERSION: Final = "0.4"
+EIP_PROTOCOL_VERSION: Final = "0.5"
 EIP_PROTOCOL_MAJOR: Final = 0
-EIP_PROTOCOL_MINOR: Final = 4
+EIP_PROTOCOL_MINOR: Final = 5
 EIP_PROTO_PACKAGE: Final = "a13n.agent_envd.eip.v1"
 EIP_DESCRIPTOR_SHA256: Final = "__DESCRIPTOR_SHA256__"
 

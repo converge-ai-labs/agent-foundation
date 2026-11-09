@@ -60,6 +60,9 @@ mod native {
             Err(unsupported())
         }
         pub(super) fn close_clipboard(&self) {}
+        pub(super) fn accessibility_geometry(&self, _: &str) -> Result<Geometry, EIPError> {
+            Err(unsupported())
+        }
         pub(super) fn describe(&self) -> Result<ComputerDescribeResult, EIPError> {
             Err(unsupported())
         }
@@ -115,7 +118,47 @@ struct Basis {
     created: Instant,
 }
 
+fn accessibility_frame() -> AccessibilityDescriptionFrames {
+    if cfg!(target_os = "windows") {
+        AccessibilityDescriptionFrames::UiaPhysicalScreen
+    } else if cfg!(target_os = "macos") {
+        AccessibilityDescriptionFrames::AxScreen
+    } else {
+        AccessibilityDescriptionFrames::AtspiScreen
+    }
+}
+
 impl Basis {
+    fn accessibility_projection(
+        &self,
+        id: &str,
+        bounds: &AccessibilityNativeBounds,
+    ) -> Option<AccessibilityImageProjection> {
+        let g = &self.geometry;
+        if bounds.frame != accessibility_frame()
+            || bounds
+                .display_id
+                .as_ref()
+                .is_some_and(|id| *id != g.target_id)
+            || bounds.x < g.x
+            || bounds.y < g.y
+            || bounds.x + bounds.width > g.x + g.width
+            || bounds.y + bounds.height > g.y + g.height
+        {
+            return None;
+        }
+        let scale_x = f64::from(self.observation.width) / g.width;
+        let scale_y = f64::from(self.observation.height) / g.height;
+        Some(AccessibilityImageProjection {
+            source_observation_id: id.to_owned(),
+            status: AccessibilityImageProjectionStatus::Projected,
+            left: Some((bounds.x - g.x) * scale_x),
+            top: Some((bounds.y - g.y) * scale_y),
+            right: Some((bounds.x + bounds.width - g.x) * scale_x),
+            bottom: Some((bounds.y + bounds.height - g.y) * scale_y),
+        })
+    }
+
     fn validate_region(&self, region: &ComputerRegion) -> Result<(), EIPError> {
         if region.left >= region.right
             || region.top >= region.bottom
@@ -300,6 +343,72 @@ impl Computer {
 
     pub(crate) fn describe(&self) -> Result<ComputerDescribeResult, EIPError> {
         self.native.describe()
+    }
+
+    fn accessibility_basis(&self, id: &str) -> Result<Basis, EIPError> {
+        let basis = self.basis(id)?;
+        if self
+            .native
+            .accessibility_geometry(&basis.geometry.target_id)?
+            != basis.geometry
+        {
+            return Err(error(
+                ErrorType::Conflict,
+                "screenshot display transform changed",
+            ));
+        }
+        Ok(basis)
+    }
+
+    pub(crate) fn accessibility_point(
+        &self,
+        id: &str,
+        point: &ComputerPoint,
+    ) -> Result<AccessibilityNativePoint, EIPError> {
+        let basis = self.accessibility_basis(id)?;
+        let (x, y) = basis.point(point)?;
+        Ok(AccessibilityNativePoint {
+            frame: accessibility_frame(),
+            x,
+            y,
+        })
+    }
+
+    pub(crate) fn project_accessibility(
+        &self,
+        id: &str,
+        value: &mut serde_json::Value,
+    ) -> Result<(), EIPError> {
+        // A live node read remains useful when projection is unavailable.
+        let basis = self.accessibility_basis(id).ok();
+        if let Some(nodes) = value
+            .get_mut("nodes")
+            .and_then(serde_json::Value::as_array_mut)
+        {
+            for node in nodes {
+                let bounds = node.get("bounds").cloned().and_then(|value| {
+                    serde_json::from_value::<AccessibilityNativeBounds>(value).ok()
+                });
+                let projection = basis
+                    .as_ref()
+                    .and_then(|basis| {
+                        bounds
+                            .as_ref()
+                            .and_then(|bounds| basis.accessibility_projection(id, bounds))
+                    })
+                    .unwrap_or_else(|| AccessibilityImageProjection {
+                        source_observation_id: id.to_owned(),
+                        status: AccessibilityImageProjectionStatus::Unavailable,
+                        left: None,
+                        top: None,
+                        right: None,
+                        bottom: None,
+                    });
+                node["image_projection"] = serde_json::to_value(projection)
+                    .map_err(|_| error(ErrorType::InternalError, "projection encoding failed"))?;
+            }
+        }
+        Ok(())
     }
 
     pub(crate) fn read_clipboard(
@@ -557,6 +666,38 @@ fn error(kind: ErrorType, message: &str) -> EIPError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn accessibility_projection_preserves_target_origin_scale_and_frame() {
+        let basis = basis();
+        let mut bounds = AccessibilityNativeBounds {
+            frame: accessibility_frame(),
+            x: -180.0,
+            y: 50.0,
+            width: 40.0,
+            height: 20.0,
+            display_id: Some("display_1".to_owned()),
+        };
+        // The fixture's native target is (-200, 30, 200, 100), image 100 x 50.
+        let projected = basis.accessibility_projection("obs_1", &bounds).unwrap();
+        assert_eq!(
+            (
+                projected.left,
+                projected.top,
+                projected.right,
+                projected.bottom
+            ),
+            (Some(10.0), Some(10.0), Some(30.0), Some(20.0))
+        );
+        bounds.frame = AccessibilityDescriptionFrames::AtspiParent;
+        assert!(basis.accessibility_projection("obs_1", &bounds).is_none());
+        bounds.frame = accessibility_frame();
+        bounds.display_id = Some("other-display".to_owned());
+        assert!(basis.accessibility_projection("obs_1", &bounds).is_none());
+        bounds.display_id = None;
+        bounds.width = 300.0;
+        assert!(basis.accessibility_projection("obs_1", &bounds).is_none());
+    }
+
     fn basis() -> Basis {
         Basis {
             observation: ComputerObservation {

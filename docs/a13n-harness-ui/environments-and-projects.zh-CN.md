@@ -67,6 +67,8 @@ Sandbox 就绪检查验证 worker 边界。失败会明确报告：修复前置�
 
 本地 Computer Use 需开启 **Desktop capability**，保存并重启 Harness UI。然后在 Host 上运行 **Check permissions**，再为目标执行默认值显式选择 Computer Use。权限检查不截屏、不注入输入。托管和自定义可执行文件设置见[根级 envd 配置](configuration.md#local-envd-runtime)。
 
+Computer 工具集也包含原生无障碍发现和有界语义读取。通过 `computer_accessibility_describe` 检查所选后端和就绪状态。在挂载权限上限中分别授予 `environment.computer.a11y_*` 操作和精确的平台修改动作。分组的 `computer_ax`、`computer_uia` 和 `computer_atspi` 工具仍逐项检查原生动作。节点和文本范围引用绑定原挂载和执行。原生后端支持、权限和就绪状态独立；工作流和截图投影规则见[原生无障碍访问](../a13n-envd/computer-use.md#native-accessibility)。
+
 CLI 将查看、准备和默认值修改分开：
 
 ```console

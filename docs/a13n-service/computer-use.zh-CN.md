@@ -44,6 +44,14 @@ API 客户端通过 `PATCH /api/v1/threads/{thread_id}/environments/{name}` 更�
 
 动作列表会替换整个权限集合。请包含需要保留的文件和执行动作；Console 预设会保留它们。电脑权限控制 Computer 工具，Shell 和其他工具仍使用各自的权限。
 
+### 原生无障碍权限
+
+Computer 工具集包含语义读取，以及分组的 `computer_ax`、`computer_uia` 和 `computer_atspi` 修改工具。通过 `computer_accessibility_describe` 发现后端，检查目标实际支持的能力，再通过回读或截图验证变更。原生后端就绪状态与权限独立。
+
+观察权限包含七项 `environment.computer.a11y_*` 读取动作。精确修改上限使用平台动作，例如 `environment.computer.uia_invoke` 或 `environment.computer.atspi_do_action`；选择分组工具不等于授权全部操作。保留的节点和文本范围引用绑定原挂载和执行。判断节点不存在前，检查有界结果的完整性。
+
+语义读取和修改使用同一 Computer 接管放行边界。交还后，执行原生修改前必须取得新截图，再由后续模型决策；语义读取、投影和修改回读不能满足截图新鲜度要求。原生修改结果不明时，必须先核对状态再尝试。
+
 ### Computer 坐标模式
 
 模型返回相对位置时，添加以下 agent 配置片段：

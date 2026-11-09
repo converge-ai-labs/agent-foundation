@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package a13n.agent_envd.eip.v1;
 
+import "a13n-envd/eip/v1/accessibility.proto";
 import "a13n-envd/eip/v1/common.proto";
 import "a13n-envd/eip/v1/discovery.proto";
 import "a13n-envd/eip/v1/computer.proto";
@@ -29,6 +30,271 @@ option (eip_data_frame_profile) = {
 };
 
 service EnvironmentInteractionProtocol {
+  rpc ComputerA11yDescribe(ComputerA11yDescribeParams) returns (AccessibilityDescription) {
+    option (eip_method) = { jsonrpc_method: "computer.a11y_describe" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_ACTIVE_ONLY introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerA11yRoots(ComputerA11yRootsParams) returns (AccessibilityTree) {
+    option (eip_method) = { jsonrpc_method: "computer.a11y_roots" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_ACTIVE_ONLY introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerA11yInspect(ComputerA11yInspectParams) returns (AccessibilityTree) {
+    option (eip_method) = { jsonrpc_method: "computer.a11y_inspect" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_ACTIVE_ONLY introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerA11yFind(ComputerA11yFindParams) returns (AccessibilityTree) {
+    option (eip_method) = { jsonrpc_method: "computer.a11y_find" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_ACTIVE_ONLY introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerA11yRead(ComputerA11yReadParams) returns (AccessibilityContent) {
+    option (eip_method) = { jsonrpc_method: "computer.a11y_read" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_ACTIVE_ONLY introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerA11yRange(ComputerA11yRangeParams) returns (AccessibilityRangeResult) {
+    option (eip_method) = { jsonrpc_method: "computer.a11y_range" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_ACTIVE_ONLY introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerA11yRangeRead(ComputerA11yRangeReadParams) returns (AccessibilityRangeResult) {
+    option (eip_method) = { jsonrpc_method: "computer.a11y_range_read" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_ACTIVE_ONLY introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerAXDisclosingSet(ComputerAXDisclosingSetParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.ax_disclosing_set" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerAXExpandedSet(ComputerAXExpandedSetParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.ax_expanded_set" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerAXFocus(ComputerAXFocusParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.ax_focus" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerAXFocusedWindowSet(ComputerAXFocusedWindowSetParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.ax_focused_window_set" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerAXMainSet(ComputerAXMainSetParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.ax_main_set" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerAXMinimizedSet(ComputerAXMinimizedSetParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.ax_minimized_set" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerAXPerformAction(ComputerAXPerformActionParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.ax_perform_action" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerAXPositionSet(ComputerAXPositionSetParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.ax_position_set" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerAXSelectedChildrenSet(ComputerAXSelectedChildrenSetParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.ax_selected_children_set" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerAXSelectedColumnsSet(ComputerAXSelectedColumnsSetParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.ax_selected_columns_set" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerAXSelectedRowsSet(ComputerAXSelectedRowsSetParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.ax_selected_rows_set" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerAXSelectedSet(ComputerAXSelectedSetParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.ax_selected_set" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerAXSelectedTextSet(ComputerAXSelectedTextSetParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.ax_selected_text_set" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerAXSizeSet(ComputerAXSizeSetParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.ax_size_set" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerAXTextRangeSelect(ComputerAXTextRangeSelectParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.ax_text_range_select" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerAXTextRangesSelect(ComputerAXTextRangesSelectParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.ax_text_ranges_select" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerAXValueNumberSet(ComputerAXValueNumberSetParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.ax_value_number_set" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerAXValueStringSet(ComputerAXValueStringSetParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.ax_value_string_set" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerAXVisibleTextRangeSet(ComputerAXVisibleTextRangeSetParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.ax_visible_text_range_set" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerUIACollapse(ComputerUIACollapseParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.uia_collapse" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerUIADockSet(ComputerUIADockSetParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.uia_dock_set" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerUIAExpand(ComputerUIAExpandParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.uia_expand" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerUIAFocus(ComputerUIAFocusParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.uia_focus" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerUIAInvoke(ComputerUIAInvokeParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.uia_invoke" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerUIALegacyDefaultAction(ComputerUIALegacyDefaultActionParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.uia_legacy_default_action" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerUIALegacySelect(ComputerUIALegacySelectParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.uia_legacy_select" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerUIALegacyValueSet(ComputerUIALegacyValueSetParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.uia_legacy_value_set" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerUIARangeAddSelection(ComputerUIARangeAddSelectionParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.uia_range_add_selection" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerUIARangeRemoveSelection(ComputerUIARangeRemoveSelectionParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.uia_range_remove_selection" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerUIARangeScrollIntoView(ComputerUIARangeScrollIntoViewParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.uia_range_scroll_into_view" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerUIARangeSelect(ComputerUIARangeSelectParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.uia_range_select" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerUIARangeShowContextMenu(ComputerUIARangeShowContextMenuParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.uia_range_show_context_menu" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerUIARangeValueSet(ComputerUIARangeValueSetParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.uia_range_value_set" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerUIARealize(ComputerUIARealizeParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.uia_realize" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerUIAScrollAmount(ComputerUIAScrollAmountParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.uia_scroll_amount" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerUIAScrollIntoView(ComputerUIAScrollIntoViewParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.uia_scroll_into_view" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerUIAScrollPercent(ComputerUIAScrollPercentParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.uia_scroll_percent" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerUIASelectionAdd(ComputerUIASelectionAddParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.uia_selection_add" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerUIASelectionRemove(ComputerUIASelectionRemoveParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.uia_selection_remove" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerUIASelectionSelect(ComputerUIASelectionSelectParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.uia_selection_select" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerUIAShowContextMenu(ComputerUIAShowContextMenuParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.uia_show_context_menu" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerUIAToggle(ComputerUIAToggleParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.uia_toggle" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerUIATransformMove(ComputerUIATransformMoveParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.uia_transform_move" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerUIATransformResize(ComputerUIATransformResizeParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.uia_transform_resize" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerUIATransformRotate(ComputerUIATransformRotateParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.uia_transform_rotate" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerUIATransformZoom(ComputerUIATransformZoomParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.uia_transform_zoom" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerUIATransformZoomUnit(ComputerUIATransformZoomUnitParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.uia_transform_zoom_unit" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerUIAValueSet(ComputerUIAValueSetParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.uia_value_set" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerUIAViewSet(ComputerUIAViewSetParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.uia_view_set" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerUIAWindowClose(ComputerUIAWindowCloseParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.uia_window_close" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerUIAWindowStateSet(ComputerUIAWindowStateSetParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.uia_window_state_set" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerAtspiCaretSet(ComputerAtspiCaretSetParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.atspi_caret_set" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerAtspiComponentExtentsSet(ComputerAtspiComponentExtentsSetParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.atspi_component_extents_set" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerAtspiComponentPositionSet(ComputerAtspiComponentPositionSetParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.atspi_component_position_set" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerAtspiComponentSizeSet(ComputerAtspiComponentSizeSetParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.atspi_component_size_set" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerAtspiDoAction(ComputerAtspiDoActionParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.atspi_do_action" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerAtspiDocumentSelectionsSet(ComputerAtspiDocumentSelectionsSetParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.atspi_document_selections_set" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerAtspiFocus(ComputerAtspiFocusParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.atspi_focus" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerAtspiRangeScrollTo(ComputerAtspiRangeScrollToParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.atspi_range_scroll_to" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerAtspiRangeScrollToPoint(ComputerAtspiRangeScrollToPointParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.atspi_range_scroll_to_point" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerAtspiScrollTo(ComputerAtspiScrollToParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.atspi_scroll_to" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerAtspiScrollToPoint(ComputerAtspiScrollToPointParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.atspi_scroll_to_point" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerAtspiSelectionAddChild(ComputerAtspiSelectionAddChildParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.atspi_selection_add_child" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerAtspiSelectionAll(ComputerAtspiSelectionAllParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.atspi_selection_all" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerAtspiSelectionClear(ComputerAtspiSelectionClearParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.atspi_selection_clear" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerAtspiSelectionRemoveChild(ComputerAtspiSelectionRemoveChildParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.atspi_selection_remove_child" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerAtspiSelectionRemoveSelected(ComputerAtspiSelectionRemoveSelectedParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.atspi_selection_remove_selected" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerAtspiTableColumnSelect(ComputerAtspiTableColumnSelectParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.atspi_table_column_select" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerAtspiTableColumnUnselect(ComputerAtspiTableColumnUnselectParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.atspi_table_column_unselect" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerAtspiTableRowSelect(ComputerAtspiTableRowSelectParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.atspi_table_row_select" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerAtspiTableRowUnselect(ComputerAtspiTableRowUnselectParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.atspi_table_row_unselect" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerAtspiTextContentsSet(ComputerAtspiTextContentsSetParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.atspi_text_contents_set" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerAtspiTextCopy(ComputerAtspiTextCopyParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.atspi_text_copy" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerAtspiTextCut(ComputerAtspiTextCutParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.atspi_text_cut" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerAtspiTextDelete(ComputerAtspiTextDeleteParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.atspi_text_delete" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerAtspiTextInsert(ComputerAtspiTextInsertParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.atspi_text_insert" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerAtspiTextPaste(ComputerAtspiTextPasteParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.atspi_text_paste" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerAtspiTextSelectionAdd(ComputerAtspiTextSelectionAddParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.atspi_text_selection_add" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerAtspiTextSelectionRemove(ComputerAtspiTextSelectionRemoveParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.atspi_text_selection_remove" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerAtspiTextSelectionSet(ComputerAtspiTextSelectionSetParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.atspi_text_selection_set" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerAtspiValueSet(ComputerAtspiValueSetParams) returns (AccessibilityMutationResult) {
+    option (eip_method) = { jsonrpc_method: "computer.atspi_value_set" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 5 error_family: ERROR_FAMILY_RESOURCE };
+  }
+
   rpc ComputerDescribe(ComputerDescribeParams) returns (ComputerDescribeResult) {
     option (eip_method) = { jsonrpc_method: "computer.describe" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_ACTIVE_ONLY introduced_major: 0 introduced_minor: 1 error_family: ERROR_FAMILY_RESOURCE };
   }

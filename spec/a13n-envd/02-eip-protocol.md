@@ -2,7 +2,7 @@
 
 ## Design Position
 
-EIP 0.4 separates a Device connection from the independent Sessions it carries. JSON-RPC 2.0 carries control; typed transfers carry raw file bytes. HTTP, reverse WebSocket and stdio share method, ownership and cleanup semantics. Provider provisioning and product authorization remain outside EIP.
+EIP 0.5 separates a Device connection from the independent Sessions it carries. JSON-RPC 2.0 carries control; typed transfers carry raw file bytes. HTTP, reverse WebSocket and stdio share method, ownership and cleanup semantics. Provider provisioning and product authorization remain outside EIP.
 
 The [canonical IDL](08-protocol-source-client-and-generation.md) generates Rust/Python wire types and fixtures.
 
@@ -146,7 +146,7 @@ Response handoff and evidence publication are bounded and atomic at the operatio
 | Ports                       | `port.inspect`, `port.wait`                                                                                                                              | `active_only`                       |
 | Output                      | `output.read` / `output.release`                                                                                                                         | `active_only` / `terminal_evidence` |
 
-[Computer use](10-computer-use.md) adds active-only `computer.describe`, `computer.observe`, `computer.zoom`, `computer.close_observation`, and `computer.read_clipboard`, plus terminal-evidence `computer.click`, `computer.move`, `computer.drag`, `computer.scroll`, `computer.type_text`, `computer.press_keys`, and `computer.write_clipboard`. Screenshot bytes use the same raw transfer plane as file readers.
+[Computer use](10-computer-use.md) adds active-only `computer.describe`, `computer.observe`, `computer.zoom`, `computer.close_observation`, and `computer.read_clipboard`, plus terminal-evidence `computer.click`, `computer.move`, `computer.drag`, `computer.scroll`, `computer.type_text`, `computer.press_keys`, and `computer.write_clipboard`. Screenshot bytes use the same raw transfer plane as file readers. EIP 0.5 also defines seven active-only `computer.a11y_*` reads and 81 independent terminal-evidence AX/UIA/AT-SPI mutations in the canonical accessibility IDL. Their native ownership, bounded reads and uncertain-dispatch semantics belong to [native accessibility](10-computer-use.md#native-accessibility).
 
 Unknown methods return `method_not_found`; known unavailable methods return `unsupported` before dispatch. Exact available methods determine support. `ExecutionFeatures` advertises optional native resource limits and signals, not per-command sandbox/network policy.
 

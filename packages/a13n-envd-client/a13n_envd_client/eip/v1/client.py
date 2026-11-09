@@ -4,6 +4,62 @@ from __future__ import annotations
 from typing import Protocol
 
 from .methods import (
+    COMPUTER_A11Y_DESCRIBE,
+    COMPUTER_A11Y_FIND,
+    COMPUTER_A11Y_INSPECT,
+    COMPUTER_A11Y_RANGE,
+    COMPUTER_A11Y_RANGE_READ,
+    COMPUTER_A11Y_READ,
+    COMPUTER_A11Y_ROOTS,
+    COMPUTER_ATSPI_CARET_SET,
+    COMPUTER_ATSPI_COMPONENT_EXTENTS_SET,
+    COMPUTER_ATSPI_COMPONENT_POSITION_SET,
+    COMPUTER_ATSPI_COMPONENT_SIZE_SET,
+    COMPUTER_ATSPI_DO_ACTION,
+    COMPUTER_ATSPI_DOCUMENT_SELECTIONS_SET,
+    COMPUTER_ATSPI_FOCUS,
+    COMPUTER_ATSPI_RANGE_SCROLL_TO,
+    COMPUTER_ATSPI_RANGE_SCROLL_TO_POINT,
+    COMPUTER_ATSPI_SCROLL_TO,
+    COMPUTER_ATSPI_SCROLL_TO_POINT,
+    COMPUTER_ATSPI_SELECTION_ADD_CHILD,
+    COMPUTER_ATSPI_SELECTION_ALL,
+    COMPUTER_ATSPI_SELECTION_CLEAR,
+    COMPUTER_ATSPI_SELECTION_REMOVE_CHILD,
+    COMPUTER_ATSPI_SELECTION_REMOVE_SELECTED,
+    COMPUTER_ATSPI_TABLE_COLUMN_SELECT,
+    COMPUTER_ATSPI_TABLE_COLUMN_UNSELECT,
+    COMPUTER_ATSPI_TABLE_ROW_SELECT,
+    COMPUTER_ATSPI_TABLE_ROW_UNSELECT,
+    COMPUTER_ATSPI_TEXT_CONTENTS_SET,
+    COMPUTER_ATSPI_TEXT_COPY,
+    COMPUTER_ATSPI_TEXT_CUT,
+    COMPUTER_ATSPI_TEXT_DELETE,
+    COMPUTER_ATSPI_TEXT_INSERT,
+    COMPUTER_ATSPI_TEXT_PASTE,
+    COMPUTER_ATSPI_TEXT_SELECTION_ADD,
+    COMPUTER_ATSPI_TEXT_SELECTION_REMOVE,
+    COMPUTER_ATSPI_TEXT_SELECTION_SET,
+    COMPUTER_ATSPI_VALUE_SET,
+    COMPUTER_AX_DISCLOSING_SET,
+    COMPUTER_AX_EXPANDED_SET,
+    COMPUTER_AX_FOCUS,
+    COMPUTER_AX_FOCUSED_WINDOW_SET,
+    COMPUTER_AX_MAIN_SET,
+    COMPUTER_AX_MINIMIZED_SET,
+    COMPUTER_AX_PERFORM_ACTION,
+    COMPUTER_AX_POSITION_SET,
+    COMPUTER_AX_SELECTED_CHILDREN_SET,
+    COMPUTER_AX_SELECTED_COLUMNS_SET,
+    COMPUTER_AX_SELECTED_ROWS_SET,
+    COMPUTER_AX_SELECTED_SET,
+    COMPUTER_AX_SELECTED_TEXT_SET,
+    COMPUTER_AX_SIZE_SET,
+    COMPUTER_AX_TEXT_RANGE_SELECT,
+    COMPUTER_AX_TEXT_RANGES_SELECT,
+    COMPUTER_AX_VALUE_NUMBER_SET,
+    COMPUTER_AX_VALUE_STRING_SET,
+    COMPUTER_AX_VISIBLE_TEXT_RANGE_SET,
     COMPUTER_CLICK,
     COMPUTER_CLOSE_OBSERVATION,
     COMPUTER_DESCRIBE,
@@ -14,6 +70,38 @@ from .methods import (
     COMPUTER_READ_CLIPBOARD,
     COMPUTER_SCROLL,
     COMPUTER_TYPE_TEXT,
+    COMPUTER_UIA_COLLAPSE,
+    COMPUTER_UIA_DOCK_SET,
+    COMPUTER_UIA_EXPAND,
+    COMPUTER_UIA_FOCUS,
+    COMPUTER_UIA_INVOKE,
+    COMPUTER_UIA_LEGACY_DEFAULT_ACTION,
+    COMPUTER_UIA_LEGACY_SELECT,
+    COMPUTER_UIA_LEGACY_VALUE_SET,
+    COMPUTER_UIA_RANGE_ADD_SELECTION,
+    COMPUTER_UIA_RANGE_REMOVE_SELECTION,
+    COMPUTER_UIA_RANGE_SCROLL_INTO_VIEW,
+    COMPUTER_UIA_RANGE_SELECT,
+    COMPUTER_UIA_RANGE_SHOW_CONTEXT_MENU,
+    COMPUTER_UIA_RANGE_VALUE_SET,
+    COMPUTER_UIA_REALIZE,
+    COMPUTER_UIA_SCROLL_AMOUNT,
+    COMPUTER_UIA_SCROLL_INTO_VIEW,
+    COMPUTER_UIA_SCROLL_PERCENT,
+    COMPUTER_UIA_SELECTION_ADD,
+    COMPUTER_UIA_SELECTION_REMOVE,
+    COMPUTER_UIA_SELECTION_SELECT,
+    COMPUTER_UIA_SHOW_CONTEXT_MENU,
+    COMPUTER_UIA_TOGGLE,
+    COMPUTER_UIA_TRANSFORM_MOVE,
+    COMPUTER_UIA_TRANSFORM_RESIZE,
+    COMPUTER_UIA_TRANSFORM_ROTATE,
+    COMPUTER_UIA_TRANSFORM_ZOOM,
+    COMPUTER_UIA_TRANSFORM_ZOOM_UNIT,
+    COMPUTER_UIA_VALUE_SET,
+    COMPUTER_UIA_VIEW_SET,
+    COMPUTER_UIA_WINDOW_CLOSE,
+    COMPUTER_UIA_WINDOW_STATE_SET,
     COMPUTER_WRITE_CLIPBOARD,
     COMPUTER_ZOOM,
     DEVICE_DESCRIBE,
@@ -65,7 +153,68 @@ from .methods import (
     MethodSpec,
 )
 from .models import (
+    AccessibilityContent,
+    AccessibilityDescription,
+    AccessibilityMutationResult,
+    AccessibilityRangeResult,
+    AccessibilityTree,
+    ComputerA11yDescribeParams,
+    ComputerA11yFindParams,
+    ComputerA11yInspectParams,
+    ComputerA11yRangeParams,
+    ComputerA11yRangeReadParams,
+    ComputerA11yReadParams,
+    ComputerA11yRootsParams,
     ComputerActionResult,
+    ComputerAtspiCaretSetParams,
+    ComputerAtspiComponentExtentsSetParams,
+    ComputerAtspiComponentPositionSetParams,
+    ComputerAtspiComponentSizeSetParams,
+    ComputerAtspiDoActionParams,
+    ComputerAtspiDocumentSelectionsSetParams,
+    ComputerAtspiFocusParams,
+    ComputerAtspiRangeScrollToParams,
+    ComputerAtspiRangeScrollToPointParams,
+    ComputerAtspiScrollToParams,
+    ComputerAtspiScrollToPointParams,
+    ComputerAtspiSelectionAddChildParams,
+    ComputerAtspiSelectionAllParams,
+    ComputerAtspiSelectionClearParams,
+    ComputerAtspiSelectionRemoveChildParams,
+    ComputerAtspiSelectionRemoveSelectedParams,
+    ComputerAtspiTableColumnSelectParams,
+    ComputerAtspiTableColumnUnselectParams,
+    ComputerAtspiTableRowSelectParams,
+    ComputerAtspiTableRowUnselectParams,
+    ComputerAtspiTextContentsSetParams,
+    ComputerAtspiTextCopyParams,
+    ComputerAtspiTextCutParams,
+    ComputerAtspiTextDeleteParams,
+    ComputerAtspiTextInsertParams,
+    ComputerAtspiTextPasteParams,
+    ComputerAtspiTextSelectionAddParams,
+    ComputerAtspiTextSelectionRemoveParams,
+    ComputerAtspiTextSelectionSetParams,
+    ComputerAtspiValueSetParams,
+    ComputerAXDisclosingSetParams,
+    ComputerAXExpandedSetParams,
+    ComputerAXFocusedWindowSetParams,
+    ComputerAXFocusParams,
+    ComputerAXMainSetParams,
+    ComputerAXMinimizedSetParams,
+    ComputerAXPerformActionParams,
+    ComputerAXPositionSetParams,
+    ComputerAXSelectedChildrenSetParams,
+    ComputerAXSelectedColumnsSetParams,
+    ComputerAXSelectedRowsSetParams,
+    ComputerAXSelectedSetParams,
+    ComputerAXSelectedTextSetParams,
+    ComputerAXSizeSetParams,
+    ComputerAXTextRangeSelectParams,
+    ComputerAXTextRangesSelectParams,
+    ComputerAXValueNumberSetParams,
+    ComputerAXValueStringSetParams,
+    ComputerAXVisibleTextRangeSetParams,
     ComputerClickParams,
     ComputerDescribeParams,
     ComputerDescribeResult,
@@ -78,6 +227,38 @@ from .models import (
     ComputerReadClipboardResult,
     ComputerScrollParams,
     ComputerTypeTextParams,
+    ComputerUIACollapseParams,
+    ComputerUIADockSetParams,
+    ComputerUIAExpandParams,
+    ComputerUIAFocusParams,
+    ComputerUIAInvokeParams,
+    ComputerUIALegacyDefaultActionParams,
+    ComputerUIALegacySelectParams,
+    ComputerUIALegacyValueSetParams,
+    ComputerUIARangeAddSelectionParams,
+    ComputerUIARangeRemoveSelectionParams,
+    ComputerUIARangeScrollIntoViewParams,
+    ComputerUIARangeSelectParams,
+    ComputerUIARangeShowContextMenuParams,
+    ComputerUIARangeValueSetParams,
+    ComputerUIARealizeParams,
+    ComputerUIAScrollAmountParams,
+    ComputerUIAScrollIntoViewParams,
+    ComputerUIAScrollPercentParams,
+    ComputerUIASelectionAddParams,
+    ComputerUIASelectionRemoveParams,
+    ComputerUIASelectionSelectParams,
+    ComputerUIAShowContextMenuParams,
+    ComputerUIAToggleParams,
+    ComputerUIATransformMoveParams,
+    ComputerUIATransformResizeParams,
+    ComputerUIATransformRotateParams,
+    ComputerUIATransformZoomParams,
+    ComputerUIATransformZoomUnitParams,
+    ComputerUIAValueSetParams,
+    ComputerUIAViewSetParams,
+    ComputerUIAWindowCloseParams,
+    ComputerUIAWindowStateSetParams,
     ComputerWriteClipboardParams,
     ComputerWriteClipboardResult,
     ComputerZoomParams,
@@ -183,6 +364,230 @@ class EIPClient:
     def __init__(self, requester: EIPRequester) -> None:
         self._requester = requester
 
+    async def computer_a11y_describe(self, params: ComputerA11yDescribeParams) -> AccessibilityDescription:
+        return await self._requester.request(COMPUTER_A11Y_DESCRIBE, params)
+
+    async def computer_a11y_find(self, params: ComputerA11yFindParams) -> AccessibilityTree:
+        return await self._requester.request(COMPUTER_A11Y_FIND, params)
+
+    async def computer_a11y_inspect(self, params: ComputerA11yInspectParams) -> AccessibilityTree:
+        return await self._requester.request(COMPUTER_A11Y_INSPECT, params)
+
+    async def computer_a11y_range(self, params: ComputerA11yRangeParams) -> AccessibilityRangeResult:
+        return await self._requester.request(COMPUTER_A11Y_RANGE, params)
+
+    async def computer_a11y_range_read(self, params: ComputerA11yRangeReadParams) -> AccessibilityRangeResult:
+        return await self._requester.request(COMPUTER_A11Y_RANGE_READ, params)
+
+    async def computer_a11y_read(self, params: ComputerA11yReadParams) -> AccessibilityContent:
+        return await self._requester.request(COMPUTER_A11Y_READ, params)
+
+    async def computer_a11y_roots(self, params: ComputerA11yRootsParams) -> AccessibilityTree:
+        return await self._requester.request(COMPUTER_A11Y_ROOTS, params)
+
+    async def computer_atspi_caret_set(self, params: ComputerAtspiCaretSetParams) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_ATSPI_CARET_SET, params)
+
+    async def computer_atspi_component_extents_set(
+        self, params: ComputerAtspiComponentExtentsSetParams
+    ) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_ATSPI_COMPONENT_EXTENTS_SET, params)
+
+    async def computer_atspi_component_position_set(
+        self, params: ComputerAtspiComponentPositionSetParams
+    ) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_ATSPI_COMPONENT_POSITION_SET, params)
+
+    async def computer_atspi_component_size_set(
+        self, params: ComputerAtspiComponentSizeSetParams
+    ) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_ATSPI_COMPONENT_SIZE_SET, params)
+
+    async def computer_atspi_do_action(self, params: ComputerAtspiDoActionParams) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_ATSPI_DO_ACTION, params)
+
+    async def computer_atspi_document_selections_set(
+        self, params: ComputerAtspiDocumentSelectionsSetParams
+    ) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_ATSPI_DOCUMENT_SELECTIONS_SET, params)
+
+    async def computer_atspi_focus(self, params: ComputerAtspiFocusParams) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_ATSPI_FOCUS, params)
+
+    async def computer_atspi_range_scroll_to(
+        self, params: ComputerAtspiRangeScrollToParams
+    ) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_ATSPI_RANGE_SCROLL_TO, params)
+
+    async def computer_atspi_range_scroll_to_point(
+        self, params: ComputerAtspiRangeScrollToPointParams
+    ) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_ATSPI_RANGE_SCROLL_TO_POINT, params)
+
+    async def computer_atspi_scroll_to(self, params: ComputerAtspiScrollToParams) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_ATSPI_SCROLL_TO, params)
+
+    async def computer_atspi_scroll_to_point(
+        self, params: ComputerAtspiScrollToPointParams
+    ) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_ATSPI_SCROLL_TO_POINT, params)
+
+    async def computer_atspi_selection_add_child(
+        self, params: ComputerAtspiSelectionAddChildParams
+    ) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_ATSPI_SELECTION_ADD_CHILD, params)
+
+    async def computer_atspi_selection_all(
+        self, params: ComputerAtspiSelectionAllParams
+    ) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_ATSPI_SELECTION_ALL, params)
+
+    async def computer_atspi_selection_clear(
+        self, params: ComputerAtspiSelectionClearParams
+    ) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_ATSPI_SELECTION_CLEAR, params)
+
+    async def computer_atspi_selection_remove_child(
+        self, params: ComputerAtspiSelectionRemoveChildParams
+    ) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_ATSPI_SELECTION_REMOVE_CHILD, params)
+
+    async def computer_atspi_selection_remove_selected(
+        self, params: ComputerAtspiSelectionRemoveSelectedParams
+    ) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_ATSPI_SELECTION_REMOVE_SELECTED, params)
+
+    async def computer_atspi_table_column_select(
+        self, params: ComputerAtspiTableColumnSelectParams
+    ) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_ATSPI_TABLE_COLUMN_SELECT, params)
+
+    async def computer_atspi_table_column_unselect(
+        self, params: ComputerAtspiTableColumnUnselectParams
+    ) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_ATSPI_TABLE_COLUMN_UNSELECT, params)
+
+    async def computer_atspi_table_row_select(
+        self, params: ComputerAtspiTableRowSelectParams
+    ) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_ATSPI_TABLE_ROW_SELECT, params)
+
+    async def computer_atspi_table_row_unselect(
+        self, params: ComputerAtspiTableRowUnselectParams
+    ) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_ATSPI_TABLE_ROW_UNSELECT, params)
+
+    async def computer_atspi_text_contents_set(
+        self, params: ComputerAtspiTextContentsSetParams
+    ) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_ATSPI_TEXT_CONTENTS_SET, params)
+
+    async def computer_atspi_text_copy(self, params: ComputerAtspiTextCopyParams) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_ATSPI_TEXT_COPY, params)
+
+    async def computer_atspi_text_cut(self, params: ComputerAtspiTextCutParams) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_ATSPI_TEXT_CUT, params)
+
+    async def computer_atspi_text_delete(self, params: ComputerAtspiTextDeleteParams) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_ATSPI_TEXT_DELETE, params)
+
+    async def computer_atspi_text_insert(self, params: ComputerAtspiTextInsertParams) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_ATSPI_TEXT_INSERT, params)
+
+    async def computer_atspi_text_paste(self, params: ComputerAtspiTextPasteParams) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_ATSPI_TEXT_PASTE, params)
+
+    async def computer_atspi_text_selection_add(
+        self, params: ComputerAtspiTextSelectionAddParams
+    ) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_ATSPI_TEXT_SELECTION_ADD, params)
+
+    async def computer_atspi_text_selection_remove(
+        self, params: ComputerAtspiTextSelectionRemoveParams
+    ) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_ATSPI_TEXT_SELECTION_REMOVE, params)
+
+    async def computer_atspi_text_selection_set(
+        self, params: ComputerAtspiTextSelectionSetParams
+    ) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_ATSPI_TEXT_SELECTION_SET, params)
+
+    async def computer_atspi_value_set(self, params: ComputerAtspiValueSetParams) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_ATSPI_VALUE_SET, params)
+
+    async def computer_ax_disclosing_set(self, params: ComputerAXDisclosingSetParams) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_AX_DISCLOSING_SET, params)
+
+    async def computer_ax_expanded_set(self, params: ComputerAXExpandedSetParams) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_AX_EXPANDED_SET, params)
+
+    async def computer_ax_focus(self, params: ComputerAXFocusParams) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_AX_FOCUS, params)
+
+    async def computer_ax_focused_window_set(
+        self, params: ComputerAXFocusedWindowSetParams
+    ) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_AX_FOCUSED_WINDOW_SET, params)
+
+    async def computer_ax_main_set(self, params: ComputerAXMainSetParams) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_AX_MAIN_SET, params)
+
+    async def computer_ax_minimized_set(self, params: ComputerAXMinimizedSetParams) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_AX_MINIMIZED_SET, params)
+
+    async def computer_ax_perform_action(self, params: ComputerAXPerformActionParams) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_AX_PERFORM_ACTION, params)
+
+    async def computer_ax_position_set(self, params: ComputerAXPositionSetParams) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_AX_POSITION_SET, params)
+
+    async def computer_ax_selected_children_set(
+        self, params: ComputerAXSelectedChildrenSetParams
+    ) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_AX_SELECTED_CHILDREN_SET, params)
+
+    async def computer_ax_selected_columns_set(
+        self, params: ComputerAXSelectedColumnsSetParams
+    ) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_AX_SELECTED_COLUMNS_SET, params)
+
+    async def computer_ax_selected_rows_set(
+        self, params: ComputerAXSelectedRowsSetParams
+    ) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_AX_SELECTED_ROWS_SET, params)
+
+    async def computer_ax_selected_set(self, params: ComputerAXSelectedSetParams) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_AX_SELECTED_SET, params)
+
+    async def computer_ax_selected_text_set(
+        self, params: ComputerAXSelectedTextSetParams
+    ) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_AX_SELECTED_TEXT_SET, params)
+
+    async def computer_ax_size_set(self, params: ComputerAXSizeSetParams) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_AX_SIZE_SET, params)
+
+    async def computer_ax_text_range_select(
+        self, params: ComputerAXTextRangeSelectParams
+    ) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_AX_TEXT_RANGE_SELECT, params)
+
+    async def computer_ax_text_ranges_select(
+        self, params: ComputerAXTextRangesSelectParams
+    ) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_AX_TEXT_RANGES_SELECT, params)
+
+    async def computer_ax_value_number_set(self, params: ComputerAXValueNumberSetParams) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_AX_VALUE_NUMBER_SET, params)
+
+    async def computer_ax_value_string_set(self, params: ComputerAXValueStringSetParams) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_AX_VALUE_STRING_SET, params)
+
+    async def computer_ax_visible_text_range_set(
+        self, params: ComputerAXVisibleTextRangeSetParams
+    ) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_AX_VISIBLE_TEXT_RANGE_SET, params)
+
     async def computer_click(self, params: ComputerClickParams) -> ComputerActionResult:
         return await self._requester.request(COMPUTER_CLICK, params)
 
@@ -212,6 +617,130 @@ class EIPClient:
 
     async def computer_type_text(self, params: ComputerTypeTextParams) -> ComputerActionResult:
         return await self._requester.request(COMPUTER_TYPE_TEXT, params)
+
+    async def computer_uia_collapse(self, params: ComputerUIACollapseParams) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_UIA_COLLAPSE, params)
+
+    async def computer_uia_dock_set(self, params: ComputerUIADockSetParams) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_UIA_DOCK_SET, params)
+
+    async def computer_uia_expand(self, params: ComputerUIAExpandParams) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_UIA_EXPAND, params)
+
+    async def computer_uia_focus(self, params: ComputerUIAFocusParams) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_UIA_FOCUS, params)
+
+    async def computer_uia_invoke(self, params: ComputerUIAInvokeParams) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_UIA_INVOKE, params)
+
+    async def computer_uia_legacy_default_action(
+        self, params: ComputerUIALegacyDefaultActionParams
+    ) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_UIA_LEGACY_DEFAULT_ACTION, params)
+
+    async def computer_uia_legacy_select(self, params: ComputerUIALegacySelectParams) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_UIA_LEGACY_SELECT, params)
+
+    async def computer_uia_legacy_value_set(
+        self, params: ComputerUIALegacyValueSetParams
+    ) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_UIA_LEGACY_VALUE_SET, params)
+
+    async def computer_uia_range_add_selection(
+        self, params: ComputerUIARangeAddSelectionParams
+    ) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_UIA_RANGE_ADD_SELECTION, params)
+
+    async def computer_uia_range_remove_selection(
+        self, params: ComputerUIARangeRemoveSelectionParams
+    ) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_UIA_RANGE_REMOVE_SELECTION, params)
+
+    async def computer_uia_range_scroll_into_view(
+        self, params: ComputerUIARangeScrollIntoViewParams
+    ) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_UIA_RANGE_SCROLL_INTO_VIEW, params)
+
+    async def computer_uia_range_select(self, params: ComputerUIARangeSelectParams) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_UIA_RANGE_SELECT, params)
+
+    async def computer_uia_range_show_context_menu(
+        self, params: ComputerUIARangeShowContextMenuParams
+    ) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_UIA_RANGE_SHOW_CONTEXT_MENU, params)
+
+    async def computer_uia_range_value_set(self, params: ComputerUIARangeValueSetParams) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_UIA_RANGE_VALUE_SET, params)
+
+    async def computer_uia_realize(self, params: ComputerUIARealizeParams) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_UIA_REALIZE, params)
+
+    async def computer_uia_scroll_amount(self, params: ComputerUIAScrollAmountParams) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_UIA_SCROLL_AMOUNT, params)
+
+    async def computer_uia_scroll_into_view(
+        self, params: ComputerUIAScrollIntoViewParams
+    ) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_UIA_SCROLL_INTO_VIEW, params)
+
+    async def computer_uia_scroll_percent(self, params: ComputerUIAScrollPercentParams) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_UIA_SCROLL_PERCENT, params)
+
+    async def computer_uia_selection_add(self, params: ComputerUIASelectionAddParams) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_UIA_SELECTION_ADD, params)
+
+    async def computer_uia_selection_remove(
+        self, params: ComputerUIASelectionRemoveParams
+    ) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_UIA_SELECTION_REMOVE, params)
+
+    async def computer_uia_selection_select(
+        self, params: ComputerUIASelectionSelectParams
+    ) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_UIA_SELECTION_SELECT, params)
+
+    async def computer_uia_show_context_menu(
+        self, params: ComputerUIAShowContextMenuParams
+    ) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_UIA_SHOW_CONTEXT_MENU, params)
+
+    async def computer_uia_toggle(self, params: ComputerUIAToggleParams) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_UIA_TOGGLE, params)
+
+    async def computer_uia_transform_move(self, params: ComputerUIATransformMoveParams) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_UIA_TRANSFORM_MOVE, params)
+
+    async def computer_uia_transform_resize(
+        self, params: ComputerUIATransformResizeParams
+    ) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_UIA_TRANSFORM_RESIZE, params)
+
+    async def computer_uia_transform_rotate(
+        self, params: ComputerUIATransformRotateParams
+    ) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_UIA_TRANSFORM_ROTATE, params)
+
+    async def computer_uia_transform_zoom(self, params: ComputerUIATransformZoomParams) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_UIA_TRANSFORM_ZOOM, params)
+
+    async def computer_uia_transform_zoom_unit(
+        self, params: ComputerUIATransformZoomUnitParams
+    ) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_UIA_TRANSFORM_ZOOM_UNIT, params)
+
+    async def computer_uia_value_set(self, params: ComputerUIAValueSetParams) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_UIA_VALUE_SET, params)
+
+    async def computer_uia_view_set(self, params: ComputerUIAViewSetParams) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_UIA_VIEW_SET, params)
+
+    async def computer_uia_window_close(self, params: ComputerUIAWindowCloseParams) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_UIA_WINDOW_CLOSE, params)
+
+    async def computer_uia_window_state_set(
+        self, params: ComputerUIAWindowStateSetParams
+    ) -> AccessibilityMutationResult:
+        return await self._requester.request(COMPUTER_UIA_WINDOW_STATE_SET, params)
 
     async def computer_write_clipboard(self, params: ComputerWriteClipboardParams) -> ComputerWriteClipboardResult:
         return await self._requester.request(COMPUTER_WRITE_CLIPBOARD, params)

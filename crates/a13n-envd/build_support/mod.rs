@@ -19,6 +19,7 @@ const TOOLING_ENUMS: &[&str] = &[
     "ReplayClass",
     "ErrorFamily",
     "EIPStringFormat",
+    "EIPJsonPrimitive",
     "TransferAction",
     "TransferDirection",
     "EIPDataFrameKind",
@@ -63,7 +64,7 @@ pub fn render(pool: &DescriptorPool) -> Result<String, String> {
          use serde::{Deserialize, Serialize};\n\n",
     );
     output.push_str(&format!(
-        "pub const EIP_PROTOCOL_VERSION: &str = \"0.4\";\n\
+        "pub const EIP_PROTOCOL_VERSION: &str = \"0.5\";\n\
          pub const EIP_PROTO_PACKAGE: &str = \"{PACKAGE}\";\n\n"
     ));
     render_data_frame(&mut output, pool, &extensions)?;
@@ -907,7 +908,17 @@ fn render_message(
             || real_oneof_names.contains(field.full_name()))
             && explicit_default.is_none();
         let (field_type, default) = rust_field_type(field, optional)?;
-        if let Some(function) = explicit_default {
+        let required = field_option_message(field, extensions)?
+            .is_some_and(|option| bool_field(&option, "required"));
+        if required && !(field.is_list() || field.is_map()) {
+            return Err(format!(
+                "required presence is only supported for collections: {}",
+                field.full_name()
+            ));
+        }
+        if required {
+            // Keep explicit empty collections in JSON and reject absent operands.
+        } else if let Some(function) = explicit_default {
             output.push_str(&format!(
                 "    #[serde(default = \"{function}\", skip_serializing_if = \"is_{function}\")]\n"
             ));
@@ -1094,6 +1105,61 @@ fn render_field_checks(
                 field.name()
             ));
         }
+        if bool_field(&option, "no_nul") {
+            output.push_str(&format!(
+                "{check_padding}if {target}.contains('\\0') {{ return Err(ValidationError(\"{} must not contain NUL\".to_owned())); }}\n",
+                field.name()
+            ));
+        }
+        if option.has_field_by_name("max_utf8_bytes") {
+            let maximum = option
+                .get_field_by_name("max_utf8_bytes")
+                .and_then(|value| value.as_u32())
+                .ok_or_else(|| "max_utf8_bytes is not uint32".to_owned())?;
+            output.push_str(&format!(
+                "{check_padding}if {target}.len() > {maximum}usize {{ return Err(ValidationError(\"{} exceeds its UTF-8 byte limit\".to_owned())); }}\n",
+                field.name()
+            ));
+        }
+        let primitives = option
+            .get_field_by_name("json_primitives")
+            .ok_or_else(|| "missing json_primitives option".to_owned())?;
+        if let prost_reflect::Value::List(primitives) = primitives.as_ref()
+            && !primitives.is_empty()
+        {
+            let value = if field.is_list() || field.is_map() {
+                "value"
+            } else {
+                &target
+            };
+            let mut accepted = Vec::new();
+            for primitive in primitives {
+                accepted.push(match primitive.as_enum_number() {
+                    Some(1) => format!("{value}.is_boolean()"),
+                    Some(2) => format!("({value}.is_i64() || {value}.is_u64())"),
+                    Some(3) => format!("{value}.as_f64().is_some_and(f64::is_finite)"),
+                    Some(4) => format!("{value}.is_string()"),
+                    Some(5) => format!("{value}.is_null()"),
+                    _ => return Err("invalid JSON primitive option".to_owned()),
+                });
+            }
+            let accepted = accepted.join(" || ");
+            let check = format!(
+                "if !({accepted}) {{ return Err(ValidationError(\"{} has an invalid JSON primitive type\".to_owned())); }}",
+                field.name()
+            );
+            if field.is_map() {
+                output.push_str(&format!(
+                    "{check_padding}for value in {target}.values() {{ {check} }}\n"
+                ));
+            } else if field.is_list() {
+                output.push_str(&format!(
+                    "{check_padding}for value in &{target} {{ {check} }}\n"
+                ));
+            } else {
+                output.push_str(&format!("{check_padding}{check}\n"));
+            }
+        }
         if option.has_field_by_name("const_string") {
             let expected = string_field(&option, "const_string")?;
             output.push_str(&format!(
@@ -1153,9 +1219,34 @@ fn render_field_checks(
             } else if matches!(field.kind(), Kind::Uint64 | Kind::Fixed64) {
                 dereferenced
             } else {
-                format!("({dereferenced} as u64)")
+                format!("({dereferenced} as i128)")
             }
         };
+        if option.has_field_by_name("signed_minimum") {
+            let minimum = option
+                .get_field_by_name("signed_minimum")
+                .and_then(|value| value.as_i64())
+                .ok_or_else(|| "signed_minimum is not sint64".to_owned())?;
+            let minimum = if matches!(field.kind(), Kind::Float | Kind::Double) {
+                format!("{minimum}.0")
+            } else {
+                minimum.to_string()
+            };
+            output.push_str(&format!(
+                "{check_padding}if {} < {minimum} {{ return Err(ValidationError(\"{} is below its signed minimum\".to_owned())); }}\n",
+                numeric_target(), field.name()
+            ));
+        }
+        if option.has_field_by_name("exclusive_minimum") {
+            let minimum = option
+                .get_field_by_name("exclusive_minimum")
+                .and_then(|value| value.as_f64())
+                .ok_or_else(|| "exclusive_minimum is not double".to_owned())?;
+            output.push_str(&format!(
+                "{check_padding}if {} <= {minimum:?} {{ return Err(ValidationError(\"{} must exceed its minimum\".to_owned())); }}\n",
+                numeric_target(), field.name()
+            ));
+        }
         if option.has_field_by_name("minimum") {
             let minimum = option
                 .get_field_by_name("minimum")

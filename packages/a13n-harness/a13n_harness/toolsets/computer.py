@@ -31,6 +31,7 @@ from a13n_harness.tools.metadata import HarnessTool, HarnessToolMetadata, ToolOu
 
 from ._instructions import InstructionFunctionToolset, tool_instruction
 from ._results import environment_failure
+from .accessibility import AccessibilityToolset
 
 _ComputerAlias = Annotated[
     str | None,
@@ -56,6 +57,12 @@ class ComputerToolset:
         self._coordinate_space = ComputerConfiguration(coordinate_space=coordinate_space).coordinate_space
         self._environment = environment
         self._observations: OrderedDict[str, ComputerObservation] = OrderedDict()
+        self._accessibility = AccessibilityToolset(
+            environment,
+            observation=self._observation,
+            image_point=self._point,
+            observation_reference=self._observation_reference,
+        )
 
     def get_toolset(self, *, allowed_names: frozenset[str] | None = None) -> FunctionToolset[AgentContext]:
         actions = frozenset(
@@ -92,7 +99,8 @@ class ComputerToolset:
                 )
                 for method, action, read_only in methods
                 if action in actions and (allowed_names is None or method.__name__ in allowed_names)
-            ],
+            ]
+            + self._accessibility.tools(allowed_names=allowed_names),
             id="a13n-computer-tools",
             instructions=[tool_instruction("environment-computer"), self._coordinate_instruction()],
         )
@@ -134,6 +142,7 @@ class ComputerToolset:
             )
             reference = f"obs-{secrets.token_hex(4)}"
             self._observations[reference] = screenshot.observation
+            self._accessibility.register_observation(screenshot.observation, selected_alias)
             while len(self._observations) > 16:
                 self._observations.popitem(last=False)
             return ToolReturn(
@@ -395,6 +404,12 @@ class ComputerToolset:
                 },
             )
         return observation
+
+    def _observation_reference(self, native_id: str) -> str:
+        for reference, observation in self._observations.items():
+            if observation.observation_id == native_id:
+                return reference
+        raise EnvironmentError("Source screenshot was evicted.", code="environment_not_found")
 
     async def _execute(self, request: ComputerInput, *, alias: _ComputerAlias = None) -> Any:
         try:

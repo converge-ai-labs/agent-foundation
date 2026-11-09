@@ -39,10 +39,84 @@ mod tests {
     }
 
     #[test]
+    fn accessibility_operand_presence_preserves_explicit_clear() {
+        assert!(decode::<super::AXChildrenSelectedChildrenSet>(r#"{}"#).is_err());
+        assert!(decode::<super::AXRanges>(r#"{}"#).is_err());
+        assert!(decode::<super::AtspiDocumentSelections>(r#"{}"#).is_err());
+        let value: super::AXChildrenSelectedChildrenSet = decode(r#"{"children":[]}"#).unwrap();
+        assert_eq!(encode(&value).unwrap(), br#"{"children":[]}"#);
+        let value: super::AXRanges = decode(r#"{"ranges":[]}"#).unwrap();
+        assert_eq!(encode(&value).unwrap(), br#"{"ranges":[]}"#);
+    }
+
+    #[test]
+    fn accessibility_numeric_domains_preserve_native_units() {
+        for count in [-10001, -10000, -1, 0, 10000, 10001] {
+            let payload = serde_json::json!({"unit": "character", "count": count}).to_string();
+            assert_eq!(
+                decode::<super::AccessibilityRangeMoveMove>(&payload).is_ok(),
+                (-10000..=10000).contains(&count)
+            );
+        }
+        for size in [-1.0, 0.0, 0.5, 1.0] {
+            let payload = serde_json::json!({"width": size, "height": size}).to_string();
+            assert_eq!(decode::<super::UIAResize>(&payload).is_ok(), size > 0.0);
+        }
+        for percent in [-1.0, 0.0, 0.5, 100.0, 101.0] {
+            let payload = serde_json::json!({"horizontal": percent}).to_string();
+            assert_eq!(
+                decode::<super::UIAScrollPercent>(&payload).is_ok(),
+                (0.0..=100.0).contains(&percent)
+            );
+        }
+    }
+
+    #[test]
+    fn accessibility_text_and_json_primitives_match_python_profile() {
+        for text in [
+            String::new(),
+            "😀".repeat(16384),
+            "😀".repeat(16385),
+            "a\0b".to_owned(),
+        ] {
+            let payload = serde_json::json!({"value": text}).to_string();
+            assert_eq!(
+                decode::<super::AXStringValue>(&payload).is_ok(),
+                text.len() <= 65536 && !text.contains('\0')
+            );
+        }
+        for value in [
+            serde_json::json!(null),
+            serde_json::json!({}),
+            serde_json::json!([]),
+        ] {
+            let payload = serde_json::json!({"value": value}).to_string();
+            assert!(decode::<super::AccessibilityScalar>(&payload).is_err());
+        }
+        for value in [
+            serde_json::json!(false),
+            serde_json::json!(-42),
+            serde_json::json!(0.5),
+            serde_json::json!(""),
+        ] {
+            let payload = serde_json::json!({"value": value}).to_string();
+            assert!(decode::<super::AccessibilityScalar>(&payload).is_ok());
+        }
+        for value in [
+            serde_json::json!(null),
+            serde_json::json!(42),
+            serde_json::json!({}),
+        ] {
+            let payload = serde_json::json!({"states": {"enabled": value}}).to_string();
+            assert!(decode::<super::AccessibilityFind>(&payload).is_err());
+        }
+    }
+
+    #[test]
     fn generated_registry_has_complete_v1_surface() {
-        assert_eq!(EIP_PROTOCOL_VERSION, "0.4");
+        assert_eq!(EIP_PROTOCOL_VERSION, "0.5");
         assert_eq!(EIP_PROTO_PACKAGE, "a13n.agent_envd.eip.v1");
-        assert_eq!(METHODS.len(), 58);
+        assert_eq!(METHODS.len(), 146);
         assert!(
             METHODS
                 .iter()
@@ -54,14 +128,14 @@ mod tests {
                 .iter()
                 .filter(|method| method.replay_class == "active_only")
                 .count(),
-            26
+            33
         );
         assert_eq!(
             METHODS
                 .iter()
                 .filter(|method| method.replay_class == "terminal_evidence")
                 .count(),
-            22
+            103
         );
         assert_eq!(
             METHODS
