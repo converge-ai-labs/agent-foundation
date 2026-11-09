@@ -59,7 +59,8 @@ export function VoiceIndicator() {
     (!(connectionNotice && isConnectionError(settings.error)) &&
       settings.error &&
       errorMessage(settings.error, t));
-  if (!settings.data?.enabled && !running) return null;
+  if (!running && !(voice.status === "failed" && settings.data?.enabled))
+    return null;
   return (
     <div className={styles.workspaceVoice}>
       <div className={styles.indicator} data-active={voice.status === "active"}>
@@ -85,10 +86,10 @@ export function VoiceIndicator() {
           <Button
             size="icon-sm"
             variant="ghost"
-            title={t(voice.status === "failed" ? "Retry voice" : "Start voice")}
+            title={t("Retry voice")}
             onClick={() => void voice.start()}
             disabled={settings.isPending || !settings.data?.enabled}
-            aria-label={t("Start voice")}
+            aria-label={t("Retry voice")}
           >
             <Microphone size={16} />
           </Button>

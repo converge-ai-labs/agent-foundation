@@ -67,6 +67,7 @@ import styles from "./conversation.module.css";
 import layout from "../shell/workbench.module.css";
 import { useResults } from "./results";
 import { savedResultVisible } from "./result-visibility";
+import { ReplyAnnotations } from "./reply-annotations";
 import { ConversationOpening, useInitialReady } from "./opening";
 import { canDeleteThread, DeleteThread } from "./delete-thread";
 
@@ -681,12 +682,8 @@ function ConversationContent({
         </Link>
       </div>
     );
-  return (
-    <ConversationOpening
-      ready={pageReady}
-      label={t("Opening chat…")}
-      onContinue={() => setShowAvailable(true)}
-    >
+  const content = (
+    <>
       <div className={styles.page}>
         {!guest && !readOnly && thread?.archived && (
           <div className={styles.warning}>
@@ -792,6 +789,11 @@ function ConversationContent({
                       : undefined
                   }
                   entries={entries}
+                  running={
+                    operation?.state === "running" &&
+                    presentation === display &&
+                    operation.run_id === presentation.runId
+                  }
                   blocks={showLive ? liveBlocks : []}
                   localInputs={hasLater ? [] : draft.localInputs}
                   turns={turns}
@@ -1213,6 +1215,21 @@ function ConversationContent({
       {deleting && thread && (
         <DeleteThread thread={thread} close={() => setDeleting(false)} />
       )}
+    </>
+  );
+  return (
+    <ConversationOpening
+      ready={pageReady}
+      label={t("Opening chat…")}
+      onContinue={() => setShowAvailable(true)}
+    >
+      <ReplyAnnotations
+        reader={reader}
+        draft={draft}
+        enabled={canCompose && !thread?.archived}
+      >
+        {content}
+      </ReplyAnnotations>
     </ConversationOpening>
   );
 }

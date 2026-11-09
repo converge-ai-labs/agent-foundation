@@ -1,4 +1,5 @@
 import * as Y from "yjs";
+import type { ReplyAnnotation } from "./reply-quote";
 import type { Schema, Transport } from "../transport/client";
 import type { ModelControlValues } from "./model-controls";
 import type { LocalInput } from "./local-input";
@@ -99,6 +100,13 @@ export class ThreadDraft {
   stop: StopRequest | undefined;
   // Private presentation only. This is neither shared input nor an execution queue.
   localInputs: LocalInput[] = [];
+  // Unsent quotations belong to this participant, not the shared text replica.
+  annotations: ReplyAnnotation[] = [];
+  getAnnotations = () => this.annotations;
+  setAnnotations(notes: ReplyAnnotation[]) {
+    this.annotations = notes;
+    this.notify();
+  }
   // A private, in-tab Send choice, not shared input or sticky Thread configuration.
   mode: "normal" | "goal" = "normal";
   // Private intent: establish the durable Coordinator role before the next Send.
@@ -165,6 +173,7 @@ export class ThreadDraft {
   }
   get hasUnsentInput() {
     return (
+      this.annotations.length > 0 ||
       !!values(this.doc).prompt.trim() ||
       attachmentSelections(this.doc).length > 0
     );

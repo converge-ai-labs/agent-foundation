@@ -29,6 +29,11 @@
   --harness-group-inset: 16px;
   --harness-prose-size: 15px;
   --harness-prose-leading: 1.7;
+  --harness-placeholder: color-mix(
+    in srgb,
+    var(--muted-foreground) 52%,
+    transparent
+  );
   --harness-log-text: light-dark(#767676, #969696);
   --harness-code-keyword: light-dark(#8250df, #d2a8ff);
   --harness-code-string: light-dark(#116329, #a5d6ff);
@@ -85,6 +90,29 @@
     0 0 0 1px rgb(255 255 255 / 9%), 0 6px 20px -6px rgb(0 0 0 / 45%);
   --elevation-floating:
     0 0 0 1px rgb(255 255 255 / 9%), 0 12px 40px -12px rgb(0 0 0 / 55%);
+}
+
+:is(input, textarea)::placeholder {
+  color: var(--harness-placeholder);
+  opacity: 1;
+}
+[data-slot="select-value"][data-placeholder],
+:is(
+    [data-slot="select-button"],
+    [data-slot="combobox-trigger"]
+  )[data-placeholder]
+  > span:first-child {
+  color: var(--harness-placeholder);
+}
+@media (prefers-contrast: more) {
+  :root {
+    --harness-placeholder: var(--a13n-secondary);
+  }
+}
+@media (forced-colors: active) {
+  :root {
+    --harness-placeholder: GrayText;
+  }
 }
 
 [data-slot="menu-popup"],

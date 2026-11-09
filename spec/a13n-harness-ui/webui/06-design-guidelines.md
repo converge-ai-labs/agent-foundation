@@ -33,6 +33,8 @@ Labels sit closer to their content than the preceding group. Group insets accomm
 
 Light-theme baselines: canvas `#fefefe`, text `#333333`, sidebar `#fafafa`, muted surface `#f9f9f9`, hover 2.5% black, selected 4% black. Use theme tokens, including their dark equivalents, rather than local shades.
 
+Placeholder text uses a quieter theme tone than secondary labels across composer, form and search inputs. Entered text retains normal contrast; increased-contrast settings strengthen placeholders.
+
 Ordinary rows, cards and buttons stay flat on hover and press: no elevation, scaling, movement, weight jump or changing hit-area dimensions. Feedback uses light fill or color. A row has one background; nested overflow controls do not add another filled rectangle. Transcript disclosures use text emphasis only.
 
 Floating menus, popovers and dialogs retain shared overlay shadows. Borders identify controls, floating boundaries or dense row separation; ordinary grouping uses space and tone. Avoid nested frames. Where rounded surfaces are nested, inner radius is outer radius minus inset, bounded at zero.
@@ -59,7 +61,7 @@ Rows drag directly without a grip icon. Use a compact preview and thin insertion
 
 Saved conversations and New chat use a centered column capped at 800px with symmetric gutters; transcript, Activity row and composer share an axis. Left navigation retains its existing layout and controls. User bubbles fit content within a bounded width. User messages and intermediate and final assistant prose share primary text color, the conversation size (15px by default) and 1.7 line height. Markdown tables follow that size; heading levels use 1.5, 1.25, 1.125 and 1em. Inline code stays relative to surrounding prose. Code blocks and line numbers use the independent code size; their toolbar labels use the interface size. Interface labels and tool rows retain their compact scale. Tool and Thought labels use quiet gray, regular text; only hover or focus strengthens them, not expansion.
 
-Completed work collapses behind **Worked for …**, leaving the final response visible, under the [conversation contract](04-workbench-interaction.md#conversation-and-shared-composer). Omit **Work log**, tool-count summaries and tool elapsed times. Recorded Run/Thought timing uses muted tabular figures.
+Completed work collapses behind **Worked for …**, leaving the final response visible, under the [conversation contract](04-workbench-interaction.md#conversation-and-shared-composer). Omit **Work log**, tool-count summaries and tool elapsed times. Recorded Run/Thought timing uses muted tabular figures. While a thought streams or a tool call is pending, a bright highlight sweeps across its label and the corresponding execution preview. Routine pending calls use the highlight alone. Tool rows and group summaries omit receiving, waiting and running status labels, counts and pulsing dots. Settled steps, reduced-motion preferences and forced colors use static text. Assistant prose, execution labels and the preparing or working logo align with the leading edge of the composer frame.
 
 **Thought** is a default-collapsed, unboxed disclosure. Expanded text grows to 144px, then scrolls in a keyboard-accessible region. Conversation disclosures have no leading category icon: use a trailing 12px caret on hover/focus, visible without hover on touch. Keep label and hit-area geometry stable.
 

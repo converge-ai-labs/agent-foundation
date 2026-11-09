@@ -41,6 +41,8 @@ import type { Profile } from "../shell/presence";
 import { ConnectionNoticeContext } from "../shell/connection";
 import { ConfirmAction } from "../shell/confirm-action";
 import { ThreadDraft, values, type DraftCapture } from "./draft";
+import { AnnotationChip } from "./annotation-chip";
+import { withReplyAnnotations } from "./reply-quote";
 import { ComposerEditor } from "./composer-editor";
 import { CoordinatorIcon } from "./coordinator-icon";
 import { useCoordinatorMutation } from "./coordinator-settings";
@@ -85,7 +87,15 @@ function beginInput(
   const input: LocalInput = {
     id,
     action,
-    parts: previewInput(id, parts, attachments, catalog),
+    parts: previewInput(
+      id,
+      withReplyAnnotations(
+        parts,
+        preset === undefined ? draft.annotations : [],
+      ),
+      attachments,
+      catalog,
+    ),
     state: "preparing",
   };
   draft.localInputs = [
@@ -171,6 +181,7 @@ export async function submitDraft(
     draft.submission.kind === "unknown"
   )
     return;
+  const annotations = preset === undefined ? draft.annotations : [];
   const mode = draft.mode;
   const controls = modelControlRequest(draft.controls);
   const environment = draft.environment
@@ -208,6 +219,7 @@ export async function submitDraft(
       skillCatalog = await loadSkills();
       references = skillReferences(parts, skillCatalog);
     }
+    parts = withReplyAnnotations(parts, annotations);
     signal?.throwIfAborted();
   } catch (error) {
     input.state = "rejected";
@@ -285,6 +297,10 @@ export async function submitDraft(
     input.state = "accepted";
     if (action === "send") draft.mode = "normal";
     if (captured) draft.clear(captured);
+    if (annotations.length)
+      draft.setAnnotations(
+        draft.annotations.filter((note) => !annotations.includes(note)),
+      );
     draft.submission = {
       kind: "accepted",
       action,
@@ -587,7 +603,11 @@ export function Composer({
       ? false
       : !isReadyAttachment(id) || !attachments[index].data,
   );
-  const hasInput = !!(input.prompt.trim() || selections.length);
+  const hasInput = !!(
+    input.prompt.trim() ||
+    selections.length ||
+    draft.annotations.length
+  );
   const valid = hasInput && !missing;
   const cancellation = useStopOperation(threadId, draft, activity, reconcile);
   const { stopping, canStop } = cancellation;
@@ -1228,6 +1248,7 @@ export function Composer({
             <Plus />
           </Button>
           <div inert={preparing} className={styles.composerEditor}>
+            <AnnotationChip />
             <ComposerEditor
               autoFocus={autoFocus}
               local={local}

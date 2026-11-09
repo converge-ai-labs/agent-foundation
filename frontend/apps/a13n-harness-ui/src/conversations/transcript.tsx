@@ -34,6 +34,7 @@ import {
   savedToolGroups,
   type ToolView,
 } from "./tool-presentation";
+import { AnnotatedReply } from "./annotated-reply";
 import { MessageText } from "./message-text";
 import { CopyMessage } from "./copy-message";
 import { ContextActivity } from "./context-activity";
@@ -122,12 +123,19 @@ type Row = {
   anchor?: string;
   position?: number;
   readingAnchor?: string;
+  replySlot?: string;
+  savedReplyAnchor?: string;
   turnId?: string;
 } & (
   | { kind: "input"; parts: InputPart[]; status?: string }
   | {
       kind: "thinking";
-      segments: { id: string; text: string; durationMs?: number }[];
+      segments: {
+        id: string;
+        text: string;
+        durationMs?: number;
+        running?: boolean;
+      }[];
     }
   | { kind: "tools"; tools: ToolView[] }
   | { kind: "origin"; childId: string }
@@ -274,7 +282,7 @@ function savedRows(
   return rows;
 }
 
-function liveRows(blocks: DisplayBlock[]): Row[] {
+function liveRows(blocks: DisplayBlock[], running = false): Row[] {
   const rows: Row[] = [];
   let previousChild: string | undefined;
   for (const block of blocks) {
@@ -332,6 +340,7 @@ function liveRows(blocks: DisplayBlock[]): Row[] {
         tools: [
           {
             ...block,
+            live: running,
             name: block.name || "Tool",
             input: block.text || undefined,
             inputComplete: block.done,
@@ -343,7 +352,12 @@ function liveRows(blocks: DisplayBlock[]): Row[] {
         id: block.id,
         kind: "thinking",
         segments: [
-          { id: block.id, text: block.text, durationMs: block.durationMs },
+          {
+            id: block.id,
+            text: block.text,
+            durationMs: block.durationMs,
+            running: running && !block.done,
+          },
         ],
       });
     } else if (block.kind === "assistant")
@@ -486,7 +500,12 @@ function groupRows(rows: Row[]) {
 function Reasoning({
   segments,
 }: {
-  segments: { id: string; text: string; durationMs?: number }[];
+  segments: {
+    id: string;
+    text: string;
+    durationMs?: number;
+    running?: boolean;
+  }[];
 }) {
   const { t } = useTranslation();
   const duration = executionTime(
@@ -501,7 +520,9 @@ function Reasoning({
       open={open}
       onToggle={(event) => setOpen(event.currentTarget.open)}
     >
-      <summary>
+      <summary
+        data-running-label={segments.some((part) => part.running) || undefined}
+      >
         {t("Thought")}
         {duration && (
           <span className={styles.executionDuration}>
@@ -575,7 +596,17 @@ function Rows({
         <ToolActivity tools={row.tools} />
       ) : row.kind === "assistant" ? (
         <section className={styles.assistantMessage}>
-          <MessageText text={row.text} />
+          <AnnotatedReply
+            source={
+              row.savedReplyAnchor ??
+              row.replySlot ??
+              row.readingAnchor ??
+              row.id
+            }
+            slot={row.replySlot}
+          >
+            <MessageText text={row.text} />
+          </AnnotatedReply>
           {row.truncated && (
             <small>{t("Saved preview truncated by the server.")}</small>
           )}
@@ -663,7 +694,9 @@ export function ConversationTranscript({
   pending,
   activity,
   currentFailureRunId,
+  running = false,
 }: {
+  running?: boolean;
   currentFailureRunId?: string | null;
   activity?: ReactNode;
   pending?: PendingInteraction;
@@ -688,7 +721,7 @@ export function ConversationTranscript({
       ),
     [entries, continuation, currentFailureRunId],
   );
-  const live = liveRows(blocks);
+  const live = liveRows(blocks, running);
   const savedIds = new Set(
     saved.filter((row) => row.kind === "input").map((row) => row.id),
   );
@@ -1021,7 +1054,11 @@ function usePresentedRows(rows: Row[], complete: boolean) {
         }
       : row;
     next.set(slot, { source: row, presented: result });
-    return result;
+    // A live quotation can still find the same input-relative slot after the
+    // turn is saved and remounted. Saved selections prefer exact entry offsets.
+    return row.kind === "assistant" && boundary !== "turn"
+      ? { ...result, replySlot: slot, savedReplyAnchor: row.readingAnchor }
+      : result;
   });
   useLayoutEffect(() => {
     previous.current = next;
@@ -1258,12 +1295,21 @@ function ExecutionSegment({
       ? t("Worked for {{duration}}", { duration })
       : t("Worked")
     : toolInfo
-      ? `${toolLabel(toolInfo, t)} ${toolSummary(toolInfo, t)}${toolInfo.phase === "Result received" ? "" : ` · ${toolPhase(toolInfo.phase, t)}`}`
+      ? `${[toolLabel(toolInfo, t), toolSummary(toolInfo, t)].filter(Boolean).join(" ")}${toolInfo.showPhase ? ` · ${toolPhase(toolInfo.phase, t)}` : ""}`
       : latest?.kind === "thinking"
         ? t("Thought")
         : t("View the available execution steps");
   return (
-    <ExecutionDetails complete={complete} preview={preview}>
+    <ExecutionDetails
+      complete={complete}
+      preview={preview}
+      running={
+        !complete &&
+        (toolInfo?.running ||
+          (latest?.kind === "thinking" &&
+            latest.segments.some((part) => part.running)))
+      }
+    >
       {(open) => (
         <ExecutionReader open={open} complete={complete}>
           <Rows rows={rows} threadId={threadId} continuation />
