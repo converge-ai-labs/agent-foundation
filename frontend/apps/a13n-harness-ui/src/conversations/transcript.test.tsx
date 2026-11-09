@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import type { Schema, Transport } from "../transport/client";
 import { TransportContext } from "../transport/context";
 import { SavedEntry, LiveOutput, MessageText } from "./transcript";
@@ -27,7 +28,8 @@ const metadata = {
     },
   },
 };
-it("renders saved attachment metadata once while preserving exact model-visible content and output targets", () => {
+it("renders saved attachment metadata once while preserving exact model-visible content and output targets", async () => {
+  const user = userEvent.setup();
   const entry = {
     position: 0,
     message_kind: "request",
@@ -54,6 +56,8 @@ it("renders saved attachment metadata once while preserving exact model-visible 
     </TransportContext>,
   );
   expect(screen.getAllByText("example.png")).toHaveLength(1);
+  await user.click(screen.getByRole("button", { name: "Preview example.png" }));
+  await user.click(screen.getByRole("button", { name: "Attachment details" }));
   expect(screen.getByText("Original attachment reference")).toBeTruthy();
   expect(screen.queryByText("Private guidance")).toBeNull();
 });
