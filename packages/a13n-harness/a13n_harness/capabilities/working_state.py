@@ -673,7 +673,12 @@ class _WorkingStateRunCapability(WorkingStateCapability):
             self.configuration,
             project_notes=request.kind is ModelContextRequestKind.INPUT,
         )
-        return ModelContextProjection(blocks=(*projection.blocks, *blocks))
+        return ModelContextProjection(
+            blocks=(
+                *projection.blocks,
+                *(block for block in blocks if request.history.latest(block.source_id, block.key) != block.content),
+            )
+        )
 
 
 def _render_working_state_blocks(

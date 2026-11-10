@@ -2308,7 +2308,14 @@ class HarnessUiApp:
                 prompt = prepare_skill_input(prompt, catalog, selected_skills)
             if selected_context:
                 prompt = tuple([prompt] if isinstance(prompt, str) else prompt) + tuple(
-                    TextContent(text, metadata={"harness_ui": {"mcp_app_context": True}}) for text in selected_context
+                    TextContent(
+                        text,
+                        metadata={
+                            "source_id": "a13n-harness-ui.mcp-app-context",
+                            "harness_ui": {"mcp_app_context": True},
+                        },
+                    )
+                    for text in selected_context
                 )
             prompt = append_surface_provenance(prompt, input_surface)
 

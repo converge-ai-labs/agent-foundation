@@ -39,15 +39,17 @@ class CurrentAgentContextCapability(AbstractModelContextCapability):
             "Continue the existing task only if work remains; otherwise finish your turn. "
             "Do not acknowledge this metadata."
         )
+        blocks = tuple(block for block in projection.blocks if block.source_id != "a13n.agent-context")
+        current = ModelContextBlock(
+            source_id="a13n.agent-context",
+            context_group="runtime_state",
+            placement=ModelContextPlacement.REQUEST_EPILOGUE,
+            content=content,
+        )
+        owned = (*surface_context(ctx.messages), current)
         return ModelContextProjection(
             blocks=(
-                *(block for block in projection.blocks if block.source_id != "a13n.agent-context"),
-                *surface_context(ctx.messages),
-                ModelContextBlock(
-                    source_id="a13n.agent-context",
-                    context_group="runtime_state",
-                    placement=ModelContextPlacement.REQUEST_EPILOGUE,
-                    content=content,
-                ),
+                *blocks,
+                *(block for block in owned if request.history.latest(block.source_id, block.key) != block.content),
             )
         )

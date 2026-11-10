@@ -20,35 +20,40 @@ description: 提供当前上下文，跨 Run 保留决策，并在压缩 Thread 
 
 先运行[两次 Run 的示例](#context-composition)，再按需添加工作区指导或压缩。Host 如何保存和续接 Thread，见[状态与恢复](state-and-resume.md)。
 
-## 按变化追加上下文
+## 来源自主决定上下文注入
 
-快照上下文仍会在适用的请求边界重新计算，但只有最终渲染文本变化时才追加。Harness 按 `(source_id, key)` 将每个 block 与规范历史中的最新同身份快照比较。旧 block 保持不变，保留提供方已看到的前缀。`A → B → A` 会追加两次变化；压缩和 handoff 移除旧历史后，会重新发送被移除的当前快照。
+每个 context producer 通过 `AbstractModelContextCapability` 或 `RunBindings.model_context` 决定要注入什么。Harness 为所有 producer 提供同一个只读的 `request.history` 视图，校验完整返回投影，并提交所有返回的 block。稳定的 `(source_id, key)` 用于区分独立变化的块；规范 metadata 在提示正文之外记录身份、placement 和 SHA-256 内容摘要。
 
-自定义生产者通过 `AbstractModelContextCapability` 或 `RunBindings.model_context` 返回 `ModelContextBlock`。同一个来源有独立变化的 block 时，使用稳定的 key：
+`history.contains(block)` 查询完全相同的正文是否存在于当前保留上下文的任意位置。相同身份后面出现 B，不代表较早的 A 已不存在。下面的资源 producer 会复用仍然保留的正文：
 
 ```python
 from a13n_harness.model_context import (
+    AbstractModelContextCapability,
     ModelContextBlock,
-    ModelContextEmission,
     ModelContextPlacement,
+    ModelContextProjection,
 )
 
-snapshot = ModelContextBlock(
-    source_id="example.status",
-    key="workspace",
-    placement=ModelContextPlacement.REQUEST_EPILOGUE,
-    content="Workspace status: ready.",
-    # ON_CHANGE is the default.
-)
-event = ModelContextBlock(
-    source_id="example.notice",
-    placement=ModelContextPlacement.REQUEST_EPILOGUE,
-    content="A new delivery is available.",
-    emission=ModelContextEmission.ALWAYS,
-)
+
+class WorkspaceGuide(AbstractModelContextCapability):
+    async def wrap_model_context(self, ctx, request, handler):
+        projection = await handler(request)
+        block = ModelContextBlock(
+            source_id="example.guide",
+            key="workspace",
+            placement=ModelContextPlacement.REQUEST_EPILOGUE,
+            content="Workspace guidance: run the focused tests before committing.",
+        )
+        if request.history.contains(block):
+            return projection
+        return ModelContextProjection(blocks=(*projection.blocks, block))
 ```
 
-事件或增量投递即使文本相同也可能代表不同发生次数，应使用 `ALWAYS`，由其所属组件决定投递时机。这是每个 block 的设置，不是全局去重开关。已有自定义生产者现在默认使用 `ON_CHANGE`；如果重复文本表示新事件，需显式改为 `ALWAYS`。不返回 block 表示没有更新。需要报告移除时，渲染确定性的空状态 block，并区分空状态与无法观测。比较前会校验完整投影。被抑制的 block 不产生新的上下文输入观测。
+对于当前状态，owner 可以另外读取 `history.latest(source_id, key)`，在变化时追加快照或选择通知，保留 `A → B → A` 的状态切换。文件上下文分别标记每份正文和当前路径／摘要列表；切回 A 时可以更新列表而不重复仍在历史中的正文。需要报告移除时，应显式提供空状态；无法观测是另一种状态。
+
+事件、提醒和增量投递保留各自 owner 的触发条件和 cursor。事件发生时就返回，即使此前事件的文字完全相同；没有 emission 开关，也没有框架返回后的自动过滤。如果外层 middleware 改写 block，它就负责基于已提交的最终正文判断是否注入。
+
+Checkpoint 续接和 fork 查询所选的保留历史。压缩或 handoff 移除正文后，`contains` 变为 false，producer 可以重新提供内容。精确 retry/resume 边界保持不变。在 Live 中，视图包含已确认的连接上下文；待发送内容不构成存在证明，顺序不明时 `latest` 为未知，但已确认的旧正文仍然存在。
 
 ## Run 配置
 

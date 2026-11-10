@@ -651,15 +651,18 @@ class AgentContext:
             "Continue the existing task only if work remains; otherwise finish your turn. "
             "Do not acknowledge this metadata."
         )
+        block = ModelContextBlock(
+            source_id="a13n.agent-context",
+            context_group="runtime_state",
+            placement=ModelContextPlacement.REQUEST_EPILOGUE,
+            content=content,
+        )
+        if request.history.latest(block.source_id, block.key) == block.content:
+            return ModelContextProjection(blocks=environment.blocks)
         return ModelContextProjection(
             blocks=(
                 *environment.blocks,
-                ModelContextBlock(
-                    source_id="a13n.agent-context",
-                    context_group="runtime_state",
-                    placement=ModelContextPlacement.REQUEST_EPILOGUE,
-                    content=content,
-                ),
+                block,
             )
         )
 

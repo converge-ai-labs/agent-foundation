@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from copy import copy
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from hashlib import sha256
 from typing import Protocol
@@ -76,22 +76,74 @@ class ModelContextPlacement(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
+class ModelContextHistory:
+    """Detached, read-only facts about context still retained at this boundary.
+
+    Presence and latest-value queries are observations, never emission policies.
+    Querying does not reserve a block or establish a delivery watermark.
+    """
+
+    _entries: tuple[tuple[str, str | None, str], ...] = ()
+    _unordered: frozenset[tuple[str, str | None]] = frozenset()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "_entries", tuple(self._entries))
+        object.__setattr__(self, "_unordered", frozenset(self._unordered))
+
+    @classmethod
+    def from_messages(cls, messages: list[ModelMessage]) -> ModelContextHistory:
+        entries: list[tuple[str, str | None, str]] = []
+        for message in messages:
+            if not isinstance(message, ModelRequest):
+                continue
+            for item in request_input_content(message):
+                source = item.metadata.source_id
+                marker = (item.metadata.model_extra or {}).get("model_context")
+                if source is None or not isinstance(marker, dict):
+                    continue
+                key = marker.get("key")
+                if key is not None and not isinstance(key, str):
+                    continue
+                value = item.value.content if isinstance(item.value, TextContent) else item.value
+                if isinstance(value, str) and marker.get("sha256") == sha256(value.encode("utf-8")).hexdigest():
+                    entries.append((source, key, value))
+        return cls(tuple(entries))
+
+    @classmethod
+    def from_blocks(
+        cls,
+        blocks: tuple[ModelContextBlock, ...],
+        *,
+        unordered: frozenset[tuple[str, str | None]] = frozenset(),
+    ) -> ModelContextHistory:
+        """Observe confirmed content; unsettled delivery can leave latest order unknown."""
+        return cls(tuple((block.source_id, block.key, block.content) for block in blocks), unordered)
+
+    def contains(self, block: ModelContextBlock) -> bool:
+        """Whether this exact source/key/content occurs anywhere in retained context."""
+        return (block.source_id, block.key, block.content) in self._entries
+
+    def latest(self, source_id: str, key: str | None = None) -> str | None:
+        """Read the latest content when an owner needs to describe a state transition."""
+        if (source_id, key) in self._unordered:
+            return None
+        return next(
+            (value for source, entry_key, value in reversed(self._entries) if (source, entry_key) == (source_id, key)),
+            None,
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class ModelContextProjectionRequest:
     """Detached description of the current eligible model request."""
 
     kind: ModelContextRequestKind
     input_origin: ModelContextInputOrigin | None = None
     tool_call_ids: tuple[str, ...] = ()
+    history: ModelContextHistory = field(default_factory=ModelContextHistory)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "tool_call_ids", tuple(self.tool_call_ids))
-
-
-class ModelContextEmission(StrEnum):
-    """Snapshot comparison versus owner-triggered event or incremental delivery."""
-
-    ON_CHANGE = "on_change"
-    ALWAYS = "always"
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,7 +156,6 @@ class ModelContextBlock:
     memory_mount: str | None = None
     context_group: ContextGroupName | None = None
     key: str | None = None
-    emission: ModelContextEmission = ModelContextEmission.ON_CHANGE
 
     def content_item(self) -> ContentItem:
         metadata = ContentMetadata.model_validate(
@@ -113,7 +164,7 @@ class ModelContextBlock:
                 "source_id": self.source_id,
                 "model_context": {
                     "key": self.key,
-                    "emission": self.emission.value,
+                    "placement": self.placement.value,
                     "sha256": sha256(self.content.encode("utf-8")).hexdigest(),
                 },
             }
@@ -190,8 +241,8 @@ class ModelContextCoordinatorCapability(AbstractCapability[AgentContext]):
         request = _classify_request(ctx, request_context.messages)
         prepared = request_context
         if request is not None:
+            request = replace(request, history=ModelContextHistory.from_messages(request_context.messages))
             projection = await _project_model_context(ctx, request)
-            projection = _drop_unchanged(request_context.messages, projection)
             original_request = request_context.messages[-1]
             assert isinstance(original_request, ModelRequest)
             committed = _commit_projection(request_context.messages, request, projection)
@@ -322,13 +373,8 @@ def _validate_projection(
                 "Model context block placement or content is invalid.",
                 code="model_context_projection_invalid",
             )
-        if not isinstance(block.emission, ModelContextEmission) or (
-            block.key is not None
-            and (not isinstance(block.key, str) or not block.key or len(block.key) > _MAX_SOURCE_ID_LENGTH)
-        ):
-            raise DefinitionError(
-                "Model context identity or emission is invalid.", code="model_context_projection_invalid"
-            )
+        if block.key is not None and (not isinstance(block.key, str) or not block.key or len(block.key) > 4096):
+            raise DefinitionError("Model context identity is invalid.", code="model_context_projection_invalid")
         identity = (block.source_id, block.key)
         if identity in identities:
             raise DefinitionError(
@@ -353,47 +399,6 @@ def _validate_projection(
         raise DefinitionError(
             "Model context exceeds its aggregate byte limit.", code="model_context_projection_invalid"
         )
-
-
-def _drop_unchanged(messages: list[ModelMessage], projection: ModelContextProjection) -> ModelContextProjection:
-    """Compare each snapshot with its latest canonical copy, never a separate watermark.
-
-    Historical parts are only read. Replacement history naturally forgets pins;
-    events and deltas retain their producer-owned delivery semantics.
-    """
-    wanted = {
-        (block.source_id, block.key) for block in projection.blocks if block.emission is ModelContextEmission.ON_CHANGE
-    }
-    latest: dict[tuple[str, str | None], str] = {}
-    for message in reversed(messages):
-        if wanted <= latest.keys():
-            break
-        if not isinstance(message, ModelRequest):
-            continue
-        for item in reversed(request_input_content(message)):
-            source = item.metadata.source_id
-            if source is None or not isinstance(item.value, str | TextContent):
-                continue
-            marker = (item.metadata.model_extra or {}).get("model_context")
-            if not isinstance(marker, dict) or marker.get("emission") != ModelContextEmission.ON_CHANGE.value:
-                continue
-            key = marker.get("key")
-            if key is not None and not isinstance(key, str):
-                continue
-            identity = (source, key)
-            if identity not in wanted or identity in latest:
-                continue
-            digest = marker.get("sha256")
-            if isinstance(digest, str):
-                latest[identity] = digest
-    return ModelContextProjection(
-        blocks=tuple(
-            block
-            for block in projection.blocks
-            if block.emission is ModelContextEmission.ALWAYS
-            or latest.get((block.source_id, block.key)) != sha256(block.content.encode("utf-8")).hexdigest()
-        )
-    )
 
 
 def _commit_projection(
@@ -518,7 +523,7 @@ def _replace_messages(request_context: ModelRequestContext, messages: list[Model
 __all__ = [
     "AbstractModelContextCapability",
     "ModelContextBlock",
-    "ModelContextEmission",
+    "ModelContextHistory",
     "ModelContextInputOrigin",
     "ModelContextMiddleware",
     "ModelContextNext",

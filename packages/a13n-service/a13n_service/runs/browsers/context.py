@@ -82,13 +82,11 @@ class BrowserContextCapability(AbstractModelContextCapability):
             message = MESSAGES[await admission.availability(self.runtime, self.lease, self.binding)]
         except (BrowserError, ServiceError) as exc:
             message = f"Browser unavailable: {exc} No handback reminder was registered."
-        return ModelContextProjection(
-            blocks=(
-                *projection.blocks,
-                ModelContextBlock(
-                    source_id="a13n.service.browser-context",
-                    placement=ModelContextPlacement.REQUEST_EPILOGUE,
-                    content=f"<browser-context>\n{escape(message, quote=False)}\n</browser-context>",
-                ),
-            )
+        block = ModelContextBlock(
+            source_id="a13n.service.browser-context",
+            placement=ModelContextPlacement.REQUEST_EPILOGUE,
+            content=f"<browser-context>\n{escape(message, quote=False)}\n</browser-context>",
         )
+        if request.history.latest(block.source_id, block.key) == block.content:
+            return projection
+        return ModelContextProjection(blocks=(*projection.blocks, block))

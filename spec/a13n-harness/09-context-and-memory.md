@@ -83,11 +83,12 @@ class ModelContextProjectionRequest:
     kind: ModelContextRequestKind
     input_origin: ModelContextInputOrigin | None = None
     tool_call_ids: tuple[str, ...] = ()
+    history: ModelContextHistory = field(default_factory=ModelContextHistory)
 
 
-class ModelContextEmission(StrEnum):
-    ON_CHANGE = "on_change"
-    ALWAYS = "always"
+class ModelContextHistory:
+    def contains(self, block: ModelContextBlock) -> bool: ...
+    def latest(self, source_id: str, key: str | None = None) -> str | None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,7 +99,6 @@ class ModelContextBlock:
     memory_mount: str | None = None
     context_group: ContextGroupName | None = None
     key: str | None = None
-    emission: ModelContextEmission = ModelContextEmission.ON_CHANGE
 
 
 @dataclass(frozen=True, slots=True)
@@ -144,9 +144,9 @@ The terminal projection calls `BoundEnvironment.project_model_context(request)` 
 
 The default Agent context names its execution identifier `harness_run_id`, with `thread_id` included at both input and tool-result boundaries. It does not expose an ambiguous `run_id` alias or infer Host resource identifiers from instance metadata. Hosts supply their own explicitly named resource identifiers through model-context middleware.
 
-`ModelContextBlock.source_id` is stable, non-blank, bounded provenance, not ordering or authority. Contents are bounded text and retain the trust level of their source. Middleware never receives mutable messages. The final Harness commit, which no Host or Capability can bypass, validates source IDs, keys, emission policies, unique `(source_id, key)` identities, block counts, per-block and aggregate UTF-8 byte limits, and the two fixed placements, and rejects malformed output before model dispatch. Limits apply after the complete outer chain, so replacement or short-circuit cannot bypass them.
+`ModelContextBlock.source_id` is stable, non-blank, bounded provenance, not ordering or authority. Contents are bounded text and retain the trust level of their source. Middleware never receives mutable messages. The final Harness commit, which no Host or Capability can bypass, validates source IDs (at most 256 characters), keys (at most 4096 characters), unique `(source_id, key)` identities, block counts, per-block and aggregate UTF-8 byte limits, and the two fixed placements, and rejects malformed output before model dispatch. Limits apply after the complete outer chain, so replacement or short-circuit cannot bypass them.
 
-Context blocks are committed as native `UserPromptPart` strings with Harness-owned canonical content annotations containing `display: false`, the block's `source_id`, and a `model_context` marker with `key`, `emission`, and the SHA-256 digest of the final rendered UTF-8 text, as defined by [Input](16-input-model-and-output.md#content-annotations). The annotations survive native message serialization without becoming provider options or prompt text. Source-typed input observations carry `content: str` separately from those native request values. Display annotations are presentation hints, not redaction or authorization. History replacement does not identify or delete individual overlays by position, hash, display flags, or matching text. It rebuilds context from the summary, system parts, and separately retained semantic inputs rather than copying historical user parts. Canonical content annotations preserve their corresponding request parts and item order; they do not establish context cleanup or execution authority. Legacy context-ownership metadata is inert in imported history and is omitted when constructing replacement requests; unrelated request metadata is preserved. No import migration or rewriting of stored snapshots is required.
+Context blocks are committed as native `UserPromptPart` strings with Harness-owned canonical content annotations containing `display: false`, the block's `source_id`, and a `model_context` marker with `key`, `placement`, and the SHA-256 digest of the final rendered UTF-8 text, as defined by [Input](16-input-model-and-output.md#content-annotations). The annotations survive native message serialization without becoming provider options or prompt text. Source-typed input observations carry `content: str` separately from those native request values. Display annotations are presentation hints, not redaction or authorization. History replacement does not identify or delete individual overlays by position, hash, display flags, or matching text. It rebuilds context from the summary, system parts, and separately retained semantic inputs rather than copying historical user parts. Canonical content annotations preserve their corresponding request parts and item order; they do not establish context cleanup or execution authority. Legacy context-ownership metadata is inert in imported history and is omitted when constructing replacement requests; unrelated request metadata is preserved. No import migration or rewriting of stored snapshots is required.
 
 ## Eligible Requests and Placement
 
@@ -183,17 +183,48 @@ Request-dynamic overlays never mutate instructions or tool schemas. The [CodeAct
 
 A Capability that intentionally supports hot reload reads the run-local Environment change journal and refreshes its owned surface at the next eligible boundary. Harness observes committed changes independently; no synthetic mount-change notice is enqueued to trigger the fresh overlay. Ordinary operation readiness stays inside the selected Environment operation and does not force unrelated model-surface preparation. Content that transforms history for correctness, including compaction and handoff, remains in the owning native history/model-request hook and executes before the coordinator's structural commit.
 
-Every logical Harness Run recomputes fresh Agent and Environment context at its first eligible input boundary and every ordinary complete tool-result boundary. A replacement durable execution attempt can materialize different mount IDs, descriptors, permissions, availability, provider generations, runtime usage, or working state under the same Host definition. Comparison uses the resulting rendered content, not definition identity or Run identity. Identical snapshots already present in retained history are not appended again, including across Runs. No mount-change prompt or enqueue notice is required. Provider-suspended and deferred exact continuations remain untouched until they advance, after which the first ordinary eligible boundary applies the same comparison.
+Every logical Harness Run resolves fresh Agent and Environment context at its first eligible input boundary and every ordinary complete tool-result boundary. A replacement durable execution attempt can materialize different mount descriptors, permissions, availability, runtime usage, or working state under the same Host definition. Each source decides which of those observations to contribute. Exact retry and resume boundaries bypass projection until they advance.
 
-### Per-block Emission
+### Retained Context and Source-Owned Injection
 
-`ON_CHANGE` is the default snapshot policy. Its identity is `(source_id, key)`; placement and attribution fields do not create another identity. A producer uses stable keys when independently changing blocks share a source. After validating the entire projection, Harness compares each snapshot's SHA-256 digest with the latest canonical snapshot of that identity. Equality suppresses the new block and its input observations. A changed snapshot is appended without editing, replacing, or deleting any old block. Comparing only the latest value preserves `A → B → A` transitions. Unmarked historical content does not establish a comparison baseline. It remains untouched; a current snapshot is appended once with its marker. No historical migration or downgrade compatibility is provided.
+The coordinator supplies `request.history`, an immutable detached observation of the current retained context after history processing. `history.contains(block)` is true when the exact `(source_id, key, content)` occurs **anywhere** in canonical marked context. For retained `A → B`, both `contains(A)` and `contains(B)` are true. Placement and attribution are not identity. Unmarked authored text and text whose digest no longer matches its canonical marker do not establish presence. The query neither reserves delivery nor changes history.
 
-`ALWAYS` preserves owner-triggered event and incremental-delivery semantics. Repeated equal event payloads remain distinct deliveries; they do not pin snapshot comparison. File-memory deltas, record-memory recall deliveries, handoff reminders, and environment-recovery notices use this policy. The owner still determines when a delivery exists; `ALWAYS` does not turn an absent event into a request-time poll.
+`history.latest(source_id, key)` separately reads the last retained rendered value, or returns `None` when absent or when a transport cannot establish current ordering. It is an observation for owners describing reversible state, not the meaning of `contains`. A state owner conveys `A → B → A` even when the old A body remains available. It may reassert the current snapshot or emit a version-selection notice referencing a retained resource body.
 
-Returning no block means no update, not clearing a previous value. A snapshot producer renders a deterministic explicit empty state when removal must be visible, and a distinct unavailable state when observation fails. Notes keep their input-only cadence; tasks and CodeAct stored-key snapshots can publish explicit emptiness at their eligible boundaries. Disabled producers do not emit artificial clears. Runtime snapshots containing genuinely changing time or usage remain changes; comparison never omits volatile text from the digest.
+Every producer makes its decision **before returning** its contribution. Resource owners can reuse retained bodies through `contains`; state owners can compare `latest` and describe actual transitions; events, reminders, and incremental deliveries retain their own triggers and cursors. Returning a block requests its injection, including repeated identical event text. The coordinator validates and commits exactly the complete outer projection without automatic suppression or an emission-policy flag. An outer middleware that rewrites a body owns its resulting injection decision: the history query describes committed rendered content, not the inner producer's pre-transformation text.
 
-Canonical history is the only durable comparison baseline. There is no persisted last-hash watermark, version counter, or global emission switch. Checkpoint continuation and forks reuse the snapshots actually retained. Compaction or handoff drops discarded comparison pins with the replaced history, so current snapshots are emitted again. Exact retry and resume boundaries bypass projection rather than manufacturing refresh blocks.
+Returning no block means no update. Enabled state producers render deterministic explicit emptiness for meaningful removals and distinguish it from observation failure. Disabled producers do not manufacture clears. Runtime time and usage remain genuine content changes. Only returned blocks produce new context input observations.
+
+Canonical retained history is the durable presence source. Checkpoint continuation and forks query their selected history. Compaction and handoff forget discarded bodies naturally, so owners can supply missing context again. No global watermark or last-hash state survives history replacement. Metadata is persisted outside prompt text and does not grant authority.
+
+### First-Party Context Ownership
+
+All dynamic rows use the same typed contribution, canonical metadata, validation, and commit contract. `INPUT` and `TOOL_RESULTS` denote eligible ordinary boundaries. An omitted key is `None`; each listed key identifies independently evolving content.
+
+| Source                                | Key                     | Eligible boundary / placement              | Owner decision                                                                                         |
+| ------------------------------------- | ----------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| `a13n.environment-mounts`             | —                       | Both; input preamble, tool epilogue        | Current mount state; append changed rendered value                                                     |
+| `a13n.agent-context`                  | —                       | Both; epilogue                             | Current Harness identity, replaced by UI identity when embedded there; append changed value            |
+| `a13n.runtime-context`                | —                       | Both; epilogue                             | Current time, usage and selected metadata; append changed value                                        |
+| `a13n.workspace-outline`              | Configured logical root | INPUT; preamble                            | Current metadata-only tree; append changes including restoration                                       |
+| `a13n.file-context`                   | `file:<logical-path>`   | INPUT; epilogue                            | Independent frozen file body; reuse any retained identical body                                        |
+| `a13n.file-context`                   | `files`                 | INPUT; epilogue                            | Current path/content-digest selection; append changes or explicit empty selection                      |
+| `a13n.file-context`                   | `project-guidance`      | INPUT; epilogue                            | Separately bounded entrypoint discovery; append changed index, empty or unavailable state when enabled |
+| `a13n.working-state.notes`            | —                       | INPUT; epilogue                            | Current notes including explicit empty state                                                           |
+| `a13n.working-state.tasks`            | —                       | Both; epilogue                             | Current tasks including explicit empty state                                                           |
+| `codeact.stored_keys`                 | —                       | Both; epilogue                             | Current stored-key index including explicit empty state                                                |
+| `tool_execution.summary`              | —                       | Both; epilogue                             | Bounded active/unread attention snapshot; absence is not success                                       |
+| `a13n.handoff`                        | —                       | Threshold-triggered TOOL_RESULTS; epilogue | Reminder trigger; identical reminders may repeat                                                       |
+| `a13n.memory.file`                    | Memory mount            | First eligible INPUT; preamble             | Owner read guards and incremental delivery cursor                                                      |
+| `a13n.memory.record`                  | Memory mount            | First eligible INPUT; preamble             | Query-specific owner recall delivery                                                                   |
+| `a13n-harness-ui.global-guidance`     | —                       | INPUT; epilogue                            | Captured global guidance or explicit empty state                                                       |
+| `a13n-harness-ui.surface`             | —                       | Both; epilogue                             | Current response-surface guidance; append transitions including restoration                            |
+| `a13n-harness-ui.browser-context`     | —                       | Both; epilogue                             | Current availability/takeover state; observation never registers a reminder                            |
+| `a13n.service-context`                | —                       | Both; epilogue                             | Current Service identity and computer admission                                                        |
+| `a13n.service.browser-context`        | —                       | Both; epilogue                             | Current browser availability; no preparation or reminder registration                                  |
+| `service.client_environment_recovery` | —                       | Owner-triggered tool epilogue              | Recovery-cycle event; equal payloads from distinct cycles remain deliveries                            |
+
+Semantic inputs use stable `source_id` provenance without a `model_context` marker: each submission's surface origin, selected MCP app context, Thread-message envelopes, lifecycle/handback/completion notices, and model-recovery or goal continuations represent occurrences. History replacement protocols and handoff summaries retain their owning operation metadata. They are not polled snapshots and do not enter block-presence queries merely because their text matches a block.
 
 `DynamicEnvironmentCapability` can be omitted or configured by its Host. Environment lifecycle and the bounded provider-neutral Environment block remain available through the default terminal projection; the Capability adds model tools and stable routing guidance. Harness observes committed mount changes independently of the model-visible snapshot. With no model-visible mount, stable tools can report typed unavailability and later become usable after a Host mount. There is no global callback list, source priority, or arbitrary prompt-rewriting switch.
 

@@ -60,7 +60,10 @@ class RootInputFiles:
                 *parts,
                 TextContent(
                     "Long text was kept inline because this Run has no enabled file reader for the thread-files mount.",
-                    metadata={"harness_ui": {"long_text_skipped": True}},
+                    metadata={
+                        "source_id": "a13n-harness-ui.long-text-notice",
+                        "harness_ui": {"long_text_skipped": True},
+                    },
                 ),
             )
         # Resolve through the entered Environment before retaining any input. This

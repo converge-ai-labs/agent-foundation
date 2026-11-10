@@ -30,13 +30,11 @@ class ModelContext:
         projection = await handler(request)
         computer = await project(self.storage, ctx.environment.dump_states())
         payload = json.dumps({"service_run_id": self.run_id, **({"computer": computer} if computer else {})})
-        return ModelContextProjection(
-            blocks=(
-                *projection.blocks,
-                ModelContextBlock(
-                    source_id="a13n.service-context",
-                    placement=ModelContextPlacement.REQUEST_EPILOGUE,
-                    content=f'<service-context source="a13n-service">\n{payload}\n</service-context>',
-                ),
-            )
+        block = ModelContextBlock(
+            source_id="a13n.service-context",
+            placement=ModelContextPlacement.REQUEST_EPILOGUE,
+            content=f'<service-context source="a13n-service">\n{payload}\n</service-context>',
         )
+        if request.history.latest(block.source_id, block.key) == block.content:
+            return projection
+        return ModelContextProjection(blocks=(*projection.blocks, block))

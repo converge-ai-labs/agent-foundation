@@ -84,15 +84,18 @@ class ToolExecutionCapability(AbstractModelContextCapability):
                 "\nFinished executions without retained results are no longer listed. "
                 "Use tool_execution_info to inspect their final status; absence does not establish success."
             )
+        block = ModelContextBlock(
+            source_id="tool_execution.summary",
+            context_group="runtime_state",
+            placement=ModelContextPlacement.REQUEST_EPILOGUE,
+            content=f"Tool executions requiring attention (status only; results are not consumed): {summary}",
+        )
+        if request.history.latest(block.source_id, block.key) == block.content:
+            return projection
         return ModelContextProjection(
             blocks=(
                 *projection.blocks,
-                ModelContextBlock(
-                    source_id="tool_execution.summary",
-                    context_group="runtime_state",
-                    placement=ModelContextPlacement.REQUEST_EPILOGUE,
-                    content=f"Tool executions requiring attention (status only; results are not consumed): {summary}",
-                ),
+                block,
             ),
         )
 

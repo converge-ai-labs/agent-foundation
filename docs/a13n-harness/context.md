@@ -20,35 +20,40 @@ A useful next turn needs both current information and remembered decisions. Cont
 
 Start with the [two-Run example](#context-composition), then add workspace guidance or compaction as needed. [State and Resume](state-and-resume.md) explains how the Host saves and continues the Thread.
 
-## Append-on-change context
+## Source-owned context injection
 
-Snapshot context is recomputed at its eligible request boundaries and appended only when its final rendered text changes. Harness compares each `(source_id, key)` block with the latest matching snapshot in canonical history. Old blocks remain unchanged, preserving the provider-visible prefix. An `A → B → A` transition appends both changes; compaction and handoff re-emit snapshots removed with the old history.
+Each context producer decides what to inject through `AbstractModelContextCapability` or `RunBindings.model_context`. Harness supplies the same read-only `request.history` view to all producers, validates the complete returned projection, and commits every returned block. Stable `(source_id, key)` identities distinguish independently changing blocks; canonical metadata records that identity, placement, and a SHA-256 content digest outside prompt text.
 
-Custom producers return `ModelContextBlock` values through `AbstractModelContextCapability` or `RunBindings.model_context`. Use stable keys for independently changing blocks from one source:
+Use `history.contains(block)` to ask whether the exact body is anywhere in current retained context. A later same-identity B does not make retained A absent. This resource producer reuses its body while it remains available:
 
 ```python
 from a13n_harness.model_context import (
+    AbstractModelContextCapability,
     ModelContextBlock,
-    ModelContextEmission,
     ModelContextPlacement,
+    ModelContextProjection,
 )
 
-snapshot = ModelContextBlock(
-    source_id="example.status",
-    key="workspace",
-    placement=ModelContextPlacement.REQUEST_EPILOGUE,
-    content="Workspace status: ready.",
-    # ON_CHANGE is the default.
-)
-event = ModelContextBlock(
-    source_id="example.notice",
-    placement=ModelContextPlacement.REQUEST_EPILOGUE,
-    content="A new delivery is available.",
-    emission=ModelContextEmission.ALWAYS,
-)
+
+class WorkspaceGuide(AbstractModelContextCapability):
+    async def wrap_model_context(self, ctx, request, handler):
+        projection = await handler(request)
+        block = ModelContextBlock(
+            source_id="example.guide",
+            key="workspace",
+            placement=ModelContextPlacement.REQUEST_EPILOGUE,
+            content="Workspace guidance: run the focused tests before committing.",
+        )
+        if request.history.contains(block):
+            return projection
+        return ModelContextProjection(blocks=(*projection.blocks, block))
 ```
 
-Use `ALWAYS` for events and incremental deliveries whose owner must preserve equal payloads as separate occurrences. This is a per-block setting, not a global deduplication switch. Existing custom producers now default to `ON_CHANGE`; set `ALWAYS` explicitly when repeated equal text represents a new event. Returning no block means no update. Render a deterministic empty-state block to report removal, and distinguish emptiness from unavailable observation. The complete projection is validated before comparison. Suppressed blocks produce no new context-input observations.
+For current state, the owner can separately read `history.latest(source_id, key)` and append a snapshot or selection notice when it changes. That preserves `A → B → A` transitions. File context keeps independent file bodies and a current path/digest selection; the selection can restore A without repeating its retained body. Meaningful removals need an explicit empty state; unavailable observation is a different state.
+
+Events, reminders, and incremental deliveries keep their owner-controlled triggers and cursors. Return the event when it occurs, even if an earlier event has identical text; there is no emission flag or framework post-filter. If outer middleware rewrites a block, that middleware owns its final injection decision against committed rendered content.
+
+Checkpoint continuation and forks query the selected retained history. After compaction or handoff removes a body, `contains` becomes false and its producer can supply it again. Exact retry/resume boundaries stay untouched. In Live sessions, the view includes confirmed connection context; pending content does not establish presence, and ambiguous order leaves `latest` unknown without erasing confirmed older bodies.
 
 ## Run configuration
 

@@ -40,6 +40,7 @@ from a13n_harness.capabilities import (
     WorkspaceOutlineCapability,
     WorkspaceOutlineConfiguration,
 )
+from a13n_harness.content import request_input_content
 from a13n_harness.environment import (
     EnvironmentAction,
     EnvironmentMount,
@@ -1912,7 +1913,8 @@ async def test_runtime_and_file_context_preserve_history_and_refresh_current_val
     assert '"tenant":"beta"' in second_text
     assert "secret" not in second_text
     assert second_text.count('<runtime-context source="a13n-harness">') == 2
-    assert second_text.count('<file-context source="a13n-harness">') == 2
+    # Each run carries its changed selection, independent file, and guidance index.
+    assert second_text.count('<file-context source="a13n-harness">') == 6
 
 
 def _user_text(messages: list[ModelMessage]) -> str:
@@ -2057,3 +2059,35 @@ def test_restored_summary_is_read_from_content_not_the_input_boundary(kind: str,
     reloaded = HarnessState.model_validate_json(saved.model_dump_json())
     assert restored_history_summary(reloaded.message_history) == summary
     assert restored_history_summary(original) is None
+
+
+async def test_workspace_outline_owner_reports_a_b_a_and_skips_unchanged(tmp_path: Path) -> None:
+    seen = []
+
+    async def stream(messages, info):
+        request = messages[-1]
+        seen.append(
+            [item for item in request_input_content(request) if item.metadata.source_id == "a13n.workspace-outline"]
+        )
+        yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(WorkspaceOutlineCapability(WorkspaceOutlineConfiguration(root="/workspace")),),
+    )
+    previous = None
+    for present in (False, False, True, False):
+        if present:
+            (tmp_path / "new.txt").write_text("not loaded")
+        else:
+            (tmp_path / "new.txt").unlink(missing_ok=True)
+        result = await executable.run(
+            "inspect", previous_state=previous, bindings=RunBindings.embedded(environment=_local_binding(tmp_path))
+        )
+        previous = result.state
+    assert [len(items) for items in seen] == [1, 0, 1, 1]
+    assert seen[0][0].value == seen[3][0].value
+    assert seen[0][0].value != seen[2][0].value
+    assert seen[0][0].metadata.model_extra["model_context"]["key"] == "/workspace"

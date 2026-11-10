@@ -10,7 +10,6 @@ from a13n_harness.environment.session_recovery import EnvdSessionBorrower
 from a13n_harness.model_context import (
     AbstractModelContextCapability,
     ModelContextBlock,
-    ModelContextEmission,
     ModelContextNext,
     ModelContextPlacement,
     ModelContextProjection,
@@ -130,7 +129,6 @@ class Recovery(AbstractModelContextCapability):
                 *projection.blocks,
                 ModelContextBlock(
                     source_id=_NAMESPACE,
-                    emission=ModelContextEmission.ALWAYS,
                     placement=ModelContextPlacement.REQUEST_EPILOGUE,
                     content="\n".join(notices),
                 ),

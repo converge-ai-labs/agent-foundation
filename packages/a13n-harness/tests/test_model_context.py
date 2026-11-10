@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncIterator
 from copy import deepcopy
+from dataclasses import replace
 from itertools import pairwise
 from typing import Any, cast
 
@@ -22,6 +23,7 @@ from a13n_harness.model_context import (
     AbstractModelContextCapability,
     ModelContextBlock,
     ModelContextCoordinatorCapability,
+    ModelContextHistory,
     ModelContextInputOrigin,
     ModelContextNext,
     ModelContextPlacement,
@@ -101,16 +103,14 @@ class _ProjectionCapability(AbstractModelContextCapability):
         self._calls.append("capability:before")
         projection = await handler(request)
         self._calls.append("capability:after")
-        return ModelContextProjection(
-            blocks=(
-                *projection.blocks,
-                ModelContextBlock(
-                    source_id=self.id,
-                    placement=ModelContextPlacement.REQUEST_EPILOGUE,
-                    content="plugin context",
-                ),
-            )
+        block = ModelContextBlock(
+            source_id=self.id,
+            placement=ModelContextPlacement.REQUEST_EPILOGUE,
+            content="plugin context",
         )
+        if request.history.contains(block):
+            return projection
+        return ModelContextProjection(blocks=(*projection.blocks, block))
 
 
 class _SequencedProjectionCapability(AbstractModelContextCapability):
@@ -304,7 +304,7 @@ async def test_capability_injection_preserves_the_active_prefix_across_model_req
     result = await executable.run("start", bindings=RunBindings.embedded())
 
     assert result.output_or_raise() == "done"
-    assert projection_requests == [
+    assert [replace(request, history=ModelContextHistory()) for request in projection_requests] == [
         ModelContextProjectionRequest(
             kind=ModelContextRequestKind.INPUT,
             input_origin=ModelContextInputOrigin.USER,
@@ -824,4 +824,4 @@ async def test_unchanged_context_does_not_emit_new_input_observations_across_run
     assert len(calls) == 6  # Fresh projection still runs at every eligible boundary.
     assert [event.content for event in observed] == ["plugin context"]
     assert not observed[0].metadata.display
-    assert observed[0].metadata.model_extra["model_context"]["emission"] == "on_change"
+    assert observed[0].metadata.model_extra["model_context"]["placement"] == "request_epilogue"

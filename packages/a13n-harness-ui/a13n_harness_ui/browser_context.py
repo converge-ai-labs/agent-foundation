@@ -88,13 +88,16 @@ class BrowserContextCapability(AbstractModelContextCapability):
                 message += (
                     " Browser tools are absent for this Run. Continue other work; a later Run can capture recovery."
                 )
+        block = ModelContextBlock(
+            source_id="a13n-harness-ui.browser-context",
+            placement=ModelContextPlacement.REQUEST_EPILOGUE,
+            content=f"<browser-context>\n{escape(message, quote=False)}\n</browser-context>",
+        )
+        if request.history.latest(block.source_id, block.key) == block.content:
+            return projection
         return ModelContextProjection(
             blocks=(
                 *projection.blocks,
-                ModelContextBlock(
-                    source_id="a13n-harness-ui.browser-context",
-                    placement=ModelContextPlacement.REQUEST_EPILOGUE,
-                    content=f"<browser-context>\n{escape(message, quote=False)}\n</browser-context>",
-                ),
+                block,
             )
         )

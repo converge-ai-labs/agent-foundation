@@ -271,7 +271,7 @@ class ThreadToolController:
             )
         result = await self._run_or_steer(
             thread_id=owner_id,
-            prompt=[TextContent(message, metadata={"display": False})],
+            prompt=[TextContent(message, metadata={"display": False, "source_id": "a13n-harness-ui.thread-lifecycle"})],
         )
         if not result["ok"]:
             get_logger(__name__).info(
@@ -792,7 +792,10 @@ def _thread_input(source: ThreadSummary, text: str, *, context: str | None = Non
             "keep the result in this Thread. Do not acknowledge reports or redispatch existing work."
         )
     return (
-        TextContent(context or f"Message from Thread {source.thread_id}:", metadata={"display": False}),
+        TextContent(
+            context or f"Message from Thread {source.thread_id}:",
+            metadata={"display": False, "source_id": "a13n-harness-ui.thread-message-context"},
+        ),
         TextContent(
             text,
             metadata={

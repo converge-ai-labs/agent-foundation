@@ -23,7 +23,6 @@ from a13n_harness import (
 from a13n_harness.capabilities import CodeActCapability
 from a13n_harness.model_context import (
     ModelContextBlock,
-    ModelContextEmission,
     ModelContextPlacement,
     ModelContextProjection,
     ModelContextRequestKind,
@@ -240,22 +239,19 @@ class _ContextProjection:
     def __init__(self) -> None:
         self.requests = []
         self.value: str | None = None
-        self.emission = ModelContextEmission.ON_CHANGE
+        self.repeat = False
 
     async def wrap_model_context(self, ctx, request, handler):
         projection = await handler(request)
         self.requests.append(request)
-        return ModelContextProjection(
-            blocks=(
-                *projection.blocks,
-                ModelContextBlock(
-                    source_id="test.live-context",
-                    placement=ModelContextPlacement.REQUEST_EPILOGUE,
-                    content=self.value if self.value is not None else f"Live context {len(self.requests)}",
-                    emission=self.emission,
-                ),
-            )
+        block = ModelContextBlock(
+            source_id="test.live-context",
+            placement=ModelContextPlacement.REQUEST_EPILOGUE,
+            content=self.value if self.value is not None else f"Live context {len(self.requests)}",
         )
+        if not self.repeat and request.history.latest(block.source_id, block.key) == block.content:
+            return projection
+        return ModelContextProjection(blocks=(*projection.blocks, block))
 
 
 async def test_live_tool_result_preserves_content_and_refreshes_context_before_send() -> None:
@@ -806,14 +802,14 @@ async def test_live_plugin_cleanup_failure_withholds_terminal_result() -> None:
     assert "Keep before plugin failure" in (await live.export_state()).model_dump_json()
 
 
-@pytest.mark.parametrize("emission", [ModelContextEmission.ON_CHANGE, ModelContextEmission.ALWAYS])
-async def test_live_snapshot_delivery_uses_confirmed_connection_context(emission) -> None:
+@pytest.mark.parametrize("repeat", [False, True])
+async def test_live_snapshot_delivery_uses_confirmed_connection_context(repeat) -> None:
     def lookup() -> str:
         return "found"
 
     projection = _ContextProjection()
     projection.value = "snapshot A"
-    projection.emission = emission
+    projection.repeat = repeat
     executable = HarnessBuilder().build(
         AgentDefinition(output_type=str, agent=AgentSpec(), capabilities=(Capability(tools=[lookup]),))
     )
@@ -836,12 +832,12 @@ async def test_live_snapshot_delivery_uses_confirmed_connection_context(emission
                 for item in result.content or ()
                 if isinstance(item, TextContent) and item.metadata.get("source_id") == "test.live-context"
             ]
-            expected = emission is ModelContextEmission.ALWAYS or index in (1, 3)
+            expected = repeat or index in (1, 3)
             assert bool(items) is expected
             if expected:
                 assert items[0].content == value
                 assert items[0].metadata["display"] is False
-                assert items[0].metadata["model_context"]["emission"] == emission.value
+                assert items[0].metadata["model_context"]["placement"] == "request_epilogue"
         await live.close()
         await consumer
     assert live.result is not None
@@ -856,9 +852,7 @@ async def test_live_snapshot_delivery_uses_confirmed_connection_context(emission
         if item.metadata.source_id == "test.live-context" and isinstance(item.value, TextContent)
     ]
     assert snapshots == (
-        ["snapshot A", "snapshot B", "snapshot B", "snapshot A"]
-        if emission is ModelContextEmission.ALWAYS
-        else ["snapshot B", "snapshot A"]
+        ["snapshot A", "snapshot B", "snapshot B", "snapshot A"] if repeat else ["snapshot B", "snapshot A"]
     )
 
 
@@ -889,29 +883,49 @@ async def test_live_pending_changes_cannot_pin_later_projection_or_replayed_even
             else None,
         )
 
+    def select(call_id, value):
+        # Selection belongs to the producer. The bridge only records delivery.
+        selected = ModelContextProjection(
+            blocks=tuple(
+                block for block in value.blocks if bridge.history.latest(block.source_id, block.key) != block.content
+            )
+        )
+        bridge.record_pending(call_id, selected)
+        return selected
+
     a, b = projection("A"), projection("B")
     bridge.initial = a
     bridge.connected()
-    assert not bridge.select("unchanged", a).blocks
-    assert bridge.select("first", b) == b
-    assert bridge.select("second", a) == a
+    assert not select("unchanged", a).blocks
+    assert select("first", b) == b
+    assert bridge.history.contains(a.blocks[0])
+    assert bridge.history.latest("test.snapshot") is None
+    assert select("second", a) == a
     # Result observations may replay in call order, not actual send order.
     bridge.settled(confirmed("first", b))
     bridge.settled(confirmed("second", a))
-    assert bridge.select("repair", a) == a
+    assert bridge.history.contains(b.blocks[0])
+    assert bridge.history.latest("test.snapshot") is None
+    assert select("repair", a) == a
     bridge.settled(confirmed("repair", a))
-    assert not bridge.select("stable", a).blocks
-    assert bridge.select("failed", b) == b
+    assert not select("stable", a).blocks
+    assert bridge.history.contains(a.blocks[0])
+    assert select("failed", b) == b
     bridge.settled(confirmed("failed", b, outcome="interrupted", include_content=False))
-    assert bridge.select("resend", b) == b
+    assert select("resend", b) == b
     bridge.settled(confirmed("resend", b, include_content=False))
-    assert bridge.select("missing", b) == b
+    assert select("missing", b) == b
     bridge.reconnected()
     assert not bridge.delivered.blocks
     assert not bridge.pending
     assert not bridge.ambiguous
     # A result from the old connection cannot establish the new baseline.
     bridge.settled(confirmed("missing", b))
-    assert bridge.select("new-connection", a) == a
+    assert select("new-connection", a) == a
     bridge.settled(confirmed("new-connection", a))
-    assert not bridge.select("new-stable", a).blocks
+    assert not select("new-stable", a).blocks
+    assert select("next-b", b) == b
+    bridge.settled(confirmed("next-b", b))
+    assert bridge.history.contains(a.blocks[0])
+    assert bridge.history.contains(b.blocks[0])
+    assert bridge.history.latest("test.snapshot") == "B"

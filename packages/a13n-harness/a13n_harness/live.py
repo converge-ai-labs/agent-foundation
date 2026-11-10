@@ -42,18 +42,16 @@ from pydantic_ai.usage import RunUsage, UsageLimits
 
 from a13n_harness._run_stream import HarnessRunStream
 from a13n_harness._usage_pricing import _cost_source, price_response
-from a13n_harness.content import input_request
 from a13n_harness.context import AgentContext, RunBindings
 from a13n_harness.environment.sources import EnvironmentEntry
 from a13n_harness.errors import PluginError, RunError
 from a13n_harness.events import enqueued_input_events
 from a13n_harness.model_context import (
-    ModelContextEmission,
+    ModelContextHistory,
     ModelContextInputOrigin,
     ModelContextProjection,
     ModelContextProjectionRequest,
     ModelContextRequestKind,
-    _drop_unchanged,
     _project_model_context,
 )
 from a13n_harness.plugins import PluginRunExchange
@@ -85,6 +83,7 @@ class _LiveCapability(AbstractCapability[AgentContext]):
         self.delivered = ModelContextProjection()
         self.pending: dict[str, ModelContextProjection] = {}
         self.ambiguous: set[tuple[str, str | None]] = set()
+        self.unordered: set[tuple[str, str | None]] = set()
 
     def connected(self) -> None:
         # Connection instructions are not canonical user input. Keep only this
@@ -95,44 +94,41 @@ class _LiveCapability(AbstractCapability[AgentContext]):
         self.delivered = ModelContextProjection()
         self.pending.clear()
         self.ambiguous.clear()
+        self.unordered.clear()
 
-    def select(self, call_id: str, projection: ModelContextProjection) -> ModelContextProjection:
-        selected = _drop_unchanged(
-            [input_request([block.content_item() for block in self.delivered.blocks])], projection
-        )
-        identities = {(block.source_id, block.key) for block in selected.blocks}
+    @property
+    def history(self) -> ModelContextHistory:
+        # Pending delivery makes current order unknown, not older content absent.
+        pending = {(block.source_id, block.key) for value in self.pending.values() for block in value.blocks}
+        return ModelContextHistory.from_blocks(self.delivered.blocks, unordered=frozenset(pending | self.unordered))
+
+    def record_pending(self, call_id: str, projection: ModelContextProjection) -> None:
+        identities = {(block.source_id, block.key) for block in projection.blocks}
         for pending in self.pending.values():
             self.ambiguous.update(identities & {(block.source_id, block.key) for block in pending.blocks})
-        # Invalidate before returning to native normalization/send. An unsent B
-        # must not let a concurrent A be suppressed against an older A.
-        self.delivered = ModelContextProjection(
-            blocks=tuple(block for block in self.delivered.blocks if (block.source_id, block.key) not in identities)
-        )
-        if selected.blocks:
-            self.pending[call_id] = selected
-        return selected
+        self.unordered.update(self.ambiguous)
+        if projection.blocks:
+            self.pending[call_id] = projection
 
     def settled(self, event: FunctionToolResultEvent) -> None:
         projection = self.pending.pop(event.part.tool_call_id, ModelContextProjection())
         content = event.content or ()
         if isinstance(event.part, ToolReturnPart) and event.part.outcome == "success":
-            self.delivered = ModelContextProjection(
-                blocks=(
-                    *self.delivered.blocks,
-                    *(
-                        block
-                        for block in projection.blocks
-                        if block.emission is ModelContextEmission.ON_CHANGE
-                        and (block.source_id, block.key) not in self.ambiguous
-                        and any(
-                            isinstance(item, TextContent)
-                            and item.content == block.content
-                            and item.metadata == block.content_item().metadata.model_dump(mode="json")
-                            for item in content
-                        )
-                    ),
+            confirmed = tuple(
+                block
+                for block in projection.blocks
+                if any(
+                    isinstance(item, TextContent)
+                    and item.content == block.content
+                    and item.metadata == block.content_item().metadata.model_dump(mode="json")
+                    for item in content
                 )
             )
+            self.delivered = ModelContextProjection(blocks=(*self.delivered.blocks, *confirmed))
+            for block in confirmed:
+                identity = (block.source_id, block.key)
+                if identity not in self.ambiguous:
+                    self.unordered.discard(identity)
         remaining = {(block.source_id, block.key) for pending in self.pending.values() for block in pending.blocks}
         self.ambiguous.intersection_update(remaining)
 
@@ -180,9 +176,10 @@ class _LiveCapability(AbstractCapability[AgentContext]):
             ModelContextProjectionRequest(
                 kind=ModelContextRequestKind.TOOL_RESULTS,
                 tool_call_ids=(call_id,),
+                history=self.history,
             ),
         )
-        projection = self.select(call_id, projection)
+        self.record_pending(call_id, projection)
         if not projection.blocks:
             return result
         extra = [

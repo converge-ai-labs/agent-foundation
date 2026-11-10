@@ -7,6 +7,7 @@ from collections.abc import Sequence
 from copy import copy, deepcopy
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
+from hashlib import sha256
 from secrets import token_urlsafe
 from typing import Any, Literal, cast
 from xml.etree.ElementTree import Element, SubElement, tostring
@@ -87,7 +88,6 @@ from a13n_harness.model_context import (
     AbstractModelContextCapability,
     ModelContextBlock,
     ModelContextCoordinatorCapability,
-    ModelContextEmission,
     ModelContextNext,
     ModelContextPlacement,
     ModelContextProjection,
@@ -185,15 +185,18 @@ class RuntimeContextCapability(AbstractModelContextCapability):
                 code="runtime_context_limit_invalid",
             )
         reminder = f"{_RUNTIME_OPEN}\n{encoded.decode('utf-8')}\n{_RUNTIME_CLOSE}"
+        block = ModelContextBlock(
+            source_id=RUNTIME_CONTEXT_CAPABILITY_ID,
+            context_group="runtime_state",
+            placement=ModelContextPlacement.REQUEST_EPILOGUE,
+            content=reminder,
+        )
+        if request.history.latest(block.source_id, block.key) == block.content:
+            return projection
         return ModelContextProjection(
             blocks=(
                 *projection.blocks,
-                ModelContextBlock(
-                    source_id=RUNTIME_CONTEXT_CAPABILITY_ID,
-                    context_group="runtime_state",
-                    placement=ModelContextPlacement.REQUEST_EPILOGUE,
-                    content=reminder,
-                ),
+                block,
             )
         )
 
@@ -265,15 +268,19 @@ class WorkspaceOutlineCapability(AbstractModelContextCapability):
                 code="workspace_outline_stale",
                 details={"root": self.configuration.root},
             )
+        block = ModelContextBlock(
+            source_id=WORKSPACE_OUTLINE_CAPABILITY_ID,
+            key=self.configuration.root,
+            context_group="environment_context",
+            placement=ModelContextPlacement.INPUT_PREAMBLE,
+            content=content,
+        )
+        if request.history.latest(block.source_id, block.key) == block.content:
+            return projection
         return ModelContextProjection(
             blocks=(
                 *projection.blocks,
-                ModelContextBlock(
-                    source_id=WORKSPACE_OUTLINE_CAPABILITY_ID,
-                    context_group="environment_context",
-                    placement=ModelContextPlacement.INPUT_PREAMBLE,
-                    content=content,
-                ),
+                block,
             )
         )
 
@@ -444,9 +451,9 @@ async def _project_guidance(context: AgentContext) -> str | None:
         async with context.environment.open_files(selection) as files:
             content = await _scan_project_guidance(files)
         current = context.environment.select_files(".")
-    except EnvironmentError:
-        # Discovery is optional and never widens the current mount's read permissions.
-        return None
+    except EnvironmentError as exc:
+        # Discovery never widens the current mount's read permissions.
+        return f"Project guidance discovery is unavailable ({exc.code})."
     if current != selection:
         raise DefinitionError(
             "The project guidance root changed while it was being scanned.", code="file_context_stale"
@@ -544,25 +551,53 @@ class _FileContextRunCapability(FileContextCapability):
         projection = await handler(request)
         if request.kind is not ModelContextRequestKind.INPUT:
             return projection
-        parts = [_FILE_CONTEXT_OPEN]
-        if not self._sections and not self._guidance:
-            parts.append("No file context is loaded.")
-        for path, content in self._sections:
-            parts.extend((f'<file path="{_xml_attribute(path)}">', content, "</file>"))
-        if self._guidance:
-            parts.extend(("<project-guidance>", self._guidance, "</project-guidance>"))
-        parts.append(_FILE_CONTEXT_CLOSE)
-        return ModelContextProjection(
-            blocks=(
-                *projection.blocks,
+        blocks = [
+            ModelContextBlock(
+                source_id=FILE_CONTEXT_CAPABILITY_ID,
+                key="files",
+                context_group="environment_context",
+                placement=ModelContextPlacement.REQUEST_EPILOGUE,
+                content=f"{_FILE_CONTEXT_OPEN}\nCurrent file context paths: "
+                + (
+                    "\n".join(
+                        f"{path} (sha256:{sha256(content.encode('utf-8')).hexdigest()})"
+                        for path, content in self._sections
+                    )
+                    or "No file context is loaded."
+                )
+                + f"\n{_FILE_CONTEXT_CLOSE}",
+            ),
+            *(
                 ModelContextBlock(
                     source_id=FILE_CONTEXT_CAPABILITY_ID,
+                    key=f"file:{path}",
                     context_group="environment_context",
                     placement=ModelContextPlacement.REQUEST_EPILOGUE,
-                    content="\n".join(parts),
-                ),
+                    content=f'{_FILE_CONTEXT_OPEN}\n<file path="{_xml_attribute(path)}">\n{content}\n</file>\n{_FILE_CONTEXT_CLOSE}',
+                )
+                for path, content in self._sections
+            ),
+            ModelContextBlock(
+                source_id=FILE_CONTEXT_CAPABILITY_ID,
+                key="project-guidance",
+                context_group="environment_context",
+                placement=ModelContextPlacement.REQUEST_EPILOGUE,
+                content=f"{_FILE_CONTEXT_OPEN}\n<project-guidance>\n"
+                + (self._guidance or "No project guidance entrypoints are available.")
+                + f"\n</project-guidance>\n{_FILE_CONTEXT_CLOSE}",
+            ),
+        ]
+        selected = tuple(
+            block
+            for block in blocks
+            if (block.key != "project-guidance" or self.configuration.include_project_guidance)
+            and (
+                not request.history.contains(block)
+                if block.key is not None and block.key.startswith("file:")
+                else request.history.latest(block.source_id, block.key) != block.content
             )
         )
+        return ModelContextProjection(blocks=(*projection.blocks, *selected))
 
 
 class HandoffConfiguration(BaseModel):
@@ -659,7 +694,6 @@ class HandoffCapability(AbstractModelContextCapability):
                 *projection.blocks,
                 ModelContextBlock(
                     source_id=HANDOFF_CAPABILITY_ID,
-                    emission=ModelContextEmission.ALWAYS,
                     context_group="conversation",
                     placement=ModelContextPlacement.REQUEST_EPILOGUE,
                     content=content,
