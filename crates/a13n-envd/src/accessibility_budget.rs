@@ -36,6 +36,17 @@ pub(crate) fn result_bytes(
             ));
         }
     };
+    if let Some(completeness) = full.get("completeness") {
+        let complete = completeness["complete"].as_bool() == Some(true);
+        let reason = !completeness["reason"].is_null();
+        let continuation = !completeness["continuation"].is_null();
+        if (complete && (reason || continuation)) || (!complete && !reason) {
+            return Err(super::error(
+                ErrorType::InternalError,
+                "inconsistent accessibility completeness",
+            ));
+        }
+    }
     let bytes = serde_json::to_vec(&full)
         .map_err(|_| {
             super::error(
@@ -111,6 +122,18 @@ mod tests {
             "left":0.0, "top":-f64::MAX, "right":f64::MAX, "bottom":1e-300
         });
         assert!(result_bytes("computer.a11y_inspect", &projected, 0).unwrap() <= counted + reserve);
+    }
+
+    #[test]
+    fn inconsistent_completeness_is_rejected_at_the_parent_boundary() {
+        for completeness in [
+            json!({"complete":true,"reason":"node_limit"}),
+            json!({"complete":false}),
+            json!({"complete":true,"continuation":{"root":{"backend":"atspi","backend_epoch":"aep-test","node_handle":"an-test"},"cursor_handle":"ac-test"}}),
+        ] {
+            let value = json!({"backend":"atspi","sampled_at":"2026-11-09T00:00:00Z", "nodes":[],"completeness":completeness});
+            assert!(result_bytes("computer.a11y_inspect", &value, 0).is_err());
+        }
     }
 
     #[test]

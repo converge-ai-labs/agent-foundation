@@ -240,7 +240,7 @@ while True:
     if behavior == 'loss_after_marker':
         sys.exit(0)
     count += 1
-    emit({'kind': 'result', 'value': {'epoch': sys.argv[1], 'count': count, 'pid': os.getpid()}})
+    emit({'kind': 'result', 'value': {'epoch': sys.argv[1], 'count': count, 'pid': os.getpid(), 'timeout_ms': params.get('_timeout_ms')}})
 "#;
 
     fn fixture(epoch: &str, mode: &str) -> io::Result<Command> {
@@ -269,6 +269,29 @@ while True:
         assert_eq!(failure.error.data.error_type, ErrorType::UnknownOutcome);
         assert_eq!(failure.error.data.retry_hint, RetryHint::ReconcileFirst);
         assert_eq!(failure.error.data.dispatch_stage, DispatchStage::Unknown);
+    }
+
+    #[tokio::test]
+    async fn native_timeout_uses_time_remaining_after_startup() {
+        let supervisor = supervisor();
+        let value = supervisor
+            .execute(
+                request(
+                    "computer.a11y_inspect",
+                    json!({"limits":{"timeout_ms":15000}}),
+                ),
+                Instant::now() + Duration::from_secs(2),
+                || None,
+                |epoch| {
+                    std::thread::sleep(Duration::from_millis(100));
+                    fixture(epoch, "ready")
+                },
+            )
+            .await
+            .unwrap();
+        let remaining = value["timeout_ms"].as_u64().unwrap();
+        assert!(remaining > 0 && remaining <= 1900, "{remaining}");
+        assert!(supervisor.close().await);
     }
 
     #[tokio::test]

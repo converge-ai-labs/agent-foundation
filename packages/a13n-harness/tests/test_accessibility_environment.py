@@ -339,6 +339,63 @@ async def test_content_enforces_each_requested_item_limit(monkeypatch, collectio
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("kind", ["content", "range"])
+async def test_content_nodes_keep_inventory_and_independent_node_budget(monkeypatch, kind):
+    from a13n_harness.environment.accessibility import (
+        AccessibilityContent,
+        AccessibilityRangeAcquire,
+        AccessibilityRangeResult,
+        AccessibilitySimpleRead,
+    )
+
+    mount, provider = _mount("one")
+    count = 1
+
+    async def result(node, request, *, limits, source=None):
+        item = AccessibilityNode(
+            reference=node,
+            native_role="Button",
+            sampled_at=datetime.now(UTC),
+            capabilities=(
+                {"operation": "invoke", "source": "test", "supported": "yes"},
+                {"operation": "focus", "source": "test", "supported": "candidate"},
+            ),
+        )
+        model = AccessibilityContent if kind == "content" else AccessibilityRangeResult
+        return model(
+            node=node,
+            sampled_at=datetime.now(UTC),
+            completeness=AccessibilityCompleteness(complete=True),
+            nodes=(item,) * count,
+        )
+
+    monkeypatch.setattr(provider, "read" if kind == "content" else "range", result)
+    runtime = create_environment_runtime(mounts={"one": mount}, default_mount="one")
+    async with runtime.bind(thread_id="thread-one", run_id="run-one", instance=_instance(), host_refs={}) as env:
+        node = (
+            (await env.computer.accessibility.roots(AccessibilityRootScope(), limits=AccessibilityLimits()))
+            .nodes[0]
+            .reference
+        )
+
+        async def read(limits):
+            if kind == "content":
+                return await env.computer.accessibility.read(
+                    node, AccessibilitySimpleRead(kind="selection"), limits=limits
+                )
+            return await env.computer.accessibility.range(
+                node, AccessibilityRangeAcquire(kind="selection"), limits=limits
+            )
+
+        await read(AccessibilityLimits(max_items=1))
+        count = 2
+        with pytest.raises(EnvironmentError, match="Nodes exceed"):
+            await read(AccessibilityLimits(max_nodes=1))
+        with pytest.raises(EnvironmentError, match="Items exceed"):
+            await read(AccessibilityLimits(max_items=1))
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize("kind", ["scalar", "scalars", "text", "node_name"])
 async def test_native_text_payloads_obey_utf8_limit(monkeypatch, kind):
     from a13n_harness.environment.accessibility import AccessibilityContent, AccessibilitySimpleRead

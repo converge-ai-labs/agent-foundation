@@ -142,6 +142,9 @@ impl Session {
         let (operation, _) = mutation_receipt_at(operation, method, ReceiptStage::Accepted)?;
         let readback = payload["readback"].as_bool().unwrap_or(false);
         let target = payload["node"].clone();
+        // Receive the native acknowledgement before doing optional observation.
+        // A blocked observer must not turn a known native reply into unknown.
+        payload["readback"] = Value::Bool(false);
         let id = context.operation_id.clone();
         let worker_id = id.clone();
         let supervisor = self.accessibility.clone();
@@ -163,7 +166,26 @@ impl Session {
                 }
                 Err(failure) => return Err(mutation_failure(operation, method, failure.error)),
             };
-            finish_native_mutation(operation, method, value, readback, &target)
+            let observation = async {
+                supervisor
+                    .call(
+                        "computer.a11y_inspect",
+                        serde_json::json!({"node":target,"limits":{"depth":0,"max_nodes":1},"view":"control"}),
+                        deadline,
+                        || ledger.interruption(&worker_id),
+                    )
+                    .await
+                    .map_err(|failure| failure.error)
+            };
+            finish_native_mutation_with_readback(
+                operation,
+                method,
+                value,
+                readback,
+                &target,
+                observation,
+            )
+            .await
         });
         drop(work);
         self.await_owned_operation(&id, owned).await
@@ -205,6 +227,37 @@ fn accessibility_deadline(context: &eip::EIPCallContext, timeout_ms: u32) -> tok
                 .min(context.timeout_ms.unwrap_or(15000))
                 .min(15000),
         )
+}
+
+async fn finish_native_mutation_with_readback(
+    operation: OperationLease,
+    method: &str,
+    mut value: Value,
+    readback: bool,
+    target: &Value,
+    observation: impl std::future::Future<Output = Result<Value, EIPError>>,
+) -> Result<eip::AccessibilityMutationResult, EIPError> {
+    // Validate the acknowledgement independently, before polling the observer.
+    if let Err(error) = decode_native_mutation(value.clone(), false, target) {
+        return Err(mutation_failure(operation, method, error));
+    }
+    if readback
+        && let Ok(tree) = observation.await
+        && crate::accessibility::budget::result_bytes("computer.a11y_inspect", &tree, 0).is_ok_and(
+            |bytes| bytes <= eip::AccessibilityLimits::default().max_result_bytes as usize,
+        )
+    {
+        // Observation failure (including unavailable/expired native objects)
+        // leaves the acknowledgement intact. Returned evidence is still checked
+        // by finish_native_mutation before it can become part of the result.
+        if let Some(node) = tree["nodes"]
+            .as_array()
+            .and_then(|nodes| nodes.iter().find(|node| &node["reference"] == target))
+        {
+            value["observation"] = node.clone();
+        }
+    }
+    finish_native_mutation(operation, method, value, readback, target)
 }
 
 fn finish_native_mutation(
@@ -327,6 +380,52 @@ mod tests {
         assert_eq!(result.receipt.method, METHOD);
         assert_eq!(result.receipt.session_id, "ses-test");
         assert!(ledger.resolve(METHOD, "op-test").unwrap().is_ok());
+    }
+
+    #[tokio::test]
+    async fn known_native_replies_survive_a_readback_that_never_replies() {
+        for (effect, status, outcome) in [
+            ("executed", "returned_success", ReceiptOutcome::Succeeded),
+            ("not_executed", "returned_false", ReceiptOutcome::Failed),
+        ] {
+            let (ledger, operation) = lease();
+            let observation = async {
+                tokio::time::timeout(Duration::from_millis(10), std::future::pending::<()>())
+                    .await
+                    .unwrap_err();
+                Err(protocol_error(ErrorType::Timeout, "readback timed out"))
+            };
+            let result = finish_native_mutation_with_readback(
+                operation,
+                METHOD,
+                json!({"effect":effect,"native_status":status,"dispatch_complete":true}),
+                true,
+                &target(),
+                observation,
+            )
+            .await
+            .unwrap();
+            assert_eq!(result.receipt.stage, ReceiptStage::Completed);
+            assert_eq!(result.receipt.outcome, Some(outcome));
+            assert!(result.observation.is_none());
+            assert!(ledger.resolve(METHOD, "op-test").unwrap().is_ok());
+        }
+    }
+
+    #[tokio::test]
+    async fn requested_post_acknowledgement_observation_is_retained() {
+        let (_, operation) = lease();
+        let result = finish_native_mutation_with_readback(
+            operation,
+            METHOD,
+            native(),
+            true,
+            &target(),
+            async { Ok(json!({"backend":"atspi","sampled_at":"2026-11-09T00:00:00Z","nodes":[observation()],"completeness":{"complete":true}})) },
+        )
+        .await
+        .unwrap();
+        assert!(result.observation.is_some());
     }
 
     #[test]

@@ -147,14 +147,14 @@ impl Supervisor {
 
     async fn execute(
         &self,
-        request: Request,
+        mut request: Request,
         deadline: Instant,
         interrupted: impl Fn() -> Option<OperationInterruption>,
         command: impl FnOnce(&str) -> io::Result<Command>,
     ) -> Result<Value, Failure> {
         let mutation = !request.method.starts_with("computer.a11y_");
         // Encoding and size failures are provably before any delivery.
-        let data = encode_frame(&request).map_err(|_| Failure {
+        encode_frame(&request).map_err(|_| Failure {
             error: error(
                 ErrorType::InvalidParams,
                 "accessibility request exceeds IPC limit",
@@ -250,6 +250,20 @@ impl Supervisor {
                     uncertain: false,
                 }));
             }
+            // Native cooperative budgets use the time left after queue/startup,
+            // not a fresh copy of the original public timeout.
+            if let Some(params) = request.params.as_object_mut() {
+                params.insert(
+                    "_timeout_ms".to_owned(),
+                    serde_json::json!(
+                        deadline
+                            .saturating_duration_since(Instant::now())
+                            .as_millis()
+                            .max(1) as u64
+                    ),
+                );
+            }
+            let data = encode_frame(&request)?;
             let worker = slot.as_mut().expect("started helper is present");
             // Any partially delivered request can have reached native dispatch.
             sent = true;

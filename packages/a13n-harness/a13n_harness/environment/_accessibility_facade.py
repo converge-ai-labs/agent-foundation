@@ -84,6 +84,10 @@ def _validate_owners(node: AccessibilityNodeReference, value: Any) -> None:
 
 def _item_limits(value: Any, maximum: int) -> None:
     """Bound each returned item collection, including values nested in native properties."""
+    if isinstance(value, AccessibilityNode):
+        # State/capability inventories describe a node; they are not paged
+        # content collections. Their schema and the total byte budget bound them.
+        return
     if isinstance(value, BaseModel):
         for name in type(value).model_fields:
             if name != "field_errors":
@@ -167,10 +171,10 @@ class _AccessibilityFacade:
         node: AccessibilityNodeReference | None = None,
     ) -> None:
         _validate_provider_artifacts(entered, value)
+        if len(value.nodes) > limits.max_nodes:
+            raise EnvironmentError("Nodes exceed the requested limit.", code="environment_provider_failure")
         if isinstance(value, AccessibilityTree):
-            if len(value.nodes) > limits.max_nodes or any(
-                item.reference.backend != value.backend for item in value.nodes
-            ):
+            if any(item.reference.backend != value.backend for item in value.nodes):
                 raise EnvironmentError("Invalid accessibility tree result.", code="environment_provider_failure")
             if value.nodes:
                 _same_scope(value.nodes[0].reference, value, code="environment_provider_failure")
