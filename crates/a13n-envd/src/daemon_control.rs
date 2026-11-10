@@ -28,7 +28,7 @@ Ask the native supervisor to drain and replace its daemon using the installed bi
 --runtime-dir defaults to A13N_ENVD_RUNTIME_DIR. The same account must own the runtime.
 --version restarts only when the running version differs, and verifies the installed
 binary before stopping the old daemon. Retrying the same version is idempotent.
-Success confirms process launch; the Host must still verify authenticated EIP readiness.
+Success confirms the launched child's version; the Host must still verify authenticated EIP readiness.
 This command never downloads a release or restarts an external service manager.";
 
 #[derive(Serialize, Deserialize)]
@@ -272,7 +272,18 @@ pub(crate) fn restart(
                 .read_to_end(&mut bytes)
                 .await?;
             if bytes != b"ok" {
-                return Err(io::Error::other("supervisor restart was not confirmed"));
+                let reason = std::str::from_utf8(&bytes).ok().filter(|text| {
+                    !text.is_empty()
+                        && bytes.len() as u64 <= LIMIT
+                        && !text.chars().any(char::is_control)
+                });
+                return Err(io::Error::other(match reason {
+                    Some(reason) => format!("supervisor restart refused: {reason}"),
+                    None => {
+                        "restart outcome unknown: supervisor did not return a valid confirmation"
+                            .to_owned()
+                    }
+                }));
             }
             Ok::<_, io::Error>(())
         })

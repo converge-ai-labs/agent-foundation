@@ -2,7 +2,8 @@
 
 use std::{ffi::OsString, io, process::Stdio, time::Duration};
 use tokio::{
-    process::Command,
+    io::{AsyncReadExt, AsyncWriteExt},
+    process::{ChildStdin, ChildStdout, Command},
     time::{sleep, timeout},
 };
 
@@ -54,19 +55,14 @@ async fn supervise(arguments: &[OsString]) -> io::Result<()> {
     let executable = std::env::current_exe()?;
     let control = crate::daemon_control::Control::bind().await?;
     let mut replacements = 0;
-    let mut acknowledgement = None;
+    let mut acknowledgement: Option<(tokio::net::TcpStream, Option<String>)> = None;
     loop {
-        let version = tokio::select! {
-            biased;
-            _ = stop.recv() => return Ok(()),
-            result = crate::daemon_control::binary_version(&executable) => result?,
-        };
         let mut command = Command::new(&executable);
         command
             .arg("--internal-supervised-daemon")
             .args(arguments)
             .stdin(Stdio::piped())
-            .stdout(Stdio::inherit())
+            .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
             .kill_on_drop(true);
         #[cfg(unix)]
@@ -76,57 +72,83 @@ async fn supervise(arguments: &[OsString]) -> io::Result<()> {
         #[cfg(not(windows))]
         let mut child = command.spawn()?;
         // Child::wait closes child.stdin; retain the lifetime writer separately.
-        let lifetime = child.stdin.take();
+        let mut lifetime = child.stdin.take().expect("piped daemon stdin");
+        let mut output = child.stdout.take().expect("piped daemon stdout");
         let pid = child
             .id()
             .ok_or_else(|| io::Error::other("daemon PID unavailable"))?;
         eprintln!("a13n-envd supervise: started daemon pid={pid}");
-        if let Some(mut stream) = acknowledgement.take() {
-            // The caller independently verifies EIP readiness. A lost receipt
-            // must not turn a successfully launched daemon into a crash.
-            let _ = crate::daemon_control::reply(&mut stream, None).await;
-        }
-        let action = loop {
-            let (mut stream, request) = tokio::select! {
-                biased;
-                _ = stop.recv() => break Action::Stop,
-                result = child.wait() => {
-                    eprintln!("a13n-envd supervise: daemon exited: {}", result?);
-                    break Action::Crash;
-                }
-                result = control.receive() => result?,
-            };
-            if request.version.as_deref() == Some(&version) {
+        let expected = acknowledgement
+            .as_ref()
+            .and_then(|(_, version)| version.as_deref());
+        let startup = tokio::select! {
+            biased;
+            _ = stop.recv() => None,
+            result = authorize_launch(&mut output, &mut lifetime, expected) => Some(result),
+        };
+        // The first line is private startup identity; subsequent stdout retains
+        // the foreground launcher's destination.
+        let forwarding = tokio::spawn(async move {
+            let _ = tokio::io::copy(&mut output, &mut tokio::io::stdout()).await;
+        });
+        let action = if let Some(Ok(version)) = startup.as_ref() {
+            if let Some((mut stream, _)) = acknowledgement.take() {
+                // EIP readiness is checked independently by the caller.
                 let _ = crate::daemon_control::reply(&mut stream, None).await;
-                continue;
             }
-            let installed = tokio::select! {
-                biased;
-                _ = stop.recv() => break Action::Stop,
-                result = crate::daemon_control::binary_version(&executable) => result,
-            };
-            if installed.as_ref().is_ok_and(|installed| {
-                request
-                    .version
-                    .as_ref()
-                    .is_none_or(|expected| expected == installed)
-            }) {
-                acknowledgement = Some(stream);
-                eprintln!("a13n-envd supervise: explicit restart accepted");
-                break Action::Restart;
+            loop {
+                let (mut stream, request) = tokio::select! {
+                    biased;
+                    _ = stop.recv() => break Action::Stop,
+                    result = child.wait() => {
+                        eprintln!("a13n-envd supervise: daemon exited: {}", result?);
+                        break Action::Crash;
+                    }
+                    result = control.receive() => result?,
+                };
+                if request.version.as_deref() == Some(version.as_str()) {
+                    let _ = crate::daemon_control::reply(&mut stream, None).await;
+                    continue;
+                }
+                let installed = tokio::select! {
+                    biased;
+                    _ = stop.recv() => break Action::Stop,
+                    result = crate::daemon_control::binary_version(&executable) => result,
+                };
+                if installed.as_ref().is_ok_and(|installed| {
+                    request
+                        .version
+                        .as_ref()
+                        .is_none_or(|expected| expected == installed)
+                }) {
+                    acknowledgement = Some((stream, request.version));
+                    eprintln!("a13n-envd supervise: explicit restart accepted");
+                    break Action::Restart;
+                }
+                let _ = crate::daemon_control::reply(
+                    &mut stream,
+                    Some("installed executable does not match requested version"),
+                )
+                .await;
             }
-            let _ = crate::daemon_control::reply(
-                &mut stream,
-                Some("installed executable does not match requested version"),
-            )
-            .await;
+        } else if let Some(Err(error)) = startup {
+            eprintln!("a13n-envd supervise: daemon launch refused: {error}");
+            if let Some((mut stream, _)) = acknowledgement.take() {
+                let _ = crate::daemon_control::reply(&mut stream, Some(&error.to_string())).await;
+                Action::Refuse(error)
+            } else {
+                Action::Crash
+            }
+        } else {
+            Action::Stop
         };
         let mut stopping = matches!(action, Action::Stop);
+        let crashed = matches!(action, Action::Crash);
         let cleanup = async {
             // Closing this private pipe requests graceful drain on every OS,
             // including Windows processes launched without an attached console.
             drop(lifetime);
-            if !matches!(action, Action::Crash) {
+            if !crashed {
                 let _ = timeout(STOP_GRACE, child.wait()).await;
             }
             #[cfg(windows)]
@@ -156,6 +178,7 @@ async fn supervise(arguments: &[OsString]) -> io::Result<()> {
             },
             result = &mut cleanup => result?,
         }
+        forwarding.abort();
         if stopping {
             return Ok(());
         }
@@ -163,6 +186,7 @@ async fn supervise(arguments: &[OsString]) -> io::Result<()> {
             Action::Stop => return Ok(()),
             Action::Restart => continue,
             Action::Crash => {}
+            Action::Refuse(error) => return Err(error),
         }
         let Some(delay) = RESTART_DELAYS.get(replacements) else {
             return Err(io::Error::other("daemon replacement budget exhausted"));
@@ -184,6 +208,54 @@ enum Action {
     Stop,
     Crash,
     Restart,
+    Refuse(io::Error),
+}
+
+async fn authorize_launch(
+    output: &mut ChildStdout,
+    lifetime: &mut ChildStdin,
+    expected: Option<&str>,
+) -> io::Result<String> {
+    timeout(Duration::from_secs(5), async {
+        let mut bytes = Vec::new();
+        loop {
+            let byte = output.read_u8().await?;
+            if byte == b'\n' {
+                break;
+            }
+            if bytes.len() == 1024 {
+                return Err(io::Error::other("daemon startup identity exceeds limit"));
+            }
+            bytes.push(byte);
+        }
+        let version = std::str::from_utf8(&bytes).map_err(io::Error::other)?;
+        semver::Version::parse(version).map_err(io::Error::other)?;
+        if expected.is_some_and(|expected| expected != version) {
+            return Err(io::Error::other(
+                "launched daemon does not match requested version",
+            ));
+        }
+        // The actual child reports its compiled version before configuration or
+        // runtime activation. A path probe alone cannot fence atomic replacement.
+        lifetime.write_all(b"\n").await?;
+        Ok(version.to_owned())
+    })
+    .await
+    .map_err(|_| io::Error::other("daemon startup identity timed out"))?
+}
+
+pub(crate) fn authorize_child() -> io::Result<()> {
+    use std::io::{Read, Write};
+    let mut output = io::stdout().lock();
+    writeln!(output, "{}", env!("CARGO_PKG_VERSION"))?;
+    output.flush()?;
+    drop(output);
+    let mut permission = [0];
+    io::stdin().read_exact(&mut permission)?;
+    if permission != *b"\n" {
+        return Err(io::Error::other("invalid supervisor launch permission"));
+    }
+    Ok(())
 }
 
 #[cfg(unix)]

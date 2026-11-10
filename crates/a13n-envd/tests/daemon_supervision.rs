@@ -83,6 +83,22 @@ impl Fixture {
         Running(self.command(mode).spawn().unwrap())
     }
 
+    #[cfg(unix)]
+    fn start_installed(&self) -> (Running, std::path::PathBuf) {
+        let installation = self.root.path().join("a13n-envd");
+        fs::copy(env!("CARGO_BIN_EXE_a13n-envd"), &installation).unwrap();
+        let template = self.command("supervise");
+        let mut command = Command::new(&installation);
+        command
+            .args(template.get_args())
+            .envs(template.get_envs().filter_map(|(k, v)| v.map(|v| (k, v))))
+            .current_dir(self.root.path())
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(fs::File::create(self.root.path().join("stderr")).unwrap());
+        (Running(command.spawn().unwrap()), installation)
+    }
+
     fn log(&self) -> String {
         fs::read_to_string(self.root.path().join("stderr")).unwrap_or_default()
     }
@@ -526,13 +542,16 @@ fn version_selected_restart_is_idempotent_and_refuses_an_uninstalled_version() {
             .unwrap()
             .success()
     );
+    let refused = fixture
+        .command("restart")
+        .args(["--version", "9999.0.0"])
+        .stderr(Stdio::piped())
+        .output()
+        .unwrap();
+    assert!(!refused.status.success());
     assert!(
-        !fixture
-            .command("restart")
-            .args(["--version", "9999.0.0"])
-            .status()
-            .unwrap()
-            .success()
+        String::from_utf8_lossy(&refused.stderr)
+            .contains("installed executable does not match requested version")
     );
     assert_eq!(
         fixture.descriptor(None)["generation"],
@@ -588,31 +607,20 @@ fn restart_requires_a_live_supervisor_and_an_authenticated_local_request() {
 fn restart_executes_the_atomically_replaced_installation_path() {
     use std::os::unix::fs::PermissionsExt;
     let fixture = Fixture::new();
-    let installation = fixture.root.path().join("a13n-envd");
-    fs::copy(env!("CARGO_BIN_EXE_a13n-envd"), &installation).unwrap();
-    let template = fixture.command("supervise");
-    let mut command = Command::new(&installation);
-    command
-        .args(template.get_args())
-        .envs(template.get_envs().filter_map(|(k, v)| v.map(|v| (k, v))))
-        .current_dir(fixture.root.path())
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(fs::File::create(fixture.root.path().join("stderr")).unwrap());
-    let mut supervisor = Running(command.spawn().unwrap());
+    let (mut supervisor, installation) = fixture.start_installed();
     let before = fixture.descriptor(None);
     let candidate = fixture.root.path().join("candidate");
-    fs::write(&candidate, format!("#!/bin/sh\nif [ \"$1\" = --version ]; then echo 'a13n-envd 0.8.1'; exit 0; fi\nprintf updated > replacement-marker\nexec '{}' \"$@\"\n", env!("CARGO_BIN_EXE_a13n-envd"))).unwrap();
+    fs::write(
+        &candidate,
+        format!(
+            "#!/bin/sh\nprintf updated > replacement-marker\nexec '{}' \"$@\"\n",
+            env!("CARGO_BIN_EXE_a13n-envd")
+        ),
+    )
+    .unwrap();
     fs::set_permissions(&candidate, fs::Permissions::from_mode(0o755)).unwrap();
     fs::rename(&candidate, &installation).unwrap();
-    assert!(
-        fixture
-            .command("restart")
-            .args(["--version", "0.8.1"])
-            .status()
-            .unwrap()
-            .success()
-    );
+    assert!(fixture.command("restart").status().unwrap().success());
     fixture.descriptor(Some(&before["generation"]));
     assert_eq!(
         fs::read_to_string(fixture.root.path().join("replacement-marker")).unwrap(),
@@ -621,7 +629,7 @@ fn restart_executes_the_atomically_replaced_installation_path() {
     assert!(
         fixture
             .command("restart")
-            .args(["--version", "0.8.1"])
+            .args(["--version", env!("CARGO_PKG_VERSION")])
             .status()
             .unwrap()
             .success()
@@ -629,6 +637,56 @@ fn restart_executes_the_atomically_replaced_installation_path() {
     assert_eq!(fixture.daemon_pids().len(), 2);
     stop(supervisor.0.id());
     assert!(supervisor.wait(Duration::from_secs(5)).success());
+}
+
+#[cfg(unix)]
+#[test]
+fn version_selected_restart_checks_the_actual_child_after_drain() {
+    use std::os::unix::fs::PermissionsExt;
+    for replace_during_drain in [false, true] {
+        let fixture = Fixture::new();
+        let (mut supervisor, installation) = fixture.start_installed();
+        fixture.descriptor(None);
+        let daemon = fixture.daemon_pids()[0];
+        let paused = PausedProcess::new(daemon as i32);
+        let candidate = fixture.root.path().join("candidate");
+        // A successful --version probe cannot establish the identity of the
+        // later child, whether a wrapper lies or installation changes in drain.
+        fs::write(&candidate, format!("#!/bin/sh\nif [ \"$1\" = --version ]; then echo 'a13n-envd 9999.0.0'; exit 0; fi\nexec '{}' \"$@\"\n", env!("CARGO_BIN_EXE_a13n-envd"))).unwrap();
+        fs::set_permissions(&candidate, fs::Permissions::from_mode(0o755)).unwrap();
+        fs::rename(&candidate, &installation).unwrap();
+        let error_path = fixture.root.path().join("restart-error");
+        let mut restart = Running(
+            fixture
+                .command("restart")
+                .args(["--version", "9999.0.0"])
+                .stderr(fs::File::create(&error_path).unwrap())
+                .spawn()
+                .unwrap(),
+        );
+        fixture.wait_for_log("explicit restart accepted");
+        if replace_during_drain {
+            fs::copy(env!("CARGO_BIN_EXE_a13n-envd"), &candidate).unwrap();
+            fs::rename(&candidate, &installation).unwrap();
+        }
+        drop(paused);
+        assert!(!restart.wait(Duration::from_secs(10)).success());
+        assert!(
+            fs::read_to_string(error_path)
+                .unwrap()
+                .contains("launched daemon does not match requested version")
+        );
+        assert!(
+            !supervisor.wait(Duration::from_secs(5)).success(),
+            "{}",
+            fixture.log()
+        );
+        assert_eq!(fixture.daemon_pids().len(), 2);
+        assert!(std::net::TcpStream::connect(fixture.address).is_err());
+        for pid in fixture.daemon_pids() {
+            assert_exited(pid);
+        }
+    }
 }
 
 #[cfg(unix)]

@@ -142,6 +142,9 @@ pub fn run_from_environment() -> Result<(), Box<dyn Error + Send + Sync>> {
         .is_some_and(|value| value == "--internal-supervised-daemon");
     let foreground_daemon = supervised || arguments.first().is_some_and(|value| value == "daemon");
     if foreground_daemon {
+        if supervised {
+            daemon_supervisor::authorize_child()?;
+        }
         arguments.remove(0);
         let mut config = config::Config::from_environment(arguments)?;
         config.supervised = supervised;
