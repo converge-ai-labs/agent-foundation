@@ -156,16 +156,37 @@ fn native_cursor_dependencies_survive_pruning_and_epoch_changes_fail() {
     let automation: IUIAutomation =
         unsafe { CoCreateInstance(&CUIAutomation8, None, CLSCTX_INPROC_SERVER).unwrap() };
     let element = unsafe { automation.GetRootElement().unwrap() };
+    let walker = unsafe { automation.ControlViewWalker().unwrap() };
+    let child = unsafe { walker.GetFirstChildElement(&element).unwrap() };
+    let child_again = unsafe { walker.GetFirstChildElement(&element).unwrap() };
+    assert!(unsafe {
+        automation
+            .CompareElements(&child, &child_again)
+            .unwrap()
+            .as_bool()
+    });
     let mut native = Native {
         epoch: "aep_registry".into(),
         handles: HashMap::new(),
+        identities: HashMap::new(),
         next: 0,
         automation,
         _apartment: apartment,
+        _dpi: crate::computer::windows::Dpi::enter().unwrap(),
     };
-    let root = native.reference(element.clone()).unwrap();
-    let parent = native.reference(element).unwrap();
+    let budget = Budget::new(&json!({})).unwrap();
+    let root = native.reference(element.clone(), &budget).unwrap();
+    let parent = native.reference(element.clone(), &budget).unwrap();
     assert_eq!(root, parent);
+    let child_ref = native.reference(child, &budget).unwrap();
+    assert_eq!(child_ref, native.reference(child_again, &budget).unwrap());
+    let before_sample = native.handles.len();
+    let sample = native.sample_fields(&element, &budget).unwrap();
+    assert!(!matches_query(
+        &sample,
+        &json!({"name":"not-a-desktop-name"})
+    ));
+    assert_eq!(native.handles.len(), before_sample);
     let root_id = string(&root, "node_handle").unwrap().to_owned();
     native.handles.get_mut(&root_id).unwrap().touched = Instant::now() - Duration::from_secs(121);
     let cursor = native
@@ -180,13 +201,115 @@ fn native_cursor_dependencies_survive_pruning_and_epoch_changes_fail() {
             },
         )
         .unwrap();
-    native.prune();
+    native.prune(&json!({}));
     assert!(native.handles.contains_key(&root_id));
+    // Force registry pressure without depending on thousands of live windows.
+    // The oldest ordinary node is evicted while an executing operand and the
+    // retained cursor root remain pinned, even when older than the TTL.
+    let oldest = native.put("an", Handle::Node(element.clone())).unwrap();
+    native.handles.get_mut(&oldest).unwrap().touched = Instant::now() - Duration::from_secs(60);
+    let operand = native.put("an", Handle::Node(element.clone())).unwrap();
+    native.handles.get_mut(&operand).unwrap().touched = Instant::now() - Duration::from_secs(121);
+    while native.handles.len() < 4095 {
+        native.put("an", Handle::Node(element.clone())).unwrap();
+    }
+    native.prune(&json!({"node":{"node_handle":operand}}));
+    assert!(native.handles.len() < 2048);
+    assert!(!native.handles.contains_key(&oldest));
+    assert!(native.handles.contains_key(&operand));
+    assert!(native.handles.contains_key(&root_id));
+    assert!(native.handles.contains_key(&cursor));
+    assert!(native.put("an", Handle::Node(element)).is_ok());
     let mut wrong_epoch = root.clone();
     wrong_epoch["backend_epoch"] = json!("aep_another");
     assert!(native.node(&wrong_epoch).is_err());
     native.handles.get_mut(&cursor).unwrap().touched = Instant::now() - Duration::from_secs(121);
-    native.prune();
+    native.prune(&json!({}));
     assert!(!native.handles.contains_key(&root_id));
     assert!(!native.handles.contains_key(&cursor));
+}
+
+#[test]
+fn native_exhaustion_overrides_prior_content_truncation() {
+    for reason in ["byte_limit", "item_limit"] {
+        let b = Budget::new(&json!({"limits":{"max_native_calls":1}})).unwrap();
+        b.mark(reason);
+        b.call(|| Ok(())).unwrap();
+        assert!(
+            b.call::<()>(|| panic!("exhausted native closure ran"))
+                .is_err()
+        );
+        assert_eq!(b.reason.get(), Some("call_limit"));
+        let mut b = Budget::new(&json!({})).unwrap();
+        b.mark(reason);
+        b.deadline = Instant::now();
+        assert!(
+            b.call::<()>(|| panic!("expired native closure ran"))
+                .is_err()
+        );
+        assert_eq!(b.reason.get(), Some("deadline"));
+    }
+}
+
+#[test]
+fn native_budget_consumes_remaining_parent_time() {
+    let b = Budget::new(&json!({"_timeout_ms":1,"limits":{"timeout_ms":5000}})).unwrap();
+    assert!(b.deadline.saturating_duration_since(Instant::now()) <= Duration::from_millis(1));
+    let b = Budget::new(&json!({"_timeout_ms":5000,"limits":{"timeout_ms":1}})).unwrap();
+    assert!(b.deadline.saturating_duration_since(Instant::now()) <= Duration::from_millis(1));
+}
+
+#[test]
+fn direct_table_and_selection_metadata_obey_item_limits() {
+    let b = Budget::new(&json!({"limits":{"max_items":1}})).unwrap();
+    let mut result = json!({"properties":[]});
+    read::property(&mut result, "rows", "GridPattern", json!(3), &b);
+    read::property(&mut result, "columns", "GridPattern", json!(4), &b);
+    read::property(&mut result, "item_count", "SelectionPattern2", json!(2), &b);
+    assert_eq!(result["properties"].as_array().unwrap().len(), 1);
+    assert_eq!(result["properties"][0]["name"], "rows");
+    assert_eq!(b.reason.get(), Some("item_limit"));
+}
+
+#[test]
+fn absent_selection_arrays_and_dead_elements_are_not_provider_failures() {
+    let b = Budget::new(&json!({})).unwrap();
+    let null = native_error(windows::core::Error::from_hresult(windows::core::HRESULT(
+        0x80004003u32 as i32,
+    )));
+    assert!(optional::<()>(Err(null)).unwrap().is_none());
+    let dead = native_error(windows::core::Error::from_hresult(windows::core::HRESULT(
+        UIA_E_ELEMENTNOTAVAILABLE as i32,
+    )));
+    assert!(element_unavailable(&dead));
+    assert!(
+        traversal_optional::<()>(Err(dead.clone()), &b)
+            .unwrap()
+            .is_none()
+    );
+    // Sibling acquisition uses ordinary optional: a dead anchor must fail,
+    // never masquerade as an observed end of enumeration.
+    assert!(optional::<()>(Err(dead)).is_err());
+    // Provider errors and quota failures must still propagate, not vanish.
+    for kind in [
+        ErrorType::ProviderUnavailable,
+        ErrorType::Denied,
+        ErrorType::QuotaExceeded,
+        ErrorType::Timeout,
+    ] {
+        assert!(traversal_optional::<()>(Err(error(kind, "failure")), &b).is_err());
+    }
+}
+
+#[test]
+fn runtime_identity_is_not_a_truncated_content_collection() {
+    let array = OwnedArray(unsafe { SafeArrayCreateVector(VT_I4, 0, 4) });
+    for index in 0..4i32 {
+        unsafe {
+            SafeArrayPutElement(array.0, &index, (&index as *const i32).cast()).unwrap();
+        }
+    }
+    let b = Budget::new(&json!({"limits":{"max_items":1}})).unwrap();
+    assert_eq!(array.runtime_id(&b).unwrap(), vec![0, 1, 2, 3]);
+    assert!(b.reason.get().is_none());
 }

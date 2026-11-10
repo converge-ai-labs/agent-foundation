@@ -421,13 +421,7 @@ impl Native {
             Ok(()) => Status::ReturnedSuccess,
             Err(_) => Status::Error,
         };
-        let observation = if p["readback"].as_bool().unwrap_or(false) {
-            self.sample(&node, b)
-                .ok()
-                .and_then(|v| serde_json::from_value(v).ok())
-        } else {
-            None
-        };
+        // The parent observes separately after retaining this acknowledgement.
         serde_json::to_value(NativeMutation {
             effect: if status == Status::ReturnedSuccess {
                 ComputerEffect::Executed
@@ -436,7 +430,7 @@ impl Native {
             },
             native_status: status,
             dispatch_complete: true,
-            observation,
+            observation: None,
         })
         .map_err(|_| {
             error(

@@ -93,6 +93,7 @@ impl Native {
                             "item_count",
                             "SelectionPattern2",
                             json!(b.call(|| unsafe { pattern.CurrentItemCount() })?),
+                            b,
                         );
                     }
                 }
@@ -101,8 +102,8 @@ impl Native {
                         self.pattern::<IUIAutomationGridPattern>(&n, UIA_GridPatternId, b)?;
                     let rows = b.call(|| unsafe { pattern.CurrentRowCount() })?;
                     let columns = b.call(|| unsafe { pattern.CurrentColumnCount() })?;
-                    property(&mut result, "rows", "GridPattern", json!(rows));
-                    property(&mut result, "columns", "GridPattern", json!(columns));
+                    property(&mut result, "rows", "GridPattern", json!(rows), b);
+                    property(&mut result, "columns", "GridPattern", json!(columns), b);
                     let row = number(r, "row", 0);
                     let column = number(r, "column", 0);
                     let nr = number(r, "rows", 1);
@@ -116,9 +117,14 @@ impl Native {
                                 b.mark("item_limit");
                                 break 'cells;
                             }
-                            let cell = b.call(|| unsafe { pattern.GetItem(y as i32, x as i32) })?;
-                            let sample = self.sample(&cell, b)?;
-                            result["nodes"].as_array_mut().unwrap().push(sample);
+                            if let Some(cell) = traversal_optional(
+                                b.call(|| unsafe { pattern.GetItem(y as i32, x as i32) }),
+                                b,
+                            )? && let Some(sample) =
+                                traversal_optional(self.sample(&cell, b), b)?
+                            {
+                                result["nodes"].as_array_mut().unwrap().push(sample);
+                            }
                         }
                     }
                     if r["include_headers"].as_bool().unwrap_or(true)
@@ -221,6 +227,7 @@ impl Native {
                         "input_idle",
                         "WindowPattern",
                         json!(idle.as_bool()),
+                        b,
                     );
                 }
                 "relations" => {
@@ -398,9 +405,12 @@ impl Native {
                 b.mark("item_limit");
                 break;
             }
-            let node = b.call(|| unsafe { array.GetElement(index) })?;
-            let sample = self.sample(&node, b)?;
-            result["nodes"].as_array_mut().unwrap().push(sample);
+            if let Some(node) =
+                traversal_optional(b.call(|| unsafe { array.GetElement(index) }), b)?
+                && let Some(sample) = traversal_optional(self.sample(&node, b), b)?
+            {
+                result["nodes"].as_array_mut().unwrap().push(sample);
+            }
         }
         Ok(())
     }
@@ -422,7 +432,7 @@ impl Native {
             match b.call(|| unsafe { n.GetCurrentPropertyValueEx(*id, true) }) {
                 Ok(value) => {
                     let value = self.variant_value(value, b)?;
-                    property_value(result, &name, "UIA", value);
+                    property_value(result, &name, "UIA", value, b);
                 }
                 Err(e) => field_error(result, &name, &e),
             }
@@ -453,13 +463,13 @@ impl Native {
                     } else if object == &unsupported {
                         json!({"kind":"unsupported"})
                     } else if let Ok(node) = b.call(|| object.cast::<IUIAutomationElement>()) {
-                        json!({"kind":"nodes","values":[self.reference(node)?]})
+                        json!({"kind":"nodes","values":[self.reference(node, b)?]})
                     } else if let Ok(array) = b.call(|| object.cast::<IUIAutomationElementArray>())
                     {
                         let count = b.call(|| array.Length())?;
                         let mut nodes = Vec::new();
                         for i in 0..count.min(b.limit("max_items").min(512) as i32) {
-                            nodes.push(self.reference(b.call(|| array.GetElement(i))?)?);
+                            nodes.push(self.reference(b.call(|| array.GetElement(i))?, b)?);
                         }
                         if count as usize > nodes.len() {
                             b.mark("item_limit");
@@ -493,6 +503,7 @@ impl Native {
                             if let Some(object) = object {
                                 nodes.push(self.reference(
                                     b.call(|| object.cast::<IUIAutomationElement>())?,
+                                    b,
                                 )?);
                             }
                         }
@@ -518,10 +529,26 @@ impl Native {
         }
     }
 }
-pub(super) fn property(result: &mut Value, name: &str, source: &str, value: Value) {
-    property_value(result, name, source, json!({"kind":"scalar","value":value}));
+pub(super) fn property(result: &mut Value, name: &str, source: &str, value: Value, b: &Budget) {
+    property_value(
+        result,
+        name,
+        source,
+        json!({"kind":"scalar","value":value}),
+        b,
+    );
 }
-pub(super) fn property_value(result: &mut Value, name: &str, source: &str, value: Value) {
+pub(super) fn property_value(
+    result: &mut Value,
+    name: &str,
+    source: &str,
+    value: Value,
+    b: &Budget,
+) {
+    if result["properties"].as_array().unwrap().len() >= b.limit("max_items").min(128) {
+        b.mark("item_limit");
+        return;
+    }
     result["properties"]
         .as_array_mut()
         .unwrap()
@@ -574,6 +601,38 @@ impl Drop for OwnedArray {
     }
 }
 impl OwnedArray {
+    pub(super) fn runtime_id(&self, b: &Budget) -> Result<Vec<i32>, EIPError> {
+        if self.0.is_null() {
+            return Ok(Vec::new());
+        }
+        if unsafe { SafeArrayGetDim(self.0) } != 1
+            || b.call(|| unsafe { SafeArrayGetVartype(self.0) })? != VT_I4
+        {
+            return Err(error(
+                ErrorType::ProviderUnavailable,
+                "invalid UIA runtime ID",
+            ));
+        }
+        let start = b.call(|| unsafe { SafeArrayGetLBound(self.0, 1) })?;
+        let end = b.call(|| unsafe { SafeArrayGetUBound(self.0, 1) })?;
+        let count = (i64::from(end) - i64::from(start) + 1).max(0);
+        // Identity is fixed metadata: never truncate it with a content limit.
+        if count > 64 {
+            return Err(error(
+                ErrorType::QuotaExceeded,
+                "UIA runtime ID exceeds registry budget",
+            ));
+        }
+        let mut result = Vec::new();
+        for index in start..=end {
+            let mut value = 0i32;
+            b.call(|| unsafe {
+                SafeArrayGetElement(self.0, &index, (&mut value as *mut i32).cast())
+            })?;
+            result.push(value);
+        }
+        Ok(result)
+    }
     pub(super) fn integers(&self, b: &Budget) -> Result<Vec<i32>, EIPError> {
         BorrowedArray(self.0).integers(b)
     }

@@ -86,6 +86,7 @@ impl Drop for Apartment {
     }
 }
 pub(super) fn new(epoch: &str) -> Result<Box<dyn Backend>, EIPError> {
+    let dpi = crate::computer::windows::Dpi::enter()?;
     unsafe {
         CoInitializeEx(None, COINIT_MULTITHREADED)
             .ok()
@@ -97,19 +98,23 @@ pub(super) fn new(epoch: &str) -> Result<Box<dyn Backend>, EIPError> {
     Ok(Box::new(Native {
         epoch: epoch.into(),
         handles: HashMap::new(),
+        identities: HashMap::new(),
         next: 0,
         automation,
         _apartment: apartment,
+        _dpi: dpi,
     }))
 }
 
 struct Native {
     epoch: String,
     handles: HashMap<String, Entry>,
+    identities: HashMap<Vec<i32>, String>,
     next: u64,
     automation: IUIAutomation,
     // Drop COM objects before uninitializing their apartment.
     _apartment: Apartment,
+    _dpi: crate::computer::windows::Dpi,
 }
 struct Entry {
     value: Handle,
@@ -132,9 +137,9 @@ enum Handle {
 }
 #[derive(Clone)]
 enum Pending {
-    Node(IUIAutomationElement, usize, Option<Value>),
-    Children(IUIAutomationElement, usize, Value),
-    Sibling(IUIAutomationElement, usize, Value),
+    Node(IUIAutomationElement, usize, Option<IUIAutomationElement>),
+    Children(IUIAutomationElement, usize),
+    Sibling(IUIAutomationElement, usize, IUIAutomationElement),
 }
 
 struct Budget {
@@ -152,9 +157,12 @@ impl Budget {
             .map(super::budget::projection_reserve)
             .transpose()?
             .unwrap_or(0);
+        let timeout =
+            number(params, "_timeout_ms", 5000).min(number(&limits, "timeout_ms", 5000)) as u64;
+        // Leave time to encode the partial response before the parent deadline.
+        let reserve = (timeout / 10).min(50);
         Ok(Self {
-            deadline: Instant::now()
-                + Duration::from_millis(number(&limits, "timeout_ms", 5000) as u64),
+            deadline: Instant::now() + Duration::from_millis(timeout - reserve),
             limits,
             calls: Cell::new(0),
             reason: Cell::new(None),
@@ -178,7 +186,7 @@ impl Budget {
         )
     }
     fn mark(&self, reason: &'static str) {
-        if self.reason.get().is_none() {
+        if self.reason.get().is_none() || matches!(reason, "deadline" | "call_limit") {
             self.reason.set(Some(reason));
         }
     }
@@ -235,7 +243,7 @@ impl Backend for Native {
     ) -> Result<Value, EIPError> {
         // Evict only between requests. Operands and newly returned handles stay
         // retained through native dispatch and response construction.
-        self.prune();
+        self.prune(&params);
         let b = Budget::new(&params)?;
         if method == "computer.a11y_describe" {
             let ready = crate::computer::windows::ready().is_ok();
@@ -259,13 +267,16 @@ impl Backend for Native {
     }
 }
 impl Native {
-    fn prune(&mut self) {
+    fn prune(&mut self, params: &Value) {
         let mut dependencies = HashSet::new();
         let mut retain_reference = |reference: &Value| {
-            if let Some(id) = reference["node_handle"].as_str() {
-                dependencies.insert(id.to_owned());
+            for key in ["node_handle", "range_handle", "cursor_handle"] {
+                if let Some(id) = reference[key].as_str() {
+                    dependencies.insert(id.to_owned());
+                }
             }
         };
+        retain_operand_references(params, &mut retain_reference);
         for entry in self
             .handles
             .values()
@@ -273,23 +284,38 @@ impl Native {
         {
             match &entry.value {
                 Handle::Range { owner, .. } => retain_reference(&json!({"node_handle":owner})),
-                Handle::Cursor { root, pending, .. } => {
-                    retain_reference(root);
-                    for stage in pending {
-                        match stage {
-                            Pending::Node(_, _, Some(parent))
-                            | Pending::Children(_, _, parent)
-                            | Pending::Sibling(_, _, parent) => retain_reference(parent),
-                            Pending::Node(_, _, None) => {}
-                        }
-                    }
-                }
+                Handle::Cursor { root, .. } => retain_reference(root),
                 Handle::Node(_) => {}
             }
         }
         self.handles.retain(|id, e| {
             e.touched.elapsed() < Duration::from_secs(120) || dependencies.contains(id)
         });
+        // Free capacity between requests only; never evict an executing operand
+        // or a live range/cursor dependency. Native objects held by Pending are
+        // owned directly, without minting model handles for unmatched nodes.
+        let mut candidates: Vec<_> = self
+            .handles
+            .iter()
+            .filter(|(id, e)| !dependencies.contains(*id) && matches!(e.value, Handle::Node(_)))
+            .map(|(id, e)| (id.clone(), e.touched))
+            .collect();
+        candidates.sort_unstable_by_key(|(_, touched)| *touched);
+        let mut bytes: usize = self
+            .handles
+            .values()
+            .map(|e| retained_bytes(&e.value))
+            .sum();
+        for (id, _) in candidates {
+            if self.handles.len() < 2048 && bytes < 4 * 1024 * 1024 {
+                break;
+            }
+            if let Some(entry) = self.handles.remove(&id) {
+                bytes = bytes.saturating_sub(retained_bytes(&entry.value));
+            }
+        }
+        self.identities
+            .retain(|_, id| self.handles.contains_key(id));
     }
     fn put(&mut self, prefix: &str, value: Handle) -> Result<String, EIPError> {
         let ranges = self
@@ -302,7 +328,13 @@ impl Native {
             .values()
             .filter(|e| matches!(e.value, Handle::Cursor { .. }))
             .count();
+        let bytes: usize = self
+            .handles
+            .values()
+            .map(|e| retained_bytes(&e.value))
+            .sum();
         if self.handles.len() >= 4096
+            || bytes.saturating_add(retained_bytes(&value)) > 8 * 1024 * 1024
             || matches!(&value, Handle::Range { .. }) && ranges >= 256
             || matches!(&value, Handle::Cursor { .. }) && cursors >= 64
         {
@@ -322,13 +354,36 @@ impl Native {
         );
         Ok(id)
     }
-    fn reference(&mut self, element: IUIAutomationElement) -> Result<Value, EIPError> {
-        // COM identity is sufficient for reuse; different wrappers may receive
-        // different handles without changing the native target of an old one.
-        let existing = self.handles.iter().find_map(|(id, e)| match &e.value {
-            Handle::Node(n) if n == &element => Some(id.clone()),
-            _ => None,
-        });
+    fn reference(&mut self, element: IUIAutomationElement, b: &Budget) -> Result<Value, EIPError> {
+        let array = OwnedArray(b.call(|| unsafe { element.GetRuntimeId() })?);
+        let runtime_id = array.runtime_id(b)?;
+        let mut existing = if runtime_id.is_empty() {
+            // The desktop root can lack a runtime ID. Reuse its COM identity.
+            self.handles.iter().find_map(|(id, e)| match &e.value {
+                Handle::Node(n) if n == &element => Some(id.clone()),
+                _ => None,
+            })
+        } else {
+            self.identities.get(&runtime_id).cloned()
+        };
+        if let Some(id) = &existing
+            && let Some(Entry {
+                value: Handle::Node(retained),
+                ..
+            }) = self.handles.get(id)
+        {
+            match b.call(|| unsafe { retained.CurrentControlType() }) {
+                Ok(_) => {}
+                Err(e) if element_unavailable(&e) => {
+                    // Runtime IDs may be reused after destruction. A new native
+                    // object must never replace the object behind an old handle.
+                    self.handles.remove(id);
+                    self.identities.remove(&runtime_id);
+                    existing = None;
+                }
+                Err(e) => return Err(e),
+            }
+        }
         let id = match existing {
             Some(id) => {
                 self.handles.get_mut(&id).unwrap().touched = Instant::now();
@@ -336,6 +391,9 @@ impl Native {
             }
             None => self.put("an", Handle::Node(element))?,
         };
+        if !runtime_id.is_empty() {
+            self.identities.insert(runtime_id, id.clone());
+        }
         Ok(json!({"backend":"uia","backend_epoch":self.epoch,"node_handle":id}))
     }
     fn node(&mut self, reference: &Value) -> Result<IUIAutomationElement, EIPError> {
@@ -375,9 +433,13 @@ impl Native {
         })
     }
     fn sample(&mut self, n: &IUIAutomationElement, b: &Budget) -> Result<Value, EIPError> {
-        let reference = self.reference(n.clone())?;
+        let mut result = self.sample_fields(n, b)?;
+        result["reference"] = self.reference(n.clone(), b)?;
+        Ok(result)
+    }
+    fn sample_fields(&self, n: &IUIAutomationElement, b: &Budget) -> Result<Value, EIPError> {
         let role = b.call(|| unsafe { n.CurrentControlType() })?;
-        let mut result = json!({"reference":reference,"native_role":format!("UIA_ControlType_{}",role.0),"role":role_name(role),"sampled_at":now(),"states":{},"capabilities":[],"field_errors":[]});
+        let mut result = json!({"reference":{"backend":"uia","backend_epoch":self.epoch,"node_handle":"x".repeat(128)},"native_role":format!("UIA_ControlType_{}",role.0),"role":role_name(role),"sampled_at":now(),"states":{},"capabilities":[],"field_errors":[]});
         macro_rules! field {
             ($name:literal,$call:expr) => {
                 match b.call(|| unsafe { $call }) {
@@ -581,18 +643,23 @@ impl Native {
                     break;
                 }
                 match item {
-                    Pending::Children(n, d, parent) => {
+                    Pending::Children(n, d) => {
                         // Keep this stage queued until acquisition succeeds. A
                         // deadline after sampling must not skip the subtree.
-                        let child =
-                            optional(b.call(|| unsafe { walker.GetFirstChildElement(&n) }))?;
+                        let child = traversal_optional(
+                            b.call(|| unsafe { walker.GetFirstChildElement(&n) }),
+                            b,
+                        )?;
                         pending.pop();
                         if let Some(child) = child {
-                            pending.push(Pending::Sibling(child.clone(), d, parent.clone()));
-                            pending.push(Pending::Node(child, d, Some(parent)));
+                            pending.push(Pending::Sibling(child.clone(), d, n.clone()));
+                            pending.push(Pending::Node(child, d, Some(n)));
                         }
                     }
                     Pending::Sibling(n, d, parent) => {
+                        // A missing sibling anchor is not an observed end of
+                        // enumeration. Fail this cursor so callers reacquire;
+                        // silently skipping it would hide still-live siblings.
                         let next =
                             optional(b.call(|| unsafe { walker.GetNextSiblingElement(&n) }))?;
                         pending.pop();
@@ -602,29 +669,63 @@ impl Native {
                         }
                     }
                     Pending::Node(n, d, parent) => {
-                        let mut sample = self.sample(&n, b)?;
-                        if let Some(parent) = parent {
-                            sample["parent"] = parent;
-                        }
-                        let reference = sample["reference"].clone();
+                        let Some(mut sample) = traversal_optional(self.sample_fields(&n, b), b)?
+                        else {
+                            pending.pop();
+                            visited += 1;
+                            continue;
+                        };
                         if matches_query(&sample, &query) {
+                            if parent.is_some() {
+                                sample["parent"] = sample["reference"].clone();
+                            }
                             result["nodes"].as_array_mut().unwrap().push(sample);
                             if !page_fits(method, &result, &root, b)? {
                                 result["nodes"].as_array_mut().unwrap().pop();
                                 b.mark("byte_limit");
                                 break;
                             }
+                            let mut sample = result["nodes"].as_array_mut().unwrap().pop().unwrap();
+                            // Mint only after the page can retain this node.
+                            let Some(reference) =
+                                traversal_optional(self.reference(n.clone(), b), b)?
+                            else {
+                                pending.pop();
+                                visited += 1;
+                                continue;
+                            };
+                            let parent = match parent {
+                                Some(parent) => traversal_optional(self.reference(parent, b), b)?,
+                                None => None,
+                            };
+                            sample["reference"] = reference;
+                            sample.as_object_mut().unwrap().remove("parent");
+                            if let Some(parent) = parent {
+                                sample["parent"] = parent;
+                            }
+                            result["nodes"].as_array_mut().unwrap().push(sample);
                         }
                         pending.pop();
                         visited += 1;
                         if d < depth {
-                            pending.push(Pending::Children(n, d + 1, reference));
+                            pending.push(Pending::Children(n, d + 1));
                         }
                     }
                 }
             }
             Ok(())
         })();
+        if let Err(e) = &outcome
+            && element_unavailable(e)
+        {
+            if let Some(id) = p["cursor"]["cursor_handle"].as_str() {
+                self.handles.remove(id);
+            }
+            return Err(error(
+                ErrorType::InvalidParams,
+                "UIA traversal anchor was destroyed; reacquire the root and restart traversal",
+            ));
+        }
         partial(outcome, b)?;
         result["completeness"] = b.completeness();
         let mut new_cursor = None;
@@ -667,6 +768,44 @@ impl Native {
             self.handles.remove(id);
         }
         Ok(result)
+    }
+}
+fn retain_operand_references(value: &Value, retain: &mut impl FnMut(&Value)) {
+    match value {
+        Value::Object(fields) => {
+            retain(value);
+            for value in fields.values() {
+                retain_operand_references(value, retain);
+            }
+        }
+        Value::Array(items) => {
+            for value in items {
+                retain_operand_references(value, retain);
+            }
+        }
+        _ => {}
+    }
+}
+fn retained_bytes(handle: &Handle) -> usize {
+    // Account for retained registry metadata and native interface slots. The
+    // provider owns the remote native allocation, not this helper's heap.
+    match handle {
+        Handle::Node(_) | Handle::Range { .. } => 1024,
+        Handle::Cursor {
+            root,
+            query,
+            pending,
+            ..
+        } => 1024 + root.to_string().len() + query.to_string().len() + pending.len() * 512,
+    }
+}
+fn element_unavailable(error: &EIPError) -> bool {
+    error.data.safe_detail.as_deref() == Some("UIA HRESULT 0x80040201")
+}
+fn traversal_optional<T>(result: Result<T, EIPError>, _b: &Budget) -> Result<Option<T>, EIPError> {
+    match result {
+        Err(e) if element_unavailable(&e) => Ok(None),
+        result => optional(result),
     }
 }
 fn now() -> String {

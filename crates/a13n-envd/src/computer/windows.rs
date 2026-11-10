@@ -108,9 +108,9 @@ pub(crate) fn ready() -> Result<(), EIPError> {
     Ok(())
 }
 
-struct Dpi(DPI_AWARENESS_CONTEXT);
+pub(crate) struct Dpi(DPI_AWARENESS_CONTEXT);
 impl Dpi {
-    fn enter() -> Result<Self, EIPError> {
+    pub(crate) fn enter() -> Result<Self, EIPError> {
         let previous =
             unsafe { SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2) };
         if previous.is_null() {

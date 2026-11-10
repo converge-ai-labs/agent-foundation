@@ -55,13 +55,22 @@ impl Native {
             match kind {
                 "document" => ranges.push(b.call(|| unsafe { pattern.DocumentRange() })?),
                 "selection" | "visible" => {
-                    let array = b.call(|| unsafe {
+                    if kind == "selection"
+                        && b.call(|| unsafe { pattern.SupportedTextSelection() })?
+                            == SupportedTextSelection_None
+                    {
+                        return Err(unsupported());
+                    }
+                    let Some(array) = optional(b.call(|| unsafe {
                         if kind == "selection" {
                             pattern.GetSelection()
                         } else {
                             pattern.GetVisibleRanges()
                         }
-                    })?;
+                    }))?
+                    else {
+                        return Ok(());
+                    };
                     let count = b.call(|| unsafe { array.Length() })?;
                     for i in 0..count.min(b.limit("max_items").min(256) as i32) {
                         ranges.push(b.call(|| unsafe { array.GetElement(i) })?);
@@ -255,7 +264,13 @@ impl Native {
                     let value =
                         b.call(|| unsafe { range.GetAttributeValue(UIA_TEXTATTRIBUTE_ID(id)) })?;
                     let value = self.variant_value(value, b)?;
-                    property_value(&mut result, &format!("attribute_{id}"), "TextRange", value);
+                    property_value(
+                        &mut result,
+                        &format!("attribute_{id}"),
+                        "TextRange",
+                        value,
+                        b,
+                    );
                 }
             }
             Ok(())
