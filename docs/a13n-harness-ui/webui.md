@@ -128,6 +128,8 @@ Open the current Model in the composer footer to choose an Agent, Model, Reasoni
 
 For a persistent Model choice, open conversation configuration and set **Default model**. **Follow Agent model** clears it. The composer shows **Thread default** when following that saved value; a different composer Model changes the Run draft. Configuration inspection distinguishes next-Run selections from the captured selections of active or saved work.
 
+A fresh chat starts with its creation defaults. When you reopen an unfinished draft or an existing chat in the same browser, it remembers that chat’s composer choices. For the same Agent, an explicit composer Model takes precedence even if the conversation’s default model changes. Clear the composer Model override to follow the current conversation default, falling back to the Agent’s Model.
+
 Use **Chat options → Clear context** to start the next message without prior model messages, notes, tasks, or saved Agent working state. It also discards pending questions and approvals. Chat history, files, settings, and unsent input remain.
 
 ### Thinking for the next Run
