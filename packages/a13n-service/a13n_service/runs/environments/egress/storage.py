@@ -117,6 +117,11 @@ async def retire(session: AsyncSession, thread_id: str, key: tuple[str, str], ve
     await session.execute(delete(SessionCredentialRow).where(*selection(thread_id, key, version)))
 
 
+async def retire_environment(session: AsyncSession, environment_id: str) -> None:
+    """The caller holds the Environment lock and has confirmed no native Sessions can remain."""
+    await session.execute(delete(SessionCredentialRow).where(SessionCredentialRow.environment_id == environment_id))
+
+
 async def discard_unstarted(
     session: AsyncSession, thread_id: str, key: tuple[str, str], retained_version: int | None
 ) -> None:

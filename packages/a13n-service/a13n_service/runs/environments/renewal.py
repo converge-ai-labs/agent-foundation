@@ -44,6 +44,7 @@ from a13n_service.resources.providers.service import read_provider
 from a13n_service.resources.providers.tables import EnvironmentProviderRow
 from a13n_service.runs.environments.adapters import Target, close, managed_target, open_provider, provider_identity
 from a13n_service.runs.environments.desktop import identity
+from a13n_service.runs.environments.egress.storage import retire_environment
 from a13n_service.runs.environments.lifecycle import LOST, Fault, fault_of, lost, reached_with, record_failure
 from a13n_service.runs.environments.schemas import EnvironmentFailure, Handle
 from a13n_service.runs.environments.tables import EnvironmentRow
@@ -168,6 +169,7 @@ async def publish(runtime: Runtime, renewal: Renewal, outcome: datetime | Except
             _fail(environment, fault, current)
             if fault is LOST:
                 await identity.invalidate(session, renewal.target.state)
+                await retire_environment(session, environment.id)
         else:
             logger.warning(
                 "Environment renewal failed",
