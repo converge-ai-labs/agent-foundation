@@ -10,6 +10,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { ScrollArea } from "a13n-ui";
 import { useTurnHistory } from "./queries";
 import {
   captureReadingAnchor,
@@ -531,15 +532,21 @@ function Reasoning({
         )}
         <CaretRight aria-hidden="true" className={styles.reasoningCaret} />
       </summary>
-      <section
+      <ScrollArea
+        autoHeight
+        scrollbarGutter
+        overscrollContain
         className={styles.reasoningBody}
-        aria-label={t("Thought content")}
-        tabIndex={0}
+        viewportProps={{
+          role: "region",
+          "aria-label": t("Thought content"),
+          tabIndex: 0,
+        }}
       >
         {segments.map((segment) => (
           <MessageText key={segment.id} text={segment.text} />
         ))}
-      </section>
+      </ScrollArea>
     </details>
   );
 }

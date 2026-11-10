@@ -107,7 +107,6 @@
   overflow-y: hidden;
   /* KaTeX's positioned glyph boxes extend beyond its line box. */
   padding-block: 0.5em;
-  scrollbar-width: thin;
   overflow-wrap: normal;
 }
 .markdown :global(.katex-display):focus-visible {
@@ -197,7 +196,6 @@
   padding: 24px 24px 24px;
   overflow: auto;
   max-height: 560px;
-  scrollbar-width: thin;
 }
 .diagramCanvas img {
   display: block;
@@ -218,7 +216,6 @@
   margin: 16px 0;
   border: 1px solid var(--a13n-border);
   border-radius: 10px;
-  scrollbar-width: thin;
 }
 .tableScroll:focus-visible {
   outline: 2px solid var(--ring);

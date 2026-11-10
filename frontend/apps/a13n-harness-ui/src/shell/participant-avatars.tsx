@@ -5,6 +5,7 @@ import {
   PopoverPopup,
   PopoverTitle,
   PopoverTrigger,
+  ScrollArea,
 } from "a13n-ui";
 import type { CSSProperties } from "react";
 import type { Schema } from "../transport/client";
@@ -110,41 +111,43 @@ export function ParticipantAvatars({
         <PopoverTitle className={styles.title}>
           {t("People here")} <span>{count}</span>
         </PopoverTitle>
-        <ul className={styles.people}>
-          {participants.map((participant) => (
-            <li key={participant.participant_id}>
-              <ParticipantAvatar participant={participant} />
-              <div className={styles.identity}>
-                <span className={styles.name}>
-                  {participant.display_name?.trim() || t("Anonymous")}
-                  {participant.participant_id === ownId && (
-                    <span className={styles.you}> {t("(you)")}</span>
-                  )}
-                </span>
-                <small>
-                  <span
-                    className={styles.statusDot}
-                    data-away={!participant.foreground || undefined}
-                  />
-                  {t(participant.foreground ? "Active" : "Away")} -{" "}
-                  {t(
-                    participant.focus?.target.kind === "conversation"
-                      ? "Chat"
-                      : participant.focus?.target.kind === "changes"
-                        ? "Changes"
-                        : participant.focus?.target.kind === "terminal"
-                          ? "Terminal"
-                          : participant.focus?.target.kind === "file"
-                            ? "Files"
-                            : participant.focus?.target.kind === "project"
-                              ? "Project"
-                              : "Workspace",
-                  )}
-                </small>
-              </div>
-            </li>
-          ))}
-        </ul>
+        <ScrollArea autoHeight scrollbarGutter className={styles.peopleScroll}>
+          <ul className={styles.people}>
+            {participants.map((participant) => (
+              <li key={participant.participant_id}>
+                <ParticipantAvatar participant={participant} />
+                <div className={styles.identity}>
+                  <span className={styles.name}>
+                    {participant.display_name?.trim() || t("Anonymous")}
+                    {participant.participant_id === ownId && (
+                      <span className={styles.you}> {t("(you)")}</span>
+                    )}
+                  </span>
+                  <small>
+                    <span
+                      className={styles.statusDot}
+                      data-away={!participant.foreground || undefined}
+                    />
+                    {t(participant.foreground ? "Active" : "Away")} -{" "}
+                    {t(
+                      participant.focus?.target.kind === "conversation"
+                        ? "Chat"
+                        : participant.focus?.target.kind === "changes"
+                          ? "Changes"
+                          : participant.focus?.target.kind === "terminal"
+                            ? "Terminal"
+                            : participant.focus?.target.kind === "file"
+                              ? "Files"
+                              : participant.focus?.target.kind === "project"
+                                ? "Project"
+                                : "Workspace",
+                    )}
+                  </small>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </ScrollArea>
       </PopoverPopup>
     </Popover>
   );
