@@ -36,6 +36,8 @@ curl -X POST "$A13N_URL/api/v1/memories" \
 
 `DELETE /memories/{id}` 需要 `write` 和 `If-Match`，会删除文件、历史和线程挂载。正在使用该记忆的 agent 在下一次记忆工具调用时收到 `memory_deleted`。
 
+文件型记忆无需空间即可使用[自定义整理任务和自动策略](memory.md#automatically-extract-conversation-knowledge)。独立自动整理在 `/memories/{id}/organization` 下使用单独的策略 ETag；记忆资源 ETag 继续控制普通配置。
+
 ## 记录型记忆
 
 ### 配置记忆 provider

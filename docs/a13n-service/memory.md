@@ -76,6 +76,90 @@ The **Organization** tab shows status, costs, traces and revisions separately fr
 
 For API clients, `GET /memory-spaces/{id}/organization` reads status; `POST /memory-spaces/{id}/organizations` requests a round; `GET` on that path lists rounds. `/memory-spaces/{id}/sessions` lists associated business sessions. Lists use `limit` and `cursor`. File and revision APIs use the Space's `memory_id` under `/memories/{memory_id}`. Manage the backing store through the Space; it stays out of standalone memory lists and cannot be mounted directly.
 
+### Automatically extract conversation knowledge
+
+Automatic policies can include task `instructions` and a `history` selection. Choose conversation Session IDs and an explicit starting seal time (`after`); optional `before` closes the window and `max_runs` limits each batch (default 100, maximum 1000). For example, add this to a Space's `organization` policy:
+
+```json
+{
+  "instructions": "Maintain product decisions and current handoff notes.",
+  "history": {
+    "session_ids": ["sess_..."],
+    "after": "2026-11-01T00:00:00Z",
+    "max_runs": 50
+  }
+}
+```
+
+Unprocessed sealed runs trigger organization even when no files changed or the memory is empty. Completed rounds consume their selected runs; failed and cancelled rounds leave them eligible after cooldown. Each batch keeps its exact source identities. File change counts and history progress are independent, so revision cleanup and concurrent file edits do not replay successfully processed conversations. Changing the selection preserves completed history progress. One-off organization tasks do not advance automatic progress.
+
+Standalone file memories use the same policy without requiring a Space. Read `GET /memories/{id}/organization`, then replace the policy with `PUT` and the returned `If-Match` ETag. The response includes policy configuration, status, `processed_history_runs` and configuration version; status changes leave the policy ETag unchanged. New standalone policies are disabled. Managed backing memories use their Space policy instead. The service rechecks the configuring actor's current permissions and configured resources before admitting every round.
+
+### Run a custom organization task
+
+Open a file collection or Space and choose **Organization → Organize memory**. Select an organizer model and optional task instructions. Console starts with **Candidate for review**; choose **Write directly** only when saved partial edits are acceptable. Turn on **Include conversation history** to select source sessions, local seal-time bounds and a run limit. After acceptance, open **Task details** for frozen source runs and **Open run and usage** for execution, cancellation and cost.
+
+Use `POST /memory-organizations` to organize a standalone file memory or an enabled Space with your own model and instructions. This needs workspace `read`, `write` and `run` permissions. It works without an automatic policy, including on an empty store:
+
+```json
+{
+  "target": {"kind": "memory", "id": "mem_..."},
+  "model": "your-model-key",
+  "instructions": "Consolidate supported product decisions and preserve unresolved disagreements."
+}
+```
+
+For a Space, use `{"kind": "space", "id": "mspace_..."}`. The managed backing memory cannot be selected directly. The response identifies the organization request and its ordinary run. Read it with `GET /memory-organizations/{id}`; use the run API for status, cancellation, usage and traces. Each submission accepts a distinct task, including a retry after an uncertain response; separate tasks may run concurrently against the same target with ordinary file conflict checks. Each keeps its own instructions and caller authority. Failed or cancelled runs retain committed edits.
+
+The `guidance.modules` API field combines `topics`, `journal` and `session_notes` independently. For example, `{"modules": ["topics", "session_notes"], "timezone": "UTC"}` keeps reusable knowledge and current handoff state. Omit `modules` to use the selected preset; `[]` keeps only common maintenance rules. A system override replaces the complete composed guide. Read the available module text with `GET /memories/guidance-presets`.
+
+### Extract knowledge from selected conversations
+
+Add `history` to a custom organization request to extract knowledge from one or several conversation Sessions, including into an empty memory:
+
+```json
+{
+  "target": {"kind": "memory", "id": "mem_..."},
+  "model": "your-model-key",
+  "instructions": "Extract supported product decisions, cite source Runs and retain conflicting statements.",
+  "history": {
+    "session_ids": ["ses_first", "ses_second"],
+    "after": "2026-01-01T00:00:00Z",
+    "before": "2026-02-01T00:00:00Z",
+    "max_runs": 100
+  }
+}
+```
+
+Select 1–100 unique conversation Sessions in the same workspace. The optional time bounds apply inclusively to Run seal time, not message time. At acceptance, the Service freezes the matching sealed Runs and returns their Session, Thread and Run provenance in `sources`. Later conversation activity does not change that selection. `max_runs` defaults to 100 and supports up to 1000; an overfull selection is refused, so narrow the window or split the Sessions. An empty selection supplies no historical facts.
+
+The organizer has bounded source discovery and content reading/search tools limited to that selection. It treats transcripts as evidence, preserves corrections and disagreements, and distinguishes user statements from agent claims. Omitting `history` organizes saved files only. Upgrading does not scan old conversations or spend model tokens automatically.
+
+### Review a candidate before publishing
+
+In Console, choose **Review candidate** on an accepted task. The full-height review page shows added, modified and deleted file counts beside a resizable, collapsible file explorer. Switch between **Changed files** and **All files**, or share the page URL to open the selected path directly. On a phone, select a file from the list and use **Files** to return. **Diff** compares complete saved-baseline and candidate content; **File** opens either full version, including the baseline of a deleted file. Markdown files also offer source and preview. The reader supports wrapping, exact raw copying, change navigation and expandable unchanged context. Use **Previous file** or **Next file** to move through the changes. **Mark as reviewed** tracks your local progress; it does not select files for publication. **Apply all changes** confirms publication of the entire candidate. **Reload review** replaces the displayed versions and clears review marks. A changed target blocks checked publication. Inspect the current target, then start a fresh task or open **Review actions → Replace entire target** and acknowledge the listed target-only deletions, concurrent edits to overwrite and deleted files to restore. An unconfirmed application preserves the review and requires reload before another attempt. **Review actions → Discard candidate** prevents publication while preserving its inspectable files. After publication, use **View updated memory** to inspect the result.
+
+Set `"output": "candidate"` on a custom organization request to keep live files unchanged during generation. The response's `candidate_memory_id` names an independent file memory copied from the target. Inspect or edit its files through ordinary memory APIs. This also works with selected conversation history.
+
+1. Wait for the ordinary run to complete and seal. Read `GET /memory-organizations/{id}/candidate` for status, changed paths, `candidate_seq` and `target_seq`.
+2. Read `GET /memory-organizations/{id}/candidate/file?path=...&candidate_seq=7` with the actual reviewed candidate sequence. It returns the complete saved-baseline and candidate strings; `null` means absent and `""` means an empty file. The older `/candidate/diff?path=...` endpoint remains a bounded preview. Inspect the current target separately when it has changed; `/candidate/replacement?candidate_seq=7&target_seq=4` lists the exact whole-tree replacement effects for the reviewed versions.
+3. Publish with `POST /memory-organizations/{id}/candidate/apply`, using `{"mode": "checked", "candidate_seq": 7, "target_seq": 4}` with the actual reviewed sequences. The complete tree publishes atomically. Unchanged target files retain their IDs and versions.
+
+`review_changed` means the candidate or target changed after review. Reload both before deciding. `baseline_changed` means the target changed since generation began. Generate a fresh candidate, or explicitly choose `replace_all` after reviewing the current target. `replace_all` overwrites the complete target tree and deletes target-only files; it does not merge concurrent edits. The same exact apply request can be retried safely using its stored receipt.
+
+To reject a settled candidate, call `POST /memory-organizations/{id}/candidate/discard`. Cancel an active run first through the run API. Failed and cancelled generation cannot publish. Apply requires current write permission and an enabled target Space. Discard and apply retain the independent candidate memory for inspection; delete it separately when no longer needed. Removing the target or candidate makes publication unavailable. Publication changes file content, not target guidance or Session bindings.
+
+### Compose a Dreams-style workflow
+
+A Dreams-style workflow combines conversation extraction, reusable knowledge and current handoff state:
+
+1. Create an empty file collection or a Space. Select **Topic knowledge** and **Session notes** under **Guidance modules**; add **Event journal** when dated events matter. Keep domain priorities in **Custom guide**.
+2. Start **Organize memory** with candidate output. Select the relevant conversations and a bounded seal-time window. Ask the organizer to preserve supported decisions, corrections, unresolved disagreements and source run identities.
+3. Review the generated files and apply the candidate. Reuse the published memory in later conversations through ordinary mounts or Space selections.
+4. For continuing extraction, configure the same sources and instructions in **Automatic policy** for a collection, or **Configuration → Organization** for a Space. Choose an explicit start time and enable automatic organization. Automatic rounds write directly; successful rounds consume sources once, while failed rounds leave sources eligible after cooldown.
+
+This composition uses ordinary organization runs, file guidance and automatic history progress. There is no separate Dreams resource or implicit historical scan. Disabling a policy preserves files and progress; changing source selections does not replay successfully consumed runs.
+
 ### Write from current knowledge
 
 Agents and organizers track the file versions their conversation has read. Each file mutation checks those observations within the same memory, atomically with the write. A changed source or target returns `read_conflict` and names the file to reread.

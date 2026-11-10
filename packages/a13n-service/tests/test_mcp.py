@@ -46,6 +46,10 @@ async def test_management_fidelity_and_audit(service: SimpleNamespace) -> None:
         assert created["headers"]["etag"]
         assert created["headers"]["x-request-id"]
         args = {"memory_id": memory_id}
+        automation = await call(http, service, "GET", "/memories/{memory_id}/organization", **args)
+        assert automation["status"] == 200
+        assert automation["body"]["processed_history_runs"] == 0
+        assert automation["body"]["policy"]["enabled"] is False
         missing = await call(http, service, "PATCH", "/memories/{memory_id}", **args, request_body={})
         assert missing["status"] == 428
         assert missing["body"]["error"]["code"] == "precondition_required"
@@ -70,6 +74,7 @@ async def test_management_fidelity_and_audit(service: SimpleNamespace) -> None:
         )
         assert cleared["status"] == 200 and cleared["body"]["guidance"] == {
             "system_preset": "general",
+            "modules": None,
             "system_override": None,
             "custom": "",
             "timezone": "UTC",
@@ -287,6 +292,10 @@ def test_worker_has_no_mcp_and_unmarked_routes_are_absent() -> None:
         ("/api/v1/memory-spaces/{space_id}/organization", "get"),
         ("/api/v1/memory-spaces/{space_id}/organizations", "get"),
         ("/api/v1/memory-spaces/{space_id}/sessions", "get"),
+        ("/api/v1/memory-organizations", "get"),
+        ("/api/v1/memory-organizations/{organization_id}", "get"),
+        ("/api/v1/memory-organizations/{organization_id}/candidate/file", "get"),
+        ("/api/v1/memory-organizations/{organization_id}/candidate/replacement", "get"),
     } <= selected
     assert {
         ("/api/v1/findings", "get"),

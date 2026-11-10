@@ -21,6 +21,7 @@ import {
 } from "../../shared/feedback";
 import { Section } from "../../shared/page";
 import { runPath } from "../conversations/api";
+import { MemoryOrganizations } from "./organizations";
 import { MemoryRunLink } from "./run-link";
 import { invalidateSpaces, spaceQueries } from "./spaces-api";
 import styles from "./space-selection.module.css";
@@ -54,6 +55,11 @@ export function SpaceOrganization({ space }: { space: Schema["MemorySpace"] }) {
     !state?.pending;
   return (
     <div className="grid gap-9">
+      <MemoryOrganizations
+        target={{ kind: "space", id: space.id }}
+        model={space.organization.model ?? undefined}
+        enabled={space.enabled}
+      />
       <Section
         title={t("Organization")}
         description={t(

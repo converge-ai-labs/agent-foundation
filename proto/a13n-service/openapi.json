@@ -2849,6 +2849,56 @@
         "title": "AuthorizationStatus",
         "type": "object"
       },
+      "AutomaticOrganizationHistory": {
+        "description": "Automatic history starts only at an explicitly chosen seal time.",
+        "properties": {
+          "after": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After"
+          },
+          "before": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before"
+          },
+          "max_runs": {
+            "default": 100,
+            "maximum": 1000.0,
+            "minimum": 1.0,
+            "title": "Max Runs",
+            "type": "integer"
+          },
+          "session_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Session Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "session_ids"
+        ],
+        "title": "AutomaticOrganizationHistory",
+        "type": "object"
+      },
       "AutomaticToolSearch": {
         "additionalProperties": false,
         "description": "Group Service-owned sources individually, following the agent's selections.",
@@ -3498,6 +3548,194 @@
           "error"
         ],
         "title": "CallbackOutcome",
+        "type": "object"
+      },
+      "CandidateApplication": {
+        "properties": {
+          "applied_at": {
+            "format": "date-time",
+            "title": "Applied At",
+            "type": "string"
+          },
+          "applied_by_id": {
+            "title": "Applied By Id",
+            "type": "string"
+          },
+          "request": {
+            "$ref": "#/components/schemas/CandidateApply"
+          },
+          "result_seq": {
+            "title": "Result Seq",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "request",
+          "result_seq",
+          "applied_by_id",
+          "applied_at"
+        ],
+        "title": "CandidateApplication",
+        "type": "object"
+      },
+      "CandidateApply": {
+        "additionalProperties": false,
+        "properties": {
+          "candidate_seq": {
+            "minimum": 0.0,
+            "title": "Candidate Seq",
+            "type": "integer"
+          },
+          "mode": {
+            "default": "checked",
+            "enum": [
+              "checked",
+              "replace_all"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "target_seq": {
+            "minimum": 0.0,
+            "title": "Target Seq",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "candidate_seq",
+          "target_seq"
+        ],
+        "title": "CandidateApply",
+        "type": "object"
+      },
+      "CandidateChange": {
+        "properties": {
+          "operation": {
+            "enum": [
+              "create",
+              "update",
+              "delete"
+            ],
+            "title": "Operation",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "operation"
+        ],
+        "title": "CandidateChange",
+        "type": "object"
+      },
+      "CandidateDiff": {
+        "properties": {
+          "diff": {
+            "title": "Diff",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path",
+          "diff",
+          "truncated"
+        ],
+        "title": "CandidateDiff",
+        "type": "object"
+      },
+      "CandidateFile": {
+        "properties": {
+          "baseline": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Baseline"
+          },
+          "candidate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Candidate"
+          },
+          "candidate_seq": {
+            "title": "Candidate Seq",
+            "type": "integer"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "candidate_seq",
+          "baseline",
+          "candidate"
+        ],
+        "title": "CandidateFile",
+        "type": "object"
+      },
+      "CandidateReplacement": {
+        "properties": {
+          "candidate_seq": {
+            "title": "Candidate Seq",
+            "type": "integer"
+          },
+          "deletions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Deletions",
+            "type": "array"
+          },
+          "overwrites": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Overwrites",
+            "type": "array"
+          },
+          "restorations": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Restorations",
+            "type": "array"
+          },
+          "target_seq": {
+            "title": "Target Seq",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "candidate_seq",
+          "target_seq",
+          "deletions",
+          "overwrites",
+          "restorations"
+        ],
+        "title": "CandidateReplacement",
         "type": "object"
       },
       "Capabilities": {
@@ -9302,6 +9540,20 @@
             "title": "Custom",
             "type": "string"
           },
+          "modules": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/GuideModule"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modules"
+          },
           "system_override": {
             "anyOf": [
               {
@@ -9327,6 +9579,28 @@
           }
         },
         "title": "FileMemoryGuidance",
+        "type": "object"
+      },
+      "FileMemoryTarget": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "maxLength": 72,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "memory",
+            "default": "memory",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "FileMemoryTarget",
         "type": "object"
       },
       "FilesystemInventory": {
@@ -10157,6 +10431,14 @@
         ],
         "title": "GrantView",
         "type": "object"
+      },
+      "GuideModule": {
+        "enum": [
+          "topics",
+          "journal",
+          "session_notes"
+        ],
+        "type": "string"
       },
       "HarnessModelCharacteristics-Input": {
         "additionalProperties": false,
@@ -12067,6 +12349,37 @@
         ],
         "type": "string"
       },
+      "MemoryAutomation": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "policy": {
+            "$ref": "#/components/schemas/OrganizationPolicy"
+          },
+          "processed_history_runs": {
+            "title": "Processed History Runs",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SpaceOrganizationStatus"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "policy",
+          "status",
+          "processed_history_runs",
+          "version"
+        ],
+        "title": "MemoryAutomation",
+        "type": "object"
+      },
       "MemoryCreate": {
         "additionalProperties": false,
         "description": "`postgres` makes a file memory the Service stores; a Memory Provider's type makes a record memory in that\nprovider's backend, under a new namespace or the existing one `namespace` adopts.",
@@ -12530,6 +12843,33 @@
         "title": "MemoryFileState",
         "type": "object"
       },
+      "MemoryGuidanceModule": {
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "guide": {
+            "title": "Guide",
+            "type": "string"
+          },
+          "id": {
+            "$ref": "#/components/schemas/GuideModule"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "guide"
+        ],
+        "title": "MemoryGuidanceModule",
+        "type": "object"
+      },
       "MemoryGuidancePreset": {
         "properties": {
           "description": {
@@ -12565,10 +12905,18 @@
             },
             "title": "Items",
             "type": "array"
+          },
+          "modules": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryGuidanceModule"
+            },
+            "title": "Modules",
+            "type": "array"
           }
         },
         "required": [
-          "items"
+          "items",
+          "modules"
         ],
         "title": "MemoryGuidancePresets",
         "type": "object"
@@ -12683,6 +13031,100 @@
           }
         },
         "title": "MemoryMountUpdate",
+        "type": "object"
+      },
+      "MemoryOrganization": {
+        "properties": {
+          "candidate_memory_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Candidate Memory Id"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by_id": {
+            "title": "Created By Id",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "request": {
+            "$ref": "#/components/schemas/OrganizationRequest"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/OrganizationSource"
+            },
+            "title": "Sources",
+            "type": "array"
+          },
+          "thread_id": {
+            "title": "Thread Id",
+            "type": "string"
+          },
+          "workspace_id": {
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "workspace_id",
+          "request",
+          "sources",
+          "session_id",
+          "thread_id",
+          "run_id",
+          "created_by_id",
+          "created_at"
+        ],
+        "title": "MemoryOrganization",
+        "type": "object"
+      },
+      "MemoryOrganizationPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryOrganization"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "MemoryOrganizationPage",
         "type": "object"
       },
       "MemoryPage": {
@@ -16320,6 +16762,147 @@
         "title": "Organization",
         "type": "object"
       },
+      "OrganizationCandidate": {
+        "properties": {
+          "application": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CandidateApplication"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "baseline_seq": {
+            "title": "Baseline Seq",
+            "type": "integer"
+          },
+          "candidate_seq": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Candidate Seq"
+          },
+          "changes": {
+            "items": {
+              "$ref": "#/components/schemas/CandidateChange"
+            },
+            "title": "Changes",
+            "type": "array"
+          },
+          "files": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "memory_id": {
+            "title": "Memory Id",
+            "type": "string"
+          },
+          "organization_id": {
+            "title": "Organization Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "generating",
+              "ready",
+              "failed",
+              "applied",
+              "discarded",
+              "unavailable"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "target_memory_id": {
+            "title": "Target Memory Id",
+            "type": "string"
+          },
+          "target_seq": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Seq"
+          }
+        },
+        "required": [
+          "organization_id",
+          "memory_id",
+          "target_memory_id",
+          "status",
+          "baseline_seq",
+          "candidate_seq",
+          "target_seq",
+          "changes",
+          "files"
+        ],
+        "title": "OrganizationCandidate",
+        "type": "object"
+      },
+      "OrganizationHistory": {
+        "description": "Explicit Sessions and a bounded, inclusive seal-time window.",
+        "properties": {
+          "after": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After"
+          },
+          "before": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before"
+          },
+          "max_runs": {
+            "default": 100,
+            "maximum": 1000.0,
+            "minimum": 1.0,
+            "title": "Max Runs",
+            "type": "integer"
+          },
+          "session_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Session Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "session_ids"
+        ],
+        "title": "OrganizationHistory",
+        "type": "object"
+      },
       "OrganizationPage": {
         "properties": {
           "items": {
@@ -16370,6 +16953,29 @@
             "title": "Enabled",
             "type": "boolean"
           },
+          "history": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AutomaticOrganizationHistory"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "instructions": {
+            "anyOf": [
+              {
+                "maxLength": 16384,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instructions"
+          },
           "model": {
             "anyOf": [
               {
@@ -16403,6 +17009,99 @@
         },
         "title": "OrganizationPolicy",
         "type": "object"
+      },
+      "OrganizationRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "history": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OrganizationHistory"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "instructions": {
+            "default": "Organize the saved memory files.",
+            "maxLength": 16384,
+            "minLength": 1,
+            "title": "Instructions",
+            "type": "string"
+          },
+          "model": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Model",
+            "type": "string"
+          },
+          "output": {
+            "default": "direct",
+            "enum": [
+              "direct",
+              "candidate"
+            ],
+            "title": "Output",
+            "type": "string"
+          },
+          "target": {
+            "$ref": "#/components/schemas/OrganizationTarget"
+          }
+        },
+        "required": [
+          "target",
+          "model"
+        ],
+        "title": "OrganizationRequest",
+        "type": "object"
+      },
+      "OrganizationSource": {
+        "additionalProperties": false,
+        "properties": {
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "sealed_at": {
+            "format": "date-time",
+            "title": "Sealed At",
+            "type": "string"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "thread_id": {
+            "title": "Thread Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "thread_id",
+          "run_id",
+          "sealed_at"
+        ],
+        "title": "OrganizationSource",
+        "type": "object"
+      },
+      "OrganizationTarget": {
+        "discriminator": {
+          "mapping": {
+            "memory": "#/components/schemas/FileMemoryTarget",
+            "space": "#/components/schemas/SpaceTarget"
+          },
+          "propertyName": "kind"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/FileMemoryTarget"
+          },
+          {
+            "$ref": "#/components/schemas/SpaceTarget"
+          }
+        ]
       },
       "OrganizationUpdate": {
         "additionalProperties": false,
@@ -23037,6 +23736,28 @@
           }
         },
         "title": "SpaceOrganizationStatus",
+        "type": "object"
+      },
+      "SpaceTarget": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "maxLength": 72,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "space",
+            "default": "space",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "SpaceTarget",
         "type": "object"
       },
       "Span": {
@@ -39733,6 +40454,168 @@
         "x-a13n-mcp": true
       }
     },
+    "/api/v1/memories/{memory_id}/organization": {
+      "get": {
+        "operationId": "get_memory_automation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "memory_id",
+            "required": true,
+            "schema": {
+              "title": "Memory Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryAutomation"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Get Memory Automation",
+        "tags": [
+          "memory organizations"
+        ],
+        "x-a13n-mcp": true
+      },
+      "put": {
+        "operationId": "update_memory_automation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "memory_id",
+            "required": true,
+            "schema": {
+              "title": "Memory Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrganizationPolicy"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryAutomation"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Update Memory Automation",
+        "tags": [
+          "memory organizations"
+        ]
+      }
+    },
     "/api/v1/memories/{memory_id}/records": {
       "get": {
         "operationId": "list_records",
@@ -40521,6 +41404,685 @@
         "summary": "Restore Memory Revision",
         "tags": [
           "memories"
+        ],
+        "x-a13n-mcp": true
+      }
+    },
+    "/api/v1/memory-organizations": {
+      "get": {
+        "operationId": "list_memory_organizations",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryOrganizationPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "List Memory Organizations",
+        "tags": [
+          "memory organizations"
+        ],
+        "x-a13n-mcp": true
+      },
+      "post": {
+        "operationId": "create_memory_organization",
+        "parameters": [
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrganizationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryOrganization"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Create Memory Organization",
+        "tags": [
+          "memory organizations"
+        ]
+      }
+    },
+    "/api/v1/memory-organizations/{organization_id}": {
+      "get": {
+        "operationId": "get_memory_organization",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryOrganization"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Get Memory Organization",
+        "tags": [
+          "memory organizations"
+        ],
+        "x-a13n-mcp": true
+      }
+    },
+    "/api/v1/memory-organizations/{organization_id}/candidate": {
+      "get": {
+        "operationId": "get_organization_candidate",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationCandidate"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Get Organization Candidate",
+        "tags": [
+          "memory organizations"
+        ],
+        "x-a13n-mcp": true
+      }
+    },
+    "/api/v1/memory-organizations/{organization_id}/candidate/apply": {
+      "post": {
+        "operationId": "apply_organization_candidate",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CandidateApply"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationCandidate"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Apply Organization Candidate",
+        "tags": [
+          "memory organizations"
+        ]
+      }
+    },
+    "/api/v1/memory-organizations/{organization_id}/candidate/diff": {
+      "get": {
+        "operationId": "get_organization_candidate_diff",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "title": "Path",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CandidateDiff"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Get Organization Candidate Diff",
+        "tags": [
+          "memory organizations"
+        ],
+        "x-a13n-mcp": true
+      }
+    },
+    "/api/v1/memory-organizations/{organization_id}/candidate/discard": {
+      "post": {
+        "operationId": "discard_organization_candidate",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationCandidate"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Discard Organization Candidate",
+        "tags": [
+          "memory organizations"
+        ]
+      }
+    },
+    "/api/v1/memory-organizations/{organization_id}/candidate/file": {
+      "get": {
+        "operationId": "get_organization_candidate_file",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "title": "Path",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "candidate_seq",
+            "required": true,
+            "schema": {
+              "minimum": 0,
+              "title": "Candidate Seq",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CandidateFile"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Get Organization Candidate File",
+        "tags": [
+          "memory organizations"
+        ],
+        "x-a13n-mcp": true
+      }
+    },
+    "/api/v1/memory-organizations/{organization_id}/candidate/replacement": {
+      "get": {
+        "operationId": "get_organization_candidate_replacement",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "candidate_seq",
+            "required": true,
+            "schema": {
+              "minimum": 0,
+              "title": "Candidate Seq",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "target_seq",
+            "required": true,
+            "schema": {
+              "minimum": 0,
+              "title": "Target Seq",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CandidateReplacement"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Get Organization Candidate Replacement",
+        "tags": [
+          "memory organizations"
         ],
         "x-a13n-mcp": true
       }

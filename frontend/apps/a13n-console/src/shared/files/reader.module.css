@@ -1,0 +1,71 @@
+.reader {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+}
+.tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  padding: 5px 12px;
+  border-bottom: 1px solid var(--a13n-border-soft);
+}
+.format {
+  margin-right: auto;
+  color: var(--a13n-secondary);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.labels {
+  display: flex;
+  flex: none;
+  border-bottom: 1px solid var(--a13n-border-soft);
+  color: var(--a13n-secondary);
+  font-size: 11px;
+}
+.labels > span {
+  flex: 1;
+  padding: 6px 16px;
+}
+.editor {
+  flex: 1;
+  min-width: 0;
+  min-height: 120px;
+  overflow: hidden;
+}
+.editor :global(.cm-mergeView) {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+.editor :global(.cm-mergeViewEditors) {
+  flex: 1;
+  min-height: 0;
+}
+.editor :global(.cm-mergeViewEditor) {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.editor :global(.cm-mergeViewEditor .cm-editor) {
+  flex: 1;
+  min-height: 0;
+}
+.editor :global(.cm-mergeView .cm-scroller) {
+  overflow: auto;
+}
+.editor :global(.cm-mergeView .cm-mergeViewEditor + .cm-mergeViewEditor) {
+  border-left: 1px solid var(--a13n-border-soft);
+}
+@media (pointer: coarse) {
+  .tools button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}

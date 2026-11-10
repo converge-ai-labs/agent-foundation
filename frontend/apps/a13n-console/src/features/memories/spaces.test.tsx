@@ -42,6 +42,8 @@ const space: Schema["MemorySpace"] = {
   always_load: ["global/MEMORY.md"],
   organization: {
     enabled: false,
+    instructions: null,
+    history: null,
     model: "local",
     check_interval_seconds: 10,
     cooldown_seconds: 300,

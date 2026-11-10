@@ -230,8 +230,13 @@ it("opens a tool row in place with its arguments, result and patch", async () =>
   expect(screen.getByText("Applied 1 hunk")).toBeTruthy();
   expect(screen.getByText("Patch")).toBeTruthy();
   expect(screen.getAllByText("src/stream.ts").length).toBeGreaterThan(0);
-  expect(screen.getByText("+const a = 2;")).toBeTruthy();
-  expect(screen.getByText("-const a = 1;")).toBeTruthy();
+  const added = screen.getByText("2", { selector: "mark" }).closest("code")!;
+  const removed = screen.getByText("1", { selector: "mark" }).closest("code")!;
+  expect(added.textContent).toBe("const a = 2;");
+  expect(removed.textContent).toBe("const a = 1;");
+  expect(within(added).getByText("2").tagName).toBe("MARK");
+  expect(within(removed).getByText("1").tagName).toBe("MARK");
+  expect(screen.queryByText(/^@@/)).toBeNull();
 });
 
 it("says so when the execution history is incomplete", () => {

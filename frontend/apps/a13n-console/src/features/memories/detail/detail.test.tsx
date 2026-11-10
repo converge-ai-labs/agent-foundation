@@ -319,7 +319,10 @@ it("opens the first always-loaded file and saves an edit under the ETag it start
   await screen.findByRole("heading", { name: "Team handbook" });
   expect(await screen.findByRole("heading", { name: "Handbook" })).toBeTruthy();
   expect(
-    screen.getByRole("button", { name: /^README\.md\s*Always loaded$/ }),
+    screen.getByRole("treeitem", {
+      name: /^README\.md\s*Always loaded$/,
+      selected: true,
+    }),
   ).toBeTruthy();
   await user.click(screen.getByRole("button", { name: "Edit" }));
   const editor = screen.getByRole("textbox", { name: "Content of README.md" });
@@ -398,7 +401,10 @@ it("creates, renames and deletes files", async () => {
 
   // Right-click a different file without changing the open document first.
   await user.pointer({
-    target: screen.getByRole("button", { name: "glossary.md" }),
+    target: screen.getByRole("treeitem", {
+      name: "glossary.md",
+      selected: false,
+    }),
     keys: "[MouseRight]",
   });
   await user.click(await screen.findByRole("menuitem", { name: "Rename" }));
@@ -427,7 +433,7 @@ it("creates, renames and deletes files", async () => {
   });
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   await waitFor(() =>
-    expect(screen.queryByRole("button", { name: "terms.md" })).toBeNull(),
+    expect(screen.queryByRole("treeitem", { name: "terms.md" })).toBeNull(),
   );
   expect(await screen.findByRole("heading", { name: "Handbook" })).toBeTruthy();
 });
@@ -444,7 +450,8 @@ it("filters history by run from the URL, opens a diff and restores under the cur
   expect(screen.getByText("#5")).toBeTruthy();
   expect(screen.queryByText("#6")).toBeNull();
   await user.click(screen.getByRole("button", { name: "Changes" }));
-  expect(await screen.findByText("+new line")).toBeTruthy();
+  expect(await screen.findByText("new")).toBeTruthy();
+  expect(screen.queryByText("@@ -1 +1 @@")).toBeNull();
   await user.click(screen.getByRole("button", { name: "Restore" }));
   const confirm = await screen.findByRole("dialog");
   await user.click(

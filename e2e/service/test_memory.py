@@ -338,7 +338,7 @@ async def test_memory_space_organization_runs_through_control_and_workers(stack)
     session_url = f"/api/v1/sessions/{owner['id']}"
     space_url = f"/api/v1/memory-spaces/{space['id']}"
     memory_id = space["memory_id"]
-    marker = "Organize the saved files in this Memory Space."
+    marker = "Organize the saved memory files."
     await model.call(
         "memory_file_create",
         {"memory": "preferences", "path": f"sessions/{owner['id']}/notes.md", "content": "Prefer concise answers."},

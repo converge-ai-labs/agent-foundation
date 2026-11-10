@@ -152,7 +152,7 @@ it("opens a builtin skill by keyboard and shares file preview and cached downloa
   await user.click(screen.getByRole("button", { name: "Preview" }));
   await user.click(screen.getByRole("link", { name: "Agent reference" }));
   await screen.findByRole("heading", { name: "Agent reference" });
-  await user.click(screen.getByRole("button", { name: "catalog.json" }));
+  await user.click(screen.getByRole("treeitem", { name: "catalog.json" }));
   await screen.findByText(/providers/);
   await user.click(screen.getByRole("button", { name: "Download ZIP" }));
   await waitFor(() => expect(download).toHaveBeenCalledTimes(1));

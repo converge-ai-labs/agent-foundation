@@ -2017,6 +2017,24 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/memories/{memory_id}/organization": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Memory Automation */
+    get: operations["get_memory_automation"];
+    /** Update Memory Automation */
+    put: operations["update_memory_automation"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/memories/{memory_id}/records": {
     parameters: {
       query?: never;
@@ -2128,6 +2146,143 @@ export interface paths {
      * @description Set the path back to the content the change replaced; `If-Match` names the file there, if any.
      */
     post: operations["restore_memory_revision"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/memory-organizations": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Memory Organizations */
+    get: operations["list_memory_organizations"];
+    put?: never;
+    /** Create Memory Organization */
+    post: operations["create_memory_organization"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/memory-organizations/{organization_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Memory Organization */
+    get: operations["get_memory_organization"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/memory-organizations/{organization_id}/candidate": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Organization Candidate */
+    get: operations["get_organization_candidate"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/memory-organizations/{organization_id}/candidate/apply": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Apply Organization Candidate */
+    post: operations["apply_organization_candidate"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/memory-organizations/{organization_id}/candidate/diff": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Organization Candidate Diff */
+    get: operations["get_organization_candidate_diff"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/memory-organizations/{organization_id}/candidate/discard": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Discard Organization Candidate */
+    post: operations["discard_organization_candidate"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/memory-organizations/{organization_id}/candidate/file": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Organization Candidate File */
+    get: operations["get_organization_candidate_file"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/memory-organizations/{organization_id}/candidate/replacement": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Organization Candidate Replacement */
+    get: operations["get_organization_candidate_replacement"];
+    put?: never;
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -5910,6 +6065,23 @@ export interface components {
       subject?: string | null;
     };
     /**
+     * AutomaticOrganizationHistory
+     * @description Automatic history starts only at an explicitly chosen seal time.
+     */
+    AutomaticOrganizationHistory: {
+      /** After */
+      after?: string | null;
+      /** Before */
+      before?: string | null;
+      /**
+       * Max Runs
+       * @default 100
+       */
+      max_runs?: number;
+      /** Session Ids */
+      session_ids: string[];
+    };
+    /**
      * AutomaticToolSearch
      * @description Group Service-owned sources individually, following the agent's selections.
      */
@@ -6162,6 +6334,75 @@ export interface components {
       /** Error */
       error: string | null;
       status: components["schemas"]["ConnectionStatus"];
+    };
+    /** CandidateApplication */
+    CandidateApplication: {
+      /**
+       * Applied At
+       * Format: date-time
+       */
+      applied_at: string;
+      /** Applied By Id */
+      applied_by_id: string;
+      request: components["schemas"]["CandidateApply"];
+      /** Result Seq */
+      result_seq: number;
+    };
+    /** CandidateApply */
+    CandidateApply: {
+      /** Candidate Seq */
+      candidate_seq: number;
+      /**
+       * Mode
+       * @default checked
+       * @enum {string}
+       */
+      mode?: "checked" | "replace_all";
+      /** Target Seq */
+      target_seq: number;
+    };
+    /** CandidateChange */
+    CandidateChange: {
+      /**
+       * Operation
+       * @enum {string}
+       */
+      operation: "create" | "update" | "delete";
+      /** Path */
+      path: string;
+    };
+    /** CandidateDiff */
+    CandidateDiff: {
+      /** Diff */
+      diff: string;
+      /** Path */
+      path: string;
+      /** Truncated */
+      truncated: boolean;
+    };
+    /** CandidateFile */
+    CandidateFile: {
+      /** Baseline */
+      baseline: string | null;
+      /** Candidate */
+      candidate: string | null;
+      /** Candidate Seq */
+      candidate_seq: number;
+      /** Path */
+      path: string;
+    };
+    /** CandidateReplacement */
+    CandidateReplacement: {
+      /** Candidate Seq */
+      candidate_seq: number;
+      /** Deletions */
+      deletions: string[];
+      /** Overwrites */
+      overwrites: string[];
+      /** Restorations */
+      restorations: string[];
+      /** Target Seq */
+      target_seq: number;
     };
     /** Capabilities */
     Capabilities: {
@@ -8319,6 +8560,8 @@ export interface components {
        * @default
        */
       custom?: string;
+      /** Modules */
+      modules?: components["schemas"]["GuideModule"][] | null;
       /** System Override */
       system_override?: string | null;
       /** @default general */
@@ -8328,6 +8571,16 @@ export interface components {
        * @default UTC
        */
       timezone?: string;
+    };
+    /** FileMemoryTarget */
+    FileMemoryTarget: {
+      /** Id */
+      id: string;
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      kind: "memory";
     };
     /** FilesystemInventory */
     FilesystemInventory: {
@@ -8668,6 +8921,8 @@ export interface components {
       /** Workspace Id */
       workspace_id: string | null;
     };
+    /** @enum {string} */
+    GuideModule: "topics" | "journal" | "session_notes";
     /**
      * HarnessModelCharacteristics
      * @description Resolved Harness characteristics of the active Agent model.
@@ -9373,6 +9628,17 @@ export interface components {
     };
     /** @enum {string} */
     MemoryAccess: "read" | "write";
+    /** MemoryAutomation */
+    MemoryAutomation: {
+      /** Id */
+      id: string;
+      policy: components["schemas"]["OrganizationPolicy"];
+      /** Processed History Runs */
+      processed_history_runs: number;
+      status: components["schemas"]["SpaceOrganizationStatus"];
+      /** Version */
+      version: number;
+    };
     /**
      * MemoryCreate
      * @description `postgres` makes a file memory the Service stores; a Memory Provider's type makes a record memory in that
@@ -9514,6 +9780,16 @@ export interface components {
       /** Path */
       path: string;
     };
+    /** MemoryGuidanceModule */
+    MemoryGuidanceModule: {
+      /** Description */
+      description: string;
+      /** Guide */
+      guide: string;
+      id: components["schemas"]["GuideModule"];
+      /** Name */
+      name: string;
+    };
     /** MemoryGuidancePreset */
     MemoryGuidancePreset: {
       /** Description */
@@ -9528,6 +9804,8 @@ export interface components {
     MemoryGuidancePresets: {
       /** Items */
       items: components["schemas"]["MemoryGuidancePreset"][];
+      /** Modules */
+      modules: components["schemas"]["MemoryGuidanceModule"][];
     };
     /** @enum {string} */
     MemoryKind: "file" | "record";
@@ -9566,6 +9844,38 @@ export interface components {
       access?: components["schemas"]["MemoryAccess"] | null;
       /** Recall */
       recall?: boolean | null;
+    };
+    /** MemoryOrganization */
+    MemoryOrganization: {
+      /** Candidate Memory Id */
+      candidate_memory_id?: string | null;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Created By Id */
+      created_by_id: string;
+      /** Id */
+      id: string;
+      request: components["schemas"]["OrganizationRequest"];
+      /** Run Id */
+      run_id: string;
+      /** Session Id */
+      session_id: string;
+      /** Sources */
+      sources: components["schemas"]["OrganizationSource"][];
+      /** Thread Id */
+      thread_id: string;
+      /** Workspace Id */
+      workspace_id: string;
+    };
+    /** MemoryOrganizationPage */
+    MemoryOrganizationPage: {
+      /** Items */
+      items: components["schemas"]["MemoryOrganization"][];
+      /** Next Cursor */
+      next_cursor?: string | null;
     };
     /** MemoryPage */
     MemoryPage: {
@@ -10695,6 +11005,54 @@ export interface components {
       /** Version */
       version: number;
     };
+    /** OrganizationCandidate */
+    OrganizationCandidate: {
+      application?: components["schemas"]["CandidateApplication"] | null;
+      /** Baseline Seq */
+      baseline_seq: number;
+      /** Candidate Seq */
+      candidate_seq: number | null;
+      /** Changes */
+      changes: components["schemas"]["CandidateChange"][];
+      /** Files */
+      files: string[];
+      /** Memory Id */
+      memory_id: string;
+      /** Organization Id */
+      organization_id: string;
+      /**
+       * Status
+       * @enum {string}
+       */
+      status:
+        | "generating"
+        | "ready"
+        | "failed"
+        | "applied"
+        | "discarded"
+        | "unavailable";
+      /** Target Memory Id */
+      target_memory_id: string;
+      /** Target Seq */
+      target_seq: number | null;
+    };
+    /**
+     * OrganizationHistory
+     * @description Explicit Sessions and a bounded, inclusive seal-time window.
+     */
+    OrganizationHistory: {
+      /** After */
+      after?: string | null;
+      /** Before */
+      before?: string | null;
+      /**
+       * Max Runs
+       * @default 100
+       */
+      max_runs?: number;
+      /** Session Ids */
+      session_ids: string[];
+    };
     /** OrganizationPage */
     OrganizationPage: {
       /** Items */
@@ -10719,6 +11077,9 @@ export interface components {
        * @default false
        */
       enabled?: boolean;
+      history?: components["schemas"]["AutomaticOrganizationHistory"] | null;
+      /** Instructions */
+      instructions?: string | null;
       /** Model */
       model?: string | null;
       /** Trigger */
@@ -10726,6 +11087,41 @@ export interface components {
         | components["schemas"]["AnyChangeTrigger"]
         | components["schemas"]["ChangeCountTrigger"];
     };
+    /** OrganizationRequest */
+    OrganizationRequest: {
+      history?: components["schemas"]["OrganizationHistory"] | null;
+      /**
+       * Instructions
+       * @default Organize the saved memory files.
+       */
+      instructions?: string;
+      /** Model */
+      model: string;
+      /**
+       * Output
+       * @default direct
+       * @enum {string}
+       */
+      output?: "direct" | "candidate";
+      target: components["schemas"]["OrganizationTarget"];
+    };
+    /** OrganizationSource */
+    OrganizationSource: {
+      /** Run Id */
+      run_id: string;
+      /**
+       * Sealed At
+       * Format: date-time
+       */
+      sealed_at: string;
+      /** Session Id */
+      session_id: string;
+      /** Thread Id */
+      thread_id: string;
+    };
+    OrganizationTarget:
+      | components["schemas"]["FileMemoryTarget"]
+      | components["schemas"]["SpaceTarget"];
     /** OrganizationUpdate */
     OrganizationUpdate: {
       /** Name */
@@ -12982,6 +13378,16 @@ export interface components {
       processed_seq?: number;
       /** Session Id */
       session_id?: string | null;
+    };
+    /** SpaceTarget */
+    SpaceTarget: {
+      /** Id */
+      id: string;
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      kind: "space";
     };
     /**
      * Span
@@ -18924,6 +19330,66 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
+  get_memory_automation: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        memory_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryAutomation"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  update_memory_automation: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        memory_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["OrganizationPolicy"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryAutomation"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
   list_records: {
     parameters: {
       query?: {
@@ -19188,6 +19654,264 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["MemoryFileState"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  list_memory_organizations: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryOrganizationPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  create_memory_organization: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["OrganizationRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryOrganization"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_memory_organization: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryOrganization"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_organization_candidate: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["OrganizationCandidate"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  apply_organization_candidate: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CandidateApply"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["OrganizationCandidate"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_organization_candidate_diff: {
+    parameters: {
+      query: {
+        path: string;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["CandidateDiff"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  discard_organization_candidate: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["OrganizationCandidate"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_organization_candidate_file: {
+    parameters: {
+      query: {
+        path: string;
+        candidate_seq: number;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["CandidateFile"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_organization_candidate_replacement: {
+    parameters: {
+      query: {
+        candidate_seq: number;
+        target_seq: number;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["CandidateReplacement"];
         };
       };
       400: components["responses"]["Error"];

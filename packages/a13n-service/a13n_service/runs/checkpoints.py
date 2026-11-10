@@ -19,12 +19,14 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Sequence
 from datetime import datetime
-from typing import TYPE_CHECKING, Literal
+from time import monotonic
+from typing import TYPE_CHECKING, Any, Literal
 
 import anyio
 import zstandard
 from a13n_harness import HarnessState, StateStore, StoredRef
 from a13n_harness.state import StoredKind
+from a13n_logging import get_logger
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from sqlalchemy import ColumnElement, and_, exists, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -553,34 +555,96 @@ async def prepare_reclaims(session: AsyncSession, takeovers: Sequence[tuple[RunR
 
 
 async def clean(runtime: Runtime, claimed: Claim) -> None:
-    """Deliver a durable reclamation intent outside sessions, with one total I/O budget.
+    """Deliver reclamation outside sessions within one total object I/O budget.
 
-    A scan checkpoints its last completed key and defers remaining pages without consuming an attempt.
-    A failure retries the same page; deletes are idempotent. Zero progress at the deadline is a failed attempt.
+    Record completed and interrupted calls separately: a batch deadline is not
+    evidence that an individual DeleteObject exceeded its own deadline.
     """
     assert claimed.organization_id is not None
     organization_id, run_id = claimed.organization_id, claimed.target["run_id"]
+    objects = runtime.cleanup_objects if runtime.cleanup_objects is not None else runtime.objects
     payload = dict(claimed.payload)
-    if "keys" in payload:
-        with anyio.fail_after(runtime.settings.objects.timeout):
-            for key in payload["keys"]:
-                await runtime.objects.delete(key)
-        async with transaction(runtime.storage) as session:
-            await settle(session, claimed, "delivered")
-        return
+    started = monotonic()
+    stats: dict[str, Any] = dict(
+        mode="keys" if "keys" in payload else "scan",
+        phase="start",
+        listed=0,
+        considered=0,
+        delete_started=0,
+        delete_completed=0,
+        delete_milliseconds=0.0,
+        delete_max_milliseconds=0.0,
+        list_milliseconds=0.0,
+        progressed=False,
+        complete=False,
+        budget_expired=False,
+        outcome="error",
+    )
+    scope = None
 
-    before, keep = payload["before_attempt"], set(payload["keep"])
-    progressed, complete = False, False
-    with anyio.move_on_after(runtime.settings.objects.timeout):
-        keys = await runtime.objects.keys(run_prefix(organization_id, run_id), limit=1000, after=payload["after"])
-        for key in keys:
-            if key not in keep and (before is None or _attempt(key) < before):
-                await runtime.objects.delete(key)
-            payload["after"] = key
-            progressed = True
-        complete = len(keys) < 1000
-    if not complete and not progressed:
-        raise TimeoutError("Checkpoint reclamation made no progress")
-    async with transaction(runtime.storage) as session:
-        if await settle(session, claimed, "delivered" if complete else "deferred") and not complete:
-            await session.execute(update(OutboxRow).where(OutboxRow.id == claimed.id).values(payload=payload))
+    async def delete(key: str) -> None:
+        stats["phase"] = "delete"
+        stats["delete_started"] += 1
+        at = monotonic()
+        try:
+            await objects.delete(key)
+            stats["delete_completed"] += 1
+        finally:
+            duration = (monotonic() - at) * 1000
+            stats["delete_milliseconds"] += duration
+            stats["delete_max_milliseconds"] = max(stats["delete_max_milliseconds"], duration)
+
+    try:
+        if "keys" in payload:
+            stats["listed"] = len(payload["keys"])
+            with anyio.fail_after(runtime.settings.objects.timeout) as scope:
+                for key in payload["keys"]:
+                    stats["considered"] += 1
+                    await delete(key)
+                    stats["progressed"] = True
+            stats["complete"] = True
+            stats["phase"] = "settle"
+            async with transaction(runtime.storage) as session:
+                await settle(session, claimed, "delivered")
+            stats["outcome"] = "delivered"
+            return
+
+        before, keep = payload["before_attempt"], set(payload["keep"])
+        with anyio.move_on_after(runtime.settings.objects.timeout) as scope:
+            stats["phase"] = "list"
+            at = monotonic()
+            try:
+                keys = await objects.keys(run_prefix(organization_id, run_id), limit=1000, after=payload["after"])
+            finally:
+                stats["list_milliseconds"] = (monotonic() - at) * 1000
+            stats["listed"] = len(keys)
+            for key in keys:
+                stats["considered"] += 1
+                if key not in keep and (before is None or _attempt(key) < before):
+                    await delete(key)
+                payload["after"] = key
+                stats["progressed"] = True
+            stats["complete"] = len(keys) < 1000
+        if not stats["complete"] and not stats["progressed"]:
+            stats["outcome"] = "no_progress"
+            raise TimeoutError("Checkpoint reclamation made no progress")
+        stats["last_io_phase"] = stats["phase"]
+        stats["phase"] = "settle"
+        async with transaction(runtime.storage) as session:
+            if (
+                await settle(session, claimed, "delivered" if stats["complete"] else "deferred")
+                and not stats["complete"]
+            ):
+                await session.execute(update(OutboxRow).where(OutboxRow.id == claimed.id).values(payload=payload))
+        stats["outcome"] = "delivered" if stats["complete"] else "deferred"
+    finally:
+        stats["budget_expired"] = scope.cancel_called if scope is not None else False
+        fields = dict(
+            stats,
+            outbox_id=claimed.id,
+            timeout_seconds=runtime.settings.objects.timeout,
+            duration_ms=(monotonic() - started) * 1000,
+        )
+        logger = get_logger(__name__)
+        log = logger.warning if stats["outcome"] in ("error", "no_progress") or stats["budget_expired"] else logger.info
+        log("Checkpoint cleanup observed", extra=fields)

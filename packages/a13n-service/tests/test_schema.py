@@ -5,7 +5,8 @@ from sqlalchemy import ForeignKeyConstraint, String
 
 # Join tables are keyed by what they join, usage facts by the Harness's own record IDs, and a memory's store and
 # revisions by the memory, provider authorization by its provider, provisioning facts by workspace/component, and a
-# run's display pages by ordinal and pending answers by tool call. Memory organization state is keyed by Space;
+# run's display pages by ordinal and pending answers by tool call. Memory organization state is keyed by Space or Memory;
+# successful history consumption is keyed by target Memory and source Run;
 # model dispatches are keyed by Harness call ID. Browser bindings use Thread IDs; tabs and selections use
 # Browser/target and Browser/Thread pairs; downloads use Browser/generation/GUID. Every other row has a Service object ID.
 NOT_OBJECT_KEYED = {
@@ -23,6 +24,8 @@ NOT_OBJECT_KEYED = {
     "pending_answers",
     "run_item_pages",
     "memory_space_organizations",
+    "memory_file_organizations",
+    "memory_organization_progress",
     "thread_codeact",
     "thread_environments",
     "thread_execution_contexts",
@@ -62,6 +65,11 @@ def test_rows_have_object_ids_unless_keyed_by_another_owner() -> None:
     assert [column.name for column in metadata.tables["thread_codeact"].primary_key.columns] == ["thread_id"]
     assert [column.name for column in metadata.tables["thread_execution_contexts"].primary_key.columns] == ["thread_id"]
     assert [column.name for column in metadata.tables["memory_space_organizations"].primary_key.columns] == ["space_id"]
+    assert [column.name for column in metadata.tables["memory_file_organizations"].primary_key.columns] == ["memory_id"]
+    assert [column.name for column in metadata.tables["memory_organization_progress"].primary_key.columns] == [
+        "memory_id",
+        "source_run_id",
+    ]
     assert [column.name for column in metadata.tables["memory_record_sources"].primary_key.columns] == [
         "memory_id",
         "record_id",

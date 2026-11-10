@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Button,
   ChoiceField,
+  Checkbox,
   DisclosureSection,
   FormField,
   Input,
@@ -16,6 +17,8 @@ import { TextAreaField } from "../../shared/forms";
 import { memoryKeys } from "./api";
 import {
   selectSystemPreset,
+  guidanceModules,
+  guidancePreview,
   validGuidance,
   type FileGuidance,
 } from "./guidance";
@@ -47,6 +50,11 @@ export function FileGuidanceField({
     (item) => item.id === value.system_preset,
   );
   const overridden = value.system_override !== null;
+  const selectedModules = guidanceModules(value);
+  const composedGuide = guidancePreview(
+    { ...value, system_override: null },
+    presets.data,
+  );
   return (
     <div className="grid gap-4 min-w-0">
       <ErrorNotice error={presets.error} retry={() => void presets.refetch()} />
@@ -75,6 +83,59 @@ export function FileGuidanceField({
           )}
         </p>
       )}
+      <div className="grid gap-3">
+        <p className="text-xs text-muted-foreground">{t("Guidance modules")}</p>
+        {(presets.data?.modules ?? []).map((module) => (
+          <label key={module.id} className="flex items-start gap-3">
+            <Checkbox
+              checked={selectedModules.includes(module.id)}
+              disabled={readOnly || overridden}
+              onCheckedChange={(checked) =>
+                onChange({
+                  ...value,
+                  modules: checked
+                    ? ([
+                        ...selectedModules,
+                        module.id,
+                      ] as FileGuidance["modules"])
+                    : (selectedModules.filter(
+                        (id) => id !== module.id,
+                      ) as FileGuidance["modules"]),
+                })
+              }
+            />
+            <span>
+              <span className="block text-[13px] font-medium">
+                {t(module.name)}
+              </span>
+              <span className="text-xs text-muted-foreground">
+                {t(module.description)}
+              </span>
+            </span>
+          </label>
+        ))}
+        <p className={styles.note}>
+          {t(
+            overridden
+              ? "The full system override replaces all module guidance."
+              : value.modules === null
+                ? "Modules follow the selected preset."
+                : "Explicit module selection. No modules keeps only the common rules.",
+          )}
+        </p>
+        {!readOnly && value.modules !== null && (
+          <div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => onChange({ ...value, modules: null })}
+            >
+              {t("Follow preset modules")}
+            </Button>
+          </div>
+        )}
+      </div>
       <TextAreaField
         label={t("Custom guide (optional)")}
         rows={3}
@@ -121,11 +182,11 @@ export function FileGuidanceField({
             label={t("System guide")}
             rows={10}
             readOnly={readOnly || !selected}
-            value={value.system_override ?? selected?.system_guide ?? ""}
+            value={value.system_override ?? composedGuide ?? ""}
             onChange={(text) =>
               onChange({
                 ...value,
-                system_override: text === selected?.system_guide ? null : text,
+                system_override: text === composedGuide ? null : text,
               })
             }
             hint={t(

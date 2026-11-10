@@ -10,7 +10,7 @@ from a13n_service.resources.memories.schemas import OrganizationPolicy
 from a13n_service.resources.memories.tables import MemoryRow, MemorySpaceRow
 from a13n_service.resources.rows import audit_row, find_row
 from a13n_service.runs import listings
-from a13n_service.runs.memories.organization_tables import SpaceOrganizationRow
+from a13n_service.runs.memories.organization_tables import FileOrganizationRow, SpaceOrganizationRow
 from a13n_service.runs.schemas import RunPage, SessionPage, SpaceOrganizationStatus
 from a13n_service.runs.sessions import _views as session_views
 from a13n_service.runs.tables import RunRow, SessionRow
@@ -18,7 +18,7 @@ from a13n_service.tenancy.access import workspace_scope
 from a13n_service.tenancy.authorize import Principal
 
 
-def status_view(state: SpaceOrganizationRow | None) -> SpaceOrganizationStatus:
+def status_view(state: SpaceOrganizationRow | FileOrganizationRow | None) -> SpaceOrganizationStatus:
     return (
         SpaceOrganizationStatus()
         if state is None

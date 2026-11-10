@@ -14,6 +14,7 @@ from a13n_service.runs.tables import SessionRow
 from a13n_service.runs.threads import new_thread
 from a13n_service.settings import Database
 from alembic import command
+from alembic.script import ScriptDirectory
 from sqlalchemy import MetaData, create_engine, text
 from sqlalchemy.exc import DBAPIError, IntegrityError
 
@@ -93,6 +94,31 @@ def test_revisions_match_metadata_and_rules(empty_database: Database, database: 
     migrated = rows(empty_database, RULES)
     assert migrated == rows(database, RULES)
     assert len(migrated) >= len(OSS.rules())
+
+
+def test_memory_organization_revision_roundtrip(empty_database: Database) -> None:
+    previous = "ab5919040d56"
+    revision = "d9c0728263c1"
+    with migration_connection(empty_database, OSS) as config:
+        script = ScriptDirectory.from_config(config).get_revision(revision)
+        assert script is not None and script.down_revision == previous
+        command.upgrade(config, previous)
+    original_rules = rows(empty_database, RULES)
+    original_objects = rows(empty_database, OBJECTS)
+    with migration_connection(empty_database, OSS) as config:
+        command.upgrade(config, revision)
+    assert rows(empty_database, "SELECT version_num FROM alembic_version") == [(revision,)]
+    assert set(rows(empty_database, OBJECTS)) - set(original_objects) == {
+        ("relation", "memory_file_organizations"),
+        ("relation", "memory_organizations"),
+        ("relation", "memory_organization_progress"),
+    }
+    with migration_connection(empty_database, OSS) as config:
+        command.downgrade(config, previous)
+    assert rows(empty_database, RULES) == original_rules
+    assert rows(empty_database, OBJECTS) == original_objects
+    upgrade(empty_database, OSS)
+    check(empty_database, OSS)
 
 
 @pytest.mark.anyio

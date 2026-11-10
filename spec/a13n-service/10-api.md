@@ -401,13 +401,19 @@ Retained-execution list, detail and bounded-result queries are admitted to MCP u
 
 ### Memories
 
-| Path                                   | Methods            | Owner                                     |
-| -------------------------------------- | ------------------ | ----------------------------------------- |
-| `/memory-spaces`                       | GET, POST          | [11](11-memory.md#memory-spaces)          |
-| `/memory-spaces/{space}`               | GET, PATCH, DELETE | [11](11-memory.md#memory-spaces)          |
-| `/memory-spaces/{space}/organization`  | GET                | [11](11-memory.md#organization-lifecycle) |
-| `/memory-spaces/{space}/organizations` | GET, POST          | [11](11-memory.md#organization-lifecycle) |
-| `/memory-spaces/{space}/sessions`      | GET                | [11](11-memory.md#organization-lifecycle) |
+| Path                                                             | Methods            | Owner                                               |
+| ---------------------------------------------------------------- | ------------------ | --------------------------------------------------- |
+| `/memories/{memory}/organization`                                | GET, PUT           | [11](11-memory.md#automatic-organization-policies)  |
+| `/memory-organizations`                                          | GET, POST          | [11](11-memory.md#organization-requests)            |
+| `/memory-organizations/{organization}`                           | GET                | [11](11-memory.md#organization-requests)            |
+| `/memory-organizations/{organization}/candidate`                 | GET                | [11](11-memory.md#candidate-output-and-publication) |
+| `/memory-organizations/{organization}/candidate/diff`            | GET                | [11](11-memory.md#candidate-output-and-publication) |
+| `/memory-organizations/{organization}/candidate/{apply,discard}` | POST               | [11](11-memory.md#candidate-output-and-publication) |
+| `/memory-spaces`                                                 | GET, POST          | [11](11-memory.md#memory-spaces)                    |
+| `/memory-spaces/{space}`                                         | GET, PATCH, DELETE | [11](11-memory.md#memory-spaces)                    |
+| `/memory-spaces/{space}/organization`                            | GET                | [11](11-memory.md#organization-lifecycle)           |
+| `/memory-spaces/{space}/organizations`                           | GET, POST          | [11](11-memory.md#organization-lifecycle)           |
+| `/memory-spaces/{space}/sessions`                                | GET                | [11](11-memory.md#organization-lifecycle)           |
 
 | Path                                         | Methods            | Owner                                                |
 | -------------------------------------------- | ------------------ | ---------------------------------------------------- |

@@ -8,7 +8,7 @@ from fastapi import APIRouter, Path, Query, Response
 from a13n_service.infra.db import short_session
 from a13n_service.infra.http import IfMatch, PageLimit, tagged
 from a13n_service.resources.memories import files, records, service
-from a13n_service.resources.memories.guidance import PRESETS, MemoryGuidancePresets
+from a13n_service.resources.memories.guidance import MODULES, PRESETS, MemoryGuidancePresets
 from a13n_service.resources.memories.schemas import (
     HistoryPurge,
     Memory,
@@ -77,7 +77,7 @@ async def list_memory_guidance_presets(
 ) -> MemoryGuidancePresets:
     async with short_session(runtime.storage) as session:
         await workspace_scope(session, actor, workspace_id, "read")
-    return MemoryGuidancePresets(items=list(PRESETS))
+    return MemoryGuidancePresets(items=list(PRESETS), modules=list(MODULES))
 
 
 @router.get("/{memory_id}", response_model=Memory, openapi_extra={"x-a13n-mcp": True})

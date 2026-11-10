@@ -296,3 +296,17 @@ def test_object_pool_environment_overrides_file(
         monkeypatch.setenv("A13N_OBJECTS__MAX_POOL_CONNECTIONS", invalid)
         with pytest.raises(ValueError, match="max_pool_connections"):
             load_settings(config)
+
+
+def test_cleanup_pool_is_independent_and_environment_overrides_file(tmp_path, monkeypatch, clean_environment):
+    assert load_settings().objects.cleanup_max_pool_connections == 4
+    config = tmp_path / "cleanup.toml"
+    config.write_text("[objects]\ncleanup_max_pool_connections = 8\n")
+    assert load_settings(config).objects.cleanup_max_pool_connections == 8
+    monkeypatch.setenv("A13N_OBJECTS__CLEANUP_MAX_POOL_CONNECTIONS", "2")
+    objects = load_settings(config).objects
+    assert objects.cleanup_max_pool_connections == 2 and objects.max_pool_connections == 32
+    for invalid in ("0", "1025"):
+        monkeypatch.setenv("A13N_OBJECTS__CLEANUP_MAX_POOL_CONNECTIONS", invalid)
+        with pytest.raises(ValueError, match="cleanup_max_pool_connections"):
+            load_settings(config)

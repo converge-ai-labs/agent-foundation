@@ -1,8 +1,8 @@
 """S3-compatible object store; keys are written once, so every write is a plain `PutObject`."""
 
+from asyncio import CancelledError
 from collections.abc import AsyncGenerator
 from contextlib import AsyncExitStack, asynccontextmanager, contextmanager
-from time import monotonic
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 from a13n_logging import get_logger
@@ -12,6 +12,7 @@ from anyio import fail_after
 from botocore.exceptions import BotoCoreError, ClientError
 
 from a13n_service.infra.errors import ServiceError
+from a13n_service.infra.objects.diagnostics import CURRENT, Diagnostics, ObservedSession, Operation
 from a13n_service.infra.objects.interface import ObjectRef, reference, validate_key
 
 if TYPE_CHECKING:
@@ -36,34 +37,68 @@ class S3Objects:
     def __init__(self, client: "S3Client", bucket: str, *, prefix: str, max_bytes: int, timeout: float):
         self.client, self.bucket, self.prefix = client, bucket, prefix
         self.max_bytes, self.timeout = max_bytes, timeout
+        self.diagnostics = Diagnostics()
 
     def _key(self, key: str) -> str:
         return self.prefix + validate_key(key)
 
     @contextmanager
-    def _deadline(self, operation: str) -> "Iterator[None]":
-        started = monotonic()
+    def _deadline(self, operation: str) -> "Iterator[Operation]":
+        observation = Operation()
+        token = CURRENT.set(observation)
+        outcome = "success"
+        error_type = None
         try:
             with fail_after(self.timeout):
-                yield
+                yield observation
         except TimeoutError as error:
-            # Keep request log context, but never include keys, endpoints or credentials.
+            outcome = "operation_timeout"
             logger.warning(
                 "Object store request timed out",
-                extra={
-                    "operation": operation,
-                    "timeout_seconds": self.timeout,
-                    "duration_ms": round((monotonic() - started) * 1000),
-                    "error_type": type(error).__name__,
-                },
+                extra=dict(
+                    operation=operation,
+                    timeout_seconds=self.timeout,
+                    error_type=type(error).__name__,
+                    **observation.fields(),
+                ),
             )
             raise _unavailable(error) from None
+        except CancelledError:
+            error_type = "CancelledError"
+            outcome = "caller_cancelled"
+            raise
+        except ClientError as error:
+            outcome = "not_found" if operation == "get" and _code(error) in {"NoSuchKey", "404"} else "error"
+            error_type = type(error).__name__
+            raise
+        except BaseException as error:
+            outcome = "error"
+            error_type = type(error).__name__
+            raise
+        finally:
+            fields = observation.fields()
+            self.diagnostics.record(operation, outcome, fields)
+            if outcome != "operation_timeout" and (
+                outcome not in ("success", "not_found") or fields["duration_ms"] >= self.timeout * 500
+            ):
+                logger.warning(
+                    "Object store operation observed",
+                    extra=dict(
+                        operation=operation,
+                        outcome=outcome,
+                        error_type=error_type,
+                        timeout_seconds=self.timeout,
+                        **fields,
+                    ),
+                )
+            CURRENT.reset(token)
 
     async def put(self, key: str, data: bytes, *, content_type: str) -> ObjectRef:
         if len(data) > self.max_bytes:
             raise ServiceError("payload_too_large", "Object exceeds its byte limit", {"limit": self.max_bytes})
         try:
-            with self._deadline("put"):
+            with self._deadline("put") as observation:
+                observation.payload_bytes = len(data)
                 await self.client.put_object(
                     Bucket=self.bucket, Key=self._key(key), Body=data, ContentType=content_type
                 )
@@ -73,12 +108,15 @@ class S3Objects:
 
     async def get(self, key: str) -> bytes | None:
         try:
-            with self._deadline("get"):
-                response = await self.client.get_object(Bucket=self.bucket, Key=self._key(key))
+            with self._deadline("get") as observation:
+                with observation.timing("sdk_request"):
+                    response = await self.client.get_object(Bucket=self.bucket, Key=self._key(key))
+                observation.payload_bytes = response["ContentLength"]
                 if response["ContentLength"] > self.max_bytes:
                     raise ServiceError("unavailable", "Stored object exceeds its byte limit", {"dependency": "objects"})
-                async with response["Body"] as body:
-                    return await body.read()
+                with observation.timing("body_read"):
+                    async with response["Body"] as body:
+                        return await body.read()
         except ClientError as error:
             if _code(error) in {"NoSuchKey", "404"}:
                 return None
@@ -143,6 +181,7 @@ async def open_s3(
                 aws_access_key_id=access_key_id,
                 aws_secret_access_key=secret_access_key,
                 config=AioConfig(
+                    http_session_cls=ObservedSession,
                     max_pool_connections=max_pool_connections,
                     connect_timeout=timeout,
                     read_timeout=timeout,

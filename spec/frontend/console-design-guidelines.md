@@ -79,6 +79,14 @@ Ordinary Console modals dismiss from the topmost backdrop without activating the
 
 Provider editors group Basic information, Credentials and Configuration, omitting empty groups. Credentials link to their issuing page; Saved/Not configured states expose Replace/Add without destroying saved values on cancellation. Optional non-secret settings disclose in place. Check connection feedback sits above Enabled (left) and Delete/Cancel/Save (right). Delete confirms the resource, shows actionable reference refusals and bounds environment-reference previews. OAuth has separate progress and recovery.
 
+## Text Files and Diffs
+
+Memory, Skill and candidate readers share one file workspace. Desktop has independently scrolling explorer and reader panes with a keyboard-resizable divider and an explorer collapse control. Narrow screens show the file list or the selected document with a Files back action. The keyboard tree has one roving tab stop and supports arrows, Home and End. A single compact path toolbar owns document identity and file actions; secondary actions use named icons with hover titles.
+
+Source and complete before/after text load through a lazy, virtualized code reader. Long lines wrap by default with an explicit toggle; each unwrapped pane retains horizontal scrolling. Copy file uses the exact raw source. Blank lines, line endings and missing final newlines remain observable. Markdown source/preview is a file-reading choice, separate from Diff/File inspection. Diffs use aligned before/after panes when the reader has room and an inline comparison when narrow, with an explicit layout choice on wide readers. Quiet line numbers, change signs, semantic row backgrounds and stronger word-level highlights identify changes without color alone. Unchanged areas can collapse or expand; changing reading options preserves the reading position. Bounded history patches retain explicit omission markers rather than claiming complete content.
+
+Candidate review occupies a dedicated full-height page. Status and whole-candidate Apply lead; task context, sequence details and destructive actions remain secondary. The explorer offers changed/all files, A/M/D status and reversible check-circle review marks. Previous/next file and previous/next change remain separate controls. The main apply action and destructive confirmations retain text labels. Full replacement lists target-only deletions, concurrent overwrites and restorations before acknowledgement.
+
 ## Conversation Rendering
 
 ### Chat

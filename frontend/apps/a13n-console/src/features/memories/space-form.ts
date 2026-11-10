@@ -1,4 +1,5 @@
 import type { Schema } from "../../shared/api";
+import { policyDraft, policyValue, validPolicy } from "./organization-form";
 import { defaultGuidance, validGuidance } from "./guidance";
 
 export const defaultSessionMemory: Schema["SessionMemorySettings"] = {
@@ -21,16 +22,7 @@ export function spaceDraft(space: Schema["MemorySpace"]) {
     enabled: space.enabled,
     guidance: { ...defaultGuidance(), ...space.guidance },
     alwaysLoad: space.always_load,
-    automatic: !!space.organization.enabled,
-    model: space.organization.model ?? "",
-    checkInterval: String(space.organization.check_interval_seconds ?? 10),
-    cooldown: String(space.organization.cooldown_seconds ?? 300),
-    trigger: space.organization.trigger?.type ?? "any_change",
-    changeCount: String(
-      space.organization.trigger?.type === "change_count"
-        ? space.organization.trigger.count
-        : 10,
-    ),
+    ...policyDraft(space.organization),
   };
 }
 export type SpaceDraft = ReturnType<typeof spaceDraft>;
@@ -44,42 +36,22 @@ export function spaceUpdate(
     enabled: draft.enabled,
     guidance: draft.guidance,
     always_load: draft.alwaysLoad,
-    organization: {
-      enabled: draft.automatic,
-      model: draft.model || null,
-      check_interval_seconds: Number(draft.checkInterval),
-      cooldown_seconds: Number(draft.cooldown),
-      trigger:
-        draft.trigger === "change_count"
-          ? { type: "change_count", count: Number(draft.changeCount) }
-          : { type: "any_change" },
-    },
+    organization: policyValue(draft),
   };
   return Object.fromEntries(
     Object.entries(next).filter(
       ([key, value]) =>
         JSON.stringify(value) !==
-        JSON.stringify(base[key as keyof typeof base]),
+        JSON.stringify(
+          key === "organization"
+            ? policyValue(policyDraft(base.organization))
+            : base[key as keyof typeof base],
+        ),
     ),
-  );
-}
-function validInteger(value: string, min: number, max: number) {
-  const number = Number(value);
-  return (
-    value.trim() !== "" &&
-    Number.isInteger(number) &&
-    number >= min &&
-    number <= max
   );
 }
 export function validSpaceDraft(draft: SpaceDraft) {
   return (
-    !!draft.name.trim() &&
-    (!draft.automatic || !!draft.model) &&
-    validInteger(draft.checkInterval, 10, 86400) &&
-    validInteger(draft.cooldown, 0, 604800) &&
-    (draft.trigger !== "change_count" ||
-      validInteger(draft.changeCount, 1, 1000000)) &&
-    validGuidance(draft.guidance)
+    !!draft.name.trim() && validPolicy(draft) && validGuidance(draft.guidance)
   );
 }
