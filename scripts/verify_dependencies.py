@@ -58,7 +58,11 @@ TEST_INPUTS: dict[str, tuple[str, ...]] = {
         ".github/workflows/images.yml",
     ),
     "test_envd_size.py": ("scripts/envd_size.py", "Cargo.toml"),
-    "test_envd_size_report.py": (".github/scripts/envd-size-comment.cjs", ".github/workflows/envd-size-report.yml"),
+    "test_envd_size_report.py": (
+        ".github/scripts/envd-size-comment.cjs",
+        ".github/workflows/envd-size-report.yml",
+        ".github/workflows/ci-a13n-envd.yml",
+    ),
     "test_envd_ci_workflow.py": (".github/workflows/ci-a13n-envd.yml",),
     "test_envd_release_workflow.py": (".github/workflows/release-a13n-envd.yml",),
     "test_sandbox_init.py": ("deploy/docker/images/sandbox/*.sh",),

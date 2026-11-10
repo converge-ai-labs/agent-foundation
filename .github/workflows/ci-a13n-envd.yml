@@ -404,7 +404,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: envd-size-${{ matrix.cache-key }}
+          name: envd-size-${{ matrix.cache-key }}-attempt-${{ github.run_attempt }}
           path: test-results/size/report.json
           if-no-files-found: warn
           retention-days: 7
