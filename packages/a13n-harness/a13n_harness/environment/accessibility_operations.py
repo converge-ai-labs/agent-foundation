@@ -30,6 +30,20 @@ def accessibility_mutation_action(request: AccessibilityMutation) -> Environment
     return EnvironmentAction(f"environment.computer.{request.backend}_{request.request.op}")
 
 
+def accessibility_mutation_requirements(
+    action: EnvironmentAction, *, readback: bool = False
+) -> frozenset[EnvironmentAction]:
+    """Exact authority for a native mutation, including its optional readback."""
+    required = {action}
+    if action in {EnvironmentAction.COMPUTER_ATSPI_TEXT_COPY, EnvironmentAction.COMPUTER_ATSPI_TEXT_CUT}:
+        required.add(EnvironmentAction.COMPUTER_WRITE_CLIPBOARD)
+    elif action == EnvironmentAction.COMPUTER_ATSPI_TEXT_PASTE:
+        required.add(EnvironmentAction.COMPUTER_READ_CLIPBOARD)
+    if readback:
+        required.add(EnvironmentAction.COMPUTER_A11Y_INSPECT)
+    return frozenset(required)
+
+
 class ProviderAccessibilityOperations(Protocol):
     """Native implementation facts; optional independently of physical Computer I/O."""
 

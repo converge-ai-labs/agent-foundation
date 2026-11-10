@@ -216,6 +216,7 @@ impl Supervisor {
         // A single executing request and bounded waiters share this deadline.
         // Never abandon the child while leaving a native call running in it.
         let mut sent = false;
+        let mut spawned = false;
         let execution = async {
             if slot.is_none() {
                 let epoch = self
@@ -225,10 +226,21 @@ impl Supervisor {
                 // Retain the child before waiting for readiness, so timeout
                 // and cancellation also kill and reap a blocked initialization.
                 *slot = Some(Worker::spawn(command(&epoch)?)?);
-                slot.as_mut()
+                spawned = true;
+                if let Err(error) = slot
+                    .as_mut()
                     .expect("spawned helper is present")
                     .ready(&epoch)
-                    .await?;
+                    .await?
+                {
+                    if let Some(mut worker) = slot.take() {
+                        let _ = worker.stop().await;
+                    }
+                    return Ok(Err(Failure {
+                        error,
+                        uncertain: false,
+                    }));
+                }
             }
             // The polling future can still be asleep after queueing or startup.
             // Recheck synchronously at the last boundary before delivery.
@@ -267,13 +279,15 @@ impl Supervisor {
         let mut retire = false;
         let result: Result<Result<Value, Failure>, io::Error> = tokio::select! {
             biased;
-            error = &mut interruption => { retire = true; Ok(Err(Failure { error, uncertain: mutation })) },
-            _ = tokio::time::sleep_until(deadline) => { retire = true; Ok(Err(Failure { error: error(ErrorType::Timeout, "accessibility native call exceeded its deadline"), uncertain: mutation })) },
+            error = &mut interruption => { retire = true; Ok(Err(Failure { error, uncertain: false })) },
+            _ = tokio::time::sleep_until(deadline) => { retire = true; Ok(Err(Failure { error: error(ErrorType::Timeout, "accessibility native call exceeded its deadline"), uncertain: false })) },
             result = execution => result,
         };
         match result {
             Ok(Ok(value)) => Ok(value),
-            Ok(Err(failure)) if !failure.uncertain && !retire => Err(failure),
+            Ok(Err(failure)) if !failure.uncertain && !(retire && (sent || spawned)) => {
+                Err(failure)
+            }
             outcome => {
                 if let Some(mut worker) = slot.take() {
                     let _ = worker.stop().await;
@@ -331,9 +345,10 @@ impl Worker {
         })
     }
 
-    async fn ready(&mut self, epoch: &str) -> io::Result<()> {
+    async fn ready(&mut self, epoch: &str) -> io::Result<Result<(), EIPError>> {
         match read_frame(&mut self.output).await? {
-            Event::Ready { epoch: received } if received == epoch => Ok(()),
+            Event::Ready { epoch: received } if received == epoch => Ok(Ok(())),
+            Event::Failure { error } => Ok(Err(*error)),
             _ => Err(io::Error::other("invalid accessibility helper handshake")),
         }
     }
@@ -412,7 +427,16 @@ fn native_backend(_epoch: &str) -> Result<Box<dyn Backend>, EIPError> {
 /// Runs on the helper's initial thread, including backend construction and drop.
 /// Platform backends enter their required apartment/run-loop here.
 pub(crate) fn run_internal(epoch: &str) -> io::Result<()> {
-    let backend = native_backend(epoch).map_err(|error| io::Error::other(error.message))?;
+    let backend = match native_backend(epoch) {
+        Ok(backend) => backend,
+        Err(error) => {
+            let mut output = io::stdout().lock();
+            output.write_all(&encode_frame(&Event::Failure {
+                error: Box::new(error),
+            })?)?;
+            return output.flush();
+        }
+    };
     serve_backend(epoch, backend, io::stdin().lock(), io::stdout().lock())
 }
 

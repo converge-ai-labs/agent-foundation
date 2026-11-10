@@ -15,6 +15,7 @@ from a13n_harness.environment.accessibility import (
     AccessibilityDescription,
     AccessibilityFind,
     AccessibilityLimits,
+    AccessibilityNode,
     AccessibilityNodeReference,
     AccessibilityRangeQuery,
     AccessibilityRangeReadRequest,
@@ -22,12 +23,17 @@ from a13n_harness.environment.accessibility import (
     AccessibilityRangeResult,
     AccessibilityRead,
     AccessibilityRootScope,
+    AccessibilityScalar,
+    AccessibilityScalarsValue,
+    AccessibilityTextContent,
     AccessibilityTree,
+    NativeSpan,
 )
 from a13n_harness.environment.accessibility_mutations import AccessibilityMutation, AccessibilityMutationResult
 from a13n_harness.environment.accessibility_operations import (
     ProviderAccessibilityOperations,
     accessibility_mutation_action,
+    accessibility_mutation_requirements,
 )
 from a13n_harness.environment.computer import ComputerCall, ComputerObservation, ComputerPoint
 from a13n_harness.environment.models import EnvironmentAction, EnvironmentError
@@ -58,6 +64,11 @@ def _validate_owners(node: AccessibilityNodeReference, value: Any) -> None:
         owner = value.node
     elif isinstance(value, AccessibilityCursor):
         owner = value.root
+    elif isinstance(value, NativeSpan):
+        expected = {"ax": "ax_native", "atspi": "atspi_character"}.get(node.backend)
+        if value.unit != expected:
+            raise EnvironmentError("Text span does not match the native backend.", code="environment_request_invalid")
+        return
     else:
         owner = None
     if owner is not None:
@@ -82,6 +93,28 @@ def _item_limits(value: Any, maximum: int) -> None:
             raise EnvironmentError("Items exceed the requested limit.", code="environment_provider_failure")
         for item in value:
             _item_limits(item, maximum)
+
+
+def _text_limits(value: Any, maximum: int) -> None:
+    """Bound native text payloads, independently of metadata and opaque identifiers."""
+    if isinstance(value, AccessibilityScalar):
+        texts = (value.value,)
+    elif isinstance(value, AccessibilityScalarsValue):
+        texts = value.values
+    elif isinstance(value, AccessibilityTextContent):
+        texts = (value.text,)
+    elif isinstance(value, AccessibilityNode):
+        texts = (value.name, value.description, value.identifier)
+    else:
+        texts = ()
+    if any(isinstance(text, str) and len(text.encode("utf-8")) > maximum for text in texts):
+        raise EnvironmentError("Text exceeds the requested limit.", code="environment_provider_failure")
+    if isinstance(value, BaseModel):
+        for name in type(value).model_fields:
+            _text_limits(getattr(value, name), maximum)
+    elif isinstance(value, tuple | list):
+        for item in value:
+            _text_limits(item, maximum)
 
 
 def _same_scope(node: AccessibilityNodeReference, value: Any, *, code: str) -> None:
@@ -145,11 +178,12 @@ class _AccessibilityFacade:
             if value.node != node:
                 raise EnvironmentError("Result belongs to another node.", code="environment_provider_failure")
             _item_limits(value, limits.max_items)
-        if isinstance(value, AccessibilityContent | AccessibilityRangeResult) and value.text is not None:
-            if value.text.text is not None and len(value.text.text.encode("utf-8")) > limits.max_text_bytes:
-                raise EnvironmentError("Text exceeds the requested limit.", code="environment_provider_failure")
+        _text_limits(value, limits.max_text_bytes)
         if node is not None:
             _same_scope(node, value, code="environment_provider_failure")
+            cursor = value.completeness.continuation
+            if cursor is not None and cursor.root != node:
+                raise EnvironmentError("Continuation belongs to another node.", code="environment_provider_failure")
         if len(value.model_dump_json().encode("utf-8")) > limits.max_result_bytes:
             raise EnvironmentError(
                 "Accessibility provider exceeded the result byte limit.", code="environment_provider_failure"
@@ -298,12 +332,8 @@ class _AccessibilityFacade:
             raise EnvironmentError("Native operation does not match the node backend.", code="environment_unsupported")
         action = accessibility_mutation_action(request)
         async with self._lease(action, node=node, peers=request) as (entered, call, provider):
-            if action in {EnvironmentAction.COMPUTER_ATSPI_TEXT_COPY, EnvironmentAction.COMPUTER_ATSPI_TEXT_CUT}:
-                self._environment.require_action(entered.mount_id, EnvironmentAction.COMPUTER_WRITE_CLIPBOARD)
-            elif action == EnvironmentAction.COMPUTER_ATSPI_TEXT_PASTE:
-                self._environment.require_action(entered.mount_id, EnvironmentAction.COMPUTER_READ_CLIPBOARD)
-            if readback:
-                self._environment.require_action(entered.mount_id, EnvironmentAction.COMPUTER_A11Y_INSPECT)
+            for required in accessibility_mutation_requirements(action, readback=readback):
+                self._environment.require_action(entered.mount_id, required)
             result = await provider.execute(node, request, readback=readback)
             evidence: dict[str, Any] = {"dispatch_stage": "unknown"}
             try:

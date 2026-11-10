@@ -367,3 +367,46 @@ async def test_screenshot_hit_test_and_projection_keep_original_mount_and_coordi
         assert not missing["ok"]
     assert two.calls == []
     assert len(calls) == 1
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "op,clipboard",
+    [
+        ("text_copy", EnvironmentAction.COMPUTER_WRITE_CLIPBOARD),
+        ("text_cut", EnvironmentAction.COMPUTER_WRITE_CLIPBOARD),
+        ("text_paste", EnvironmentAction.COMPUTER_READ_CLIPBOARD),
+    ],
+)
+@pytest.mark.parametrize("allow_clipboard", [False, True])
+async def test_capability_permission_includes_required_clipboard_authority(monkeypatch, op, clipboard, allow_clipboard):
+    action = EnvironmentAction(f"environment.computer.atspi_{op}")
+    actions = ACCESSIBILITY_READ_ACTIONS | {action} | ({clipboard} if allow_clipboard else set())
+    from a13n_harness.environment.operations import EnvironmentOperations
+
+    from .test_computer_environment import Computer
+
+    mount, provider = _mount("one", actions=actions)
+    computer = Computer()
+    computer.binding = provider.binding
+    provider.binding.bound.operations = EnvironmentOperations(accessibility=provider, computer=computer)
+    original = provider.roots
+
+    async def roots(scope, *, limits):
+        result = await original(scope, limits=limits)
+        node = result.nodes[0]
+        node = node.model_copy(
+            update={
+                "reference": node.reference.model_copy(update={"backend": "atspi"}),
+                "capabilities": (AccessibilityCapability(operation=op, supported="candidate", source="atspi.Text"),),
+            }
+        )
+        return result.model_copy(update={"backend": "atspi", "nodes": (node,)})
+
+    monkeypatch.setattr(provider, "roots", roots)
+    runtime = create_environment_runtime(mounts={"one": mount}, default_mount="one")
+    async with runtime.bind(thread_id="thread-one", run_id="run-one", instance=_instance(), host_refs={}) as env:
+        tools = ComputerToolset(env).get_toolset().tools
+        result = await tools["computer_accessibility_roots"].function()
+        assert result["ok"], result
+        assert result["nodes"][0]["capabilities"][0]["permitted"] is allow_clipboard

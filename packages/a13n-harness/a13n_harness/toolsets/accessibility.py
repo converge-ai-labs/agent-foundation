@@ -37,6 +37,7 @@ from a13n_harness.environment.accessibility_mutations import (
     UIAMutation,
     UIARequest,
 )
+from a13n_harness.environment.accessibility_operations import accessibility_mutation_requirements
 from a13n_harness.environment.computer import ComputerObservation, ComputerPoint
 from a13n_harness.environment.models import ACCESSIBILITY_MUTATION_ACTIONS, EnvironmentAction, EnvironmentError
 from a13n_harness.environment.providers import BoundEnvironment
@@ -254,7 +255,12 @@ class AccessibilityToolset:
             )
             for capability in result["capabilities"]:
                 identifier = f"environment.computer.{value.reference.backend}_{capability['operation']}"
-                capability["permitted"] = mount is not None and identifier in mount.permission_ceiling.operations
+                capability["permitted"] = (
+                    mount is not None
+                    and identifier in ACCESSIBILITY_MUTATION_ACTIONS
+                    and accessibility_mutation_requirements(EnvironmentAction(identifier))
+                    <= mount.permission_ceiling.operations
+                )
             if value.image_projection is not None:
                 self._capabilities(value.image_projection, result["image_projection"])
         elif isinstance(value, AccessibilityImageProjection):

@@ -336,3 +336,94 @@ async def test_content_enforces_each_requested_item_limit(monkeypatch, collectio
                 AccessibilitySimpleRead(kind="selection"),
                 limits=AccessibilityLimits(max_items=1),
             )
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("kind", ["scalar", "scalars", "text", "node_name"])
+async def test_native_text_payloads_obey_utf8_limit(monkeypatch, kind):
+    from a13n_harness.environment.accessibility import AccessibilityContent, AccessibilitySimpleRead
+
+    mount, provider = _mount("one")
+
+    async def read(node, request, *, limits):
+        payload = {}
+        if kind in {"scalar", "scalars"}:
+            value = {"kind": kind, "value": "😀"} if kind == "scalar" else {"kind": kind, "values": ["😀"]}
+            payload["properties"] = [{"name": "value", "source": "test", "value": value}]
+        elif kind == "text":
+            payload["text"] = AccessibilityTextContent(status="text", source="test", text="😀")
+        else:
+            payload["nodes"] = [
+                AccessibilityNode(reference=node, native_role="Button", name="😀", sampled_at=datetime.now(UTC))
+            ]
+        return AccessibilityContent(
+            node=node, sampled_at=datetime.now(UTC), completeness=AccessibilityCompleteness(complete=True), **payload
+        )
+
+    monkeypatch.setattr(provider, "read", read)
+    runtime = create_environment_runtime(mounts={"one": mount}, default_mount="one")
+    async with runtime.bind(thread_id="thread-one", run_id="run-one", instance=_instance(), host_refs={}) as env:
+        node = (
+            (await env.computer.accessibility.roots(AccessibilityRootScope(), limits=AccessibilityLimits()))
+            .nodes[0]
+            .reference
+        )
+        await env.computer.accessibility.read(
+            node, AccessibilitySimpleRead(kind="selection"), limits=AccessibilityLimits(max_text_bytes=4)
+        )
+        with pytest.raises(EnvironmentError, match="Text exceeds"):
+            await env.computer.accessibility.read(
+                node, AccessibilitySimpleRead(kind="selection"), limits=AccessibilityLimits(max_text_bytes=3)
+            )
+
+
+@pytest.mark.anyio
+async def test_returned_continuation_must_keep_requested_root(monkeypatch):
+    from a13n_harness.environment.accessibility import AccessibilityCursor
+
+    mount, provider = _mount("one")
+    original = provider.inspect
+
+    async def inspect(node, **kwargs):
+        result = await original(node, **kwargs)
+        cursor = AccessibilityCursor(
+            root=node.model_copy(update={"node_handle": "other"}), cursor_handle="cursor-other"
+        )
+        return result.model_copy(
+            update={"completeness": AccessibilityCompleteness(complete=False, reason="node_limit", continuation=cursor)}
+        )
+
+    monkeypatch.setattr(provider, "inspect", inspect)
+    runtime = create_environment_runtime(mounts={"one": mount}, default_mount="one")
+    async with runtime.bind(thread_id="thread-one", run_id="run-one", instance=_instance(), host_refs={}) as env:
+        node = (
+            (await env.computer.accessibility.roots(AccessibilityRootScope(), limits=AccessibilityLimits()))
+            .nodes[0]
+            .reference
+        )
+        with pytest.raises(EnvironmentError, match="Continuation belongs"):
+            await env.computer.accessibility.inspect(node, limits=AccessibilityLimits())
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("backend,unit", [("uia", "ax_native"), ("ax", "atspi_character"), ("atspi", "ax_native")])
+@pytest.mark.parametrize("operation", ["read", "range"])
+async def test_native_span_unit_is_checked_before_provider_dispatch(monkeypatch, backend, unit, operation):
+    from a13n_harness.environment.accessibility import AccessibilityRangeSpan, AccessibilityTextRead, NativeSpan
+
+    mount, provider = _mount("one")
+    runtime = create_environment_runtime(mounts={"one": mount}, default_mount="one")
+    async with runtime.bind(thread_id="thread-one", run_id="run-one", instance=_instance(), host_refs={}) as env:
+        tree = await env.computer.accessibility.roots(AccessibilityRootScope(), limits=AccessibilityLimits())
+        node = tree.nodes[0].reference.model_copy(update={"backend": backend})
+        span = NativeSpan(unit=unit, start=0, end=1)
+        with pytest.raises(EnvironmentError, match="Text span does not match"):
+            if operation == "read":
+                await env.computer.accessibility.read(
+                    node, AccessibilityTextRead(span=span), limits=AccessibilityLimits()
+                )
+            else:
+                await env.computer.accessibility.range(
+                    node, AccessibilityRangeSpan(span=span), limits=AccessibilityLimits()
+                )
+    assert provider.calls == ["roots"]

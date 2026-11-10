@@ -216,6 +216,9 @@ def emit(value):
 
 if sys.argv[2] == 'startup_hang':
     time.sleep(60)
+if sys.argv[2] == 'startup_error':
+    emit(json.loads(sys.argv[3]))
+    sys.exit(0)
 emit({'kind': 'ready', 'epoch': sys.argv[1]})
 count = 0
 while True:
@@ -305,6 +308,83 @@ while True:
             .unwrap();
         assert_eq!(before["epoch"], after["epoch"]);
         assert_eq!(after["count"], 2);
+        assert!(supervisor.close().await);
+    }
+
+    #[tokio::test]
+    async fn deadline_after_lock_check_preserves_unsent_healthy_helper() {
+        use std::cell::Cell;
+
+        let supervisor = supervisor();
+        let before = invoke(&supervisor, "computer.a11y_inspect", json!({}))
+            .await
+            .unwrap();
+        let checks = Cell::new(0);
+        let failure = supervisor
+            .execute(
+                request("computer.atspi_action", json!({})),
+                Instant::now() + Duration::from_millis(20),
+                || {
+                    checks.set(checks.get() + 1);
+                    if checks.get() == 2 {
+                        // Move the deadline between the post-lock check and the
+                        // biased execution select, without delivering a request.
+                        std::thread::sleep(Duration::from_millis(40));
+                    }
+                    None
+                },
+                |_| panic!("an unsent deadline must preserve the existing child"),
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(
+            checks.get(),
+            2,
+            "the select must win before execution is polled"
+        );
+        assert!(!failure.uncertain);
+        assert_eq!(failure.error.data.error_type, ErrorType::Timeout);
+        let after = invoke(&supervisor, "computer.a11y_inspect", json!({}))
+            .await
+            .unwrap();
+        assert_eq!(before["epoch"], after["epoch"]);
+        assert_eq!(after["count"], 2);
+        assert!(supervisor.close().await);
+    }
+
+    #[tokio::test]
+    async fn typed_startup_failure_is_unsent_and_reaps_failed_helper() {
+        let supervisor = supervisor();
+        let expected = error(
+            ErrorType::ProviderUnavailable,
+            "native runtime is unavailable",
+        );
+        let event = serde_json::to_string(&Event::Failure {
+            error: Box::new(expected.clone()),
+        })
+        .unwrap();
+        let failure = supervisor
+            .execute(
+                request("computer.atspi_action", json!({})),
+                Instant::now() + Duration::from_secs(3),
+                || None,
+                |epoch| {
+                    let mut command = fixture(epoch, "startup_error")?;
+                    command.arg(event);
+                    Ok(command)
+                },
+            )
+            .await
+            .unwrap_err();
+        assert!(!failure.uncertain);
+        assert_eq!(failure.error, expected);
+        assert!(supervisor.worker.lock().await.is_none());
+        assert_eq!(
+            invoke(&supervisor, "computer.a11y_inspect", json!({}))
+                .await
+                .unwrap()["count"],
+            1
+        );
         assert!(supervisor.close().await);
     }
 
