@@ -2701,6 +2701,8 @@ class HarnessUiApp:
     ) -> RootControlResult:
         async with self._operation():
             operation = await self._root_runs.get(receipt_id)
+            if operation.receipt.thread_id == BOT_THREAD_ID:
+                raise ThreadError("Use Bot chat to send Bot input.", code="bot_chat_required")
             await self._threads.require_interactive(operation.receipt.thread_id)
             draft_clear = self._prepare_draft_clear(operation.receipt.thread_id, draft)
             catalog = (

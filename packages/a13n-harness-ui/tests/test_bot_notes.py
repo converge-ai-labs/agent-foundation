@@ -16,7 +16,8 @@ from a13n_harness_ui.thread_capability import ThreadCollaborationCapability, Thr
 from anyio import Event, create_task_group
 
 from .test_app import _settings, _write_configuration
-from .test_bot import ready
+from .test_bot import _write_configuration as _bot_configuration
+from .test_bot import consumed, ready
 
 pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
@@ -116,6 +117,23 @@ async def test_note_tool_schemas_bind_ordinary_roots_and_recheck_host_context(tm
         privileged = ThreadCollaborationCapability(controller=controller, source_thread_id=BOT_THREAD_ID)
         bot_tools = privileged.get_toolset().tools
         assert "list_bot_notes" in bot_tools
+        assert "your own slot" in ordinary.get_instructions()
+        assert "your own slot" not in privileged.get_instructions()
+        captured = await app._root_runs._executor.capture(thread_id=thread.thread_id, prompt="Inspect scope")
+        composition = captured.published.value
+        for kind in ("live", "memory"):
+            internal = ThreadCollaborationCapability(
+                controller=controller,
+                source_thread_id=thread.thread_id,
+                composition=composition.model_copy(
+                    update={"root": composition.root.model_copy(update={"source_kind": kind})}
+                ),
+            )
+            assert "Bot Notes" not in internal.get_instructions()
+            assert (
+                not {"read_bot_note", "write_bot_note", "clear_bot_note", "list_bot_notes"}
+                & internal.get_toolset().tools.keys()
+            )
         for toolset in (tools, bot_tools):
             for name in ("write_bot_note", "clear_bot_note"):
                 metadata = toolset[name].metadata[HARNESS_TOOL_METADATA_KEY]
@@ -131,3 +149,71 @@ async def test_note_tool_schemas_bind_ordinary_roots_and_recheck_host_context(tm
         assert set(bot_tools["write_bot_note"].function_schema.json_schema["properties"]) == {"thread_id", "content"}
         with pytest.raises(DefinitionError):
             await privileged.write_thread_bot_note(context, thread.thread_id, "Impersonation")
+
+
+@pytest.mark.parametrize("is_bot", [False, True])
+async def test_native_note_errors_are_recoverable_without_failing_or_pausing_runs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, is_bot: bool
+) -> None:
+    import json
+
+    from a13n_harness_ui.bot_models import BotSubmit
+    from a13n_harness_ui.model_runtime import HarnessUiModelResolver
+    from pydantic_ai.messages import ToolReturnPart
+    from pydantic_ai.models.function import DeltaToolCall, FunctionModel
+
+    root = _bot_configuration(tmp_path)
+    target_id = ""
+    step = 0
+    plan: list[tuple[str, dict[str, Any], str | None]] = []
+
+    async def resolve(self, model_id, *, thread_id):
+        async def model(messages, info):
+            nonlocal step
+            if step:
+                returns = [part for message in messages for part in message.parts if isinstance(part, ToolReturnPart)]
+                observed = returns[-1].content
+                error = plan[step - 1][2]
+                if error is not None:
+                    assert observed["ok"] is False
+                    assert observed["error"]["code"] == error
+                else:
+                    assert observed["content"] == "Recovered handoff"
+            if step == len(plan):
+                yield "Recovered and continued"
+                return
+            name, arguments, _ = plan[step]
+            step += 1
+            yield {0: DeltaToolCall(name=name, json_args=json.dumps(arguments), tool_call_id=f"recover-{step}")}
+
+        return FunctionModel(stream_function=model)
+
+    monkeypatch.setattr(HarnessUiModelResolver, "resolve", resolve)
+    async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
+        bot = await ready(app)
+        target = await app.create_thread()
+        target_id = target.thread_id
+        args = {"thread_id": target_id} if is_bot else {}
+        plan = [("write_bot_note", {**args, "content": "x" * 17000}, "bot_note_too_large")]
+        if is_bot:
+            plan += [
+                (name, {"thread_id": "thread-deleted", **extra}, "bot_note_target_invalid")
+                for name, extra in (
+                    ("read_bot_note", {}),
+                    ("write_bot_note", {"content": "Stale handoff"}),
+                    ("clear_bot_note", {}),
+                )
+            ]
+            plan.append(("publish_bot_message", {"text": " "}, "bot_message_empty"))
+        plan.append(("write_bot_note", {**args, "content": "Recovered handoff"}, None))
+        if is_bot:
+            await bot.submit(BotSubmit(input_id="recover-tools", text="Recover from ordinary tool errors"))
+            item = await consumed(app, "recover-tools")
+            assert item.state == "completed", item.error
+            assert not (await bot.snapshot()).state.paused
+        else:
+            receipt = await app.submit_thread(thread_id=target_id, prompt="Recover from ordinary tool errors")
+            operation = await app.wait_root_operation(receipt.receipt_id)
+            assert operation.status.value == "completed", operation
+        assert step == len(plan)
+        assert (await bot.notes.read(caller=target_id, thread_id=target_id)).content == "Recovered handoff"

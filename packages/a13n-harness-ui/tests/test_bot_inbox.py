@@ -218,3 +218,33 @@ async def test_oversized_serialized_envelope_rolls_back_source_and_cannot_block_
         ).settings == configuration.settings
         await retain(app, configuration.connector_id, (event("after-large"),))
         assert len(await app._store.bot_inbox.pending()) == 1
+
+
+async def test_automatic_policy_read_failure_is_supervised_and_retried(tmp_path: Path, monkeypatch) -> None:
+    from anyio import create_task_group
+
+    root = _write_configuration(tmp_path)
+    async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
+        bot = await ready(app)
+        app._root_runs._executor._agents = _CompletedReconstructor()
+        original = bot._policy
+        retried = Event()
+        calls = 0
+
+        async def fail_once():
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise RuntimeError("Transient policy read failure")
+            retried.set()
+            return await original()
+
+        monkeypatch.setattr(bot, "_policy", fail_once)
+        async with create_task_group() as group:
+            group.start_soon(bot._automatic_loop)
+            with fail_after(5):
+                await retried.wait()
+            assert bot._owned
+            await bot.submit(BotSubmit(input_id="after-policy-fault", text="Continue explicitly"))
+            assert (await consumed(app, "after-policy-fault")).state == "completed"
+            group.cancel_scope.cancel()

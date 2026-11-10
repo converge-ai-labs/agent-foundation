@@ -519,3 +519,67 @@ async def test_native_finish_silently_completes_without_publication_and_resumes_
         replied = await bot.snapshot()
         assert replied.messages[-1].text == "I am still following the objective."
         assert replied.thread.completion != completion
+
+
+async def test_generic_human_steer_cannot_bypass_bot_input_policy(tmp_path: Path) -> None:
+    from anyio import Event
+
+    from .test_app import _SlowReconstructor
+    from .test_bot_inbox import policy
+
+    root = _write_configuration(tmp_path)
+    async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
+        bot = await ready(app)
+        started = Event()
+        app._root_runs._executor._agents = _SlowReconstructor(started)
+        await bot.submit(BotSubmit(input_id="busy-steer", text="Work"))
+        with fail_after(5):
+            await started.wait()
+        operation = await app._root_runs.active(BOT_THREAD_ID)
+        assert operation is not None
+        for enabled in (True, False):
+            if not enabled:
+                await policy(app, root, enabled=False)
+            with pytest.raises(HarnessUiError) as error:
+                await app.steer_root_operation(receipt_id=operation.receipt.receipt_id, message="Bypass")
+            assert error.value.code == "bot_chat_required"
+        assert len(await app._store.bot.inputs()) == 1
+        await app.cancel_root_operation(operation.receipt.receipt_id)
+
+
+async def test_unknown_decision_admission_is_interrupted_without_stranding_dispatch(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from a13n_harness_ui.surfaces import ExternalToolResult, ThreadDeferredResponse
+
+    from .test_app import _DeferredReconstructor
+
+    root = _write_configuration(tmp_path)
+    async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
+        bot = await ready(app)
+        app._root_runs._executor._agents = _DeferredReconstructor()
+        await bot.submit(BotSubmit(input_id="decision-fault", text="Ask before proceeding"))
+        assert (await consumed(app, "decision-fault")).state == "completed"
+        detail = await app.get_thread(BOT_THREAD_ID)
+        response = ThreadDeferredResponse(
+            expected_continuation_id=detail.continuation_id,
+            responses=(ExternalToolResult(request_id=detail.deferred_requests[0].request_id, result="Human answer"),),
+        )
+        original = app._root_runs.submit_response
+
+        async def fail(**kwargs):
+            raise RuntimeError("Unexpected decision admission failure")
+
+        monkeypatch.setattr(app._root_runs, "submit_response", fail)
+        with pytest.raises(RuntimeError, match="Unexpected decision"):
+            await bot.respond(response)
+        failed = (await app._store.bot.inputs())[-1]
+        assert failed.source_id == "decision" and failed.state == "interrupted"
+        assert (await bot.snapshot()).state.paused
+        assert all(item.state != "dispatching" for item in await app._store.bot.inputs())
+        monkeypatch.setattr(app._root_runs, "submit_response", original)
+        receipt = await bot.respond(response)
+        assert (await app.wait_root_operation(receipt.receipt_id)).status.value == "completed"
+        with fail_after(5):
+            while any(item.state == "admitted" for item in await app._store.bot.inputs()):
+                await sleep(0.01)

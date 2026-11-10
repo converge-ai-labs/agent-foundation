@@ -20,6 +20,7 @@ async def _target(session: AsyncSession, thread_id: str) -> None:
     if (
         thread is None
         or thread.parent_thread_id is not None
+        or thread.memory_scope is not None
         or configuration is None
         or configuration.agent_source_kind in {"live", "bot"}
         or thread_id == BOT_THREAD_ID

@@ -36,7 +36,7 @@ class Sharing:
             if (
                 thread.parent_thread_id is None
                 and thread.memory_scope is None
-                and thread.configuration.agent_source.kind != "live"
+                and thread.configuration.agent_source.kind not in {"live", "bot"}
             ):
                 return thread.title or "Untitled conversation"
         raise unavailable()
@@ -75,7 +75,7 @@ class Sharing:
                 root = (await self._app.get_thread(root.parent_thread_id)).thread
         except HarnessUiError:
             raise unavailable() from None
-        if root.memory_scope is not None or root.configuration.agent_source.kind == "live":
+        if root.memory_scope is not None or root.configuration.agent_source.kind in {"live", "bot"}:
             raise unavailable()
         allowed = (
             root.thread_id == grant.target_id

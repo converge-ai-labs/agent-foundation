@@ -163,6 +163,11 @@ class BotController:
                 except HarnessUiError as exc:
                     await self._store.bot.save_input(item.model_copy(update={"state": "discarded", "error": str(exc)}))
                     raise
+                except BaseException:
+                    await self._save_interrupted(
+                        item, "Bot decision admission was interrupted. Inspect activity before continuing."
+                    )
+                    raise
                 await self._store.bot.save_input(
                     item.model_copy(update={"state": "admitted", "receipt_id": receipt.receipt_id})
                 )
@@ -265,11 +270,12 @@ class BotController:
 
     async def _automatic_loop(self) -> None:
         while True:
-            await sleep((await self._policy()).connector_interval_seconds)
             try:
+                await sleep((await self._policy()).connector_interval_seconds)
                 await self.deliver_automatic_inputs()
             except Exception:
                 get_logger(__name__).exception("Automatic Bot input delivery failed")
+                await sleep(1)
 
     async def deliver_automatic_inputs(self) -> None:
         """Freeze one batch; exact native acceptance consumes only its selected IDs."""
