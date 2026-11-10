@@ -104,7 +104,7 @@ impl Native {
                 let p = self.accessible(node).await?;
                 let direction = string(r, "direction")?;
                 let target = match direction {
-                    "parent" => b.call(p.parent()).await?,
+                    "parent" => self.parent(node, b).await?,
                     "first_child" => b.call(p.get_child_at_index(0)).await?,
                     "last_child" => {
                         let count = b.call(p.child_count()).await?;
@@ -114,7 +114,7 @@ impl Native {
                         b.call(p.get_child_at_index(count - 1)).await?
                     }
                     "next_sibling" | "previous_sibling" => {
-                        let parent = b.call(p.parent()).await?;
+                        let parent = self.parent(node, b).await?;
                         if parent.is_null() {
                             return Ok(());
                         }

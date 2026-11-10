@@ -1041,6 +1041,155 @@ fn linux_accessibility_controlled_native_members() {
         .unwrap_err();
     assert_eq!(err.data.error_type, ErrorType::Timeout);
 
+    // Native predicate evidence is independent of the bounded node display.
+    configure(&backend, "query_text");
+    for (query, expected) in [
+        (json!({"name":"Save"}), 0),
+        (json!({"name":"Save as Straße"}), 1),
+        (
+            json!({"name":"STRASSE","name_match":"substring_casefold"}),
+            1,
+        ),
+        (json!({"identifier":"/org/a11y/atspi/accessible/root"}), 1),
+        (json!({"identifier":"/org"}), 0),
+    ] {
+        let page = call(
+            &mut backend,
+            "computer.a11y_find",
+            json!({
+                "node":root,"query":query,"limits":{"depth":0,"max_text_bytes":4}
+            }),
+        );
+        assert_eq!(page["nodes"].as_array().unwrap().len(), expected, "{query}");
+        assert_eq!(page["completeness"]["reason"], "byte_limit");
+        if expected > 0 {
+            assert_eq!(page["nodes"][0]["name"], "Save");
+        }
+    }
+    for (mode, query, kind) in [
+        (
+            "query_name_error",
+            json!({"name":"Controlled provider"}),
+            ErrorType::ProviderUnavailable,
+        ),
+        (
+            "query_name_error",
+            json!({"name":""}),
+            ErrorType::ProviderUnavailable,
+        ),
+        (
+            "query_identifier_error",
+            json!({"identifier":"missing"}),
+            ErrorType::ProviderUnavailable,
+        ),
+        (
+            "query_interfaces_error",
+            json!({"operation":"focus"}),
+            ErrorType::Denied,
+        ),
+    ] {
+        configure(&backend, mode);
+        let err = backend
+            .execute(
+                "computer.a11y_find",
+                json!({
+                    "node":root,"query":query,"limits":{"depth":0}
+                }),
+                &mut || panic!("read dispatched"),
+            )
+            .unwrap_err();
+        assert_eq!(err.data.error_type, kind, "{mode}");
+        let page = call(
+            &mut backend,
+            "computer.a11y_find",
+            json!({
+                "node":root,"query":{"role":"text"},"limits":{"depth":0}
+            }),
+        );
+        assert_eq!(page["nodes"].as_array().unwrap().len(), 1);
+        assert!(
+            !page["nodes"][0]["field_errors"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+        let page = call(
+            &mut backend,
+            "computer.a11y_find",
+            json!({
+                "node":root,"query":{"role":"button","name":"unreadable"},"limits":{"depth":0}
+            }),
+        );
+        assert!(page["nodes"].as_array().unwrap().is_empty());
+    }
+    configure(&backend, "query_empty_name");
+    let page = call(
+        &mut backend,
+        "computer.a11y_find",
+        json!({
+            "node":root,"query":{"name":""},"limits":{"depth":0}
+        }),
+    );
+    assert_eq!(page["nodes"].as_array().unwrap().len(), 1);
+    configure(&backend, "query_no_interfaces");
+    let page = call(
+        &mut backend,
+        "computer.a11y_find",
+        json!({
+            "node":root,"query":{"operation":"focus"},"limits":{"depth":0}
+        }),
+    );
+    assert!(page["nodes"].as_array().unwrap().is_empty());
+
+    configure(&backend, "topology_initial");
+    let page = call(
+        &mut backend,
+        "computer.a11y_inspect",
+        json!({
+            "node":root,"limits":{"max_nodes":2}
+        }),
+    );
+    assert_eq!(page["nodes"].as_array().unwrap().len(), 2);
+    let children_cursor = page["completeness"]["continuation"].clone();
+    // Also model the other legal retained work kind, a sampled-later child.
+    let id = backend
+        .native
+        .registry
+        .put(
+            "ac",
+            Handle::Cursor {
+                root: root.clone(),
+                query: Value::Null,
+                view: Value::Null,
+                depth: 2,
+                pending: vec![Pending::Node(object("child"), 1)],
+                seen: HashSet::new(),
+            },
+        )
+        .unwrap();
+    let node_cursor = json!({"root":root,"cursor_handle":id});
+    // An interrupted ancestry check must leave the original cursor reusable.
+    let err = backend
+        .execute(
+            "computer.a11y_inspect",
+            json!({
+                "node":root,"cursor":node_cursor,"limits":{"max_native_calls":1}
+            }),
+            &mut || panic!("read dispatched"),
+        )
+        .unwrap_err();
+    assert_eq!(err.data.error_type, ErrorType::Timeout);
+    configure(&backend, "topology_moved");
+    for cursor in [children_cursor, node_cursor] {
+        let page = call(
+            &mut backend,
+            "computer.a11y_inspect",
+            json!({"node":root,"cursor":cursor}),
+        );
+        assert!(page["nodes"].as_array().unwrap().is_empty(), "{page}");
+        assert_eq!(page["completeness"]["complete"], true);
+    }
+
     configure(&backend, "long_text");
     let started = Instant::now();
     let partial = call(
@@ -1062,11 +1211,17 @@ fn linux_accessibility_controlled_native_members() {
     );
     let (_, start, end) = backend.native.span(&expanded["ranges"][0]).unwrap();
     assert_eq!((start, end), (0, 11));
-    for mode in ["child_error", "sample_error"] {
+    for mode in ["child_error", "sample_error", "ancestry_error"] {
         configure(&backend, mode);
         let partial = call(&mut backend, "computer.a11y_inspect", json!({"node":root}));
         assert_eq!(partial["nodes"].as_array().unwrap().len(), 1);
-        if mode == "child_error" {
+        assert!(
+            partial["nodes"][0]["children"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+        if mode != "sample_error" {
             assert!(
                 partial["nodes"][0]["field_errors"]
                     .as_array()

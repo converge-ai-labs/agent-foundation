@@ -95,8 +95,7 @@ impl Native {
             if &current == parent {
                 return Ok(true);
             }
-            let p = self.accessible(&current).await?;
-            current = b.call(p.parent()).await?;
+            current = self.parent(&current, b).await?;
             if current.is_null() {
                 break;
             }
@@ -110,7 +109,7 @@ impl Native {
         b: &Budget,
     ) -> Result<i32, EIPError> {
         let p = self.accessible(child).await?;
-        if b.call(p.parent()).await? != *node {
+        if self.parent(child, b).await? != *node {
             return Err(stale());
         }
         let index = b.call(p.get_index_in_parent()).await?;

@@ -137,6 +137,9 @@ def invoke(_bus, _sender, object_path, interface, member, arguments, invocation)
     if member == "GetRoleName" and object_path == ROOT + "child" and state["mode"] == "sample_error":
         invocation.return_dbus_error("org.freedesktop.DBus.Error.UnknownObject", "Fixture child disappeared")
         return
+    if member == "GetInterfaces" and state["mode"] == "query_interfaces_error":
+        invocation.return_dbus_error("org.freedesktop.DBus.Error.AccessDenied", "Fixture interfaces denied")
+        return
     if member == "GetState" and state["mode"] == "defunct":
         invocation.return_value(GLib.Variant("(au)", ([1 << 6, 0],)))
         return
@@ -153,9 +156,19 @@ def invoke(_bus, _sender, object_path, interface, member, arguments, invocation)
         if member == "GetStringAtOffset"
         else ("", 0, 0),
         "GetRole": (61,),
-        "GetInterfaces": ([PREFIX + name for name in methods if name != "TestControl"],),
+        "GetInterfaces": (
+            []
+            if state["mode"] == "query_no_interfaces"
+            else [PREFIX + name for name in methods if name != "TestControl"],
+        ),
         "GetIndexInParent": (0,),
-        "GetChildAtIndex": (ref("child"),),
+        "GetChildAtIndex": (
+            (":999.999", ROOT + "child")
+            if state["mode"] == "ancestry_error"
+            else ref("foreign" if state["mode"] == "topology_moved" else "grand")
+            if state["mode"].startswith("topology_") and object_path == ROOT + "child"
+            else ref("child"),
+        ),
         "GetName": ("activate",),
         "GetLocalizedName": ("Activate",),
         "GetDescription": ("Test action",),
@@ -199,10 +212,26 @@ pending = []
 
 def get_property(_bus, _sender, object_path, interface, name):
     native = interface.removeprefix(PREFIX)
+    if state["mode"] == "query_name_error" and name == "Name":
+        return None
+    if state["mode"] == "query_identifier_error" and name == "AccessibleId":
+        return None
+    parent = "root" if object_path == ROOT + "child" else None
+    count = 1 if object_path == ROOT + "root" else 0
+    if state["mode"].startswith("topology_"):
+        if object_path == ROOT + "child":
+            parent = "other" if state["mode"] == "topology_moved" else "root"
+            count = 1
+        elif object_path in {ROOT + "grand", ROOT + "foreign"}:
+            parent = "child"
     values = {
-        "Parent": ref("root") if object_path == ROOT + "child" else ("", "/org/a11y/atspi/null"),
-        "ChildCount": 1 if object_path == ROOT + "root" else 0,
-        "Name": "Controlled provider",
+        "Parent": ref(parent) if parent else ("", "/org/a11y/atspi/null"),
+        "ChildCount": count,
+        "Name": ""
+        if state["mode"] == "query_empty_name"
+        else "Save as Straße"
+        if state["mode"] == "query_text"
+        else "Controlled provider",
         "Description": "Native test fixture",
         "AccessibleId": object_path,
         "NActions": 1,
@@ -237,7 +266,7 @@ for native, members in methods.items():
         xml += f'<property name="{name}" type="{kind}" access="{access}"/>'
     xml += "</interface></node>"
     info = Gio.DBusNodeInfo.new_for_xml(xml).interfaces[0]
-    for node in ["root", "child", "other"]:
+    for node in ["root", "child", "other", "grand", "foreign"]:
         bus.register_object(ROOT + node, info, invoke, get_property, set_property)
 
 

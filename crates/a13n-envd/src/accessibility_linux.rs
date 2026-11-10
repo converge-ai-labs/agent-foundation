@@ -489,6 +489,20 @@ impl Native {
             _ => Err(stale()),
         }
     }
+    async fn parent(&self, node: &ObjectRefOwned, b: &Budget) -> Result<ObjectRefOwned, EIPError> {
+        let p = self.accessible(node).await?;
+        // atspi-common 0.14's OwnedValue conversion for Parent parses the bus
+        // name before recognizing the protocol's ("", null-path) sentinel.
+        let (name, path): (String, zbus::zvariant::OwnedObjectPath) =
+            b.call(p.inner().get_property("Parent")).await?;
+        if path.as_str() == "/org/a11y/atspi/null" {
+            return Ok(ObjectRef::Null.into());
+        }
+        Ok(ObjectRef::new_owned(
+            zbus::names::UniqueName::try_from(name).map_err(|_| unavailable())?,
+            path,
+        ))
+    }
     async fn live(&self, node: &ObjectRefOwned, b: &Budget) -> Result<(), EIPError> {
         let p = self.accessible(node).await?;
         let state = b.call(p.get_state()).await?;
@@ -819,8 +833,17 @@ impl Native {
         )
     }
     async fn sample(&mut self, node: &ObjectRefOwned, b: &Budget) -> Result<Value, EIPError> {
+        Ok(self.sample_query(node, b, &Value::Null).await?.0)
+    }
+    async fn sample_query(
+        &mut self,
+        node: &ObjectRefOwned,
+        b: &Budget,
+        query: &Value,
+    ) -> Result<(Value, Result<bool, EIPError>), EIPError> {
         let p = self.accessible(node).await?;
-        let role = b.string(b.call(p.get_role_name()).await?, 1024);
+        let native_role = b.call(p.get_role_name()).await?;
+        let role = b.string(native_role.clone(), 1024);
         let state = b.call(p.get_state()).await?;
         if state.contains(State::Defunct) {
             return Err(stale());
@@ -839,17 +862,32 @@ impl Native {
             }
         }
         result["states"]["protected"] = json!(protected);
+        // Predicate evidence is request-local native data, independent of the
+        // bounded display projection. Never retain it in a traversal cursor.
+        let mut predicate = json!({"native_role":native_role,"role":native_role.replace(' ', "_"),
+            "states":result["states"],"capabilities":[]});
+        let mut query_errors = Vec::new();
         for (field, value) in [
             ("name", b.call(p.name()).await),
             ("description", b.call(p.description()).await),
             ("identifier", b.call(p.accessible_id()).await),
         ] {
             match value {
-                Ok(text) => result[field] = json!(b.text(text)),
-                Err(err) => field_error(&mut result, field, &err),
+                Ok(text) => {
+                    if !query[field].is_null() {
+                        predicate[field] = json!(text);
+                    }
+                    result[field] = json!(b.text(text));
+                }
+                Err(err) => {
+                    field_error(&mut result, field, &err);
+                    if !query[field].is_null() {
+                        query_errors.push((field, err));
+                    }
+                }
             }
         }
-        match b.call(p.parent()).await {
+        match self.parent(node, b).await {
             Ok(parent) if !parent.is_null() => result["parent"] = self.reference(parent)?,
             Err(err) => field_error(&mut result, "parent", &err),
             _ => {}
@@ -862,7 +900,10 @@ impl Native {
             Ok(interfaces) => interfaces,
             Err(err) => {
                 field_error(&mut result, "interfaces", &err);
-                return Ok(result);
+                if !query["operation"].is_null() {
+                    query_errors.push(("operation", err));
+                }
+                return Ok((result, resolve_query(&predicate, query, query_errors)));
             }
         };
         if interfaces.contains(Interface::Component) {
@@ -888,6 +929,14 @@ impl Native {
         if interfaces.contains(Interface::Action) && !protected {
             match self.actions(node, b).await {
                 Ok(actions) => {
+                    if actions.iter().any(|identity| {
+                        !identity.0.is_empty() && identity.0.chars().count() <= 1024
+                    }) {
+                        predicate["capabilities"]
+                            .as_array_mut()
+                            .unwrap()
+                            .push(json!({"operation":"do_action"}));
+                    }
                     for (index, identity) in actions.iter().enumerate() {
                         // Action identities cannot be truncated and then used
                         // as native identifiers. Keep them exact or omit them.
@@ -911,15 +960,24 @@ impl Native {
                     "action":{"node":reference,"action_handle":id,"native_identifier":identity.0},"label":b.text(identity.1.clone()),"description":b.text(identity.2.clone())}));
                     }
                 }
-                Err(err) => field_error(&mut result, "actions", &err),
+                Err(err) => {
+                    field_error(&mut result, "actions", &err);
+                    if query["operation"] == "do_action" {
+                        query_errors.push(("operation", err));
+                    }
+                }
             }
         }
+        predicate["capabilities"]
+            .as_array_mut()
+            .unwrap()
+            .extend(capabilities.iter().cloned());
         if capabilities.len() > b.limit("max_items").min(128) {
             capabilities.truncate(b.limit("max_items").min(128));
             b.mark("item_limit");
         }
         result["capabilities"] = json!(capabilities);
-        Ok(result)
+        Ok((result, resolve_query(&predicate, query, query_errors)))
     }
     async fn actions(
         &self,
@@ -964,7 +1022,7 @@ impl Native {
         } else {
             Value::Null
         };
-        let mut pending = vec![Pending::Node(root, 0)];
+        let mut pending = vec![Pending::Node(root.clone(), 0)];
         let mut seen = HashSet::new();
         if !p["cursor"].is_null() {
             if p["cursor"]["root"] != p["node"] {
@@ -1009,6 +1067,30 @@ impl Native {
             }
             if b.check().is_err() {
                 break;
+            }
+            // Validate live scope before consuming either kind of retained
+            // work. An interrupted ancestry read leaves the cursor unchanged.
+            let candidate = match pending.last().unwrap() {
+                Pending::Node(node, _) | Pending::Children { node, .. } => node,
+            };
+            match self.descendant(candidate, &root, b).await {
+                Ok(true) => {}
+                Err(_) if b.check().is_err() => break,
+                Ok(false) => {
+                    tree_remove_child(&mut nodes, &self.reference(candidate.clone())?, &stale());
+                    pending.pop();
+                    progressed = true;
+                    continue;
+                }
+                Err(err) if err.data.error_type == ErrorType::Conflict => {
+                    let reference = self.reference(candidate.clone())?;
+                    tree_remove_child(&mut nodes, &reference, &err);
+                    tree_field_error(&mut nodes, &reference, "children", &err);
+                    pending.pop();
+                    progressed = true;
+                    continue;
+                }
+                Err(err) => return Err(err),
             }
             match pending.pop().unwrap() {
                 Pending::Children {
@@ -1113,7 +1195,7 @@ impl Native {
                         break;
                     }
                     visited += 1;
-                    let sample = match self.sample(&node, b).await {
+                    let (sample, matched) = match self.sample_query(&node, b, &query).await {
                         Ok(sample) => sample,
                         Err(_) if b.check().is_err() => {
                             pending.push(Pending::Node(node, depth));
@@ -1123,17 +1205,7 @@ impl Native {
                             // A vanished object is absent from this live traversal.
                             // It must not discard observations of surviving siblings.
                             let reference = self.reference(node.clone())?;
-                            if let Some(parent) = nodes.iter_mut().find(|parent: &&mut Value| {
-                                parent["children"]
-                                    .as_array()
-                                    .is_some_and(|children| children.contains(&reference))
-                            }) {
-                                parent["children"]
-                                    .as_array_mut()
-                                    .unwrap()
-                                    .retain(|child| *child != reference);
-                                field_error(parent, "children", &err);
-                            }
+                            tree_remove_child(&mut nodes, &reference, &err);
                             seen.insert(node);
                             progressed = true;
                             continue;
@@ -1151,7 +1223,7 @@ impl Native {
                         break;
                     }
                     let count = sample["child_count"].as_i64().map(|n| n as i32);
-                    if !find || matches_query(&sample, &query) {
+                    if !find || matched? {
                         nodes.push(sample);
                         if !tree_fits(
                             &nodes,
@@ -1336,6 +1408,16 @@ fn field_error(result: &mut Value, field: &str, e: &EIPError) {
         errors.push(json!({"field":field,"reason":reason}));
     }
 }
+fn tree_remove_child(nodes: &mut [Value], reference: &Value, err: &EIPError) {
+    for parent in nodes {
+        if let Some(children) = parent["children"].as_array_mut()
+            && children.contains(reference)
+        {
+            children.retain(|child| child != reference);
+            field_error(parent, "children", err);
+        }
+    }
+}
 fn tree_field_error(nodes: &mut [Value], reference: &Value, field: &str, err: &EIPError) {
     if let Some(parent) = nodes
         .iter_mut()
@@ -1372,6 +1454,25 @@ fn point(p: &Value) -> Result<(CoordType, i32, i32), EIPError> {
         Ok(n as i32)
     };
     Ok((frame, n("x")?, n("y")?))
+}
+fn resolve_query(
+    node: &Value,
+    query: &Value,
+    errors: Vec<(&str, EIPError)>,
+) -> Result<bool, EIPError> {
+    // A known false conjunct resolves the query even if another native field
+    // failed. Otherwise preserve the original typed failure, not a nonmatch.
+    let mut resolved = query.clone();
+    for (field, _) in &errors {
+        resolved[*field] = Value::Null;
+    }
+    if !matches_query(node, &resolved) {
+        return Ok(false);
+    }
+    match errors.into_iter().next() {
+        Some((_, err)) => Err(err),
+        None => Ok(true),
+    }
 }
 fn matches_query(node: &Value, q: &Value) -> bool {
     for key in ["role", "native_role", "identifier"] {
