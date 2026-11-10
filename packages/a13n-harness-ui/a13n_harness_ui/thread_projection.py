@@ -597,6 +597,7 @@ class ThreadProjectionService:
         assert inspection.run_composition is not None
         composition = await self._store.objects.read_model(inspection.run_composition, ResolvedRunComposition)
         latest = inspection.latest_request_tokens
+        observed = None
         if not inspection.context_empty:
             observed = await self._store.usage.latest_root_request(thread_id=thread_id)
             if observed is not None:
@@ -608,6 +609,15 @@ class ThreadProjectionService:
         return ContextUsageView(
             thread_id=thread_id,
             latest_request_tokens=latest,
+            record_id=observed.record_id if observed else None,
+            input_audio_tokens=observed.request_usage.input_audio_tokens if observed else None,
+            context_breakdown=observed.context_breakdown if observed else None,
+            input_tokens=observed.request_usage.input_tokens
+            if observed and observed.usage_status != "unavailable"
+            else None,
+            output_tokens=observed.request_usage.output_tokens
+            if observed and observed.usage_status != "unavailable"
+            else None,
             context_window=(
                 None if model.model_characteristics is None else model.model_characteristics.context_window_tokens
             ),

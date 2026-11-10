@@ -21,6 +21,7 @@ from pydantic_ai.models import ModelRequestContext
 from pydantic_ai.tools import ToolDefinition
 
 from a13n_harness.context import AgentContext, SkillPath
+from a13n_harness.context_breakdown import ContextItemUsage, InstructionCatalog
 from a13n_harness.environment._mount_path import parse_mount_path
 from a13n_harness.environment.archives import FileArchive
 from a13n_harness.environment.files import (
@@ -782,6 +783,7 @@ class _SkillsRunCapability(SkillsCapability):
         self.manager = manager
         self._catalog = catalog.model_copy(deep=True)
         self._context = context
+        self.catalog_measurement = self._render_catalog()
         keys: dict[tuple[str, str], BoundSkillCatalogItem] = {}
         skill_paths: list[SkillPath] = []
         for item in self._catalog.items:
@@ -802,11 +804,15 @@ class _SkillsRunCapability(SkillsCapability):
         return self
 
     def get_instructions(self) -> str | None:
+        return self.catalog_measurement.text if self.catalog_measurement else None
+
+    def _render_catalog(self) -> InstructionCatalog | None:
         if not self._catalog.items:
             return None
         lines = [_SKILL_ROUTING_POLICY, "", "<available-skills>"]
+        sizes: dict[str, ContextItemUsage] = {}
         for item in self._catalog.items:
-            lines.extend(
+            entry = "\n".join(
                 (
                     f'<skill name="{escape(item.name, quote=True)}">',
                     f"  <description>{escape(item.description, quote=True)}</description>",
@@ -814,8 +820,10 @@ class _SkillsRunCapability(SkillsCapability):
                     "</skill>",
                 )
             )
+            lines.append(entry)
+            sizes[item.name] = ContextItemUsage(characters=len(entry), description=item.description)
         lines.append("</available-skills>")
-        return "\n".join(lines)
+        return InstructionCatalog("\n".join(lines), sizes)
 
     async def before_model_request(
         self,

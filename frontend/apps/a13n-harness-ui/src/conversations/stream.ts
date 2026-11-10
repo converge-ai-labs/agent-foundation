@@ -150,7 +150,7 @@ export class FocusDisplay {
     retries: number;
   };
   terminalFailure?: string;
-  contextUsage?: { tokens: number; ordinal: number };
+  contextUsage?: { tokens: number; ordinal: number; recordId?: string };
   readonly checkpoints = new Map<string, number>();
   private readonly savedBlocks = new Map<string, number>();
   blocksAfter(continuation: string | null | undefined) {
@@ -872,6 +872,10 @@ export class FocusDisplay {
           this.contextUsage = {
             tokens: input_tokens + output_tokens,
             ordinal: record.response_ordinal,
+            recordId:
+              typeof record.record_id === "string"
+                ? record.record_id
+                : undefined,
           };
         }
       }

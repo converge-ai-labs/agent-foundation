@@ -9,7 +9,7 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
-import { ArrowUp, Trash } from "@phosphor-icons/react";
+import { Check, Trash } from "@phosphor-icons/react";
 import { Button, Popover, PopoverPopup } from "a13n-ui";
 import { useTranslation } from "../i18n";
 import type { ThreadDraft } from "./draft";
@@ -306,7 +306,7 @@ function SelectionPopup({
                 size="icon-xs"
                 aria-label={t("Add annotation")}
               >
-                <ArrowUp />
+                <Check weight="bold" aria-hidden="true" />
               </Button>
             )}
           </form>

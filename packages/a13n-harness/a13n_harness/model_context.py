@@ -6,7 +6,7 @@ from collections.abc import Awaitable, Callable
 from copy import copy
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Protocol
+from typing import Literal, Protocol
 
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
@@ -86,6 +86,16 @@ class ModelContextBlock:
     source_id: str
     placement: ModelContextPlacement
     content: str
+    memory_mount: str | None = None
+    context_group: Literal["environment_context"] | None = None
+
+    def content_item(self) -> ContentItem:
+        metadata = ContentMetadata(display=False, source_id=self.source_id)
+        if self.memory_mount is not None:
+            metadata = metadata.model_copy(update={"memory_mount": self.memory_mount})
+        if self.context_group is not None:
+            metadata = metadata.model_copy(update={"context_group": self.context_group})
+        return ContentItem(self.content, metadata)
 
 
 @dataclass(frozen=True, slots=True)
@@ -160,10 +170,7 @@ class ModelContextCoordinatorCapability(AbstractCapability[AgentContext]):
             _persist_projection(ctx.messages, original_request, committed, request, projection)
             # Observe only freshly produced overlays, never history replay.
             for event in input_events(
-                [
-                    ContentItem(block.content, ContentMetadata(display=False, source_id=block.source_id))
-                    for block in projection.blocks
-                ],
+                [block.content_item() for block in projection.blocks],
                 source="context",
                 input_id=f"context-{ctx.run_id}-{ctx.run_step}",
             ):
@@ -342,7 +349,7 @@ def _commit_projection(
     inserted_parts = [
         (
             UserPromptPart(block.content),
-            [ContentItem(block.content, ContentMetadata(display=False, source_id=block.source_id))],
+            [block.content_item()],
         )
         for block in preamble
     ]
@@ -350,7 +357,7 @@ def _commit_projection(
     parts.extend(
         (
             UserPromptPart(block.content),
-            [ContentItem(block.content, ContentMetadata(display=False, source_id=block.source_id))],
+            [block.content_item()],
         )
         for block in epilogue
     )

@@ -961,6 +961,9 @@ function ConversationContent({
                   threadId={threadId}
                   receipt={receipt}
                   busy={thread.root_activity.state !== "inactive"}
+                  liveRecordId={
+                    showLive ? display.contextUsage?.recordId : undefined
+                  }
                   liveTokens={
                     showLive ? display.contextUsage?.tokens : undefined
                   }

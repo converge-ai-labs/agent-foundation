@@ -54,6 +54,7 @@ from a13n_harness.toolsets import (
     FileViewRule,
     MediaUnderstandingResult,
 )
+from a13n_harness.usage import ModelUsageRecord
 from pydantic_ai import RunContext
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import AbstractCapability
@@ -811,6 +812,12 @@ async def test_host_skill_selection_injects_only_exact_selected_names(tmp_path: 
     assert "Use alpha." in instructions
     assert 'skill name="beta"' not in instructions
     assert "Use beta." not in instructions
+    record = next(record for record in result.usage_records if isinstance(record, ModelUsageRecord))
+    assert record.context_breakdown is not None
+    skills = record.context_breakdown.groups["skills"]
+    assert list(skills.items) == ["alpha"]
+    assert skills.items["alpha"].description == "Use alpha."
+    assert skills.characters > skills.items["alpha"].characters > len("Use alpha.")
 
 
 async def test_empty_host_skill_selection_injects_no_skill_catalog(tmp_path: Path) -> None:

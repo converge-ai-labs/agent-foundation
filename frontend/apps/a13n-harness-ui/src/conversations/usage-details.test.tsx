@@ -156,3 +156,68 @@ it("shows an empty scoped view without unknown-cost placeholders and restores to
   expect(number("Total tokens")).toBe("15,456");
   expect(screen.queryByText("No usage in this scope yet.")).toBeNull();
 });
+
+it("estimates from input alone and falls back to characters for unmeasured media", () => {
+  const request: Schema<"ContextUsageView"> = {
+    thread_id: "one",
+    input_tokens: 1000,
+    output_tokens: 200,
+    context_window: 4000,
+    context_breakdown: {
+      counted_input_characters: 100,
+      groups: {
+        skills: {
+          characters: 25,
+          items: {
+            sample: { characters: 20, description: "Sample catalog entry" },
+          },
+        },
+        conversation: { characters: 75 },
+      },
+    },
+  };
+  const view = render(
+    <ContextDetails compact used={1200} capacity={4000} request={request} />,
+  );
+  expect(screen.getByText("250")).toBeTruthy();
+  expect(screen.getByText("25%")).toBeTruthy();
+  expect(screen.getByRole("meter").getAttribute("aria-valuenow")).toBe("1200");
+  const skills = screen.getByRole("button", { name: /Skills/ });
+  expect(skills.getAttribute("aria-expanded")).toBe("false");
+  fireEvent.click(skills);
+  expect(skills.getAttribute("aria-expanded")).toBe("true");
+  expect(screen.getByText("Sample catalog entry")).toBeTruthy();
+  view.rerender(
+    <ContextDetails
+      compact
+      used={1200}
+      capacity={4000}
+      request={{
+        ...request,
+        context_breakdown: {
+          ...request.context_breakdown!,
+          unmeasured_content: ["other"],
+        },
+      }}
+    />,
+  );
+  expect(screen.getByText("Text characters")).toBeTruthy();
+  expect(screen.queryByText("250")).toBeNull();
+  view.rerender(
+    <ContextDetails
+      compact
+      used={1200}
+      capacity={4000}
+      request={{
+        ...request,
+        input_audio_tokens: 100,
+        context_breakdown: {
+          ...request.context_breakdown!,
+          unmeasured_content: ["audio"],
+        },
+      }}
+    />,
+  );
+  expect(screen.getByText("225")).toBeTruthy();
+  expect(screen.getByText("22.5%")).toBeTruthy();
+});

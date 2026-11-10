@@ -112,6 +112,7 @@ class _GlobalGuidanceCapability(AbstractModelContextCapability):
             blocks=(
                 ModelContextBlock(
                     source_id="a13n-harness-ui.global-guidance",
+                    context_group="environment_context",
                     placement=ModelContextPlacement.REQUEST_EPILOGUE,
                     content=content,
                 ),

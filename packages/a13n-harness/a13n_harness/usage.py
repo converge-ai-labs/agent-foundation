@@ -23,6 +23,7 @@ from pydantic_ai.usage import RequestUsage, RunUsage, UsageLimits
 
 from a13n_harness._json import dump_json_bytes, is_sensitive_key
 from a13n_harness.context import AgentContext
+from a13n_harness.context_breakdown import ContextBreakdown
 from a13n_harness.errors import DefinitionError, RunError, StateError
 from a13n_harness.identity import AgentInstanceContext
 from a13n_harness.money import sum_decimal
@@ -171,6 +172,7 @@ class ModelUsageRecord(ModelUsageObservation):
     """One observed generation: immutable attribution plus a revisable observation."""
 
     kind: Literal["model"] = "model"
+    context_breakdown: ContextBreakdown | None = Field(default=None, exclude_if=lambda v: v is None)
     record_id: str = Field(min_length=1, max_length=128)
     run_id: str = Field(min_length=1, max_length=256)
     response_ordinal: int = Field(ge=0)

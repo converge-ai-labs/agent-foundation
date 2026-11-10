@@ -4150,6 +4150,26 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** ContextBreakdown */
+        ContextBreakdown: {
+            /**
+             * Method
+             * @default text_characters_v1
+             * @constant
+             */
+            method?: "text_characters_v1";
+            /**
+             * Unmeasured Content
+             * @default []
+             */
+            unmeasured_content?: ("audio" | "other")[];
+            /** Counted Input Characters */
+            counted_input_characters: number;
+            /** Groups */
+            groups: {
+                [key: string]: components["schemas"]["ContextGroupUsage"];
+            };
+        };
         /** ContextChoice */
         ContextChoice: {
             /** Value */
@@ -4159,10 +4179,48 @@ export interface components {
             /** Description */
             description: string;
         };
+        /** @enum {string} */
+        ContextGroupName: "system" | "tools" | "skills" | "memory" | "environment_context" | "runtime_state" | "conversation" | "tool_calls" | "other";
+        /** ContextGroupUsage */
+        ContextGroupUsage: {
+            /** Characters */
+            characters: number;
+            /** Items */
+            items?: {
+                [key: string]: components["schemas"]["ContextItemUsage"];
+            };
+            /**
+             * Omitted Items
+             * @default 0
+             */
+            omitted_items?: number;
+        };
+        /** ContextItemUsage */
+        ContextItemUsage: {
+            /** Characters */
+            characters: number;
+            /** Description */
+            description?: string | null;
+            /** Calls */
+            calls?: number | null;
+            /** Argument Characters */
+            argument_characters?: number | null;
+            /** Result Characters */
+            result_characters?: number | null;
+        };
         /** ContextUsageView */
         ContextUsageView: {
             /** Thread Id */
             thread_id: string;
+            /** Record Id */
+            record_id?: string | null;
+            /** Input Audio Tokens */
+            input_audio_tokens?: number | null;
+            context_breakdown?: components["schemas"]["ContextBreakdown"] | null;
+            /** Input Tokens */
+            input_tokens?: number | null;
+            /** Output Tokens */
+            output_tokens?: number | null;
             /** Latest Request Tokens */
             latest_request_tokens?: number | null;
             /** Context Window */

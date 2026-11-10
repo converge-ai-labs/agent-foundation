@@ -1,6 +1,6 @@
 import { reasoningModeLabel } from "./reasoning-mode-picker";
 import { speedLabel } from "./speed-label";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTransport } from "../transport/context";
 import { result } from "../transport/client";
@@ -10,6 +10,7 @@ import {
   PopoverTrigger,
   PopoverPopup,
   PopoverTitle,
+  ScrollArea,
 } from "a13n-ui";
 import { useOperation, useThreads } from "./queries";
 import { HelpTip } from "../shell/help-tip";
@@ -36,11 +37,13 @@ export function ComposerStatus({
   receipt,
   busy = false,
   liveTokens,
+  liveRecordId,
 }: {
   threadId: string;
   receipt?: string | null;
   busy?: boolean;
   liveTokens?: number;
+  liveRecordId?: string;
 }) {
   const { t, i18n } = useTranslation();
   const { enabled: debug } = useDebug();
@@ -77,6 +80,7 @@ export function ComposerStatus({
       : captured?.captured?.agent;
   const usage = useThreadUsage(threadId);
   const context = useContextUsage(threadId);
+  const contextBody = useRef<HTMLDivElement>(null);
   const [now, setNow] = useState(Date.now);
   const [detail, setDetail] = useState<string | null>(null);
   useEffect(() => {
@@ -85,6 +89,10 @@ export function ComposerStatus({
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [active, operation?.receipt.receipt_id]);
+  const { refetch: refreshContext } = context;
+  useEffect(() => {
+    if (detail === "Context" && liveRecordId) void refreshContext();
+  }, [detail, liveRecordId, liveTokens, refreshContext]);
   const tokens = liveTokens ?? context.data?.latest_request_tokens;
   const summary = usageSummary(
     usage.data,
@@ -192,6 +200,8 @@ export function ComposerStatus({
                       {t(
                         "Tokens in the latest request. Chat totals are in Usage. The context limit depends on the model.",
                       )}
+                      {context.data?.context_breakdown &&
+                        ` ${t("Prompt estimates divide input tokens in proportion to the measured characters in each category.")}`}
                       {!context.data?.context_window &&
                         ` ${t("This model has not provided a context limit, so its used percentage is unavailable.")}`}
                     </HelpTip>
@@ -213,30 +223,52 @@ export function ComposerStatus({
                     <ArrowClockwise />
                   </Button>
                 </div>
-                <div className={styles.popupBody}>
-                  {label === "Context" ? (
-                    <div className={styles.contextStats}>
-                      <ContextDetails
-                        used={tokens}
-                        capacity={context.data?.context_window}
-                        compact
-                        cacheRate={summary.cache}
-                      />
-                    </div>
-                  ) : (
-                    <UsageDetails usage={usage.data} />
-                  )}
-                  <ErrorNotice
-                    inline
-                    error={
-                      usage.error ||
-                      context.error ||
-                      inspection.error ||
-                      observed.error ||
-                      activity.error
-                    }
-                  />
-                </div>
+                <ScrollArea
+                  className={styles.popupScroll}
+                  overscrollContain
+                  ref={label === "Context" ? contextBody : undefined}
+                >
+                  <div className={styles.popupBody}>
+                    {label === "Context" ? (
+                      <div className={styles.contextStats}>
+                        <ContextDetails
+                          request={
+                            liveTokens == null ||
+                            (liveRecordId != null &&
+                              liveRecordId === context.data?.record_id &&
+                              liveTokens ===
+                                context.data?.latest_request_tokens)
+                              ? context.data
+                              : undefined
+                          }
+                          used={tokens}
+                          capacity={context.data?.context_window}
+                          onGroupOpen={() => {
+                            // Keep this upward-opening popover at its natural resting height.
+                            const body = contextBody.current;
+                            if (body && !body.style.height) {
+                              body.style.height = getComputedStyle(body).height;
+                            }
+                          }}
+                          compact
+                          cacheRate={summary.cache}
+                        />
+                      </div>
+                    ) : (
+                      <UsageDetails usage={usage.data} />
+                    )}
+                    <ErrorNotice
+                      inline
+                      error={
+                        usage.error ||
+                        context.error ||
+                        inspection.error ||
+                        observed.error ||
+                        activity.error
+                      }
+                    />
+                  </div>
+                </ScrollArea>
               </PopoverPopup>
             </Popover>
           ))}

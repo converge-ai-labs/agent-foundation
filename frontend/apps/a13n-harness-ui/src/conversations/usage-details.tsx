@@ -1,3 +1,5 @@
+import { PromptBreakdown } from "./context-breakdown";
+import type { Schema } from "../transport/client";
 import { HelpTip } from "../shell/help-tip";
 import { ModelIdentity } from "../shell/model-identity";
 import { Fragment, useState } from "react";
@@ -19,15 +21,21 @@ export function ContextDetails({
   capacity,
   compact = false,
   cacheRate,
+  request,
+  onGroupOpen,
 }: {
   used?: number | null;
   capacity?: number | null;
   compact?: boolean;
   cacheRate?: string;
+  request?: Schema<"ContextUsageView">;
+  onGroupOpen?: () => void;
 }) {
   const { t } = useTranslation();
   const count = useCount();
   const limit = capacity != null && capacity > 0 ? capacity : undefined;
+  const breakdown = request?.context_breakdown;
+  const measured = !!breakdown?.counted_input_characters;
   const remaining =
     used != null && limit != null ? Math.max(0, limit - used) : undefined;
   const percent =
@@ -47,7 +55,7 @@ export function ContextDetails({
           )}
         </div>
       )}
-      {percent != null && (
+      {percent != null && !measured && (
         <div className={styles.contextCapacity}>
           {!compact && (
             <span>
@@ -70,6 +78,9 @@ export function ContextDetails({
             <span style={{ width: `${Math.min(100, percent)}%` }} />
           </div>
         </div>
+      )}
+      {measured && request && (
+        <PromptBreakdown request={request} onGroupOpen={onGroupOpen} />
       )}
       <dl
         className={`${styles.numbers} ${styles.contextNumbers}`}

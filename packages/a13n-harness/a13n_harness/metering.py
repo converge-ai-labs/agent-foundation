@@ -30,6 +30,7 @@ from a13n_harness._usage_pricing import (
     price_response,
 )
 from a13n_harness.context import AgentContext
+from a13n_harness.context_breakdown import ContextBreakdown, InstructionCatalog, measure_context
 from a13n_harness.errors import StateError
 from a13n_harness.identity import AgentIdentityRef, AgentInstanceContext
 from a13n_harness.model_calls import ModelCall, ModelCallCheck, _check_model_call
@@ -131,6 +132,15 @@ def meter_request(
         selected.wrapped = model
     else:
         selected = model = MeteredModel(request, binding, ctx.run_id)
+    from a13n_harness.capabilities.memory import FileMemoryCapability, RecordMemoryCapability
+    from a13n_harness.capabilities.skills import _SkillsRunCapability
+
+    model.catalogs = {
+        f"capability:{capability_id}": capability.catalog_measurement
+        for capability_id, capability in ctx.capabilities.items()
+        if isinstance(capability, (_SkillsRunCapability, FileMemoryCapability, RecordMemoryCapability))
+        and capability.catalog_measurement is not None
+    }
     return replace(request, model=selected)
 
 
@@ -156,11 +166,14 @@ class MeteredModel(WrapperModel):
         super().__init__(request.model)
         self.request_context = request
         self.binding = binding
+        self.catalogs: dict[str, InstructionCatalog] = {}
         self.model_run_id = model_run_id
         self.pricing: _PricingOutcome | None = None
         self.records: dict[str, ModelUsageRecord] = {}
 
-    async def _admit(self, messages: list[ModelMessage]) -> tuple[str, ModelUsageRecord | None, RequestBudget | None]:
+    async def _admit(
+        self, messages: list[ModelMessage], params: ModelRequestParameters
+    ) -> tuple[str, ModelUsageRecord | None, RequestBudget | None, ContextBreakdown | None]:
         binding = self.binding
         tail = messages[-1] if messages else None
         continuation = (
@@ -203,7 +216,13 @@ class MeteredModel(WrapperModel):
                     continuation_of=continuation if previous is not None else None,
                 ),
             )
-            return call_id, previous, budget
+            try:
+                breakdown = measure_context(messages, params, self.catalogs)
+            except Exception:
+                # A custom provider part may not have a text representation.
+                breakdown = None
+                logger.warning("Model input character measurement unavailable")
+            return call_id, previous, budget, breakdown
         except BaseException:
             binding.ledger.requests.cancel(call_id)
             raise
@@ -216,6 +235,7 @@ class MeteredModel(WrapperModel):
         first_chunk: datetime | None,
         error: BaseException | None,
         seed: ModelUsageRecord | None,
+        breakdown: ContextBreakdown | None,
     ) -> tuple[ModelUsageRecord, _PricingOutcome | None]:
         binding, ledger = self.binding, self.binding.ledger
         value = response or ModelResponse(parts=[], model_name=self.model_name, provider_name=self.system)
@@ -265,6 +285,7 @@ class MeteredModel(WrapperModel):
         else:
             record = ModelUsageRecord(
                 **observation.model_dump(),
+                context_breakdown=breakdown,
                 record_id=_stable_id("model", ledger.run_id, call_id),
                 run_id=ledger.run_id,
                 response_ordinal=ledger.next_model_ordinal(),
@@ -291,6 +312,7 @@ class MeteredModel(WrapperModel):
         error: BaseException | None,
         seed: ModelUsageRecord | None,
         host_budget: RequestBudget | None,
+        breakdown: ContextBreakdown | None,
     ) -> None:
         binding, ledger = self.binding, self.binding.ledger
         try:
@@ -299,7 +321,7 @@ class MeteredModel(WrapperModel):
             record, pricing = (
                 (seed, None)
                 if response is None and seed is not None
-                else self._snapshot(response, call_id, started, first_chunk, error, seed)
+                else self._snapshot(response, call_id, started, first_chunk, error, seed, breakdown)
             )
             refusal = ledger.finish(call_id, record, host_budget)
             self.records[record.record_id] = record
@@ -344,7 +366,7 @@ class MeteredModel(WrapperModel):
         model_settings: ModelSettings | None,
         model_request_parameters: ModelRequestParameters,
     ) -> ModelResponse:
-        call_id, seed, host_budget = await self._admit(messages)
+        call_id, seed, host_budget, breakdown = await self._admit(messages, model_request_parameters)
         started, response, error = datetime.now(UTC), None, None
         try:
             response = await super().request(messages, model_settings, model_request_parameters)
@@ -353,7 +375,7 @@ class MeteredModel(WrapperModel):
             error = exc
             raise
         finally:
-            await self._capture(response, call_id, started, None, error, seed, host_budget)
+            await self._capture(response, call_id, started, None, error, seed, host_budget, breakdown)
 
     @asynccontextmanager
     async def request_stream(
@@ -363,7 +385,7 @@ class MeteredModel(WrapperModel):
         model_request_parameters: ModelRequestParameters,
         run_context: RunContext[object] | None = None,
     ) -> AsyncGenerator[StreamedResponse]:
-        call_id, seed, host_budget = await self._admit(messages)
+        call_id, seed, host_budget, breakdown = await self._admit(messages, model_request_parameters)
         started, clock, stream, error = datetime.now(UTC), time.perf_counter(), None, None
         try:
             async with super().request_stream(
@@ -385,4 +407,5 @@ class MeteredModel(WrapperModel):
                 error,
                 seed,
                 host_budget,
+                breakdown,
             )
