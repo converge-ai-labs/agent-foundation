@@ -322,12 +322,36 @@ async def test_native_acknowledgements_and_read_deadlines_survive_stalled_provid
                     assert result.dispatch_complete and result.receipt.stage == "completed"
                     assert result.observation is None
                     await configure("success")
-                    recovered = await client.computer_a11y_inspect(
-                        eip.ComputerA11yInspectParams(
-                            context=eip.EIPCallContext(operation_id=f"recover-{mode}"),
-                            node=node,
+                    # The optional observer shares the mutation's hard deadline.
+                    # Cooperative timeout preserves this epoch; hard supervision
+                    # retires it. Both must preserve the acknowledgement above.
+                    try:
+                        recovered = await client.computer_a11y_inspect(
+                            eip.ComputerA11yInspectParams(
+                                context=eip.EIPCallContext(operation_id=f"recover-{mode}"),
+                                node=node,
+                            )
                         )
-                    )
+                    except EIPMethodError as expired:
+                        assert expired.error.data.error_type == "conflict", expired.error.model_dump_json()
+                        roots = await client.computer_a11y_roots(
+                            eip.ComputerA11yRootsParams.model_validate(
+                                {
+                                    "context": {"operation_id": f"reacquire-{mode}"},
+                                    "scope": {"kind": "application", "process_id": provider.pid},
+                                }
+                            )
+                        )
+                        assert len(roots.nodes) == 1
+                        node = roots.nodes[0].reference
+                        assert node.backend_epoch != epoch
+                        epoch = node.backend_epoch
+                        recovered = await client.computer_a11y_inspect(
+                            eip.ComputerA11yInspectParams(
+                                context=eip.EIPCallContext(operation_id=f"inspect-reacquired-{mode}"),
+                                node=node,
+                            )
+                        )
                     assert recovered.nodes[0].reference.backend_epoch == epoch
                 for refusal in ["UnknownMethod"]:
                     await configure(f"org.freedesktop.DBus.Error.{refusal}")
@@ -354,9 +378,11 @@ async def test_native_acknowledgements_and_read_deadlines_survive_stalled_provid
                 with pytest.raises(EIPMethodError) as stalled:
                     await client.computer_a11y_inspect(
                         eip.ComputerA11yInspectParams(
-                            context=eip.EIPCallContext(operation_id="stalled-read", timeout_ms=1000),
+                            # Exercise cooperative timeout separately from hard
+                            # supervision, with time to deliver its typed error.
+                            context=eip.EIPCallContext(operation_id="stalled-read", timeout_ms=5000),
                             node=node,
-                            limits=eip.AccessibilityLimits(timeout_ms=5000),
+                            limits=eip.AccessibilityLimits(timeout_ms=500),
                         )
                     )
                 assert stalled.value.error.data.error_type == "timeout"
