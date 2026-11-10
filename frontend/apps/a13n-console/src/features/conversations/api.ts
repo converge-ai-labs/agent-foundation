@@ -452,6 +452,7 @@ export function invalidateConversation(
               isLiveRunPage(position, state.data)
             );
           case "ranked-runs":
+          case "session-binding":
           case "thread":
           case "inbox":
             return !!change.threadId && id === change.threadId;

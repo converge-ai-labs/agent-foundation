@@ -39,9 +39,10 @@ export function SessionPolicyFields({
   readOnly = false,
 }: {
   value: SessionPolicy;
-  onChange: (value: SessionPolicy) => void;
-  readOnly?: boolean;
-}) {
+} & (
+  | { readOnly: true; onChange?: (value: SessionPolicy) => void }
+  | { readOnly?: false; onChange: (value: SessionPolicy) => void }
+)) {
   const { t } = useTranslation();
   const secrets = value.egress?.secrets ?? [];
   const { egress: _egress, egress_mode: _mode, ...other } = value;
@@ -60,7 +61,7 @@ export function SessionPolicyFields({
         onValueChange={(selected) => {
           const mode = modes.find((item) => item.value === selected)?.value;
           if (!mode) return;
-          onChange({
+          onChange?.({
             ...value,
             egress_mode: mode === "default" ? null : mode,
             egress:
@@ -97,7 +98,7 @@ export function SessionPolicyFields({
                 (mode !== "allowlist" && mode !== "public")
               )
                 return;
-              onChange({
+              onChange?.({
                 ...value,
                 egress: {
                   ...value.egress,
@@ -131,7 +132,7 @@ export function SessionPolicyFields({
                   value.egress.destinations.mode !== "allowlist"
                 )
                   return;
-                onChange({
+                onChange?.({
                   ...value,
                   egress: {
                     ...value.egress,
@@ -149,7 +150,7 @@ export function SessionPolicyFields({
             readOnly={readOnly}
             onChange={(next) => {
               if (value.egress)
-                onChange({
+                onChange?.({
                   ...value,
                   egress: { ...value.egress, secrets: next },
                 });
@@ -177,7 +178,9 @@ export function SessionPolicyFields({
           </p>
         </DisclosureSection>
       )}
-      {!readOnly && <SessionPolicyJson value={value} onChange={onChange} />}
+      {!readOnly && onChange && (
+        <SessionPolicyJson value={value} onChange={onChange} />
+      )}
     </div>
   );
 }

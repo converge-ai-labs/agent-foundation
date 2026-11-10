@@ -4288,5 +4288,15 @@
   "Configure Session defaults": "设置 Session 默认配置",
   "Session configuration JSON": "Session 配置 JSON",
   "Edit all Session settings. Apply updates the draft; save the parent form to publish changes.": "编辑全部 Session 设置。应用后仅更新草稿；保存外层表单后才会生效。",
-  "Edit Session JSON": "编辑 Session JSON"
+  "Edit Session JSON": "编辑 Session JSON",
+  "Captured Session configuration": "本次 Session 配置",
+  "Binding {{binding}} · Session version {{version}}": "绑定 {{binding}} · Session 版本 {{version}}",
+  "These references were captured when the Run was accepted. Current credential versions are shown for comparison and do not identify which token version each request used.": "这些引用在 Run 接纳时已固定。当前凭据版本仅供对照，不代表每次请求实际使用的 token 版本。",
+  "Session configuration": "Session 配置",
+  "Binding {{binding}} · {{environment}}": "绑定 {{binding}} · {{environment}}",
+  "Saved configuration applies to later Runs. It does not change an accepted Run or immediately replace its Session. A Run needing a different Session policy can start only after existing work releases the binding.": "保存的配置用于后续 Run，不会修改已接纳的 Run，也不会立即替换它的 Session。需要不同 Session 配置的 Run，必须等已有任务释放该绑定后才能启动。",
+  "Review the current Session configuration": "检查当前 Session 配置",
+  "The Thread changed or the save result is uncertain. Load the current configuration before saving again. Your draft will be kept.": "Thread 已发生变化，或无法确认保存结果。请先加载当前配置再保存；你的草稿会保留。",
+  "Your draft is unchanged. Saving replaces the current configuration shown below.": "草稿保持不变。保存将替换下方展示的当前配置。",
+  "Save Session configuration": "保存 Session 配置"
 }
