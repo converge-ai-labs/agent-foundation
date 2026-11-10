@@ -318,7 +318,14 @@ impl Native {
                                 ),
                             )
                             .await?;
-                        span = (start, end);
+                        let end_at = (span.1 - 1).max(span.0).min(count - 1);
+                        let (_, end_start, end_end) = b
+                            .call(text.get_string_at_offset(end_at, granularity(unit)?))
+                            .await?;
+                        span = (
+                            start.min(end_start).min(span.0),
+                            end.max(end_end).max(span.1),
+                        );
                     }
                 } else {
                     let count_move = integer(q, "count")?;

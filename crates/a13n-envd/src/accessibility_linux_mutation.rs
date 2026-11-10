@@ -161,7 +161,16 @@ impl Native {
             ($future:expr) => {{
                 b.check()?;
                 dispatch()?;
-                b.call($future).await?
+                b.calls.set(b.calls.get() + 1);
+                // A pending dispatch stays under the parent's hard deadline.
+                // Only protocol-defined refusals prove no native execution.
+                match $future.await {
+                    Ok(value) => value,
+                    Err(err) if definite_refusal(&err) => {
+                        return acknowledgement(false, Status::Error);
+                    }
+                    Err(err) => return Err(native_error(err)),
+                }
             }};
         }
         let success = match op {
@@ -425,32 +434,47 @@ impl Native {
             }
             _ => return Err(error(ErrorType::Unsupported, "unsupported mutation")),
         };
-        // Readback is independent evidence. An action may destroy its target;
-        // that must not discard an already received native acknowledgement.
-        let observation = if p["readback"] == true {
-            self.sample(&node, b)
-                .await
-                .ok()
-                .and_then(|value| serde_json::from_value(value).ok())
-        } else {
-            None
-        };
-        serde_json::to_value(NativeMutation {
-            effect: if success {
-                ComputerEffect::Executed
-            } else {
-                ComputerEffect::NotExecuted
-            },
-            native_status: if success {
+        // The parent receives this acknowledgement before optional readback.
+        acknowledgement(
+            success,
+            if success {
                 Status::ReturnedSuccess
             } else {
                 Status::ReturnedFalse
             },
-            dispatch_complete: true,
-            observation,
-        })
-        .map_err(|_| error(ErrorType::InternalError, "cannot encode native mutation"))
+        )
     }
+}
+pub(super) fn definite_refusal(err: &zbus::Error) -> bool {
+    match err {
+        zbus::Error::MethodError(name, _, _) => matches!(
+            name.as_str(),
+            "org.freedesktop.DBus.Error.UnknownMethod"
+                | "org.freedesktop.DBus.Error.InvalidArgs"
+                | "org.freedesktop.DBus.Error.AccessDenied"
+        ),
+        // Properties.Set converts the same replies through the typed FDO proxy.
+        zbus::Error::FDO(err) => matches!(
+            err.as_ref(),
+            zbus::fdo::Error::UnknownMethod(_)
+                | zbus::fdo::Error::InvalidArgs(_)
+                | zbus::fdo::Error::AccessDenied(_)
+        ),
+        _ => false,
+    }
+}
+fn acknowledgement(success: bool, native_status: Status) -> Result<Value, EIPError> {
+    serde_json::to_value(NativeMutation {
+        effect: if success {
+            ComputerEffect::Executed
+        } else {
+            ComputerEffect::NotExecuted
+        },
+        native_status,
+        dispatch_complete: true,
+        observation: None,
+    })
+    .map_err(|_| error(ErrorType::InternalError, "cannot encode native mutation"))
 }
 fn alignment(r: &Value) -> Result<ScrollType, EIPError> {
     match r["alignment"].as_str() {

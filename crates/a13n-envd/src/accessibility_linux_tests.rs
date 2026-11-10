@@ -79,6 +79,38 @@ fn serialized_result_budget_bounds_the_whole_envelope() {
     assert!(fit_result(&mut tree, "computer.a11y_roots", 1, 0).is_err());
 }
 #[test]
+fn remaining_deadline_bounds_inflight_reads_even_after_an_item_cut() {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let b = Budget::for_request(&json!({"limits":{"timeout_ms":5000},"_timeout_ms":100}));
+    assert!(b.deadline.duration_since(Instant::now()) <= Duration::from_millis(90));
+    b.mark("item_limit");
+    let result: Result<(), _> = runtime.block_on(b.call(std::future::pending()));
+    assert_eq!(result.unwrap_err().data.error_type, ErrorType::Timeout);
+    assert_eq!(b.completeness()["reason"], "deadline");
+}
+
+#[test]
+fn typed_property_refusals_are_definite_but_delivery_failures_are_not() {
+    for err in [
+        zbus::fdo::Error::UnknownMethod("fixture".into()),
+        zbus::fdo::Error::InvalidArgs("fixture".into()),
+        zbus::fdo::Error::AccessDenied("fixture".into()),
+    ] {
+        assert!(mutation::definite_refusal(&zbus::Error::from(err)));
+    }
+    for err in [
+        zbus::fdo::Error::Failed("fixture".into()),
+        zbus::fdo::Error::NoReply("fixture".into()),
+        zbus::fdo::Error::Disconnected("fixture".into()),
+    ] {
+        assert!(!mutation::definite_refusal(&zbus::Error::from(err)));
+    }
+}
+
+#[test]
 fn call_budget_stops_before_another_native_request() {
     let b = Budget::new(&json!({"max_native_calls":1}));
     assert!(b.check().is_ok());
@@ -297,6 +329,19 @@ fn linux_accessibility_real_gtk_application() {
     );
     wait_for(|| state(&path)["clicks"] == 1);
     let entry = named("Unicode editor")["reference"].clone();
+    mutation(backend.as_mut(), &entry, "focus", json!({}));
+    wait_for(|| {
+        let focused = call(
+            backend.as_mut(),
+            "computer.a11y_roots",
+            json!({"scope":{"kind":"focused"},"limits":{"depth":0,"max_native_calls":8192}}),
+        );
+        focused["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|node| node["reference"] == entry)
+    });
     mutation(
         backend.as_mut(),
         &entry,
@@ -467,7 +512,7 @@ fn item_bounds_apply_to_nested_content_but_not_tree_node_count() {
     assert_eq!(tree["nodes"][0]["children"].as_array().unwrap().len(), 1);
     assert_eq!(
         tree["nodes"][0]["capabilities"].as_array().unwrap().len(),
-        1
+        2
     );
     assert_eq!(
         tree["nodes"][0]["field_errors"].as_array().unwrap().len(),
@@ -920,6 +965,69 @@ fn linux_accessibility_controlled_native_members() {
     );
     assert_eq!(dispatches, 1);
     assert_eq!(state(&path)["calls"].as_array().unwrap().len(), 32);
+    for name in ["UnknownMethod", "InvalidArgs", "AccessDenied"] {
+        configure(&backend, &format!("org.freedesktop.DBus.Error.{name}"));
+        let reply = backend
+            .execute(
+                "computer.atspi_focus",
+                json!({"node":root,"request":{}}),
+                &mut || Ok(()),
+            )
+            .unwrap();
+        assert_eq!(reply["native_status"], "error");
+        assert_eq!(reply["effect"], "not_executed");
+        assert_eq!(reply["dispatch_complete"], true);
+    }
+    configure(&backend, "success");
+    let source = backend.native.range_ref(&object("root"), 1, 10).unwrap();
+    let expanded = call(
+        &mut backend,
+        "computer.a11y_range",
+        json!({"node":root,"source":source,"query":{"kind":"expand","unit":"word"}}),
+    );
+    let (_, start, end) = backend.native.span(&expanded["ranges"][0]).unwrap();
+    assert_eq!((start, end), (0, 11));
+    for mode in ["child_error", "sample_error"] {
+        configure(&backend, mode);
+        assert!(
+            backend
+                .execute(
+                    "computer.a11y_inspect",
+                    json!({"node":root}),
+                    &mut || panic!("read dispatched")
+                )
+                .is_err()
+        );
+    }
+    configure(&backend, "defunct");
+    let mut dispatches = 0;
+    assert!(
+        backend
+            .execute(
+                "computer.atspi_focus",
+                json!({"node":root,"request":{}}),
+                &mut || {
+                    dispatches += 1;
+                    Ok(())
+                }
+            )
+            .is_err()
+    );
+    assert_eq!(dispatches, 0);
+    configure(&backend, "read_hang");
+    let partial = call(
+        &mut backend,
+        "computer.a11y_inspect",
+        json!({"node":root,"_timeout_ms":200,"limits":{"timeout_ms":5000}}),
+    );
+    assert_eq!(partial["completeness"]["reason"], "deadline");
+    configure(&backend, "success");
+    assert!(
+        !call(&mut backend, "computer.a11y_inspect", json!({"node":root}))["nodes"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
     // Pending native delivery must stay pending; it cannot become a false ack.
     configure(&backend, "no_reply");
     let mut dispatches = 0;
@@ -939,5 +1047,5 @@ fn linux_accessibility_controlled_native_members() {
     });
     assert!(pending.is_err());
     assert_eq!(dispatches, 1);
-    assert_eq!(state(&path)["calls"].as_array().unwrap().len(), 33);
+    assert_eq!(state(&path)["calls"].as_array().unwrap().len(), 36);
 }

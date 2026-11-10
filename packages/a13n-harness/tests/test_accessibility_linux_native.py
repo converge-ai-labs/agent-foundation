@@ -252,3 +252,123 @@ async def test_real_linux_accessibility_session_and_harness(tmp_path):
                 await adapter.close()
         finally:
             await device.close()
+
+
+async def test_native_acknowledgements_and_read_deadlines_survive_stalled_provider(tmp_path):
+    binary = Path(os.environ["A13N_ENVD_TEST_BINARY"])
+    fixture = Path(__file__).resolve().parents[3] / "dev/fixtures/linux-desktop/atspi-provider.py"
+    state = tmp_path / "provider.json"
+    config = tmp_path / "envd.json"
+    config.write_text(json.dumps({"device_id": "atspi-evidence", "computer_use": True}))
+    environment = {
+        key: value
+        for key, value in os.environ.items()
+        if key in {"PATH", "HOME", "LANG", "DISPLAY", "XAUTHORITY", "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS"}
+    }
+    environment.update(A13N_ENVD_RUNTIME_DIR=str(tmp_path / "runtime"), A13N_ENVD_STATE_DIR=str(tmp_path / "state"))
+
+    async def configure(mode):
+        state.with_suffix(".mode").write_text(mode)
+        await wait_until(lambda: json.loads(state.read_text())["mode"] == mode)
+
+    async with (
+        child(
+            "/usr/bin/python3", str(fixture), str(state), "--register", stdout=asyncio.subprocess.DEVNULL
+        ) as provider,
+        child(
+            str(binary),
+            "--config",
+            str(config),
+            env=environment,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+        ) as daemon,
+    ):
+        await wait_until(lambda: state.exists() and json.loads(state.read_text())["ready"])
+        device = await EIPDeviceConnection.initialize(
+            StdioTransport.from_process(daemon), expected_device_id="atspi-evidence", request_timeout=20
+        )
+        try:
+            async with await device.open_session() as session:
+                client = session.client
+                roots = await client.computer_a11y_roots(
+                    eip.ComputerA11yRootsParams.model_validate(
+                        {
+                            "context": {"operation_id": "acquire-provider"},
+                            "scope": {"kind": "application", "process_id": provider.pid},
+                        }
+                    )
+                )
+                assert len(roots.nodes) == 1
+                node = roots.nodes[0].reference
+                epoch = node.backend_epoch
+                for mode, status, effect in [
+                    ("ack_hang_true", "returned_success", "executed"),
+                    ("ack_hang_false", "returned_false", "not_executed"),
+                ]:
+                    await configure(mode)
+                    result = await client.computer_atspi_focus(
+                        eip.ComputerAtspiFocusParams.model_validate(
+                            {
+                                "context": {"operation_id": mode, "timeout_ms": 1000},
+                                "node": node.model_dump(),
+                                "request": {"op": "focus"},
+                                "readback": True,
+                            }
+                        )
+                    )
+                    assert result.native_status == status
+                    assert result.effect == effect
+                    assert result.dispatch_complete and result.receipt.stage == "completed"
+                    assert result.observation is None
+                    await configure("success")
+                    recovered = await client.computer_a11y_inspect(
+                        eip.ComputerA11yInspectParams(
+                            context=eip.EIPCallContext(operation_id=f"recover-{mode}"),
+                            node=node,
+                        )
+                    )
+                    assert recovered.nodes[0].reference.backend_epoch == epoch
+                for refusal in ["UnknownMethod", "InvalidArgs", "AccessDenied"]:
+                    await configure(f"org.freedesktop.DBus.Error.{refusal}")
+                    result = await client.computer_atspi_focus(
+                        eip.ComputerAtspiFocusParams.model_validate(
+                            {
+                                "context": {"operation_id": f"refusal-{refusal}"},
+                                "node": node.model_dump(),
+                                "request": {"op": "focus"},
+                            }
+                        )
+                    )
+                    assert result.native_status == "error" and result.effect == "not_executed"
+                    assert result.receipt.stage == "completed"
+                    await configure("success")
+                    recovered = await client.computer_a11y_inspect(
+                        eip.ComputerA11yInspectParams(
+                            context=eip.EIPCallContext(operation_id=f"recover-{refusal}"),
+                            node=node,
+                        )
+                    )
+                    assert recovered.nodes[0].reference.backend_epoch == epoch
+                await configure("read_hang")
+                partial = await client.computer_a11y_inspect(
+                    eip.ComputerA11yInspectParams(
+                        context=eip.EIPCallContext(operation_id="stalled-read", timeout_ms=1000),
+                        node=node,
+                        limits=eip.AccessibilityLimits(timeout_ms=5000),
+                    )
+                )
+                assert not partial.completeness.complete and partial.completeness.reason == "deadline"
+                assert partial.completeness.continuation is not None
+                await configure("success")
+                recovered = await client.computer_a11y_inspect(
+                    eip.ComputerA11yInspectParams(
+                        context=eip.EIPCallContext(operation_id="resume-stalled-read"),
+                        node=node,
+                        cursor=partial.completeness.continuation,
+                    )
+                )
+                assert recovered.nodes[0].reference.backend_epoch == epoch
+                assert len(json.loads(state.read_text())["calls"]) == 5
+        finally:
+            await device.close()

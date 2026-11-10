@@ -19,6 +19,7 @@ methods = {
     "Accessible": [
         ("GetState", [], ["au"]),
         ("GetRole", [], ["u"]),
+        ("GetRoleName", [], ["s"]),
         ("GetInterfaces", [], ["as"]),
         ("GetIndexInParent", [], ["i"]),
         ("GetChildAtIndex", ["i"], ["(so)"]),
@@ -53,6 +54,8 @@ methods = {
     ],
     "Text": [
         ("GetNSelections", [], ["i"]),
+        ("GetText", ["i", "i"], ["s"]),
+        ("GetStringAtOffset", ["i", "u"], ["s", "i", "i"]),
         ("GetSelection", ["i"], ["i", "i"]),
         ("GetAttributeRun", ["i", "b"], ["a{ss}", "i", "i"]),
         ("SetCaretOffset", ["i"], ["b"]),
@@ -73,11 +76,13 @@ methods = {
         ],
     ],
     "Value": [],
+    "Application": [],
     "TestControl": [("Configure", ["s"], [])],
 }
 properties = {
-    "Accessible": {"Parent": "(so)"},
+    "Accessible": {"Parent": "(so)", "ChildCount": "i", "Name": "s", "Description": "s", "AccessibleId": "s"},
     "Action": {"NActions": "i"},
+    "Application": {"Id": "i"},
     "Selection": {"NSelectedChildren": "i"},
     "Text": {"CharacterCount": "i"},
     "Table": {"NRows": "i", "NColumns": "i"},
@@ -120,8 +125,28 @@ def ref(name):
 def invoke(_bus, _sender, object_path, interface, member, arguments, invocation):
     native = interface.removeprefix(PREFIX)
     args = arguments.unpack()
+    if member == "GetState" and (
+        state["mode"] == "read_hang"
+        or (state["mode"].startswith("ack_hang_") and len(state["calls"]) > state["hang_after"])
+    ):
+        pending.append(invocation)
+        return
+    if member == "GetChildAtIndex" and state["mode"] == "child_error":
+        invocation.return_dbus_error("org.freedesktop.DBus.Error.UnknownObject", "Fixture child disappeared")
+        return
+    if member == "GetRoleName" and object_path == ROOT + "child" and state["mode"] == "sample_error":
+        invocation.return_dbus_error("org.freedesktop.DBus.Error.UnknownObject", "Fixture child disappeared")
+        return
+    if member == "GetState" and state["mode"] == "defunct":
+        invocation.return_value(GLib.Variant("(au)", ([1 << 6, 0],)))
+        return
     reads = {
         "GetState": ([0, 0],),
+        "GetRoleName": ("text",),
+        "GetText": ("hello world fixture!"[args[0] : args[1]],) if member == "GetText" else ("",),
+        "GetStringAtOffset": (("hello", 0, 5) if args[0] < 6 else ("world", 6, 11))
+        if member == "GetStringAtOffset"
+        else ("", 0, 0),
         "GetRole": (61,),
         "GetInterfaces": ([PREFIX + name for name in methods if name != "TestControl"],),
         "GetIndexInParent": (0,),
@@ -138,6 +163,7 @@ def invoke(_bus, _sender, object_path, interface, member, arguments, invocation)
     }
     if member == "Configure":
         state["mode"] = args[0]
+        state["hang_after"] = len(state["calls"])
         save()
         invocation.return_value(GLib.Variant("()", ()))
         return
@@ -150,13 +176,17 @@ def invoke(_bus, _sender, object_path, interface, member, arguments, invocation)
     if member == "SetTextSelections":
         state["selections"] = args[0]
     save()
-    if state["mode"] == "error":
+    if state["mode"].startswith("org.freedesktop.DBus.Error."):
+        invocation.return_dbus_error(state["mode"], "Fixture protocol refusal")
+    elif state["mode"] == "error":
         invocation.return_dbus_error("org.a11y.atspi.Error.Failed", "Fixture native error")
     elif state["mode"] == "no_reply":
         # Retain the invocation until the test kills this provider.
         pending.append(invocation)
     else:
-        invocation.return_value(GLib.Variant(signature, (state["mode"] != "false",) if output else ()))
+        invocation.return_value(
+            GLib.Variant(signature, (state["mode"] not in {"false", "ack_hang_false"},) if output else ())
+        )
 
 
 pending = []
@@ -166,6 +196,10 @@ def get_property(_bus, _sender, object_path, interface, name):
     native = interface.removeprefix(PREFIX)
     values = {
         "Parent": ref("root") if object_path == ROOT + "child" else ("", "/org/a11y/atspi/null"),
+        "ChildCount": 1 if object_path == ROOT + "root" else 0,
+        "Name": "Controlled provider",
+        "Description": "Native test fixture",
+        "AccessibleId": object_path,
         "NActions": 1,
         "NSelectedChildren": 1,
         "CharacterCount": 20,
@@ -179,6 +213,8 @@ def get_property(_bus, _sender, object_path, interface, name):
 
 
 def set_property(_bus, _sender, object_path, interface, name, value):
+    if name == "Id":
+        return True
     state["calls"].append([object_path, interface.removeprefix(PREFIX), name, [value.unpack()]])
     save()
     return True
@@ -192,12 +228,46 @@ for native, members in methods.items():
             xml += "".join(f'<arg type="{kind}" direction="{direction}"/>' for kind in types)
         xml += "</method>"
     for name, kind in properties.get(native, {}).items():
-        access = "readwrite" if name == "CurrentValue" else "read"
+        access = "readwrite" if name in {"CurrentValue", "Id"} else "read"
         xml += f'<property name="{name}" type="{kind}" access="{access}"/>'
     xml += "</interface></node>"
     info = Gio.DBusNodeInfo.new_for_xml(xml).interfaces[0]
     for node in ["root", "child", "other"]:
         bus.register_object(ROOT + node, info, invoke, get_property, set_property)
-state["ready"] = True
-save()
+
+
+def poll_mode():
+    mode_path = path.with_suffix(".mode")
+    if mode_path.exists():
+        mode = mode_path.read_text()
+        if mode != state["mode"]:
+            state["mode"] = mode
+            state["hang_after"] = len(state["calls"])
+            save()
+    return True
+
+
+GLib.timeout_add(10, poll_mode)
+if "--register" in sys.argv[2:]:
+
+    def registered(connection, result):
+        connection.call_finish(result)
+        state["ready"] = True
+        save()
+
+    bus.call(
+        "org.a11y.atspi.Registry",
+        ROOT + "root",
+        "org.a11y.atspi.Socket",
+        "Embed",
+        GLib.Variant("((so))", (ref("root"),)),
+        GLib.VariantType.new("((so))"),
+        Gio.DBusCallFlags.NONE,
+        5000,
+        None,
+        registered,
+    )
+else:
+    state["ready"] = True
+    save()
 GLib.MainLoop().run()
