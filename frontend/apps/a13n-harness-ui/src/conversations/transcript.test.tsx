@@ -246,3 +246,55 @@ it("renders retained root errors alongside historical output without making them
     "Earlier provider failure",
   );
 });
+
+it("hides Bot no-op calls live and after reload without hiding ordinary Thread tools", () => {
+  const blocks = [
+    {
+      id: "quiet",
+      kind: "tool" as const,
+      name: "no_op",
+      text: "{}",
+      result: "Final result processed.",
+      done: true,
+    },
+  ];
+  const view = render(
+    <LiveOutput
+      blocks={blocks}
+      gap={false}
+      threadId="thread_bot"
+      label="Live output"
+    />,
+  );
+  expect(screen.queryByText("no_op")).toBeNull();
+  expect(screen.queryByText("Live output")).toBeNull();
+  view.rerender(
+    <LiveOutput blocks={blocks} gap={false} threadId="ordinary-thread" />,
+  );
+  expect(screen.getByText("no_op")).toBeTruthy();
+  const entry = {
+    position: 0,
+    message_kind: "response",
+    parts: [
+      {
+        kind: "tool_call",
+        tool_name: "no_op",
+        tool_call_id: "quiet",
+        value: {},
+      },
+      {
+        kind: "tool_result",
+        tool_name: "no_op",
+        tool_call_id: "quiet",
+        value: "Final result processed.",
+      },
+      { kind: "assistant", text: "A separately published result." },
+    ],
+  } as Schema<"TranscriptEntry">;
+  view.rerender(<SavedEntry entry={entry} threadId="thread_bot" />);
+  expect(screen.queryByText("no_op")).toBeNull();
+  expect(screen.queryByText("Final result processed.")).toBeNull();
+  expect(screen.getByText("A separately published result.")).toBeTruthy();
+  view.rerender(<SavedEntry entry={entry} threadId="ordinary-thread" />);
+  expect(screen.getByText("no_op")).toBeTruthy();
+});

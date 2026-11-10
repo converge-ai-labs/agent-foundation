@@ -138,7 +138,7 @@ class ExcerptCollector:
                 self.value = self.value.model_copy(update={"latest_reply": self._reply, "reply_kind": "progress"})
                 self.changed = True
 
-    def finish(self, result: HarnessRunResult[str] | None) -> ConversationExcerpt:
+    def finish(self, result: HarnessRunResult[str | None] | None) -> ConversationExcerpt:
         if result is not None and result.status == "completed" and isinstance(result.output, str):
             text = excerpt_text(result.output)
             if text:

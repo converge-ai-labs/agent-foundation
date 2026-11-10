@@ -40,7 +40,7 @@ When memory is enabled, Bot receives global memory normally. It can discover con
 
 ## Messages, activity, and decisions
 
-The Bot conversation shows your messages, direct replies, and intentional proactive messages. Routine heartbeat output stays quiet. Bot can explicitly publish a verified result, blocker, or question; publication participates in existing unread and notification behavior.
+The Bot conversation shows your messages, direct replies, and intentional proactive messages. Routine heartbeat output stays quiet. When no reply is needed, Bot calls the native `no_op` output tool to finish successfully without a message. Its call and result are hidden in live and saved conversation views, while execution history remains available for inspection. Bot can explicitly publish a verified result, blocker, or question; publication participates in existing unread and notification behavior.
 
 Use the **Activity** icon to inspect the ordinary Bot Thread history and answer pending human decisions. Heartbeats and external events cannot answer an approval. The existing native panel chooser provides Files and Browser when enabled on the server; Bot does not add a separate browser implementation.
 

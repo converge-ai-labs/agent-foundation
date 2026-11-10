@@ -165,11 +165,19 @@ async def test_native_bot_observes_saved_sidekick_result_and_follows_up_on_heart
             names = {tool.name for tool in info.function_tools}
             if thread_id != BOT_THREAD_ID:
                 assert "publish_bot_message" not in names
+                assert not any(tool.name == "no_op" for tool in info.output_tools)
                 assert "Leave substantive findings" in str(messages)
                 working_runs += 1
                 yield "analysis complete" if working_runs == 1 else "follow-up complete"
                 return
             assert "publish_bot_message" in names and "resolve_bot_delivery" not in names
+            assert "no_op" not in names
+            output_tools = {tool.name: tool for tool in info.output_tools}
+            assert output_tools["no_op"].parameters_json_schema == {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": False,
+            }
             assert "Only human input, Host heartbeat" in str(messages) + (info.instructions or "")
             returns = [part for message in messages for part in message.parts if isinstance(part, ToolReturnPart)]
             if bot_steps == 1:
@@ -191,7 +199,10 @@ async def test_native_bot_observes_saved_sidekick_result_and_follows_up_on_heart
             call = plan.get(bot_steps)
             bot_steps += 1
             if call is None:
-                yield "I will check the working Thread." if bot_steps == 2 else "Internal heartbeat finished."
+                if bot_steps == 2:
+                    yield "I will check the working Thread."
+                else:
+                    yield {0: DeltaToolCall(name="no_op", json_args="{}", tool_call_id="quiet-heartbeat")}
             else:
                 name, args = call
                 yield {0: DeltaToolCall(name=name, json_args=json.dumps(args), tool_call_id=f"bot-step-{bot_steps}")}
@@ -215,7 +226,7 @@ async def test_native_bot_observes_saved_sidekick_result_and_follows_up_on_heart
         assert verified
         assert [item.role for item in after.messages] == ["user", "assistant", "assistant"]
         assert after.messages[-1].text == "Verified the saved result and continued the working Thread."
-        assert "Internal heartbeat" not in str(after.messages)
+        assert bot_steps == 6  # The output tool ends the Run without another model request.
         assert (await app.list_threads()).total == 2
         with fail_after(10):
             while await app._root_runs.active(target_id) is not None:
@@ -398,3 +409,56 @@ async def test_builtin_bot_policy_workspace_and_on_demand_project_tools(tmp_path
         assert composition.root.global_guidance[0].endswith("Global Bot policy sentinel")
         assert "Drive working Threads" in "\n".join(composition.root.system_prompt)
         assert not composition.root.children
+
+
+async def test_native_no_op_completes_without_publication_and_resumes_next_input(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from a13n_harness_ui.model_runtime import HarnessUiModelResolver
+    from pydantic_ai.messages import ToolCallPart, ToolReturnPart
+    from pydantic_ai.models.function import DeltaToolCall, FunctionModel
+
+    root = _write_configuration(tmp_path)
+    requests = 0
+
+    async def resolve(self, model_id, *, thread_id):
+        async def model(messages, info):
+            nonlocal requests
+            requests += 1
+            if requests == 1:
+                assert "call no_op" in str(messages) + (info.instructions or "")
+                yield {0: DeltaToolCall(name="no_op", json_args="{}", tool_call_id="quiet-direct")}
+            elif requests == 2:
+                assert "Then call no_op" in str(messages)
+                assert any(
+                    isinstance(part, ToolReturnPart) and part.tool_call_id == "quiet-direct"
+                    for message in messages
+                    for part in message.parts
+                )
+                yield {0: DeltaToolCall(name="no_op", json_args="{}", tool_call_id="quiet-heartbeat")}
+            else:
+                calls = [part for message in messages for part in message.parts if isinstance(part, ToolCallPart)]
+                assert [part.tool_name for part in calls].count("no_op") == 2
+                yield "I am still following the objective."
+
+        return FunctionModel(stream_function=model)
+
+    monkeypatch.setattr(HarnessUiModelResolver, "resolve", resolve)
+    async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
+        bot = await ready(app)
+        await bot.submit(BotSubmit(input_id="quiet", text="Keep watching; no reply is needed."))
+        assert (await consumed(app, "quiet")).state == "completed"
+        before = await bot.snapshot()
+        assert [message.role for message in before.messages] == ["user"]
+        assert (await app._root_runs.latest(BOT_THREAD_ID)).outcome.execution.output is None
+        completion = before.thread.completion
+        await bot.tick(now=datetime.now(UTC) + timedelta(hours=1))
+        after = await bot.snapshot()
+        assert after.inputs[-1].state == "completed"
+        assert after.messages == before.messages
+        assert after.thread.completion == completion
+        assert requests == 2
+        await bot.submit(BotSubmit(input_id="follow-up", text="What is the status?"))
+        assert (await consumed(app, "follow-up")).state == "completed"
+        assert requests == 3
+        assert (await bot.snapshot()).messages[-1].text == "I am still following the objective."

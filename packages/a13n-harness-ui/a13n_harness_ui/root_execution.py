@@ -121,7 +121,7 @@ class RootContinuationSelection:
 
 @dataclass(frozen=True, slots=True)
 class RootRunOutcome:
-    result: HarnessRunResult[str]
+    result: HarnessRunResult[str | None]
     environment: EnvironmentFinalization
     continuation: RootContinuationSelection
     composition: ObjectRef
@@ -597,8 +597,8 @@ class RootRunExecutor:
                 capability_count=len(reconstructed.definition_capability_ids),
                 environment_prepared=True,
             )
-        result: HarnessRunResult[str] | None = None
-        stream: HarnessRunStream[str] | None = None
+        result: HarnessRunResult[str | None] | None = None
+        stream: HarnessRunStream[str | None] | None = None
         stream_entry_attempted = False
         run_error: BaseException | None = None
         excerpts: ExcerptCollector | None = None

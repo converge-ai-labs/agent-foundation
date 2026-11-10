@@ -43,7 +43,7 @@ from a13n_harness.recovery import DEFAULT_RECOVERY_PROMPT
 from a13n_harness.tools import HARNESS_TOOL_METADATA_KEY, ToolPermissionsCapability
 from a13n_harness.tools.metadata import normalize_harness_tool_metadata
 from a13n_harness.toolsets.file_media import NativeInputMediaKind
-from pydantic_ai import RunContext
+from pydantic_ai import RunContext, ToolOutput
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
 from pydantic_ai.messages import TextContent
 from pydantic_ai.toolsets import AbstractToolset, ToolsetTool, WrapperToolset
@@ -73,7 +73,7 @@ from .models import ResolvedAgentNode, ResolvedModelRecipe, ResolvedRunCompositi
 class ReconstructedAgent:
     """One fresh executable and the Run bindings needed to invoke it."""
 
-    executable: ExecutableAgent[str]
+    executable: ExecutableAgent[str | None]
     model_resolver: HarnessUiModelResolver
     definition_capability_ids: frozenset[str]
     run_configuration: RunConfiguration = field(default_factory=RunConfiguration)
@@ -85,6 +85,10 @@ class ReconstructedAgent:
         if not self.media_models:
             return None
         return FileMediaUnderstanding(self.media_models, self.model_resolver.fresh(), thread_id=thread_id)
+
+
+def _bot_no_op() -> None:
+    """End this Bot turn quietly without sending a message to the user."""
 
 
 class _GlobalGuidanceCapability(AbstractModelContextCapability):
@@ -318,7 +322,7 @@ class AgentReconstructor:
         return ReconstructedAgent(
             run_configuration=composition.run_configuration,
             memory_cursors=cursors,
-            executable=cast(ExecutableAgent[str], executable),
+            executable=cast(ExecutableAgent[str | None], executable),
             model_resolver=model_resolver,
             compaction=compaction,
             definition_capability_ids=frozenset(item.id for item in definition.capabilities if item.id is not None),
@@ -364,7 +368,7 @@ class AgentReconstructor:
             instrumentation=self._instrumentation,
         ).build(definition, pricing_catalog=pricing_catalog)
         return ReconstructedAgent(
-            executable=cast(ExecutableAgent[str], executable),
+            executable=cast(ExecutableAgent[str | None], executable),
             model_resolver=HarnessUiModelResolver(
                 {recipe_id: node.model},
                 subscription_sources=subscription_sources,
@@ -386,7 +390,7 @@ class AgentReconstructor:
         path_layout: EnvironmentPathLayout,
         model_recipes: dict[str, ResolvedModelRecipe],
         native_default_tools: bool,
-    ) -> AgentDefinition[str]:
+    ) -> AgentDefinition[str | None]:
         recipe_id = model_recipe_id(node.model)
         previous = model_recipes.setdefault(recipe_id, node.model)
         if previous != node.model:
@@ -503,7 +507,7 @@ class AgentReconstructor:
                 system_prompt=list(node.system_prompt),
                 instructions=list(node.instructions),
             ),
-            output_type=str,
+            output_type=[str, ToolOutput(_bot_no_op, name="no_op")] if node.source_kind == "bot" else str,
             definition_id=f"a13n-harness-ui:{node.source_kind}:{node.source_id}",
             capabilities=tuple(capabilities),
             plugins=plugins,

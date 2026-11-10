@@ -48,7 +48,9 @@ class BotSnapshot(SurfaceModel):
 
 _HEARTBEAT = """Host heartbeat: inspect your ongoing objectives and relevant saved Thread outcomes.
 Check known working Threads before creating anything. Continue work only when useful and authorized.
-Publish a message for a verified result, blocker or human decision when it is useful; otherwise stay quiet.
+Publish a message for a verified result, blocker or human decision when it is useful.
+Then call no_op with no arguments to end this turn, whether you published or have nothing useful to report.
+Do not add explanatory text or rely on an empty response.
 This opportunity is not a human approval, a task completion report, or permission to repeat uncertain effects.
 """
 
