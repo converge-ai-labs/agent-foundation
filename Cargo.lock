@@ -26,6 +26,7 @@ dependencies = [
  "image",
  "libc",
  "microsandbox",
+ "microsandbox-utils",
  "mxc-sdk",
  "objc2",
  "objc2-app-kit",

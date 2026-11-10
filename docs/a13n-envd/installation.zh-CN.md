@@ -27,6 +27,8 @@ export A13N_ENVD_EXECUTABLE="$PWD/target/debug/a13n-envd"
 
 使用已发布的 Local Envd 时，让原生版本与已安装的 `a13n-envd-client` 匹配；该客户端独立于 Harness 和 Harness UI 发版。Python RC 版本 `1.2.3rc1` 对应原生版本 `1.2.3-rc.1`。
 
+默认构建不包含 VM 后端及其运行时资源。Linux 上可显式启用两个 VM 后端：`BOXLITE_DEPS_STUB=2 BOXLITE_EMBED_RUNTIME=1 cargo build --locked --package a13n-envd --features vm`。该构建还需要 C 编译器及 3.12 或更新版本的 `protoc`。启用 VM 后仍可使用原生执行。
+
 ## 从 Console 连接这台电脑
 
 批准后，所选工作空间中拥有运行权限的用户和服务账号都能在已批准的操作权限内使用这台电脑。
@@ -73,6 +75,8 @@ ENVD_VERSION="$(python -c 'from importlib.metadata import version; import re; pr
 sh install-a13n-envd.sh --version "$ENVD_VERSION" --install-dir "$HOME/.local/bin"
 "$HOME/.local/bin/a13n-envd" --version
 ```
+
+安装脚本默认选择不含 VM 的原生归档。Linux 用户可通过 `--variant vm` 或 `A13N_ENVD_VARIANT=vm` 选择较大的 VM 归档。VM 归档在目标名后添加 `-vm`，例如 `a13n-envd-<version>-x86_64-unknown-linux-gnu-vm.tar.gz`。缺少所选 VM 资源时直接失败，不会回退。`0.7.0` 等历史发布保留原有资源；请使用提供拆分构建的新版本。从尚未拆分的旧版本迁移并保留 VM 支持时，请使用安装脚本指定 `--variant vm`；旧更新器会选择普通归档。
 
 ### Windows
 
@@ -130,6 +134,8 @@ a13n-envd update --version 1.2.3 --force
 
 `--force` 重新安装所选版本，不能与 `--check` 同时使用。更新器替换实际调用的可执行文件，包括通过符号链接访问的情况。它保留 PATH 和配置，使用当前账号权限，服务的停止和重启由你负责。
 
+更新器保留当前 Linux 构建类型：不含 VM 的构建选择普通归档，包含任一 VM 后端的构建选择完整的 `-vm` 归档。需要切换类型时，先停止守护进程，再用独立安装脚本指定 `--variant default` 或 `--variant vm`。
+
 Envd 下载匹配的发布归档，验证 `SHA256SUMS`，检查解压后程序的 `--version`，然后替换可执行文件。下载和验证失败会保留已有程序。如果在替换期间中断，请先用 `--version` 检查安装，再决定是否重试。强制终止独立更新器可能在可执行文件旁留下 `.a13n-envd-update-*` 暂存目录；确认更新器已退出后，才可删除本次操作对应的目录。
 
 Host 可通过 `--version ... --install-dir ...` 将另一个精确版本安装到独立的绝对目录，同时保留源安装。`--staging-dir` 接受调用方拥有的已有暂存目录，便于中断子进程退出后清理。Harness UI 使用这些选项维护按版本选择的缓存。`.a13n-envd-version` 标记固定托管目标版本；请通过 Harness UI 更新，不要将缓存条目替换为另一个版本。
@@ -139,6 +145,8 @@ Host 可通过 `--version ... --install-dir ...` 将另一个精确版本安装�
 ## 运行沙箱镜像
 
 使用标准[沙箱镜像](sandbox.md)，获得已启用 shell 命令的 agent 开发容器。Envd 以 root 运行；命令和文件操作使用预置的 `1000:1000` 账号，并支持免密码 sudo。需要受控出站网络时显式开启。镜像指南介绍本地构建、stdio 和向外连接 Host、持久化与配置覆盖。
+
+沙箱镜像也默认使用不含 VM 的 Envd。需要 VM 时，选择 `vm`、`slim-vm` 或 `desktop-vm`；精确版本标签为 `<version>-vm`、`<version>-slim-vm` 和 `<version>-desktop-vm`，开发标签为 `dev-vm`、`dev-slim-vm` 和 `dev-desktop-vm`。本地源码构建镜像时添加 `--build-arg ENVD_VARIANT=vm`；`SANDBOX_VARIANT` 仍独立选择工具组合。Service 自动获取使用普通归档和镜像标签。已有 Service 版本固定值需在后续发布更新后采用新构建。
 
 ## 下一步
 

@@ -393,7 +393,7 @@ rust-format-check: ## Check Rust formatting
 	@cargo fmt --all -- --check
 
 # BoxLite mode 2 acquires real versioned runtime assets; mode 1 is check-only.
-# Embed debug assets too so make rust-build produces a relocatable daemon.
+# Optional VM checks embed their runtime assets; ordinary builds stay non-VM.
 rust-lint rust-test rust-build: export BOXLITE_DEPS_STUB = 2
 rust-lint rust-test rust-build: export BOXLITE_EMBED_RUNTIME = 1
 
@@ -406,8 +406,8 @@ rust-test: ## Run Rust workspace tests
 	@cargo test --workspace --all-features --locked
 
 .PHONY: rust-build
-rust-build: ## Build the Rust workspace
-	@cargo build --workspace --all-features --locked
+rust-build: ## Build the Rust workspace without optional VM backends
+	@cargo build --workspace --locked
 
 .PHONY: rust-package
 rust-package: ## Verify the a13n-envd crates.io package

@@ -28,5 +28,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         build_support::render(&pool).map_err(std::io::Error::other)?
     );
     fs::write(output_dir.join("eip_wire.rs"), wire)?;
+    #[cfg(feature = "vm-microsandbox")]
+    if env::var("CARGO_CFG_TARGET_OS")? == "linux" {
+        stage_microsandbox_runtime(&output_dir)?;
+    }
+    Ok(())
+}
+
+#[cfg(feature = "vm-microsandbox")]
+fn stage_microsandbox_runtime(output: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
+    use microsandbox_utils::{PREBUILT_VERSION, bundle_download_url, http_client};
+
+    println!("cargo:rerun-if-env-changed=MSB_EMBED_RUNTIME_BUNDLE_PATH");
+    let destination = output.join("microsandbox-runtime.tar.gz");
+    if let Some(source) = env::var_os("MSB_EMBED_RUNTIME_BUNDLE_PATH") {
+        println!(
+            "cargo:rerun-if-changed={}",
+            PathBuf::from(&source).display()
+        );
+        fs::copy(source, destination)?;
+    } else {
+        // Build scripts execute on the host; runtime selection follows the target.
+        let url = bundle_download_url(
+            PREBUILT_VERSION,
+            &env::var("CARGO_CFG_TARGET_ARCH")?,
+            &env::var("CARGO_CFG_TARGET_OS")?,
+        );
+        println!("cargo:warning=downloading Microsandbox runtime v{PREBUILT_VERSION} from {url}");
+        let response = http_client().get(&url).call()?;
+        let mut archive = fs::File::create(destination)?;
+        std::io::copy(&mut response.into_body().into_reader(), &mut archive)?;
+    }
     Ok(())
 }

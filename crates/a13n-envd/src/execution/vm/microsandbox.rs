@@ -8,6 +8,27 @@ use microsandbox::{
 use std::{io, sync::Arc};
 use tokio::task::JoinSet;
 
+// A static has one address. The SDK's const slice was duplicated into async
+// installation code paths, embedding the entire compressed runtime seven times.
+static RUNTIME_ARCHIVE: &[u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/microsandbox-runtime.tar.gz"));
+
+#[cfg(test)]
+#[tokio::test]
+async fn embedded_runtime_installs_into_private_home_without_kvm() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let home = tempfile::tempdir().unwrap();
+    // Match the private generation directory provided by the Device lifecycle.
+    std::fs::set_permissions(home.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+    let backend = Backend::new(home.path()).await.unwrap();
+    assert!(home.path().join("bin/msb").is_file());
+    assert!(home.path().join("lib/libkrunfw.so.5.6.1").is_file());
+    drop(backend);
+    // Reopening retains a complete installation through the upstream installer.
+    Backend::new(home.path()).await.unwrap();
+}
+
 pub(crate) struct Backend {
     backend: Arc<dyn microsandbox::Backend>,
     sandbox: Option<Sandbox>,
@@ -24,10 +45,12 @@ impl Backend {
             .build()
             .await
             .map_err(io::Error::other)?;
+        let mut archive = tempfile::NamedTempFile::new_in(path.path())?;
+        std::io::Write::write_all(&mut archive, RUNTIME_ARCHIVE)?;
         install_runtime(
             backend.config(),
             InstallOptions {
-                source: InstallSource::EmbeddedArchive,
+                source: InstallSource::Archive(archive.path().to_path_buf()),
                 ..Default::default()
             },
         )

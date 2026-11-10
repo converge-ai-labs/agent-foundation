@@ -139,6 +139,18 @@ fn target() -> Result<&'static str> {
     }
 }
 
+fn archive_name(version: &Version, target: &str, extension: &str) -> String {
+    // Updating a VM-capable Linux build must not silently remove its backends.
+    let suffix = if target.contains("linux")
+        && cfg!(any(feature = "vm-boxlite", feature = "vm-microsandbox"))
+    {
+        "-vm"
+    } else {
+        ""
+    };
+    format!("a13n-envd-{version}-{target}{suffix}.{extension}")
+}
+
 fn binary_name() -> &'static str {
     if cfg!(windows) {
         "a13n-envd.exe"
@@ -286,7 +298,7 @@ fn update(
     } else {
         "tar.gz"
     };
-    let archive_name = format!("a13n-envd-{version}-{target}.{extension}");
+    let archive_name = archive_name(&version, target, extension);
     let base = format!("{}/{PREFIX}{version}", source.download);
     let archive = stage.path().join(&archive_name);
     source.get(
@@ -485,6 +497,30 @@ fn installed_version(path: &Path) -> Result<Option<Version>> {
 mod tests {
     use super::*;
     use std::{io::BufRead, net::TcpListener, thread};
+
+    #[test]
+    fn release_archive_preserves_linux_build_variant() {
+        let version = Version::parse("1.2.3").unwrap();
+        let suffix = if cfg!(any(feature = "vm-boxlite", feature = "vm-microsandbox")) {
+            "-vm"
+        } else {
+            ""
+        };
+        for target in ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"] {
+            assert_eq!(
+                archive_name(&version, target, "tar.gz"),
+                format!("a13n-envd-1.2.3-{target}{suffix}.tar.gz")
+            );
+        }
+        assert_eq!(
+            archive_name(&version, "x86_64-apple-darwin", "tar.gz"),
+            "a13n-envd-1.2.3-x86_64-apple-darwin.tar.gz"
+        );
+        assert_eq!(
+            archive_name(&version, "x86_64-pc-windows-msvc", "zip"),
+            "a13n-envd-1.2.3-x86_64-pc-windows-msvc.zip"
+        );
+    }
 
     fn options(args: &[&str]) -> Result<Options> {
         Options::parse(&args.iter().map(OsString::from).collect::<Vec<_>>())
@@ -772,7 +808,7 @@ mod tests {
             } else {
                 tar_bytes(&[(binary_name(), script), ("LICENSE", b"license")])
             };
-            let name = format!("a13n-envd-9.8.7-{}.tar.gz", target().unwrap());
+            let name = archive_name(&Version::new(9, 8, 7), target().unwrap(), "tar.gz");
             let checksum = format!(
                 // release-a13n-envd.yml uses `find . ... | xargs -0 sha256sum`.
                 "{:x}  ./{name}\n",

@@ -39,6 +39,10 @@ on:
       - "scripts/tests/test_check_release_version.py"
       - "scripts/tests/test_prepare_release_version.py"
       - "scripts/tests/test_release_notes.py"
+      - "scripts/envd_size.py"
+      - "scripts/tests/test_envd*.py"
+      - "scripts/tests/test_install_envd.py"
+      - "scripts/tests/test_image_workflows.py"
       - "scripts/tests/test_pr_labels.py"
       - "scripts/tests/test_pr_change_breakdown.py"
       - "scripts/tests/test_welcome_contributor.py"
@@ -80,6 +84,10 @@ on:
       - "scripts/tests/test_check_release_version.py"
       - "scripts/tests/test_prepare_release_version.py"
       - "scripts/tests/test_release_notes.py"
+      - "scripts/envd_size.py"
+      - "scripts/tests/test_envd*.py"
+      - "scripts/tests/test_install_envd.py"
+      - "scripts/tests/test_image_workflows.py"
       - "scripts/tests/test_pr_labels.py"
       - "scripts/tests/test_pr_change_breakdown.py"
       - "scripts/tests/test_welcome_contributor.py"
@@ -177,6 +185,8 @@ jobs:
           scripts/tests/test_impact.py
           scripts/tests/test_sandbox_init.py
           scripts/tests/test_envd_release_workflow.py
+          scripts/tests/test_envd_size.py
+          scripts/tests/test_envd_size_report.py
           scripts/tests/test_k8s_local.py
           scripts/tests/test_deploy_smoke.py
           scripts/tests/test_harness_ui_release_workflow.py
