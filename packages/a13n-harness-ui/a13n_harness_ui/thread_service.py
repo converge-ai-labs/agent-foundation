@@ -467,7 +467,9 @@ def apply_configuration_mutation(
     """Validate the next configuration without persisting it."""
     if thread.configuration.agent_source.kind in {"live", "bot"}:
         kind = thread.configuration.agent_source.kind
-        raise ThreadError(f"Configure the built-in {kind} in its instance settings.", code=f"{kind}_thread_reserved")
+        raise ThreadError(
+            f"Configure the built-in executor in {kind.title()} settings.", code=f"{kind}_thread_reserved"
+        )
     if thread.configuration.version != mutation.expected_version:
         raise ThreadError("Thread configuration version changed; read it again.", code="thread_configuration_conflict")
     replacement = mutation.patch.apply(thread.configuration)

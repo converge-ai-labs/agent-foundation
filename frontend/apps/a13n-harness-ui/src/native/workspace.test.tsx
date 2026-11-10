@@ -321,6 +321,7 @@ function setup(
   return { focus, get, queries };
 }
 it("opens Bot in the existing native workspace before activation without loading a missing Thread", async () => {
+  localStorage.setItem("a13n-harness-ui.native-panel.thread_bot", "open");
   const { get } = setup("/bot");
   await screen.findByRole("heading", { name: "Bot" });
   await screen.findByRole("link", { name: "Bot settings" });
