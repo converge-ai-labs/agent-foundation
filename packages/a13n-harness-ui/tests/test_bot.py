@@ -103,6 +103,35 @@ async def test_due_heartbeat_does_not_starve_a_full_user_queue(tmp_path: Path) -
         assert len(await app._store.bot.inputs(pending_only=True)) < 16
 
 
+@pytest.mark.parametrize("state", ["dispatching", "admitted"])
+async def test_pending_limit_includes_active_inputs_and_allows_idempotent_retry(tmp_path: Path, state) -> None:
+    root = _write_configuration(tmp_path)
+    async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
+        bot = await ready(app)
+        async with bot._dispatch_lock:
+            repository = app._store.bot
+            active = await repository.retain(
+                BotInput(
+                    input_id="active", source="user", text="In progress", created_at=datetime.now(UTC), state=state
+                )
+            )
+            for index in range(15):
+                await repository.retain(
+                    BotInput(
+                        input_id=f"queued-{index}", source="user", text=f"Message {index}", created_at=datetime.now(UTC)
+                    )
+                )
+            overflow = BotInput(input_id="overflow", source="user", text="One more", created_at=datetime.now(UTC))
+            with pytest.raises(HarnessUiError) as error:
+                await repository.retain(overflow)
+            assert error.value.code == "bot_input_full"
+            assert await repository.retain(active) == active
+            assert len(await repository.inputs(pending_only=True)) == 16
+            await repository.save_input(active.model_copy(update={"state": "completed"}))
+            assert await repository.retain(overflow) == overflow
+            assert len(await repository.inputs(pending_only=True)) == 16
+
+
 async def test_restart_never_replays_uncertain_input(tmp_path: Path) -> None:
     root = _write_configuration(tmp_path)
     async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:

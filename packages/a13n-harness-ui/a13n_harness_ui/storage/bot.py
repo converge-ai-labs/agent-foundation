@@ -40,7 +40,9 @@ class BotRepository:
                     raise ThreadError("This Bot input ID already has different content.", code="bot_input_conflict")
                 return previous
             pending = await session.scalar(
-                select(func.count()).select_from(BotInputRecord).where(BotInputRecord.state == "queued")
+                select(func.count())
+                .select_from(BotInputRecord)
+                .where(BotInputRecord.state.in_(("queued", "dispatching", "admitted")))
             )
             if pending is not None and pending >= 16:
                 raise ThreadError("Bot has 16 pending inputs. Inspect them before adding more.", code="bot_input_full")
