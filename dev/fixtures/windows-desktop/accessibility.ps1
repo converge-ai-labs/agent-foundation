@@ -172,7 +172,7 @@ $timer.Interval = [TimeSpan]::FromMilliseconds(50)
 $timer.Add_Tick({
     $selection = @($window.FindName('Items').SelectedItems | ForEach-Object { $_.Content })
     $state = @{
-        ready = $window.IsVisible; pid = $PID; clicks = $script:clicks; text = $editor.Text
+        ready = $window.IsVisible; active = $window.IsActive; pid = $PID; clicks = $script:clicks; text = $editor.Text
         checked = $window.FindName('Toggle').IsChecked; numeric = $window.FindName('Numeric').Value
         expanded = $window.FindName('Expand').IsExpanded; selection = $selection
         document_selection = $document.Selection.Text

@@ -311,6 +311,18 @@ async def test_real_windows_projection_and_additional_mutations():
         marker = named["Projection marker"].reference
         current = await state_until(session, state, lambda value: value["ready"])
         for size in (1280, 768):
+            visible = await a11y.roots(
+                AccessibilityRootScope(
+                    kind="at_point",
+                    point=NativePoint(
+                        frame="uia_physical_screen",
+                        x=current["marker_x"] + current["marker_width"] * current["dpi_x"] / 2,
+                        y=current["marker_y"] + current["marker_height"] * current["dpi_x"] / 2,
+                    ),
+                ),
+                limits=limits,
+            )
+            assert visible.nodes and visible.nodes[0].reference == marker, ("Fixture marker is occluded", current)
             screenshot = await env.computer.observe(max_dimension=size)
             sample = (
                 await a11y.inspect(marker, limits=AccessibilityLimits(depth=0), projection=screenshot.observation)
