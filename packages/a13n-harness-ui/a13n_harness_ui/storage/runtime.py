@@ -14,9 +14,11 @@ from pydantic import JsonValue
 from a13n_harness_ui import __version__
 from a13n_harness_ui.errors import StoreConflictError
 
+from .bot import BotRepository
 from .checkpoint_lock import checkpoint_lock
 from .checkpoint_pruning import CheckpointPruner
 from .compaction import CompactionRepository
+from .connectors import ConnectorRepository
 from .continuations import read_continuation
 from .contracts import Continuation, StoredThreadInitialState
 from .database import Database, open_database
@@ -70,6 +72,8 @@ class LocalStore:
         self.compactions = CompactionRepository(database.sessions)
         self.usage_analytics = UsageAnalyticsRepository(database.sessions)
         self.voice = VoiceTranscriptRepository(database.sessions, objects)
+        self.bot = BotRepository(database.sessions)
+        self.connectors = ConnectorRepository(database.sessions)
         self.restarts = RestartRepository(database.sessions)
         self.child_executions = ChildExecutionRepository(database.sessions)
         self.environment_states = EnvironmentStateRepository(database.sessions)

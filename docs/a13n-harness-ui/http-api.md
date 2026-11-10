@@ -258,6 +258,18 @@ To adopt the selected Project's defaults:
 
 Only Project-specified axes are applied. For just the four Environment axes, use GET/POST `/api/threads/{thread_id}/project-environments`; its preview describes a complete Environment replacement. Neither operation copies files.
 
+## Bot
+
+Instance-key clients can use the shared [Bot](bot.md) without creating another Thread. Scoped guests cannot access these routes.
+
+| Method and path        | Body                                                                   | Result                                                                                                          |
+| ---------------------- | ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `GET /api/bot`         | None                                                                   | Snapshot with saved state, intentional messages, retained inputs, active operation, and pending-decision status |
+| `POST /api/bot/inputs` | `{ "input_id": "input-client-1", "text": "Follow the release work." }` | Retained input; acceptance is not Run admission or completion                                                   |
+| `POST /api/bot/pause`  | `{ "paused": true }`                                                   | Updated snapshot; automatic delivery pauses while direct input remains usable                                   |
+
+Queries start no work. For an uncertain input submission, explicitly retry the same ID and text. Different content with the same ID fails. Open `/threads/thread_bot` for Activity and use the existing decision API for pending human responses. Configuration belongs under `webui.bot`; private Connector configuration is not a YAML resource or a provider management API.
+
 ## Coordinator
 
 Create an owner with `POST /api/threads` and `{"defaults":{"project_id":"project-main"},"coordinator":true}`. Use an available Project ID. Creation saves the role and enables automatic follow-up; submit input separately. A failed submission leaves the created Thread in place.

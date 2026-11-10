@@ -365,6 +365,8 @@ The preview labels semantically identical imports as unchanged. Applying any val
 
 ## Resolution
 
+The built-in [Bot source](12-bot-and-connector-ingress.md#identity-composition-and-workspace) resolves an application-owned Agent recipe from its selected Model, built-in instructions, optional custom instructions, and captured global guidance. It does not resolve a configured Agent resource or inherit that Agent's policy, children, Plugins, or MCP selections. It uses the same immutable composition and native reconstruction boundaries below.
+
 Harness UI reconstructs every root and child Agent with native `UsageLimits(request_limit=None)`, so long-running work does not inherit the Harness library's default request-count ceiling. This Host policy does not change the Harness library default, explicit child execution limits, cancellation, or model-recovery budgets.
 
 Every resolved Agent node captures the accepted configuration directory's global `AGENTS.md` guidance separately from authored native Agent instructions. Reconstruction injects that captured guidance through user-role model-context blocks on eligible input requests; it never places it in the model/native `instructions` field. Current empty guidance explicitly supersedes earlier global blocks. Legacy captures without this field retain their original reconstruction behavior rather than reading current files.

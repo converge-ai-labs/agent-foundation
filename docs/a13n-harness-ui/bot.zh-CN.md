@@ -1,0 +1,61 @@
+---
+title: Bot
+description: 通过协调工作 Thread、默认每小时检查进展的个人助手，持续推进目标。
+---
+
+Bot 是 WebUI 侧边栏中的实例级助手。向 Bot 提出持续目标后，它可以查找或创建 Project、启动普通工作 Thread，并在后续 heartbeat 中检查已保存的结果。聊天页面复用现有 Thread 的阅读器、编辑器和原生面板。
+
+## 启动和配置 Bot
+
+1. 打开 **设置 → 常规 → Bot**，选择已有 Model。Bot 使用内置指令，不需要选择 Agent。
+2. 按需添加自定义指令，例如偏好的工作协调方式。捕获的全局 `AGENTS.md` 指引也会生效。
+3. 在侧边栏打开 **Bot** 并发送消息。首次接受消息后，系统启用 heartbeat 调度。
+
+默认 heartbeat 间隔为 **一小时**。打开页面或保存设置不会发起模型请求。heartbeat 处理要求 WebUI 服务保持运行。持实例密钥的参与者共享 Bot；受限分享访客无法访问 Bot。[Live 模式](live-mode.md) 与其独立。
+
+将以下字段合并到所选根 YAML 已有的 `webui` 映射中：
+
+```yaml title="a13n-harness-ui.yaml — Bot"
+webui:
+  bot:
+    model: model-coordinator
+    instructions: "Prefer coordinating work in project Threads."
+    heartbeat_enabled: true
+    interval_seconds: 3600
+    connector_interval_seconds: 60
+    run_timeout_seconds: 180
+```
+
+使用已有 Model ID。`model` 为 null 或省略时，仅沿用全局默认 Agent 的 Model，不继承该 Agent 的指令、子 Agent、Plugin 或 MCP 选择。没有有效 Model 时无法执行。Model 和指令变更应用于后续 Run。
+
+heartbeat 间隔允许 60–86,400 秒，Connector 投递间隔允许 1–86,400 秒，Run 超时允许 10–3,600 秒。自定义指令最多 1,048,576 个字符。编辑文件后，使用 `a13n-harness-ui config validate` 验证。
+
+## 协调工作与记忆
+
+Bot 的专属工作区是所选根 YAML 同级的 `bot/` 目录。默认配置下，路径为 `~/.a13n-harness-ui/bot/`。显式指定 `--config` 会改变其父目录。内置指令建议将此目录用于协调材料，把实质工作交给普通工作 Thread。
+
+Bot 可使用 `create_project` 创建普通 Project 配置，并通过 `create_thread` 按正常的 Sidekick/全局 Agent 默认值启动工作。Project 创建、Thread 创建、Run 接受和任务完成是独立结果。内置指令要求 Bot 检查保存的结果后再报告成功。
+
+启用 memory 时，Bot 正常获得全局记忆。它可以发现已配置的 Project，再调用 `read_project_memory` 按需读取 Project 记忆。这些读取有大小限制且为只读；各 Project 的记忆不会自动注入 Bot 上下文。协调笔记和任务保留在 Bot 自己的 Thread 中。
+
+## 消息、活动与决策
+
+Bot 聊天页面显示你的消息、直接回复，以及有意发布的主动消息。普通 heartbeat 输出保持安静。Bot 可以显式发布经过确认的结果、阻塞或问题；发布沿用现有未读和通知机制。
+
+使用 **活动** 图标查看普通 Bot Thread 的执行历史，并处理待回答的人类决策。heartbeat 和外部事件无法代答审批。服务器启用相应功能后，现有原生面板选择器提供文件和浏览器；Bot 不另做一套浏览器实现。
+
+文本草稿保留在当前标签页中，刷新可能丢失尚未发送的草稿。提交结果不确定时，保留原命令并使用显式重试。重试沿用相同的输入 ID 和文本，不会再创建一份输入。输入被接受代表进入队列，不代表 Run 已启动或完成。
+
+## 暂停与恢复
+
+使用暂停图标停止自动 heartbeat 和 Connector 投递。直接消息仍可使用。暂停不会取消已经运行的 Run；恢复后从当前时间安排下次 heartbeat。
+
+排队输入在服务重启后保留。在接受或执行过程中中断的输入会保留供检查，并暂停自动处理。Bot 不会自动重放这些输入，因为工具可能已经修改文件或外部系统。先检查活动和工作 Thread 的结果，再明确发送后续要求。Run 超时也采用暂停并检查的处理方式。错过的 heartbeat 间隔会合并成一次机会，不逐次补跑。
+
+## Connector 入站基础
+
+Host 提供私有数据库存储，用于保存 Connector 设置、凭据和所选事件信封。周期性投递会跨 Connector 合并待处理事件，并提交给 Bot 或向其确切的当前操作追加输入。原生执行接受输入后消费该批次，不等待模型确认或任务完成。待回答的人类决策会阻止投递。
+
+本版本提供公共存储和投递基础。具体提供方的配置、注册、轮询、写入工具和 Connector 管理界面仍需要专门集成。Connector 凭据以明文保存在私有本地数据库中；请保护数据目录及其备份。外部事件内容提供上下文，不代表人类授权。
+
+客户端集成参见 [Bot HTTP API](http-api.md#bot)，根设置参见[配置参考](configuration.md#webui-bot)。

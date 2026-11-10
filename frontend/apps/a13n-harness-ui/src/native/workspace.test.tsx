@@ -227,31 +227,38 @@ function setup(
                         roots: ["/other"],
                       },
                     ]
-                  : url === "/api/threads/{thread_id}"
+                  : url === "/api/bot"
                     ? {
-                        thread: {
-                          title: "Current chat",
-                          configuration: {
-                            local_roots:
-                              options?.params?.path?.thread_id === "other"
-                                ? otherProject === "project-two"
-                                  ? ["/other"]
-                                  : currentRoots
-                                : currentProject
-                                  ? currentRoots
-                                  : [],
-                            project_id:
-                              options?.params?.path?.thread_id === "other"
-                                ? otherProject
-                                : currentProject,
-                          },
-                        },
+                        available: true,
+                        state: { activated: false, paused: false },
+                        messages: [],
+                        inputs: [],
                       }
-                    : {
-                        kind: options?.params?.query?.path?.endsWith(".txt")
-                          ? "file"
-                          : "directory",
-                      },
+                    : url === "/api/threads/{thread_id}"
+                      ? {
+                          thread: {
+                            title: "Current chat",
+                            configuration: {
+                              local_roots:
+                                options?.params?.path?.thread_id === "other"
+                                  ? otherProject === "project-two"
+                                    ? ["/other"]
+                                    : currentRoots
+                                  : currentProject
+                                    ? currentRoots
+                                    : [],
+                              project_id:
+                                options?.params?.path?.thread_id === "other"
+                                  ? otherProject
+                                  : currentProject,
+                            },
+                          },
+                        }
+                      : {
+                          kind: options?.params?.query?.path?.endsWith(".txt")
+                            ? "file"
+                            : "directory",
+                        },
           },
   );
   const transport = { client: { GET: get } } as unknown as Transport;
@@ -313,6 +320,23 @@ function setup(
   );
   return { focus, get, queries };
 }
+it("opens Bot in the existing native workspace before activation without loading a missing Thread", async () => {
+  const { get } = setup("/bot");
+  await screen.findByRole("heading", { name: "Bot" });
+  await screen.findByRole("link", { name: "Bot settings" });
+  await waitFor(() =>
+    expect(
+      screen.getByRole("button", { name: "New tab" }).hasAttribute("disabled"),
+    ).toBe(false),
+  );
+  expect(
+    get.mock.calls.some(([path]) => path === "/api/threads/{thread_id}"),
+  ).toBe(false);
+  expect(screen.queryByRole("button", { name: "Chat actions" })).toBeNull();
+  await chooseView("Browser");
+  expect(screen.getByTestId("chat").textContent).toContain("/bot");
+});
+
 async function chooseView(name: "Files" | "Changes" | "Browser" | "Terminal") {
   await waitFor(() =>
     expect(

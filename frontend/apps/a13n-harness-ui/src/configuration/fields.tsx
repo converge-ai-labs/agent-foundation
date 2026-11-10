@@ -7,7 +7,7 @@ import { Link, useLocation } from "react-router";
 import management from "./management.module.css";
 import layout from "./settings.module.css";
 import { AddModelButton } from "./models";
-import { Button, FormField, Switch, Textarea } from "a13n-ui";
+import { Button, FormField, Input, Switch, Textarea } from "a13n-ui";
 import { ResourceChoice } from "./resource-choice";
 import { useQuery } from "@tanstack/react-query";
 import { useSelectors, useSources, useTransport } from "../transport/context";
@@ -388,41 +388,23 @@ export function ResourceFields({
           <>
             <SettingsSection variant="grouped" title={t("Chats")}>
               {scalar(t("Default agent"), ["defaults", "agent"], agentOptions)}
-              <SettingsRow
-                label="Sidekick"
-                controlId="sidekick-enabled"
-                stackOnNarrow={false}
-                description={t(
-                  "Let your agent delegate work to separate chats.",
-                )}
-              >
-                <Switch
-                  id="sidekick-enabled"
-                  checked={get(["webui", "sidekick"]) !== null}
-                  onCheckedChange={(enabled) =>
-                    set(["webui", "sidekick"], enabled ? {} : null)
-                  }
-                />
-              </SettingsRow>
-              {get(["webui", "sidekick"]) !== null && (
-                <details className={layout.groupDisclosure}>
-                  <summary>{t("Subagent defaults")}</summary>
-                  <div>
-                    {scalar(
-                      t("Sidekick agent"),
-                      ["webui", "sidekick", "agent"],
-                      agentOptions,
-                      t("Use current agent"),
-                    )}
-                    {scalar(
-                      t("Sidekick model"),
-                      ["webui", "sidekick", "model"],
-                      models,
-                      t("Use agent model"),
-                    )}
-                  </div>
-                </details>
-              )}
+              <details className={layout.groupDisclosure}>
+                <summary>{t("Subagent defaults")}</summary>
+                <div>
+                  {scalar(
+                    t("Sidekick agent"),
+                    ["webui", "sidekick", "agent"],
+                    agentOptions,
+                    t("Use current agent"),
+                  )}
+                  {scalar(
+                    t("Sidekick model"),
+                    ["webui", "sidekick", "model"],
+                    models,
+                    t("Use agent model"),
+                  )}
+                </div>
+              </details>
             </SettingsSection>
             <SettingsSection variant="grouped" title={t("Memory")}>
               <SettingsRow
@@ -499,6 +481,68 @@ export function ResourceFields({
                 </>
               )}
             </SettingsSection>
+            <section id="bot">
+              <SettingsSection variant="grouped" title={t("Bot")}>
+                {scalar(
+                  t("Bot model"),
+                  ["webui", "bot", "model"],
+                  models,
+                  t("Use default agent model"),
+                )}
+                <div className={styles.fieldGroup}>
+                  <FormField
+                    label={t("Custom instructions")}
+                    description={t(
+                      "Added to Bot's built-in instructions and global AGENTS.md.",
+                    )}
+                  >
+                    <Textarea
+                      variant="soft"
+                      value={text(["webui", "bot", "instructions"])}
+                      rows={3}
+                      onChange={(event) =>
+                        set(
+                          ["webui", "bot", "instructions"],
+                          event.target.value,
+                        )
+                      }
+                    />
+                  </FormField>
+                </div>
+                <SettingsRow
+                  label={t("Heartbeat")}
+                  controlId="bot-heartbeat-enabled"
+                  stackOnNarrow={false}
+                >
+                  <Switch
+                    id="bot-heartbeat-enabled"
+                    checked={
+                      get(["webui", "bot", "heartbeat_enabled"]) !== false
+                    }
+                    onCheckedChange={(enabled) =>
+                      set(["webui", "bot", "heartbeat_enabled"], enabled)
+                    }
+                  />
+                </SettingsRow>
+                <SettingsRow label={t("Interval (seconds)")}>
+                  <Input
+                    type="number"
+                    min={60}
+                    max={86400}
+                    aria-label={t("Heartbeat interval")}
+                    value={String(
+                      get(["webui", "bot", "interval_seconds"]) ?? 3600,
+                    )}
+                    onChange={(event) =>
+                      set(
+                        ["webui", "bot", "interval_seconds"],
+                        Number(event.target.value),
+                      )
+                    }
+                  />
+                </SettingsRow>
+              </SettingsSection>
+            </section>
             <section id="live">
               <SettingsSection variant="grouped" title={t("Live voice")}>
                 <SettingsRow

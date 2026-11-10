@@ -374,6 +374,7 @@ export function Composer({
   local = false,
   skillDefaults,
   prepareThread,
+  queuedInput,
   coordinator,
   owner,
   onPreparing,
@@ -411,6 +412,7 @@ export function Composer({
   local?: boolean;
   skillDefaults?: Schema<"NewThreadDefaults">;
   prepareThread?: () => Promise<void>;
+  queuedInput?: { pending: boolean; locked: boolean; submit: () => void };
   coordinator?: { active: boolean; available: boolean; locked?: boolean };
   owner?: { title: string; onRemove?: () => void; locked?: boolean };
   onPreparing?: (preparing: boolean) => void;
@@ -597,7 +599,7 @@ export function Composer({
     [preview],
   );
   const busy = activity.state !== "inactive";
-  const pending = draft.submission.kind === "pending";
+  const pending = draft.submission.kind === "pending" || !!queuedInput?.pending;
   const unknown = draft.submission.kind === "unknown";
   const input = values(draft.doc);
   const missing = selections.some(({ key, id }, index) =>
@@ -648,6 +650,7 @@ export function Composer({
   const stopAction = !transport.shareId && busy && !hasInput;
   const canSend =
     canRun &&
+    !queuedInput?.locked &&
     !coordinatorBlocked &&
     !busy &&
     ready &&
@@ -682,6 +685,10 @@ export function Composer({
       : undefined;
   const submit = async (action: "send" | "steer") => {
     if (action === "send" ? !canSend : !canSteer) return;
+    if (queuedInput) {
+      queuedInput.submit();
+      return;
+    }
     if (
       preparation.current ||
       draft.submission.kind === "pending" ||
@@ -1234,19 +1241,24 @@ export function Composer({
               void uploadFiles(Array.from(event.target.files ?? []))
             }
           />
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className={styles.attachButton}
-            aria-label={t("Attach files")}
-            title={t("Attach files - you can also paste or drop files")}
-            loading={uploading}
-            disabled={preparing}
-            onClick={() => upload.current?.click()}
+          {!queuedInput && (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className={styles.attachButton}
+              aria-label={t("Attach files")}
+              title={t("Attach files - you can also paste or drop files")}
+              loading={uploading}
+              disabled={preparing}
+              onClick={() => upload.current?.click()}
+            >
+              <Plus />
+            </Button>
+          )}
+          <div
+            inert={preparing || pending || queuedInput?.locked}
+            className={styles.composerEditor}
           >
-            <Plus />
-          </Button>
-          <div inert={preparing} className={styles.composerEditor}>
             {imageSelections.length > 0 && (
               <div className={styles.imageTray}>
                 {imageSelections.map(
@@ -1303,9 +1315,16 @@ export function Composer({
             <ComposerEditor
               autoFocus={autoFocus}
               local={local}
+              draftDescription={
+                queuedInput
+                  ? t(
+                      "Private draft in this tab. Reloading loses unsent input and uncertain submission details. Enter to send, Shift+Enter for a new line.",
+                    )
+                  : undefined
+              }
               skillContext={skillContext}
               loadSkills={
-                transport.shareId
+                transport.shareId || queuedInput
                   ? undefined
                   : async () => {
                       try {
@@ -1331,33 +1350,38 @@ export function Composer({
               }}
               submit={() => void submit(busy ? "steer" : "send")}
               editor={editor}
-              attachments={{
-                imageKeys: new Set(imageSelections.map(({ key }) => key)),
-                transport,
-                threadId,
-                metadata: new Map(
-                  attachments.flatMap((item) =>
-                    item.data
-                      ? [[item.data.attachment_id, item.data] as const]
-                      : [],
-                  ),
-                ),
-                preview: (id, attachment) =>
-                  void showAttachment(id, attachment),
-                upload: (files, at) => void uploadFiles(files, at),
-                retry: (key) => {
-                  const item = draft.uploads.get(key);
-                  if (
-                    !local &&
-                    (item?.status === "failed" || item?.status === "staged")
-                  )
-                    void uploadOne(key, item.file);
-                  else if (!item)
-                    setError(
-                      "This upload is unavailable in this tab. Remove it and attach the file again.",
-                    );
-                },
-              }}
+              attachments={
+                queuedInput
+                  ? undefined
+                  : {
+                      imageKeys: new Set(imageSelections.map(({ key }) => key)),
+                      transport,
+                      threadId,
+                      metadata: new Map(
+                        attachments.flatMap((item) =>
+                          item.data
+                            ? [[item.data.attachment_id, item.data] as const]
+                            : [],
+                        ),
+                      ),
+                      preview: (id, attachment) =>
+                        void showAttachment(id, attachment),
+                      upload: (files, at) => void uploadFiles(files, at),
+                      retry: (key) => {
+                        const item = draft.uploads.get(key);
+                        if (
+                          !local &&
+                          (item?.status === "failed" ||
+                            item?.status === "staged")
+                        )
+                          void uploadOne(key, item.file);
+                        else if (!item)
+                          setError(
+                            "This upload is unavailable in this tab. Remove it and attach the file again.",
+                          );
+                      },
+                    }
+              }
             />
           </div>
           <div className={styles.composerActions}>
@@ -1375,7 +1399,7 @@ export function Composer({
                 </span>
               )}
             </span>
-            {!transport.shareId && (
+            {!transport.shareId && !queuedInput && (
               <TaskOptions
                 coordinatorEnabled={draft.coordinator}
                 goal={

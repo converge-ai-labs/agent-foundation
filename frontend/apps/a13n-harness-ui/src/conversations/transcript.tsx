@@ -687,6 +687,32 @@ export const SavedEntry = memo(function SavedEntry({
   );
 });
 
+// Intentional publications use the same message rendering as native history.
+// Host heartbeat and working output remain available in the separate activity view.
+export function PublishedTranscript({
+  messages,
+}: {
+  messages: { message_id: string; role: "user" | "assistant"; text: string }[];
+}) {
+  return messages.map((message) => {
+    const row: Row =
+      message.role === "user"
+        ? {
+            id: message.message_id,
+            kind: "input",
+            parts: [{ kind: "text", text: message.text }],
+          }
+        : { id: message.message_id, kind: "assistant", text: message.text };
+    return (
+      <Rows
+        key={row.id}
+        rows={[row]}
+        output={row.kind === "assistant" ? [row] : []}
+      />
+    );
+  });
+}
+
 export function ConversationTranscript({
   entries,
   blocks,

@@ -195,6 +195,18 @@ export function ConversationConfiguration({
                 })}
               </p>
             </section>
+          ) : data.next_run.configuration.agent_source.kind === "bot" ? (
+            <section>
+              <h3>{t("Bot")}</h3>
+              <p>
+                <Link to="/settings#bot">{t("Bot settings")}</Link>
+              </p>
+              <p>
+                {t("Next model: {{model}}", {
+                  model: data.next_model_id || t("Not configured"),
+                })}
+              </p>
+            </section>
           ) : readOnly ? (
             <section>
               <h3>{t("Automatic organization")}</h3>
@@ -421,10 +433,12 @@ export function ThreadSelections({
         agent_source:
           updated.configuration.agent_source.kind === "live"
             ? { kind: "live", id: "live" }
-            : {
-                ...updated.configuration.agent_source,
-                kind: updated.configuration.agent_source.kind,
-              },
+            : updated.configuration.agent_source.kind === "bot"
+              ? { kind: "bot", id: "bot" }
+              : {
+                  ...updated.configuration.agent_source,
+                  kind: updated.configuration.agent_source.kind,
+                },
       });
       updatePatch({});
       setBase(null);

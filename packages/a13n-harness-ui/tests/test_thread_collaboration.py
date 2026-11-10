@@ -191,7 +191,7 @@ async def test_real_model_tools_discover_delegate_cross_project_and_report_to_id
 ) -> None:
     root = configuration(tmp_path)
     document = yaml.safe_load(root.read_text())
-    document["webui"] = {"sidekick": None}  # Opting out does not remove generic collaboration tools.
+    document["webui"] = {"sidekick": None}  # Legacy null uses inherited Sidekick defaults.
     root.write_text(yaml.safe_dump(document))
     origin_id = ""
     origin_idle, reported = Event(), Event()
@@ -315,7 +315,7 @@ async def test_real_model_tools_discover_delegate_cross_project_and_report_to_id
         assert (
             next(part for part in parts if (part.text or "").startswith("Task from Thread")).metadata.display is False
         )
-    assert all("Sidekick is enabled" not in text for text in instructions)
+    assert any("Sidekick is enabled" in text for text in instructions)
 
 
 @pytest.mark.parametrize(

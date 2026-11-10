@@ -3199,5 +3199,22 @@
   "Environment context": "Environment context",
   "Unmetered media tokens are distributed by text share.": "Unmetered media tokens are distributed by text share.",
   "Other entries ({{count}} omitted)": "Other entries ({{count}} omitted)",
-  "Prompt estimates divide input tokens in proportion to the measured characters in each category.": "Prompt estimates divide input tokens in proportion to the measured characters in each category."
+  "Prompt estimates divide input tokens in proportion to the measured characters in each category.": "Prompt estimates divide input tokens in proportion to the measured characters in each category.",
+  "Bot": "Bot",
+  "Your persistent assistant": "Your persistent assistant",
+  "Tell Bot what you want to accomplish. It can continue work in separate chats and check back on heartbeat.": "Tell Bot what you want to accomplish. It can continue work in separate chats and check back on heartbeat.",
+  "Bot processing is unavailable": "Bot processing is unavailable",
+  "Bot needs your decision in Activity": "Bot needs your decision in Activity",
+  "Automation paused · You can still chat": "Automation paused · You can still chat",
+  "Heartbeat every {{minutes}} minutes": "Heartbeat every {{minutes}} minutes",
+  "Open Activity to respond": "Open Activity to respond",
+  "Message Bot": "Message Bot",
+  "Bot settings": "Bot settings",
+  "Bot model": "Bot model",
+  "Custom instructions": "Custom instructions",
+  "Added to Bot's built-in instructions and global AGENTS.md.": "Added to Bot's built-in instructions and global AGENTS.md.",
+  "Heartbeat": "Heartbeat",
+  "Interval (seconds)": "Interval (seconds)",
+  "Heartbeat interval": "Heartbeat interval",
+  "Private draft in this tab. Reloading loses unsent input and uncertain submission details. Enter to send, Shift+Enter for a new line.": "Private draft in this tab. Reloading loses unsent input and uncertain submission details. Enter to send, Shift+Enter for a new line."
 }

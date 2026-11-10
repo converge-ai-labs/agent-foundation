@@ -300,6 +300,8 @@ class ThreadProjectionService:
         )
 
     async def detail(self, thread_id: str) -> ThreadDetail:
+        from a13n_harness_ui.bot_models import BOT_THREAD_ID
+
         thread = await self._required_thread(thread_id)
         summary = await self._summary(thread)
         continuation_id = None
@@ -320,6 +322,8 @@ class ThreadProjectionService:
                     actions.append("clear_context")
         else:
             actions.extend(summary.root_activity.available_actions)
+        if thread_id == BOT_THREAD_ID:
+            actions = [action for action in actions if action in {"respond", "wait", "cancel"}]
         return ThreadDetail(
             thread=summary,
             continuation_id=continuation_id,

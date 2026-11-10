@@ -40,6 +40,7 @@ from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import AgentStreamEvent, FunctionToolResultEvent
 from pydantic_ai.tools import DeferredToolApprovalResult, ToolApproved
 
+from a13n_harness_ui.bot_models import BOT_THREAD_ID
 from a13n_harness_ui.browser import HostBrowsers
 from a13n_harness_ui.browser_context import BrowserContextCapability
 from a13n_harness_ui.capability_runtime import production_run_bindings
@@ -949,6 +950,9 @@ class RootRunExecutor:
         """Select native state with a display already frozen on the producer's event loop."""
         if state is None:
             return RootContinuationSelection(status="not_available")
+        if thread.thread_id == BOT_THREAD_ID and completed_run_id is not None:
+            if not await self._store.bot.has_visible_result():
+                completed_run_id = None
         published_ref: ObjectRef | None = None
 
         def prepare_continuation() -> tuple[Continuation, ThreadReadModel]:

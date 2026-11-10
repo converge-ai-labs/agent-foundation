@@ -86,21 +86,51 @@ function renderFields(initial: string) {
   );
 }
 
-it("preserves explicit Sidekick opt-out and writes an empty mapping when re-enabled", async () => {
+it("configures Bot's model, custom instructions and hourly heartbeat without choosing an agent", async () => {
+  const initial = 'schema_version: "1"\n';
+  renderFields(initial);
+  expect(screen.getByRole("combobox", { name: "Bot model" })).toBeTruthy();
+  expect(screen.queryByRole("combobox", { name: "Bot agent" })).toBeNull();
+  expect(
+    (
+      screen.getByRole("spinbutton", {
+        name: "Heartbeat interval",
+      }) as HTMLInputElement
+    ).value,
+  ).toBe("3600");
+  expect(screen.getByTestId("source").textContent).toBe(initial);
+  fireEvent.change(
+    screen.getByRole("textbox", { name: "Custom instructions" }),
+    { target: { value: "Coordinate my projects." } },
+  );
+  fireEvent.click(screen.getByRole("switch", { name: "Heartbeat" }));
+  fireEvent.change(
+    screen.getByRole("spinbutton", { name: "Heartbeat interval" }),
+    {
+      target: { value: "7200" },
+    },
+  );
+  expect(parse(screen.getByTestId("source").textContent!)).toEqual({
+    schema_version: "1",
+    webui: {
+      bot: {
+        instructions: "Coordinate my projects.",
+        heartbeat_enabled: false,
+        interval_seconds: 7200,
+      },
+    },
+  });
+});
+
+it("shows Sidekick defaults for legacy null without rewriting source on load", async () => {
   const initial = 'schema_version: "1"\nwebui:\n  sidekick: null\n';
   renderFields(initial);
   const user = userEvent.setup();
-  const sidekick = await screen.findByRole("switch", { name: "Sidekick" });
-  expect(sidekick.getAttribute("aria-checked")).toBe("false");
-  expect(screen.queryByRole("combobox", { name: "Sidekick agent" })).toBeNull();
-  expect(screen.queryByRole("combobox", { name: "Sidekick model" })).toBeNull();
-  expect(screen.getByTestId("source").textContent).toBe(initial);
-  await user.click(sidekick);
-  await user.click(screen.getByText("Subagent defaults"));
-  expect(
-    parse(screen.getByTestId("source").textContent!).webui.sidekick,
-  ).toEqual({});
+  await user.click(await screen.findByText("Subagent defaults"));
+  expect(screen.queryByRole("switch", { name: "Sidekick" })).toBeNull();
   expect(screen.getByRole("combobox", { name: "Sidekick agent" })).toBeTruthy();
+  expect(screen.getByRole("combobox", { name: "Sidekick model" })).toBeTruthy();
+  expect(screen.getByTestId("source").textContent).toBe(initial);
 });
 
 it("selects saved key metadata without rewriting model settings or dropping an unresolved reference on load", async () => {

@@ -15,6 +15,7 @@ import { useUnsent } from "./unsent";
 
 export function canDeleteThread(thread: Schema<"ThreadSummary">) {
   return (
+    thread.thread_id !== "thread_bot" &&
     !thread.parent_thread_id &&
     !thread.memory_scope &&
     thread.configuration.agent_source.kind !== "live"

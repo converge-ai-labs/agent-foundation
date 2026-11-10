@@ -1,0 +1,22 @@
+.status {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-body);
+}
+.navigation {
+  margin: 4px 8px;
+}
+.navigation[aria-current="page"] {
+  background: var(--a13n-selected);
+  color: var(--a13n-text);
+}
+.unread {
+  margin-inline-start: auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--a13n-signal);
+}

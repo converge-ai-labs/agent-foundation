@@ -246,9 +246,27 @@ class McpAppsConfiguration(ConfigurationModel):
     sandbox: McpAppsSandboxConfiguration = Field(default_factory=McpAppsSandboxConfiguration)
 
 
+class BotConfiguration(ConfigurationModel):
+    """Built-in Bot Model, optional instructions and Host scheduling policy."""
+
+    model: ResourceId | None = None
+    instructions: str = Field(default="", max_length=1024 * 1024)
+    heartbeat_enabled: bool = True
+    interval_seconds: int = Field(default=3600, ge=60, le=86400)
+    connector_interval_seconds: int = Field(default=60, ge=1, le=86400)
+    run_timeout_seconds: int = Field(default=180, ge=10, le=3600)
+
+
 class WebUiConfiguration(ConfigurationModel):
     allowed_origins: tuple[str, ...] = ()
-    sidekick: SidekickConfiguration | None = Field(default_factory=SidekickConfiguration)
+    sidekick: SidekickConfiguration = Field(default_factory=SidekickConfiguration)
+    bot: BotConfiguration = Field(default_factory=BotConfiguration)
+
+    @field_validator("sidekick", mode="before")
+    @classmethod
+    def _always_available_sidekick(cls, value: object) -> object:
+        return {} if value is None else value
+
     mcp_apps: McpAppsConfiguration = Field(default_factory=McpAppsConfiguration)
 
     @field_validator("allowed_origins")
@@ -972,6 +990,7 @@ class LoadedHarnessUiConfiguration(ConfigurationModel):
         for item in self.document.mcp.protocol_overrides:
             _require_reference(item, self.mcp_servers, "mcp.protocol_overrides")
         _require_reference(self.document.memory.auto_organize.model, self.models, "memory.auto_organize.model")
+        _require_reference(self.document.webui.bot.model, self.models, "webui.bot.model")
         live = self.document.live
         if live is not None and live.model is not None:
             _require_reference(live.model, self.models, "live.model")
@@ -985,11 +1004,10 @@ class LoadedHarnessUiConfiguration(ConfigurationModel):
             if kind not in self.models[model_id].media_capabilities():
                 raise ValueError(f"{field} requires a Model declaring {kind}_understanding: {model_id}")
         sidekick = self.document.webui.sidekick
-        if sidekick is not None:
-            _require_reference(sidekick.agent, self.agents, "webui.sidekick.agent")
-            _require_reference(sidekick.model, self.models, "webui.sidekick.model")
-            if sidekick.agent is not None and sidekick.model is None and self.agents[sidekick.agent].model is None:
-                raise ValueError("Sidekick requires an Agent Model or a webui.sidekick.model override")
+        _require_reference(sidekick.agent, self.agents, "webui.sidekick.agent")
+        _require_reference(sidekick.model, self.models, "webui.sidekick.model")
+        if sidekick.agent is not None and sidekick.model is None and self.agents[sidekick.agent].model is None:
+            raise ValueError("Sidekick requires an Agent Model or a webui.sidekick.model override")
         if (
             defaults.environment_profile is not None
             and built_in_environment_profile(defaults.environment_profile) is None
@@ -1083,6 +1101,14 @@ class LoadedHarnessUiConfiguration(ConfigurationModel):
 
     def markdown(self, resource_id: str) -> CanonicalSubagent:
         return self.subagents[resource_id]
+
+    @property
+    def bot_model_id(self) -> ResourceId | None:
+        """Use Bot's Model selection, otherwise the global default Agent's Model only."""
+        if self.document.webui.bot.model is not None:
+            return self.document.webui.bot.model
+        agent_id = self.document.defaults.agent
+        return None if agent_id is None else self.agents[agent_id].model
 
     @property
     def memory_organization_model_id(self) -> ResourceId | None:
