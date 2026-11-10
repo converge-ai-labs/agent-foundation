@@ -272,6 +272,61 @@ while True:
     }
 
     #[tokio::test]
+    async fn private_timeout_overflow_is_unsent_and_preserves_healthy_helper() {
+        let supervisor = supervisor();
+        let before = invoke(&supervisor, "computer.a11y_inspect", json!({}))
+            .await
+            .unwrap();
+        let mut req = request("computer.atspi_action", json!({"padding":""}));
+        let overhead = serde_json::to_vec(&req).unwrap().len();
+        req.params["padding"] = json!("x".repeat(MAX_FRAME_BYTES - overhead - 8));
+        assert!(encode_frame(&req).is_ok());
+        let failure = supervisor
+            .execute(
+                req,
+                Instant::now() + Duration::from_secs(3),
+                || None,
+                |_| panic!("healthy helper must remain available"),
+            )
+            .await
+            .unwrap_err();
+        assert!(!failure.uncertain);
+        assert_eq!(failure.error.data.error_type, ErrorType::InvalidParams);
+        let after = invoke(&supervisor, "computer.a11y_inspect", json!({}))
+            .await
+            .unwrap();
+        assert_eq!(before["epoch"], after["epoch"]);
+        assert_eq!(after["count"], 2);
+        assert!(supervisor.close().await);
+    }
+
+    #[tokio::test]
+    async fn idle_helper_exit_is_detected_before_mutation_delivery() {
+        let supervisor = supervisor();
+        let before = invoke(&supervisor, "computer.a11y_inspect", json!({}))
+            .await
+            .unwrap();
+        {
+            let mut slot = supervisor.worker.lock().await;
+            slot.as_mut().unwrap().child.kill().await.unwrap();
+        }
+        let failure = invoke(&supervisor, "computer.atspi_action", json!({}))
+            .await
+            .unwrap_err();
+        assert!(!failure.uncertain);
+        assert_eq!(
+            failure.error.data.error_type,
+            ErrorType::ProviderUnavailable
+        );
+        let after = invoke(&supervisor, "computer.a11y_inspect", json!({}))
+            .await
+            .unwrap();
+        assert_ne!(before["epoch"], after["epoch"]);
+        assert_eq!(after["count"], 1);
+        assert!(supervisor.close().await);
+    }
+
+    #[tokio::test]
     async fn native_timeout_uses_time_remaining_after_startup() {
         let supervisor = supervisor();
         let value = supervisor

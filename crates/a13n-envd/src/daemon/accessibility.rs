@@ -247,12 +247,13 @@ async fn finish_native_mutation_with_readback(
             |bytes| bytes <= eip::AccessibilityLimits::default().max_result_bytes as usize,
         )
     {
-        // Observation failure (including unavailable/expired native objects)
-        // leaves the acknowledgement intact. Returned evidence is still checked
-        // by finish_native_mutation before it can become part of the result.
+        // The observer is an independent read. Validate its candidate before
+        // attaching it to the already validated mutation acknowledgement.
         if let Some(node) = tree["nodes"]
             .as_array()
             .and_then(|nodes| nodes.iter().find(|node| &node["reference"] == target))
+            && let Ok(observation) = serde_json::from_value::<eip::AccessibilityNode>(node.clone())
+            && observation.validate().is_ok()
         {
             value["observation"] = node.clone();
         }
@@ -409,6 +410,37 @@ mod tests {
             assert_eq!(result.receipt.outcome, Some(outcome));
             assert!(result.observation.is_none());
             assert!(ledger.resolve(METHOD, "op-test").unwrap().is_ok());
+        }
+    }
+
+    #[tokio::test]
+    async fn invalid_independent_readback_preserves_known_native_reply() {
+        for invalid in [
+            json!({"reference": target()}),
+            json!({"reference": target(), "native_role":"entry", "sampled_at":"2026-11-09T00:00:00Z", "child_count":-1}),
+        ] {
+            for (effect, status) in [
+                ("executed", "returned_success"),
+                ("not_executed", "returned_false"),
+            ] {
+                let (ledger, operation) = lease();
+                let result = finish_native_mutation_with_readback(
+                    operation,
+                    METHOD,
+                    json!({"effect":effect,"native_status":status,"dispatch_complete":true}),
+                    true,
+                    &target(),
+                    async { Ok(json!({"nodes":[invalid]})) },
+                )
+                .await
+                .unwrap();
+                assert_eq!(result.receipt.stage, ReceiptStage::Completed);
+                assert!(result.observation.is_none());
+                assert!(result.dispatch_complete);
+                assert_eq!(serde_json::to_value(result.effect).unwrap(), effect);
+                assert_eq!(serde_json::to_value(result.native_status).unwrap(), status);
+                assert!(ledger.resolve(METHOD, "op-test").unwrap().is_ok());
+            }
         }
     }
 

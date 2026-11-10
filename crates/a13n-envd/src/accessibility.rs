@@ -145,6 +145,9 @@ impl Supervisor {
         .await
     }
 
+    // Callers run this future in Session-owned work and join it during close.
+    // Dropping a transport waiter must not drop an in-flight private exchange:
+    // the single worker stream is reused only after its terminal frame is read.
     async fn execute(
         &self,
         mut request: Request,
@@ -218,6 +221,18 @@ impl Supervisor {
         let mut sent = false;
         let mut spawned = false;
         let execution = async {
+            if let Some(worker) = slot.as_mut()
+                && worker.child.try_wait()?.is_some()
+            {
+                slot.take();
+                return Ok(Err(Failure {
+                    error: error(
+                        ErrorType::ProviderUnavailable,
+                        "accessibility helper exited while idle; reacquire references",
+                    ),
+                    uncertain: false,
+                }));
+            }
             if slot.is_none() {
                 let epoch = self
                     .ids
@@ -263,7 +278,18 @@ impl Supervisor {
                     ),
                 );
             }
-            let data = encode_frame(&request)?;
+            let data = match encode_frame(&request) {
+                Ok(data) => data,
+                Err(_) => {
+                    return Ok(Err(Failure {
+                        error: error(
+                            ErrorType::InvalidParams,
+                            "accessibility request exceeds IPC limit",
+                        ),
+                        uncertain: false,
+                    }));
+                }
+            };
             let worker = slot.as_mut().expect("started helper is present");
             // Any partially delivered request can have reached native dispatch.
             sent = true;
