@@ -19,7 +19,7 @@ from a13n_harness.environment.models import (
 )
 from a13n_harness.environment.operations import EnvironmentOperations
 from a13n_harness.environment.session_recovery import SessionConfigurationSource
-from a13n_harness.providers.environment.eip._common import invoke
+from a13n_harness.providers.environment.eip._common import session_client
 from a13n_harness.providers.environment.eip.computer import EIPComputerOperations
 from a13n_harness.providers.environment.eip.files import EIPFileOperator
 from a13n_harness.providers.environment.eip.output import EIPOutputOperations, EIPOutputRegistry
@@ -195,17 +195,13 @@ class EIPEnvironmentSession:
                 code="environment_unsupported",
             )
         try:
-            readiness = await invoke(self._session.readiness())
+            # Session opening already completed the readiness/identity handshake.
+            # Check its local lifecycle here; native dispatch retains Session
+            # fencing and reports remote failures without a second probe RPC.
+            session_client(self._session)
         except EnvironmentError:
             self._availability = EnvironmentAvailability(status="unavailable")
             raise
-        if not readiness.ready:
-            self._availability = EnvironmentAvailability(status="unavailable")
-            raise EnvironmentError(
-                "EIP environment is not ready",
-                code="environment_unavailable",
-                retry_hint="new_run",
-            )
         self._availability = EnvironmentAvailability(
             status="available", ready_families=self._descriptor.operation_families
         )

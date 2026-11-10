@@ -147,7 +147,7 @@ async def test_planned_restart_continues_without_repeating_input_or_tool(
             batch = await store.restarts.get()
             assert batch is None
         async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
-            await sleep(0.05)
+            assert not app._restart.restoring
         assert len(requests) == 1
         return
     async with open_local_store(settings.storage) as store:
@@ -255,8 +255,8 @@ async def test_planned_restart_continues_without_repeating_input_or_tool(
         if mode == "goal":
             assert goal.input_tokens == resumed_usage.summary.input_tokens
             assert goal.output_tokens == resumed_usage.summary.output_tokens
-    async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui"):
-        await sleep(0.05)
+    async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
+        assert not app._restart.restoring
     assert len(requests) == 2
 
 
@@ -390,7 +390,7 @@ async def test_child_restores_with_active_or_completed_parent(
             batch = await store.restarts.get()
             assert batch is None
         async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
-            await sleep(0.05)
+            assert not app._restart.restoring
         assert calls["child"] == 1
         return
     async with open_local_store(settings.storage) as store:
@@ -449,9 +449,13 @@ async def test_questions_stay_waiting_without_timeout_or_automatic_answer(tmp_pa
         before = await app.thread_decisions(thread_id=thread.thread_id)
         assert before is not None and before.expires_at is not None
     async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
-        await sleep(0.4)
-        waiting = await app.thread_decisions(thread_id=thread.thread_id)
-        assert waiting is not None and waiting.expires_at is None
+        with fail_after(10):
+            while True:
+                waiting = await app.thread_decisions(thread_id=thread.thread_id)
+                if waiting is not None and waiting.expires_at is None:
+                    break
+                await sleep(0)
+        assert waiting.expires_at is None
         assert waiting.continuation_id == before.continuation_id
     assert requests == 1
 
@@ -507,8 +511,8 @@ async def test_cancelled_task_is_excluded_from_planned_handoff(tmp_path, monkeyp
     async with open_local_store(settings.storage) as store:
         batch = await store.restarts.get()
         assert batch is None
-    async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui"):
-        await sleep(0.05)
+    async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
+        assert not app._restart.restoring
     assert calls == 1
 
 
@@ -552,7 +556,7 @@ async def test_incompatible_reconstruction_is_blocked_and_never_retried(tmp_path
         receipt = await app.submit_thread(thread_id=unrelated.thread_id, prompt="Ordinary work")
         assert (await app.wait_root_operation(receipt.receipt_id)).status == "completed"
     async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
-        await sleep(0.05)
+        assert not app._restart.restoring
         assert calls == 1
 
 
@@ -643,7 +647,7 @@ async def test_children_admitted_during_drain_require_complete_family_staging(tm
     async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
         report = await app._store.restarts.get()
         assert report is not None and report.state == "consumed"
-        await sleep(0.05)
+        assert not app._restart.restoring
     assert calls == before
 
 

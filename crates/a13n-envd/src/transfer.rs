@@ -2373,11 +2373,27 @@ mod tests {
             assert_eq!(chunk.offset, offset);
             offset += chunk.payload.len() as u64;
         }
-        assert!(
-            tokio::time::timeout(Duration::from_millis(20), outbound.recv())
-                .await
-                .is_err()
-        );
+        let record = {
+            let state = transfers.inner.state.lock().unwrap();
+            let TransferRecord::Reader(record) = state.records.get(&frame.handle).unwrap() else {
+                panic!("expected reader");
+            };
+            record.clone()
+        };
+        let mut cancellation = record.lock().await.cancellation.subscribe();
+        {
+            let credit = transfers.wait_reader_credit(&record, &mut cancellation, false);
+            tokio::pin!(credit);
+            std::future::poll_fn(|cx| {
+                assert!(std::future::Future::poll(credit.as_mut(), cx).is_pending());
+                std::task::Poll::Ready(())
+            })
+            .await;
+        }
+        assert!(matches!(
+            outbound.try_recv(),
+            Err(mpsc::error::TryRecvError::Empty)
+        ));
         frame.kind = DataFrameKind::Credit;
         frame.offset = offset;
         transfers.handle_frame(frame.clone()).await.unwrap();

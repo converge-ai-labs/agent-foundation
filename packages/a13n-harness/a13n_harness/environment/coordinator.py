@@ -996,9 +996,16 @@ class CompositeBoundEnvironment(BoundEnvironment):
             if entered.operations.files is None:
                 raise EnvironmentInvocationError("File operation facet is unavailable.", code="environment_unsupported")
             root = _preferred_mount_path(entered.public, self._snapshot.default_mount)
+            logical_root = parse_mount_path(_virtualize_path(root, selected.path, entered.public.provider_root))
+            single_scope = not any(
+                parse_mount_path(child).suffix_below(logical_root)
+                for mount in self._entered.values()
+                for child in _mount_paths(mount.public, self._snapshot.default_mount)
+            )
             yield _PreparedFile(
                 selected=selected,
                 backend=entered.operations.files,
+                discovery_single_scope=single_scope,
                 validate_result=lambda value: _validate_provider_artifacts(entered, value),
                 virtualize_path=lambda provider_path: _virtualize_path(
                     root, provider_path, entered.public.provider_root

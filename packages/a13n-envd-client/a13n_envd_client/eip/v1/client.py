@@ -26,6 +26,7 @@ from .methods import (
     FILE_CLOSE_READER,
     FILE_COMMIT_WRITER,
     FILE_COPY,
+    FILE_DISCOVER_DOCUMENTS,
     FILE_FIND,
     FILE_LIST,
     FILE_MKDIR,
@@ -37,6 +38,7 @@ from .methods import (
     FILE_REMOVE,
     FILE_SEARCH,
     FILE_STAT,
+    FILE_TREE,
     FILE_WRITE_TEXT,
     INITIALIZE,
     OPERATION_CANCEL,
@@ -94,6 +96,8 @@ from .models import (
     EnvironmentReadinessResult,
     FileCopyParams,
     FileCopyResult,
+    FileDiscoverDocumentsParams,
+    FileDiscoverDocumentsResult,
     FileFindParams,
     FileFindResult,
     FileListParams,
@@ -116,6 +120,8 @@ from .models import (
     FileSearchResult,
     FileStatParams,
     FileStatResult,
+    FileTreeParams,
+    FileTreeResult,
     FileWriterAbortParams,
     FileWriterAbortResult,
     FileWriterCommitParams,
@@ -243,6 +249,9 @@ class EIPClient:
     async def file_copy(self, params: FileCopyParams) -> FileCopyResult:
         return await self._requester.request(FILE_COPY, params)
 
+    async def file_discover_documents(self, params: FileDiscoverDocumentsParams) -> FileDiscoverDocumentsResult:
+        return await self._requester.request(FILE_DISCOVER_DOCUMENTS, params)
+
     async def file_find(self, params: FileFindParams) -> FileFindResult:
         return await self._requester.request(FILE_FIND, params)
 
@@ -275,6 +284,9 @@ class EIPClient:
 
     async def file_stat(self, params: FileStatParams) -> FileStatResult:
         return await self._requester.request(FILE_STAT, params)
+
+    async def file_tree(self, params: FileTreeParams) -> FileTreeResult:
+        return await self._requester.request(FILE_TREE, params)
 
     async def file_write_text(self, params: FileWriteTextParams) -> FileWriteTextResult:
         return await self._requester.request(FILE_WRITE_TEXT, params)

@@ -281,8 +281,19 @@ async def test_read_and_retain_share_the_same_gate(tmp_path: Path, monkeypatch: 
     reading = asyncio.create_task(files.read("thread-one", attachment.attachment_id))
     try:
         assert await to_thread.run_sync(entered.wait, 5)
+        from filelock import FileLock
+
+        blocked = threading.Event()
+        original_acquire = FileLock._acquire
+
+        def observe_acquire(lock):
+            original_acquire(lock)
+            if not lock.is_locked:
+                blocked.set()
+
+        monkeypatch.setattr(FileLock, "_acquire", observe_acquire)
         retaining = asyncio.create_task(other.retain("thread-one", attachment.attachment_id))
-        await asyncio.sleep(0.05)
+        assert await to_thread.run_sync(blocked.wait, 5)
         assert not retaining.done()
         release.set()
         assert (await reading)[1] == b"notes"

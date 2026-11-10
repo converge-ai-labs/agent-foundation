@@ -114,6 +114,7 @@ class FileReadTextParams(BaseModel):
     line_offset: int = 0
     line_limit: int
     max_line_length: int
+    text_byte_limit: int | None = None
 
 
 class FileReadTextResult(BaseModel):
@@ -129,7 +130,21 @@ class FileReadTextResult(BaseModel):
 
 A source line longer than `max_line_length` remains readable: the response retains its character prefix and its LF terminator when present, and records the one-based source line number in `truncated_lines`. The daemon scans incrementally, retains only bounded selected prefixes, and stops after it can determine `has_more`; it does not read or hash the complete file merely to return one page. Invalid UTF-8 or NUL encountered while scanning the requested page returns `unsupported`.
 
+The optional positive `text_byte_limit` caps the UTF-8 bytes of `text`, including retained line endings. The effective ceiling is the minimum of this request bound and the Session's inline/response limits; omitting it retains the Session limits. A line that would exceed the remaining page budget is deferred to the next call. If the first selected line's rendered prefix cannot fit, the operation returns `output_limit_exceeded` rather than a zero-progress page; callers can lower `max_line_length` to fit the byte budget.
+
 `lines_read` counts returned logical lines and `has_more` reports whether another line existed after them. A caller continues with `line_offset + lines_read`. Every call is an independent current-filesystem observation: concurrent insertion, deletion, or replacement can shift a later result, and EIP provides no text cursor, snapshot, revision, or stability promise.
+
+### `file.discover_documents`
+
+This Session-scoped, active-only observation discovers one literal document basename at a root and in its immediate non-hidden regular child directories. The root is considered first, followed by child paths in UTF-8 byte order. Listed directory symlinks are not traversed; an explicitly selected document symlink can resolve to a regular file. Missing and nonregular document targets are nonmatches. The operation interprets no YAML, frontmatter, or application metadata.
+
+The request supplies `root`, `basename`, positive `max_entries` (at most 10,000), `line_limit`, `max_line_length`, optional positive per-document `text_byte_limit`, and positive `result_byte_limit`. Basenames are single literal filenames, excluding empty names, `.`, `..`, separators and NUL. The entry bound counts all visible root entries, independently of matching documents. Exceeding it returns `entries_exceeded` with no documents; unrepresentable entries are counted separately. Root access and operation cancellation/deadline failures are top-level errors.
+
+Each ordered document outcome is either a bounded text observation with metadata from the opened regular file, or a typed EIP error identifying the selected path and the failed `probe` or `read` phase. Individual read failures do not discard valid siblings. The text observation uses `file.read_text` prefix semantics and preserves the original per-document ceiling; aggregate space never silently narrows that prefix.
+
+`result_byte_limit` bounds the encoded result, including outcomes, metadata, escaping, separators and continuation fields. The daemon also reserves 4 KiB within its response ceiling for the JSON-RPC envelope. It builds only a bounded page. If another outcome does not fit, `next_position` explicitly supplies its zero-based candidate offset. An oversized individual text prefix is split at UTF-8 byte boundaries and continued with a text byte offset in that candidate. Its `FileReadTextResult` line counts, `has_more` and truncation evidence describe the complete bounded prefix; only `text` is a fragment. `prefix_byte_length` and a SHA-256 `prefix_digest` identify that bounded text for assembly, not a filesystem revision. Clients verify contiguous offsets, path, prefix evidence and digest before accepting assembled text. A page unable to carry an outcome or a nonempty fragment fails with `output_limit_exceeded`, never a zero-progress continuation.
+
+Each continuation is another current observation: it can repeat bounded directory enumeration and prefix reading, and retains no daemon cursor or snapshot. A changed prefix during assembly fails explicitly rather than being silently joined or retried. Normal roots fit in one call; exceptional continuation uses the same discovery method, never hidden per-document stat/read fallback. Completion means no `next_position`, no entry overflow, and no omitted unrepresentable entries. A document's own `has_more` describes text beyond its bounded prefix, independently of discovery completion. Harness owns application parsing, source precedence, diagnostics and Run-local catalog freezing.
 
 ### Binary reader
 
@@ -210,6 +225,16 @@ class FileListResult(BaseModel):
 ```
 
 `file.list` returns only immediate children. Representable entries are ordered bytewise by relative path. `offset` is the zero-based number of ordered representable entries to skip, `max_results` is positive, and `has_more` reports whether another representable entry existed. Hidden names are omitted unless requested. Native names that cannot be represented safely in portable UTF-8 EIP paths are omitted rather than lossily decoded; `omitted_unrepresentable_entries` reports the bounded count observed during that page's traversal.
+
+### `file.tree`
+
+`file.tree` observes metadata in deterministic breadth-first order. It drains each directory's sorted shallow pages before queued child directories, follows an explicitly selected root link under ordinary native permissions, and never descends listed child links or reads file content. It uses the same Session authority, operation cancellation, portable-path handling, and bounded immediate-directory enumeration as `file.list`.
+
+The request contains `root`, positive `max_depth` (at most 16), `max_entries` (at most 4096), `max_directory_calls` (at most 1024), `metadata_byte_limit` (at most 256 KiB), `include_hidden`, `path_prefix_bytes`, and positive `result_byte_limit`. Directory calls count shallow observations, including continuation pages, independently of transport RPCs. The result contains root-relative `FileListEntry` values in BFS order, `directory_calls`, and `truncated`; truncation is not a continuation token or a promise of completeness.
+
+Metadata accounting charges the compact UTF-8 JSON object containing `kind`, `path`, and present `size`, plus one separator byte per entry. For accounting only, `path` is the slash-prefixed root-relative suffix, and `path_prefix_bytes` adds the encoded root-prefix length, excluding quotes. This lets a caller account for its logical path mapping without giving the daemon a rendering policy or another filesystem path. It grants no authority. The independent encoded-result ceiling includes full native metadata and reserves space for the transport envelope. Exhausted entry, metadata, directory, depth, or response bounds and omitted unrepresentable entries mark truncation. No next directory is observed after a budget stop. Sorting a shallow page can inspect more names than are returned, under the existing finite directory-enumeration guard.
+
+The operation retains no cursor, index, or cross-call cache. Filesystem and lifecycle errors propagate; a failed native observation is never replayed as a shallow fallback.
 
 ### `file.find`
 

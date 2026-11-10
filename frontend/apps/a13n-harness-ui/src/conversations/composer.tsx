@@ -356,7 +356,7 @@ export function submitContinuation(
     draft.modelId,
     undefined,
     undefined,
-    () => loadThreadSkills(transport, threadId, draft.environment?.local_roots),
+    () => loadThreadSkills(transport, threadId, draft.environment),
     undefined,
     "Continue completing the previous task.",
     async () => {
@@ -507,7 +507,7 @@ export function Composer({
   const skillContext = JSON.stringify([
     local,
     skillDefaults,
-    draft.environment?.local_roots,
+    draft.environment,
     activity.receipt_id,
   ]);
   const loadSkills: LoadSkills = () =>
@@ -519,19 +519,12 @@ export function Composer({
               transport.client.POST("/api/threads/skills-preview", {
                 body: {
                   ...skillDefaults,
-                  ...(draft.environment?.local_roots !== undefined
-                    ? { local_roots: draft.environment.local_roots }
-                    : {}),
+                  ...draft.environment,
                 },
                 signal,
               }),
             )
-          : loadThreadSkills(
-              transport,
-              threadId,
-              draft.environment?.local_roots,
-              signal,
-            ),
+          : loadThreadSkills(transport, threadId, draft.environment, signal),
       staleTime: 10000,
     });
   const [syncDelayed, setSyncDelayed] = useState(false);

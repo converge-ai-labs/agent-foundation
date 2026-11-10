@@ -1,11 +1,13 @@
 """Provider HTTP ownership is independent of Agent orchestration."""
 
+from contextlib import contextmanager
+
 import httpx2
 import pytest
 from a13n_harness.providers.authentication import Authentication, CredentialMode
 from a13n_harness.providers.web import WebProviderError, WebProviderTransport, WebSearchRequest
 from a13n_harness.providers.web.builtins import built_in_web_providers
-from anyio import fail_after, sleep_forever
+from anyio import CancelScope, current_time, fail_after, move_on_after, sleep_forever
 
 
 class EndpointPolicy:
@@ -62,18 +64,40 @@ async def test_client_ownership_on_success_and_invalid_response(borrowed):
 @pytest.mark.anyio
 @pytest.mark.parametrize("cleanup", ["normal", "hang", "fail"])
 async def test_cancellation_preserved_and_cleanup_bounded(cleanup, caplog, monkeypatch):
-    # Shrink the shielded close bound so the hanging cleanup is cut short quickly.
-    monkeypatch.setattr("a13n_harness.providers.web.transport._CLOSE_TIMEOUT_SECONDS", 0.01)
+    deadlines = []
+
+    @contextmanager
+    def capture_close_deadline(seconds, *, shield):
+        assert seconds == 1 and shield
+        with move_on_after(None, shield=shield) as scope:
+            deadlines.append(scope)
+            yield scope
+
+    monkeypatch.setattr("a13n_harness.providers.web.transport.move_on_after", capture_close_deadline)
+
+    class OwnedClient(Client):
+        async def aclose(self):
+            if cleanup == "hang":
+                await super().aclose()
+                deadlines[-1].deadline = current_time()
+                await sleep_forever()
+            else:
+                await super().aclose()
 
     async def handler(request):
+        cancellation.cancel()
         await sleep_forever()
 
-    client = Client(handler, cleanup=cleanup)
+    client = OwnedClient(handler, cleanup="fail" if cleanup == "fail" else "normal")
     transport = WebProviderTransport(client_factory=lambda: client, endpoint_policy=EndpointPolicy())
-    with pytest.raises(TimeoutError), fail_after(0.01):
+    with CancelScope() as cancellation:
         async with brave().open({}, {"api_key": "test-key"}, transport=transport) as provider:
             await provider.search(WebSearchRequest(query="query", limit=1))
+        pytest.fail("cancellation was swallowed")
+    assert cancellation.cancelled_caught
     assert client.closes == 1
+    assert deadlines[-1].cancel_called is (cleanup == "hang")
+    assert ("cleanup timed out" in caplog.text) is (cleanup == "hang")
     assert "private secret diagnostic" not in caplog.text
 
 
@@ -158,11 +182,24 @@ async def test_generated_query_credentials_and_jina_paths_retain_the_actual_dest
 
 
 @pytest.mark.anyio
-async def test_scrape_deadline_cleans_up_its_owned_http_client(policy):
+async def test_scrape_deadline_cleans_up_its_owned_http_client(policy, monkeypatch):
     from a13n_harness.providers.web import WebProviderDefinition, WebScrapeRequest
     from a13n_harness.providers.web.configuration import EmptyConfiguration
 
+    deadlines = []
+
+    @contextmanager
+    def capture_deadline(seconds):
+        assert seconds == 60
+        with fail_after(None) as scope:
+            deadlines.append(scope)
+            yield scope
+
+    monkeypatch.setattr("a13n_harness.providers.web.definition.fail_after", capture_deadline)
+
     async def handler(request):
+        (scope,) = deadlines
+        scope.deadline = current_time()
         await sleep_forever()
 
     async def scrape(configuration, credential, request, options, transport, callback_policy):
@@ -190,7 +227,7 @@ async def test_scrape_deadline_cleans_up_its_owned_http_client(policy):
                 WebScrapeRequest(
                     url="https://example.com/article",
                     max_content_bytes=4,
-                    deadline_seconds=0.01,
+                    deadline_seconds=60,
                     max_redirects=0,
                 ),
                 policy=policy,

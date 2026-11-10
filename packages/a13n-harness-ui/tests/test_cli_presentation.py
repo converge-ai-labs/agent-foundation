@@ -346,7 +346,9 @@ async def test_menu_escape_and_multiline_paste_preserve_draft_and_images(termina
         task = asyncio.create_task(shell.run(backend))
         try:
             await initialized.wait()
-            await asyncio.sleep(0.05)
+            async with asyncio.timeout(3):
+                while not shell.app.is_running:
+                    await asyncio.sleep(0.01)
             shell.composer.buffer.document = Document("unsent", 2)
             shell.insert_attachments((image_bytes("draft.png", _png()),))
             draft = shell.composer.buffer.document
@@ -359,7 +361,9 @@ async def test_menu_escape_and_multiline_paste_preserve_draft_and_images(termina
             assert shell.composer.buffer.document == draft
             assert len(shell.images) == 1
             pipe.send_text("\x03\x1b[200~a\nb\x1b[201~")
-            await asyncio.sleep(0.1)
+            async with asyncio.timeout(3):
+                while shell.composer.text != "a\nb":
+                    await asyncio.sleep(0.01)
             assert shell.composer.text == "a\nb"
             assert not shell.busy
             pipe.send_text("\x03/quit\r")
@@ -506,8 +510,17 @@ async def test_first_page_key_scrolls_visible_viewport_and_freezes_new_output() 
                     await asyncio.sleep(0.01)
             assert shell.output_window.vertical_scroll < initial
             frozen = shell.output_window.vertical_scroll
-            shell.emit("new output")
-            await asyncio.sleep(0.1)
+            rendered = asyncio.Event()
+
+            def after_render(_app):
+                rendered.set()
+
+            shell.app.after_render += after_render
+            try:
+                shell.emit("new output")
+                await asyncio.wait_for(rendered.wait(), 3)
+            finally:
+                shell.app.after_render -= after_render
             assert shell.output_window.vertical_scroll == frozen
             pipe.send_text("\x1b[1;5F")
             async with asyncio.timeout(3):
@@ -559,7 +572,9 @@ async def test_cancel_key_stops_pending_menu_query_without_consuming_next_draft(
         task = asyncio.create_task(shell.run(backend))
         try:
             await initialized.wait()
-            await asyncio.sleep(0.05)
+            async with asyncio.timeout(3):
+                while not shell.app.is_running:
+                    await asyncio.sleep(0.01)
             pipe.send_text("/model\r")
             await asyncio.wait_for(entered.wait(), 3)
             shell.composer.buffer.document = Document("next draft", 3)

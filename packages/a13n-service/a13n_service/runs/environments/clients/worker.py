@@ -322,6 +322,10 @@ class SessionTransport:
             self.incoming.put,
         )
 
+    @property
+    def max_response_bytes(self) -> int:
+        return self.response_bytes
+
     def set_limits(self, *, max_request_bytes: int, max_response_bytes: int, max_transfer_frame_bytes: int) -> None:
         self.request_bytes = min(self.request_bytes, max_request_bytes)
         self.response_bytes = min(self.response_bytes, max_response_bytes)

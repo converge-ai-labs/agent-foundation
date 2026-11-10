@@ -35,6 +35,8 @@ async def test_approval_projection_preserves_omission_and_override_capabilities(
         root_runs=SimpleNamespace(interaction_expiry=AsyncMock(return_value=None)),
         children=None,
         configuration_path=None,
+        environments=None,
+        resolver=None,
     )
     batch = await projection.decisions(thread_id="thread-one")
     assert batch is not None
@@ -89,6 +91,8 @@ async def test_external_and_question_projection_disclose_metadata_omissions(ques
         root_runs=SimpleNamespace(interaction_expiry=AsyncMock(return_value=None)),
         children=None,
         configuration_path=None,
+        environments=None,
+        resolver=None,
     )
     batch = await projection.decisions(thread_id="thread-one")
     assert batch is not None
@@ -188,6 +192,8 @@ async def test_long_tool_names_survive_pending_and_decision_projection(proxy, ap
         root_runs=SimpleNamespace(interaction_expiry=AsyncMock(return_value=None)),
         children=None,
         configuration_path=None,
+        environments=None,
+        resolver=None,
     )
     batch = await projection.decisions(thread_id="thread-one")
     assert batch is not None

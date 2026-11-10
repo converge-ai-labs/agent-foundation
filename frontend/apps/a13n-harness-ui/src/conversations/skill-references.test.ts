@@ -1,13 +1,17 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
+import { createTransport } from "../transport/client";
 import { CompletionContext } from "@codemirror/autocomplete";
 import { EditorState } from "@codemirror/state";
 import {
+  loadThreadSkills,
   skillCompletion,
   skillReferences,
   skillSpans,
   retainedSkillSpans,
   type SkillCatalog,
 } from "./skill-references";
+
+vi.mock("../platform", () => ({ apiOrigin: () => "http://localhost" }));
 
 export const catalog: SkillCatalog = {
   catalog_id: "a".repeat(64),
@@ -22,6 +26,37 @@ export const catalog: SkillCatalog = {
     },
   ],
 };
+it("forwards every Environment preview axis, including an explicit cleared default", async () => {
+  const transport = createTransport("fixture", () => {});
+  const post = vi
+    .spyOn(transport.client, "POST")
+    .mockResolvedValue({ data: catalog, response: new Response() });
+  const get = vi
+    .spyOn(transport.client, "GET")
+    .mockResolvedValue({ data: catalog, response: new Response() });
+  const environment = {
+    local_roots: [],
+    environment_profile_id: "environment-envd",
+    environment_bindings: [],
+    default_environment: null,
+  };
+  const signal = new AbortController().signal;
+  try {
+    expect(
+      await loadThreadSkills(transport, "thread-preview", environment, signal),
+    ).toBe(catalog);
+    expect(post).toHaveBeenCalledWith("/api/threads/{thread_id}/skills", {
+      params: { path: { thread_id: "thread-preview" } },
+      body: environment,
+      signal,
+    });
+    expect(get).not.toHaveBeenCalled();
+    await loadThreadSkills(transport, "thread-preview");
+    expect(get).toHaveBeenCalledOnce();
+  } finally {
+    transport.close();
+  }
+});
 it("matches TUI dollar names exactly, deduplicates, and leaves unknown text alone", () => {
   expect(
     skillReferences(

@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from types import SimpleNamespace
 
 import anyio
 import pytest
 from a13n_harness import DefinitionError, HarnessBuilder, RunBindings
 from a13n_harness.capabilities import FileSkillSource, SkillManager, SkillsCapability, skills
+from a13n_harness.environment._ordered import map_ordered
+from a13n_harness.environment._streams import closing_stream
+from a13n_harness.environment.discovery import discover_documents
 from a13n_harness.providers.environment.direct_local.files import LocalFileOperator
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.models.function import FunctionModel
@@ -17,6 +21,17 @@ from .environment_helpers import DirectLocalFilePolicy
 from .test_skills import _binding
 
 pytestmark = pytest.mark.anyio
+
+
+async def _map_ordered(items, read):
+    async with closing_stream(map_ordered(items, read)) as stream:
+        return [result async for result in stream]
+
+
+@pytest.fixture(autouse=True)
+def composed_discovery(monkeypatch):
+    # Exercise compatibility scheduling independently of native local file I/O.
+    monkeypatch.setattr(LocalFileOperator, "discover_documents", discover_documents)
 
 
 def _write_skill(root: Path, directory: str, name: str, description: str = "A skill.") -> None:
@@ -43,7 +58,7 @@ async def test_ordered_reads_bound_workers_and_overlap_io(count: int) -> None:
         nonlocal active, peak, task_peak
         active += 1
         peak = max(peak, active)
-        task_peak = max(task_peak, sum(task.get_name() == "skill-catalog-read" for task in asyncio.all_tasks()))
+        task_peak = max(task_peak, sum(task.get_name() == "file-observation" for task in asyncio.all_tasks()))
         try:
             await asyncio.sleep(0)
             completed.append(index)
@@ -51,7 +66,7 @@ async def test_ordered_reads_bound_workers_and_overlap_io(count: int) -> None:
         finally:
             active -= 1
 
-    assert await skills._map_ordered(tuple(range(count)), read) == [index * 2 for index in range(count)]
+    assert await _map_ordered(tuple(range(count)), read) == [index * 2 for index in range(count)]
     assert peak == task_peak == min(8, count)
     assert sorted(completed) == list(range(count))
     assert active == 0
@@ -70,7 +85,7 @@ async def test_catalog_overlaps_reads_but_preserves_sorted_results(tmp_path: Pat
         async def catalog(*, files):
             return baseline
 
-        monkeypatch.setattr(source, "catalog", catalog)
+        manager = SkillManager((SimpleNamespace(source_id=source.source_id, roots=source.roots, catalog=catalog),))
     method = "read_text" if stage == "discovery" else "stat"
     original = files.read_text if stage == "discovery" else files.stat
     active = peak = 0
@@ -110,9 +125,7 @@ async def test_completion_order_does_not_change_full_skill_instructions(tmp_path
         model=FunctionModel(stream_function=stream),
         capabilities=(SkillsCapability(manager),),
     )
-    monkeypatch.setattr(skills, "_SKILL_READ_CONCURRENCY", 1)
     await executable.run("Use a skill", bindings=RunBindings.embedded(environment=_binding(tmp_path)))
-    monkeypatch.setattr(skills, "_SKILL_READ_CONCURRENCY", 8)
     original = LocalFileOperator.read_text
     later_done = {root: asyncio.Event() for root in ("global", "project")}
     completed: list[str] = []
@@ -198,11 +211,11 @@ async def test_cancelled_reads_join_all_workers(cancel_mode: str) -> None:
     async with asyncio.timeout(3):
         if cancel_mode == "scope":
             async with anyio.create_task_group() as group:
-                group.start_soon(skills._map_ordered, tuple(range(30)), read)
+                group.start_soon(_map_ordered, tuple(range(30)), read)
                 await ready.wait()
                 group.cancel_scope.cancel()
         else:
-            task = asyncio.create_task(skills._map_ordered(tuple(range(30)), read))
+            task = asyncio.create_task(_map_ordered(tuple(range(30)), read))
             await ready.wait()
             if cancel_mode == "task":
                 task.cancel()
@@ -211,7 +224,7 @@ async def test_cancelled_reads_join_all_workers(cancel_mode: str) -> None:
             with pytest.raises(asyncio.CancelledError):
                 await task
     assert active == 0
-    assert not any(task.get_name() == "skill-catalog-read" for task in asyncio.all_tasks())
+    assert not any(task.get_name() == "file-observation" for task in asyncio.all_tasks())
 
 
 async def test_existing_size_limits_remain_errors(tmp_path: Path) -> None:

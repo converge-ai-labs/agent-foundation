@@ -15,9 +15,12 @@ from pydantic import JsonValue
 from a13n_harness.environment._streams import closing_stream
 from a13n_harness.environment.archives import FileArchive
 from a13n_harness.environment.batches import validate_file_batch
+from a13n_harness.environment.discovery import discover_documents
 from a13n_harness.environment.files import (
     FileBatchValue,
     FileCopyResult,
+    FileDocument,
+    FileDocumentRequest,
     FileEntriesResult,
     FileMetadata,
     FileMutationResult,
@@ -29,18 +32,27 @@ from a13n_harness.environment.files import (
     FileTextResult,
     FileTextSearchRequest,
     FileTextSearchResult,
+    FileTreeRequest,
+    FileTreeResult,
     FileWriteMode,
     FileWriteResult,
     FileWriteTextOperation,
 )
 from a13n_harness.environment.models import EnvironmentError
 from a13n_harness.environment.text import apply_unified_diff, iter_lf_lines
+from a13n_harness.environment.trees import list_tree as list_tree_from_operations
 from a13n_harness.providers.environment._guest_commands import FileCommands
 
 
 class GuestFiles:
     def __init__(self, commands: FileCommands) -> None:
         self.commands = commands
+
+    def discover_documents(self, request: FileDocumentRequest) -> AsyncIterator[FileDocument]:
+        return discover_documents(self, request)
+
+    async def list_tree(self, request: FileTreeRequest) -> FileTreeResult:
+        return await list_tree_from_operations(self, request)
 
     async def batch(self, operations: Sequence[FileOperation]) -> tuple[FileBatchValue, ...]:
         validate_file_batch(operations)
@@ -150,29 +162,46 @@ class GuestFiles:
         return value
 
     async def read_text(
-        self, path: str, *, line_offset: int = 0, line_limit: int = 200, max_line_length: int = 2000
+        self,
+        path: str,
+        *,
+        line_offset: int = 0,
+        line_limit: int = 200,
+        max_line_length: int = 2000,
+        max_bytes: int | None = None,
     ) -> FileTextResult:
-        if line_offset < 0 or line_limit <= 0 or max_line_length <= 0:
+        if line_offset < 0 or line_limit <= 0 or max_line_length <= 0 or (max_bytes is not None and max_bytes < 1):
             raise EnvironmentError("Invalid Guest text range.", code="environment_request_invalid")
+        byte_limit = min(
+            self.commands.configuration.max_file_bytes, max_bytes or self.commands.configuration.max_file_bytes
+        )
         text = _text(await self.read_bytes(path))
         lines = list(iter_lf_lines(text))
-        selected = lines[line_offset : line_offset + line_limit]
-        truncated = tuple(
-            line_offset + index + 1 for index, line in enumerate(selected) if len(line.rstrip("\r\n")) > max_line_length
-        )
-        rendered = [
-            line
-            if len(line.rstrip("\r\n")) <= max_line_length
-            else line[:max_line_length] + ("\n" if line.endswith("\n") else "")
-            for line in selected
-        ]
+        rendered: list[str] = []
+        truncated_lines: list[int] = []
+        used = 0
+        for index, line in enumerate(lines[line_offset : line_offset + line_limit]):
+            truncated = len(line.rstrip("\r\n")) > max_line_length
+            preview = line[:max_line_length] + ("\n" if line.endswith("\n") else "") if truncated else line
+            encoded = preview.encode("utf-8")
+            if used + len(encoded) > byte_limit:
+                if rendered:
+                    break
+                suffix = "\n" if line.endswith("\n") else ""
+                preview = encoded[: byte_limit - len(suffix)].decode("utf-8", errors="ignore") + suffix
+                encoded = preview.encode("utf-8")
+                truncated = True
+            rendered.append(preview)
+            used += len(encoded)
+            if truncated:
+                truncated_lines.append(line_offset + index + 1)
         return FileTextResult(
             path=path,
             text="".join(rendered),
             line_offset=line_offset,
-            lines_read=len(selected),
-            has_more=len(lines) > line_offset + line_limit,
-            truncated_lines=truncated,
+            lines_read=len(rendered),
+            has_more=len(lines) > line_offset + len(rendered),
+            truncated_lines=tuple(truncated_lines),
         )
 
     async def write_bytes_stream(

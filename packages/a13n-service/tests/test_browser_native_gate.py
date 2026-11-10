@@ -279,9 +279,26 @@ async def test_native_old_runtime_info_still_fences_recovered_marker(tmp_path, m
     with pytest.raises(BrowserProviderError) as error:
         await provider.inspect("browser_old_info", None)
     assert error.value.code == "native_writer_unconfirmed"
-    with pytest.raises(TimeoutError):
-        async with asyncio.timeout(0.1):
-            await provider.delete("browser_old_info", None)
+    from types import SimpleNamespace
+
+    from a13n_service.providers.browser import native as native_module
+
+    blocked = asyncio.Event()
+
+    async def wait_for_group(delay):
+        assert delay == 0.1
+        blocked.set()
+        await asyncio.Future()
+
+    local_asyncio = SimpleNamespace(**vars(asyncio))
+    local_asyncio.sleep = wait_for_group
+    monkeypatch.setattr(native_module, "asyncio", local_asyncio)
+    deleting = asyncio.create_task(provider.delete("browser_old_info", None))
+    await asyncio.wait_for(blocked.wait(), 3)
+    assert not deleting.done()
+    deleting.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await deleting
     record = json.loads((tmp_path / "browser_old_info/allocation.json").read_text())
     assert record["deleted"] and (tmp_path / "browser_old_info/data").exists()
 

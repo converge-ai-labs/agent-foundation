@@ -33,7 +33,10 @@ beforeEach(() => {
     }),
   });
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 it("mounts the actual CodeMirror binding and retains remote updates without replacing the editor", async () => {
   const draft = new ThreadDraft();
   const submit = vi.fn();
@@ -491,6 +494,7 @@ it("keeps the placeholder out of authored input and preserves the editor across 
 
 it("completes dollar skills without sending, and retains the editor across catalog context changes", async () => {
   const { startCompletion } = await import("@codemirror/autocomplete");
+  const now = vi.spyOn(Date, "now").mockReturnValue(1_000);
   const draft = new ThreadDraft();
   const editor = { current: null as EditorView | null };
   const submit = vi.fn();
@@ -527,10 +531,8 @@ it("completes dollar skills without sending, and retains the editor across catal
   });
   await screen.findByRole("option", { name: /\$review/ });
   expect(screen.getByText("Review carefully")).toBeTruthy();
-  // CodeMirror suppresses accidental acceptance immediately after opening.
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  });
+  // CodeMirror compares Date.now against the completion's opening timestamp.
+  now.mockReturnValue(1_100);
   const textbox = screen.getByRole("textbox", { name: "Shared prompt" });
   fireEvent.keyDown(textbox, { key: "Enter" });
   expect(submit).not.toHaveBeenCalled();

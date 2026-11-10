@@ -1,4 +1,5 @@
 from datetime import UTC, datetime, timedelta
+from importlib import import_module
 
 import pytest
 from a13n_harness.tool_execution import StoredToolExecution, ToolExecutionRecord
@@ -8,7 +9,7 @@ from a13n_harness_ui.storage.database import short_session, transaction
 from a13n_harness_ui.storage.models import ThreadRecord, ToolExecutionHeadRecord
 from a13n_harness_ui.storage.objects import ObjectKind
 from a13n_harness_ui.storage.runtime import open_local_store
-from anyio import Event, create_task_group, fail_after, sleep
+from anyio import Event, create_task_group, fail_after
 
 pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
@@ -143,7 +144,14 @@ async def test_collection_waits_for_in_flight_result_read_across_stores(tmp_path
     settings = StorageSettings(data_root=tmp_path)
     async with open_local_store(settings) as reader, open_local_store(settings) as collector:
         await reader.tool_executions.save(execution())
-        started, release, collected = Event(), Event(), Event()
+        started, release, collected, blocked, retry = (Event() for _ in range(5))
+        lock_module = import_module("a13n_harness_ui.storage.checkpoint_lock")
+
+        async def blocked_retry(delay):
+            blocked.set()
+            await retry.wait()
+
+        monkeypatch.setattr(lock_module, "sleep", blocked_retry)
         read = reader.objects.read_model
         results = []
 
@@ -169,9 +177,10 @@ async def test_collection_waits_for_in_flight_result_read_across_stores(tmp_path
                     row = await session.get(ToolExecutionHeadRecord, "exec-a")
                     row.expires_at = datetime.now(UTC) - timedelta(seconds=1)
                 group.start_soon(prune)
-                await sleep(0.1)
+                await blocked.wait()
                 assert not collected.is_set()
                 release.set()
+                retry.set()
         assert results[0].result == "same result"
         assert not (await collector.tool_executions.get("thread-a", "exec-a")).record.result_available
 

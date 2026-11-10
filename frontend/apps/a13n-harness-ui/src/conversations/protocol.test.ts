@@ -422,13 +422,18 @@ it("projects skills before creation and validates references on submit and activ
       },
     }),
   );
-  const active = await result(
-    transport.client.GET("/api/threads/{thread_id}/skills", {
-      params: { path },
-    }),
+  await vi.waitFor(
+    async () => {
+      const active = await result(
+        transport.client.GET("/api/threads/{thread_id}/skills", {
+          params: { path },
+        }),
+      );
+      expect(active.context_kind).toBe("active");
+      expect(active.receipt_id).toBe(accepted.receipt_id);
+    },
+    { timeout: 10000 },
   );
-  expect(active.context_kind).toBe("active");
-  expect(active.receipt_id).toBe(accepted.receipt_id);
   await vi.waitFor(
     async () => {
       const operation = await result(

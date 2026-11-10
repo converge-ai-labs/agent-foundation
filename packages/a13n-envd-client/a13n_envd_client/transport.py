@@ -23,6 +23,11 @@ class HttpTransferLifecycle(Protocol):
 
 
 class EIPTransport(Protocol):
+    @property
+    def max_response_bytes(self) -> int:
+        """The current local ceiling for one encoded control response."""
+        ...
+
     async def send(self, frame: EIPTransportFrame) -> None: ...
 
     async def receive(self) -> EIPTransportFrame: ...

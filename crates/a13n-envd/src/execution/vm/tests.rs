@@ -1,6 +1,6 @@
 use super::*;
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn startup_deadline_abandons_admission_without_cancelling_owned_phase() {
     let (ready, receive) = tokio::sync::oneshot::channel::<()>();
     let (finish, blocked) = tokio::sync::oneshot::channel();

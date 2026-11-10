@@ -1383,7 +1383,15 @@ class CliShell:
             self.emit(notice)
         self.status.notices.clear()
         await self._activate_decisions()
-        self.registry.set_skills(await backend.skill_catalog())
+        from a13n_harness_ui.errors import ThreadError
+
+        try:
+            self.registry.set_skills(await backend.skill_catalog())
+        except ThreadError as exc:
+            if exc.code != "skill_catalog_preparing":
+                raise
+            self.registry.set_skills(None)
+            self.emit("Skills are preparing; completion is temporarily unavailable.")
         self.registry.thinking_choices = tuple((item.value, item.description) for item in backend.thinking_choices())
         if backend.thread_id is not None:
             self.renderer.tasks.restore(await backend.app.thread_tasks(thread_id=backend.thread_id))

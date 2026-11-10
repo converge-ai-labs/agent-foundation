@@ -62,6 +62,9 @@ async def test_native_unpublished_runtime_cannot_be_observed_stopped_or_restarte
 
 async def test_native_cancel_waits_for_spawn_identity_under_allocation_lock(tmp_path, monkeypatch):
     import asyncio
+    from types import SimpleNamespace
+
+    from a13n_service.providers.browser import selfhost
 
     provider = Native(tmp_path, "chromium")
     async with provider.allocation("browser_cancel") as allocation:
@@ -101,8 +104,20 @@ async def test_native_cancel_waits_for_spawn_identity_under_allocation_lock(tmp_
             async with provider.allocation("browser_cancel"):
                 acquired.set()
 
+        blocked = asyncio.Event()
+        loop = asyncio.get_running_loop()
+        original_flock = selfhost.fcntl.flock
+
+        def flock(*args):
+            try:
+                return original_flock(*args)
+            except BlockingIOError:
+                loop.call_soon_threadsafe(blocked.set)
+                raise
+
+        monkeypatch.setattr(selfhost, "fcntl", SimpleNamespace(**(vars(selfhost.fcntl) | {"flock": flock})))
         waiter = asyncio.create_task(contender())
-        await asyncio.sleep(0.15)
+        await asyncio.wait_for(blocked.wait(), 5)
         assert not acquired.is_set()
         proceed.set()
         with pytest.raises(asyncio.CancelledError):

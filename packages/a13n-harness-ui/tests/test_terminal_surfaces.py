@@ -238,10 +238,11 @@ async def test_skill_references_refresh_on_submission_and_keep_active_catalog(
             await started.wait()
         active = await app.skill_catalog(thread_id=thread.thread_id)
         assert active.context_kind == "active"
-        assert active.catalog_id == latest.catalog_id
-        assert active.items == latest.items
+        assert [(item.name, item.description, item.source_id) for item in active.items] == [
+            (item.name, item.description, item.source_id) for item in latest.items
+        ]
 
-        # Editing live files must not replace the catalog pinned at admission.
+        # Editing live files must not replace the catalog frozen by SkillsCapability.
         document.write_text("---\nname: review\ndescription: Changed while running.\n---\n")
         assert (await app.skill_catalog(thread_id=thread.thread_id)) == active
         steering = await app.steer_root_operation(
@@ -324,8 +325,7 @@ async def test_steering_after_project_rename_does_not_read_current_configuration
             if with_skill:
                 assert (await app.skill_catalog(thread_id=thread.thread_id)) == catalog
             else:
-                # Plain guidance needs no catalog, even if its cached entry is absent.
-                app._terminal_projections._active_skill_catalogs.clear()
+                # Plain guidance never requests a catalog.
                 patch.setattr(app._terminal_projections, "skill_catalog", unreadable)
             text = "focus on the renamed project"
             message: str | ComposerInput = text
@@ -434,3 +434,59 @@ async def test_archived_activity_filters_before_pagination_and_binds_cursors(tmp
         )
         assert (await app.thread_activity(project_id=None, archived_only=True)).total == 2
         assert (await app.thread_activity(project_id=None)).total == 2
+
+
+@pytest.mark.parametrize("skills_enabled", [False, True])
+async def test_plain_admission_never_previews_skills_and_active_catalog_waits_for_freeze(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, skills_enabled: bool
+) -> None:
+    configuration = _write_configuration(
+        tmp_path, projects=(("project-main", "Main", tmp_path),), skills=skills_enabled
+    )
+    preparing, release, started, finish = Event(), Event(), Event(), Event()
+
+    async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        started.set()
+        await finish.wait()
+        yield "complete"
+
+    async def resolve(self, context, model_id):
+        return FunctionModel(stream_function=model)
+
+    async def forbidden_preview(*args, **kwargs):
+        raise AssertionError("Plain admission must not request a preview")
+
+    monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
+    async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=configuration) as app:
+        thread = await app.create_thread()
+        executor = app._root_runs._executor
+        original = executor._environments.prepare
+
+        async def prepare(composition):
+            preparing.set()
+            await release.wait()
+            return await original(composition)
+
+        monkeypatch.setattr(executor._environments, "prepare", prepare)
+        with monkeypatch.context() as patch:
+            patch.setattr(app._terminal_projections, "skill_catalog", forbidden_preview)
+            receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="plain input")
+        with fail_after(10):
+            await preparing.wait()
+        if skills_enabled:
+            with pytest.raises(ThreadError) as pending:
+                await app.skill_catalog(thread_id=thread.thread_id)
+            assert pending.value.code == "skill_catalog_preparing"
+        else:
+            empty = await app.skill_catalog(thread_id=thread.thread_id)
+            assert empty.context_kind == "active"
+            assert empty.items == ()
+        release.set()
+        with fail_after(10):
+            await started.wait()
+        frozen = await app.skill_catalog(thread_id=thread.thread_id)
+        assert frozen.receipt_id == receipt.receipt_id
+        assert bool(frozen.items) is skills_enabled
+        finish.set()
+        with fail_after(10):
+            assert (await app.wait_root_operation(receipt.receipt_id)).status is RootOperationStatus.completed

@@ -2058,6 +2058,29 @@ impl EipSessionHandler for Session {
         Ok(result)
     }
 
+    async fn file_discover_documents(
+        &self,
+        params: eip::FileDiscoverDocumentsParams,
+    ) -> Result<eip::FileDiscoverDocumentsResult, EIPError> {
+        self.ensure_ready()?;
+        let operation =
+            match self.admit_record("file.discover_documents", &params.context, &params)? {
+                BeginOutcome::Replay(value) => return self.decode_replay(value),
+                BeginOutcome::ReplayFailure(error) => return Err(*error),
+                BeginOutcome::New(operation) => operation,
+            };
+        let resources = self.resources.clone();
+        let filesystem = self.filesystem.clone();
+        let call = params.clone();
+        let result =
+            tokio::task::spawn_blocking(move || resources.discover_documents(&filesystem, &call))
+                .await
+                .map_err(|_| protocol_error(ErrorType::InternalError, "resource worker failed"))?
+                .map_err(map_resource_error)?;
+        operation.finish(&result, None).map_err(map_ledger_error)?;
+        Ok(result)
+    }
+
     async fn file_list(
         &self,
         params: eip::FileListParams,
@@ -2072,6 +2095,27 @@ impl EipSessionHandler for Session {
         let filesystem = self.filesystem.clone();
         let call = params.clone();
         let result = tokio::task::spawn_blocking(move || resources.list(&filesystem, &call))
+            .await
+            .map_err(|_| protocol_error(ErrorType::InternalError, "resource worker failed"))?
+            .map_err(map_resource_error)?;
+        operation.finish(&result, None).map_err(map_ledger_error)?;
+        Ok(result)
+    }
+
+    async fn file_tree(
+        &self,
+        params: eip::FileTreeParams,
+    ) -> Result<eip::FileTreeResult, EIPError> {
+        self.ensure_ready()?;
+        let operation = match self.admit_record("file.tree", &params.context, &params)? {
+            BeginOutcome::Replay(value) => return self.decode_replay(value),
+            BeginOutcome::ReplayFailure(error) => return Err(*error),
+            BeginOutcome::New(operation) => operation,
+        };
+        let resources = self.resources.clone();
+        let filesystem = self.filesystem.clone();
+        let call = params.clone();
+        let result = tokio::task::spawn_blocking(move || resources.tree(&filesystem, &call))
             .await
             .map_err(|_| protocol_error(ErrorType::InternalError, "resource worker failed"))?
             .map_err(map_resource_error)?;
