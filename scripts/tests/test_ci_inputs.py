@@ -24,6 +24,18 @@ WORKFLOWS = ROOT / ".github/workflows"
         ("packages/a13n-harness/tests/providers_environment/test_remote_envd_e2e.py", {"protocol"}),
         ("examples/environment-provider/tests/test_stdio.py", {"protocol"}),
         ("crates/a13n-envd/src/transfer.rs", {"daemon", "protocol"}),
+        ("crates/a13n-envd/Cargo.toml", {"daemon", "protocol"}),
+        ("crates/a13n-envd/build.rs", {"daemon", "protocol"}),
+        ("crates/a13n-envd/build_support/mod.rs", {"daemon", "protocol"}),
+        ("crates/a13n-envd/protocol/eip/v1/descriptor.pb", {"daemon", "protocol"}),
+        ("crates/a13n-envd/protocol/eip/v1/testdata/schema.golden.json", {"daemon", "protocol"}),
+        ("crates/a13n-envd/README.md", {"daemon"}),
+        ("crates/a13n-envd/LICENSE", {"daemon"}),
+        ("crates/a13n-envd/macos/EnvdApp.swift", {"daemon"}),
+        ("scripts/envd_size.py", {"daemon"}),
+        ("deploy/docker/images/sandbox/Dockerfile", set()),
+        ("pyproject.toml", {"client", "daemon", "protocol"}),
+        ("uv.lock", {"client", "daemon", "protocol"}),
         ("Makefile", {"client", "daemon", "protocol"}),
         ("conftest.py", {"client", "daemon", "protocol"}),
         ("scripts/tests/test_envd_ci_workflow.py", set()),
@@ -196,6 +208,15 @@ def test_examples_ci_selects_build_inputs_and_prepares_node(path: str, selected:
     assert node["with"]["node-version"] == "24"
     assert node["with"]["cache-dependency-path"] == "examples/mcp-apps/package-lock.json"
     assert steps.index(node) < steps.index(gate)
+
+
+def test_sandbox_dockerfile_keeps_container_ci_ownership() -> None:
+    workflow = yaml.safe_load((WORKFLOWS / "ci-containers.yml").read_text())
+    path = Path("deploy/docker/images/sandbox/Dockerfile")
+    assert any(path.full_match(pattern) for pattern in workflow[True]["pull_request"]["paths"])
+    classifier = next(step for step in workflow["jobs"]["changes"]["steps"] if step.get("id") == "filter")
+    filters = yaml.safe_load(classifier["with"]["filters"])
+    assert {name for name, patterns in filters.items() if any(path.full_match(p) for p in patterns)} == {"sandbox"}
 
 
 def test_makefile_selects_all_container_commands() -> None:

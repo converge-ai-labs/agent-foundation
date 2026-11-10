@@ -12,7 +12,6 @@ on:
       - "Makefile"
       - "conftest.py"
       - "crates/a13n-envd/**"
-      - "deploy/docker/images/sandbox/Dockerfile"
       - "packages/a13n-envd-client/**"
       - "packages/a13n-harness/a13n_harness/providers/environment/eip/**"
       - "packages/a13n-harness/a13n_harness/providers/environment/local_envd/**"
@@ -48,7 +47,6 @@ on:
       - "Makefile"
       - "conftest.py"
       - "crates/a13n-envd/**"
-      - "deploy/docker/images/sandbox/Dockerfile"
       - "packages/a13n-envd-client/**"
       - "packages/a13n-harness/a13n_harness/providers/environment/eip/**"
       - "packages/a13n-harness/a13n_harness/providers/environment/local_envd/**"
@@ -113,7 +111,6 @@ jobs:
               - 'conftest.py'
               - '.github/workflows/release-a13n-envd.yml'
               - 'crates/a13n-envd/**'
-              - 'deploy/docker/images/sandbox/Dockerfile'
               - 'spec/a13n-envd/01-daemon-lifecycle-and-configuration.md'
               - 'spec/a13n-envd/05-command-and-process-execution.md'
               - 'spec/a13n-envd/07-execution-isolation.md'
@@ -140,9 +137,15 @@ jobs:
               - 'conftest.py'
               - '.github/workflows/release-a13n-envd.yml'
               - 'Cargo.toml'
-              - 'scripts/envd_size.py'
               - 'Cargo.lock'
-              - 'crates/a13n-envd/**'
+              # Rust build inputs; packaging metadata and the Swift launcher
+              # do not participate in the Linux protocol integration job.
+              - 'crates/a13n-envd/Cargo.toml'
+              - 'crates/a13n-envd/build.rs'
+              - 'crates/a13n-envd/build_support/**'
+              - 'crates/a13n-envd/src/**'
+              - 'crates/a13n-envd/protocol/**'
+              - 'crates/a13n-envd/tests/**'
               - 'packages/a13n-envd-client/**'
               - 'packages/a13n-harness/a13n_harness/providers/environment/eip/**'
               - 'packages/a13n-harness/a13n_harness/providers/environment/local_envd/**'
