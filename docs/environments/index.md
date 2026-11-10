@@ -24,7 +24,7 @@ Follow the [file quickstart](getting-started.md) to open a workspace, write a fi
 
 ## Choose a backend
 
-Choose **Native Execution** for Files & Shell through the target's native APIs: Direct Local, Docker, E2B, Vercel, Sprites, or Runloop. Shell covers command execution and the process, stdin, and output operations the backend supports.
+Choose **Native Execution** for Files & Shell through the target's native APIs: Direct Local, Docker, E2B, Modal, Vercel, Sprites, or Runloop. Shell covers command execution and the process, stdin, and output operations the backend supports.
 
 Choose **Envd Execution** when you need the general execution interface, including OS sandbox and Egress policy, Computer use, or Device metrics. This path connects to a compatible Envd daemon over EIP. The Host selects the policy; the daemon enforces it within the target's available OS boundary. Metrics are read through the Host's Device connection.
 
@@ -35,7 +35,7 @@ Choose **Envd Execution** when you need the general execution interface, includi
 | Native / Envd  | `e2b`            | An E2B sandbox; select HTTP EIP for the Envd route           |
 | Envd           | `local_envd`     | A Host-owned local daemon over stdio                         |
 | Envd           | `daytona`        | A compatible daemon in a Daytona sandbox                     |
-| Envd           | `modal`          | A compatible daemon in a Modal sandbox                       |
+| Native / Envd  | `modal`          | Native Files & Shell or a compatible Envd in a Modal sandbox |
 | Native / Envd  | `vercel`         | A Vercel sandbox; select HTTP EIP for the Envd route         |
 | Native / Envd  | `sprites`        | A Sprite; its Envd route uses a private tunnel               |
 | Native         | `runloop`        | A Runloop Devbox; Envd is not integrated                     |

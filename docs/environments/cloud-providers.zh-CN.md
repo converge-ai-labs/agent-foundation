@@ -8,13 +8,13 @@ description: 准备云账号与运行时、选择原生或 Envd 执行，并管�
 
 ## 云 provider
 
-创建计费目标前，准备所选账号与目标配置。Daytona 和 Modal 使用 Envd。E2B、Vercel 和 Sprites 提供 Native Files & Shell 及显式 Envd 路径。Runloop 提供 Native Files & Shell，尚未集成 Envd、Computer 和人工桌面访问。
+创建计费目标前，准备所选账号与目标配置。Daytona 使用 Envd。Modal、E2B、Vercel 和 Sprites 提供 Native Files & Shell 及显式 Envd 路径。Runloop 提供 Native Files & Shell，尚未集成 Envd、Computer 和人工桌面访问。
 
 | Provider       | 后端设置                                                                                 | 凭据字段                         | 常用目标配置设置                                                                                               |
 | -------------- | ---------------------------------------------------------------------------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------------------- |
 | E2B            | `domain`、可选 `api_url`                                                                 | `api_key`                        | `template`, `user`, `root`, `allow_internet_access`, `timeout_seconds`                                         |
 | Daytona        | `organization_id`、`target`（默认 `us`）                                                 | `api_key`                        | `snapshot`，决定沙箱资源                                                                                       |
-| Modal          | 可选 `workspace`、`app_name`（默认 `a13n-sandboxes`）、`environment_name`（默认 `main`） | `token_id`, `token_secret`       | Service 自动桌面 `image="auto"` 或兼容 Envd 的自定义镜像、`desktop`、`cpu`、`memory`（MiB）、`timeout_seconds` |
+| Modal          | 可选 `workspace`、`app_name`（默认 `a13n-sandboxes`）、`environment_name`（默认 `main`） | `token_id`, `token_secret`       | 显式 Native 镜像或兼容 Envd 镜像 / 自动桌面、`execution`、`desktop`、`cpu`、`memory`（MiB）、`timeout_seconds` |
 | Vercel Sandbox | `team_id`, `project_id`                                                                  | `api_key`（Vercel access token） | `execution`, `snapshot`, `desktop`, `runtime`, `vcpus`, `timeout_seconds`                                      |
 | Fly.io Sprites | `organization`                                                                           | `api_key`（Sprites token）       | `region`                                                                                                       |
 | Runloop        | `organization`                                                                           | `api_key`                        | `blueprint_id`, `resource_size`, `idle_timeout_seconds`                                                        |
@@ -163,6 +163,26 @@ Agent 操作在 `/workspace` 通过私有 8888 端口使用 EIP。Daytona 代理
 
 ### Modal
 
+创建前选择执行模式。已有配置保留 Envd 默认值和冻结的 fingerprint。
+
+| 模式                    | 镜像与准备方式                                                         | 能力                                                           |
+| ----------------------- | ---------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `native`                | 显式指定 Python 镜像，例如 `python:3.13-slim`；不安装 Envd，不准备桌面 | 文件、分块二进制传输、Python 和有界前台 Shell                  |
+| `envd_http` / `envd_ws` | 镜像预装兼容的 Envd 和启动脚本，或使用自动桌面镜像准备                 | 共享 EIP 执行、协商后的执行策略及指标；Computer use 还需要桌面 |
+
+轻量 Service 环境使用已有 Modal App 和以下配置：
+
+```json
+{
+  "execution": "native",
+  "image": "python:3.13-slim"
+}
+```
+
+Native 默认使用 `/workspace`、`python3` 和 `/bin/sh`。镜像需要 Linux、Python、指定的 shell 及可写工作目录；Git-ignore 查询还需要 Git。Native 不提供交互或后台进程操作、Envd OS sandbox / Egress 策略、Computer 操作和 Device 指标，外层隔离仍由 Modal 提供。两种模式共用文件系统快照停止/恢复流程。修改模板只影响新实例；已有实例切换模式需要新建实例。
+
+Computer use 通过 Envd 截图、点击和输入，需要桌面运行环境。Browser use 通过单独配置的 Chromium/CDP [Browser 资源](../a13n-service/browsers.md)工作，不会在 Modal 环境里安装 Chromium 或 Envd。Agent 工具和访问权限仍需单独启用。
+
 在 Service / Console 中准备自动桌面：
 
 1. 提供 Modal Token ID 和 Token Secret。凭据选择账号，`workspace` 是可选标签。
@@ -172,7 +192,7 @@ Agent 操作在 `/workspace` 通过私有 8888 端口使用 EIP。Daytona 代理
 
 首次创建从固定版本的公开文件构建，后续复用不可变镜像 ID。默认 2 CPU、4096 MiB、3600 秒并启用人工协助，保留显式覆盖值。构建记录按工作区、Provider、凭据版本和清单隔离。复用检查当前镜像访问权；等待中断后重新等待同一内容寻址构建，不分配临时沙箱。镜像和 App 保留为账号资源。
 
-自定义镜像和无桌面目标需要显式兼容的 `image` 及已有 App。用 `modal token new` 登录，准备 Linux amd64 Envd 二进制，再从仓库根目录运行可选构建器：
+自定义 Envd 镜像和无桌面 Envd 目标需要显式兼容的 `image` 及已有 App。Envd 和桌面依赖在镜像中准备，Run 连接时不会临时安装。自动桌面在分配沙箱前构建并复用不可变镜像；创建/启动检查经过认证的 EIP 就绪状态，启用桌面时还检查桌面。缺少依赖时保留已分配的目标身份并报告失败，不自动切换模式或安装软件。复用已有 Modal 凭据，准备 Linux amd64 Envd 二进制，再从仓库根目录运行可选构建器：
 
 ```sh
 uv run --locked python examples/environment-provider/modal_desktop_image.py \

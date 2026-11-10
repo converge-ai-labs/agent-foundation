@@ -11,7 +11,7 @@ class ModalRecipe(ModalEnvironmentConfiguration):
         default="auto",
         min_length=1,
         max_length=256,
-        description="Automatic desktop image, or a compatible custom registry image / Modal image ID.",
+        description="Native: supply a Python image such as python:3.13-slim. Envd: supply a compatible image, or use auto with desktop enabled.",
     )
 
     @model_validator(mode="before")
@@ -43,4 +43,4 @@ class ModalRecipe(ModalEnvironmentConfiguration):
 
     @property
     def fingerprint(self) -> str:
-        return ModalEnvironmentConfiguration.model_validate(self.model_dump(exclude={"desktop_assistance"})).fingerprint
+        return super().fingerprint

@@ -24,23 +24,23 @@ Environment API 让应用在选定的目标上读写文件、执行命令。可�
 
 ## 选择后端
 
-需要通过目标原生 API 使用 Files & Shell 时，选择 **Native Execution**：Direct Local、Docker、E2B、Vercel、Sprites 或 Runloop。Shell 包含命令执行，以及该后端支持的进程、stdin 和输出操作。
+需要通过目标原生 API 使用 Files & Shell 时，选择 **Native Execution**：Direct Local、Docker、E2B、Modal、Vercel、Sprites 或 Runloop。Shell 包含命令执行，以及该后端支持的进程、stdin 和输出操作。
 
 需要通用执行接口，包括 OS sandbox 和 Egress 策略、Computer use 或 Device 指标时，选择 **Envd Execution**。该路径通过 EIP 连接兼容的 Envd 守护进程。Host 选择策略，守护进程在目标可用的操作系统边界内执行策略。指标通过 Host 的 Device 连接读取。
 
-| 执行路径      | Provider         | 连接目标                                 |
-| ------------- | ---------------- | ---------------------------------------- |
-| Native        | `direct_local`   | Host 上的已有目录                        |
-| Native / Envd | `docker`         | Docker 容器；Envd 路径选择 HTTP EIP      |
-| Native / Envd | `e2b`            | E2B 沙箱；Envd 路径选择 HTTP EIP         |
-| Envd          | `local_envd`     | 通过 stdio 连接 Host 管理的本地守护进程  |
-| Envd          | `daytona`        | Daytona 沙箱内的兼容守护进程             |
-| Envd          | `modal`          | Modal 沙箱内的兼容守护进程               |
-| Native / Envd | `vercel`         | Vercel 沙箱；Envd 路径选择 HTTP EIP      |
-| Native / Envd | `sprites`        | Sprite；Envd 路径使用私有隧道            |
-| Native        | `runloop`        | Runloop Devbox；尚未接入 Envd            |
-| Envd          | `http_envd`      | 通过 HTTP(S) 连接已有守护进程            |
-| Envd          | `websocket_envd` | 反向连接到 Host WebSocket 入口的守护进程 |
+| 执行路径      | Provider         | 连接目标                                     |
+| ------------- | ---------------- | -------------------------------------------- |
+| Native        | `direct_local`   | Host 上的已有目录                            |
+| Native / Envd | `docker`         | Docker 容器；Envd 路径选择 HTTP EIP          |
+| Native / Envd | `e2b`            | E2B 沙箱；Envd 路径选择 HTTP EIP             |
+| Envd          | `local_envd`     | 通过 stdio 连接 Host 管理的本地守护进程      |
+| Envd          | `daytona`        | Daytona 沙箱内的兼容守护进程                 |
+| Native / Envd | `modal`          | Modal 原生 Files & Shell 或沙箱内的兼容 Envd |
+| Native / Envd | `vercel`         | Vercel 沙箱；Envd 路径选择 HTTP EIP          |
+| Native / Envd | `sprites`        | Sprite；Envd 路径使用私有隧道                |
+| Native        | `runloop`        | Runloop Devbox；尚未接入 Envd                |
+| Envd          | `http_envd`      | 通过 HTTP(S) 连接已有守护进程                |
+| Envd          | `websocket_envd` | 反向连接到 Host WebSocket 入口的守护进程     |
 
 云账号和运行时选择见[云 Provider](cloud-providers.md#cloud-providers)。Docker、E2B、Daytona、Modal、Vercel 和 Sprites 可通过兼容的 Envd 运行环境提供桌面访问。按[桌面设置](../a13n-service/environments.md#computer-use)准备镜像、模板、快照或 Sprite 安装。使用云账号前，也可以[在本地试用 HTTP 和 WebSocket](remote-envd.md)。
 

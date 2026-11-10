@@ -7,8 +7,10 @@ import sys
 from unittest.mock import AsyncMock
 
 import pytest
+from a13n_harness.environment.commands import CommandRequest, ShellCommand
 from a13n_harness.environment.errors import EnvironmentProviderError
 from a13n_harness.environment.models import EnvironmentState
+from a13n_harness.environment.retention import EnvironmentOutputPolicy
 from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_service.providers.environments import BUILT_IN_ENVIRONMENT_PROVIDERS
 from a13n_service.providers.environments.modal.management import ModalManagement
@@ -126,10 +128,21 @@ class ModalCloud:
             response = api.TaskGetCommandRouterAccessResponse(url=self.url, jwt="fixture")
         elif name == "TaskExecStart":
             proc = await asyncio.create_subprocess_exec(
-                *request.command_args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+                *request.command_args,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
             )
             self.processes[request.exec_id] = proc
             response = router.TaskExecStartResponse()
+        elif name == "TaskExecStdinWrite":
+            proc = self.processes[request.exec_id]
+            proc.stdin.write(request.data)
+            if request.eof:
+                proc.stdin.close()
+            else:
+                await proc.stdin.drain()
+            response = router.TaskExecStdinWriteResponse()
         elif name == "TaskExecStdioRead":
             proc = self.processes[request.exec_id]
             output = (
@@ -164,8 +177,11 @@ class ModalCloud:
         await stream.send_message(response)
 
 
-@pytest.mark.parametrize("desktop", [False, True])
-def test_modal_real_sdk_snapshot_resume(tmp_path, monkeypatch, desktop):
+@pytest.mark.parametrize("mode", ["native", "envd_http", "desktop"])
+def test_modal_real_sdk_snapshot_resume(tmp_path, monkeypatch, mode):
+    desktop = mode == "desktop"
+    native = mode == "native"
+
     async def scenario():
         root = tmp_path / "guest"
         root.mkdir()
@@ -188,6 +204,7 @@ def test_modal_real_sdk_snapshot_resume(tmp_path, monkeypatch, desktop):
                 "desktop": desktop,
                 "desktop_assistance": desktop,
                 "environment": {"APP_MODE": "agent-default"},
+                **({"execution": "native", "root": str(root), "python": sys.executable} if native else {}),
             }
         )
         provider = await definition.open_provider(
@@ -211,13 +228,43 @@ def test_modal_real_sdk_snapshot_resume(tmp_path, monkeypatch, desktop):
 
         try:
             state = await manage("create")
-            assert ready.await_count == 1
+            assert ready.await_count == int(not native)
             launch = cloud.definitions[0]
-            assert launch.entrypoint_args[-1].endswith("a13n-sandbox-desktop" if desktop else "a13n-envd")
+            if native:
+                assert "a13n-envd" not in " ".join(launch.entrypoint_args)
+            else:
+                assert launch.entrypoint_args[-1].endswith("a13n-sandbox-desktop" if desktop else "a13n-envd")
             assert access.await_count == int(desktop)
-            assert launch.workdir == "/workspace"
-            assert [port.port for port in launch.open_ports.ports] == ([8888, 6081] if desktop else [8888])
+            assert launch.workdir == (str(root) if native else "/workspace")
+            assert [port.port for port in launch.open_ports.ports] == (
+                [] if native else [8888, 6081] if desktop else [8888]
+            )
             assert not any(port.unencrypted for port in launch.open_ports.ports)
+            if native:
+                first = await connector(state).open()
+                try:
+                    await first.operations.files.write_text("/hello", "native files", mode="upsert")
+                    result = await first.operations.shell.exec(
+                        CommandRequest(
+                            command=ShellCommand(profile_id="default", script="cat hello; printf error >&2"),
+                            output_policy=EnvironmentOutputPolicy(
+                                max_inline_bytes=1024, max_output_bytes=1024, overflow="truncate"
+                            ),
+                        )
+                    )
+                    assert result.status.exit_code == 0
+                    assert result.output.stdout.inline == b"native files"
+                    assert result.output.stderr.inline == b"error"
+                    payload = bytes(range(256)) * 600
+
+                    async def chunks():
+                        yield payload[:70000]
+                        yield payload[70000:]
+
+                    await first.operations.files.write_bytes_stream("/binary", chunks(), mode="upsert")
+                    assert await first.operations.files.read_bytes("/binary") == payload
+                finally:
+                    await first.close()
             (root / "data").write_text("saved in native snapshot")
             running = EnvironmentState.model_validate_json(state.model_dump_json())
             state = await manage("stop", running)
@@ -234,10 +281,14 @@ def test_modal_real_sdk_snapshot_resume(tmp_path, monkeypatch, desktop):
             assert (await manage("stop", running)).state == state.state
             state = await manage("start", state)
             assert (root / "data").read_text() == "saved in native snapshot"
-            assert ready.await_count == 2
+            if native:
+                assert (root / "binary").read_bytes() == payload
+            assert ready.await_count == (0 if native else 2)
             assert cloud.created == 2
             assert len(cloud.environments) == 2
             assert all(item["APP_MODE"] == "agent-default" for item in cloud.environments)
+            if native:
+                assert all(not any(key.startswith("A13N_ENVD_") for key in item) for item in cloud.environments)
             assert "TaskSnapshotFilesystem" in cloud.calls
             assert "ImageDelete" in cloud.calls
             await provider.close()

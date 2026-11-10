@@ -24,6 +24,15 @@ import {
   TextAreaField,
 } from "../../shared/forms";
 
+const MODAL_NATIVE_FIELDS = [
+  "root",
+  "python",
+  "shell",
+  "max_file_bytes",
+  "max_query_entries",
+  "max_output_bytes",
+] as const;
+
 /**
  * The provider-specific part of a template. Ordinary fields lead;
  * the JSON escape hatch is one toggle away; mounts and rare settings stay in
@@ -69,6 +78,7 @@ export function ProviderConfiguration({
   const vercelDraft = useRef<string | undefined>(undefined);
   const [modalCustom, setModalCustom] = useState(false);
   const modalDraft = useRef<string | undefined>(undefined);
+  const modalNativeDraft = useRef<Record<string, unknown>>({});
   const [e2bCustom, setE2bCustom] = useState(false);
   const e2bCustomDraft = useRef<string | undefined>(undefined);
   const customDraft = useRef<Record<string, unknown> | undefined>(undefined);
@@ -108,6 +118,7 @@ export function ProviderConfiguration({
     (typeof value?.snapshot === "string" && value.snapshot !== "auto");
   const modalUsesCustom =
     modalCustom || (typeof value?.image === "string" && value.image !== "auto");
+  const modalNative = variant === "modal" && value?.execution === "native";
   const presets = variant === "docker" ? dockerPresets(schema) : undefined;
   const selected: DockerMode =
     presets && value && schema && !custom
@@ -141,6 +152,12 @@ export function ProviderConfiguration({
     const key = property[0];
     if (key === "environment") continue;
     if (
+      variant === "modal" &&
+      !modalNative &&
+      MODAL_NATIVE_FIELDS.some((name) => name === key)
+    )
+      continue;
+    if (
       variant === "e2b" &&
       e2bRequiresEnvd &&
       [
@@ -158,7 +175,8 @@ export function ProviderConfiguration({
     if (variant === "e2b" && key === "template") continue;
     if (variant === "vercel" && ["snapshot", "desktop"].includes(key)) continue;
     if (variant === "sprites" && key === "desktop") continue;
-    if (variant === "modal" && ["image", "desktop"].includes(key)) continue;
+    if (variant === "modal" && ["image", "desktop", "execution"].includes(key))
+      continue;
     if (variant === "daytona" && ["snapshot", "desktop"].includes(key))
       continue;
     if (
@@ -250,6 +268,7 @@ export function ProviderConfiguration({
                 daytonaDraft.current = undefined;
                 setModalCustom(false);
                 modalDraft.current = undefined;
+                modalNativeDraft.current = {};
                 e2bCustomDraft.current = undefined;
                 customDraft.current = undefined;
                 setMode("fields");
@@ -345,21 +364,77 @@ export function ProviderConfiguration({
             )}
             {variant === "modal" && (
               <>
+                <SegmentedControl
+                  label={t("Execution mode")}
+                  value={
+                    typeof value.execution === "string"
+                      ? value.execution
+                      : "envd_http"
+                  }
+                  options={[
+                    { value: "native", label: t("Native"), disabled: readOnly },
+                    {
+                      value: "envd_http",
+                      label: t("Envd HTTP"),
+                      disabled: readOnly,
+                    },
+                    {
+                      value: "envd_ws",
+                      label: t("Envd WebSocket"),
+                      disabled: readOnly,
+                    },
+                  ]}
+                  onValueChange={(execution) => {
+                    const next: Record<string, unknown> = {
+                      ...value,
+                      execution,
+                    };
+                    if (execution === "native") {
+                      Object.assign(next, modalNativeDraft.current);
+                      next.desktop = false;
+                      next.desktop_assistance = false;
+                      if (next.image === "auto") next.image = "";
+                    } else {
+                      if (modalNative) {
+                        modalNativeDraft.current = Object.fromEntries(
+                          MODAL_NATIVE_FIELDS.filter((key) => key in value).map(
+                            (key) => [key, value[key]],
+                          ),
+                        );
+                      }
+                      for (const key of MODAL_NATIVE_FIELDS) delete next[key];
+                    }
+                    change(next);
+                  }}
+                />
+                <p role="note">
+                  {t(
+                    modalNative
+                      ? "Run Python, shell commands and file transfers without Envd. Use a Python image such as python:3.13-slim. Computer use requires Envd and a desktop; Browser use uses a separate browser resource."
+                      : "Envd provides execution policy, Computer use and device metrics. Custom images must already contain compatible Envd and launchers; connecting checks readiness without installing them. Browser use uses a separate browser resource.",
+                  )}
+                </p>
                 <SettingsRow
                   label={t("Desktop environment")}
                   controlId={desktopId}
                   stackOnNarrow={false}
                   description={t(
-                    "Automatically prepare Envd, desktop dependencies and human control on first creation.",
+                    modalNative
+                      ? "Select Envd to use a desktop. Native does not install desktop components."
+                      : "Automatic images prepare Envd and desktop dependencies before allocation. Custom images must already include them.",
                   )}
                 >
                   <Switch
                     id={desktopId}
                     checked={value.desktop === true}
-                    disabled={readOnly}
+                    disabled={readOnly || modalNative}
                     onCheckedChange={(enabled) =>
                       change({
                         ...value,
+                        execution:
+                          value.execution === "envd_ws"
+                            ? "envd_ws"
+                            : "envd_http",
                         desktop: enabled,
                         desktop_assistance: enabled,
                         ...(enabled && !modalUsesCustom

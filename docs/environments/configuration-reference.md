@@ -339,17 +339,23 @@ Optional outer-daemon sampling; independent of Session execution policy.
 
 ## `ModalRecipe`
 
-| Field                     | Required | Type / choices         | Constraints and default                      |
-| ------------------------- | -------- | ---------------------- | -------------------------------------------- |
-| `image`                   | false    | string                 | minLength=1; maxLength=256; default="auto"   |
-| `desktop`                 | false    | boolean                | default=false                                |
-| `execution`               | false    | "envd_http", "envd_ws" | default="envd_http"                          |
-| `environment`             | false    | EnvironmentVariables   | —; default from model factory                |
-| `request_timeout_seconds` | false    | number                 | maximum=600; exclusiveMinimum=0; default=120 |
-| `timeout_seconds`         | false    | integer                | minimum=300; maximum=86400; default=86400    |
-| `cpu`                     | false    | number                 | maximum=64; exclusiveMinimum=0; default=1    |
-| `memory`                  | false    | integer                | minimum=128; maximum=262144; default=1024    |
-| `desktop_assistance`      | false    | boolean                | default=false                                |
+| Field                     | Required | Type / choices                   | Constraints and default                                |
+| ------------------------- | -------- | -------------------------------- | ------------------------------------------------------ |
+| `environment`             | false    | EnvironmentVariables             | —; default from model factory                          |
+| `root`                    | false    | string                           | default="/workspace"                                   |
+| `python`                  | false    | string                           | default="python3"                                      |
+| `shell`                   | false    | string                           | default="/bin/sh"                                      |
+| `request_timeout_seconds` | false    | number                           | maximum=600; exclusiveMinimum=0; default=120           |
+| `max_file_bytes`          | false    | integer                          | maximum=67108864; exclusiveMinimum=0; default=16777216 |
+| `max_query_entries`       | false    | integer                          | maximum=100000; exclusiveMinimum=0; default=10000      |
+| `max_output_bytes`        | false    | integer                          | maximum=16777216; exclusiveMinimum=0; default=1048576  |
+| `image`                   | false    | string                           | minLength=1; maxLength=256; default="auto"             |
+| `desktop`                 | false    | boolean                          | default=false                                          |
+| `execution`               | false    | "native", "envd_http", "envd_ws" | default="envd_http"                                    |
+| `timeout_seconds`         | false    | integer                          | minimum=300; maximum=86400; default=86400              |
+| `cpu`                     | false    | number                           | maximum=64; exclusiveMinimum=0; default=1              |
+| `memory`                  | false    | integer                          | minimum=128; maximum=262144; default=1024              |
+| `desktop_assistance`      | false    | boolean                          | default=false                                          |
 
 ## `VercelRecipe`
 
@@ -400,16 +406,22 @@ Optional outer-daemon sampling; independent of Session execution policy.
 
 ## `ModalEnvironmentConfiguration`
 
-| Field                     | Required | Type / choices         | Constraints and default                      |
-| ------------------------- | -------- | ---------------------- | -------------------------------------------- |
-| `image`                   | true     | string                 | minLength=1; maxLength=256                   |
-| `desktop`                 | false    | boolean                | default=false                                |
-| `execution`               | false    | "envd_http", "envd_ws" | default="envd_http"                          |
-| `environment`             | false    | EnvironmentVariables   | —; default from model factory                |
-| `request_timeout_seconds` | false    | number                 | maximum=600; exclusiveMinimum=0; default=120 |
-| `timeout_seconds`         | false    | integer                | minimum=300; maximum=86400; default=86400    |
-| `cpu`                     | false    | number                 | maximum=64; exclusiveMinimum=0; default=1    |
-| `memory`                  | false    | integer                | minimum=128; maximum=262144; default=1024    |
+| Field                     | Required | Type / choices                   | Constraints and default                                |
+| ------------------------- | -------- | -------------------------------- | ------------------------------------------------------ |
+| `environment`             | false    | EnvironmentVariables             | —; default from model factory                          |
+| `root`                    | false    | string                           | default="/workspace"                                   |
+| `python`                  | false    | string                           | default="python3"                                      |
+| `shell`                   | false    | string                           | default="/bin/sh"                                      |
+| `request_timeout_seconds` | false    | number                           | maximum=600; exclusiveMinimum=0; default=120           |
+| `max_file_bytes`          | false    | integer                          | maximum=67108864; exclusiveMinimum=0; default=16777216 |
+| `max_query_entries`       | false    | integer                          | maximum=100000; exclusiveMinimum=0; default=10000      |
+| `max_output_bytes`        | false    | integer                          | maximum=16777216; exclusiveMinimum=0; default=1048576  |
+| `image`                   | true     | string                           | minLength=1; maxLength=256                             |
+| `desktop`                 | false    | boolean                          | default=false                                          |
+| `execution`               | false    | "native", "envd_http", "envd_ws" | default="envd_http"                                    |
+| `timeout_seconds`         | false    | integer                          | minimum=300; maximum=86400; default=86400              |
+| `cpu`                     | false    | number                           | maximum=64; exclusiveMinimum=0; default=1              |
+| `memory`                  | false    | integer                          | minimum=128; maximum=262144; default=1024              |
 
 ## `VercelEnvironmentConfiguration`
 

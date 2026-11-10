@@ -9,7 +9,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, SecretStr, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, PrivateAttr, SecretStr, TypeAdapter, model_validator
 
 from a13n_harness.environment.errors import EnvironmentProviderError
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
@@ -18,12 +18,14 @@ from a13n_harness.environment.models import EnvironmentState
 from a13n_harness.environment.variables import EnvironmentVariables
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_harness.providers.environment.modal.pool import Transport, TransportKey, TransportPool
-from a13n_harness.providers.environment.native.configuration import TargetState
+from a13n_harness.providers.environment.native.configuration import CommandConfiguration, TargetState
 from a13n_harness.providers.environment.native.environment import NativeReference, NativeRuntime
 from a13n_harness.providers.environment.native.errors import failure
 
 if TYPE_CHECKING:
     import modal
+
+_FINGERPRINT = TypeAdapter(dict[str, JsonValue])
 
 
 class ModalConnectionConfiguration(BaseModel):
@@ -50,7 +52,7 @@ class ModalCredential(BaseModel):
     token_secret: SecretStr = Field(min_length=1)
 
 
-class ModalEnvironmentConfiguration(BaseModel):
+class ModalEnvironmentConfiguration(CommandConfiguration):
     model_config = ConfigDict(
         frozen=True,
         extra="forbid",
@@ -59,24 +61,53 @@ class ModalEnvironmentConfiguration(BaseModel):
     image: str = Field(
         min_length=1,
         max_length=256,
-        description="Operator-built registry image or Modal image ID (im-...) containing compatible a13n-envd and sandbox launchers. Agent operations use EIP.",
+        description="Registry image or Modal image ID (im-...). Native needs Python and a shell; Envd needs compatible a13n-envd and sandbox launchers.",
     )
     desktop: bool = Field(default=False, description="Require an observable, input-ready X11 desktop from the image.")
-    execution: Literal["envd_http", "envd_ws"] = Field(default="envd_http", title="Execution connection")
+    execution: Literal["native", "envd_http", "envd_ws"] = Field(default="envd_http", title="Execution connection")
+    root: str = "/workspace"
+    shell: str = "/bin/sh"
     environment: EnvironmentVariables = Field(default_factory=dict)
     request_timeout_seconds: float = Field(default=120, gt=0, le=600, allow_inf_nan=False)
     timeout_seconds: int = Field(default=86400, ge=300, le=86400)
     cpu: float = Field(default=1, gt=0, le=64, allow_inf_nan=False)
     memory: int = Field(default=1024, ge=128, le=262144, description="Memory in MiB")
 
+    @model_validator(mode="after")
+    def execution_requirements(self) -> Self:
+        if self.execution == "native" and self.desktop:
+            raise ValueError("Computer use requires Envd execution and a desktop image")
+        if self.execution != "native":
+            native = set(CommandConfiguration.model_fields) - {"environment", "request_timeout_seconds"}
+            if any(getattr(self, name) != type(self).model_fields[name].default for name in native):
+                raise ValueError("Native execution settings require execution='native'")
+        return self
+
     @property
     def fingerprint(self) -> str:
-        return hashlib.sha256(
-            self.model_dump_json(
-                exclude=({"environment"} if not self.environment else set())
-                | ({"execution"} if self.execution == "envd_http" else set())
-            ).encode()
-        ).hexdigest()
+        # Keep the original field order and omitted HTTP default for saved EIP recipes.
+        fields = [
+            "image",
+            "desktop",
+            "execution",
+            "environment",
+            "request_timeout_seconds",
+            "timeout_seconds",
+            "cpu",
+            "memory",
+        ]
+        if self.execution == "envd_http":
+            fields.remove("execution")
+        if not self.environment:
+            fields.remove("environment")
+        if self.execution == "native":
+            fields.extend(
+                name
+                for name in CommandConfiguration.model_fields
+                if name not in {"environment", "request_timeout_seconds"}
+            )
+        data = self.model_dump(mode="json")
+        return hashlib.sha256(_FINGERPRINT.dump_json({name: data[name] for name in fields})).hexdigest()
 
 
 class SnapshotReference(BaseModel):

@@ -1,11 +1,13 @@
-"""Modal resources expose Agent operations exclusively through Envd/EIP."""
+"""Modal offers explicit native Files & Shell alongside Envd/EIP."""
 
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
 from a13n_harness.environment.models import EnvironmentDescriptor, EnvironmentState, decode_target_state
 from a13n_harness.environment.session_recovery import EnvdSessionBorrower
+from a13n_harness.providers.environment._backend import ExecutionBackend
 from a13n_harness.providers.environment._backend_factory import BackendFactory
 from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
 from a13n_harness.providers.environment.eip.binding import configured_descriptor
+from a13n_harness.providers.environment.modal.execution import ModalExecution
 from a13n_harness.providers.environment.modal.http import HttpReference, http_execution
 from a13n_harness.providers.environment.modal.shared import (
     ModalConnectionConfiguration,
@@ -13,9 +15,8 @@ from a13n_harness.providers.environment.modal.shared import (
     ModalEnvironmentConfiguration,
     ModalState,
 )
-from a13n_harness.providers.environment.native.environment import NativeRuntime
+from a13n_harness.providers.environment.native.environment import NativeRuntime, descriptor
 from a13n_harness.providers.environment.native.errors import failure
-from a13n_harness.providers.environment.remote_envd.environment import RemoteEnvdExecution
 
 
 async def runtime(*, configuration: ModalConnectionConfiguration, credential: ModalCredential | None) -> NativeRuntime:
@@ -25,7 +26,11 @@ async def runtime(*, configuration: ModalConnectionConfiguration, credential: Mo
 
 
 def describe(configuration: ModalEnvironmentConfiguration) -> EnvironmentDescriptor:
-    return configured_descriptor(working_directory="/workspace")
+    return (
+        descriptor(configuration)
+        if configuration.execution == "native"
+        else configured_descriptor(working_directory="/workspace")
+    )
 
 
 def identity(*, configuration: ModalEnvironmentConfiguration, state: EnvironmentState | None) -> str:
@@ -42,9 +47,11 @@ def construct(
     state: EnvironmentState | None,
     runtime: NativeRuntime | None,
     session_recovery: EnvdSessionBorrower | None = None,
-) -> RemoteEnvdExecution:
+) -> ExecutionBackend:
     if runtime is None:
         raise TypeError("Modal requires a runtime")
+    if configuration.execution == "native":
+        return ModalExecution(configuration, environment_id, state, runtime)
     return http_execution(
         HttpReference(configuration, environment_id, state, runtime), session_recovery=session_recovery
     )

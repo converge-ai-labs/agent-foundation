@@ -4183,5 +4183,12 @@
   "Back to organization tasks": "返回整理任务",
   "Task context": "任务上下文",
   "Review candidate": "审阅候选内容",
-  "View task": "查看任务"
+  "View task": "查看任务",
+  "Envd WebSocket": "Envd WebSocket",
+  "Run Python, shell commands and file transfers without Envd. Use a Python image such as python:3.13-slim. Computer use requires Envd and a desktop; Browser use uses a separate browser resource.": "无需 Envd 即可运行 Python、Shell 命令并传输文件。使用 python:3.13-slim 等 Python 镜像。Computer use 需要 Envd 和桌面；Browser use 使用独立的浏览器资源。",
+  "Envd provides execution policy, Computer use and device metrics. Custom images must already contain compatible Envd and launchers; connecting checks readiness without installing them. Browser use uses a separate browser resource.": "Envd 提供执行策略、Computer use 和设备指标。自定义镜像须预装兼容的 Envd 及启动脚本；连接时只检查就绪，不安装依赖。Browser use 使用独立的浏览器资源。",
+  "Select Envd to use a desktop. Native does not install desktop components.": "使用桌面需选择 Envd。Native 不安装桌面组件。",
+  "Automatic images prepare Envd and desktop dependencies before allocation. Custom images must already include them.": "自动镜像在分配沙箱前准备 Envd 和桌面依赖。自定义镜像须预装这些组件。",
+  "Native: supply a Python image such as python:3.13-slim. Envd: supply a compatible image, or use auto with desktop enabled.": "Native：使用 python:3.13-slim 等 Python 镜像。Envd：使用兼容镜像，或启用桌面并使用 auto 自动准备。",
+  "Registry image or Modal image ID (im-...). Native needs Python and a shell; Envd needs compatible a13n-envd and sandbox launchers.": "镜像仓库地址或 Modal 镜像 ID（im-...）。Native 需要 Python 和 shell；Envd 需要兼容的 a13n-envd 及沙箱启动脚本。"
 }

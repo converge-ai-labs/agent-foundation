@@ -4183,5 +4183,12 @@
   "Back to organization tasks": "Back to organization tasks",
   "Task context": "Task context",
   "Review candidate": "Review candidate",
-  "View task": "View task"
+  "View task": "View task",
+  "Envd WebSocket": "Envd WebSocket",
+  "Run Python, shell commands and file transfers without Envd. Use a Python image such as python:3.13-slim. Computer use requires Envd and a desktop; Browser use uses a separate browser resource.": "Run Python, shell commands and file transfers without Envd. Use a Python image such as python:3.13-slim. Computer use requires Envd and a desktop; Browser use uses a separate browser resource.",
+  "Envd provides execution policy, Computer use and device metrics. Custom images must already contain compatible Envd and launchers; connecting checks readiness without installing them. Browser use uses a separate browser resource.": "Envd provides execution policy, Computer use and device metrics. Custom images must already contain compatible Envd and launchers; connecting checks readiness without installing them. Browser use uses a separate browser resource.",
+  "Select Envd to use a desktop. Native does not install desktop components.": "Select Envd to use a desktop. Native does not install desktop components.",
+  "Automatic images prepare Envd and desktop dependencies before allocation. Custom images must already include them.": "Automatic images prepare Envd and desktop dependencies before allocation. Custom images must already include them.",
+  "Native: supply a Python image such as python:3.13-slim. Envd: supply a compatible image, or use auto with desktop enabled.": "Native: supply a Python image such as python:3.13-slim. Envd: supply a compatible image, or use auto with desktop enabled.",
+  "Registry image or Modal image ID (im-...). Native needs Python and a shell; Envd needs compatible a13n-envd and sandbox launchers.": "Registry image or Modal image ID (im-...). Native needs Python and a shell; Envd needs compatible a13n-envd and sandbox launchers."
 }

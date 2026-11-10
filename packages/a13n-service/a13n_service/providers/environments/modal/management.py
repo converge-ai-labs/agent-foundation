@@ -69,13 +69,21 @@ class ModalManagement(ModalReference, NativeManagement[ModalEnvironmentConfigura
             tags = {**self.labels, "a13n_expiry": expiry.isoformat()}
             if snapshot is not None:
                 tags["a13n_resume_snapshot"] = snapshot.image_id
+            native = self.config.execution == "native"
+            command = (
+                [self.config.python, "-I", "-c", "import time; time.sleep(86400)"]
+                if native
+                else [
+                    # Filesystem snapshots can retain runtime paths, not their owners.
+                    # Only a newly allocated VM clears these before starting services.
+                    "sh",
+                    "-c",
+                    "rm -f /tmp/.X99-lock /tmp/.X11-unix/X99 /run/a13n-desktop-access/control.sock; "
+                    "exec a13n-sandbox-entrypoint " + ("a13n-sandbox-desktop" if self.config.desktop else "a13n-envd"),
+                ]
+            )
             sandbox = await modal.Sandbox.create.aio(
-                # Filesystem snapshots can retain runtime paths, not their owners.
-                # Only a newly allocated VM clears these before starting services.
-                "sh",
-                "-c",
-                "rm -f /tmp/.X99-lock /tmp/.X11-unix/X99 /run/a13n-desktop-access/control.sock; "
-                "exec a13n-sandbox-entrypoint " + ("a13n-sandbox-desktop" if self.config.desktop else "a13n-envd"),
+                *command,
                 app=app,
                 name=self.name,
                 image=image,
@@ -84,13 +92,15 @@ class ModalManagement(ModalReference, NativeManagement[ModalEnvironmentConfigura
                 timeout=self.config.timeout_seconds,
                 cpu=self.config.cpu,
                 memory=self.config.memory,
-                workdir="/workspace",
+                workdir=self.config.root if native else "/workspace",
                 encrypted_ports=[
                     *([8888] if self.config.execution == "envd_http" else []),
                     *([access.PORT] if self.recipe.desktop_assistance else []),
                 ],
                 experimental_options={"vm_runtime": True} if self.config.desktop else None,
-                env=dict(
+                env=dict(self.config.environment)
+                if native
+                else dict(
                     self.bootstrap_environment(
                         {
                             **self.config.environment,
@@ -127,7 +137,21 @@ class ModalManagement(ModalReference, NativeManagement[ModalEnvironmentConfigura
         self.sandbox = sandbox
         # Readiness and snapshot retirement belong to explicit management. A
         # failed probe retains both the new target ID and the resume snapshot.
-        await self._check_envd()
+        if self.config.execution == "native":
+            await execute_command(
+                sandbox,
+                [
+                    self.config.python,
+                    "-I",
+                    "-c",
+                    "import os,sys; assert os.path.isdir(sys.argv[1]); assert os.access(sys.argv[1],os.W_OK); assert os.access(sys.argv[2],os.X_OK)",
+                    self.config.root,
+                    self.config.shell,
+                ],
+                self.config.request_timeout_seconds,
+            )
+        else:
+            await self._check_envd()
         if self.recipe.desktop_assistance:
             await self.desktop_access(access.Describe())
         if self.target and self.target.snapshot_id:

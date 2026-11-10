@@ -10,6 +10,11 @@ vi.mock("react-i18next", () => ({
 const schema = {
   type: "object",
   properties: {
+    execution: {
+      type: "string",
+      enum: ["native", "envd_http", "envd_ws"],
+      default: "envd_http",
+    },
     image: { type: "string", title: "Image", default: "auto" },
     desktop: { type: "boolean", default: false },
     desktop_assistance: { type: "boolean", default: false },
@@ -31,6 +36,47 @@ function Editor({ initial = {} }: { initial?: Record<string, unknown> }) {
 }
 const configuration = () =>
   JSON.parse(screen.getByTestId("config").textContent ?? "{}");
+it("selects native without keeping desktop preparation and requires an explicit image", async () => {
+  render(
+    <Editor
+      initial={{
+        desktop: true,
+        desktop_assistance: true,
+        image: "auto",
+        cpu: 3,
+      }}
+    />,
+  );
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Native" }));
+  expect(configuration()).toMatchObject({
+    execution: "native",
+    desktop: false,
+    desktop_assistance: false,
+    image: "",
+    cpu: 3,
+  });
+  expect(
+    screen
+      .getByRole("switch", { name: "Desktop environment" })
+      .getAttribute("aria-disabled"),
+  ).toBe("true");
+  await user.type(
+    screen.getByRole("textbox", { name: "Image" }),
+    "python:3.13-slim",
+  );
+  await user.click(screen.getByRole("button", { name: "Envd HTTP" }));
+  expect(configuration()).toMatchObject({
+    execution: "envd_http",
+    image: "python:3.13-slim",
+    cpu: 3,
+  });
+  expect(
+    screen
+      .getByRole("switch", { name: "Desktop environment" })
+      .getAttribute("aria-disabled"),
+  ).not.toBe("true");
+});
 it("one desktop toggle enables automatic image preparation and human control", async () => {
   render(<Editor />);
   const user = userEvent.setup();
@@ -44,6 +90,29 @@ it("one desktop toggle enables automatic image preparation and human control", a
   });
   expect(screen.queryByRole("textbox", { name: "Image" })).toBeNull();
   expect(screen.getByText(/first Modal desktop creation/)).toBeTruthy();
+});
+it("keeps native settings as a draft while selecting an Envd connection", async () => {
+  render(
+    <Editor
+      initial={{
+        execution: "native",
+        image: "python:3.13-slim",
+        root: "/custom",
+        cpu: 3,
+      }}
+    />,
+  );
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Envd WebSocket" }));
+  expect(configuration().root).toBeUndefined();
+  expect(configuration().cpu).toBe(3);
+  await user.click(screen.getByRole("button", { name: "Native" }));
+  expect(configuration()).toMatchObject({
+    execution: "native",
+    image: "python:3.13-slim",
+    root: "/custom",
+    cpu: 3,
+  });
 });
 it("retains a custom image and resource choices when enabling desktop", async () => {
   render(<Editor initial={{ image: "im-custom", cpu: 3, memory: 5000 }} />);

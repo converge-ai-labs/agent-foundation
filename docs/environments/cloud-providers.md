@@ -8,16 +8,16 @@ Choose a backend in the [Environment overview](index.md#choose-a-backend). This 
 
 ## Cloud Providers
 
-Prepare the selected account and recipe before creating a billable target. Daytona and Modal use Envd. E2B, Vercel, and Sprites offer Native Files & Shell and an explicit Envd path. Runloop provides Native Files & Shell; Envd, Computer, and human desktop access are not integrated.
+Prepare the selected account and recipe before creating a billable target. Daytona uses Envd. Modal, E2B, Vercel, and Sprites offer Native Files & Shell and an explicit Envd path. Runloop provides Native Files & Shell; Envd, Computer, and human desktop access are not integrated.
 
-| Provider       | Backend settings                                                                                 | Credential fields               | Common recipe settings                                                                                                        |
-| -------------- | ------------------------------------------------------------------------------------------------ | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| E2B            | `domain`, optional `api_url`                                                                     | `api_key`                       | `template`, `user`, `root`, `allow_internet_access`, `timeout_seconds`                                                        |
-| Daytona        | `organization_id`, `target` (default `us`)                                                       | `api_key`                       | `snapshot`, which sets the sandbox's resources                                                                                |
-| Modal          | optional `workspace`, `app_name` (default `a13n-sandboxes`), `environment_name` (default `main`) | `token_id`, `token_secret`      | Service automatic desktop `image="auto"` or custom Envd-compatible image, `desktop`, `cpu`, `memory` (MiB), `timeout_seconds` |
-| Vercel Sandbox | `team_id`, `project_id`                                                                          | `api_key` (Vercel access token) | `execution`, `snapshot`, `desktop`, `runtime`, `vcpus`, `timeout_seconds`                                                     |
-| Fly.io Sprites | `organization`                                                                                   | `api_key` (Sprites token)       | `region`                                                                                                                      |
-| Runloop        | `organization`                                                                                   | `api_key`                       | `blueprint_id`, `resource_size`, `idle_timeout_seconds`                                                                       |
+| Provider       | Backend settings                                                                                 | Credential fields               | Common recipe settings                                                                                                               |
+| -------------- | ------------------------------------------------------------------------------------------------ | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| E2B            | `domain`, optional `api_url`                                                                     | `api_key`                       | `template`, `user`, `root`, `allow_internet_access`, `timeout_seconds`                                                               |
+| Daytona        | `organization_id`, `target` (default `us`)                                                       | `api_key`                       | `snapshot`, which sets the sandbox's resources                                                                                       |
+| Modal          | optional `workspace`, `app_name` (default `a13n-sandboxes`), `environment_name` (default `main`) | `token_id`, `token_secret`      | Explicit Native image or compatible Envd image / automatic desktop, `execution`, `desktop`, `cpu`, `memory` (MiB), `timeout_seconds` |
+| Vercel Sandbox | `team_id`, `project_id`                                                                          | `api_key` (Vercel access token) | `execution`, `snapshot`, `desktop`, `runtime`, `vcpus`, `timeout_seconds`                                                            |
+| Fly.io Sprites | `organization`                                                                                   | `api_key` (Sprites token)       | `region`                                                                                                                             |
+| Runloop        | `organization`                                                                                   | `api_key`                       | `blueprint_id`, `resource_size`, `idle_timeout_seconds`                                                                              |
 
 Store credentials outside recipes and reconnect state. Organization/team fields name backend namespaces, not permission grants. Modal credentials select the workspace; its optional `workspace` field is a label. Service E2B connections select E2B cloud or a compatible backend by domain; see [Service providers](../a13n-service/environments.md#providers).
 
@@ -163,6 +163,26 @@ Stop/start preserves files but recreates desktop processes and invalidates old o
 
 ### Modal
 
+Select the execution mode before creating the environment. Existing recipes keep their Envd default and frozen fingerprints.
+
+| Mode                    | Image and preparation                                                                              | Capabilities                                                                                             |
+| ----------------------- | -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `native`                | Explicit Python image, for example `python:3.13-slim`; no Envd installation or desktop preparation | Files, streamed binary transfers, Python and bounded foreground Shell                                    |
+| `envd_http` / `envd_ws` | Compatible preinstalled Envd and sandbox launchers, or automatic desktop image preparation         | Shared EIP execution, negotiated execution policy and metrics; Computer use additionally needs a desktop |
+
+For a lightweight Service environment, use an existing Modal App and this recipe:
+
+```json
+{
+  "execution": "native",
+  "image": "python:3.13-slim"
+}
+```
+
+Native defaults to `/workspace`, `python3` and `/bin/sh`. The image must provide Linux, Python and that shell, plus a writable working directory. Git-ignore queries additionally need Git. Native does not provide interactive/background process operations, Envd OS sandbox or Egress enforcement, Computer operations, or Device metrics. Modal still supplies the outer sandbox. Stop/start uses the same filesystem snapshot lifecycle in both modes. Changing a template affects new instances; create a new instance to change an existing instance's mode.
+
+Computer use means desktop screenshots, clicks and typing through Envd. Browser use instead connects to a separately configured Chromium/CDP [Browser resource](../a13n-service/browsers.md); it does not install Chromium or Envd in the Modal environment. Agent tools and access permissions must be enabled separately in either case.
+
 For an automatic desktop in Service / Console:
 
 1. Supply the Modal Token ID and Token Secret. Credentials choose the account; `workspace` is an optional label.
@@ -172,7 +192,7 @@ For an automatic desktop in Service / Console:
 
 The first creation builds from pinned public artifacts; later creations reuse the immutable image ID. Defaults are 2 CPUs, 4096 MiB, 3600 seconds, and human assistance enabled, with explicit overrides retained. Build records are scoped to workspace, Provider, credential version, and manifest. Reuse checks current image access; interrupted waits rejoin the same content-addressed build without temporary sandboxes. Images and the App remain account assets.
 
-Custom images and headless targets require an explicit compatible `image` and existing App. Authenticate with `modal token new`, prepare a Linux amd64 Envd binary, and run the optional builder from the repository root:
+Custom Envd images and headless Envd targets require an explicit compatible `image` and existing App. Envd and desktop dependencies are prepared in the image, not installed when a Run connects. Automatic desktop preparation builds and reuses an immutable image before allocation; create/start checks authenticated EIP readiness and, when selected, desktop readiness. Missing prerequisites fail with the allocated identity retained; they do not switch modes or install software on attachment. Reuse existing Modal credentials, prepare a Linux amd64 Envd binary, and run the optional builder from the repository root:
 
 ```sh
 uv run --locked python examples/environment-provider/modal_desktop_image.py \

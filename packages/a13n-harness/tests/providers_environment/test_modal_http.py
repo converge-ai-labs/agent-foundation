@@ -40,7 +40,7 @@ def reference(policy=None):
     )
 
 
-@pytest.mark.parametrize("value", [{}, {"image": "im-envd", "root": "/tmp"}, {"image": "im-envd", "python": "python3"}])
+@pytest.mark.parametrize("value", [{}, {"image": "im-envd", "root": "/tmp"}, {"image": "im-envd", "python": "/custom/python"}])
 def test_requires_explicit_envd_image(value):
     with pytest.raises(EnvironmentProviderError):
         MODAL.validate_environment(value)
