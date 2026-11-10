@@ -1,5 +1,5 @@
 .popup {
-  width: min(320px, calc(100vw - 24px));
+  width: min(244px, calc(100vw - 24px));
 }
 .popup [data-slot="popover-viewport"] {
   padding: 0;
@@ -355,9 +355,6 @@
   text-overflow: ellipsis;
   color: color-mix(in srgb, var(--a13n-secondary) 89%, var(--a13n-canvas));
   font-size: inherit;
-}
-.popup:is([data-page="root"], [data-page="thinking"]) {
-  width: min(244px, calc(100vw - 24px));
 }
 .effortPanel {
   padding: 4px 8px 10px;
