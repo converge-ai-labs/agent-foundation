@@ -171,7 +171,6 @@ export async function submitDraft(
   threadId: string,
   action: "send" | "steer",
   receipt?: string,
-  modelId?: string,
   localInput?: LocalInput,
   attachments = new Map<string, Schema<"ThreadAttachment">>(),
   loadSkills?: LoadSkills,
@@ -186,11 +185,6 @@ export async function submitDraft(
   )
     return;
   const annotations = preset === undefined ? draft.annotations : [];
-  const mode = draft.mode;
-  const controls = modelControlRequest(draft.controls);
-  const environment = draft.environment
-    ? structuredClone(draft.environment)
-    : undefined;
   // Own the shared submission state before any asynchronous preparation so
   // Retry and ordinary Send/Steer cannot race while synchronization or skills load.
   draft.submission = { kind: "pending", action };
@@ -236,6 +230,7 @@ export async function submitDraft(
         !(error instanceof AppContextPendingError),
     };
     captured?.doc.destroy();
+    captured?.optionsDoc.destroy();
     draft.notify();
     return;
   }
@@ -247,6 +242,10 @@ export async function submitDraft(
   try {
     let acceptedReceipt: string;
     if (action === "send") {
+      const { model, environment, mode } = captured.options;
+      const { thinking, fast, reasoning_mode } = model ?? {};
+      const controls = modelControlRequest({ thinking, fast, reasoning_mode });
+      const selectedModel = model?.model_id;
       const accepted = await result(
         transport.client.POST("/api/threads/{thread_id}/submit", {
           params: { path: { thread_id: threadId } },
@@ -257,7 +256,7 @@ export async function submitDraft(
             source_id: input.id,
             ...(references.length ? { skill_references: references } : {}),
             ...(appContext.length ? { app_context: appContext } : {}),
-            ...(modelId ? { model_id: modelId } : {}),
+            ...(selectedModel ? { model_id: selectedModel } : {}),
             ...(environment ? { environment } : {}),
             ...controls,
           },
@@ -299,8 +298,7 @@ export async function submitDraft(
       acceptedReceipt = receipt;
     }
     input.state = "accepted";
-    if (action === "send") draft.mode = "normal";
-    if (captured) draft.clear(captured);
+    if (captured) draft.clear(captured, action === "send");
     if (annotations.length)
       draft.setAnnotations(
         draft.annotations.filter((note) => !annotations.includes(note)),
@@ -335,6 +333,7 @@ export async function submitDraft(
     }
   } finally {
     captured?.doc.destroy();
+    captured?.optionsDoc.destroy();
     draft.notify();
   }
   return draft.submission.kind === "accepted";
@@ -353,7 +352,6 @@ export function submitContinuation(
     threadId,
     "send",
     undefined,
-    draft.modelId,
     undefined,
     undefined,
     () => loadThreadSkills(transport, threadId, draft.environment),
@@ -735,7 +733,6 @@ export function Composer({
         threadId,
         action,
         activity.receipt_id ?? undefined,
-        draft.modelId,
         localInput,
         metadata,
         loadSkills,

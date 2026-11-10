@@ -5,8 +5,9 @@ import userEvent from "@testing-library/user-event";
 import type { Schema } from "../transport/client";
 import { i18n } from "../i18n";
 import { ThinkingPicker } from "./thinking-picker";
-import { useBrowserRunChoices } from "./browser-run-choices";
+import { useComposerRunChoices } from "./composer-run-choices";
 import { ThreadDraft } from "./draft";
+import * as Y from "yjs";
 import { renderHook } from "@testing-library/react";
 
 beforeEach(() =>
@@ -66,12 +67,12 @@ it("renders backend labels and preserves false separately from default", async (
   expect(onChange).toHaveBeenLastCalledWith(null);
 });
 
-it("restores only the matching conversation, agent and effective model", () => {
+it("retains shared choices only for the matching Agent and effective Model", () => {
   localStorage.clear();
   const draft = new ThreadDraft();
   const props = { id: "first", draft, model: "original", agent: "writer" };
   const { result, rerender } = renderHook(
-    (p) => useBrowserRunChoices(p.id, p.draft, p.agent, p.model),
+    (p) => useComposerRunChoices(p.draft, p.agent, p.model),
     { initialProps: props },
   );
   act(() =>
@@ -82,6 +83,7 @@ it("restores only the matching conversation, agent and effective model", () => {
     }),
   );
   const restored = new ThreadDraft();
+  Y.applyUpdate(restored.optionsDoc, Y.encodeStateAsUpdate(draft.optionsDoc));
   rerender({ ...props, draft: restored });
   expect(restored.controls).toMatchObject({
     thinking: false,
@@ -91,7 +93,7 @@ it("restores only the matching conversation, agent and effective model", () => {
   act(() => result.current.onModelChange("original"));
   expect(restored.controls.thinking).toBe(false);
   rerender({ ...props, draft: restored, agent: "reviewer" });
-  expect(restored.controls).toEqual({});
+  expect(restored.modelOptions).toBeUndefined();
   act(() => result.current.onModelChange(undefined));
   act(() => result.current.onControlsChange({ thinking: "low" }));
   rerender({
@@ -100,10 +102,10 @@ it("restores only the matching conversation, agent and effective model", () => {
     agent: "reviewer",
     model: "new-default",
   });
-  expect(restored.controls).toEqual({});
+  expect(restored.modelOptions).toBeUndefined();
   const other = new ThreadDraft();
   rerender({ ...props, draft: other, id: "second" });
-  expect(other.controls).toEqual({});
+  expect(other.modelOptions).toBeUndefined();
 });
 it("renders boolean controls without inventing effort levels", async () => {
   const user = userEvent.setup();

@@ -6,34 +6,34 @@ Harness UI keeps execution persistence continuation-oriented:
 
 1. editable YAML, MCP JSON, and local Markdown files own desired resources and global defaults;
 2. data-root Content Plugin ID directories contain editable local files with optional Git provenance;
-3. SQLite owns accepted-generation indexes, Project/resource lookup projections, terminal Project Model preferences, sticky Thread configurations, execution heads, selected references, and browser push subscriptions/VAPID identity;
+3. SQLite owns accepted-generation indexes, Project/resource lookup projections, terminal Project Model preferences, sticky Thread configurations, current shared browser drafts, execution heads, selected references, and browser push subscriptions/VAPID identity;
 4. immutable content-addressed files own normalized configuration generations, resolved Run compositions, and complete continuation checkpoints;
-5. shared browser drafts, live runtime objects, presence, and native terminal sessions remain in process memory.
+5. live runtime objects, presence, and native terminal sessions remain in process memory.
 
 The store supports local restart, inspection and native Shell supervision recovery. It persists retained tool records, frozen execution composition, native start correlation, cancellation intent and completion delivery state. Root input queues, active model invocations and arbitrary Python call stacks remain process-local. Harness UI uses local OS ownership locks rather than distributed worker leases.
 
 ## Persisted Values
 
-| Value                                                                           | Storage                               | Authority                                                                |
-| ------------------------------------------------------------------------------- | ------------------------------------- | ------------------------------------------------------------------------ |
-| Desired resource definitions and global defaults                                | YAML and local Markdown files         | Human-editable desired behavior                                          |
-| Installed Content Plugin directories                                            | Data-root files                       | Current optional plugin availability and editable files                  |
-| Thread scratch and submitted attachments                                        | Data-root Thread directories          | Disposable working files and retained input files                        |
-| Accepted configuration generation and resource indexes                          | SQLite plus immutable object          | Current complete validated file and plugin generation                    |
-| Thread metadata head, sticky configuration head, and initial-state reference    | SQLite                                | Identity, mutable presentation, defaults, and first-Run bootstrap        |
-| Empty initial `HarnessState`                                                    | Immutable object                      | Harness-generated Thread identity before any selected Run                |
-| Resolved Run composition                                                        | Immutable object                      | Exact behavior and dependency provenance captured for one Run            |
-| Root or child continuation bundle                                               | Immutable object                      | Exact selected `HarnessState` resume authority                           |
-| Child execution heads                                                           | SQLite                                | Segment correlation, saved status, and selected checkpoint               |
-| Compact child display                                                           | Immutable child checkpoint            | Inspection history only                                                  |
-| Environment-state references                                                    | SQLite plus immutable files           | Current Host-authoritative state                                         |
-| Browser push subscriptions and VAPID identity                                   | SQLite                                | Device opt-in delivery destinations; never execution or delivery history |
-| Shared browser drafts                                                           | Process memory                        | Synchronized editing state only; not execution or continuation authority |
-| Participant presence and native Host terminal sessions                          | Process memory                        | Current shared instance only                                             |
-| Retained tool records, cancellation and completion delivery                     | SQLite plus immutable payloads        | Execution identity, retained results and pending notification            |
-| Envd Session descriptors and native Shell start/process identity                | SQLite plus immutable execution state | Exact native attachment under local ownership                            |
-| Root receipts, active tasks, Models, credentials, clients, adapters and streams | Process memory                        | Current App only                                                         |
-| Logs and OpenTelemetry                                                          | Configured process outputs            | Diagnostics only                                                         |
+| Value                                                                           | Storage                               | Authority                                                                                      |
+| ------------------------------------------------------------------------------- | ------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Desired resource definitions and global defaults                                | YAML and local Markdown files         | Human-editable desired behavior                                                                |
+| Installed Content Plugin directories                                            | Data-root files                       | Current optional plugin availability and editable files                                        |
+| Thread scratch and submitted attachments                                        | Data-root Thread directories          | Disposable working files and retained input files                                              |
+| Accepted configuration generation and resource indexes                          | SQLite plus immutable object          | Current complete validated file and plugin generation                                          |
+| Thread metadata head, sticky configuration head, and initial-state reference    | SQLite                                | Identity, mutable presentation, defaults, and first-Run bootstrap                              |
+| Empty initial `HarnessState`                                                    | Immutable object                      | Harness-generated Thread identity before any selected Run                                      |
+| Resolved Run composition                                                        | Immutable object                      | Exact behavior and dependency provenance captured for one Run                                  |
+| Root or child continuation bundle                                               | Immutable object                      | Exact selected `HarnessState` resume authority                                                 |
+| Child execution heads                                                           | SQLite                                | Segment correlation, saved status, and selected checkpoint                                     |
+| Compact child display                                                           | Immutable child checkpoint            | Inspection history only                                                                        |
+| Environment-state references                                                    | SQLite plus immutable files           | Current Host-authoritative state                                                               |
+| Browser push subscriptions and VAPID identity                                   | SQLite                                | Device opt-in delivery destinations; never execution or delivery history                       |
+| Shared browser drafts                                                           | SQLite                                | Current synchronized composer content and Run choices, not execution or continuation authority |
+| Participant presence and native Host terminal sessions                          | Process memory                        | Current shared instance only                                                                   |
+| Retained tool records, cancellation and completion delivery                     | SQLite plus immutable payloads        | Execution identity, retained results and pending notification                                  |
+| Envd Session descriptors and native Shell start/process identity                | SQLite plus immutable execution state | Exact native attachment under local ownership                                                  |
+| Root receipts, active tasks, Models, credentials, clients, adapters and streams | Process memory                        | Current App only                                                                               |
+| Logs and OpenTelemetry                                                          | Configured process outputs            | Diagnostics only                                                                               |
 
 [File Memory](08-file-memory.md) has separate mutable plain files under the selected configuration root. Root and child checkpoint bundles carry optional memory cursor positions, not memory file snapshots. Its maintenance manifest and per-scope lock do not change SQLite head coordination or authorize Thread continuation. Each scope's observation-only Memory Thread uses ordinary continuation, transcript and usage storage with a nullable unique `memory_scope`; null preserves existing ordinary Threads. Each automatic round preserves display history while starting fresh model context. The scope lock serializes organizer admission, not arbitrary foreground file writes.
 
@@ -101,11 +101,13 @@ Server restart retains subscriptions and identity, not queued reminders. Deliver
 
 ## Shared Browser Drafts
 
-Shared editing uses an in-memory CRDT document per participating root Thread, separate from sticky configuration, `HarnessState`, and root-operation receipts. Synchronization does not admit a Run, advance a continuation, or create an input queue. [Collaborative conversations](webui/01-collaborative-conversations.md) owns frontend editing and Send behavior.
+Each existing root Thread has at most one current shared composer row in `webui_draft`, separate from sticky configuration, `HarnessState`, and root-operation receipts. The row stores its draft identity, current content and owner-only options CRDT states, unsent transition time, and last content/options change time. Both states are saved atomically before publication or editing acknowledgment. Presence and duplicate synchronization do not refresh retention. Reconnect, browser reload, and App restart restore the same saved identity and state. [Collaborative conversations](webui/01-collaborative-conversations.md) owns editing, permissions, and Send behavior.
 
-A browser can reconnect to the document during the same App lifetime. Server restart restores selected conversation history, not shared drafts or presence. There is no durable draft store, save acknowledgment, CRDT update log, or draft-based submission registry. Editing state must not be submitted automatically on startup or reconnect.
+Combined CRDT state is limited to 512 KiB per composer. The store overwrites one current row without update history, checkpoint objects, or draft-based execution receipts. After 30 days without a content/options change, maintenance removes the row even when it contains input or choices, skipping currently attached editors. Thread deletion cascades to its composer row. These fixed limits have no configuration switch. A pre-Thread New draft remains browser-local until creation and synchronization.
 
-Attachments reuse the existing Thread-scoped staging and retained-input lifecycle. The App protects a participating Thread's file area during its lifetime; submitting input retains referenced files independently of the document. Sharing a data root between independent App processes does not synchronize their live documents.
+Attachments reuse the Thread-scoped staging and retained-input lifecycle. A retained nonempty composer protects its Thread scratch area from the ordinary three-day pruning, including across App restart; active editors retain that protection until detached. Submitted attachments remain retained independently. Once a draft expires or becomes empty, ordinary scratch retention applies.
+
+Synchronization saves editing state; it never admits a Run, advances a continuation, or authorizes automatic submission on startup or reconnect. A save failure leaves the prior published state intact and reports an editing error. Failure to save draft consumption after known admission does not turn that admission into rejection: the App returns the accepted receipt and records the cleanup failure. Presence and local unacknowledged edits are not restored by the server. Sharing a data root between independent App processes does not synchronize their live documents.
 
 ## SQLite Contract
 

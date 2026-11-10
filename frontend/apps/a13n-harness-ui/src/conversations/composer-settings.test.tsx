@@ -267,7 +267,7 @@ it.each([false, true])(
     expect([search.selectionStart, search.selectionEnd]).toEqual([1, 2]);
     expect(window.document.activeElement).toBe(search);
     expect(screen.getByRole("button", { name: "Model Two" })).toBeTruthy();
-    expect(draft.controls).toBe(originalControls);
+    expect(draft.controls).toEqual(originalControls);
     expect(draft.modelId).toBe("one");
     expect(get).toHaveBeenCalledTimes(reads);
     expect(post).not.toHaveBeenCalled();
@@ -288,7 +288,7 @@ it.each([false, true])(
         .getByRole("button", { name: /Writer\s*writer/ })
         .getAttribute("aria-pressed"),
     ).toBe("true");
-    expect(draft.controls).toBe(originalControls);
+    expect(draft.controls).toEqual(originalControls);
 
     await user.click(
       screen.getByRole("button", { name: "返回智能体与模型设置" }),
@@ -361,7 +361,7 @@ it("preserves an unknown submission and locked choices when the language changes
   await user.click(standard);
   await act(() => i18n.changeLanguage("en"));
   expect(draft.submission).toBe(submission);
-  expect(draft.controls).toBe(controls);
+  expect(draft.controls).toEqual(controls);
   expect(draft.modelId).toBe("one");
   expect(get).toHaveBeenCalledTimes(reads);
   expect(post).not.toHaveBeenCalled();
