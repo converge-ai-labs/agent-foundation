@@ -31,6 +31,14 @@ def test_envd_gate_rejects_failed_classification(result: str) -> None:
     assert completed.returncode != 0
 
 
+def test_clipboard_ci_prevents_xvfb_reset_between_serial_tests():
+    job = yaml.safe_load(WORKFLOW.read_text())["jobs"]["daemon"]
+    step = next(step for step in job["steps"] if step["name"] == "Test native X11 clipboard under Xvfb")
+    assert step["if"] == "matrix.linux"
+    assert 'xvfb-run -a -s "-screen 0 1280x1024x24 -noreset"' in step["run"]
+    assert "--lib clipboard -- --include-ignored --test-threads=1" in step["run"]
+
+
 def test_linux_ci_builds_real_embedded_vm_backends_on_both_architectures():
     job = yaml.safe_load(WORKFLOW.read_text())["jobs"]["daemon"]
     assert job["env"]["BOXLITE_DEPS_STUB"] == "2"
