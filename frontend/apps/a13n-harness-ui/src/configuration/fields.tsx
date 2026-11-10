@@ -17,6 +17,7 @@ import { readDocument, updateDocument } from "./documents";
 import styles from "../shell/workbench.module.css";
 import { SelectionField } from "./selection";
 import { useRootConfiguration } from "./root-configuration";
+import { BotFields } from "./bot-fields";
 import { ModelFields } from "./model-editor";
 import { AgentFields } from "./agent-fields";
 import { EnvironmentsEditor } from "./environments";
@@ -482,66 +483,7 @@ export function ResourceFields({
               )}
             </SettingsSection>
             <section id="bot">
-              <SettingsSection variant="grouped" title={t("Bot")}>
-                {scalar(
-                  t("Bot model"),
-                  ["webui", "bot", "model"],
-                  models,
-                  t("Use default agent model"),
-                )}
-                <div className={styles.fieldGroup}>
-                  <FormField
-                    label={t("Custom instructions")}
-                    description={t(
-                      "Added to Bot's built-in instructions and global AGENTS.md.",
-                    )}
-                  >
-                    <Textarea
-                      variant="soft"
-                      value={text(["webui", "bot", "instructions"])}
-                      rows={3}
-                      onChange={(event) =>
-                        set(
-                          ["webui", "bot", "instructions"],
-                          event.target.value,
-                        )
-                      }
-                    />
-                  </FormField>
-                </div>
-                <SettingsRow
-                  label={t("Heartbeat")}
-                  controlId="bot-heartbeat-enabled"
-                  stackOnNarrow={false}
-                >
-                  <Switch
-                    id="bot-heartbeat-enabled"
-                    checked={
-                      get(["webui", "bot", "heartbeat_enabled"]) !== false
-                    }
-                    onCheckedChange={(enabled) =>
-                      set(["webui", "bot", "heartbeat_enabled"], enabled)
-                    }
-                  />
-                </SettingsRow>
-                <SettingsRow label={t("Interval (seconds)")}>
-                  <Input
-                    type="number"
-                    min={60}
-                    max={86400}
-                    aria-label={t("Heartbeat interval")}
-                    value={String(
-                      get(["webui", "bot", "interval_seconds"]) ?? 3600,
-                    )}
-                    onChange={(event) =>
-                      set(
-                        ["webui", "bot", "interval_seconds"],
-                        Number(event.target.value),
-                      )
-                    }
-                  />
-                </SettingsRow>
-              </SettingsSection>
+              <BotFields source={source} onChange={onChange} />
             </section>
             <section id="live">
               <SettingsSection variant="grouped" title={t("Live voice")}>

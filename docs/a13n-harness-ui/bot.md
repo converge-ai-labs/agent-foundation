@@ -7,9 +7,9 @@ Bot is the instance-wide assistant in the WebUI sidebar. Give Bot an ongoing obj
 
 ## Start and configure Bot
 
-1. Open **Settings → General → Bot**. Select an existing Model. Bot uses built-in instructions; you do not select an Agent.
+1. Open **Bot** in the sidebar. Bot is off by default. Select an existing Model in its inline setup; Bot uses built-in instructions, not a configured Agent.
 2. Optionally add custom instructions, such as your preferred coordination style. Captured global `AGENTS.md` guidance also applies.
-3. Open **Bot** in the sidebar and send a message. The first accepted message activates heartbeat scheduling.
+3. Choose **Turn on Bot**. This saves settings without running the Model. The first Heartbeat is scheduled one interval later, even if you never send a message. Edit later in **Settings → General → Bot**.
 
 The default heartbeat interval is **one hour**. Opening the page or saving settings starts no model request. The WebUI server must remain running for heartbeat processing. Bot is shared by instance-key participants and is unavailable to scoped guests. [Live mode](live-mode.md) is independent.
 
@@ -18,6 +18,7 @@ Merge these fields into the selected root YAML's existing `webui` mapping:
 ```yaml title="a13n-harness-ui.yaml — Bot"
 webui:
   bot:
+    enabled: true
     model: model-coordinator
     instructions: "Prefer coordinating work in project Threads."
     heartbeat_enabled: true
@@ -38,6 +39,12 @@ Bot can use `create_project` to create a normal Project configuration and `creat
 
 When memory is enabled, Bot receives global memory normally. It can discover configured Projects and call `read_project_memory` to read a Project's memory on demand. These reads are bounded and read-only. Project memories are not automatically injected into Bot's context. Keep coordination notes and tasks in Bot's own Thread.
 
+## Bot Notes
+
+Agents manage one short Markdown handoff per ordinary root Thread. A working Thread uses `read_bot_note()`, `write_bot_note(content)` and `clear_bot_note()` for its own slot. Bot can address any ordinary root's slot and list bounded summaries with `list_bot_notes`. There is no human Notes management form.
+
+Notes hold objectives, references, findings and next follow-up, up to 16 KiB UTF-8. Empty clears; identical content changes nothing; the last committed mutation wins. Notes remain usable while Bot is off. Archive preserves them, forks start empty, and deleting a Thread removes its slot. Writing a note never wakes Bot. On the next legitimate input, Bot can inspect saved results, follow up, update notes and clear handled items.
+
 ## Messages, activity, and decisions
 
 The Bot conversation shows your messages, direct replies, and intentional proactive messages. Routine heartbeat output stays quiet. When no reply is needed, Bot calls the native `finish_silently` output tool to finish successfully without a message. Its call and result are hidden in live and saved conversation views, while execution history remains available for inspection. Bot can explicitly publish a verified result, blocker, or question; publication participates in existing unread and notification behavior.
@@ -48,14 +55,16 @@ The text draft stays in the current tab. Reloading can lose an unsent draft. If 
 
 ## Pause and recover
 
-Use the pause icon to stop automated heartbeat and Connector delivery. Direct messages remain usable. Pausing does not cancel a Run already in progress. Resume schedules the next heartbeat from the current time.
+Use the pause icon to hold automatic processing. Heartbeat ticks and selected Connector events keep collecting; direct messages remain usable. Pause does not cancel a Run or reset the Heartbeat clock. Turn off Heartbeat separately to stop ticks while allowing Connector delivery.
+
+Turn off Bot in Settings to stop new ticks and delivery. History, settings, Notes and pending inputs are retained; already admitted work and other Threads continue. The conversation becomes read-only. Re-enable in Settings; a later normal delivery opportunity can process retained input. Pending human decisions can resume only after re-enable.
 
 Queued inputs survive server restart. An input interrupted during admission or execution is retained for inspection and pauses automation. Bot does not automatically replay it: tools may already have changed files or external systems. Inspect Activity and working Thread results, then send an explicit follow-up. A Run timeout uses the same pause-and-inspect behavior. Missed heartbeat intervals coalesce into one opportunity instead of replaying every missed tick.
 
 ## Connector ingress foundation
 
-The Host includes private database storage for Connector settings, credentials, and selected event envelopes. A periodic delivery attempt batches pending events across Connectors and submits or steers the exact Bot operation. Native acceptance consumes that batch; model acknowledgement or task completion is not required. Pending human decisions hold delivery.
+The Host includes private database storage for Connector settings, credentials, and selected event envelopes. Heartbeat and selected Connector events share one automatic inbox, independent of active Model execution. A periodic delivery attempt fairly batches a pending tick with events across Connectors and submits or steers the exact Bot operation. Native acceptance consumes that batch; model acknowledgement or task completion is not required. Pending human decisions hold delivery.
 
-This release provides the common storage and delivery foundation. Concrete provider setup, registrations, polling, write tools, and a Connector management UI require provider-specific integration. Connector credentials are plaintext in the private local database; protect the data directory and its backups. External event content supplies context, not human authorization.
+This release provides the common storage and delivery foundation. Concrete provider setup, polling, write tools, and a Connector management UI require provider-specific integration. Connector credentials are plaintext in the private local database; protect the data directory and its backups. External event content supplies context, not human authorization.
 
 For client integration, see the [Bot HTTP API](http-api.md#bot). For root settings, see the [configuration reference](configuration.md#webui-bot).

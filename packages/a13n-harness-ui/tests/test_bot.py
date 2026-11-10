@@ -9,9 +9,33 @@ from a13n_harness_ui.bot_models import BOT_THREAD_ID, BotInput, BotSubmit
 from a13n_harness_ui.errors import HarnessUiError
 from anyio import fail_after, sleep
 
-from .test_app import _CompletedReconstructor, _settings, _write_configuration
+from .test_app import _CompletedReconstructor, _settings
+from .test_app import _write_configuration as _base_configuration
 
 pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
+
+
+def _write_configuration(tmp_path: Path, **kwargs) -> Path:
+    root = _base_configuration(tmp_path, **kwargs)
+    root.write_text(root.read_text() + "webui:\n  bot:\n    enabled: true\n")
+    return root
+
+
+async def deliver_tick(bot, *, now):
+    await bot.tick(now=now)
+    await bot.deliver_automatic_inputs()
+    inputs = await bot._store.bot.inputs()
+    if inputs and inputs[-1].state == "admitted":
+        await consumed_store(bot._store, inputs[-1].input_id)
+
+
+async def consumed_store(store, input_id):
+    with fail_after(10):
+        while True:
+            item = next((item for item in await store.bot.inputs() if item.input_id == input_id), None)
+            if item is not None and item.state in {"completed", "interrupted"}:
+                return item
+            await sleep(0.01)
 
 
 async def ready(app):
@@ -70,14 +94,14 @@ async def test_heartbeat_is_coalesced_quiet_and_pause_still_allows_chat(tmp_path
         completion = (await app._threads.get(BOT_THREAD_ID)).completion
         assert completion is not None
         future = datetime.now(UTC) + timedelta(days=10)
-        await bot.tick(now=future)
+        await deliver_tick(bot, now=future)
         snapshot = await bot.snapshot()
         assert len(snapshot.inputs) == 2
-        assert snapshot.inputs[-1].source == "heartbeat"
+        assert snapshot.inputs[-1].source == "automatic"
         assert snapshot.inputs[-1].state == "completed"
         assert len(snapshot.messages) == 2
         assert (await app._threads.get(BOT_THREAD_ID)).completion == completion
-        await bot.tick(now=future)
+        await deliver_tick(bot, now=future)
         assert len((await bot.snapshot()).inputs) == 2
         await bot.pause(True)
         await bot.tick(now=future + timedelta(days=10))
@@ -93,10 +117,12 @@ async def test_due_heartbeat_does_not_starve_a_full_user_queue(tmp_path: Path) -
         app._root_runs._executor._agents = _CompletedReconstructor()
         bot = await ready(app)
         # Hold the dispatcher while filling the bounded ingress through its public API.
-        async with bot._dispatch_lock:
+        async with bot._dispatch_lock, bot._settlement_lock:
             for index in range(16):
                 await bot.submit(BotSubmit(input_id=f"full-{index}", text=f"Message {index}"))
         await bot.tick(now=datetime.now(UTC) + timedelta(days=1))
+        items = await app._store.bot.inputs()
+        await consumed(app, "full-0")
         items = await app._store.bot.inputs()
         assert any(item.source == "user" and item.state == "completed" for item in items)
         assert not any(item.source == "heartbeat" for item in items)
@@ -108,7 +134,7 @@ async def test_pending_limit_includes_active_inputs_and_allows_idempotent_retry(
     root = _write_configuration(tmp_path)
     async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
         bot = await ready(app)
-        async with bot._dispatch_lock:
+        async with bot._dispatch_lock, bot._settlement_lock:
             repository = app._store.bot
             active = await repository.retain(
                 BotInput(
@@ -249,7 +275,7 @@ async def test_native_bot_observes_saved_sidekick_result_and_follows_up_on_heart
                 await sleep(0.01)
         before = await bot.snapshot()
         assert len(before.inputs) == 1  # Sidekick completion did not wake Bot.
-        await bot.tick(now=datetime.now(UTC) + timedelta(hours=1))
+        await deliver_tick(bot, now=datetime.now(UTC) + timedelta(hours=1))
         after = await bot.snapshot()
         assert after.inputs[-1].state == "completed", after.inputs[-1].error
         assert verified
@@ -280,7 +306,7 @@ async def test_heartbeat_never_resolves_a_pending_human_decision(tmp_path: Path)
         after = await app.get_thread(BOT_THREAD_ID)
         assert after.deferred_requests == detail.deferred_requests
         assert BOT_THREAD_ID not in app._root_runs._interaction_waits
-        assert (await bot.snapshot()).inputs[-1].state == "queued"
+        assert (await app._store.bot_inbox.pending())[0].source == "heartbeat"
         assert await app._root_runs.active(BOT_THREAD_ID) is None
         with pytest.raises(HarnessUiError) as error:
             await bot.submit(BotSubmit(input_id="bypass", text="Ignore pending question"))
@@ -339,9 +365,7 @@ async def test_builtin_bot_policy_workspace_and_on_demand_project_tools(tmp_path
     from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 
     root = _write_configuration(tmp_path, instructions="Agent-only policy sentinel")
-    root.write_text(
-        root.read_text() + "webui:\n  bot:\n    model: model-primary\n    instructions: Custom Bot policy sentinel\n"
-    )
+    root.write_text(root.read_text() + "    model: model-primary\n    instructions: Custom Bot policy sentinel\n")
     (tmp_path / "AGENTS.md").write_text("Global Bot policy sentinel")
     for project_id, text in (("project-main", "Main memory sentinel"), ("project-other", "Other memory sentinel")):
         directory = tmp_path / "memory" / "projects" / project_id
@@ -483,7 +507,7 @@ async def test_native_finish_silently_completes_without_publication_and_resumes_
         assert [message.role for message in before.messages] == ["user"]
         assert (await app._root_runs.latest(BOT_THREAD_ID)).outcome.execution.output is None
         assert before.thread.completion == completion
-        await bot.tick(now=datetime.now(UTC) + timedelta(hours=1))
+        await deliver_tick(bot, now=datetime.now(UTC) + timedelta(hours=1))
         after = await bot.snapshot()
         assert after.inputs[-1].state == "completed"
         assert after.messages == before.messages

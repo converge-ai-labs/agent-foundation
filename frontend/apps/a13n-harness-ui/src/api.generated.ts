@@ -3381,7 +3381,7 @@ export interface components {
              * Source
              * @enum {string}
              */
-            source: "user" | "heartbeat" | "connector";
+            source: "user" | "heartbeat" | "connector" | "automatic";
             /** Text */
             text: string;
             /**
@@ -3436,6 +3436,10 @@ export interface components {
             thread?: components["schemas"]["ThreadSummary"] | null;
             /** Available */
             available: boolean;
+            /** Enabled */
+            enabled: boolean;
+            /** Model Id */
+            model_id?: string | null;
             /** Heartbeat Enabled */
             heartbeat_enabled: boolean;
             /** Interval Seconds */
@@ -3475,6 +3479,8 @@ export interface components {
             last_attempt_at?: string | null;
             /** Last Error */
             last_error?: string | null;
+            /** Heartbeat Interval Seconds */
+            heartbeat_interval_seconds?: number | null;
         };
         /** BrowserAccess */
         BrowserAccess: {

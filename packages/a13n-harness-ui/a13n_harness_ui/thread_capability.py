@@ -534,6 +534,12 @@ class ThreadCollaborationCapability(AbstractCapability[AgentContext]):
                 "If you are already executing another Thread's task, ask for clarification as needed, complete it and report to the requester "
                 "rather than creating another Sidekick for the same task. Do not create work merely because enabled."
             )
+        instructions += (
+            "\nBot Notes are Agent-managed Markdown handoffs. Use write_bot_note to retain concise objectives, "
+            "references, verified findings and next follow-up in your own slot; read_bot_note recovers it and "
+            "clear_bot_note empties it. Writing notes never wakes Bot or grants execution authority. "
+            "Notes remain available while Bot is off. After an uncertain write, read before retrying."
+        )
         return instructions
 
     def get_toolset(self) -> FunctionToolset[AgentContext]:
@@ -592,7 +598,81 @@ class ThreadCollaborationCapability(AbstractCapability[AgentContext]):
                 )
             if self.controller.read_project_memory is not None:
                 self._toolset.add_tool(_tool(self.read_project_memory, name="read_project_memory", effects={"read"}))
+        if isinstance(self.controller, ThreadToolController) and self.controller.bot is not None:
+            is_bot = self.source_thread_id == BOT_THREAD_ID
+            for function, name, effects in (
+                (self.read_thread_bot_note if is_bot else self.read_bot_note, "read_bot_note", {"read"}),
+                (self.write_thread_bot_note if is_bot else self.write_bot_note, "write_bot_note", {"write"}),
+                (self.clear_thread_bot_note if is_bot else self.clear_bot_note, "clear_bot_note", {"write"}),
+            ):
+                self._toolset.add_tool(_tool(function, name=name, effects=effects))
+            if is_bot:
+                self._toolset.add_tool(_tool(self.list_bot_notes, name="list_bot_notes", effects={"read"}))
         return self._toolset
+
+    async def read_bot_note(self, ctx: RunContext[AgentContext]) -> dict[str, Any]:
+        """Read this root Thread's Bot Note. A missing slot is empty."""
+        self._require_context(ctx)
+        assert self.controller.bot is not None
+        return (
+            await self.controller.bot.notes.read(caller=self.source_thread_id, thread_id=self.source_thread_id)
+        ).model_dump(mode="json")
+
+    async def write_bot_note(self, ctx: RunContext[AgentContext], content: str) -> dict[str, Any]:
+        """Replace your Markdown handoff (16 KiB UTF-8). Empty clears; identical content is a no-op.
+
+        Notes do not wake Bot. Last committed write wins; read after an uncertain outcome.
+        """
+        self._require_context(ctx)
+        assert self.controller.bot is not None
+        return (
+            await self.controller.bot.notes.write(
+                caller=self.source_thread_id, thread_id=self.source_thread_id, content=content
+            )
+        ).model_dump(mode="json")
+
+    async def clear_bot_note(self, ctx: RunContext[AgentContext]) -> dict[str, Any]:
+        """Clear your Bot Note. A later write creates it again."""
+        return await self.write_bot_note(ctx, "")
+
+    async def read_thread_bot_note(self, ctx: RunContext[AgentContext], thread_id: str) -> dict[str, Any]:
+        """Read any ordinary root's Bot Note; this grants no Thread execution authority."""
+        self._require_bot(ctx)
+        assert self.controller.bot is not None
+        return (await self.controller.bot.notes.read(caller=self.source_thread_id, thread_id=thread_id)).model_dump(
+            mode="json"
+        )
+
+    async def write_thread_bot_note(
+        self, ctx: RunContext[AgentContext], thread_id: str, content: str
+    ) -> dict[str, Any]:
+        """Create/replace any ordinary root's Markdown slot (16 KiB UTF-8). Empty clears.
+
+        Last committed mutation wins. Notes never wake Bot; read after an uncertain write.
+        """
+        self._require_bot(ctx)
+        assert self.controller.bot is not None
+        return (
+            await self.controller.bot.notes.write(caller=self.source_thread_id, thread_id=thread_id, content=content)
+        ).model_dump(mode="json")
+
+    async def clear_thread_bot_note(self, ctx: RunContext[AgentContext], thread_id: str) -> dict[str, Any]:
+        """Clear any ordinary root's Bot Note after its follow-up is handled."""
+        return await self.write_thread_bot_note(ctx, thread_id, "")
+
+    async def list_bot_notes(
+        self,
+        ctx: RunContext[AgentContext],
+        limit: int = Field(default=20, ge=1, le=100),
+        offset: int = Field(default=0, ge=0),
+    ) -> dict[str, Any]:
+        """List bounded handoff summaries with Thread title, Project and archive metadata.
+
+        Read relevant full slots on demand; inspect saved Thread outcomes before claiming progress.
+        """
+        self._require_bot(ctx)
+        assert self.controller.bot is not None
+        return await self.controller.bot.notes.list(caller=self.source_thread_id, limit=limit, offset=offset)
 
     def _require_bot(self, ctx: RunContext[AgentContext]) -> None:
         self._require_context(ctx)

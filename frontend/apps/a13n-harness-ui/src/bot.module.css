@@ -20,3 +20,37 @@
   border-radius: 50%;
   background: var(--a13n-signal);
 }
+
+.setup {
+  composes: settingsContent from "./shell/workbench.module.css";
+}
+.setupActions,
+.offBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.setupActions p,
+.offBar p {
+  margin: 0;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-body);
+  line-height: 1.5;
+}
+.setupActions > button,
+.offBar > a {
+  flex-shrink: 0;
+}
+.offBar {
+  padding: 16px;
+  border-radius: 16px;
+  background: var(--a13n-surface);
+}
+@media (max-width: 600px) {
+  .setupActions,
+  .offBar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}

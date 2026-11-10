@@ -7,9 +7,9 @@ Bot 是 WebUI 侧边栏中的实例级助手。向 Bot 提出持续目标后，�
 
 ## 启动和配置 Bot
 
-1. 打开 **设置 → 常规 → Bot**，选择已有 Model。Bot 使用内置指令，不需要选择 Agent。
+1. 在侧边栏打开 **Bot**。Bot 默认关闭；在页面内选择已有 Model。Bot 使用内置指令，不需要选择 Agent。
 2. 按需添加自定义指令，例如偏好的工作协调方式。捕获的全局 `AGENTS.md` 指引也会生效。
-3. 在侧边栏打开 **Bot** 并发送消息。首次接受消息后，系统启用 heartbeat 调度。
+3. 点击 **开启 Bot**。此操作只保存设置，不立即调用模型。首次 heartbeat 安排在一个间隔后，无需先发消息。之后可在 **设置 → 常规 → Bot** 中修改。
 
 默认 heartbeat 间隔为 **一小时**。打开页面或保存设置不会发起模型请求。heartbeat 处理要求 WebUI 服务保持运行。持实例密钥的参与者共享 Bot；受限分享访客无法访问 Bot。[Live 模式](live-mode.md) 与其独立。
 
@@ -18,6 +18,7 @@ Bot 是 WebUI 侧边栏中的实例级助手。向 Bot 提出持续目标后，�
 ```yaml title="a13n-harness-ui.yaml — Bot"
 webui:
   bot:
+    enabled: true
     model: model-coordinator
     instructions: "Prefer coordinating work in project Threads."
     heartbeat_enabled: true
@@ -38,6 +39,12 @@ Bot 可使用 `create_project` 创建普通 Project 配置，并通过 `create_t
 
 启用 memory 时，Bot 正常获得全局记忆。它可以发现已配置的 Project，再调用 `read_project_memory` 按需读取 Project 记忆。这些读取有大小限制且为只读；各 Project 的记忆不会自动注入 Bot 上下文。协调笔记和任务保留在 Bot 自己的 Thread 中。
 
+## Bot Notes
+
+Agent 为每个普通根 Thread 管理一份简短的 Markdown 交接笔记。工作 Thread 使用 `read_bot_note()`、`write_bot_note(content)` 和 `clear_bot_note()` 访问自己的 slot；Bot 可以访问任意普通根 Thread 的 slot，并用 `list_bot_notes` 分页读取摘要。此功能没有人工管理表单。
+
+笔记用于保存目标、引用、已确认的发现和下一步，最多 16 KiB UTF-8。空白内容会清除，内容相同则不修改，最后提交的操作生效。Bot 关闭时仍可使用笔记。归档保留笔记，fork 不复制，删除 Thread 会移除其 slot。写笔记不会唤醒 Bot；Bot 可在下一次合法输入时检查已保存结果、跟进并清除已处理事项。
+
 ## 消息、活动与决策
 
 Bot 聊天页面显示你的消息、直接回复，以及有意发布的主动消息。普通 heartbeat 输出保持安静。无需回复时，Bot 调用原生 `finish_silently` 输出工具，成功结束本轮而不发送消息。实时和已保存的聊天视图隐藏该工具的调用与结果，底层执行历史仍保留供检查。Bot 可以显式发布经过确认的结果、阻塞或问题；发布沿用现有未读和通知机制。
@@ -48,14 +55,16 @@ Bot 聊天页面显示你的消息、直接回复，以及有意发布的主动�
 
 ## 暂停与恢复
 
-使用暂停图标停止自动 heartbeat 和 Connector 投递。直接消息仍可使用。暂停不会取消已经运行的 Run；恢复后从当前时间安排下次 heartbeat。
+使用暂停图标暂停自动处理。heartbeat 和所选 Connector 事件仍会收集，直接消息仍可使用。暂停不取消 Run，也不重置 heartbeat 时钟。单独关闭 Heartbeat 可停止 tick，同时保留 Connector 投递。
+
+在设置中关闭 Bot 会停止新的 tick 和投递。历史、设置、Notes 和待处理输入全部保留；已接受的运行和其他 Thread 继续执行。聊天变为只读。重新开启后，后续正常投递机会可以处理保留的输入。待回答的人类决策需重新开启后才能继续。
 
 排队输入在服务重启后保留。在接受或执行过程中中断的输入会保留供检查，并暂停自动处理。Bot 不会自动重放这些输入，因为工具可能已经修改文件或外部系统。先检查活动和工作 Thread 的结果，再明确发送后续要求。Run 超时也采用暂停并检查的处理方式。错过的 heartbeat 间隔会合并成一次机会，不逐次补跑。
 
 ## Connector 入站基础
 
-Host 提供私有数据库存储，用于保存 Connector 设置、凭据和所选事件信封。周期性投递会跨 Connector 合并待处理事件，并提交给 Bot 或向其确切的当前操作追加输入。原生执行接受输入后消费该批次，不等待模型确认或任务完成。待回答的人类决策会阻止投递。
+Host 提供私有数据库存储，用于保存 Connector 设置、凭据和所选事件信封。heartbeat 和所选 Connector 事件共用自动 inbox，收集不受模型运行状态影响。周期性投递会公平合并待处理 tick 与跨 Connector 事件，并提交给 Bot 或向其确切的当前操作追加输入。原生执行接受输入后消费该批次，不等待模型确认或任务完成。待回答的人类决策会阻止投递。
 
-本版本提供公共存储和投递基础。具体提供方的配置、注册、轮询、写入工具和 Connector 管理界面仍需要专门集成。Connector 凭据以明文保存在私有本地数据库中；请保护数据目录及其备份。外部事件内容提供上下文，不代表人类授权。
+本版本提供公共存储和投递基础。具体提供方的配置、轮询、写入工具和 Connector 管理界面仍需要专门集成。Connector 凭据以明文保存在私有本地数据库中；请保护数据目录及其备份。外部事件内容提供上下文，不代表人类授权。
 
 客户端集成参见 [Bot HTTP API](http-api.md#bot)，根设置参见[配置参考](configuration.md#webui-bot)。

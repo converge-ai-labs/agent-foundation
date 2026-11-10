@@ -15,6 +15,8 @@ from a13n_harness_ui import __version__
 from a13n_harness_ui.errors import StoreConflictError
 
 from .bot import BotRepository
+from .bot_inbox import BotInboxRepository
+from .bot_notes import BotNoteRepository
 from .checkpoint_lock import checkpoint_lock
 from .checkpoint_pruning import CheckpointPruner
 from .compaction import CompactionRepository
@@ -73,6 +75,8 @@ class LocalStore:
         self.usage_analytics = UsageAnalyticsRepository(database.sessions)
         self.voice = VoiceTranscriptRepository(database.sessions, objects)
         self.bot = BotRepository(database.sessions)
+        self.bot_inbox = BotInboxRepository(database.sessions)
+        self.bot_notes = BotNoteRepository(database.sessions)
         self.connectors = ConnectorRepository(database.sessions)
         self.restarts = RestartRepository(database.sessions)
         self.child_executions = ChildExecutionRepository(database.sessions)

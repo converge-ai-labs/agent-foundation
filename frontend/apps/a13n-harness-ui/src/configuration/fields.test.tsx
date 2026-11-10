@@ -89,31 +89,27 @@ function renderFields(initial: string) {
 it("configures Bot's model, custom instructions and hourly heartbeat without choosing an agent", async () => {
   const initial = 'schema_version: "1"\n';
   renderFields(initial);
+  expect(screen.queryByRole("combobox", { name: "Bot model" })).toBeNull();
+  expect(screen.getByTestId("source").textContent).toBe(initial);
+  fireEvent.click(screen.getByRole("switch", { name: "Bot" }));
   expect(screen.getByRole("combobox", { name: "Bot model" })).toBeTruthy();
   expect(screen.queryByRole("combobox", { name: "Bot agent" })).toBeNull();
   expect(
-    (
-      screen.getByRole("spinbutton", {
-        name: "Heartbeat interval",
-      }) as HTMLInputElement
-    ).value,
-  ).toBe("3600");
-  expect(screen.getByTestId("source").textContent).toBe(initial);
+    screen.getByRole("combobox", { name: "Check in every" }).textContent,
+  ).toContain("1 hour");
   fireEvent.change(
     screen.getByRole("textbox", { name: "Custom instructions" }),
     { target: { value: "Coordinate my projects." } },
   );
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("combobox", { name: "Check in every" }));
+  await user.click(screen.getByRole("option", { name: "2 hours" }));
   fireEvent.click(screen.getByRole("switch", { name: "Heartbeat" }));
-  fireEvent.change(
-    screen.getByRole("spinbutton", { name: "Heartbeat interval" }),
-    {
-      target: { value: "7200" },
-    },
-  );
   expect(parse(screen.getByTestId("source").textContent!)).toEqual({
     schema_version: "1",
     webui: {
       bot: {
+        enabled: true,
         instructions: "Coordinate my projects.",
         heartbeat_enabled: false,
         interval_seconds: 7200,
@@ -450,4 +446,24 @@ it("edits web options without replacing nested custom constraints", async () => 
     search: { mode: "host", allowed_domains: ["example.com"] },
     download: { max_bytes: 1234, enabled: false },
   });
+});
+
+it("requires confirmation before turning Bot off and leaves policy untouched on cancel", async () => {
+  const initial =
+    'schema_version: "1"\nwebui:\n  bot: {enabled: true, instructions: "Keep", interval_seconds: 7200}\n';
+  renderFields(initial);
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("switch", { name: "Bot" }));
+  await screen.findByRole("dialog", { name: "Turn off Bot?" });
+  expect(screen.getByTestId("source").textContent).toBe(initial);
+  await user.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(screen.getByTestId("source").textContent).toBe(initial);
+  await user.click(screen.getByRole("switch", { name: "Bot" }));
+  await user.click(await screen.findByRole("button", { name: "Turn off" }));
+  expect(parse(screen.getByTestId("source").textContent!).webui.bot).toEqual({
+    enabled: false,
+    instructions: "Keep",
+    interval_seconds: 7200,
+  });
+  expect(screen.queryByRole("combobox", { name: "Bot model" })).toBeNull();
 });

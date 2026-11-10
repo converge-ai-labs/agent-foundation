@@ -16,13 +16,14 @@ class ConnectorConfiguration(ConnectorModel):
     connector_id: str = Field(min_length=1, max_length=128)
     kind: str = Field(min_length=1, max_length=64)
     enabled: bool = True
+    deliver_to_bot: bool = False
     selected_events: tuple[str, ...] = Field(default=(), max_length=128)
     settings: dict[str, JsonValue] = Field(default_factory=dict, exclude=True, repr=False)
     credentials: dict[str, str] = Field(default_factory=dict, exclude=True, repr=False)
 
 
 class ConnectorInput(ConnectorModel):
-    """An adapter-authored event, already normalized within its resource/registration scope.
+    """An adapter-authored event, already normalized within its resource scope.
 
     Text is external content, never human authorization. Credentials and private adapter state
     must not be included. A stable source event ID deduplicates only while pending in the inbox.

@@ -15,6 +15,7 @@ import { createTransport, type Schema } from "./transport/client";
 import { TransportContext } from "./transport/context";
 import { ComposerDrafts } from "./conversations/composer";
 import { ThreadDraft } from "./conversations/draft";
+import { DraftContext, type SourceDraft } from "./configuration/drafts";
 
 vi.mock("./conversations/live-threads", async () => {
   const { FocusDisplay } = await import("./conversations/stream");
@@ -44,6 +45,11 @@ vi.mock("./conversations/results", () => ({
 let snapshot: Schema<"BotSnapshot">;
 let requests: Schema<"BotSubmit">[];
 let reject: boolean;
+let rootSource: string;
+let configurationWrites: string[];
+let writable: boolean;
+let saveFailure: "validation" | "unknown" | null;
+let savedDrafts: Map<string, SourceDraft>;
 let queries: QueryClient;
 let transport: ReturnType<typeof createTransport>;
 let draft: ThreadDraft;
@@ -75,12 +81,19 @@ beforeEach(() => {
     thread_id: BOT_THREAD_ID,
     state: { activated: false, paused: false },
     available: true,
+    enabled: true,
     heartbeat_enabled: true,
     interval_seconds: 3600,
     messages: [],
     inputs: [],
   };
   requests = [];
+  rootSource =
+    '# Keep this comment\nschema_version: "1"\ndefaults: {agent: agent-assistant}\nwebui:\n  bot: {enabled: false}\n';
+  configurationWrites = [];
+  writable = true;
+  saveFailure = null;
+  savedDrafts = new Map();
   reject = false;
   vi.spyOn(document, "hasFocus").mockReturnValue(true);
   vi.stubGlobal(
@@ -116,7 +129,48 @@ beforeEach(() => {
           deferred_requests: [],
         });
       if (path === "/api/selectors")
-        return Response.json({ agents: [], models: [] });
+        return Response.json({
+          agents: [
+            {
+              agent_id: "agent-assistant",
+              model_id: "model-primary",
+              name: "Assistant",
+            },
+          ],
+          models: [
+            {
+              model_id: "model-primary",
+              name: "Primary",
+              route: "openai:gpt-5",
+            },
+          ],
+        });
+      if (path === "/api/configuration/sources")
+        return Response.json({
+          sources: [
+            {
+              resource_kind: "root",
+              relative_path: "root.yaml",
+              content_available: true,
+              writable,
+            },
+          ],
+        });
+      if (path === "/api/configuration/sources/root.yaml") {
+        if (request.method === "PUT") {
+          if (saveFailure === "unknown") throw new TypeError("Offline");
+          if (saveFailure === "validation")
+            return Response.json(
+              { error: { message: "Invalid configuration" } },
+              { status: 422 },
+            );
+          rootSource = (await request.json()).content;
+          configurationWrites.push(rootSource);
+          snapshot = { ...snapshot, enabled: true };
+          return Response.json({ source_digest: "saved" });
+        }
+        return Response.json({ content: rootSource, writable });
+      }
       if (path === "/api/bot") return Response.json(snapshot);
       return Response.json(
         { message: "Not provided by this fixture" },
@@ -139,30 +193,32 @@ function mount() {
   return render(
     <TransportContext value={transport}>
       <QueryClientProvider client={queries}>
-        <ComposerDrafts value={new Map([[BOT_THREAD_ID, draft]])}>
-          <MemoryRouter initialEntries={["/bot"]}>
-            <BotComposerProvider>
-              <Link to="/elsewhere">Leave</Link>
-              <Link to="/bot">Return</Link>
-              <Routes>
-                <Route
-                  path="/bot"
-                  element={
-                    <BotPage profile={profile} unauthorized={() => {}} />
-                  }
-                />
-                <Route path="/elsewhere" element={<p>Elsewhere</p>} />
-              </Routes>
-            </BotComposerProvider>
-          </MemoryRouter>
-        </ComposerDrafts>
+        <DraftContext value={savedDrafts}>
+          <ComposerDrafts value={new Map([[BOT_THREAD_ID, draft]])}>
+            <MemoryRouter initialEntries={["/bot"]}>
+              <BotComposerProvider>
+                <Link to="/elsewhere">Leave</Link>
+                <Link to="/bot">Return</Link>
+                <Routes>
+                  <Route
+                    path="/bot"
+                    element={
+                      <BotPage profile={profile} unauthorized={() => {}} />
+                    }
+                  />
+                  <Route path="/elsewhere" element={<p>Elsewhere</p>} />
+                </Routes>
+              </BotComposerProvider>
+            </MemoryRouter>
+          </ComposerDrafts>
+        </DraftContext>
       </QueryClientProvider>
     </TransportContext>,
   );
 }
 it("registers the lazy root's zero baseline before its first admission and clears accepted input", async () => {
   mount();
-  await screen.findByText("Ready when you are");
+  await screen.findByText("Heartbeat every 60 minutes");
   typeMessage("Track this");
   fireEvent.click(screen.getByRole("button", { name: "Send" }));
   await waitFor(() => expect(requests).toHaveLength(1));
@@ -199,7 +255,7 @@ it("queues human input while busy or paused without using Thread run or steer", 
 it("retains drafts and uncertain exact commands across navigation without automatic retry", async () => {
   reject = true;
   mount();
-  await screen.findByText("Ready when you are");
+  await screen.findByText("Heartbeat every 60 minutes");
   typeMessage("Do once");
   fireEvent.click(screen.getByText("Leave"));
   fireEvent.click(screen.getByText("Return"));
@@ -290,4 +346,103 @@ it("acknowledges the rendered completion, preserves a scrolled-up reader, and ex
   reader.scrollTop = 800;
   fireEvent.scroll(reader);
   expect(tracker.acknowledge).toHaveBeenCalledWith(BOT_THREAD_ID, 4);
+});
+
+it("offers inline setup while off and enables with one policy save, without submitting work", async () => {
+  snapshot.enabled = false;
+  mount();
+  const enable = await screen.findByRole("button", { name: "Turn on Bot" });
+  await waitFor(() => expect(enable.hasAttribute("disabled")).toBe(false));
+  expect(
+    screen.getByRole("combobox", { name: "Bot model" }).textContent,
+  ).toContain("Primary");
+  expect(screen.queryByRole("button", { name: "Send" })).toBeNull();
+  fireEvent.change(
+    screen.getByRole("textbox", { name: "Custom instructions" }),
+    { target: { value: "Track release progress" } },
+  );
+  fireEvent.click(enable);
+  await screen.findByRole("button", { name: "Send" });
+  expect(configurationWrites).toHaveLength(1);
+  expect(configurationWrites[0]).toContain("# Keep this comment");
+  expect(configurationWrites[0]).toContain("Track release progress");
+  expect(requests).toHaveLength(0);
+});
+
+it("keeps used off Bot history read-only with settings recovery and no Notes management", async () => {
+  snapshot.enabled = false;
+  snapshot.messages = [
+    {
+      message_id: "saved",
+      role: "assistant",
+      text: "Verified saved result",
+      created_at: "2026-11-10T00:00:00Z",
+    },
+  ];
+  mount();
+  await screen.findByText("Verified saved result");
+  expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
+  expect(
+    screen.getByRole("link", { name: "Bot settings" }).getAttribute("href"),
+  ).toBe("/settings#bot");
+  expect(screen.queryByText("Registered work")).toBeNull();
+});
+
+it("keeps read-only setup disabled and protects unsaved global settings", async () => {
+  snapshot.enabled = false;
+  writable = false;
+  mount();
+  const enable = await screen.findByRole("button", { name: "Turn on Bot" });
+  await screen.findByRole("combobox", { name: "Bot model" });
+  expect(enable.hasAttribute("disabled")).toBe(true);
+  cleanup();
+  writable = true;
+  queries.clear();
+  savedDrafts.set("root.yaml", {
+    content: "unsaved",
+    base: rootSource,
+    digest: "base",
+    replacement: false,
+  });
+  mount();
+  const editable = await screen.findByRole("button", { name: "Turn on Bot" });
+  await waitFor(() => expect(editable.hasAttribute("disabled")).toBe(false));
+  fireEvent.click(editable);
+  await screen.findByText(
+    "Save or discard your global settings changes first.",
+  );
+  expect(configurationWrites).toHaveLength(0);
+  expect(savedDrafts.get("root.yaml")?.content).toBe("unsaved");
+});
+
+it("retains setup edits after validation failure and rechecks unknown saves before retry", async () => {
+  snapshot.enabled = false;
+  saveFailure = "validation";
+  mount();
+  const enable = await screen.findByRole("button", { name: "Turn on Bot" });
+  await waitFor(() => expect(enable.hasAttribute("disabled")).toBe(false));
+  fireEvent.change(
+    screen.getByRole("textbox", { name: "Custom instructions" }),
+    { target: { value: "Keep this draft" } },
+  );
+  fireEvent.click(enable);
+  await screen.findByText("Invalid configuration");
+  expect(
+    (
+      screen.getByRole("textbox", {
+        name: "Custom instructions",
+      }) as HTMLTextAreaElement
+    ).value,
+  ).toBe("Keep this draft");
+  saveFailure = "unknown";
+  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+  const check = await screen.findByRole("button", { name: "Check again" });
+  expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+  expect(configurationWrites).toHaveLength(0);
+  // The server accepted the policy even though its response was lost.
+  snapshot.enabled = true;
+  fireEvent.click(check);
+  await screen.findByRole("button", { name: "Send" });
+  expect(configurationWrites).toHaveLength(0);
+  expect(requests).toHaveLength(0);
 });

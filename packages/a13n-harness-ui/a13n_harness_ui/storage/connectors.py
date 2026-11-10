@@ -1,4 +1,4 @@
-"""Shared Connector configuration and selected-input inbox over the Host database.
+"""Connector configuration and transaction-scoped automatic inbox ingestion.
 
 Concrete Connectors own fixed domain tables. They can call enqueue_inputs within the same
 short transaction that saves their own cursor/state; neither operation performs external I/O.
@@ -6,7 +6,7 @@ short transaction that saves their own cursor/state; neither operation performs 
 
 import json
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,7 +14,7 @@ from a13n_harness_ui.connector_models import ConnectorConfiguration, ConnectorIn
 from a13n_harness_ui.errors import HarnessUiError
 
 from .database import DatabaseSessions, short_session, transaction
-from .models import ConnectorConfigurationRecord, ConnectorInputRecord
+from .models import BotInboxRecord, ConnectorConfigurationRecord
 
 
 async def enqueue_inputs(session: AsyncSession, connector_id: str, inputs: tuple[ConnectorInput, ...]) -> None:
@@ -22,16 +22,22 @@ async def enqueue_inputs(session: AsyncSession, connector_id: str, inputs: tuple
     row = await session.get(ConnectorConfigurationRecord, connector_id)
     if row is None:
         raise HarnessUiError("Connector does not exist.", code="connector_missing")
-    selected = set(json.loads(row.selected_events)) if row.enabled else set()
+    selected = set(json.loads(row.selected_events)) if row.enabled and row.deliver_to_bot else set()
     for item in inputs:
         if item.connector_id != connector_id:
             raise HarnessUiError("Connector input belongs to another instance.", code="connector_input_invalid")
         if item.event_type not in selected:
             continue
+        envelope = {**item.model_dump(mode="json"), "source": "connector"}
+        if len(json.dumps([envelope], ensure_ascii=False, separators=(",", ":")).encode("utf-8")) > 60 * 1024:
+            raise HarnessUiError(
+                "Connector envelope exceeds the automatic batch limit.", code="connector_input_too_large"
+            )
         await session.execute(
-            insert(ConnectorInputRecord)
+            insert(BotInboxRecord)
             .values(
                 input_id=item.input_id,
+                source="connector",
                 connector_id=connector_id,
                 event_type=item.event_type,
                 source_event_id=item.source_event_id,
@@ -58,6 +64,7 @@ class ConnectorRepository:
                     connector_id=configuration.connector_id,
                     kind=configuration.kind,
                     enabled=configuration.enabled,
+                    deliver_to_bot=configuration.deliver_to_bot,
                     selected_events=json.dumps(configuration.selected_events),
                     settings=json.dumps(configuration.settings, allow_nan=False),
                     credentials=json.dumps(configuration.credentials, allow_nan=False),
@@ -66,6 +73,7 @@ class ConnectorRepository:
                     index_elements=["connector_id"],
                     set_={
                         "enabled": configuration.enabled,
+                        "deliver_to_bot": configuration.deliver_to_bot,
                         "selected_events": json.dumps(configuration.selected_events),
                         "settings": json.dumps(configuration.settings, allow_nan=False),
                         "credentials": json.dumps(configuration.credentials, allow_nan=False),
@@ -74,9 +82,9 @@ class ConnectorRepository:
             )
             # Explicitly deselected types cannot linger ahead of selected input in a batch.
             await session.execute(
-                delete(ConnectorInputRecord).where(
-                    ConnectorInputRecord.connector_id == configuration.connector_id,
-                    ConnectorInputRecord.event_type.not_in(configuration.selected_events),
+                delete(BotInboxRecord).where(
+                    BotInboxRecord.connector_id == configuration.connector_id,
+                    BotInboxRecord.event_type.not_in(configuration.selected_events),
                 )
             )
 
@@ -90,6 +98,7 @@ class ConnectorRepository:
                 connector_id=row.connector_id,
                 kind=row.kind,
                 enabled=row.enabled,
+                deliver_to_bot=row.deliver_to_bot,
                 selected_events=tuple(json.loads(row.selected_events)),
                 settings=json.loads(row.settings),
                 credentials=json.loads(row.credentials),
@@ -99,41 +108,3 @@ class ConnectorRepository:
         """Ingress without a cursor update (for example an already authenticated webhook)."""
         async with transaction(self._sessions) as session:
             await enqueue_inputs(session, connector_id, inputs)
-
-    async def pending(self) -> tuple[ConnectorInput, ...]:
-        """One cross-Connector batch, at most 32 events and 60 KiB of serialized envelopes."""
-        async with short_session(self._sessions) as session:
-            rows = (
-                await session.scalars(
-                    select(ConnectorInputRecord)
-                    .join(ConnectorConfigurationRecord)
-                    .where(ConnectorConfigurationRecord.enabled.is_(True))
-                    .order_by(ConnectorInputRecord.created_at, ConnectorInputRecord.input_id)
-                    .limit(32)
-                )
-            ).all()
-            result: list[ConnectorInput] = []
-            size = 0
-            for row in rows:
-                item = ConnectorInput(
-                    input_id=row.input_id,
-                    connector_id=row.connector_id,
-                    event_type=row.event_type,
-                    source_event_id=row.source_event_id,
-                    text=row.text,
-                    created_at=row.created_at,
-                )
-                size += len(item.model_dump_json().encode("utf-8"))
-                if result and size > 60 * 1024:
-                    break
-                result.append(item)
-            return tuple(result)
-
-    async def delivered(self, inputs: tuple[ConnectorInput, ...]) -> None:
-        """Forget exactly the accepted batch, preserving arrivals during delivery."""
-        if not inputs:
-            return
-        async with transaction(self._sessions) as session:
-            await session.execute(
-                delete(ConnectorInputRecord).where(ConnectorInputRecord.input_id.in_(item.input_id for item in inputs))
-            )

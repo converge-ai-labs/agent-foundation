@@ -249,6 +249,7 @@ class McpAppsConfiguration(ConfigurationModel):
 class BotConfiguration(ConfigurationModel):
     """Built-in Bot Model, optional instructions and Host scheduling policy."""
 
+    enabled: bool = False
     model: ResourceId | None = None
     instructions: str = Field(default="", max_length=1024 * 1024)
     heartbeat_enabled: bool = True

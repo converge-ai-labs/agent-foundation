@@ -9967,7 +9967,8 @@
             "enum": [
               "user",
               "heartbeat",
-              "connector"
+              "connector",
+              "automatic"
             ],
             "title": "Source"
           },
@@ -10129,6 +10130,21 @@
             "type": "boolean",
             "title": "Available"
           },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "model_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Id"
+          },
           "heartbeat_enabled": {
             "type": "boolean",
             "title": "Heartbeat Enabled"
@@ -10174,6 +10190,7 @@
         "required": [
           "state",
           "available",
+          "enabled",
           "heartbeat_enabled",
           "interval_seconds"
         ],
@@ -10225,6 +10242,17 @@
               }
             ],
             "title": "Last Error"
+          },
+          "heartbeat_interval_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Heartbeat Interval Seconds"
           }
         },
         "additionalProperties": false,

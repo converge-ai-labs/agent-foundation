@@ -3248,6 +3248,8 @@ class HarnessUiApp:
         self._replace_candidate_error(None)
         self._devices.update_monitoring_sources(result.configuration.devices.values())
         self._memory_organizer.configuration_changed(result.configuration)
+        if self._bot is not None:
+            await self._bot.reconcile_policy()
         await self._retire_mcp_bindings(result.configuration)
         self._configuration_fingerprint = await configuration_tree_fingerprint(self._require_configuration_path())
         await self._summary_hub.publish(kind="configuration")

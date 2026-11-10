@@ -22,6 +22,7 @@ import { useResults } from "./conversations/results";
 import row from "./shell/navigation-row.module.css";
 import styles from "./bot.module.css";
 
+import { BotSetup } from "./bot-setup";
 import { BOT_THREAD_ID } from "./bot-identity";
 export { BOT_THREAD_ID } from "./bot-identity";
 
@@ -116,9 +117,11 @@ export function BotActions() {
       result(client.POST("/api/bot/pause", { body: { paused } })),
     onSuccess: (snapshot) => queries.setQueryData(["bot"], snapshot),
   });
+  if (data && !data.enabled && !data.thread && !data.messages?.length)
+    return null;
   return (
     <>
-      {data?.state.activated && (
+      {data?.thread && (
         <Button
           variant="ghost"
           size="icon-sm"
@@ -138,7 +141,7 @@ export function BotActions() {
       >
         <Gear />
       </Button>
-      {data && (
+      {data?.enabled && (
         <Button
           variant="ghost"
           size="icon-sm"
@@ -177,20 +180,24 @@ export function BotPage({
     data?.inputs?.some((input) =>
       ["queued", "dispatching", "admitted"].includes(input.state ?? "queued"),
     );
+  if (data && !data.enabled && !data.thread && !data.messages?.length)
+    return <BotSetup />;
   const status =
-    !data?.available && data
-      ? t("Bot processing is unavailable")
-      : data?.pending_decision
-        ? t("Bot needs your decision in Activity")
-        : data?.state.paused
-          ? t("Automation paused · You can still chat")
-          : busy
-            ? t("Working…")
-            : data?.state.activated && data.heartbeat_enabled
-              ? t("Heartbeat every {{minutes}} minutes", {
-                  minutes: data.interval_seconds / 60,
-                })
-              : t("Ready when you are");
+    data && !data.enabled
+      ? t("Bot is off")
+      : !data?.available && data
+        ? t("Bot processing is unavailable")
+        : data?.pending_decision
+          ? t("Bot needs your decision in Activity")
+          : data?.state.paused
+            ? t("Automation paused · You can still chat")
+            : busy
+              ? t("Working…")
+              : data?.heartbeat_enabled
+                ? t("Heartbeat every {{minutes}} minutes", {
+                    minutes: data.interval_seconds / 60,
+                  })
+                : t("Ready when you are");
   return (
     <Conversation
       threadId={BOT_THREAD_ID}
@@ -207,40 +214,57 @@ export function BotPage({
             {status}
           </span>
         ),
-        composer: (
-          <Composer
-            local
-            threadId={BOT_THREAD_ID}
-            activity={{ state: "inactive" }}
-            canRun={!!data?.available && !data.pending_decision}
-            queuedInput={{
-              pending: send.isPending,
-              locked: uncertain,
-              submit: () => send.mutate(),
-            }}
-            profile={profile}
-            unauthorized={unauthorized}
-            reconcile={() => void bot.refetch()}
-            controls={() => <Link to="/settings#bot">{t("Model")}</Link>}
-            feedback={
-              <>
-                <ErrorNotice
-                  error={bot.error}
-                  retry={() => void bot.refetch()}
-                />
-                <ErrorNotice
-                  error={send.error || data?.state.last_error}
-                  retry={uncertain ? () => send.mutate() : undefined}
-                />
-                {data?.pending_decision && (
-                  <Link to={`/threads/${BOT_THREAD_ID}`}>
-                    {t("Open Activity to respond")}
-                  </Link>
-                )}
-              </>
-            }
-          />
-        ),
+        composer:
+          data && !data.enabled ? (
+            <div className={styles.offBar}>
+              <div>
+                <strong>{t("Bot is off")}</strong>
+                <p>
+                  {t(
+                    "History and pending inputs are kept. Turn Bot on in Settings to continue.",
+                  )}
+                </p>
+              </div>
+              <Button variant="outline" render={<Link to="/settings#bot" />}>
+                {t("Bot settings")}
+              </Button>
+            </div>
+          ) : (
+            <Composer
+              local
+              threadId={BOT_THREAD_ID}
+              activity={{ state: "inactive" }}
+              canRun={
+                !!data?.enabled && !!data.available && !data.pending_decision
+              }
+              queuedInput={{
+                pending: send.isPending,
+                locked: uncertain,
+                submit: () => send.mutate(),
+              }}
+              profile={profile}
+              unauthorized={unauthorized}
+              reconcile={() => void bot.refetch()}
+              controls={() => <Link to="/settings#bot">{t("Model")}</Link>}
+              feedback={
+                <>
+                  <ErrorNotice
+                    error={bot.error}
+                    retry={() => void bot.refetch()}
+                  />
+                  <ErrorNotice
+                    error={send.error || data?.state.last_error}
+                    retry={uncertain ? () => send.mutate() : undefined}
+                  />
+                  {data?.pending_decision && (
+                    <Link to={`/threads/${BOT_THREAD_ID}`}>
+                      {t("Open Activity to respond")}
+                    </Link>
+                  )}
+                </>
+              }
+            />
+          ),
       }}
     />
   );
