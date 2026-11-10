@@ -148,7 +148,7 @@ description: Service 设置的每个字段，及其环境变量、类型、范�
 
 | 设置                             | 环境变量                               | 类型 / 选项 | 约束与默认值                                     |
 | -------------------------------- | -------------------------------------- | ----------- | ------------------------------------------------ |
-| `worker.slots`                   | `A13N_WORKER__SLOTS`                   | 整数        | minimum=1; maximum=128; default=4                |
+| `worker.slots`                   | `A13N_WORKER__SLOTS`                   | 整数        | minimum=1; maximum=128; default=128              |
 | `worker.max_attempts`            | `A13N_WORKER__MAX_ATTEMPTS`            | 整数        | minimum=1; maximum=20; default=3                 |
 | `worker.lease_seconds`           | `A13N_WORKER__LEASE_SECONDS`           | 整数        | minimum=3; maximum=300; default=30               |
 | `worker.scan_seconds`            | `A13N_WORKER__SCAN_SECONDS`            | 数值        | maximum=30; exclusiveMinimum=0; default=1        |

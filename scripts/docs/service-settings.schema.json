@@ -2051,7 +2051,7 @@
       "additionalProperties": false,
       "properties": {
         "slots": {
-          "default": 4,
+          "default": 128,
           "maximum": 128,
           "minimum": 1,
           "title": "Slots",

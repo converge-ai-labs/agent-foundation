@@ -11,8 +11,10 @@ from a13n_service.settings import Server, Settings, load_settings
 def test_environment_overrides_the_file_and_unknown_keys_fail(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, clean_environment: None
 ) -> None:
+    assert load_settings().worker.slots == 128
     config = tmp_path / "service.toml"
     config.write_text('[worker]\nslots = 2\n[telemetry]\nlog_format = "pretty"\n')
+    assert load_settings(config).worker.slots == 2
     monkeypatch.setenv("A13N_WORKER__SLOTS", "6")
     loaded = load_settings(config)
     assert (loaded.worker.slots, loaded.telemetry.log_format) == (6, LogFormat.pretty)
