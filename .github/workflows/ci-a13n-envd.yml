@@ -349,6 +349,13 @@ jobs:
             sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           fi
 
+      # setup-python changes PKG_CONFIG_PATH, which native Cargo build scripts
+      # track. Set it up before compiling so later tests reuse those artifacts.
+      - name: Set up Python for size and native EIP tests
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@1.96.0
         with:
@@ -378,11 +385,6 @@ jobs:
           set -o pipefail
           mkdir -p test-results
           cargo test --release --locked --package a13n-envd --features "$FEATURES" 2>&1 | tee test-results/native.log
-
-      - name: Set up Python for size and native EIP tests
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.13"
 
       - name: Measure release binary and archive size
         if: ${{ !cancelled() }}
