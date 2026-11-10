@@ -196,7 +196,7 @@ For slow upstreams, tune the matching budget: `providers.model_timeout` covers e
 
 ## Execution
 
-Each worker process can run up to 128 attempts concurrently by default. Set `worker.slots` to a lower value if provider quotas, target capacity or database connections require it. Use these groups for other changes:
+Each worker process can run up to 128 attempts concurrently by default. Set `worker.slots` from 1 to 1024 according to provider quotas, target capacity and available database connections. Use these groups for other changes:
 
 | Goal                                    | Settings                                                                                             |
 | --------------------------------------- | ---------------------------------------------------------------------------------------------------- |

@@ -15,9 +15,9 @@ def test_environment_overrides_the_file_and_unknown_keys_fail(
     config = tmp_path / "service.toml"
     config.write_text('[worker]\nslots = 2\n[telemetry]\nlog_format = "pretty"\n')
     assert load_settings(config).worker.slots == 2
-    monkeypatch.setenv("A13N_WORKER__SLOTS", "6")
+    monkeypatch.setenv("A13N_WORKER__SLOTS", "1024")
     loaded = load_settings(config)
-    assert (loaded.worker.slots, loaded.telemetry.log_format) == (6, LogFormat.pretty)
+    assert (loaded.worker.slots, loaded.telemetry.log_format) == (1024, LogFormat.pretty)
     monkeypatch.setenv("A13N_WORKER__SLOT", "6")
     with pytest.raises(ValueError, match=r"worker\.slot"):
         load_settings(config)
@@ -69,6 +69,7 @@ def test_a_distribution_section_cannot_shadow_a_core_section() -> None:
 @pytest.mark.parametrize(
     ("values", "refused"),
     [
+        ({"worker": {"slots": 1025}}, "worker.slots"),
         ({"worker": {"scan_seconds": 2}}, "worker.scan_seconds"),
         ({"worker": {"lease_seconds": 3}}, "worker.authority_seconds"),
         ({"worker": {"lease_seconds": 12}}, "objects.timeout"),

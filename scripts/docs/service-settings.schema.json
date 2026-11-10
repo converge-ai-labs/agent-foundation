@@ -2052,7 +2052,7 @@
       "properties": {
         "slots": {
           "default": 128,
-          "maximum": 128,
+          "maximum": 1024,
           "minimum": 1,
           "title": "Slots",
           "type": "integer"
