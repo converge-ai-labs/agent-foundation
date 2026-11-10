@@ -1046,6 +1046,10 @@ impl Native {
                 }
                 _ => return Err(stale()),
             }
+            // Retained work does not prove the required root is still alive.
+            // Validate it before consuming either node or children work; a
+            // failed budgeted read leaves the original cursor reusable.
+            self.live(&root, b).await?;
         }
         // Child enumeration is lazy. A wide native container never expands a
         // breadth-first queue or loses its unenumerated suffix at a page limit.

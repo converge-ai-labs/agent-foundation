@@ -1322,4 +1322,78 @@ fn linux_accessibility_controlled_native_members() {
     assert!(pending.is_err());
     assert_eq!(dispatches, 1);
     assert_eq!(state(&path)["calls"].as_array().unwrap().len(), 36);
+
+    configure(&backend, "success");
+    let mut continuations = Vec::new();
+    for (method, query) in [
+        ("computer.a11y_inspect", Value::Null),
+        (
+            "computer.a11y_find",
+            json!({"identifier":"/org/a11y/atspi/accessible/child"}),
+        ),
+    ] {
+        let page = call(
+            &mut backend,
+            method,
+            json!({"node":root,"query":query,"limits":{"max_nodes":1}}),
+        );
+        let cursor = page["completeness"]["continuation"].clone();
+        assert!(cursor.is_object(), "{page}");
+        let Handle::Cursor { pending, .. } = backend
+            .native
+            .registry
+            .get(cursor["cursor_handle"].as_str().unwrap())
+            .unwrap()
+        else {
+            panic!("expected traversal cursor");
+        };
+        assert!(
+            matches!(pending.as_slice(), [Pending::Children { node, .. }] if *node == object("root"))
+        );
+        let id = backend
+            .native
+            .registry
+            .put(
+                "ac",
+                Handle::Cursor {
+                    root: root.clone(),
+                    query: query.clone(),
+                    view: Value::Null,
+                    depth: 2,
+                    pending: vec![Pending::Node(object("child"), 1)],
+                    seen: HashSet::new(),
+                },
+            )
+            .unwrap();
+        for cursor in [cursor, json!({"root":root,"cursor_handle":id})] {
+            let params = json!({"node":root,"query":query,"cursor":cursor});
+            configure(&backend, "defunct");
+            let err = backend
+                .execute(method, params.clone(), &mut || panic!("read dispatched"))
+                .unwrap_err();
+            assert_eq!(err.data.error_type, ErrorType::Conflict, "{method}");
+            configure(&backend, "read_hang");
+            let mut limited = params.clone();
+            limited["limits"] = json!({"timeout_ms":100});
+            let err = backend
+                .execute(method, limited, &mut || panic!("read dispatched"))
+                .unwrap_err();
+            assert_eq!(err.data.error_type, ErrorType::Timeout, "{method}");
+            configure(&backend, "success");
+            let resumed = call(&mut backend, method, params.clone());
+            assert_eq!(resumed["nodes"].as_array().unwrap().len(), 1);
+            assert_eq!(resumed["nodes"][0]["reference"], child);
+            assert_eq!(resumed["completeness"]["complete"], true);
+            continuations.push((method, params));
+        }
+    }
+    // Retained native identity cannot turn provider death into an empty tree.
+    app.0.kill().unwrap();
+    app.0.wait().unwrap();
+    for (method, params) in continuations {
+        let err = backend
+            .execute(method, params, &mut || panic!("read dispatched"))
+            .unwrap_err();
+        assert_eq!(err.data.error_type, ErrorType::Conflict, "{method}");
+    }
 }
