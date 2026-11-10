@@ -127,13 +127,13 @@
   border-radius: 2px;
 }
 .output {
-  background: var(--muted-foreground);
+  background: color-mix(in oklab, var(--muted-foreground), var(--chart-1) 30%);
 }
 .input {
   background: var(--chart-1);
 }
 .audio {
-  background: var(--chart-4);
+  background: color-mix(in oklab, var(--chart-4), var(--chart-3) 35%);
 }
 .note {
   margin: 6px 0 0;
