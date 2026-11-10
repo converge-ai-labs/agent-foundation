@@ -1520,9 +1520,11 @@ dl.detailGrid > .detailLongRow dd {
 }
 .showMore {
   margin: 4px 0 0 8px;
-  color: var(--harness-log-text);
   font-size: calc(var(--a13n-text-body) * 12 / 14);
   font-weight: 400;
+}
+.showMore:not([data-loading]) {
+  color: var(--harness-log-text);
 }
 
 /* Attachment identities live in the editor text; widgets are their presentation. */
