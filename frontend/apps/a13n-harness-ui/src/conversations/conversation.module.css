@@ -621,7 +621,6 @@
   margin: 8px 0 16px auto;
   position: relative;
   width: fit-content;
-  min-width: 64px;
   max-width: min(85%, 640px);
 }
 .sentAttachments {
@@ -632,14 +631,15 @@
   gap: 8px;
 }
 .sentAttachments + .userMessage {
-  width: fit-content;
-  max-width: 100%;
-  margin: 8px 0 0 auto;
+  margin-top: 8px;
 }
 .userMessage {
+  width: fit-content;
+  max-width: 100%;
+  margin-inline-start: auto;
   color: var(--a13n-text);
-  padding: 12px 12px;
-  background: var(--a13n-surface);
+  padding: 12px;
+  background: color-mix(in srgb, var(--a13n-surface) 98%, var(--a13n-text));
   border-radius: 10px;
   font-size: var(--harness-prose-size);
   line-height: var(--harness-prose-leading);
