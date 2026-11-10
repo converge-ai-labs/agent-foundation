@@ -137,6 +137,30 @@
       "title": "AgentReviewer",
       "type": "object"
     },
+    "AllowlistDestinations": {
+      "additionalProperties": false,
+      "properties": {
+        "hosts": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 256,
+          "title": "Hosts",
+          "type": "array"
+        },
+        "mode": {
+          "const": "allowlist",
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode"
+      ],
+      "title": "AllowlistDestinations",
+      "type": "object"
+    },
     "AutomaticToolSearch": {
       "additionalProperties": false,
       "description": "Group Service-owned sources individually, following the agent's selections.",
@@ -391,6 +415,21 @@
       "title": "DelegationContextPolicy",
       "type": "object"
     },
+    "DisabledSandbox": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "const": "disabled",
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode"
+      ],
+      "title": "DisabledSandbox",
+      "type": "object"
+    },
     "DynamicSubagents": {
       "additionalProperties": false,
       "description": "Root-only task-specific delegation within the parent's capability boundary.",
@@ -443,6 +482,54 @@
       "title": "DynamicSubagents",
       "type": "object"
     },
+    "EgressConfiguration": {
+      "additionalProperties": false,
+      "properties": {
+        "destinations": {
+          "$ref": "#/$defs/EgressDestinations"
+        },
+        "secrets": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/SecretReference"
+          },
+          "maxItems": 64,
+          "title": "Secrets",
+          "type": "array"
+        }
+      },
+      "required": [
+        "destinations"
+      ],
+      "title": "EgressConfiguration",
+      "type": "object"
+    },
+    "EgressDestinations": {
+      "discriminator": {
+        "mapping": {
+          "allowlist": "#/$defs/AllowlistDestinations",
+          "public": "#/$defs/PublicDestinations"
+        },
+        "propertyName": "mode"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/PublicDestinations"
+        },
+        {
+          "$ref": "#/$defs/AllowlistDestinations"
+        }
+      ]
+    },
+    "EgressMode": {
+      "enum": [
+        "inherit",
+        "deny",
+        "controlled"
+      ],
+      "title": "EgressMode",
+      "type": "string"
+    },
     "EnvironmentVariables": {
       "additionalProperties": {
         "type": "string"
@@ -490,6 +577,22 @@
       },
       "title": "ExecutionOverride",
       "type": "object"
+    },
+    "GrantAccess": {
+      "enum": [
+        "read_only",
+        "read_write"
+      ],
+      "title": "GrantAccess",
+      "type": "string"
+    },
+    "Hosts": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 256,
+      "minItems": 1,
+      "type": "array"
     },
     "IsolatedSkillSync": {
       "additionalProperties": false,
@@ -596,6 +699,21 @@
         "access"
       ],
       "title": "MemoryMount",
+      "type": "object"
+    },
+    "NativeIsolation": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "const": "native",
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode"
+      ],
+      "title": "NativeIsolation",
       "type": "object"
     },
     "OutputSpec": {
@@ -768,6 +886,49 @@
       "title": "PluginSelection",
       "type": "object"
     },
+    "PublicDestinations": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "const": "public",
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode"
+      ],
+      "title": "PublicDestinations",
+      "type": "object"
+    },
+    "RestrictedSandbox": {
+      "additionalProperties": false,
+      "properties": {
+        "full_disk_read": {
+          "default": false,
+          "title": "Full Disk Read",
+          "type": "boolean"
+        },
+        "grants": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/SandboxGrant"
+          },
+          "title": "Grants",
+          "type": "array"
+        },
+        "mode": {
+          "const": "restricted",
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode"
+      ],
+      "title": "RestrictedSandbox",
+      "type": "object"
+    },
     "RetryConfig": {
       "additionalProperties": false,
       "properties": {
@@ -787,6 +948,204 @@
         }
       },
       "title": "RetryConfig",
+      "type": "object"
+    },
+    "SandboxGrant": {
+      "additionalProperties": false,
+      "properties": {
+        "access": {
+          "$ref": "#/$defs/GrantAccess"
+        },
+        "path": {
+          "format": "eip-absolute-path",
+          "title": "Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "access"
+      ],
+      "title": "SandboxGrant",
+      "type": "object"
+    },
+    "SandboxPolicy": {
+      "discriminator": {
+        "mapping": {
+          "disabled": "#/$defs/DisabledSandbox",
+          "restricted": "#/$defs/RestrictedSandbox"
+        },
+        "propertyName": "mode"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/DisabledSandbox"
+        },
+        {
+          "$ref": "#/$defs/RestrictedSandbox"
+        }
+      ]
+    },
+    "SecretReference": {
+      "additionalProperties": false,
+      "properties": {
+        "credential_id": {
+          "maxLength": 41,
+          "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+          "title": "Credential Id",
+          "type": "string"
+        },
+        "env": {
+          "maxLength": 128,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+          "title": "Env",
+          "type": "string"
+        },
+        "inject_hosts": {
+          "$ref": "#/$defs/Hosts"
+        }
+      },
+      "required": [
+        "env",
+        "credential_id",
+        "inject_hosts"
+      ],
+      "title": "SecretReference",
+      "type": "object"
+    },
+    "SessionConfiguration": {
+      "additionalProperties": false,
+      "description": "Tenant-authored Session policy; Service credentials are not process-environment references.",
+      "properties": {
+        "commands": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Commands"
+        },
+        "egress": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EgressConfiguration"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "egress_mode": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EgressMode"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "isolation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SessionIsolation"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "lifecycle": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SessionLifecyclePolicy"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "sandbox": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SandboxPolicy"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "working_directory": {
+          "anyOf": [
+            {
+              "format": "eip-absolute-path",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Working Directory"
+        }
+      },
+      "title": "SessionConfiguration",
+      "type": "object"
+    },
+    "SessionIsolation": {
+      "discriminator": {
+        "mapping": {
+          "native": "#/$defs/NativeIsolation",
+          "vm": "#/$defs/VmIsolation"
+        },
+        "propertyName": "mode"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/NativeIsolation"
+        },
+        {
+          "$ref": "#/$defs/VmIsolation"
+        }
+      ]
+    },
+    "SessionLifecyclePolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "idle_timeout_ms": {
+          "maximum": 18446744073709551615,
+          "minimum": 1,
+          "title": "Idle Timeout Ms",
+          "type": "integer"
+        },
+        "max_lifetime_ms": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Lifetime Ms"
+        }
+      },
+      "required": [
+        "idle_timeout_ms"
+      ],
+      "title": "SessionLifecyclePolicy",
       "type": "object"
     },
     "SessionMemorySettings": {
@@ -1380,6 +1739,87 @@
       },
       "title": "UsageLimits",
       "type": "object"
+    },
+    "VmBackend": {
+      "enum": [
+        "boxlite",
+        "microsandbox"
+      ],
+      "title": "VmBackend",
+      "type": "string"
+    },
+    "VmIsolation": {
+      "additionalProperties": false,
+      "properties": {
+        "backend": {
+          "$ref": "#/$defs/VmBackend"
+        },
+        "cpus": {
+          "maximum": 255,
+          "minimum": 1,
+          "title": "Cpus",
+          "type": "integer"
+        },
+        "image": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Image",
+          "type": "string"
+        },
+        "memory_mib": {
+          "maximum": 4294967295,
+          "minimum": 128,
+          "title": "Memory Mib",
+          "type": "integer"
+        },
+        "mode": {
+          "const": "vm",
+          "title": "Mode",
+          "type": "string"
+        },
+        "mounts": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/VmMount"
+          },
+          "title": "Mounts",
+          "type": "array"
+        }
+      },
+      "required": [
+        "mode",
+        "backend",
+        "image",
+        "cpus",
+        "memory_mib"
+      ],
+      "title": "VmIsolation",
+      "type": "object"
+    },
+    "VmMount": {
+      "additionalProperties": false,
+      "properties": {
+        "access": {
+          "$ref": "#/$defs/GrantAccess"
+        },
+        "source": {
+          "format": "eip-absolute-path",
+          "title": "Source",
+          "type": "string"
+        },
+        "target": {
+          "format": "eip-absolute-path",
+          "title": "Target",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "target",
+        "access"
+      ],
+      "title": "VmMount",
+      "type": "object"
     }
   },
   "additionalProperties": false,
@@ -1441,6 +1881,17 @@
       ],
       "default": null,
       "title": "Default Environment Template Id"
+    },
+    "default_session_configuration": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SessionConfiguration"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "execution": {
       "anyOf": [

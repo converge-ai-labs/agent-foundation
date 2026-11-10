@@ -230,6 +230,36 @@ Each Thread owns a named Session binding on an Environment. Directory mounts usi
 
 Set `session_binding` on a mount (default `default`) and use `session_configuration` to initialize its startup policy. Inspect or replace desired policy through `GET` or `PUT /api/v1/threads/{thread_id}/session-bindings/{environment_id}/{name}?workspace_id=…`; PUT uses the Thread ETag and a `configuration` object. Changing startup policy replaces the Session at admission only when no admitted Run or unfinished retained tool uses it; otherwise admission returns `environment_busy`. Directory selection remains mount-local.
 
+### HTTPS credentials in commands
+
+Create a workspace [egress credential](resources.md#egress-credentials), then reference its ID in Session configuration. For example:
+
+```json
+{
+  "egress_mode": "controlled",
+  "egress": {
+    "destinations": { "mode": "allowlist", "hosts": ["api.github.com"] },
+    "secrets": [
+      {
+        "env": "GH_TOKEN",
+        "credential_id": "ecred_your_credential_id",
+        "inject_hosts": ["api.github.com"]
+      }
+    ]
+  }
+}
+```
+
+Put this policy in an Agent's `default_session_configuration` to initialize new primary bindings, in a Thread binding's `configuration` for later Runs, or in `options.environment.session_configuration` for one Run. Existing Thread bindings take precedence over Agent defaults. A Run override does not rewrite the Thread's desired policy. Different policies cannot concurrently use the same binding.
+
+The environment must support controlled Envd egress. Service checks current credentials before allowing commands; unsupported execution fails without putting real tokens into ordinary environment variables. Envd supplies placeholder values and substitutes them in HTTPS headers only for the configured hosts. Commands still construct the service's required header, for example `curl -H "Authorization: Bearer $GH_TOKEN" https://api.github.com/user`. Keep TLS verification enabled and use the environment's configured trust. Host web and browser tools do not inherit these bindings.
+
+The Agent receives the selected variable names, domains and usage instructions on every model request. Only one current copy is used; history compaction does not remove it. Instructions contain neither real values nor placeholders. Rotating the value does not change the command or these instructions.
+
+Rotation saves the new value synchronously and updates active Sessions asynchronously. Existing Session owners also compare versions periodically (ten seconds by default), so lost notifications are retried. A retained background tool can keep synchronization active after its Run ends. Idle Sessions are not connected just to update a credential: they receive the latest version before commands at their next attach. Detach preserves the Session and its credentials; native close or expiry cleans them up.
+
+Revocation prevents new use immediately at Service admission. Active Sessions remove their bindings asynchronously. An idle Session may still retain its old value until next attach or native cleanup; revoke the token at the upstream service when immediate invalidation is needed. A successful save or revoke response is not proof that all native Sessions have applied it.
+
 ### Upgrade to Session bindings
 
 Before this schema cutover, finish or cancel and settle every admitted Run using environment mounts, including waiting Runs, and all retained environment or Shell tools. Worker drain or handoff alone is insufficient. Stop all old Controls and Workers, migrate, then start only the new version. The migration preserves registrations, provider state, files and historical Run captures, but does not import old Session recovery hints into the new binding heads. New work opens fresh Sessions. Do not mix old and new processes during this upgrade.

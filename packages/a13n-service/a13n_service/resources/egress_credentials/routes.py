@@ -67,7 +67,14 @@ async def rotate_egress_credential(
     return tagged(
         response,
         await service.rotate_credential(
-            runtime.storage, runtime.keys, actor, workspace_id, credential_id, body, if_match=if_match
+            runtime.storage,
+            runtime.keys,
+            actor,
+            workspace_id,
+            credential_id,
+            body,
+            if_match=if_match,
+            redis=runtime.redis,
         ),
     )
 
@@ -83,5 +90,7 @@ async def revoke_egress_credential(
 ) -> Credential:
     return tagged(
         response,
-        await service.revoke_credential(runtime.storage, actor, workspace_id, credential_id, if_match=if_match),
+        await service.revoke_credential(
+            runtime.storage, actor, workspace_id, credential_id, if_match=if_match, redis=runtime.redis
+        ),
     )

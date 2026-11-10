@@ -48,6 +48,8 @@ from a13n_service.provisioning.service import Initializer
 from a13n_service.resources.models.catalog import ModelsDevCatalog, catalog_channels, run_official_catalog
 from a13n_service.runs.environments.clients.routing import Routing
 from a13n_service.runs.environments.clients.tables import ClientSettingsRow
+from a13n_service.runs.environments.egress.synchronization import Synchronizer as CredentialSynchronizer
+from a13n_service.runs.environments.egress.tables import SessionCredentialRow
 from a13n_service.runs.environments.monitoring.proxy import Proxy
 from a13n_service.runs.environments.monitoring.pull import run as run_collector
 from a13n_service.runs.execute import execute
@@ -332,6 +334,8 @@ def build_app(
                     app.state.runtime = runtime
                     await initializer.existing()
                 runtime.tasks.start(run_official_catalog(runtime.endpoint_policy), name="official-model-catalog")
+                if SessionCredentialRow in distribution.tables:
+                    runtime.tasks.start(CredentialSynchronizer(runtime).run(), name="session-credentials", service=True)
                 if serves_api:
                     if ClientSettingsRow in distribution.tables:
                         runtime.tasks.start(

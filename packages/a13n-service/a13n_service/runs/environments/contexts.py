@@ -26,6 +26,7 @@ from a13n_service.runs.environments.session_owner import AdmittedSession, Sessio
 from a13n_service.runs.environments.tables import ThreadExecutionContextRow
 from a13n_service.runs.schemas import EnvironmentMount
 from a13n_service.runs.tables import AttemptRow, RunRow, ThreadRow, ToolExecutionRow
+from a13n_service.tenancy.authorize import WorkspaceScope
 
 if TYPE_CHECKING:
     from a13n_service.runs.runtime import Runtime
@@ -123,6 +124,9 @@ class Contexts:
         self._sessions: WeakValueDictionary[tuple[str, int, tuple[str, str]], SessionOwner] = WeakValueDictionary()
         self._lock = asyncio.Lock()
 
+    def active(self) -> tuple[SessionOwner, ...]:
+        return tuple(owner for owner in self._sessions.values() if owner.active and owner.sync_key is not None)
+
     async def get(self, lease: Lease, mount: EnvironmentMount) -> AdmittedSession:
         return await self._get(lease.thread_id, lease.worker_id, mount)
 
@@ -173,9 +177,10 @@ class Contexts:
                 if row is None or row.worker_id != worker_id:
                     raise LeaseLost()
                 generation = row.generation
+                scope = WorkspaceScope(row.organization_id, row.workspace_id)
             key = (thread_id, generation, binding)
             owner = self._sessions.get(key)
             if owner is None:
-                owner = SessionOwner(self.runtime, thread_id, worker_id, generation, binding)
+                owner = SessionOwner(self.runtime, thread_id, worker_id, generation, binding, scope)
                 self._sessions[key] = owner
             return AdmittedSession(owner, mount)

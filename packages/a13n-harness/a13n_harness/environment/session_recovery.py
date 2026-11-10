@@ -180,6 +180,8 @@ class EnvdSessionRecovery:
                         await self._release()
                 raise
             self._users += 1
+        # Resolved values are startup inputs, not state retained for the borrower's lifetime.
+        del configuration
         try:
             async with session.use():
                 yield session

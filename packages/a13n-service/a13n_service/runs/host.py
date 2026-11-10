@@ -51,6 +51,8 @@ from a13n_service.runs.builtin_instructions import BuiltinInstructionsCapability
 from a13n_service.runs.calls import CallCheck
 from a13n_service.runs.environments.desktop.freshness import Freshness
 from a13n_service.runs.environments.desktop.notify import HandbackNotifications
+from a13n_service.runs.environments.egress.instructions import CredentialInstructionsCapability
+from a13n_service.runs.environments.egress.instructions import render as credential_instructions
 from a13n_service.runs.environments.mounts import PRIMARY
 from a13n_service.runs.mcp_apps.capture import Captures
 from a13n_service.runs.memories.execution import (
@@ -63,6 +65,7 @@ from a13n_service.runs.model_context import ModelContext
 from a13n_service.runs.platform_files import SOURCE
 from a13n_service.runs.platform_tools import platform_capability
 from a13n_service.runs.runtime import Runtime
+from a13n_service.runs.schemas import EnvironmentMount as FrozenEnvironmentMount
 from a13n_service.runs.schemas import RunOptions
 from a13n_service.runs.skill_cache import Cache
 from a13n_service.runs.skills import SkillPackage, resolve_skills, skills_capability
@@ -95,6 +98,7 @@ class HostPlan:
     file_tools: frozenset[FileToolKey]
     record_tools: frozenset[RecordToolKey]
     browser: BrowserBinding | None
+    credential_instructions: str | None
 
 
 async def resolve_host(
@@ -160,6 +164,9 @@ async def resolve_host(
         file_tools=memory_file_tools(agent.config.toolsets),
         record_tools=memory_record_tools(agent.config.toolsets),
         browser=BrowserBinding.model_validate(run.browser_binding) if run.browser_binding is not None else None,
+        credential_instructions=credential_instructions(
+            [FrozenEnvironmentMount.model_validate(mount) for mount in run.environment_mounts]
+        ),
     )
 
 
@@ -193,6 +200,8 @@ class Host:
             )
         if parts.builtin_instructions is not None:
             features.append(BuiltinInstructionsCapability(parts.builtin_instructions))
+        if self.plan.credential_instructions is not None and enabled_tool(agent.config.toolsets, "shell", "exec"):
+            features.append(CredentialInstructionsCapability(self.plan.credential_instructions))
         skills = parts.skills
         sync = agent.config.skill_sync
         if parts.host_skills or skills or (isinstance(sync, SharedSkillSync) and sync.cleanup):

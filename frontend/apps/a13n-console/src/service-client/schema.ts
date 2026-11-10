@@ -5276,6 +5276,8 @@ export interface components {
       default_environment_id?: string | null;
       /** Default Environment Template Id */
       default_environment_template_id?: string | null;
+      default_session_configuration?:
+        components["schemas"]["SessionConfiguration"] | null;
       execution?: components["schemas"]["ExecutionOverride"] | null;
       /**
        * Instructions
@@ -5357,6 +5359,8 @@ export interface components {
       default_environment_id?: string | null;
       /** Default Environment Template Id */
       default_environment_template_id?: string | null;
+      default_session_configuration?:
+        components["schemas"]["SessionConfiguration"] | null;
       execution?: components["schemas"]["ExecutionOverride"] | null;
       /**
        * Instructions
@@ -7834,6 +7838,15 @@ export interface components {
        */
       enabled?: boolean;
     };
+    /** EgressConfiguration */
+    EgressConfiguration: {
+      destinations: components["schemas"]["EgressDestinations"];
+      /**
+       * Secrets
+       * @default []
+       */
+      secrets?: components["schemas"]["SecretReference"][];
+    };
     EgressDestinations:
       | components["schemas"]["PublicDestinations"]
       | components["schemas"]["AllowlistDestinations"];
@@ -7984,23 +7997,6 @@ export interface components {
       /** Thread Id */
       thread_id: string;
     };
-    /** EnvdEgressConfiguration */
-    EnvdEgressConfiguration: {
-      destinations: components["schemas"]["EgressDestinations"];
-      /**
-       * Secrets
-       * @default []
-       */
-      secrets?: components["schemas"]["EnvdSecretReference"][];
-    };
-    /** EnvdSecretReference */
-    EnvdSecretReference: {
-      /** Env */
-      env: string;
-      /** Inject Hosts */
-      inject_hosts: string[];
-      source: components["schemas"]["EnvironmentCredentialSource"];
-    };
     /**
      * EnvironmentAction
      * @description Exact authorization values in the locked first-party catalog.
@@ -8049,16 +8045,6 @@ export interface components {
       | "environment.computer.press_keys"
       | "environment.computer.read_clipboard"
       | "environment.computer.write_clipboard";
-    /** EnvironmentCredentialSource */
-    EnvironmentCredentialSource: {
-      /**
-       * Kind
-       * @constant
-       */
-      kind: "environment";
-      /** Name */
-      name: string;
-    };
     /**
      * EnvironmentFailure
      * @description The last error of the outstanding operation or, on a ready instance, of its last renewal.
@@ -12990,6 +12976,14 @@ export interface components {
       schedule?: components["schemas"]["ScheduleRule"] | null;
       target?: components["schemas"]["ScheduleTarget"] | null;
     };
+    /** SecretReference */
+    SecretReference: {
+      /** Credential Id */
+      credential_id: string;
+      /** Env */
+      env: string;
+      inject_hosts: components["schemas"]["Hosts"];
+    };
     /** SelectedTrace */
     SelectedTrace: {
       /** Run Id */
@@ -13105,7 +13099,7 @@ export interface components {
     SessionConfiguration: {
       /** Commands */
       commands?: boolean | null;
-      egress?: components["schemas"]["EnvdEgressConfiguration"] | null;
+      egress?: components["schemas"]["EgressConfiguration"] | null;
       egress_mode?: components["schemas"]["EgressMode"] | null;
       isolation?: components["schemas"]["SessionIsolation"] | null;
       lifecycle?: components["schemas"]["SessionLifecyclePolicy"] | null;
