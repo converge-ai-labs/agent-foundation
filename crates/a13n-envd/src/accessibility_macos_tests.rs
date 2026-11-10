@@ -299,6 +299,157 @@ fn containing_collections_respect_the_item_budget() {
     assert_eq!(b.reason.get(), Some("item_limit"));
 }
 #[test]
+fn failed_native_return_records_elapsed_deadline_without_erasing_native_identity() {
+    let b = Budget::new(&json!({})).unwrap();
+    let e = b.returned(AXError::CannotComplete).unwrap_err();
+    assert_eq!(native::code(&e), Some(-25204));
+    assert_eq!(e.data.error_type, ErrorType::ProviderUnavailable);
+    assert!(b.reason.get().is_none());
+    assert!(partial(Err(e), &b).is_err());
+
+    let mut b = Budget::new(&json!({})).unwrap();
+    b.deadline = Instant::now();
+    let mut out = tree_result();
+    out["nodes"] = json!([{"reference":reference(),"native_role":"AXButton","sampled_at":now()}]);
+    partial(b.returned(AXError::CannotComplete), &b).unwrap();
+    out["completeness"] = b.completeness();
+    assert_eq!(out["nodes"].as_array().unwrap().len(), 1);
+    assert_eq!(out["completeness"]["reason"], "deadline");
+    assert!(ensure_progress(0, &b).is_err());
+
+    let b = Budget::new(&json!({"limits":{"max_native_calls":1}})).unwrap();
+    b.calls.set(1);
+    b.returned(AXError::Success).unwrap();
+    assert!(b.reason.get().is_none());
+}
+#[test]
+fn content_node_limits_are_independent_from_item_limits() {
+    for (nodes, items, reason) in [(1, 128, "node_limit"), (128, 1, "item_limit")] {
+        let b = Budget::new(&json!({"limits":{"max_nodes":nodes,"max_items":items}})).unwrap();
+        let mut out = json!({"nodes":[]});
+        // Both table cells and scrollbar nodes use this same admission check.
+        for node in [json!({"name":"first"}), json!({"name":"second"})] {
+            if !collection_room(&out, "nodes", &b) {
+                break;
+            }
+            out["nodes"].as_array_mut().unwrap().push(node);
+        }
+        assert_eq!(out["nodes"].as_array().unwrap().len(), 1);
+        assert_eq!(b.reason.get(), Some(reason));
+    }
+}
+#[test]
+fn root_cap_marks_only_remaining_candidates_partial() {
+    for (candidates, expected) in [
+        (vec![1], None),
+        (vec![1, 1], Some("node_limit")),
+        (vec![2], Some("node_limit")),
+    ] {
+        let b = Budget::new(&json!({"limits":{"max_nodes":1}})).unwrap();
+        let mut out = tree_result();
+        for windows in candidates {
+            if !root_room(&out, &b) {
+                break;
+            }
+            for _ in 0..windows {
+                if !root_room(&out, &b) {
+                    break;
+                }
+                out["nodes"].as_array_mut().unwrap().push(json!({}));
+            }
+        }
+        assert_eq!(out["nodes"].as_array().unwrap().len(), 1);
+        assert_eq!(b.reason.get(), expected);
+    }
+}
+fn action_sample(names: &[&str]) -> Sample {
+    Sample {
+        value: json!({"reference":reference(),"native_role":"AXButton","sampled_at":now(),
+            "capabilities":names.iter().map(|name| json!({"operation":"perform_action","supported":"yes",
+                "source":"AXAction","action":{"node":reference(),"action_handle":"placeholder","native_identifier":name}})).collect::<Vec<_>>()}),
+        actions: names.iter().map(|name| CFString::from_str(name)).collect(),
+    }
+}
+#[test]
+fn sample_capacity_is_atomic_and_reused_actions_need_no_extra_slots() {
+    let mut native = Native {
+        epoch: "aep_test".into(),
+        next: 0,
+        handles: HashMap::new(),
+    };
+    let n = unsafe { AXUIElement::new_application(std::process::id() as i32) };
+    let owner = native.reference(n.clone()).unwrap();
+    for i in 0..511 {
+        native
+            .put(
+                "aa",
+                Handle::Action {
+                    owner: owner["node_handle"].as_str().unwrap().into(),
+                    name: CFString::from_str(&format!("Action{i}")),
+                },
+            )
+            .unwrap();
+    }
+    let other = unsafe { AXUIElement::new_application(std::process::id() as i32 + 1) };
+    let before = native.handles.len();
+    assert!(!native.registry_room(
+        &native.sample_additions(&other, &action_sample(&["AXPress", "AXShowMenu"]).actions)
+    ));
+    assert_eq!(
+        native
+            .publish_sample(&other, action_sample(&["AXPress", "AXShowMenu"]))
+            .unwrap_err()
+            .data
+            .error_type,
+        ErrorType::QuotaExceeded
+    );
+    assert_eq!(native.handles.len(), before);
+    assert!(native.node_id(&other).is_none());
+    let first = native
+        .publish_sample(&n, action_sample(&["AXPress"]))
+        .unwrap();
+    let again = native
+        .publish_sample(&n, action_sample(&["AXPress", "AXPress"]))
+        .unwrap();
+    assert_eq!(
+        again["capabilities"][0]["action"],
+        first["capabilities"][0]["action"]
+    );
+    assert_eq!(
+        again["capabilities"][1]["action"],
+        first["capabilities"][0]["action"]
+    );
+    assert_eq!(native.handles.len(), before + 1);
+    let pending = vec![Pending::Node(other.clone(), 1, Some(owner.clone()))];
+    let cursor = native
+        .put(
+            "ac",
+            Handle::Cursor {
+                root: owner.clone(),
+                query: Value::Null,
+                view: "raw".into(),
+                depth: 2,
+                pending,
+            },
+        )
+        .unwrap();
+    assert!(
+        native.handles.contains_key(
+            first["capabilities"][0]["action"]["action_handle"]
+                .as_str()
+                .unwrap()
+        )
+    );
+    native.prune(&json!({"node":owner,"cursor":{"cursor_handle":cursor}}));
+    assert!(
+        matches!(&native.handles[&cursor].value, Handle::Cursor { pending, .. } if pending.len() == 1)
+    );
+    let resumed = native
+        .publish_sample(&other, action_sample(&["AXPress", "AXShowMenu"]))
+        .unwrap();
+    assert_eq!(resumed["capabilities"].as_array().unwrap().len(), 2);
+}
+#[test]
 fn registry_eviction_frees_each_kind_and_pins_operands_and_owners() {
     let mut native = Native {
         epoch: "aep_test".into(),

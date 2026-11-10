@@ -140,6 +140,17 @@ async def test_real_macos_accessibility_session_and_harness():
                 named["fixture-scroll"].reference, AccessibilitySimpleRead(kind="scroll"), limits=small
             )
             assert len(scroll.nodes) == 1 and scroll.completeness.reason == "item_limit"
+            one_node = limits.model_copy(update={"max_nodes": 1, "max_items": 128})
+            cells = await a11y.read(
+                named["fixture-table"].reference,
+                AccessibilityTableRead(rows=2, columns=1, include_headers=False),
+                limits=one_node,
+            )
+            assert len(cells.nodes) == 1 and cells.completeness.reason == "node_limit"
+            bars = await a11y.read(
+                named["fixture-scroll"].reference, AccessibilitySimpleRead(kind="scroll"), limits=one_node
+            )
+            assert len(bars.nodes) == 1 and bars.completeness.reason == "node_limit"
 
             async def execute(identifier, request):
                 node = named[identifier].reference

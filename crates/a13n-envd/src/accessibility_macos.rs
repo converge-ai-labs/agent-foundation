@@ -171,13 +171,23 @@ impl Budget {
             self.reason.set(Some("deadline"));
             return self.check();
         }
-        native::status(unsafe { n.set_messaging_timeout(seconds) })?;
+        self.returned(unsafe { n.set_messaging_timeout(seconds) })?;
         self.check()
     }
     fn call(&self, n: &AXUIElement, f: impl FnOnce() -> AXError) -> Result<(), EIPError> {
         self.prepare(n)?;
         self.calls.set(self.calls.get() + 1);
-        native::status(f())
+        self.returned(f())
+    }
+    fn returned(&self, code: AXError) -> Result<(), EIPError> {
+        let result = native::status(code);
+        // A failed message can consume the remaining deadline. Preserve its
+        // native error, while allowing traversal to retain prior usable output.
+        // Successful final calls remain usable, including the last allowed call.
+        if result.is_err() && Instant::now() >= self.deadline {
+            self.reason.set(Some("deadline"));
+        }
+        result
     }
     fn completeness(&self) -> Value {
         match self.reason.get() {
@@ -325,22 +335,22 @@ impl Native {
             }
         }
     }
+    fn registry_room(&self, additions: &[Handle]) -> bool {
+        let mut counts = [0; 4];
+        let mut bytes = 0usize;
+        for value in self.handles.values().map(|e| &e.value).chain(additions) {
+            counts[handle_kind(value)] += 1;
+            bytes = bytes.saturating_add(retained_bytes(value));
+        }
+        counts.iter().sum::<usize>() <= 4096
+            && bytes <= 8 * 1024 * 1024
+            && counts
+                .iter()
+                .enumerate()
+                .all(|(kind, count)| *count <= handle_capacity(kind))
+    }
     fn put(&mut self, prefix: &str, value: Handle) -> Result<String, EIPError> {
-        let count = self
-            .handles
-            .values()
-            .filter(|e| std::mem::discriminant(&e.value) == std::mem::discriminant(&value))
-            .count();
-        let max = handle_capacity(handle_kind(&value));
-        let bytes: usize = self
-            .handles
-            .values()
-            .map(|e| retained_bytes(&e.value))
-            .sum();
-        if self.handles.len() >= 4096
-            || count >= max
-            || bytes.saturating_add(retained_bytes(&value)) > 8 * 1024 * 1024
-        {
+        if !self.registry_room(std::slice::from_ref(&value)) {
             return Err(error(
                 ErrorType::QuotaExceeded,
                 "AX handle registry is full",
@@ -357,12 +367,14 @@ impl Native {
         );
         Ok(id)
     }
-    fn reference(&mut self, n: CFRetained<AXUIElement>) -> Result<Value, EIPError> {
-        let existing = self.handles.iter().find_map(|(id, e)| match &e.value {
-            Handle::Node(x) if x == &n => Some(id.clone()),
+    fn node_id(&self, n: &AXUIElement) -> Option<String> {
+        self.handles.iter().find_map(|(id, e)| match &e.value {
+            Handle::Node(x) if &**x == n => Some(id.clone()),
             _ => None,
-        });
-        let id = match existing {
+        })
+    }
+    fn reference(&mut self, n: CFRetained<AXUIElement>) -> Result<Value, EIPError> {
+        let id = match self.node_id(&n) {
             Some(id) => {
                 self.handles.get_mut(&id).unwrap().touched = Instant::now();
                 id
@@ -398,9 +410,40 @@ impl Native {
             .transpose()?
             .unwrap_or(false))
     }
-    fn sample(&mut self, n: &CFRetained<AXUIElement>, b: &Budget) -> Result<Value, EIPError> {
+    fn sample(
+        &mut self,
+        n: &CFRetained<AXUIElement>,
+        b: &Budget,
+    ) -> Result<Option<Value>, EIPError> {
         let sample = self.sample_fields(n, b)?;
-        self.publish_sample(n, sample)
+        if !self.registry_room(&self.sample_additions(n, &sample.actions)) {
+            b.mark("item_limit");
+            return Ok(None);
+        }
+        self.publish_sample(n, sample).map(Some)
+    }
+    fn sample_additions(
+        &self,
+        n: &CFRetained<AXUIElement>,
+        actions: &[CFRetained<CFString>],
+    ) -> Vec<Handle> {
+        let mut additions = Vec::new();
+        let owner = self.node_id(n).unwrap_or_else(|| {
+            additions.push(Handle::Node(n.clone()));
+            format!("an_{:x}", self.next + 1)
+        });
+        for name in actions {
+            let exists = self.handles.values().map(|e| &e.value).chain(&additions).any(|value| {
+                matches!(value, Handle::Action { owner: o, name: x } if o == &owner && x == name)
+            });
+            if !exists {
+                additions.push(Handle::Action {
+                    owner: owner.clone(),
+                    name: name.clone(),
+                });
+            }
+        }
+        additions
     }
     fn sample_fields(&self, n: &AXUIElement, b: &Budget) -> Result<Sample, EIPError> {
         // Reserve the maximum wire handle length, without registering unmatched
@@ -518,6 +561,12 @@ impl Native {
         n: &CFRetained<AXUIElement>,
         sample: Sample,
     ) -> Result<Value, EIPError> {
+        if !self.registry_room(&self.sample_additions(n, &sample.actions)) {
+            return Err(error(
+                ErrorType::QuotaExceeded,
+                "AX sample exceeds registry capacity",
+            ));
+        }
         let mut out = sample.value;
         let reference = self.reference(n.clone())?;
         out["reference"] = reference.clone();
@@ -591,29 +640,32 @@ impl Native {
                 _ => return Err(unsupported()),
             };
             for n in roots {
+                // Check only when another candidate exists: exact exhaustion at
+                // the cap remains complete, while skipped applications do not.
+                if !root_room(&out, b) {
+                    break;
+                }
                 if scope["kind"] == "windows" || scope["kind"].is_null() {
                     let Some(total) = optional(native::count(&n, "AXWindows", b))? else {
                         continue;
                     };
                     for i in 0..total {
-                        if out["nodes"].as_array().unwrap().len() >= b.limit("max_nodes") {
-                            b.mark("node_limit");
+                        if !root_room(&out, b) {
                             break;
                         }
                         let page = native::page(&n, "AXWindows", i, 1, b)?;
                         if let Some(value) = page.get(0) {
-                            let node = self.sample(&typed(value)?, b)?;
+                            let Some(node) = self.sample(&typed(value)?, b)? else {
+                                return Ok(());
+                            };
                             out["nodes"].as_array_mut().unwrap().push(node);
                         }
                     }
                 } else {
-                    out["nodes"]
-                        .as_array_mut()
-                        .unwrap()
-                        .push(self.sample(&n, b)?);
-                }
-                if out["nodes"].as_array().unwrap().len() >= b.limit("max_nodes") {
-                    break;
+                    let Some(node) = self.sample(&n, b)? else {
+                        break;
+                    };
+                    out["nodes"].as_array_mut().unwrap().push(node);
                 }
             }
             Ok(())
@@ -683,6 +735,21 @@ impl Native {
                             sample.value["parent"] = parent;
                         }
                         let matched = matches_query(&sample.value, &query);
+                        let mut additions =
+                            self.sample_additions(&n, if matched { &sample.actions } else { &[] });
+                        // Reserve the continuation before minting any page handles.
+                        // Replacing Node with Children does not grow this frontier.
+                        additions.push(Handle::Cursor {
+                            root: root.clone(),
+                            query: query.clone(),
+                            view: view.clone(),
+                            depth,
+                            pending: pending.clone(),
+                        });
+                        if !self.registry_room(&additions) {
+                            b.mark("item_limit");
+                            break;
+                        }
                         let mut reference = Value::Null;
                         if matched {
                             out["nodes"]
@@ -812,7 +879,18 @@ fn retained_bytes(value: &Handle) -> usize {
         Handle::Node(_) => 0,
     }
 }
+fn root_room(out: &Value, b: &Budget) -> bool {
+    if out["nodes"].as_array().unwrap().len() >= b.limit("max_nodes") {
+        b.mark("node_limit");
+        false
+    } else {
+        true
+    }
+}
 fn collection_room(out: &Value, key: &str, b: &Budget) -> bool {
+    if key == "nodes" && !root_room(out, b) {
+        return false;
+    }
     if out[key]
         .as_array()
         .is_some_and(|v| v.len() >= b.limit("max_items"))

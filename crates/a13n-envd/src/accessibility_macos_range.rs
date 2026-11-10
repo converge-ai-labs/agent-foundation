@@ -318,10 +318,11 @@ impl Native {
                         .unwrap()
                         .push(rect_value(native::rectangle(&value)?)?);
                 }
-                "enclosing_element" => out["nodes"]
-                    .as_array_mut()
-                    .unwrap()
-                    .push(self.sample(&n, b)?),
+                "enclosing_element" => {
+                    if let Some(node) = self.sample(&n, b)? {
+                        out["nodes"].as_array_mut().unwrap().push(node);
+                    }
+                }
                 "compare" => {
                     let other = self.range_operand(&r["other"], owner, b)?;
                     out["comparison"] = if r["endpoint"].is_null() {

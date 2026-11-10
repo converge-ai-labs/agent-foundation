@@ -209,11 +209,10 @@ impl Native {
                         }
                         _ => return Err(invalid()),
                     };
-                    if let Some(n) = target {
-                        out["nodes"]
-                            .as_array_mut()
-                            .unwrap()
-                            .push(self.sample(&n, b)?);
+                    if let Some(n) = target
+                        && let Some(node) = self.sample(&n, b)?
+                    {
+                        out["nodes"].as_array_mut().unwrap().push(node);
                     }
                 }
                 "table" => {
@@ -222,11 +221,9 @@ impl Native {
                     let column = number(r, "column", 0);
                     let nr = number(r, "rows", 1);
                     let nc = number(r, "columns", 1);
-                    let mut returned = 0;
                     'rows: for y in row..row + nr {
                         for x in column..column + nc {
-                            if returned >= b.limit("max_items") {
-                                b.mark("item_limit");
+                            if !collection_room(&out, "nodes", b) {
                                 break 'rows;
                             }
                             let args = objc2_core_foundation::CFArray::from_retained_objects(&[
@@ -237,11 +234,10 @@ impl Native {
                                 optional(native::parameter(&n, "AXCellForColumnAndRow", &args, b))?
                             {
                                 let cell = typed(v)?;
-                                out["nodes"]
-                                    .as_array_mut()
-                                    .unwrap()
-                                    .push(self.sample(&cell, b)?);
-                                returned += 1;
+                                let Some(node) = self.sample(&cell, b)? else {
+                                    break 'rows;
+                                };
+                                out["nodes"].as_array_mut().unwrap().push(node);
                             }
                         }
                     }
@@ -263,10 +259,10 @@ impl Native {
                         }
                         if let Some(v) = optional(get(&n, key, b))? {
                             let bar = typed(v)?;
-                            out["nodes"]
-                                .as_array_mut()
-                                .unwrap()
-                                .push(self.sample(&bar, b)?);
+                            let Some(node) = self.sample(&bar, b)? else {
+                                break;
+                            };
+                            out["nodes"].as_array_mut().unwrap().push(node);
                             self.properties(
                                 &bar,
                                 &["AXValue", "AXMinValue", "AXMaxValue"],
