@@ -1937,7 +1937,7 @@ dl.detailGrid > .detailLongRow dd {
 }
 .executionContent {
   position: relative;
-  max-height: min(640px, 70dvh);
+  max-height: min(192px, 32dvh);
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
