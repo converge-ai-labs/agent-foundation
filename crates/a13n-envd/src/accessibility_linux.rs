@@ -286,6 +286,21 @@ impl Budget {
         budget.projection_bytes = p["_projection_bytes"].as_u64().unwrap_or(0) as usize;
         budget
     }
+    fn share(&self, peers: usize) -> Self {
+        let peers = peers.max(1);
+        let mut limits = self.limits.clone();
+        let calls = self.calls.get();
+        let remaining = (self.limit("max_native_calls") as u64).saturating_sub(calls);
+        limits["max_native_calls"] = json!(calls + remaining.div_ceil(peers as u64));
+        Self {
+            limits,
+            calls: Cell::new(calls),
+            deadline: Instant::now()
+                + self.deadline.saturating_duration_since(Instant::now()) / peers as u32,
+            reason: Cell::new(None),
+            projection_bytes: self.projection_bytes,
+        }
+    }
     fn limit(&self, key: &str) -> usize {
         number(
             &self.limits,
@@ -605,8 +620,11 @@ impl Native {
             match b.call(p.get_child_at_index(i as i32)).await {
                 Ok(child) if !child.is_null() => out.push(child),
                 Err(_) if b.check().is_err() => break,
+                // Registry and toolkit child arrays are live: a disappeared
+                // child does not invalidate the remaining native siblings.
+                Err(err) if err.data.error_type == ErrorType::Conflict => continue,
                 Err(err) => return Err(err),
-                _ => return Err(stale()),
+                _ => continue,
             }
         }
         Ok(out)
@@ -620,112 +638,167 @@ impl Native {
                 nodes.push(self.sample(&root, b).await?);
             } else {
                 let applications = self.children(&root, b).await?;
-                for app in applications {
+                let count = applications.len();
+                for (index, app) in applications.into_iter().enumerate() {
                     if b.check().is_err() {
                         break;
                     }
-                    if kind == "application" {
-                        // PID comes from the bus daemon, not an app-provided label.
-                        let dbus = zbus::fdo::DBusProxy::new(
-                            self.connection.as_ref().ok_or_else(unavailable)?,
-                        )
-                        .await
-                        .map_err(native_error)?;
-                        let pid = b
-                            .call(async {
-                                dbus.get_connection_unix_process_id(
-                                    app.name()
-                                        .ok_or(zbus::Error::Failure("missing owner".into()))?
-                                        .clone()
-                                        .into(),
-                                )
-                                .await
-                                .map_err(Into::into)
-                            })
-                            .await?;
-                        if Some(i64::from(pid)) != scope["process_id"].as_i64() {
-                            continue;
+                    // Reserve a fair share of the remaining read budget for
+                    // every registry entry. A hung app cannot consume the time
+                    // and calls reserved for all later applications.
+                    let app_budget = b.share(count - index);
+                    let read = async {
+                        let b = &app_budget;
+                        if kind == "application" {
+                            // PID comes from the bus daemon, not an app-provided label.
+                            let dbus = zbus::fdo::DBusProxy::new(
+                                self.connection.as_ref().ok_or_else(unavailable)?,
+                            )
+                            .await
+                            .map_err(native_error)?;
+                            let pid = b
+                                .call(async {
+                                    dbus.get_connection_unix_process_id(
+                                        app.name()
+                                            .ok_or(zbus::Error::Failure("missing owner".into()))?
+                                            .clone()
+                                            .into(),
+                                    )
+                                    .await
+                                    .map_err(Into::into)
+                                })
+                                .await?;
+                            if Some(i64::from(pid)) != scope["process_id"].as_i64() {
+                                return Ok(());
+                            }
                         }
-                    }
-                    if kind == "applications" || kind == "application" {
-                        nodes.push(self.sample(&app, b).await?);
-                    } else if kind == "windows" {
-                        for window in self.children(&app, b).await? {
-                            if nodes.len() >= b.limit("max_nodes") {
-                                b.mark("node_limit");
-                                break;
-                            }
-                            nodes.push(self.sample(&window, b).await?);
-                        }
-                    } else if kind == "focused" {
-                        // Focus acquisition is not a depth-limited tree page.
-                        let mut pending = vec![app];
-                        let mut seen = HashSet::new();
-                        while let Some(node) = pending.pop() {
-                            if !seen.insert(node.clone()) {
-                                continue;
-                            }
-                            if seen.len() > b.limit("max_nodes")
-                                || nodes.len() >= b.limit("max_nodes")
-                            {
-                                b.mark("node_limit");
-                                break;
-                            }
-                            let state = b.call(self.accessible(&node).await?.get_state()).await?;
-                            if state.contains(State::Defunct) {
-                                return Err(stale());
-                            }
-                            if state.contains(State::Focused) {
-                                nodes.push(self.sample(&node, b).await?);
-                            }
-                            pending.extend(self.children(&node, b).await?);
-                        }
-                    } else if kind == "at_point" {
-                        let (frame, x, y) = point(&scope["point"])?;
-                        // Application roots need not expose Component. Hit testing
-                        // starts at their top-level windows, then follows native hits.
-                        for window in self.children(&app, b).await? {
-                            let state = b.call(self.accessible(&window).await?.get_state()).await?;
-                            if state.contains(State::Defunct)
-                                || state.contains(State::Iconified)
-                                || !state.contains(State::Showing)
-                                || !state.contains(State::Visible)
-                            {
-                                continue;
-                            }
-                            if !b
-                                .call(self.component(&window).await?.contains(x, y, frame))
-                                .await?
-                            {
-                                continue;
-                            }
-                            let mut current = window;
-                            let mut seen = HashSet::new();
-                            loop {
-                                if !seen.insert(current.clone()) {
-                                    return Err(error(
-                                        ErrorType::ProviderUnavailable,
-                                        "native hit-test cycle",
-                                    ));
+                        if kind == "applications" || kind == "application" {
+                            nodes.push(self.sample(&app, b).await?);
+                        } else if kind == "windows" {
+                            for window in self.children(&app, b).await? {
+                                if nodes.len() >= b.limit("max_nodes") {
+                                    b.mark("node_limit");
+                                    break;
                                 }
-                                let p = self.component(&current).await?;
-                                match b.call(p.get_accessible_at_point(x, y, frame)).await {
-                                    Ok(next) if !next.is_null() && next != current => {
-                                        current = next
+                                match self.sample(&window, b).await {
+                                    Ok(sample) => nodes.push(sample),
+                                    Err(err) if err.data.error_type == ErrorType::Conflict => {
+                                        continue;
                                     }
-                                    Ok(_) => break,
-                                    Err(_) if b.check().is_err() => break,
                                     Err(err) => return Err(err),
                                 }
                             }
-                            nodes.push(self.sample(&current, b).await?);
-                            if nodes.len() >= b.limit("max_nodes") {
-                                b.mark("node_limit");
-                                break;
+                        } else if kind == "focused" {
+                            // Active is a top-level window state; visibility on an
+                            // arbitrary descendant does not prove focus is absent.
+                            let mut pending = Vec::new();
+                            for window in self.children(&app, b).await? {
+                                match b.call(self.accessible(&window).await?.get_state()).await {
+                                    Ok(state)
+                                        if state.contains(State::Active)
+                                            && !state.contains(State::Defunct) =>
+                                    {
+                                        pending.push(window)
+                                    }
+                                    Ok(_) => {}
+                                    Err(err) if err.data.error_type == ErrorType::Conflict => {
+                                        continue;
+                                    }
+                                    Err(err) => return Err(err),
+                                }
                             }
+                            pending.reverse();
+                            let mut seen = HashSet::new();
+                            while let Some(node) = pending.pop() {
+                                if !seen.insert(node.clone()) {
+                                    continue;
+                                }
+                                if seen.len() > b.limit("max_nodes")
+                                    || nodes.len() >= b.limit("max_nodes")
+                                {
+                                    b.mark("node_limit");
+                                    break;
+                                }
+                                let state =
+                                    match b.call(self.accessible(&node).await?.get_state()).await {
+                                        Ok(state) => state,
+                                        Err(err) if err.data.error_type == ErrorType::Conflict => {
+                                            continue;
+                                        }
+                                        Err(err) => return Err(err),
+                                    };
+                                if state.contains(State::Defunct) {
+                                    continue;
+                                }
+                                if state.contains(State::Focused) {
+                                    nodes.push(self.sample(&node, b).await?);
+                                    break;
+                                }
+                                pending.extend(self.children(&node, b).await?.into_iter().rev());
+                            }
+                        } else if kind == "at_point" {
+                            let (frame, x, y) = point(&scope["point"])?;
+                            // Application roots need not expose Component. Hit testing
+                            // starts at their top-level windows, then follows native hits.
+                            for window in self.children(&app, b).await? {
+                                let state =
+                                    b.call(self.accessible(&window).await?.get_state()).await?;
+                                if state.contains(State::Defunct)
+                                    || state.contains(State::Iconified)
+                                    || !state.contains(State::Showing)
+                                    || !state.contains(State::Visible)
+                                {
+                                    continue;
+                                }
+                                if !b
+                                    .call(self.component(&window).await?.contains(x, y, frame))
+                                    .await?
+                                {
+                                    continue;
+                                }
+                                let mut current = window;
+                                let mut seen = HashSet::new();
+                                loop {
+                                    if !seen.insert(current.clone()) {
+                                        return Err(error(
+                                            ErrorType::ProviderUnavailable,
+                                            "native hit-test cycle",
+                                        ));
+                                    }
+                                    let p = self.component(&current).await?;
+                                    match b.call(p.get_accessible_at_point(x, y, frame)).await {
+                                        Ok(next) if !next.is_null() && next != current => {
+                                            current = next
+                                        }
+                                        Ok(_) => break,
+                                        Err(_) if b.check().is_err() => break,
+                                        Err(err) => return Err(err),
+                                    }
+                                }
+                                nodes.push(self.sample(&current, b).await?);
+                                if nodes.len() >= b.limit("max_nodes") {
+                                    b.mark("node_limit");
+                                    break;
+                                }
+                            }
+                        } else {
+                            return Err(error(ErrorType::InvalidParams, "invalid root scope"));
                         }
-                    } else {
-                        return Err(error(ErrorType::InvalidParams, "invalid root scope"));
+                        Ok::<(), EIPError>(())
+                    }
+                    .await;
+                    b.calls.set(app_budget.calls.get());
+                    if let Some(reason) = app_budget.reason.get() {
+                        b.mark(reason);
+                    }
+                    if let Err(err) = read
+                        && err.data.error_type != ErrorType::Conflict
+                        && !matches!(app_budget.reason.get(), Some("call_limit" | "deadline"))
+                    {
+                        return Err(err);
+                    }
+                    if kind == "focused" && !nodes.is_empty() {
+                        break;
                     }
                     if nodes.len() >= b.limit("max_nodes") {
                         b.mark("node_limit");
@@ -737,7 +810,7 @@ impl Native {
         }
         .await;
         if let Err(err) = read
-            && !matches!(b.reason.get(), Some("call_limit" | "deadline"))
+            && b.check().is_ok()
         {
             return Err(err);
         }
@@ -921,6 +994,7 @@ impl Native {
         let sampled_at = now();
         let mut nodes = Vec::new();
         let mut visited = 0;
+        let mut progressed = false;
         while !pending.is_empty() {
             if visited >= b.limit("max_nodes")
                 || nodes.len()
@@ -957,10 +1031,21 @@ impl Native {
                                 });
                                 break;
                             }
+                            Err(err) if err.data.error_type == ErrorType::Conflict => {
+                                tree_field_error(
+                                    &mut nodes,
+                                    &self.reference(node)?,
+                                    "children",
+                                    &err,
+                                );
+                                progressed = true;
+                                continue;
+                            }
                             Err(err) => return Err(err),
                         },
                     };
                     if next >= count {
+                        progressed = true;
                         continue;
                     }
                     let child = b.call(proxy.get_child_at_index(next)).await;
@@ -999,8 +1084,20 @@ impl Native {
                             pending.push(Pending::Node(child, depth));
                         }
                         Err(_) if !advance => break,
+                        Err(err) if err.data.error_type == ErrorType::Conflict => {
+                            tree_field_error(&mut nodes, &self.reference(node)?, "children", &err);
+                            progressed = true;
+                        }
                         Err(err) => return Err(err),
-                        Ok(child) if child.is_null() => return Err(stale()),
+                        Ok(child) if child.is_null() => {
+                            tree_field_error(
+                                &mut nodes,
+                                &self.reference(node)?,
+                                "children",
+                                &stale(),
+                            );
+                            progressed = true;
+                        }
                         _ => {}
                     }
                 }
@@ -1022,8 +1119,37 @@ impl Native {
                             pending.push(Pending::Node(node, depth));
                             break;
                         }
+                        Err(err) if depth > 0 && err.data.error_type == ErrorType::Conflict => {
+                            // A vanished object is absent from this live traversal.
+                            // It must not discard observations of surviving siblings.
+                            let reference = self.reference(node.clone())?;
+                            if let Some(parent) = nodes.iter_mut().find(|parent: &&mut Value| {
+                                parent["children"]
+                                    .as_array()
+                                    .is_some_and(|children| children.contains(&reference))
+                            }) {
+                                parent["children"]
+                                    .as_array_mut()
+                                    .unwrap()
+                                    .retain(|child| *child != reference);
+                                field_error(parent, "children", &err);
+                            }
+                            seen.insert(node);
+                            progressed = true;
+                            continue;
+                        }
                         Err(err) => return Err(err),
                     };
+                    // Optional fields can report budget errors in an otherwise
+                    // valid sample. Do not commit an unresolved find predicate
+                    // or a degraded inspect node to the cursor's seen set.
+                    if matches!(b.reason.get(), Some("call_limit" | "deadline"))
+                        || Instant::now() >= b.deadline
+                    {
+                        b.check().ok();
+                        pending.push(Pending::Node(node, depth));
+                        break;
+                    }
                     let count = sample["child_count"].as_i64().map(|n| n as i32);
                     if !find || matches_query(&sample, &query) {
                         nodes.push(sample);
@@ -1047,6 +1173,7 @@ impl Native {
                         }
                     }
                     seen.insert(node.clone());
+                    progressed = true;
                     if depth < b.limit("depth") as u64 && count != Some(0) {
                         pending.push(Pending::Children {
                             node,
@@ -1059,6 +1186,12 @@ impl Native {
                     }
                 }
             }
+        }
+        if !pending.is_empty() && !progressed {
+            return Err(error(
+                ErrorType::Timeout,
+                "accessibility traversal made no progress; retry the read with a larger budget or reacquire its root",
+            ));
         }
         let mut complete = b.completeness();
         if !pending.is_empty() {
@@ -1175,6 +1308,16 @@ fn native_error(e: zbus::Error) -> EIPError {
         zbus::Error::MethodError(name, _, _) if name.as_str().contains("AccessDenied") => {
             ErrorType::Denied
         }
+        zbus::Error::FDO(err) => match err.as_ref() {
+            zbus::fdo::Error::UnknownObject(_)
+            | zbus::fdo::Error::NameHasNoOwner(_)
+            | zbus::fdo::Error::ServiceUnknown(_) => ErrorType::Conflict,
+            zbus::fdo::Error::UnknownMethod(_) | zbus::fdo::Error::UnknownInterface(_) => {
+                ErrorType::Unsupported
+            }
+            zbus::fdo::Error::AccessDenied(_) => ErrorType::Denied,
+            _ => ErrorType::ProviderUnavailable,
+        },
         _ => ErrorType::ProviderUnavailable,
     };
     error(kind, "native accessibility request failed")
@@ -1191,6 +1334,14 @@ fn field_error(result: &mut Value, field: &str, e: &EIPError) {
         && errors.len() < 128
     {
         errors.push(json!({"field":field,"reason":reason}));
+    }
+}
+fn tree_field_error(nodes: &mut [Value], reference: &Value, field: &str, err: &EIPError) {
+    if let Some(parent) = nodes
+        .iter_mut()
+        .find(|node| node["reference"] == *reference)
+    {
+        field_error(parent, field, err);
     }
 }
 fn bounds((x, y, w, h): (i32, i32, i32, i32), frame: &str) -> Value {

@@ -262,21 +262,26 @@ impl Native {
                     }
                     // Compare native character slices so case expansion never
                     // turns folded byte indices into native offsets.
-                    let mut candidate = String::new();
+                    let mut matched = 0;
                     for (end, ch) in haystack.iter().enumerate().skip(start) {
-                        candidate.push(*ch);
+                        if b.check().is_err() {
+                            break 'search;
+                        }
+                        // Fold only the newly consumed native character; never
+                        // rebuild and refold the growing candidate prefix.
                         let actual = if ignore {
-                            candidate.case_fold().collect::<String>()
+                            std::iter::once(*ch).case_fold().collect::<String>()
                         } else {
-                            candidate.clone()
+                            ch.to_string()
                         };
-                        if actual == expected {
+                        if !expected[matched..].starts_with(&actual) {
+                            break;
+                        }
+                        matched += actual.len();
+                        if matched == expected.len() {
                             spans
                                 .push((search_start + start as i32, search_start + end as i32 + 1));
                             break 'search;
-                        }
-                        if !expected.starts_with(&actual) {
-                            break;
                         }
                     }
                 }

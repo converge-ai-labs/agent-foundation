@@ -446,20 +446,14 @@ impl Native {
     }
 }
 pub(super) fn definite_refusal(err: &zbus::Error) -> bool {
+    // InvalidArgs and AccessDenied can come from an application handler after
+    // partial effects. Only an unavailable native method proves nonexecution.
     match err {
-        zbus::Error::MethodError(name, _, _) => matches!(
-            name.as_str(),
-            "org.freedesktop.DBus.Error.UnknownMethod"
-                | "org.freedesktop.DBus.Error.InvalidArgs"
-                | "org.freedesktop.DBus.Error.AccessDenied"
-        ),
+        zbus::Error::MethodError(name, _, _) => {
+            matches!(name.as_str(), "org.freedesktop.DBus.Error.UnknownMethod")
+        }
         // Properties.Set converts the same replies through the typed FDO proxy.
-        zbus::Error::FDO(err) => matches!(
-            err.as_ref(),
-            zbus::fdo::Error::UnknownMethod(_)
-                | zbus::fdo::Error::InvalidArgs(_)
-                | zbus::fdo::Error::AccessDenied(_)
-        ),
+        zbus::Error::FDO(err) => matches!(err.as_ref(), zbus::fdo::Error::UnknownMethod(_)),
         _ => false,
     }
 }

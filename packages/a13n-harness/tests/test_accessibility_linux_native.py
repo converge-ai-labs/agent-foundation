@@ -329,7 +329,7 @@ async def test_native_acknowledgements_and_read_deadlines_survive_stalled_provid
                         )
                     )
                     assert recovered.nodes[0].reference.backend_epoch == epoch
-                for refusal in ["UnknownMethod", "InvalidArgs", "AccessDenied"]:
+                for refusal in ["UnknownMethod"]:
                     await configure(f"org.freedesktop.DBus.Error.{refusal}")
                     result = await client.computer_atspi_focus(
                         eip.ComputerAtspiFocusParams.model_validate(
@@ -351,24 +351,53 @@ async def test_native_acknowledgements_and_read_deadlines_survive_stalled_provid
                     )
                     assert recovered.nodes[0].reference.backend_epoch == epoch
                 await configure("read_hang")
-                partial = await client.computer_a11y_inspect(
-                    eip.ComputerA11yInspectParams(
-                        context=eip.EIPCallContext(operation_id="stalled-read", timeout_ms=1000),
-                        node=node,
-                        limits=eip.AccessibilityLimits(timeout_ms=5000),
+                with pytest.raises(EIPMethodError) as stalled:
+                    await client.computer_a11y_inspect(
+                        eip.ComputerA11yInspectParams(
+                            context=eip.EIPCallContext(operation_id="stalled-read", timeout_ms=1000),
+                            node=node,
+                            limits=eip.AccessibilityLimits(timeout_ms=5000),
+                        )
                     )
-                )
-                assert not partial.completeness.complete and partial.completeness.reason == "deadline"
-                assert partial.completeness.continuation is not None
+                assert stalled.value.error.data.error_type == "timeout"
                 await configure("success")
                 recovered = await client.computer_a11y_inspect(
                     eip.ComputerA11yInspectParams(
                         context=eip.EIPCallContext(operation_id="resume-stalled-read"),
                         node=node,
-                        cursor=partial.completeness.continuation,
                     )
                 )
                 assert recovered.nodes[0].reference.backend_epoch == epoch
+                # Handler errors do not prove nonexecution. The fixture records
+                # dispatch before returning either error, like a partially
+                # applied native operation; supervision must retain unknown.
+                for handler_error in ["InvalidArgs", "AccessDenied"]:
+                    await configure(f"org.freedesktop.DBus.Error.{handler_error}")
+                    with pytest.raises(EIPMethodError) as uncertain:
+                        await client.computer_atspi_focus(
+                            eip.ComputerAtspiFocusParams.model_validate(
+                                {
+                                    "context": {"operation_id": f"handler-{handler_error}"},
+                                    "node": node.model_dump(),
+                                    "request": {"op": "focus"},
+                                }
+                            )
+                        )
+                    assert uncertain.value.error.data.error_type == "unknown_outcome"
+                    assert uncertain.value.error.data.retry_hint == "reconcile_first"
+                    await configure("success")
+                    roots = await client.computer_a11y_roots(
+                        eip.ComputerA11yRootsParams.model_validate(
+                            {
+                                "context": {"operation_id": f"reacquire-{handler_error}"},
+                                "scope": {"kind": "application", "process_id": provider.pid},
+                            }
+                        )
+                    )
+                    assert len(roots.nodes) == 1
+                    node = roots.nodes[0].reference
+                    assert node.backend_epoch != epoch
+                    epoch = node.backend_epoch
                 assert len(json.loads(state.read_text())["calls"]) == 5
         finally:
             await device.close()

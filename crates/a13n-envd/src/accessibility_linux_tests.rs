@@ -93,21 +93,35 @@ fn remaining_deadline_bounds_inflight_reads_even_after_an_item_cut() {
 }
 
 #[test]
-fn typed_property_refusals_are_definite_but_delivery_failures_are_not() {
+fn only_missing_native_methods_prove_nonexecution() {
+    assert!(mutation::definite_refusal(&zbus::Error::from(
+        zbus::fdo::Error::UnknownMethod("fixture".into())
+    )));
     for err in [
-        zbus::fdo::Error::UnknownMethod("fixture".into()),
         zbus::fdo::Error::InvalidArgs("fixture".into()),
         zbus::fdo::Error::AccessDenied("fixture".into()),
-    ] {
-        assert!(mutation::definite_refusal(&zbus::Error::from(err)));
-    }
-    for err in [
         zbus::fdo::Error::Failed("fixture".into()),
         zbus::fdo::Error::NoReply("fixture".into()),
         zbus::fdo::Error::Disconnected("fixture".into()),
     ] {
         assert!(!mutation::definite_refusal(&zbus::Error::from(err)));
     }
+}
+
+#[test]
+fn app_budget_reserves_calls_and_time_for_later_registry_entries() {
+    let b = Budget::new(&json!({"max_native_calls":100,"timeout_ms":1000}));
+    b.calls.set(10);
+    let first = b.share(3);
+    assert_eq!(first.limit("max_native_calls"), 40);
+    assert_eq!(first.calls.get(), 10);
+    assert!(first.deadline < b.deadline);
+    first.calls.set(40);
+    b.calls.set(first.calls.get());
+    let second = b.share(2);
+    assert_eq!(second.limit("max_native_calls"), 70);
+    let last = b.share(1);
+    assert_eq!(last.limit("max_native_calls"), 100);
 }
 
 #[test]
@@ -299,13 +313,14 @@ fn linux_accessibility_real_gtk_application() {
         assert!(finished, "native traversal did not finish");
         assert_eq!(observed, expected);
     }
-    let partial = call(
-        backend.as_mut(),
-        "computer.a11y_inspect",
-        json!({"node":application,"view":"raw","limits":{"max_native_calls":1}}),
-    );
-    assert_eq!(partial["completeness"]["reason"], "call_limit");
-    assert!(partial["completeness"]["continuation"].is_object());
+    let err = backend
+        .execute(
+            "computer.a11y_inspect",
+            json!({"node":application,"view":"raw","limits":{"max_native_calls":1}}),
+            &mut || panic!("read dispatched"),
+        )
+        .unwrap_err();
+    assert_eq!(err.data.error_type, ErrorType::Timeout);
     let named = |name: &str| {
         nodes
             .iter()
@@ -542,8 +557,9 @@ fn linux_accessibility_controlled_native_members() {
         .join("../../dev/fixtures/linux-desktop/atspi-provider.py");
     let mut app = Application(
         std::process::Command::new("/usr/bin/python3")
-            .arg(script)
+            .arg(&script)
             .arg(&path)
+            .arg("--register")
             .spawn()
             .unwrap(),
     );
@@ -967,17 +983,76 @@ fn linux_accessibility_controlled_native_members() {
     assert_eq!(state(&path)["calls"].as_array().unwrap().len(), 32);
     for name in ["UnknownMethod", "InvalidArgs", "AccessDenied"] {
         configure(&backend, &format!("org.freedesktop.DBus.Error.{name}"));
-        let reply = backend
-            .execute(
-                "computer.atspi_focus",
-                json!({"node":root,"request":{}}),
-                &mut || Ok(()),
-            )
-            .unwrap();
+        let reply = backend.execute(
+            "computer.atspi_focus",
+            json!({"node":root,"request":{}}),
+            &mut || Ok(()),
+        );
+        if name != "UnknownMethod" {
+            assert!(
+                reply.is_err(),
+                "handler error must remain uncertain: {name}"
+            );
+            continue;
+        }
+        let reply = reply.unwrap();
         assert_eq!(reply["native_status"], "error");
         assert_eq!(reply["effect"], "not_executed");
         assert_eq!(reply["dispatch_complete"], true);
     }
+    configure(&backend, "success");
+    // End a page after the root, before the child's predicate can be read.
+    let budget = Budget::new(&json!({}));
+    backend
+        .runtime
+        .block_on(backend.native.sample(&object("root"), &budget))
+        .unwrap();
+    let query = json!({"identifier":"/org/a11y/atspi/accessible/child"});
+    let page = call(
+        &mut backend,
+        "computer.a11y_find",
+        json!({
+            "node":root,"query":query,"limits":{"max_native_calls":budget.calls.get()+4}
+        }),
+    );
+    assert!(page["nodes"].as_array().unwrap().is_empty());
+    assert_eq!(page["completeness"]["reason"], "call_limit");
+    let cursor = &page["completeness"]["continuation"];
+    assert!(cursor.is_object());
+    let resumed = call(
+        &mut backend,
+        "computer.a11y_find",
+        json!({
+            "node":root,"query":query,"cursor":cursor
+        }),
+    );
+    assert_eq!(resumed["nodes"].as_array().unwrap().len(), 1);
+    assert_eq!(resumed["nodes"][0]["reference"], child);
+    assert_eq!(resumed["completeness"]["complete"], true);
+    // No first-node progress produces a timeout, never a fresh looping cursor.
+    let err = backend
+        .execute(
+            "computer.a11y_find",
+            json!({
+                "node":root,"query":query,"limits":{"max_native_calls":3}
+            }),
+            &mut || panic!("read dispatched"),
+        )
+        .unwrap_err();
+    assert_eq!(err.data.error_type, ErrorType::Timeout);
+
+    configure(&backend, "long_text");
+    let started = Instant::now();
+    let partial = call(
+        &mut backend,
+        "computer.a11y_range",
+        json!({
+            "node":root,"query":{"kind":"find_text","text":format!("{}c", "a".repeat(32768)),"ignore_case":true},
+            "limits":{"timeout_ms":100,"max_text_bytes":65536}
+        }),
+    );
+    assert_eq!(partial["completeness"]["reason"], "deadline");
+    assert!(started.elapsed() < Duration::from_secs(1));
     configure(&backend, "success");
     let source = backend.native.range_ref(&object("root"), 1, 10).unwrap();
     let expanded = call(
@@ -989,15 +1064,17 @@ fn linux_accessibility_controlled_native_members() {
     assert_eq!((start, end), (0, 11));
     for mode in ["child_error", "sample_error"] {
         configure(&backend, mode);
-        assert!(
-            backend
-                .execute(
-                    "computer.a11y_inspect",
-                    json!({"node":root}),
-                    &mut || panic!("read dispatched")
-                )
-                .is_err()
-        );
+        let partial = call(&mut backend, "computer.a11y_inspect", json!({"node":root}));
+        assert_eq!(partial["nodes"].as_array().unwrap().len(), 1);
+        if mode == "child_error" {
+            assert!(
+                partial["nodes"][0]["field_errors"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|e| e["field"] == "children" && e["reason"] == "stale")
+            );
+        }
     }
     configure(&backend, "defunct");
     let mut dispatches = 0;
@@ -1015,12 +1092,14 @@ fn linux_accessibility_controlled_native_members() {
     );
     assert_eq!(dispatches, 0);
     configure(&backend, "read_hang");
-    let partial = call(
-        &mut backend,
-        "computer.a11y_inspect",
-        json!({"node":root,"_timeout_ms":200,"limits":{"timeout_ms":5000}}),
-    );
-    assert_eq!(partial["completeness"]["reason"], "deadline");
+    let err = backend
+        .execute(
+            "computer.a11y_inspect",
+            json!({"node":root,"_timeout_ms":200,"limits":{"timeout_ms":5000}}),
+            &mut || panic!("read dispatched"),
+        )
+        .unwrap_err();
+    assert_eq!(err.data.error_type, ErrorType::Timeout);
     configure(&backend, "success");
     assert!(
         !call(&mut backend, "computer.a11y_inspect", json!({"node":root}))["nodes"]
@@ -1028,6 +1107,46 @@ fn linux_accessibility_controlled_native_members() {
             .unwrap()
             .is_empty()
     );
+    // A hung earlier app must leave budget for a later healthy registry entry.
+    let healthy_path = temp.path().join("healthy.json");
+    let mut healthy = Application(
+        std::process::Command::new("/usr/bin/python3")
+            .arg(&script)
+            .arg(&healthy_path)
+            .arg("--register")
+            .spawn()
+            .unwrap(),
+    );
+    wait_for(|| {
+        assert!(healthy.0.try_wait().unwrap().is_none());
+        state(&healthy_path)["ready"] == true
+    });
+    configure(&backend, "read_hang");
+    let roots = call(
+        &mut backend,
+        "computer.a11y_roots",
+        json!({
+            "scope":{"kind":"applications"},"limits":{"timeout_ms":1000}
+        }),
+    );
+    assert_eq!(roots["completeness"]["reason"], "deadline");
+    let healthy_owner = state(&healthy_path)["owner"].as_str().unwrap().to_owned();
+    assert!(roots["nodes"].as_array().unwrap().iter().any(|node| {
+        backend
+            .native
+            .node(&node["reference"])
+            .unwrap()
+            .name_as_str()
+            == Some(healthy_owner.as_str())
+    }));
+    configure(&backend, "focused_child");
+    let focused = call(
+        &mut backend,
+        "computer.a11y_roots",
+        json!({"scope":{"kind":"focused"}}),
+    );
+    assert_eq!(focused["nodes"].as_array().unwrap().len(), 1);
+    assert_eq!(focused["nodes"][0]["reference"], child);
     // Pending native delivery must stay pending; it cannot become a false ack.
     configure(&backend, "no_reply");
     let mut dispatches = 0;

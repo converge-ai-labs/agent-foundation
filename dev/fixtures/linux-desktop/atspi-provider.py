@@ -141,9 +141,14 @@ def invoke(_bus, _sender, object_path, interface, member, arguments, invocation)
         invocation.return_value(GLib.Variant("(au)", ([1 << 6, 0],)))
         return
     reads = {
-        "GetState": ([0, 0],),
+        # AT-SPI Active=1 and Focused=12 apply to this top-level child.
+        "GetState": (
+            [((1 << 1) | (1 << 12)) if state["mode"] == "focused_child" and object_path == ROOT + "child" else 0, 0],
+        ),
         "GetRoleName": ("text",),
-        "GetText": ("hello world fixture!"[args[0] : args[1]],) if member == "GetText" else ("",),
+        "GetText": (("a" * 65535 + "b" if state["mode"] == "long_text" else "hello world fixture!")[args[0] : args[1]],)
+        if member == "GetText"
+        else ("",),
         "GetStringAtOffset": (("hello", 0, 5) if args[0] < 6 else ("world", 6, 11))
         if member == "GetStringAtOffset"
         else ("", 0, 0),
@@ -202,7 +207,7 @@ def get_property(_bus, _sender, object_path, interface, name):
         "AccessibleId": object_path,
         "NActions": 1,
         "NSelectedChildren": 1,
-        "CharacterCount": 20,
+        "CharacterCount": 65536 if state["mode"] == "long_text" else 20,
         "NRows": 3,
         "NColumns": 2,
         "MinimumValue": 0.0,
