@@ -4199,8 +4199,6 @@ export interface components {
         ContextItemUsage: {
             /** Characters */
             characters: number;
-            /** Description */
-            description?: string | null;
             /** Calls */
             calls?: number | null;
             /** Argument Characters */

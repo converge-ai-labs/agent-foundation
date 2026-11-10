@@ -74,3 +74,38 @@ def test_producer_groups_and_exact_catalog_match():
     skills = breakdown.groups["skills"]
     assert skills.characters == len("old entry") + len(catalog.text)
     assert skills.items["one"].characters == 5
+
+
+def test_large_skill_descriptions_leave_room_for_every_category():
+    description = "技能说明" * 150
+    entries = {f"skill_{i}": ContextItemUsage(characters=len(description)) for i in range(51)}
+    catalog = InstructionCatalog("skills", description * len(entries), entries)
+    key = InstructionId(CapabilityInstructionSource("custom.skills"))
+    tools = [ToolDefinition(name=f"tool_{i}") for i in range(56)]
+    calls = [ToolCallPart(tool.name, {}, f"call_{i}") for i, tool in enumerate(tools[:6])]
+    mounts = [
+        ModelContextBlock(
+            "custom.memory", ModelContextPlacement.INPUT_PREAMBLE, name, memory_mount=name, context_group="memory"
+        ).content_item()
+        for name in ("team", "personal")
+    ]
+    result = measure_context(
+        [
+            ModelRequest(parts=[InstructionDeltaPart(id=key, content=catalog.text)]),
+            input_request(mounts),
+            ModelResponse(parts=calls),
+        ],
+        ModelRequestParameters(function_tools=tools),
+        {str(key.source): catalog},
+    )
+    assert {key: len(group.items) for key, group in result.groups.items()} == {
+        "skills": 51,
+        "tools": 56,
+        "memory": 2,
+        "tool_calls": 6,
+    }
+    assert all(group.omitted_items == 0 for group in result.groups.values())
+    assert description not in result.model_dump_json()
+    assert ContextItemUsage.model_validate({"characters": 5, "description": "old record"}).model_dump() == {
+        "characters": 5
+    }

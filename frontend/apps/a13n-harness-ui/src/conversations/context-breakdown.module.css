@@ -111,26 +111,12 @@
   text-align: end;
 }
 .outputRow {
-  display: flex;
-  align-items: center;
-  gap: 8px;
   border-top: 1px solid var(--a13n-border-soft);
   margin-top: 6px;
   padding-top: 8px;
 }
-.outputRow span:last-child {
-  margin-inline-start: auto;
-}
-.outputRow i {
-  width: 7px;
-  height: 7px;
-  border-radius: 2px;
-}
 .output {
   background: color-mix(in oklab, var(--muted-foreground), var(--chart-1) 30%);
-}
-.input {
-  background: var(--chart-1);
 }
 .audio {
   background: color-mix(in oklab, var(--chart-4), var(--chart-3) 35%);

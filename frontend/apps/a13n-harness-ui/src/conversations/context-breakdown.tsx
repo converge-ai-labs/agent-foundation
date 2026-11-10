@@ -59,15 +59,14 @@ function GroupDetails({
           background: color,
         }}
       />
-      {item.description && <small>{item.description}</small>}
       {item.calls != null && (
         <small>
           {t(
-            "{{calls}} calls · {{args, number}} argument chars · {{results, number}} result chars",
+            "{{calls}} calls · {{args}} argument tokens · {{results}} result tokens",
             {
               calls: item.calls,
-              args: item.argument_characters ?? 0,
-              results: item.result_characters ?? 0,
+              args: format(item.argument_characters ?? 0),
+              results: format(item.result_characters ?? 0),
             },
           )}
         </small>
@@ -132,66 +131,57 @@ export function PromptBreakdown({
     context_window: capacity,
   } = request;
   const missing = breakdown.unmeasured_content ?? [];
+  const reportedAudio = request.input_audio_tokens ?? 0;
   const audio =
-    missing.length === 1 && missing[0] === "audio"
-      ? (request.input_audio_tokens ?? 0)
-      : 0;
-  const estimate =
-    inputTokens != null &&
-    inputTokens > 0 &&
-    (missing.length === 0 || (audio > 0 && audio <= inputTokens));
-  const textTokens = estimate ? inputTokens - audio : 0;
+    inputTokens != null && reportedAudio <= inputTokens ? reportedAudio : 0;
+  const textTokens = inputTokens == null ? null : inputTokens - audio;
+  const estimate = (chars: number) =>
+    textTokens == null ? null : (chars / total) * textTokens;
   const used = (inputTokens ?? 0) + (outputTokens ?? 0);
   const axis = Math.max(capacity ?? 0, used);
-  const windowScale = !!(capacity && used > 0);
-  const fraction = (chars: number) =>
-    (chars / total) * (estimate ? textTokens / inputTokens : 1);
   const number = new Intl.NumberFormat(i18n.resolvedLanguage);
   const percentage = new Intl.NumberFormat(i18n.resolvedLanguage, {
     style: "percent",
     maximumFractionDigits: 1,
   });
-  const format = (chars: number) =>
-    number.format(estimate ? Math.round((chars / total) * textTokens) : chars);
-  const share = (chars: number) => percentage.format(fraction(chars));
-  const inputScale = windowScale ? textTokens / axis : 1;
-  const segments = groups.map(({ key, value, color }) => (
-    <span
-      key={key}
-      style={{
-        width: `${(value.characters / total) * inputScale * 100}%`,
-        backgroundColor: color,
-      }}
-    />
-  ));
+  const format = (chars: number) => {
+    const tokens = estimate(chars);
+    return tokens == null ? "—" : number.format(Math.round(tokens));
+  };
+  const windowShare = (tokens: number | null) =>
+    tokens != null && capacity && capacity > 0
+      ? percentage.format(tokens / capacity)
+      : "—";
+  const share = (chars: number) => windowShare(estimate(chars));
   return (
     <section
       data-prompt-breakdown=""
       className={styles.section}
-      aria-label={t("Prompt breakdown")}
+      aria-label={t("Context breakdown")}
     >
-      {windowScale && (
+      {capacity != null && capacity > 0 && (
         <div
           className={styles.track}
           role="meter"
           aria-label={t("Context used")}
-          aria-valuenow={Math.min(used, capacity!)}
-          aria-valuemax={capacity!}
+          aria-valuenow={Math.min(used, capacity)}
+          aria-valuemax={capacity}
           aria-valuemin={0}
           aria-valuetext={t("{{used, number}} of {{limit, number}} tokens", {
             used,
-            limit: capacity!,
+            limit: capacity,
           })}
         >
-          {estimate ? (
-            segments
-          ) : (
+          {groups.map(({ key, value, color }) => (
             <span
-              className={styles.input}
-              style={{ width: `${((inputTokens ?? 0) / axis) * 100}%` }}
+              key={key}
+              style={{
+                width: `${((estimate(value.characters) ?? 0) / axis) * 100}%`,
+                backgroundColor: color,
+              }}
             />
-          )}
-          {audio > 0 && estimate && (
+          ))}
+          {audio > 0 && (
             <span
               className={styles.audio}
               style={{ width: `${(audio / axis) * 100}%` }}
@@ -206,15 +196,10 @@ export function PromptBreakdown({
         </div>
       )}
       <div className={styles.heading}>
-        <strong>{t("Prompt breakdown")}</strong>
-        <span>{estimate ? t("Est. tokens") : t("Text characters")}</span>
-        <span>{estimate ? t("Of input") : t("Of text")}</span>
+        <strong>{t("Context breakdown")}</strong>
+        <span>{t("Est. tokens")}</span>
+        <span>{t("Of window")}</span>
       </div>
-      {!windowScale && (
-        <div className={styles.track} aria-label={t("Prompt breakdown")}>
-          {segments}
-        </div>
-      )}
       {groups.map(({ key, label, color, value }) => {
         const items =
           Object.keys(value.items ?? {}).length + (value.omitted_items ?? 0);
@@ -258,27 +243,30 @@ export function PromptBreakdown({
           </div>
         );
       })}
-      {estimate && audio > 0 && (
+      {audio > 0 && (
         <div className={styles.row}>
           <i className={styles.audio} />
           <span>{t("Audio")}</span>
           <span className={styles.amount}>{number.format(audio)}</span>
-          <span className={styles.share}>
-            {percentage.format(audio / inputTokens)}
-          </span>
+          <span className={styles.share}>{windowShare(audio)}</span>
         </div>
       )}
       {outputTokens != null && outputTokens > 0 && (
-        <div className={styles.outputRow}>
+        <div className={`${styles.row} ${styles.outputRow}`}>
           <i className={styles.output} />
           <span>{t("Response output")}</span>
-          <span>{number.format(outputTokens)}</span>
+          <span className={styles.amount}>{number.format(outputTokens)}</span>
+          <span className={styles.share}>{windowShare(outputTokens)}</span>
         </div>
       )}
-      {!estimate && (
-        <p className={styles.note}>
-          {t("Token split unavailable. Shares cover measured text only.")}
-        </p>
+      {inputTokens == null ? (
+        <p className={styles.note}>{t("Input token count unavailable.")}</p>
+      ) : (
+        missing.some((kind) => kind !== "audio" || !audio) && (
+          <p className={styles.note}>
+            {t("Unmetered media tokens are distributed by text share.")}
+          </p>
+        )
       )}
     </section>
   );
