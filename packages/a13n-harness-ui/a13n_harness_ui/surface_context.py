@@ -37,7 +37,12 @@ def append_surface_provenance(prompt: RunInputValue, surface: Literal["tui", "we
         *parts,
         TextContent(
             f"This input was submitted through {label}.",
-            metadata={"display": False, "source_id": "a13n-harness-ui.input-surface", "input_surface": surface},
+            metadata={
+                "display": False,
+                "source_id": "a13n-harness-ui.input-surface",
+                "context_group": "runtime_state",
+                "input_surface": surface,
+            },
         ),
     )
 

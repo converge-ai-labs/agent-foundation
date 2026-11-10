@@ -113,57 +113,164 @@ def test_projection_validation_precedes_suppression_and_rejects_duplicate_keys()
 
 
 @pytest.mark.anyio
-async def test_attention_summary_filters_before_limit_and_keeps_explicit_history():
+async def test_attention_summary_reads_one_priority_page_and_keeps_explicit_history(monkeypatch):
     from types import SimpleNamespace
+    from unittest.mock import AsyncMock
 
     from a13n_harness.capabilities.tool_execution import ToolExecutionCapability, tool_execution_info
-    from a13n_harness.tool_execution import ToolExecutionRecord
+    from a13n_harness.tool_execution import (
+        MemoryToolExecutionStore,
+        StoredToolExecution,
+        ToolExecutionRecord,
+        ToolExecutionRuntime,
+    )
 
-    records = [
-        ToolExecutionRecord(
+    store = MemoryToolExecutionStore(max_completed=400)
+    for index in range(301):
+        status = ("succeeded", "failed", "cancelled", "lost")[index % 4]
+        record = ToolExecutionRecord(
             execution_id=f"old-{index}",
             thread_id="thread-test",
             run_id="run-test",
             tool_call_id=f"call-{index}",
             tool_name="lookup",
             status=status,
-            delivery_acknowledged=True,
+            result_available=status == "succeeded",
+            delivery_acknowledged=status == "succeeded",
         )
-        for index, status in enumerate(["succeeded", "failed", "cancelled", "lost"] * 26)
-    ]
-    attention = [
-        record.model_copy(update={"execution_id": f"attention-{index}", "delivery_acknowledged": False})
-        for index, record in enumerate(records[:4])
-    ]
-    records.extend(attention)
-    records.append(records[0].model_copy(update={"execution_id": "running", "status": "running"}))
-    calls = []
+        await store.save(StoredToolExecution(record, "delivered" if record.result_available else None))
+    runtime = ToolExecutionRuntime(store=store)
 
-    async def summarize(thread_id, *, offset, limit):
-        assert thread_id == "thread-test"
-        calls.append((offset, limit))
-        return tuple(records[offset : offset + limit])
+    async def operation():
+        return "unread"
 
-    ctx = SimpleNamespace(
-        deps=SimpleNamespace(thread_id="thread-test", tool_execution=SimpleNamespace(summarize=summarize))
+    unread = runtime.admit(
+        operation, thread_id="thread-test", run_id="run-test", tool_call_id="unread", tool_name="lookup"
     )
+    await runtime.join()
+    queued = runtime.admit(
+        operation, thread_id="thread-test", run_id="run-test", tool_call_id="queued", tool_name="lookup"
+    )
+    listed = AsyncMock(wraps=store.list)
+    monkeypatch.setattr(store, "list", listed)
+    ctx = SimpleNamespace(deps=SimpleNamespace(thread_id="thread-test", tool_execution=runtime))
+
+    async def handler(request):
+        return ModelContextProjection()
+
+    projection = await ToolExecutionCapability().wrap_model_context(ctx, INPUT, handler)
+    listed.assert_awaited_once_with("thread-test", offset=0, limit=21)
+    text = projection.blocks[0].content
+    assert "old-" not in text
+    assert unread.execution_id in text and queued.execution_id in text
+    assert '"queued"' in text
+    assert not (await runtime.info("thread-test", unread.execution_id)).delivery_acknowledged
+    explicit = await tool_execution_info(ctx, offset=2, limit=100)
+    assert len(explicit) == 100 and all(record["execution_id"].startswith("old-") for record in explicit)
+    await runtime.close()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("status", ["failed", "cancelled", "lost"])
+async def test_attention_summary_clears_real_terminal_executions_without_results(status, monkeypatch):
+    import asyncio
+    from types import SimpleNamespace
+
+    from a13n_harness.capabilities.tool_execution import (
+        ToolExecutionCapability,
+        tool_execution_info,
+        tool_execution_result,
+    )
+    from a13n_harness.tool_execution import ToolExecutionRuntime
+
+    runtime = ToolExecutionRuntime()
+    if status == "lost":
+        save = runtime.store.save
+
+        async def fail_terminal(execution):
+            if execution.record.terminal:
+                raise OSError("result publication failed")
+            await save(execution)
+
+        monkeypatch.setattr(runtime.store, "save", fail_terminal)
+
+    async def operation():
+        if status == "failed":
+            raise RuntimeError("operation failed")
+        if status == "cancelled":
+            raise asyncio.CancelledError
+        return "result that cannot be published"
+
+    record = runtime.admit(
+        operation, thread_id="thread-test", run_id="run-test", tool_call_id="call-test", tool_name="lookup"
+    )
+    ctx = SimpleNamespace(deps=SimpleNamespace(thread_id="thread-test", tool_execution=runtime))
+
+    async def handler(request):
+        return ModelContextProjection()
+
+    capability = ToolExecutionCapability()
+    active = await capability.wrap_model_context(ctx, INPUT, handler)
+    assert record.execution_id in active.blocks[0].content
+    await runtime.join()
+    terminal = await tool_execution_info(ctx, record.execution_id)
+    assert terminal["status"] == status
+    assert not terminal["result_available"] and not terminal["delivery_acknowledged"]
+    assert (await tool_execution_result(ctx, record.execution_id))["status"] == status
+    empty = await capability.wrap_model_context(ctx, INPUT, handler)
+    assert empty.blocks[0].content.endswith(": []")
+    history = append([], active.blocks[0])
+    assert _drop_unchanged(history, empty).blocks
+    assert not _drop_unchanged(append(history, empty.blocks[0]), empty).blocks
+    assert not (await runtime.info("thread-test", record.execution_id)).delivery_acknowledged
+    await runtime.close()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("count", [0, 20, 21])
+async def test_attention_summary_bounds_results_and_signals_overflow(count, monkeypatch):
+    import json
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from a13n_harness.capabilities.tool_execution import ToolExecutionCapability
+    from a13n_harness.tool_execution import ToolExecutionRuntime
+
+    runtime = ToolExecutionRuntime()
+
+    async def operation():
+        return "unread"
+
+    for index in range(count):
+        runtime.admit(
+            operation, thread_id="thread-test", run_id="run-test", tool_call_id=f"call-{index}", tool_name="lookup"
+        )
+        await runtime.join()
+    listed = AsyncMock(wraps=runtime.store.list)
+    monkeypatch.setattr(runtime.store, "list", listed)
+    ctx = SimpleNamespace(deps=SimpleNamespace(thread_id="thread-test", tool_execution=runtime))
 
     async def handler(request):
         return ModelContextProjection()
 
     capability = ToolExecutionCapability()
     projection = await capability.wrap_model_context(ctx, INPUT, handler)
+    listed.assert_awaited_once_with("thread-test", offset=0, limit=21)
     text = projection.blocks[0].content
-    assert calls == [(0, 100), (100, 100)]
-    assert "old-" not in text
-    assert all(record.execution_id in text for record in attention)
-    assert '"running"' in text
-    explicit = await tool_execution_info(ctx, offset=0, limit=20)
-    assert len(explicit) == 20 and explicit[0]["delivery_acknowledged"]
-    records.clear()
-    empty = await capability.wrap_model_context(ctx, INPUT, handler)
-    assert empty.blocks[0].content.endswith(": []")
-    assert _drop_unchanged(append([], projection.blocks[0]), empty).blocks
+    records = json.loads(text.split(": ", 1)[1].split("\n", 1)[0])
+    assert len(records) == min(count, 20)
+    assert ("More executions require attention" in text) == (count > 20)
+    assert all(not record["delivery_acknowledged"] for record in records)
+    if count:
+        stored = await runtime.summarize("thread-test", limit=count)
+        assert len(stored) == count
+        assert all(not record.delivery_acknowledged for record in stored)
+        for record in stored:
+            await runtime.acknowledge_delivery("thread-test", record.execution_id)
+        empty = await capability.wrap_model_context(ctx, INPUT, handler)
+        assert empty.blocks[0].content.endswith(": []")
+        assert _drop_unchanged(append([], projection.blocks[0]), empty).blocks
+    await runtime.close()
 
 
 def test_context_breakdown_counts_retained_snapshots_not_hashes_or_suppressed_copies():

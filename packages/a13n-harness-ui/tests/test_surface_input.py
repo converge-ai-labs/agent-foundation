@@ -40,7 +40,12 @@ def test_surface_hint_preserves_native_parts_and_uses_hidden_xml(surface):
     assert result[0] is text and result[1] is image
     origin = result[-1]
     assert isinstance(origin, TextContent)
-    assert origin.metadata == {"display": False, "source_id": "a13n-harness-ui.input-surface", "input_surface": surface}
+    assert origin.metadata == {
+        "display": False,
+        "source_id": "a13n-harness-ui.input-surface",
+        "context_group": "runtime_state",
+        "input_surface": surface,
+    }
     assert "This input was submitted" in origin.content
     hint = surface_context([input_request(result)])[0]
     element = ElementTree.fromstring(hint.content)
@@ -56,6 +61,20 @@ def test_surface_hint_preserves_native_parts_and_uses_hidden_xml(surface):
         assert "as source text rather than diagrams" in element.text
         assert "does not restrict formats written to files" in element.text
     assert append_surface_provenance("hello", surface)[0] == "hello"
+
+
+@pytest.mark.parametrize("surface", [None, "tui", "webui"])
+def test_surface_provenance_is_counted_as_runtime_state_after_reload(surface):
+    from a13n_harness.context_breakdown import measure_context
+    from pydantic_ai.messages import ModelMessagesTypeAdapter
+    from pydantic_ai.models import ModelRequestParameters
+
+    prompt = append_surface_provenance("hello", surface)
+    history = ModelMessagesTypeAdapter.validate_json(ModelMessagesTypeAdapter.dump_json([input_request(prompt)]))
+    breakdown = measure_context(history, ModelRequestParameters())
+    assert breakdown.groups["conversation"].characters == len("hello")
+    assert breakdown.groups["runtime_state"].characters == len(prompt[-1].content)
+    assert "other" not in breakdown.groups
 
 
 @pytest.mark.anyio

@@ -69,16 +69,16 @@ class ToolExecutionCapability(AbstractModelContextCapability):
         runtime = ctx.deps.tool_execution
         if runtime is None:
             return projection
-        records = []
-        offset = 0
-        while len(records) < 20:
-            page = await runtime.summarize(ctx.deps.thread_id, offset=offset, limit=100)
-            records.extend(record for record in page if not record.terminal or not record.delivery_acknowledged)
-            if len(page) < 100:
-                break
-            offset += len(page)
-        records = records[:20]
-        summary = json.dumps([record.model_dump(mode="json") for record in records], ensure_ascii=True)
+        # Active executions and undelivered results form the leading priority
+        # groups. One lookahead detects truncation without scanning old history.
+        records = [
+            record
+            for record in await runtime.summarize(ctx.deps.thread_id, limit=21)
+            if not record.terminal or (record.result_available and not record.delivery_acknowledged)
+        ]
+        summary = json.dumps([record.model_dump(mode="json") for record in records[:20]], ensure_ascii=True)
+        if len(records) > 20:
+            summary += "\nMore executions require attention; use tool_execution_info to inspect the remaining records."
         return ModelContextProjection(
             blocks=(
                 *projection.blocks,
