@@ -141,11 +141,22 @@ impl Native {
                     for key in ["AXSelectedChildren", "AXSelectedRows", "AXSelectedColumns"] {
                         self.collection_property(&n, key, &mut out, b)?;
                     }
-                    for span in self.selected_spans(&n, b)? {
-                        out["ranges"]
-                            .as_array_mut()
-                            .unwrap()
-                            .push(self.range_reference(owner, span)?);
+                    match self.selected_spans(&n, b) {
+                        Ok(spans) => {
+                            for span in spans {
+                                out["ranges"]
+                                    .as_array_mut()
+                                    .unwrap()
+                                    .push(self.range_reference(owner, span)?);
+                            }
+                        }
+                        // A list/table can support selected nodes without text
+                        // selection. Preserve those properties and report the
+                        // unsupported text field instead of fabricating empty.
+                        Err(e) if e.data.error_type == ErrorType::Unsupported => {
+                            field_error(&mut out, "AXSelectedTextRange", &e);
+                        }
+                        Err(e) => return Err(e),
                     }
                 }
                 "navigate" => {
@@ -247,6 +258,9 @@ impl Native {
                 }
                 "scroll" => {
                     for key in ["AXHorizontalScrollBar", "AXVerticalScrollBar"] {
+                        if !collection_room(&out, "nodes", b) {
+                            break;
+                        }
                         if let Some(v) = optional(get(&n, key, b))? {
                             let bar = typed(v)?;
                             out["nodes"]
@@ -326,6 +340,9 @@ impl Native {
         out: &mut Value,
         b: &Budget,
     ) -> Result<(), EIPError> {
+        if !collection_room(out, "properties", b) {
+            return Ok(());
+        }
         let total = match optional(native::count(n, key, b))? {
             Some(v) => v,
             None => return Ok(()),

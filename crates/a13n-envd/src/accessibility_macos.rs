@@ -97,6 +97,10 @@ enum Pending {
     Node(CFRetained<AXUIElement>, usize, Option<Value>),
     Children(CFRetained<AXUIElement>, usize, Value, usize),
 }
+struct Sample {
+    value: Value,
+    actions: Vec<CFRetained<CFString>>,
+}
 struct Budget {
     limits: Value,
     calls: Cell<usize>,
@@ -106,12 +110,14 @@ struct Budget {
 }
 impl Budget {
     fn new(p: &Value) -> Result<Self, EIPError> {
+        let timeout = number(p, "_timeout_ms", number(&p["limits"], "timeout_ms", 5000));
+        let reserve = (timeout / 20).min(25);
         Ok(Self {
             limits: p["limits"].clone(),
             calls: Cell::new(0),
             reason: Cell::new(None),
             deadline: Instant::now()
-                + Duration::from_millis(number(&p["limits"], "timeout_ms", 5000) as u64),
+                + Duration::from_millis(timeout.saturating_sub(reserve) as u64),
             // The Session replaces the public observation ID with this reserve.
             projection: number(p, "_projection_bytes", 0),
         })
@@ -153,8 +159,23 @@ impl Budget {
     fn exhausted(&self) -> bool {
         matches!(self.reason.get(), Some("deadline" | "call_limit"))
     }
-    fn call(&self, f: impl FnOnce() -> AXError) -> Result<(), EIPError> {
+    fn prepare(&self, n: &AXUIElement) -> Result<(), EIPError> {
         self.check()?;
+        // This setting applies to this exact AX object, including child objects
+        // acquired from arrays. Never leave a native message on the default timeout.
+        let seconds = self
+            .deadline
+            .saturating_duration_since(Instant::now())
+            .as_secs_f32();
+        if seconds <= 0.0 {
+            self.reason.set(Some("deadline"));
+            return self.check();
+        }
+        native::status(unsafe { n.set_messaging_timeout(seconds) })?;
+        self.check()
+    }
+    fn call(&self, n: &AXUIElement, f: impl FnOnce() -> AXError) -> Result<(), EIPError> {
+        self.prepare(n)?;
         self.calls.set(self.calls.get() + 1);
         native::status(f())
     }
@@ -195,7 +216,7 @@ impl Native {
         p: &Value,
         dispatch: &mut dyn FnMut() -> Result<(), EIPError>,
     ) -> Result<Value, EIPError> {
-        self.prune();
+        self.prune(p);
         let b = Budget::new(p)?;
         let trusted = unsafe { AXIsProcessTrusted() };
         if method == "computer.a11y_describe" {
@@ -222,8 +243,10 @@ impl Native {
         }
         Ok(result)
     }
-    fn prune(&mut self) {
-        let mut keep = HashSet::new();
+    fn prune(&mut self, params: &Value) {
+        let mut operands = HashSet::new();
+        operand_handles(params, &mut operands);
+        let mut keep = operands.clone();
         for entry in self
             .handles
             .values()
@@ -250,8 +273,57 @@ impl Native {
                 Handle::Node(_) => {}
             }
         }
+        // An expired operand can retain its owner until this executing call has
+        // validated it. Expiry never replaces the object behind an old handle.
+        for id in &operands {
+            if let Some(e) = self.handles.get(id) {
+                handle_dependencies(&e.value, &mut keep);
+            }
+        }
         self.handles
             .retain(|id, e| e.touched.elapsed() < Duration::from_secs(120) || keep.contains(id));
+        // Evict owned ranges/actions/cursors first, then recompute which nodes
+        // their remaining references pin. Nothing is evicted during a request.
+        for kind in 0..4 {
+            let dependencies = if kind == 3 {
+                let mut deps = operands.clone();
+                for entry in self.handles.values() {
+                    handle_dependencies(&entry.value, &mut deps);
+                }
+                deps
+            } else {
+                operands.clone()
+            };
+            let mut candidates: Vec<_> = self
+                .handles
+                .iter()
+                .filter(|(id, e)| handle_kind(&e.value) == kind && !dependencies.contains(*id))
+                .map(|(id, e)| (id.clone(), e.touched))
+                .collect();
+            candidates.sort_unstable_by_key(|(_, touched)| *touched);
+            let mut count = self
+                .handles
+                .values()
+                .filter(|e| handle_kind(&e.value) == kind)
+                .count();
+            let mut bytes: usize = self
+                .handles
+                .values()
+                .map(|e| retained_bytes(&e.value))
+                .sum();
+            for (id, _) in candidates {
+                if count < handle_capacity(kind) / 2
+                    && self.handles.len() < 2048
+                    && bytes < 4 * 1024 * 1024
+                {
+                    break;
+                }
+                if let Some(entry) = self.handles.remove(&id) {
+                    count -= 1;
+                    bytes = bytes.saturating_sub(retained_bytes(&entry.value));
+                }
+            }
+        }
     }
     fn put(&mut self, prefix: &str, value: Handle) -> Result<String, EIPError> {
         let count = self
@@ -259,13 +331,16 @@ impl Native {
             .values()
             .filter(|e| std::mem::discriminant(&e.value) == std::mem::discriminant(&value))
             .count();
-        let max = match value {
-            Handle::Range { .. } => 256,
-            Handle::Action { .. } => 512,
-            Handle::Cursor { .. } => 64,
-            Handle::Node(_) => 4096,
-        };
-        if self.handles.len() >= 4096 || count >= max {
+        let max = handle_capacity(handle_kind(&value));
+        let bytes: usize = self
+            .handles
+            .values()
+            .map(|e| retained_bytes(&e.value))
+            .sum();
+        if self.handles.len() >= 4096
+            || count >= max
+            || bytes.saturating_add(retained_bytes(&value)) > 8 * 1024 * 1024
+        {
             return Err(error(
                 ErrorType::QuotaExceeded,
                 "AX handle registry is full",
@@ -324,8 +399,15 @@ impl Native {
             .unwrap_or(false))
     }
     fn sample(&mut self, n: &CFRetained<AXUIElement>, b: &Budget) -> Result<Value, EIPError> {
-        let r = self.reference(n.clone())?;
-        let role = native::name(&*get(n, "AXRole", b)?, b)?;
+        let sample = self.sample_fields(n, b)?;
+        self.publish_sample(n, sample)
+    }
+    fn sample_fields(&self, n: &AXUIElement, b: &Budget) -> Result<Sample, EIPError> {
+        // Reserve the maximum wire handle length, without registering unmatched
+        // nodes or their actions. Publication happens after query and byte fitting.
+        let r = json!({"backend":"ax","backend_epoch":self.epoch,"node_handle":"x".repeat(128)});
+        let role = native::identifier(&*get(n, "AXRole", b)?)?;
+        let mut action_names = Vec::new();
         let mut out = json!({"reference":r,"native_role":role,"role":role_name(&role),"sampled_at":now(),"states":{},"capabilities":[],"field_errors":[]});
         for (field, key) in [
             ("name", "AXTitle"),
@@ -374,31 +456,26 @@ impl Native {
             Err(e) => field_error(&mut out, "child_count", &e),
         }
         if out["states"]["enabled"] == false {
-            return Ok(out);
+            b.check()?;
+            return Ok(Sample {
+                value: out,
+                actions: action_names,
+            });
         }
-        if let Ok(actions) = native::names(n, "actions", b) {
-            if actions.len() > b.limit("max_items").min(64) {
-                b.mark("item_limit");
+        match native::names(n, "actions", b) {
+            Ok(actions) => {
+                if actions.len() > b.limit("max_items").min(64) {
+                    b.mark("item_limit");
+                }
+                for i in 0..actions.len().min(b.limit("max_items")).min(64) {
+                    let name = typed::<CFString>(actions.get(i).ok_or_else(unavailable)?)?;
+                    let identifier = native::identifier(&name)?;
+                    let id = "x".repeat(128);
+                    action_names.push(name);
+                    out["capabilities"].as_array_mut().unwrap().push(json!({"operation":"perform_action","supported":"yes","source":"AXAction","action":{"node":r,"action_handle":id,"native_identifier":identifier}}));
+                }
             }
-            for i in 0..actions.len().min(b.limit("max_items")).min(64) {
-                let name = typed::<CFString>(actions.get(i).ok_or_else(unavailable)?)?;
-                let identifier = native::name(&name, b)?;
-                let owner = string(&r, "node_handle")?.to_owned();
-                let existing = self.handles.iter().find_map(|(id, e)| match &e.value {
-                    Handle::Action { owner: o, name: x } if o == &owner && x == &name => {
-                        Some(id.clone())
-                    }
-                    _ => None,
-                });
-                let id = match existing {
-                    Some(id) => {
-                        self.handles.get_mut(&id).unwrap().touched = Instant::now();
-                        id
-                    }
-                    None => self.put("aa", Handle::Action { owner, name })?,
-                };
-                out["capabilities"].as_array_mut().unwrap().push(json!({"operation":"perform_action","supported":"yes","source":"AXAction","action":{"node":r,"action_handle":id,"native_identifier":identifier}}));
-            }
+            Err(e) => field_error(&mut out, "actions", &e),
         }
         let mut observed_value = None;
         for &(op, key) in mutation::SETTERS {
@@ -430,10 +507,53 @@ impl Native {
                 break;
             }
         }
+        b.check()?;
+        Ok(Sample {
+            value: out,
+            actions: action_names,
+        })
+    }
+    fn publish_sample(
+        &mut self,
+        n: &CFRetained<AXUIElement>,
+        sample: Sample,
+    ) -> Result<Value, EIPError> {
+        let mut out = sample.value;
+        let reference = self.reference(n.clone())?;
+        out["reference"] = reference.clone();
+        let owner = string(&reference, "node_handle")?.to_owned();
+        let mut names = sample.actions.into_iter();
+        for capability in out["capabilities"].as_array_mut().unwrap() {
+            if capability["operation"] != "perform_action" {
+                continue;
+            }
+            let name = names.next().ok_or_else(unavailable)?;
+            let existing = self.handles.iter().find_map(|(id, e)| match &e.value {
+                Handle::Action { owner: o, name: x } if o == &owner && x == &name => {
+                    Some(id.clone())
+                }
+                _ => None,
+            });
+            let id = match existing {
+                Some(id) => {
+                    self.handles.get_mut(&id).unwrap().touched = Instant::now();
+                    id
+                }
+                None => self.put(
+                    "aa",
+                    Handle::Action {
+                        owner: owner.clone(),
+                        name,
+                    },
+                )?,
+            };
+            capability["action"]["node"] = reference.clone();
+            capability["action"]["action_handle"] = json!(id);
+        }
         Ok(out)
     }
     fn applications(&self, b: &Budget) -> Result<Vec<CFRetained<AXUIElement>>, EIPError> {
-        use objc2_app_kit::NSWorkspace;
+        use objc2_app_kit::{NSApplicationActivationPolicy, NSWorkspace};
         use objc2_core_foundation::{CFRunLoop, kCFRunLoopDefaultMode};
         b.check()?;
         // NSWorkspace refreshes its runningApplications cache through the main
@@ -442,13 +562,11 @@ impl Native {
             CFRunLoop::run_in_mode(kCFRunLoopDefaultMode, 0.0, false);
         }
         let apps = NSWorkspace::sharedWorkspace().runningApplications();
-        let max = b.limit("max_nodes");
-        if apps.len() > max {
-            b.mark("node_limit");
-        }
+        // Default discovery targets regular GUI applications. Accessory/background
+        // applications remain explicitly addressable through application scope.
         Ok(apps
             .iter()
-            .take(max)
+            .filter(|app| app.activationPolicy() == NSApplicationActivationPolicy::Regular)
             .map(|app| unsafe { AXUIElement::new_application(app.processIdentifier()) })
             .collect())
     }
@@ -474,19 +592,18 @@ impl Native {
             };
             for n in roots {
                 if scope["kind"] == "windows" || scope["kind"].is_null() {
-                    let total = native::count(&n, "AXWindows", b)?;
+                    let Some(total) = optional(native::count(&n, "AXWindows", b))? else {
+                        continue;
+                    };
                     for i in 0..total {
                         if out["nodes"].as_array().unwrap().len() >= b.limit("max_nodes") {
                             b.mark("node_limit");
                             break;
                         }
                         let page = native::page(&n, "AXWindows", i, 1, b)?;
-                        if let Some(v) = page.get(0) {
-                            let n = typed(v)?;
-                            out["nodes"]
-                                .as_array_mut()
-                                .unwrap()
-                                .push(self.sample(&n, b)?);
+                        if let Some(value) = page.get(0) {
+                            let node = self.sample(&typed(value)?, b)?;
+                            out["nodes"].as_array_mut().unwrap().push(node);
                         }
                     }
                 } else {
@@ -506,7 +623,7 @@ impl Native {
         Ok(out)
     }
     fn tree(&mut self, method: &str, p: &Value, b: &Budget) -> Result<Value, EIPError> {
-        let root = p["root"].clone();
+        let root = p["node"].clone();
         let node = self.node(&root)?;
         let query = p["query"].clone();
         let view = p["view"].as_str().unwrap_or("control").to_owned();
@@ -561,22 +678,32 @@ impl Native {
                         }
                     }
                     Pending::Node(n, d, parent) => {
-                        let mut sample = self.sample(&n, b)?;
+                        let mut sample = self.sample_fields(&n, b)?;
                         if let Some(parent) = parent {
-                            sample["parent"] = parent;
+                            sample.value["parent"] = parent;
                         }
-                        let reference = sample["reference"].clone();
-                        if matches_query(&sample, &query) {
-                            out["nodes"].as_array_mut().unwrap().push(sample);
+                        let matched = matches_query(&sample.value, &query);
+                        let mut reference = Value::Null;
+                        if matched {
+                            out["nodes"]
+                                .as_array_mut()
+                                .unwrap()
+                                .push(sample.value.clone());
                             if !page_fits(method, &out, &root, b)? {
                                 out["nodes"].as_array_mut().unwrap().pop();
                                 b.mark("byte_limit");
                                 break;
                             }
+                            let node = self.publish_sample(&n, sample)?;
+                            reference = node["reference"].clone();
+                            *out["nodes"].as_array_mut().unwrap().last_mut().unwrap() = node;
                         }
                         pending.pop();
                         visited += 1;
                         if d < depth {
+                            if !matched {
+                                reference = self.reference(n.clone())?;
+                            }
                             pending.push(Pending::Children(n, d + 1, reference, 0));
                         }
                     }
@@ -588,12 +715,7 @@ impl Native {
         out["completeness"] = b.completeness();
         let mut cursor = None;
         if !pending.is_empty() {
-            if out["nodes"].as_array().unwrap().is_empty() && b.reason.get() == Some("byte_limit") {
-                return Err(error(
-                    ErrorType::QuotaExceeded,
-                    "one AX node exceeds byte budget",
-                ));
-            }
+            ensure_progress(visited, b)?;
             let id = self.put(
                 "ac",
                 Handle::Cursor {
@@ -621,6 +743,95 @@ impl Native {
         }
         Ok(out)
     }
+}
+fn handle_kind(value: &Handle) -> usize {
+    match value {
+        Handle::Action { .. } => 0,
+        Handle::Range { .. } => 1,
+        Handle::Cursor { .. } => 2,
+        Handle::Node(_) => 3,
+    }
+}
+fn handle_capacity(kind: usize) -> usize {
+    [512, 256, 64, 4096][kind]
+}
+fn operand_handles(value: &Value, handles: &mut HashSet<String>) {
+    match value {
+        Value::Object(fields) => {
+            for (key, value) in fields {
+                if matches!(
+                    key.as_str(),
+                    "node_handle" | "range_handle" | "cursor_handle" | "action_handle"
+                ) {
+                    if let Some(id) = value.as_str() {
+                        handles.insert(id.to_owned());
+                    }
+                } else {
+                    operand_handles(value, handles);
+                }
+            }
+        }
+        Value::Array(values) => {
+            for value in values {
+                operand_handles(value, handles);
+            }
+        }
+        _ => {}
+    }
+}
+fn handle_dependencies(value: &Handle, keep: &mut HashSet<String>) {
+    match value {
+        Handle::Action { owner, .. } | Handle::Range { owner, .. } => {
+            keep.insert(owner.clone());
+        }
+        Handle::Cursor { root, pending, .. } => {
+            operand_handles(root, keep);
+            for stage in pending {
+                match stage {
+                    Pending::Node(_, _, Some(parent)) | Pending::Children(_, _, parent, _) => {
+                        operand_handles(parent, keep)
+                    }
+                    _ => {}
+                }
+            }
+        }
+        Handle::Node(_) => {}
+    }
+}
+fn retained_bytes(value: &Handle) -> usize {
+    512 + match value {
+        Handle::Action { owner, name } => owner.len() + name.length() as usize * 2,
+        Handle::Range { owner, .. } => owner.len(),
+        Handle::Cursor {
+            root,
+            query,
+            view,
+            pending,
+            ..
+        } => root.to_string().len() + query.to_string().len() + view.len() + pending.len() * 512,
+        Handle::Node(_) => 0,
+    }
+}
+fn collection_room(out: &Value, key: &str, b: &Budget) -> bool {
+    if out[key]
+        .as_array()
+        .is_some_and(|v| v.len() >= b.limit("max_items"))
+    {
+        b.mark("item_limit");
+        false
+    } else {
+        true
+    }
+}
+fn ensure_progress(visited: usize, b: &Budget) -> Result<(), EIPError> {
+    if visited == 0 {
+        b.check()?;
+        return Err(error(
+            ErrorType::QuotaExceeded,
+            "AX page cannot complete one node within its budget",
+        ));
+    }
+    Ok(())
 }
 fn now() -> String {
     chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
@@ -760,7 +971,8 @@ fn page_fits(method: &str, result: &Value, root: &Value, b: &Budget) -> Result<b
 }
 fn fit_result(out: &mut Value, method: &str, b: &Budget) -> Result<(), EIPError> {
     while !b.fits(method, out)? {
-        out["completeness"] = json!({"complete":false,"reason":"byte_limit"});
+        b.mark("byte_limit");
+        out["completeness"] = b.completeness();
         if [
             "nodes",
             "properties",

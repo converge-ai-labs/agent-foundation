@@ -42,7 +42,9 @@ pub(super) fn typed<T: ConcreteType>(value: CFRetained<CFType>) -> Result<CFReta
 pub(super) fn get(n: &AXUIElement, key: &str, b: &Budget) -> Result<CFRetained<CFType>, EIPError> {
     let key = CFString::from_str(key);
     let mut raw = std::ptr::null();
-    b.call(|| unsafe { n.copy_attribute_value(&key, NonNull::from(&mut raw)) })?;
+    b.call(n, || unsafe {
+        n.copy_attribute_value(&key, NonNull::from(&mut raw))
+    })?;
     adopt(raw)
 }
 pub(super) fn parameter(
@@ -53,14 +55,14 @@ pub(super) fn parameter(
 ) -> Result<CFRetained<CFType>, EIPError> {
     let key = CFString::from_str(key);
     let mut raw = std::ptr::null();
-    b.call(|| unsafe {
+    b.call(n, || unsafe {
         n.copy_parameterized_attribute_value(&key, value, NonNull::from(&mut raw))
     })?;
     adopt(raw)
 }
 pub(super) fn count(n: &AXUIElement, key: &str, b: &Budget) -> Result<usize, EIPError> {
     let mut value = 0;
-    b.call(|| unsafe {
+    b.call(n, || unsafe {
         n.attribute_value_count(&CFString::from_str(key), NonNull::from(&mut value))
     })?;
     usize::try_from(value).map_err(|_| unavailable())
@@ -75,7 +77,7 @@ pub(super) fn page(
     let mut raw = std::ptr::null();
     let start = start.try_into().map_err(|_| invalid())?;
     let max = max.try_into().map_err(|_| invalid())?;
-    b.call(|| unsafe {
+    b.call(n, || unsafe {
         n.copy_attribute_values(
             &CFString::from_str(key),
             start,
@@ -91,7 +93,7 @@ pub(super) fn names(
     b: &Budget,
 ) -> Result<CFRetained<CFArray>, EIPError> {
     let mut raw = std::ptr::null();
-    b.call(|| unsafe {
+    b.call(n, || unsafe {
         match kind {
             "actions" => n.copy_action_names(NonNull::from(&mut raw)),
             "parameters" => n.copy_parameterized_attribute_names(NonNull::from(&mut raw)),
@@ -118,7 +120,7 @@ pub(super) fn array(value: &CFType) -> Result<CFRetained<CFArray>, EIPError> {
 }
 pub(super) fn writable(n: &AXUIElement, key: &str, b: &Budget) -> Result<bool, EIPError> {
     let mut value = 0;
-    b.call(|| unsafe {
+    b.call(n, || unsafe {
         n.is_attribute_settable(&CFString::from_str(key), NonNull::from(&mut value))
     })?;
     Ok(value != 0)
@@ -135,14 +137,14 @@ pub(super) fn hit(
         return Err(invalid());
     }
     let mut raw = std::ptr::null();
-    b.call(|| unsafe {
+    b.call(n, || unsafe {
         n.copy_element_at_position(p.x as f32, p.y as f32, NonNull::from(&mut raw))
     })?;
     adopt(raw)
 }
 pub(super) fn pid(n: &AXUIElement, b: &Budget) -> Result<i32, EIPError> {
     let mut pid = 0;
-    b.call(|| unsafe { n.pid(NonNull::from(&mut pid)) })?;
+    b.call(n, || unsafe { n.pid(NonNull::from(&mut pid)) })?;
     Ok(pid)
 }
 /// Compare native protocol identifiers without applying a content text quota.
@@ -196,6 +198,50 @@ pub(super) fn text(v: &CFType, b: &Budget) -> Result<(String, usize), EIPError> 
         consumed as usize,
     ))
 }
+/// Decode a byte-bounded suffix and its skipped native UTF-16 positions. The
+/// temporary UTF-16 buffer is bounded independently of the source CFString size.
+pub(super) fn text_suffix(v: &CFType, b: &Budget) -> Result<(String, usize), EIPError> {
+    let value = v.downcast_ref::<CFString>().ok_or_else(unavailable)?;
+    let length = usize::try_from(value.length()).map_err(|_| unavailable())?;
+    let mut start = length.saturating_sub(b.limit("max_text_bytes"));
+    if start < length
+        && (0xdc00..=0xdfff).contains(&unsafe { value.character_at_index(start as isize) })
+    {
+        start += 1;
+    }
+    let mut units = vec![0u16; length - start];
+    unsafe {
+        value.characters(
+            CFRange {
+                location: start as isize,
+                length: units.len() as isize,
+            },
+            units.as_mut_ptr(),
+        );
+    }
+    let text = String::from_utf16(&units).map_err(|_| unavailable())?;
+    let mut byte_start = text.len().saturating_sub(b.limit("max_text_bytes"));
+    while !text.is_char_boundary(byte_start) {
+        byte_start += 1;
+    }
+    start += text[..byte_start].encode_utf16().count();
+    if start > 0 {
+        b.mark("byte_limit");
+    }
+    Ok((text[byte_start..].to_owned(), start))
+}
+/// Native identifiers are protocol metadata, not user content. Keep them exact
+/// under an independent fixed bound rather than truncating action/role names.
+pub(super) fn identifier(v: &CFType) -> Result<String, EIPError> {
+    let value = v.downcast_ref::<CFString>().ok_or_else(unavailable)?;
+    if value.length() > 256 {
+        return Err(error(
+            ErrorType::QuotaExceeded,
+            "AX identifier exceeds metadata bound",
+        ));
+    }
+    Ok(value.to_string())
+}
 pub(super) fn name(v: &CFType, b: &Budget) -> Result<String, EIPError> {
     text(v, b).map(|v| v.0)
 }
@@ -239,6 +285,12 @@ pub(super) fn rectangle(v: &CFType) -> Result<CGRect, EIPError> {
 }
 payload!(span, span_value, CFRange, CFRange);
 
+pub(super) fn optional_selection<T>(value: Result<T, EIPError>) -> Result<Option<T>, EIPError> {
+    match value {
+        Err(e) if code(&e) == Some(AXError::NoValue.0) => Ok(None),
+        value => value.map(Some),
+    }
+}
 pub(super) fn optional<T>(value: Result<T, EIPError>) -> Result<Option<T>, EIPError> {
     match value {
         Ok(v) => Ok(Some(v)),

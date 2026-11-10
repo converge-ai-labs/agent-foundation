@@ -57,8 +57,14 @@ impl Native {
         n: &AXUIElement,
         b: &Budget,
     ) -> Result<Vec<CFRange>, EIPError> {
-        if let Some(values) = optional(get(n, "AXSelectedTextRanges", b))? {
-            let values = native::array(&values)?;
+        let Some((plural, value)) = selection_source(get(n, "AXSelectedTextRanges", b), || {
+            get(n, "AXSelectedTextRange", b)
+        })?
+        else {
+            return Ok(vec![]);
+        };
+        if plural {
+            let values = native::array(&value)?;
             let mut spans = Vec::new();
             if values.len() > b.limit("max_items").min(256) {
                 b.mark("item_limit");
@@ -72,10 +78,7 @@ impl Native {
             }
             return Ok(spans);
         }
-        optional(get(n, "AXSelectedTextRange", b))?
-            .map(|v| self.validate_span(n, native::span(&v)?, b))
-            .transpose()
-            .map(|v| v.into_iter().collect())
+        Ok(vec![self.validate_span(n, native::span(&value)?, b)?])
     }
     pub(super) fn text_span(
         &self,
@@ -250,8 +253,15 @@ impl Native {
                         s.length = max;
                         b.mark("byte_limit");
                     }
-                    let v = self.text_span(&n, s, b)?;
-                    let text = string(&v, "text")?;
+                    let (text, start) = if q["backward"] == true {
+                        let value =
+                            native::parameter(&n, "AXStringForRange", &*native::span_value(s)?, b)?;
+                        let (text, skipped) = native::text_suffix(&value, b)?;
+                        (text, s.location + skipped as isize)
+                    } else {
+                        let value = self.text_span(&n, s, b)?;
+                        (string(&value, "text")?.to_owned(), s.location)
+                    };
                     let needle = string(q, "text")?;
                     if needle.is_empty() {
                         return Err(invalid());
@@ -266,7 +276,7 @@ impl Native {
                     };
                     if let Some(index) = found {
                         spans.push(CFRange {
-                            location: s.location + text[..index].encode_utf16().count() as isize,
+                            location: start + text[..index].encode_utf16().count() as isize,
                             length: needle.encode_utf16().count() as isize,
                         });
                     }
@@ -411,6 +421,18 @@ impl Native {
             properties.push(json!({"name":name,"source":"AXAttributedStringForRange","value":self.value(value,b)?}));
         }
         Ok(properties)
+    }
+}
+pub(super) fn selection_source<T>(
+    plural: Result<T, EIPError>,
+    singular: impl FnOnce() -> Result<T, EIPError>,
+) -> Result<Option<(bool, T)>, EIPError> {
+    match native::optional_selection(plural) {
+        // Unsupported plural falls back; native NoValue is authoritative empty.
+        Err(e) if e.data.error_type == ErrorType::Unsupported => {
+            native::optional_selection(singular()).map(|v| v.map(|v| (false, v)))
+        }
+        result => result.map(|v| v.map(|v| (true, v))),
     }
 }
 pub(super) fn validate_span(s: CFRange, length: isize) -> Result<(), EIPError> {

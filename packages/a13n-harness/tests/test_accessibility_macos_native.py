@@ -25,6 +25,8 @@ from a13n_harness.environment.accessibility import (
     AccessibilityRangeFind,
     AccessibilityRangeRead,
     AccessibilityRootScope,
+    AccessibilitySimpleRead,
+    AccessibilityTableRead,
     AccessibilityTextRead,
 )
 from a13n_harness.environment.accessibility_mutations import AXRequest
@@ -121,6 +123,23 @@ async def test_real_macos_accessibility_session_and_harness():
             named = {node.identifier: node for node in nodes if node.identifier}
             assert all(node.image_projection is None for node in nodes)
             assert all(node.parent is not None for node in nodes[1:])
+            with pytest.raises(EnvironmentError):
+                await a11y.inspect(root, limits=limits.model_copy(update={"max_native_calls": 1}))
+            small = limits.model_copy(update={"max_items": 1})
+            table = await a11y.read(
+                named["fixture-table"].reference,
+                AccessibilityTableRead(rows=1, columns=1, include_headers=True, include_selection=True),
+                limits=small,
+            )
+            assert len(table.properties) == 1 and table.completeness.reason == "item_limit"
+            selection = await a11y.read(
+                named["fixture-table"].reference, AccessibilitySimpleRead(kind="selection"), limits=limits
+            )
+            assert any(prop.name == "AXSelectedRows" for prop in selection.properties)
+            scroll = await a11y.read(
+                named["fixture-scroll"].reference, AccessibilitySimpleRead(kind="scroll"), limits=small
+            )
+            assert len(scroll.nodes) == 1 and scroll.completeness.reason == "item_limit"
 
             async def execute(identifier, request):
                 node = named[identifier].reference
@@ -162,6 +181,19 @@ async def test_real_macos_accessibility_session_and_harness():
             text = await a11y.range_read(found.ranges[0], AccessibilityRangeRead(kind="text"), limits=limits)
             assert text.text.text == "世界😀"
             assert text.text.span.end - text.text.span.start == 4
+            # UTF-8 bounding must keep the suffix nearest the backward endpoint.
+            backward = await a11y.range(
+                owner,
+                AccessibilityRangeFind(text="e", backward=True),
+                source=document,
+                limits=limits.model_copy(update={"max_text_bytes": 4}),
+            )
+            assert backward.ranges
+            last = await a11y.range_read(backward.ranges[0], AccessibilityRangeRead(kind="text"), limits=limits)
+            assert (
+                last.text.text == "e"
+                and last.text.span.end == len("Hello 世界😀\nSecond line".encode("utf-16-le")) // 2
+            )
             await execute(
                 "fixture-document", {"op": "text_range_select", "range": found.ranges[0].model_dump(mode="json")}
             )

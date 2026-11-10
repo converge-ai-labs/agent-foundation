@@ -1,7 +1,7 @@
 // Disposable AppKit provider. State records application effects, not AX receipts.
 #import <AppKit/AppKit.h>
 
-@interface Fixture : NSObject <NSApplicationDelegate>
+@interface Fixture : NSObject <NSApplicationDelegate, NSTableViewDataSource>
 @property(nonatomic, strong) NSWindow *window;
 @property(nonatomic, strong) NSTextView *editor;
 @property(nonatomic, strong) NSTextView *document;
@@ -14,6 +14,10 @@
 
 @implementation Fixture
 - (void)apply:(id)sender { self.clicks++; }
+- (NSInteger)numberOfRowsInTableView:(NSTableView *)tableView { return 2; }
+- (id)tableView:(NSTableView *)tableView objectValueForTableColumn:(NSTableColumn *)column row:(NSInteger)row {
+    return [NSString stringWithFormat:@"%@ %ld", column.identifier, (long)row];
+}
 - (void)publish:(NSTimer *)timer {
     NSRange selection = self.document.selectedRange;
     NSDictionary *state = @{
@@ -44,6 +48,10 @@
 
     NSScrollView *editorScroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(24, 500, 820, 112)];
     editorScroll.hasVerticalScroller = YES;
+    editorScroll.hasHorizontalScroller = YES;
+    editorScroll.autohidesScrollers = NO;
+    editorScroll.scrollerStyle = NSScrollerStyleLegacy;
+    editorScroll.accessibilityIdentifier = @"fixture-scroll";
     self.editor = [[NSTextView alloc] initWithFrame:editorScroll.bounds];
     self.editor.string = @"Initial text";
     self.editor.richText = NO;
@@ -84,6 +92,19 @@
     disabled.enabled = NO;
     disabled.accessibilityIdentifier = @"fixture-disabled";
     [content addSubview:disabled];
+
+    NSScrollView *tableScroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(24, 8, 820, 40)];
+    NSTableView *table = [[NSTableView alloc] initWithFrame:tableScroll.bounds];
+    table.accessibilityIdentifier = @"fixture-table";
+    table.dataSource = self;
+    for (NSString *identifier in @[@"First", @"Second"]) {
+        NSTableColumn *column = [[NSTableColumn alloc] initWithIdentifier:identifier];
+        column.title = identifier;
+        column.width = 300;
+        [table addTableColumn:column];
+    }
+    tableScroll.documentView = table;
+    [content addSubview:tableScroll];
 
     [self.window makeKeyAndOrderFront:nil];
     [NSApp activateIgnoringOtherApps:YES];

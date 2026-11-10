@@ -94,7 +94,7 @@ impl Native {
                 }
                 _ => return Err(stale()),
             };
-            if native::name(&name, b)? != string(a, "native_identifier")? {
+            if native::identifier(&name)? != string(a, "native_identifier")? {
                 return Err(stale());
             }
             let live = native::names(&n, "actions", b)?;
@@ -215,7 +215,7 @@ impl Native {
             };
             Prepared::Set(key, value)
         };
-        b.check()?;
+        b.prepare(&n)?;
         dispatch()?;
         let status = unsafe {
             match prepared {
@@ -225,15 +225,8 @@ impl Native {
                 }
             }
         };
-        // Preserve the native return even when optional readback fails or exceeds
-        // its remaining budget. Acknowledgement is not application success.
-        let observation = if p["readback"].as_bool() == Some(true) {
-            self.sample(&n, b)
-                .ok()
-                .and_then(|v| serde_json::from_value(v).ok())
-        } else {
-            None
-        };
+        // Send the native acknowledgement first. The parent supervises optional
+        // readback separately, so a wedged observer cannot erase a known return.
         serde_json::to_value(NativeMutation {
             effect: if status == AXError::Success {
                 ComputerEffect::Executed
@@ -246,7 +239,7 @@ impl Native {
                 Status::Error
             },
             dispatch_complete: true,
-            observation,
+            observation: None,
         })
         .map_err(|_| unavailable())
     }
