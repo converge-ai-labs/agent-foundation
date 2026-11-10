@@ -2,15 +2,20 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const marker = '<!-- a13n-envd-size -->';
-const targets = new Set([
-  'x86_64-unknown-linux-gnu', 'aarch64-unknown-linux-gnu',
-  'x86_64-apple-darwin', 'aarch64-apple-darwin',
-  'x86_64-pc-windows-msvc', 'aarch64-pc-windows-msvc',
+const targets = new Map([
+  ['x86_64-unknown-linux-gnu', 'Linux x86_64'],
+  ['aarch64-unknown-linux-gnu', 'Linux ARM64'],
+  ['x86_64-apple-darwin', 'macOS x86_64'],
+  ['aarch64-apple-darwin', 'macOS ARM64'],
+  ['x86_64-pc-windows-msvc', 'Windows x86_64'],
+  ['aarch64-pc-windows-msvc', 'Windows ARM64'],
 ]);
 
 function render(reports, run, repo) {
   const rows = [];
   const keys = new Set();
+  const budgets = new Set();
+  let failed = 0;
   for (const report of reports) {
     if (!targets.has(report.target) || !['default', 'vm'].includes(report.variant)) throw new Error('Invalid build identity');
     for (const field of ['binary_bytes', 'archive_bytes', 'binary_budget', 'archive_budget']) {
@@ -22,15 +27,26 @@ function render(reports, run, repo) {
     const mib = value => (value / 1048576).toFixed(2);
     const passed = report.binary_bytes <= report.binary_budget && report.archive_bytes <= report.archive_budget &&
       (report.variant !== 'vm' || report.microsandbox_copies === 1);
-    rows.push(`| ${report.target} | ${report.variant} | ${mib(report.binary_bytes)} / ${mib(report.binary_budget)} | ${mib(report.archive_bytes)} / ${mib(report.archive_budget)} | ${report.variant === 'vm' ? Number(report.microsandbox_copies) : '—'} | ${passed ? 'PASS' : '**FAIL**'} |`);
+    if (!passed) failed++;
+    const runtime = report.variant === 'vm' && report.microsandbox_copies !== 1
+      ? ` — ${Number(report.microsandbox_copies)} runtime copies (expected 1)` : '';
+    const build = report.variant === 'vm' ? 'VM' : 'Default';
+    budgets.add(`${build}: ${mib(report.binary_budget)} / ${mib(report.archive_budget)} MiB`);
+    rows.push(`| ${targets.get(report.target)} | ${build} | ${mib(report.binary_bytes)} | ${mib(report.archive_bytes)} | ${passed ? 'Pass' : '**FAIL**'}${runtime} |`);
   }
   rows.sort();
-  return [marker, '## Envd release size', '',
-    `Commit: \`${run.head_sha}\`. [CI run](https://github.com/${repo.owner}/${repo.repo}/actions/runs/${run.id}) (attempt ${run.run_attempt}).`, '',
-    '| Target | Build | Binary / budget (MiB) | Archive / budget (MiB) | MSB copies | Check |',
-    '| --- | --- | ---: | ---: | ---: | --- |', ...rows, '',
-    `${rows.length}/6 build reports available. Missing rows mean the build or measurement did not complete; see CI for the required gate.`,
-    'Measurements reuse the release binaries compiled by native integration tests. Size excess and repeated runtime archives fail the daemon CI job.',
+  const summary = failed
+    ? `**${failed} of ${rows.length} reported builds failed.**`
+    : `**${rows.length} build${rows.length === 1 ? '' : 's'} within budget.**`;
+  return [marker, '## Envd release size', '', summary, '',
+    '| Platform | Build | Binary (MiB) | Archive (MiB) | Result |',
+    '| --- | --- | ---: | ---: | --- |', ...rows, '',
+    ...(rows.length < 6 ? [`${rows.length}/6 build reports available; see CI for missing measurements.`, ''] : []),
+    '<details>', '<summary>Budgets and build details</summary>', '',
+    `Limits (binary / archive): ${[...budgets].sort().join('; ')}.`, '',
+    'Measured from the release binaries used by native tests. VM builds must contain exactly one embedded Microsandbox runtime archive.', '',
+    '</details>', '',
+    `\`${run.head_sha.slice(0, 7)}\` · [CI run](https://github.com/${repo.owner}/${repo.repo}/actions/runs/${run.id}) (attempt ${run.run_attempt}).`,
   ].join('\n');
 }
 
