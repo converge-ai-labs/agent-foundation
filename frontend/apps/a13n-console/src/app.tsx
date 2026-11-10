@@ -126,6 +126,16 @@ const BrowsersPage = lazy(() =>
     default: module.BrowsersPage,
   })),
 );
+const CredentialsPage = lazy(() =>
+  import("./features/credentials/page").then((module) => ({
+    default: module.CredentialsPage,
+  })),
+);
+const CredentialDetail = lazy(() =>
+  import("./features/credentials/detail").then((module) => ({
+    default: module.CredentialDetail,
+  })),
+);
 const ConnectionsPage = lazy(() =>
   import("./features/connections/page").then((module) => ({
     default: module.ConnectionsPage,
@@ -339,6 +349,11 @@ function AppContent() {
                         element={<TraceDetailPage />}
                       />
                       <Route path="connections" element={<ConnectionsPage />} />
+                      <Route path="credentials" element={<CredentialsPage />} />
+                      <Route
+                        path="credentials/:credentialId"
+                        element={<CredentialDetail />}
+                      />
                       <Route
                         path="environments"
                         element={<EnvironmentsPage />}

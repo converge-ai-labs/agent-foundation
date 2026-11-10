@@ -76,6 +76,8 @@ Disable a provider with `PATCH {"enabled": false}` to stop new use. Maintenance 
 
 An egress credential stores a static token for controlled Envd HTTPS requests. It belongs to one workspace and uses an `ecred_…` ID. Creating, editing, rotating and revoking it requires workspace `write`. Values are encrypted and write-only; resource queries return metadata and versions, never the token.
 
+In Console, open **Capabilities → Credentials**. Select **Add credential** to create a token resource, then open its detail page to edit metadata, rotate its token or inspect Session application. **Configuration** shows the immutable domains and the revoke action. Token fields start empty and clear when the dialog closes; saved values cannot be read back. A successful save confirms the displayed version in Service. **Sync active Sessions** requests an asynchronous retry and leaves idle Sessions disconnected. The application view refreshes every ten seconds while open.
+
 1. Create the resource with `POST /api/v1/egress-credentials`, supplying `name`, optional `description`, `allowed_hosts` and `value`. Allowed hosts are exact ASCII DNS names, such as `api.github.com`; URLs, IP addresses and wildcards are refused. The token must contain 1–8192 UTF-8 bytes without ASCII control characters.
 2. Read the resource and retain its ETag. Use `PATCH /api/v1/egress-credentials/{id}` with `If-Match` to edit its name or description. Allowed hosts are fixed after creation; create a new resource to change them.
 3. Rotate with `PUT /api/v1/egress-credentials/{id}/value`, `If-Match` and `{"value": "<new token>"}`. The response returns `202` and the new `credential_version`. Metadata edits change only the ordinary `version`.
