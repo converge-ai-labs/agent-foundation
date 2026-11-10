@@ -227,7 +227,7 @@ async def test_invalid_caller_text_budget_is_rejected(tmp_path: Path, maximum: i
 
 
 async def test_caller_text_budget_cannot_raise_provider_limit(tmp_path: Path) -> None:
-    (tmp_path / "text").write_text("abc\n" * 4)
+    (tmp_path / "text").write_bytes(b"abc\n" * 4)
     page = await _files(tmp_path, 8).read_text("/text", max_bytes=1024)
     assert page.text == "abc\n" * 2
     assert page.lines_read == 2 and page.has_more

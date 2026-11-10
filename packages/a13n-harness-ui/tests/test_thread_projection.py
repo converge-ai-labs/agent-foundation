@@ -73,6 +73,8 @@ async def test_retained_review_accepts_transcript_text_and_preserves_truncation(
         root_runs=Mock(spec=RootRunCoordinator),
         children=Mock(spec=HarnessUiSubagentOperator),
         configuration_path=None,
+        environments=None,
+        resolver=None,
     )
     review = await projections.retained_review(
         thread_id="thread-one", expected_continuation_id="a" * 64, position=0, tool_call_id="call-one"

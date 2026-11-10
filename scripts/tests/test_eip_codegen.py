@@ -111,8 +111,8 @@ def test_checked_inspection_artifacts_follow_eip_json_profile() -> None:
     assert readiness_result["properties"]["device_id"]["minLength"] == 1
 
     methods = json.loads(METHODS_PATH.read_text(encoding="utf-8"))
-    assert methods["method_count"] == 57
-    assert sum(method["replay_class"] == "active_only" for method in methods["methods"]) == 25
+    assert methods["method_count"] == 58
+    assert sum(method["replay_class"] == "active_only" for method in methods["methods"]) == 26
     assert sum(method["replay_class"] == "terminal_evidence" for method in methods["methods"]) == 22
     assert sum(method["replay_class"] == "ledger_external" for method in methods["methods"]) == 10
     assert {method["jsonrpc_method"] for method in methods["methods"] if method["device_scoped"]} == {
@@ -124,6 +124,8 @@ def test_checked_inspection_artifacts_follow_eip_json_profile() -> None:
     }
     discovery = next(method for method in methods["methods"] if method["jsonrpc_method"] == "file.discover_documents")
     assert discovery["replay_class"] == "active_only" and not discovery["device_scoped"]
+    tree = next(method for method in methods["methods"] if method["jsonrpc_method"] == "file.tree")
+    assert tree["replay_class"] == "active_only" and not tree["device_scoped"]
     assert schema["FileDiscoverDocumentsParams"]["properties"]["max_entries"]["maximum"] == 10_000
     assert {"root", "basename", "max_entries", "line_limit", "max_line_length", "result_byte_limit"}.issubset(
         schema["FileDiscoverDocumentsParams"]["required"]

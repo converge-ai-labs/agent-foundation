@@ -17,6 +17,7 @@ from a13n_envd_client import (
     EIPRequestTimeoutError,
     EIPSession,
     EIPSessionStateError,
+    EIPTransportClosedError,
     HttpTransport,
     StdioTransport,
 )
@@ -46,7 +47,7 @@ from websockets.asyncio.server import serve
 @pytest.mark.parametrize("accessor", ["client", "requester"])
 def test_session_access_rejects_unusable_local_lifecycle_without_io(state, accessor):
     device = SimpleNamespace(is_closed=state == "carrier_closed", _sessions={})
-    requester = Mock()
+    requester = Mock(_error=None)
     session = EIPSession(device, requester, SimpleNamespace(session_id="session"))
     session._ready = state != "not_ready"
     if state == "closed":
@@ -70,6 +71,25 @@ def test_ready_session_access_uses_local_state_without_io():
     for _ in range(10):
         assert session.client is session._client
         assert session.requester is requester
+    assert requester.mock_calls == []
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("accessor", ["client", "requester", "describe"])
+async def test_session_guard_preserves_carrier_failure_before_keepalive_observes_it(accessor):
+    failure = EIPTransportClosedError("Carrier reached EOF")
+    requester = Mock(_error=failure)
+    session = EIPSession(SimpleNamespace(is_closed=True), requester, SimpleNamespace())
+    session._ready = True
+    assert session._error is None
+    with pytest.raises(EIPSessionStateError) as captured:
+        if accessor == "client":
+            _ = session.client
+        elif accessor == "requester":
+            _ = session.requester
+        else:
+            await session.describe()
+    assert captured.value.__cause__ is failure
     assert requester.mock_calls == []
 
 
