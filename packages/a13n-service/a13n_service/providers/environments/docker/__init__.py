@@ -73,8 +73,18 @@ def docker(*, host: str | None, mount_roots: Sequence[PurePosixPath]) -> Environ
             json_schema_extra={
                 **cast(dict[str, Any], DockerRecipe.model_config["json_schema_extra"]),
                 "x-environment-presets": {
-                    "standard": {"image": default_image(), "execution": "native", "desktop": False},
-                    "desktop": {"image": f"{default_image()}-desktop", "execution": "envd_http", "desktop": True},
+                    "standard": {
+                        "image": default_image(),
+                        "execution": "native",
+                        "desktop": False,
+                        "envd_management": "preinstalled",
+                    },
+                    "desktop": {
+                        "image": f"{default_image()}-desktop",
+                        "execution": "envd_http",
+                        "desktop": True,
+                        "envd_management": "managed",
+                    },
                 },
             }
         )

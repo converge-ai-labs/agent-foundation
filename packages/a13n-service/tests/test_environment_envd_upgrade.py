@@ -287,3 +287,53 @@ async def test_upgrade_retry_refuses_unconfirmed_or_stale_attempts(managed, monk
         },
     )
     assert response.status_code == (412 if blocker == "stale" else 409), response.text
+
+
+async def test_retained_failed_upgrade_does_not_starve_newer_maintenance_work(managed, monkeypatch):
+    from a13n_service.runs.environments.maintenance import maintain_environments
+
+    env = managed
+    failed_id, _, _ = await failed_upgrade(env, monkeypatch)
+    env.runtime = replace(
+        env.runtime,
+        settings=env.runtime.settings.model_copy(
+            update={"environments": env.runtime.settings.environments.model_copy(update={"batch": 1})}
+        ),
+    )
+    _, newer_id = await begin_create(env)
+    await backdate(env, failed_id, updated_at=timedelta(days=1), next_operation_at=timedelta(days=1))
+    await maintain_environments(env.runtime, owner="maintenance")
+    assert (await saved(env, newer_id))[0] == "ready"
+    assert (await saved(env, failed_id))[0] == "starting"
+    current = await env.client.get(f"{env.api}/environments/{failed_id}")
+    retried = await env.client.post(
+        f"{env.api}/environments/{failed_id}/retry-creation", headers={"If-Match": current.headers["etag"]}
+    )
+    assert retried.status_code == 202, retried.text
+    env.fail_start = False
+    await maintain_environments(env.runtime, owner="retry")
+    assert (await saved(env, failed_id))[0] == "ready"
+
+
+async def test_confirmed_loss_requires_replacement_instead_of_upgrade_retry(managed, monkeypatch):
+    env = managed
+    environment_id, _, _ = await failed_upgrade(env, monkeypatch)
+    async with transaction(env.runtime.storage) as session:
+        row = await session.get_one(EnvironmentRow, environment_id, with_for_update=True)
+        row.failure = {
+            **row.failure,
+            "code": lifecycle.LOST.code,
+            "certainty": lifecycle.LOST.certainty,
+            "permanent": True,
+        }
+        assert lifecycle.confirmed_loss(row)
+        before = row.handle
+    url = f"{env.api}/environments/{environment_id}"
+    progress = (await env.client.get(url + "/creation")).json()
+    assert not progress["retryable"]
+    current = await env.client.get(url)
+    response = await env.client.post(url + "/retry-creation", headers={"If-Match": current.headers["etag"]})
+    assert response.status_code == 409, response.text
+    async with transaction(env.runtime.storage) as session:
+        row = await session.get_one(EnvironmentRow, environment_id)
+        assert lifecycle.confirmed_loss(row) and row.handle == before

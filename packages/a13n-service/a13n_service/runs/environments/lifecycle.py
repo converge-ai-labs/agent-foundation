@@ -560,7 +560,11 @@ async def claim_locked(
     assert environment.provider_id is not None, "only managed instances have operations"
     failure = environment.failure or {}
     unresolved = not settled(environment)
-    if phase in {"creating", "starting"} and failure.get("code") == "envd_upgrade_failed" and not unresolved:
+    if (
+        phase in {"creating", "starting"}
+        and failure.get("code") in {"envd_upgrade_failed", "envd_startup_failed"}
+        and not unresolved
+    ):
         # A terminal guest attempt needs an explicit new operation ID to retry.
         return None
     if phase == "creating" and failure.get("permanent") and settled(environment) and environment.handle:

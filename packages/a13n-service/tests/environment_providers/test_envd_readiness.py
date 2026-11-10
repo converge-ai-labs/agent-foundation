@@ -185,3 +185,33 @@ async def test_token_read_keeps_existing_file_errors(tmp_path):
     )
     await process.communicate()
     assert process.returncode != 0
+
+
+@pytest.mark.parametrize("fault", ["token_loop", "parent_loop", "unsearchable_parent", "missing_parent"])
+async def test_token_read_distinguishes_absence_from_path_lookup_errors(tmp_path, fault):
+    parent = tmp_path / "runtime"
+    path = parent / "http-token"
+    if fault == "parent_loop":
+        parent.symlink_to(parent.name)
+    elif fault != "missing_parent":
+        parent.mkdir()
+        if fault == "token_loop":
+            path.symlink_to(path.name)
+        else:
+            path.write_text("fixture-token")
+            parent.chmod(0)
+    try:
+        process = await asyncio.create_subprocess_exec(
+            *managed.HTTP_TOKEN_READ[:-1],
+            str(path),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        output, _ = await process.communicate()
+        if fault == "missing_parent":
+            assert process.returncode == 0 and output == b""
+        else:
+            assert process.returncode != 0
+    finally:
+        if fault == "unsearchable_parent":
+            parent.chmod(0o700)

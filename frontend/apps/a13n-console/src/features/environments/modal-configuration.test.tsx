@@ -11,6 +11,23 @@ const schema = {
   type: "object",
   properties: {
     image: { type: "string", title: "Image", default: "auto" },
+    execution: {
+      type: "string",
+      title: "Execution connection",
+      enum: ["native", "envd_http", "envd_ws"],
+      default: "envd_http",
+    },
+    envd_management: {
+      type: "string",
+      title: "Envd binary management",
+      enum: ["managed", "preinstalled"],
+      default: "preinstalled",
+    },
+    startup_command: {
+      anyOf: [{ type: "array", items: { type: "string" } }, { type: "null" }],
+      title: "Startup command",
+      default: null,
+    },
     desktop: { type: "boolean", default: false },
     desktop_assistance: { type: "boolean", default: false },
   },
@@ -87,4 +104,69 @@ it("offers headless automatic images and preserves a managed base across custom 
   await user.click(screen.getByRole("button", { name: "Custom image" }));
   expect(configuration()).toMatchObject({ image: "im-team", desktop: false });
   expect(configuration().base_image).toBeUndefined();
+});
+
+it("restores authored startup and ownership after automatic mode, including normalized saved recipes", async () => {
+  const startup = ["/opt/team/start-envd", "--background"];
+  render(
+    <Editor
+      initial={{
+        image: "im-custom",
+        envd_management: "preinstalled",
+        startup_command: startup,
+      }}
+    />,
+  );
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Automatic Envd" }));
+  expect(configuration()).toMatchObject({
+    image: "auto",
+    envd_management: "managed",
+  });
+  expect(configuration().startup_command).toBeUndefined();
+  expect(screen.queryByText("Startup command")).toBeNull();
+  await user.click(screen.getByRole("button", { name: "Custom image" }));
+  expect(configuration()).toMatchObject({
+    image: "im-custom",
+    envd_management: "preinstalled",
+    startup_command: startup,
+  });
+});
+
+it("shows the effective managed default without changing the draft on disclosure", async () => {
+  render(<Editor />);
+  await userEvent.setup().click(
+    screen.getByRole("button", {
+      name: "Advanced environment configuration",
+    }),
+  );
+  expect(
+    screen.getByRole("combobox", { name: "Envd binary management" })
+      .textContent,
+  ).toContain("Managed");
+  expect(configuration()).toEqual({});
+});
+
+it("preserves custom managed image ownership when changing the Envd transport", async () => {
+  render(
+    <Editor
+      initial={{
+        image: "im-team",
+        execution: "envd_http",
+        envd_management: "managed",
+        startup_command: null,
+      }}
+    />,
+  );
+  const user = userEvent.setup();
+  await user.click(
+    screen.getByRole("combobox", { name: "Execution connection" }),
+  );
+  await user.click(screen.getByRole("option", { name: "Envd ws" }));
+  expect(configuration()).toMatchObject({
+    image: "im-team",
+    execution: "envd_ws",
+    envd_management: "managed",
+  });
+  expect(configuration().startup_command).toBeUndefined();
 });

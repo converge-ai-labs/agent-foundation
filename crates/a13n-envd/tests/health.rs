@@ -83,7 +83,7 @@ impl Drop for Running {
 #[test]
 fn health_is_opt_in_and_does_not_bind_when_disabled() {
     let fixture = Fixture::new();
-    let held = TcpListener::bind(fixture.address).unwrap();
+    let held = TcpListener::bind("127.0.0.1:0").unwrap();
     for config in ["{}", r#"{"health":{"enabled":false}}"#] {
         let mut command = fixture.command();
         command

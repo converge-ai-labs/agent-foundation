@@ -60,6 +60,13 @@ async def maintain_environments(runtime: Runtime, *, owner: str) -> None:
             EnvironmentRow.preparation_failed_at.is_(None),
             ~settled_clause(),
         ),
+        # Settled guest startup/upgrade jobs need explicit retry, including instances without
+        # failed-initial-preparation retention. Omit them before the bounded candidate scan.
+        or_(
+            EnvironmentRow.status.not_in(("creating", "starting")),
+            EnvironmentRow.failure["code"].astext.not_in(("envd_upgrade_failed", "envd_startup_failed")).is_not(False),
+            ~settled_clause(),
+        ),
         or_(EnvironmentRow.lease_expires_at.is_(None), EnvironmentRow.lease_expires_at < func.now()),
         or_(EnvironmentRow.next_operation_at.is_(None), EnvironmentRow.next_operation_at <= func.now()),
     )

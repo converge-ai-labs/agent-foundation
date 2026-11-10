@@ -1,10 +1,13 @@
 """Vercel management implementation."""
 
 import asyncio
+import hashlib
 import math
+import shlex
 from datetime import UTC, datetime
 
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
+from a13n_harness.environment.errors import EnvironmentProviderOutcomeCertainty as Certainty
 from a13n_harness.environment.models import EnvironmentState
 from a13n_harness.providers.endpoint_policy import EndpointPolicyError
 from a13n_harness.providers.environment.native.configuration import NamedTargetState, TokenCredential
@@ -20,7 +23,7 @@ from a13n_harness.providers.environment.vercel.shared import (
 )
 
 from a13n_service.providers.environment import desktop_access as access
-from a13n_service.providers.environment import envd_assets, envd_upgrade
+from a13n_service.providers.environment import envd_assets, envd_install, envd_upgrade
 from a13n_service.providers.environment.envd_readiness import wait_until_ready
 from a13n_service.providers.environment.management import Pending
 from a13n_service.providers.environment.native import NativeManagement
@@ -103,8 +106,7 @@ class VercelManagement(VercelReference, NativeManagement[VercelEnvironmentConfig
             # Publish the final native identity before dispatching any guest installation.
             return Pending(self.state, settled=True)
         if created and self.config.execution != "native":
-            await self._ready(response, bootstrap=True)
-            return None
+            return await self._ready(response)
         return await self.start()
 
     async def start(self) -> Pending | None:
@@ -132,7 +134,7 @@ class VercelManagement(VercelReference, NativeManagement[VercelEnvironmentConfig
             self.pinned_session = response.session.id
             if self.automatic and not await preparation.prepare(self, response, self.operation_id):
                 return Pending(self.state, settled=True)
-            await self._ready(response, bootstrap=resumed)
+            return await self._ready(response)
         return None
 
     def _envd_environment(self) -> dict[str, str]:
@@ -152,7 +154,7 @@ class VercelManagement(VercelReference, NativeManagement[VercelEnvironmentConfig
             }
         )
 
-    async def _ready(self, response: SandboxResponse, *, bootstrap: bool) -> None:
+    async def _ready(self, response: SandboxResponse) -> Pending | None:
         if response.session.status != "running":
             raise failure("vercel", "provider_unavailable", Category.UNAVAILABLE)
         self.pinned_session = response.session.id
@@ -178,6 +180,37 @@ nohup flock -n /var/lib/a13n-envd/start.lock sh -c '
                 sudo=True,
                 timeout=15,
             )
+        elif self.recipe.startup_command is not None:
+            # Reconcile every management entry, including lost allocation/resume replies.
+            # One frozen guest job per native session prevents replay of authored side effects.
+            script = "exec 9>&-\nexec " + shlex.join(self.recipe.startup_command)
+            revision = hashlib.sha256(script.encode()).hexdigest()
+            session = hashlib.sha256(response.session.id.encode()).hexdigest()
+            status = (
+                await command(
+                    self,
+                    response.session.id,
+                    [
+                        "sh",
+                        "-c",
+                        envd_install.dispatch(
+                            script,
+                            revision,
+                            self.operation_id,
+                            root=f"/var/lib/a13n-startup/{session}",
+                            timeout_seconds=math.ceil(self.config.request_timeout_seconds),
+                        ),
+                    ],
+                    env=self._envd_environment(),
+                    sudo=True,
+                    timeout=15,
+                    max_output=1024,
+                )
+            ).strip()
+            if status == "running":
+                return Pending(self.state, settled=True)
+            if status != "ready":
+                raise failure(self.provider_key, "envd_startup_failed", Category.INVALID, certainty=Certainty.KNOWN)
         if self.defer_envd_readiness or self.config.execution == "envd_ws":
             return
         runtime = NativeRuntime(self.backend, TokenCredential(api_key=self.token))
@@ -209,8 +242,7 @@ nohup flock -n /var/lib/a13n-envd/start.lock sh -c '
         response = await self.lookup()
         if response is None or response.session.id != session_id:
             raise failure(self.provider_key, "provider_target_conflict", Category.CONFLICT)
-        await self._ready(response, bootstrap=False)
-        return None
+        return await self._ready(response)
 
     async def desktop_access(self, request: access.Request) -> access.Reply:
         if not self.recipe.desktop_assistance or self.target is None:

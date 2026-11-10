@@ -48,7 +48,8 @@ Docker、E2B、Modal、Daytona、Vercel 和 Sprites 的 recipe 支持 `envd_mana
 
 - E2B：自定义 `template`，并使用 `preparation: "preinstalled"`。
 - Modal：自定义 `image` 及 `startup_command`，例如 `["/usr/local/bin/start-envd"]`。创建及快照恢复均原样使用这个 argv。
-- Daytona/Vercel：提供启动命令会运行 Envd 的自定义快照。
+- Daytona：提供启动命令会运行 Envd 的自定义快照。
+- Vercel：提供自定义 `snapshot` 及 `startup_command`，例如 `["/usr/local/bin/start-envd"]`。命令需在后台启动运行时后返回。创建和原生会话恢复时，Service 使用实例启动环境变量，以 root 执行这个 argv。每个原生会话记录一个启动任务，管理操作在回执丢失后可重新加入，而不会重放命令；文件系统快照不会保留进程。
 - Sprites：使用 `envd_http`，自行安装运行时、配置 Device 身份和服务；Service 不注册标准启动器。`preinstalled` 与 `envd_ws` 组合会被拒绝，因为私有 outbound 启动配置目前需要 Service 启动器。
 - Docker：提供包含自定义启动命令的镜像。
 
@@ -56,7 +57,7 @@ Modal/Daytona 可通过 `base_image` 选择支持的基础镜像并自动托管�
 
 Service 在创建、启动/恢复，以及固定版本推进后首次使用已有托管实例时升级。它先取得现有持久化准备操作，再安装经过校验的发布版本、请求重启，并验证认证 EIP 就绪状态。并发调用者加入同一操作。已有人工桌面保留和查看会推迟首次使用升级。空闲实例不通过定时任务升级，Service 也不选择 `latest`。
 
-**升级会结束已有 Envd Session，以及其中的进程和输出句柄。** 工作区文件遵循 Provider 原有的持久化规则。Session 恢复可以打开新 Session，但不会重放命令。安装失败会保留旧二进制并记录准备失败。检查目标中受保护的 `/var/lib/a13n-envd/update-<version>/output`，核对结果后，对确认失败的升级使用 Console 的**重试准备**。API 客户端使用 `POST /api/v1/environments/{id}/retry-creation` 并携带当前 `If-Match`。重试保留原实例和选定版本，创建新的客体尝试；仍在执行或结果未知的操作会被拒绝。缺少回执不代表命令没有执行。
+**升级会结束已有 Envd Session，以及其中的进程和输出句柄。** 工作区文件遵循 Provider 原有的持久化规则。Session 恢复可以打开新 Session，但不会重放命令。安装失败会保留旧二进制并记录准备失败。检查目标中受保护的 `/var/lib/a13n-envd/update-<version>/output`，核对结果后，对确认失败的升级使用 Console 的**重试准备**。API 客户端使用 `POST /api/v1/environments/{id}/retry-creation` 并携带当前 `If-Match`。重试保留原实例和选定版本，创建新的客体尝试；仍在执行、结果未知或实例已确认丢失时会被拒绝。升级失败会使此前已就绪的托管实例停留在 `starting`，直到显式重试成功才能使用，但不会启动首次准备失败的自动回收。若缺少发布版本或运行时不兼容，应先修复原因再重试。原生实例确认丢失后需替换或删除。缺少回执不代表命令没有执行。
 
 外部服务管理器运行 `a13n-envd daemon` 并负责重启。没有外部管理器时，准备的运行时使用 `a13n-envd supervise`；Service 安装二进制后请求该原生监督进程重启。局部重启命令见 [Envd 运维](../a13n-envd/operations.md#restart-after-installing-a-release)。
 

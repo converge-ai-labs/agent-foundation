@@ -445,3 +445,121 @@ async def test_orphan_changed_account_is_retained_and_rotates_behind_other_work(
         old = await session.get(builds.VercelDesktopSnapshotRow, op.vercel_desktop_snapshot)
         assert old.phase == "new"
     assert not cloud.calls
+
+
+@pytest.mark.parametrize("phase", ["creating", "starting"])
+@pytest.mark.parametrize("action", ["retry", "delete"])
+async def test_authored_startup_lost_reply_then_failure_allows_explicit_recovery(
+    setup, monkeypatch, tmp_path, phase, action
+):
+    from a13n_harness.providers.environment.vercel.shared import SandboxResponse
+    from a13n_service.providers.environments.vercel import management as module
+
+    service = setup.service
+    marker = tmp_path / "repaired"
+    effects = tmp_path / "effects"
+    template = await service.client.post(
+        "/api/v1/environment-templates",
+        json={
+            "name": "Authored startup",
+            "provider_id": (await service.client.get("/api/v1/environment-providers")).json()["items"][0]["id"],
+            "config": {
+                "recipe": {
+                    "execution": "envd_http",
+                    "snapshot": "snap_team",
+                    "envd_management": "preinstalled",
+                    "startup_command": ["sh", "-c", f"printf x >> {effects}; test -f {marker}"],
+                }
+            },
+        },
+    )
+    assert template.status_code == 201, template.text
+    created = await service.client.post("/api/v1/environments", json={"template_id": template.json()["id"]})
+    assert created.status_code == 201, created.text
+    identity = created.json()["id"]
+    url = f"/api/v1/environments/{identity}"
+    lost = True
+
+    async def lookup(self):
+        result = SandboxResponse.model_validate(
+            {
+                "sandbox": {
+                    "name": self.name,
+                    "createdAt": 1,
+                    "persistent": True,
+                    "status": "running",
+                    "tags": self.labels,
+                },
+                "session": {"id": "session-authored", "status": "running", "timeout": 3600000},
+                "routes": [{"port": 8888, "url": "https://envd.vercel.run"}],
+            }
+        )
+        self.accept(result)
+        return result
+
+    async def command(ref, session_id, argv, **kwargs):
+        nonlocal lost
+        script = argv[2].replace("/var/lib/a13n-startup/", str(tmp_path / "jobs") + "/")
+        process = await asyncio.create_subprocess_exec("sh", "-c", script, stdout=asyncio.subprocess.PIPE)
+        output, _ = await process.communicate()
+        assert process.returncode == 0
+        if lost:
+            lost = False
+            async with asyncio.timeout(5):
+                while not any(path.read_text() == "failed" for path in (tmp_path / "jobs").glob("*/status")):
+                    await asyncio.sleep(0.01)
+            raise TimeoutError("lost startup reply")
+        return output.decode()
+
+    monkeypatch.setattr(module.VercelManagement, "lookup", lookup)
+    monkeypatch.setattr(module, "command", command)
+    monkeypatch.setattr(module, "wait_until_ready", AsyncMock())
+    if phase == "starting":
+        # Establish the previously ready target before exercising its resume startup.
+        monkeypatch.setattr(module, "command", AsyncMock(return_value="ready"))
+        await lifecycle.advance(service.runtime, identity, owner="initial")
+        monkeypatch.setattr(module, "command", command)
+        async with transaction(service.runtime.storage) as session:
+            row = await session.get_one(EnvironmentRow, identity, with_for_update=True)
+            assert row.status == "ready"
+            await lifecycle.begin(session, row, "starting")
+    first = await lifecycle.claim(service.runtime, identity, owner="lost")
+    await lifecycle.publish(service.runtime, first, await lifecycle.perform(service.runtime, first))
+    async with transaction(service.runtime.storage) as session:
+        row = await session.get_one(EnvironmentRow, identity, with_for_update=True)
+        assert not lifecycle.settled(row) and Handle.model_validate(row.handle).state is not None
+        row.next_operation_at = None
+    second = await lifecycle.claim(service.runtime, identity, owner="reconcile")
+    assert second.operation_id == first.operation_id
+    await lifecycle.publish(service.runtime, second, await lifecycle.perform(service.runtime, second))
+    async with transaction(service.runtime.storage) as session:
+        row = await session.get_one(EnvironmentRow, identity, with_for_update=True)
+        assert lifecycle.settled(row) and row.failure["code"] == "envd_startup_failed"
+        assert row.failure["permanent"] and row.failure["certainty"] == "known"
+        before = Handle.model_validate(row.handle)
+        row.next_operation_at = None
+    assert await lifecycle.claim(service.runtime, identity, owner="no-replay") is None
+    assert effects.read_text() == "x"
+    progress = await service.client.get(url + "/creation")
+    assert progress.json()["stage"] == "failed" and progress.json()["retryable"]
+    current = await service.client.get(url)
+    if action == "delete":
+        deleted = await service.client.delete(url, headers={"If-Match": current.headers["etag"]})
+        assert deleted.status_code == 202, deleted.text
+        return
+    marker.touch()
+    retried = await service.client.post(url + "/retry-creation", headers={"If-Match": current.headers["etag"]})
+    assert retried.status_code == 202, retried.text
+    async with asyncio.timeout(5):
+        while True:
+            operation = await lifecycle.claim(service.runtime, identity, owner="retry")
+            assert operation is not None and operation.operation_id != first.operation_id
+            assert operation.target.state == before.state and operation.target.recipe == before.recipe
+            await lifecycle.publish(service.runtime, operation, await lifecycle.perform(service.runtime, operation))
+            async with transaction(service.runtime.storage) as session:
+                row = await session.get_one(EnvironmentRow, identity, with_for_update=True)
+                if row.status == "ready":
+                    break
+                row.next_operation_at = None
+            await asyncio.sleep(0.01)
+    assert effects.read_text() == "xx"

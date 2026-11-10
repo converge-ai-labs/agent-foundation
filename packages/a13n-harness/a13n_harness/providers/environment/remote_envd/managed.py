@@ -15,11 +15,16 @@ from a13n_harness.providers.environment.remote_envd.configuration import (
 )
 from a13n_harness.providers.environment.remote_envd.http import HttpEnvdProviderRuntime
 
-# An unpublished token is empty (retryable); an existing but unreadable file still fails the command.
+# Only confirmed absence is retryable; preserve read and path-lookup failures.
 HTTP_TOKEN_READ = (
     "sh",
     "-c",
-    'if [ ! -e "$1" ]; then exit 0; fi; exec head -c 4097 "$1"',
+    '''if [ ! -e "$1" ] && [ ! -L "$1" ]; then
+ parent=${1%/*}
+ while [ ! -e "$parent" ] && [ ! -L "$parent" ]; do parent=${parent%/*}; done
+ if [ -d "$parent" ] && [ -x "$parent" ]; then exit 0; fi
+fi
+exec head -c 4097 "$1"''',
     "sh",
     "/var/lib/a13n-envd/http-token",
 )

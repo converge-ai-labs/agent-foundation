@@ -24,7 +24,11 @@ from a13n_service.providers.environment.recipes.vercel import VercelRecipe
         (E2BRecipe, {"execution": "envd_http"}, {"execution": "envd_http", "template": "custom"}),
         (ModalRecipe, {}, {"image": "custom:1", "startup_command": ["/usr/local/bin/start-envd"]}),
         (DaytonaRecipe, {}, {"snapshot": "custom"}),
-        (VercelRecipe, {"execution": "envd_http"}, {"execution": "envd_http", "snapshot": "snap_custom"}),
+        (
+            VercelRecipe,
+            {"execution": "envd_http"},
+            {"execution": "envd_http", "snapshot": "snap_custom", "startup_command": ["/usr/local/bin/start-envd"]},
+        ),
         (SpritesRecipe, {"execution": "envd_http"}, {"execution": "native"}),
     ],
 )
@@ -40,7 +44,11 @@ def test_management_defaults_are_frozen_and_explicit_policy_wins(model, automati
             model.model_validate({**automatic, "envd_management": "preinstalled"})
     if custom.get("execution") != "native":
         managed = model.model_validate(
-            {**custom, **({"startup_command": None} if model is ModalRecipe else {}), "envd_management": "managed"}
+            {
+                **custom,
+                **({"startup_command": None} if model in {ModalRecipe, VercelRecipe} else {}),
+                "envd_management": "managed",
+            }
         )
         preinstalled = model.model_validate({**custom, "envd_management": "preinstalled"})
         if isinstance(managed, DockerRecipe):

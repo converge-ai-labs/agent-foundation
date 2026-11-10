@@ -433,6 +433,7 @@ Optional outer-daemon sampling; independent of Session execution policy.
 | `runtime`                 | false    | string                           | minLength=1; maxLength=128; default="python3.13"                                    |
 | `timeout_seconds`         | false    | integer                          | minimum=300; maximum=18000; default=3600                                            |
 | `vcpus`                   | false    | integer                          | minimum=2; maximum=8; default=2                                                     |
+| `startup_command`         | false    | array of string or null          | minItems=1; default=null                                                            |
 | `desktop_assistance`      | false    | boolean                          | default=false                                                                       |
 
 ## `SpritesRecipe`

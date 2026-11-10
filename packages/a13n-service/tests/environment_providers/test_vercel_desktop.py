@@ -38,7 +38,13 @@ def anyio_backend():
 
 
 def recipe():
-    return VercelRecipe(execution="envd_http", snapshot="snap_fixture", desktop=True, desktop_assistance=True)
+    return VercelRecipe(
+        execution="envd_http",
+        snapshot="snap_fixture",
+        desktop=True,
+        desktop_assistance=True,
+        startup_command=["/usr/local/bin/start-envd"],
+    )
 
 
 def manager(config=None):
@@ -107,7 +113,7 @@ async def test_native_fingerprint_and_desktop_opt_in():
     assert (
         recipe().fingerprint
         == VercelEnvironmentConfiguration.model_validate(
-            recipe().model_dump(exclude={"desktop_assistance", "envd_management"})
+            recipe().model_dump(exclude={"desktop_assistance", "envd_management", "startup_command"})
         ).fingerprint
     )
     assert VercelRecipe(desktop=True).snapshot == "auto"
@@ -306,7 +312,7 @@ async def test_commands_do_not_replay_unknown_or_failed_output(monkeypatch, body
 
 
 @pytest.mark.parametrize("existing", ["running", "stopped", None])
-async def test_lifecycle_starts_services_only_on_new_sessions(monkeypatch, existing):
+async def test_lifecycle_reconciles_startup_on_each_management_entry(monkeypatch, existing):
     manage = manager()
     events = []
     if existing is None:
@@ -320,14 +326,14 @@ async def test_lifecycle_starts_services_only_on_new_sessions(monkeypatch, exist
             events.append((method, path, kwargs))
             return response(manage).model_dump(mode="json")
 
-    async def ready(value, *, bootstrap):
-        events.append(("ready", bootstrap))
+    async def ready(value):
+        events.append(("ready", value.session.id))
 
     monkeypatch.setattr(manage, "lookup", lookup)
     monkeypatch.setattr(manage, "transport", lambda: Transport())
     monkeypatch.setattr(manage, "_ready", ready)
     await manage.create()
-    assert events[-1] == ("ready", existing != "running")
+    assert events[-1] == ("ready", "session-1")
     if existing is None:
         assert events[0][1] == "/v3/sandboxes"
         body = events[0][2]["body"]
@@ -386,7 +392,7 @@ async def test_rejoins_same_target_and_prepares_before_readiness(monkeypatch, pr
         events.append("prepare")
         return prepared
 
-    async def ready(observed, *, bootstrap):
+    async def ready(observed):
         events.append("ready")
 
     monkeypatch.setattr(manage, "lookup", lookup)
@@ -413,15 +419,129 @@ async def test_backend_preserves_pending_and_does_not_wait_for_websocket(monkeyp
     wait.assert_not_called()
 
 
-@pytest.mark.parametrize("bootstrap", [False, True])
-async def test_preinstalled_snapshot_never_dispatches_a_service_launcher(monkeypatch, bootstrap):
+@pytest.mark.parametrize("existing", ["running", "stopped", None])
+@pytest.mark.parametrize("execution", ["envd_http", "envd_ws"])
+async def test_preinstalled_snapshot_rejoins_authored_startup_before_readiness(monkeypatch, existing, execution):
     from a13n_service.providers.environments.vercel import management as module
 
-    manage = manager(VercelRecipe(execution="envd_http", snapshot="snap_custom", envd_management="preinstalled"))
-    launch = AsyncMock(side_effect=AssertionError("overrode authored snapshot startup"))
-    readiness = AsyncMock()
+    authored = ["/opt/team/start-envd", "--background"]
+    manage = manager(
+        VercelRecipe(
+            execution=execution,
+            snapshot="snap_custom",
+            envd_management="preinstalled",
+            startup_command=authored,
+        )
+    )
+    if existing is None:
+        manage.target = None
+    running = existing == "running"
+    events = []
+
+    async def lookup():
+        return response(manage, status=existing) if existing else None
+
+    class Transport:
+        async def request(self, method, path, **kwargs):
+            return response(manage, session="session-new").model_dump(mode="json")
+
+    async def launch(ref, session_id, argv, **kwargs):
+        nonlocal running
+        import base64
+        import re
+
+        assert ref is manage
+        assert session_id == ("session-1" if existing == "running" else "session-new")
+        assert argv[:2] == ["sh", "-c"]
+        encoded = re.search(r"printf %s ([A-Za-z0-9+/=]+) \| base64 -d > install.sh", argv[2])
+        assert encoded is not None
+        assert base64.b64decode(encoded.group(1)).decode() == "exec 9>&-\nexec /opt/team/start-envd --background"
+        assert kwargs["sudo"] is True
+        assert kwargs["env"]["A13N_ENVD_DEVICE_ID"] == manage.owner
+        events.append("authored-startup")
+        running = True
+        return "ready"
+
+    async def readiness(*args, **kwargs):
+        assert running, "a filesystem snapshot does not preserve the old daemon"
+        events.append("authenticated-readiness")
+
+    monkeypatch.setattr(manage, "lookup", lookup)
+    monkeypatch.setattr(manage, "transport", lambda: Transport())
     monkeypatch.setattr(module, "command", launch)
     monkeypatch.setattr(module, "wait_until_ready", readiness)
-    await manage._ready(response(manage), bootstrap=bootstrap)
-    launch.assert_not_awaited()
-    readiness.assert_awaited_once()
+    await manage.create()
+    assert events == ["authored-startup"] + (["authenticated-readiness"] if execution == "envd_http" else [])
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        {"execution": "envd_http", "snapshot": "snap_custom"},
+        {"execution": "envd_http", "startup_command": ["start-envd"]},
+        {"execution": "envd_http", "envd_management": "managed", "startup_command": ["start-envd"]},
+        {"execution": "native", "startup_command": ["start-envd"]},
+    ],
+)
+def test_startup_command_requires_preinstalled_custom_snapshot(values):
+    with pytest.raises(ValueError):
+        VercelRecipe.model_validate(values)
+
+
+@pytest.mark.parametrize("lost", ["allocation", "resume", "startup"])
+async def test_authored_startup_reconciles_lost_replies_without_replaying_the_command(monkeypatch, tmp_path, lost):
+    from a13n_service.providers.environments.vercel import management as module
+
+    evidence = tmp_path / "effects"
+    # A background child must not retain the dispatch lock after the authored launcher returns.
+    authored = ["sh", "-c", f"printf once >> {evidence}; sleep 2 >/dev/null 2>&1 &"]
+    manage = manager(VercelRecipe(execution="envd_http", snapshot="snap_team", startup_command=authored))
+    manage.target = None if lost == "allocation" else manage.target
+    status = None if lost == "allocation" else "stopped" if lost == "resume" else "running"
+    lose_response = True
+    dispatched = []
+    readiness = AsyncMock()
+
+    async def lookup():
+        if status is None:
+            return None
+        value = response(manage, session="session-new", status=status)
+        manage.accept(value)
+        return value
+
+    class Transport:
+        async def request(self, method, path, **kwargs):
+            nonlocal status, lose_response
+            status = "running"
+            if lose_response and lost in {"allocation", "resume"}:
+                lose_response = False
+                raise TimeoutError("lost provider reply")
+            return response(manage, session="session-new").model_dump(mode="json")
+
+    async def launch(ref, session_id, argv, **kwargs):
+        nonlocal lose_response
+        assert session_id == "session-new"
+        script = argv[2].replace("/var/lib/a13n-startup/", str(tmp_path / "jobs") + "/")
+        dispatched.append(script)
+        process = await asyncio.create_subprocess_exec("sh", "-c", script, stdout=asyncio.subprocess.PIPE)
+        output, _ = await process.communicate()
+        assert process.returncode == 0
+        if lose_response and lost == "startup":
+            lose_response = False
+            raise TimeoutError("lost guest reply")
+        return output.decode()
+
+    monkeypatch.setattr(manage, "lookup", lookup)
+    monkeypatch.setattr(manage, "transport", lambda: Transport())
+    monkeypatch.setattr(module, "command", launch)
+    monkeypatch.setattr(module, "wait_until_ready", readiness)
+    with pytest.raises(TimeoutError):
+        await manage.create()
+    async with asyncio.timeout(5):
+        while isinstance(await manage.create(), Pending):
+            readiness.assert_not_awaited()
+            await asyncio.sleep(0.01)
+    assert await manage.create() is None
+    assert evidence.read_text() == "once"
+    assert len(set(dispatched)) == 1
+    assert readiness.await_count == 2

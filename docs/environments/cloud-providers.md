@@ -237,6 +237,8 @@ The builder allocates a temporary billable sandbox, installs desktop dependencie
 {
   "execution": "envd_http",
   "snapshot": "snap_yourSnapshot",
+  "envd_management": "preinstalled",
+  "startup_command": ["sh", "-c", "umask 077; install -d -m 0700 /var/lib/a13n-envd; cd /workspace; rm -f /tmp/.X99-lock /tmp/.X11-unix/X99 /run/a13n-desktop-access/control.sock; nohup a13n-sandbox-entrypoint a13n-sandbox-desktop a13n-envd supervise >> /var/lib/a13n-envd/startup.log 2>&1 < /dev/null &"],
   "desktop": true,
   "desktop_assistance": true,
   "vcpus": 2,
@@ -244,7 +246,7 @@ The builder allocates a temporary billable sandbox, installs desktop dependencie
 }
 ```
 
-Envd uses `/workspace` as UID/GID 1001; Native execution uses `/vercel/sandbox`. Creation and explicit resume start preinstalled components and verify EIP/Computer readiness. Attachment and access do not install, repair, or resume. Port 8888 carries authenticated EIP; 6081 carries the revocable viewer. Browsers receive short-lived supervisor credentials, not Vercel or guest tokens. Service checks ownership, native identity, current session, and endpoint policy. Stop preserves files; resume recreates desktop processes and invalidates old observations/grants.
+Envd uses `/workspace` as UID/GID 1001; Native execution uses `/vercel/sandbox`. For preinstalled snapshots, `startup_command` is required: it starts the runtime in the background and returns. Creation and native session resume execute this operator-authored argv as root with the instance bootstrap environment through a frozen job per native session, then verify EIP/Computer readiness. Lost replies rejoin that job instead of replaying startup; a confirmed failed job needs an explicit new lifecycle operation to retry. Snapshots preserve files, not processes. Attachment and access do not install, repair, or resume. Port 8888 carries authenticated EIP; 6081 carries the revocable viewer. Browsers receive short-lived supervisor credentials, not Vercel or guest tokens. Service checks ownership, native identity, current session, and endpoint policy. Stop preserves files; resume recreates desktop processes and invalidates old observations/grants.
 
 ### Fly.io Sprites
 

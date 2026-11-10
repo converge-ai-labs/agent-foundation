@@ -91,7 +91,7 @@ def check_desktop(image: str) -> None:
         docker("start", name)
         docker("exec", name, "python3", "-c", probe)
         docker("exec", name, "test", "-f", "/workspace/preserved")
-        restart_guest_process(name, "^a13n-envd$")
+        restart_guest_process(name, r"(^|/)a13n-envd --internal-supervised-daemon( |$)")
         docker("exec", name, "python3", "-c", probe)
         # Display failure retains the desktop launcher's fail-closed ownership.
         docker("exec", name, "pkill", "-x", "openbox")

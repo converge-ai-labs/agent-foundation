@@ -33,11 +33,22 @@ class CreationProgress(BaseModel):
     retryable: bool = False
 
 
+def _authored_startup(row: EnvironmentRow, handle: Handle) -> bool:
+    return bool(
+        row.provider_identity
+        and row.provider_identity.get("type") == "vercel"
+        and handle.recipe.get("execution") in {"envd_http", "envd_ws"}
+        and handle.recipe.get("envd_management") == "preinstalled"
+        and handle.recipe.get("startup_command")
+    )
+
+
 def _automatic(row: EnvironmentRow, handle: Handle | None) -> bool:
     return bool(
         handle
         and (
             handle.recipe.get("envd_management") == "managed"
+            or _authored_startup(row, handle)
             or handle.e2b_desktop_template
             or handle.modal_desktop_image
             or handle.daytona_desktop_snapshot
@@ -69,7 +80,12 @@ def _automatic(row: EnvironmentRow, handle: Handle | None) -> bool:
 
 
 def _retryable(row: EnvironmentRow) -> bool:
-    return row.status in {"creating", "starting"} and row.failure is not None and lifecycle.settled(row)
+    return (
+        row.status in {"creating", "starting"}
+        and row.failure is not None
+        and lifecycle.settled(row)
+        and not lifecycle.confirmed_loss(row)
+    )
 
 
 async def progress(runtime: Runtime, actor: Principal, workspace_id: str, identity: str) -> CreationProgress | None:
@@ -183,16 +199,18 @@ async def retry(
             raise conflict("environment", identity, "in_use")
         assert handle is not None and row.provider_id is not None
         if row.status == "starting" and (
-            handle.recipe.get("envd_management") != "managed"
-            or handle.envd_target_version is None
-            or handle.state is None
+            handle.state is None
+            or not (
+                _authored_startup(row, handle)
+                or (handle.recipe.get("envd_management") == "managed" and handle.envd_target_version is not None)
+            )
         ):
             raise conflict("environment", identity, "creation_retry_unavailable")
         provider = await resolve_provider(session, actor, EnvironmentProviderRow, scope, row.provider_id)
         if row.provider_identity != provider_identity(runtime.registry, provider):
             raise conflict("environment", identity, "provider_identity_changed")
         if row.status == "starting":
-            # Retain the native target and frozen version; only the failed guest attempt changes.
+            # Retain the native target and frozen recipe/version; only the failed guest attempt changes.
             await lifecycle.begin(session, row, "starting")
             await session.flush()
             audit(session, actor, row, "retry_preparation")

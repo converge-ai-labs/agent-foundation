@@ -237,6 +237,8 @@ uv run --locked python examples/environment-provider/vercel_desktop_snapshot.py 
 {
   "execution": "envd_http",
   "snapshot": "snap_yourSnapshot",
+  "envd_management": "preinstalled",
+  "startup_command": ["sh", "-c", "umask 077; install -d -m 0700 /var/lib/a13n-envd; cd /workspace; rm -f /tmp/.X99-lock /tmp/.X11-unix/X99 /run/a13n-desktop-access/control.sock; nohup a13n-sandbox-entrypoint a13n-sandbox-desktop a13n-envd supervise >> /var/lib/a13n-envd/startup.log 2>&1 < /dev/null &"],
   "desktop": true,
   "desktop_assistance": true,
   "vcpus": 2,
@@ -244,7 +246,7 @@ uv run --locked python examples/environment-provider/vercel_desktop_snapshot.py 
 }
 ```
 
-Envd 以 UID/GID 1001 使用 `/workspace`，Native 执行使用 `/vercel/sandbox`。创建与显式恢复启动预装组件，并检查 EIP/Computer 就绪。连接和访问不安装、修复或恢复。8888 端口承载已认证 EIP，6081 承载可撤销查看器。浏览器接收短期 supervisor 凭据，不接收 Vercel 或客体 token。Service 检查所有权、原生身份、当前 session 和端点策略。停止保留文件；恢复重建桌面进程并使旧观察/授权失效。
+Envd 以 UID/GID 1001 使用 `/workspace`，Native 执行使用 `/vercel/sandbox`。预装快照必须提供 `startup_command`，命令在后台启动运行时后返回。创建与原生会话恢复时，Service 使用实例启动环境变量，以 root 通过每个原生会话的固定任务执行操作者编写的 argv，然后检查 EIP/Computer 就绪。回执丢失后重新加入该任务，不会重放启动；确认失败的任务需要显式创建新的生命周期操作才能重试。快照保留文件，不保留进程。连接和访问不安装、修复或恢复。8888 端口承载已认证 EIP，6081 承载可撤销查看器。浏览器接收短期 supervisor 凭据，不接收 Vercel 或客体 token。Service 检查所有权、原生身份、当前 session 和端点策略。停止保留文件；恢复重建桌面进程并使旧观察/授权失效。
 
 ### Fly.io Sprites
 
