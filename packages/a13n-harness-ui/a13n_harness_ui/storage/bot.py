@@ -79,12 +79,12 @@ class BotRepository:
             )
             return True
 
-    async def has_visible_result(self) -> bool:
-        """Only human turns or intentional publications advance Bot's result marker."""
+    async def has_visible_result(self, *, direct_reply: bool = False) -> bool:
+        """Only direct replies or intentional publications advance Bot's result marker."""
         current = tuple(
             item for item in await self.inputs(pending_only=True) if item.state in {"dispatching", "admitted"}
         )
-        if any(item.source == "user" for item in current):
+        if direct_reply and any(item.source == "user" for item in current):
             return True
         identities = {item.input_id for item in current}
         return any(message.role == "assistant" and message.input_id in identities for message in await self.messages())

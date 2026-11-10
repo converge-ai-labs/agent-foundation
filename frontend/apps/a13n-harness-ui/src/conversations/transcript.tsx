@@ -1,4 +1,5 @@
 import { useTranslation } from "../i18n";
+import { BOT_THREAD_ID } from "../bot-identity";
 import {
   memo,
   createContext,
@@ -207,7 +208,7 @@ function savedRows(
       if (
         part.metadata?.display === false ||
         part.kind === "system" ||
-        (threadId === "thread_bot" && part.tool_name === "no_op")
+        (threadId === BOT_THREAD_ID && part.tool_name === "finish_silently")
       )
         return;
       // Sibling parts can grow at later checkpoints without replacing this part.
@@ -301,9 +302,9 @@ function liveRows(
       block.diagnostic ||
       block.kind === "task" ||
       block.metadata?.display === false ||
-      (threadId === "thread_bot" &&
+      (threadId === BOT_THREAD_ID &&
         block.kind === "tool" &&
-        block.name === "no_op" &&
+        block.name === "finish_silently" &&
         !block.subagentRunId)
     )
       continue;

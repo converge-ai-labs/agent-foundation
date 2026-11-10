@@ -165,15 +165,15 @@ async def test_native_bot_observes_saved_sidekick_result_and_follows_up_on_heart
             names = {tool.name for tool in info.function_tools}
             if thread_id != BOT_THREAD_ID:
                 assert "publish_bot_message" not in names
-                assert not any(tool.name == "no_op" for tool in info.output_tools)
+                assert not any(tool.name == "finish_silently" for tool in info.output_tools)
                 assert "Leave substantive findings" in str(messages)
                 working_runs += 1
                 yield "analysis complete" if working_runs == 1 else "follow-up complete"
                 return
             assert "publish_bot_message" in names and "resolve_bot_delivery" not in names
-            assert "no_op" not in names
+            assert "finish_silently" not in names
             output_tools = {tool.name: tool for tool in info.output_tools}
-            assert output_tools["no_op"].parameters_json_schema == {
+            assert output_tools["finish_silently"].parameters_json_schema == {
                 "type": "object",
                 "properties": {},
                 "additionalProperties": False,
@@ -202,7 +202,7 @@ async def test_native_bot_observes_saved_sidekick_result_and_follows_up_on_heart
                 if bot_steps == 2:
                     yield "I will check the working Thread."
                 else:
-                    yield {0: DeltaToolCall(name="no_op", json_args="{}", tool_call_id="quiet-heartbeat")}
+                    yield {0: DeltaToolCall(name="finish_silently", json_args="{}", tool_call_id="quiet-heartbeat")}
             else:
                 name, args = call
                 yield {0: DeltaToolCall(name=name, json_args=json.dumps(args), tool_call_id=f"bot-step-{bot_steps}")}
@@ -226,6 +226,7 @@ async def test_native_bot_observes_saved_sidekick_result_and_follows_up_on_heart
         assert verified
         assert [item.role for item in after.messages] == ["user", "assistant", "assistant"]
         assert after.messages[-1].text == "Verified the saved result and continued the working Thread."
+        assert after.thread.completion != before.thread.completion
         assert bot_steps == 6  # The output tool ends the Run without another model request.
         assert (await app.list_threads()).total == 2
         with fail_after(10):
@@ -411,7 +412,7 @@ async def test_builtin_bot_policy_workspace_and_on_demand_project_tools(tmp_path
         assert not composition.root.children
 
 
-async def test_native_no_op_completes_without_publication_and_resumes_next_input(
+async def test_native_finish_silently_completes_without_publication_and_resumes_next_input(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from a13n_harness_ui.model_runtime import HarnessUiModelResolver
@@ -426,19 +427,19 @@ async def test_native_no_op_completes_without_publication_and_resumes_next_input
             nonlocal requests
             requests += 1
             if requests == 1:
-                assert "call no_op" in str(messages) + (info.instructions or "")
-                yield {0: DeltaToolCall(name="no_op", json_args="{}", tool_call_id="quiet-direct")}
+                assert "call finish_silently" in str(messages) + (info.instructions or "")
+                yield {0: DeltaToolCall(name="finish_silently", json_args="{}", tool_call_id="quiet-direct")}
             elif requests == 2:
-                assert "Then call no_op" in str(messages)
+                assert "Then call finish_silently" in str(messages)
                 assert any(
                     isinstance(part, ToolReturnPart) and part.tool_call_id == "quiet-direct"
                     for message in messages
                     for part in message.parts
                 )
-                yield {0: DeltaToolCall(name="no_op", json_args="{}", tool_call_id="quiet-heartbeat")}
+                yield {0: DeltaToolCall(name="finish_silently", json_args="{}", tool_call_id="quiet-heartbeat")}
             else:
                 calls = [part for message in messages for part in message.parts if isinstance(part, ToolCallPart)]
-                assert [part.tool_name for part in calls].count("no_op") == 2
+                assert [part.tool_name for part in calls].count("finish_silently") == 2
                 yield "I am still following the objective."
 
         return FunctionModel(stream_function=model)
@@ -446,12 +447,13 @@ async def test_native_no_op_completes_without_publication_and_resumes_next_input
     monkeypatch.setattr(HarnessUiModelResolver, "resolve", resolve)
     async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
         bot = await ready(app)
+        completion = (await app._threads.bot_thread()).completion
         await bot.submit(BotSubmit(input_id="quiet", text="Keep watching; no reply is needed."))
         assert (await consumed(app, "quiet")).state == "completed"
         before = await bot.snapshot()
         assert [message.role for message in before.messages] == ["user"]
         assert (await app._root_runs.latest(BOT_THREAD_ID)).outcome.execution.output is None
-        completion = before.thread.completion
+        assert before.thread.completion == completion
         await bot.tick(now=datetime.now(UTC) + timedelta(hours=1))
         after = await bot.snapshot()
         assert after.inputs[-1].state == "completed"
@@ -461,4 +463,6 @@ async def test_native_no_op_completes_without_publication_and_resumes_next_input
         await bot.submit(BotSubmit(input_id="follow-up", text="What is the status?"))
         assert (await consumed(app, "follow-up")).state == "completed"
         assert requests == 3
-        assert (await bot.snapshot()).messages[-1].text == "I am still following the objective."
+        replied = await bot.snapshot()
+        assert replied.messages[-1].text == "I am still following the objective."
+        assert replied.thread.completion != completion

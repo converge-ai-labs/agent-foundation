@@ -752,11 +752,13 @@ class RootRunExecutor:
                                 usage=result.usage,
                             )
                         )
-                    completed_run_id = (
-                        stream.run_id
-                        if stream is not None and result.status == "completed" and run_error is None
-                        else None
-                    )
+                    run_completed = stream is not None and result.status == "completed" and run_error is None
+                    completed_run_id = stream.run_id if stream is not None and run_completed else None
+                    if thread.thread_id == BOT_THREAD_ID and completed_run_id is not None:
+                        if not await self._store.bot.has_visible_result(
+                            direct_reply=isinstance(result.output, str) and bool(result.output.strip())
+                        ):
+                            completed_run_id = None
                     continuation = await self._select_state(
                         thread=thread,
                         superseded=run_checkpoint,
@@ -766,7 +768,7 @@ class RootRunExecutor:
                         state=result.state,
                         display_base=archive,
                         display=(
-                            display.capture(result.state.message_history, completed=completed_run_id is not None)
+                            display.capture(result.state.message_history, completed=run_completed)
                             if display is not None and result.state is not None
                             else None
                         ),
@@ -950,9 +952,6 @@ class RootRunExecutor:
         """Select native state with a display already frozen on the producer's event loop."""
         if state is None:
             return RootContinuationSelection(status="not_available")
-        if thread.thread_id == BOT_THREAD_ID and completed_run_id is not None:
-            if not await self._store.bot.has_visible_result():
-                completed_run_id = None
         published_ref: ObjectRef | None = None
 
         def prepare_continuation() -> tuple[Continuation, ThreadReadModel]:

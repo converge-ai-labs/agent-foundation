@@ -22,7 +22,8 @@ import { useResults } from "./conversations/results";
 import row from "./shell/navigation-row.module.css";
 import styles from "./bot.module.css";
 
-export const BOT_THREAD_ID = "thread_bot";
+import { BOT_THREAD_ID } from "./bot-identity";
+export { BOT_THREAD_ID } from "./bot-identity";
 
 export function useBot(enabled = true) {
   const { client, shareId } = useTransport();

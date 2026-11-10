@@ -87,8 +87,8 @@ class ReconstructedAgent:
         return FileMediaUnderstanding(self.media_models, self.model_resolver.fresh(), thread_id=thread_id)
 
 
-def _bot_no_op() -> None:
-    """End this Bot turn quietly without sending a message to the user."""
+def _finish_bot_silently() -> None:
+    """Finish this Bot turn without adding a final user-facing reply."""
 
 
 class _GlobalGuidanceCapability(AbstractModelContextCapability):
@@ -507,7 +507,9 @@ class AgentReconstructor:
                 system_prompt=list(node.system_prompt),
                 instructions=list(node.instructions),
             ),
-            output_type=[str, ToolOutput(_bot_no_op, name="no_op")] if node.source_kind == "bot" else str,
+            output_type=[str, ToolOutput(_finish_bot_silently, name="finish_silently")]
+            if node.source_kind == "bot"
+            else str,
             definition_id=f"a13n-harness-ui:{node.source_kind}:{node.source_id}",
             capabilities=tuple(capabilities),
             plugins=plugins,
