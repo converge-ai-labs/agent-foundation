@@ -20,6 +20,7 @@ from a13n_harness.providers.environment.vercel.shared import (
 )
 
 from a13n_service.providers.environment import desktop_access as access
+from a13n_service.providers.environment import envd_assets
 from a13n_service.providers.environment.envd_readiness import wait_until_ready
 from a13n_service.providers.environment.management import Pending
 from a13n_service.providers.environment.native import NativeManagement
@@ -158,9 +159,9 @@ install -d -m 0700 /var/lib/a13n-envd
 cd /workspace
 nohup flock -n /var/lib/a13n-envd/start.lock sh -c '
  rm -f /tmp/.X99-lock /tmp/.X11-unix/X99 /run/a13n-desktop-access/control.sock
- exec a13n-sandbox-entrypoint "$1"
-' sh "$1" >> /var/lib/a13n-envd/startup.log 2>&1 < /dev/null &
-"""
+ STARTUP
+' >> /var/lib/a13n-envd/startup.log 2>&1 < /dev/null &
+""".replace("STARTUP", envd_assets.startup(program))
             await command(
                 self,
                 response.session.id,

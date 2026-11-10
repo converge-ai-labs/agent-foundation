@@ -21,6 +21,7 @@ from a13n_service.infra.ids import new_object_id
 from a13n_service.infra.sweeps import Sweep
 from a13n_service.resources.environment_instances.access import superseded
 from a13n_service.resources.environment_templates.service import idle_past
+from a13n_service.runs.environments import vercel_snapshots
 from a13n_service.runs.environments.lifecycle import (
     LOST,
     PHASES,
@@ -63,6 +64,7 @@ async def maintain_environments(runtime: Runtime, *, owner: str) -> None:
         or_(EnvironmentRow.next_operation_at.is_(None), EnvironmentRow.next_operation_at <= func.now()),
     )
     await _each(runtime, due.order_by(EnvironmentRow.updated_at), partial(advance, runtime, owner=owner))
+    await _each(runtime, vercel_snapshots.orphaned(), partial(vercel_snapshots.drain, runtime))
 
 
 async def renew_environments(runtime: Runtime) -> None:

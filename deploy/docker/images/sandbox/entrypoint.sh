@@ -32,4 +32,18 @@ if [ "${A13N_ENVD_TRANSPORT:-}" = "reverse_websocket" ] && [ -n "${A13N_ENVD_SER
     trap - EXIT HUP INT TERM
     unset A13N_ENVD_SERVICE_BOOTSTRAP_TOKEN
 fi
+# Supervise only the image-owned runtime, preserving arbitrary custom commands
+# and the caller-owned stdio lifecycle. Credentials are initialized exactly once.
+case ${1:-} in
+    a13n-envd)
+        exec a13n-envd-supervise "$@" ;;
+    a13n-sandbox-desktop)
+        # The desktop launcher retains display/access supervision. Only replace
+        # its default daemon child; explicitly authored commands stay intact.
+        if [ "$#" -eq 1 ] || [ "${2:-}" = a13n-envd ]; then
+            shift
+            if [ "$#" -eq 0 ]; then set -- a13n-envd; fi
+            exec a13n-sandbox-desktop a13n-envd-supervise "$@"
+        fi ;;
+esac
 exec "$@"

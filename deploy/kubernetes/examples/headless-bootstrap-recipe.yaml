@@ -1,0 +1,45 @@
+# Service KubernetesRecipe, not a kubectl resource. Build/load a13n-sandbox:local
+# from the matching checkout first; pin a reviewed registry digest in production.
+execution_container: agent
+working_directory: /workspace
+pod_template:
+  spec:
+    restartPolicy: OnFailure
+    securityContext:
+      runAsUser: 0
+    initContainers:
+      - name: publish-envd
+        image: a13n-sandbox:local
+        imagePullPolicy: IfNotPresent
+        command:
+          - /bin/sh
+          - -ec
+          - cp /usr/local/bin/a13n-envd /prepared/a13n-envd && chmod 0755 /prepared/a13n-envd
+        volumeMounts:
+          - name: envd-binary
+            mountPath: /prepared
+    containers:
+      - name: agent
+        # The execution root filesystem owns libc and Session accounts. Installing
+        # packages in publish-envd cannot modify this separate root filesystem.
+        image: debian:trixie-slim@sha256:4876fdea29cac1a33a3195f1eb1952feb1fca7dd6dd00be3e2f1879cf20d34d2
+        command:
+          - /bin/sh
+          - -ec
+          - |
+            getent group sandbox >/dev/null || groupadd --gid 1000 sandbox
+            getent passwd sandbox >/dev/null || useradd --uid 1000 --gid sandbox --create-home --shell /bin/sh sandbox
+            chown sandbox:sandbox /workspace
+            export A13N_ENVD_EXECUTION_UID=1000 A13N_ENVD_EXECUTION_GID=1000 A13N_ENVD_FULL_CONTROL=true
+            exec /opt/a13n/bin/a13n-envd
+        volumeMounts:
+          - name: envd-binary
+            mountPath: /opt/a13n/bin
+            readOnly: true
+          - name: workspace
+            mountPath: /workspace
+    volumes:
+      - name: envd-binary
+        emptyDir: {}
+      - name: workspace
+        emptyDir: {}

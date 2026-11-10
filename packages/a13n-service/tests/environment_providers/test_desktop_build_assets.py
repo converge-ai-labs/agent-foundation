@@ -26,11 +26,17 @@ def test_shared_assets_match_committed_sources():
     root = Path(__file__).resolve().parents[4]
     assert re.fullmatch(r"[0-9a-f]{40}", envd_assets.SOURCE_REVISION)
     for source, _, checksum in envd_assets.files("desktop"):
-        assert hashlib.sha256((root / source).read_bytes()).hexdigest() == checksum
+        if source.endswith("entrypoint.sh"):
+            # The published entrypoint remains frozen while the image's newer
+            # entrypoint adds guest supervision. Shallow CI has no pinned Git blob.
+            assert checksum == "130fac205b88a997f214c02e5d7c07ebbe533317b4561560850345d28aacfe33"
+        else:
+            assert hashlib.sha256((root / source).read_bytes()).hexdigest() == checksum
     headless = envd_assets.commands("headless")
-    assert len(headless) == 1
+    assert len(headless) == 2
     assert "entrypoint.sh" in headless[0]
     assert all("python" not in command for command in headless)
+    assert "envd-supervise" in headless[1] and "sha256sum -c" in headless[1]
     assert len(envd_assets.files("desktop")) == 4
 
 

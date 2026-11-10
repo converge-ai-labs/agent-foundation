@@ -101,12 +101,7 @@ async def _credential(reference: DockerReference) -> HttpEnvdCredential:
     try:
         await reference._check_initialized(commands)
         token = await commands.execute(
-            [
-                reference.config.python,
-                "-I",
-                "-c",
-                f"import sys; sys.stdout.buffer.write(open({connection.credential_file!r},'rb').read(4097))",
-            ],
+            ["head", "-c", "4097", "--", connection.credential_file],
             maximum=4096,
             mutation=False,
         )

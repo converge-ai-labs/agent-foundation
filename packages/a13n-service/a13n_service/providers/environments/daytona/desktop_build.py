@@ -51,7 +51,13 @@ def specification(profile: envd_assets.Profile = "desktop", base_image: str | No
     assets = _assets(profile, base_image)
     commands = assets["commands"]
     assert isinstance(commands, list)
-    startup = '#!/bin/sh\nset -eu\nif [ "$A13N_DESKTOP" = true ]; then exec a13n-sandbox-entrypoint a13n-sandbox-desktop; else exec a13n-sandbox-entrypoint a13n-envd; fi\n'
+    startup = (
+        '#!/bin/sh\nset -eu\nif [ "$A13N_DESKTOP" = true ]; then\n'
+        + envd_assets.startup("a13n-sandbox-desktop")
+        + "\nelse\n"
+        + envd_assets.startup("a13n-envd")
+        + "\nfi\n"
+    )
     encoded = base64.b64encode(startup.encode()).decode()
     dockerfile = "FROM " + str(assets["base"]) + "\n" + "\n".join("RUN " + str(c) for c in commands)
     dockerfile += f"\nRUN printf %s {encoded} | base64 -d > /usr/local/bin/a13n-daytona-start && chmod 0755 /usr/local/bin/a13n-daytona-start\n"

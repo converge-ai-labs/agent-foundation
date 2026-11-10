@@ -15,6 +15,26 @@ def docker(*args: str) -> str:
     return result.stdout.strip()
 
 
+def restart_guest_process(name: str, pattern: str) -> None:
+    """Kill one image-owned service and wait for its guest supervisor replacement."""
+    previous = docker("exec", name, "pgrep", "-f", pattern)
+    docker("exec", name, "pkill", "-f", pattern)
+    probe = textwrap.dedent("""\
+        import subprocess, sys, time
+        previous = set(sys.argv[2].split())
+        deadline = time.monotonic() + 25
+        while time.monotonic() < deadline:
+            result = subprocess.run(['pgrep', '-f', sys.argv[1]], capture_output=True, text=True, check=False)
+            current = set(result.stdout.split())
+            if current and current.isdisjoint(previous):
+                break
+            time.sleep(.1)
+        else:
+            raise RuntimeError('Guest supervisor did not replace the exited service')
+        """)
+    docker("exec", name, "python3", "-c", probe, pattern, previous)
+
+
 def check_desktop(image: str) -> None:
     name = f"a13n-desktop-smoke-{uuid.uuid4().hex}"
     probe = textwrap.dedent("""\
@@ -71,7 +91,9 @@ def check_desktop(image: str) -> None:
         docker("start", name)
         docker("exec", name, "python3", "-c", probe)
         docker("exec", name, "test", "-f", "/workspace/preserved")
-        # Losing the desktop must fail the container instead of leaving a healthy-looking daemon.
+        restart_guest_process(name, "^a13n-envd$")
+        docker("exec", name, "python3", "-c", probe)
+        # Display failure retains the desktop launcher's fail-closed ownership.
         docker("exec", name, "pkill", "-x", "openbox")
         assert docker("wait", name) == "1"
     finally:

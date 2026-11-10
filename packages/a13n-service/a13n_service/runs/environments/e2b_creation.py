@@ -23,6 +23,7 @@ from a13n_service.tenancy.authorize import Principal, authorize
 
 
 class CreationProgress(BaseModel):
+    profile: Literal["headless", "desktop"]
     stage: Literal["preparing", "building", "starting", "ready", "failed", "inactive"]
     started_at: datetime
     observed_at: datetime
@@ -92,7 +93,11 @@ async def progress(runtime: Runtime, actor: Principal, workspace_id: str, identi
             and row.provider_identity.get("type") == "e2b"
             and handle.recipe.get("preparation") == "headless"
         ):
-            phase = handle.state.state.get("preparation_phase") if handle.state else None
+            phase = (
+                handle.state.state.get("preparation_phase")
+                if handle.state and isinstance(handle.state.state, dict)
+                else None
+            )
             stage = (
                 "building" if phase == "installing" else "starting" if phase in {"starting", "ready"} else "preparing"
             )
@@ -144,6 +149,7 @@ async def progress(runtime: Runtime, actor: Principal, workspace_id: str, identi
                 elif build.phase in {"failed", "cleanup"}:
                     stage, ended = "failed", build.updated_at
         return CreationProgress(
+            profile="desktop" if handle.recipe.get("desktop") else "headless",
             stage=stage,
             observed_at=await now(session),
             started_at=row.operation_started_at or row.created_at,
@@ -191,9 +197,9 @@ async def retry(
                 row.handle = handle.model_copy(update={"daytona_desktop_snapshot": key}).model_dump(mode="json")
         if handle.recipe.get("snapshot") == "auto" and handle.vercel_desktop_snapshot:
             snapshot = await session.get(vercel_snapshots.VercelDesktopSnapshotRow, handle.vercel_desktop_snapshot)
-            if snapshot is not None and snapshot.phase == "failed":
-                key = await vercel_snapshots.bind(runtime, session, row, provider)
-                row.handle = handle.model_copy(update={"vercel_desktop_snapshot": key}).model_dump(mode="json")
+            if snapshot is not None and snapshot.phase == "failed" and handle.state is None:
+                # Confirmed-clean legacy failures retry on the final target, without another builder.
+                row.handle = handle.model_copy(update={"vercel_desktop_snapshot": None}).model_dump(mode="json")
         await lifecycle.begin(session, row, "creating")
         await session.flush()
         audit(session, actor, row, "retry_creation")

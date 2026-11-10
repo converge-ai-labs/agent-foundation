@@ -213,7 +213,8 @@ def test_modal_real_sdk_snapshot_resume(tmp_path, monkeypatch, desktop):
             state = await manage("create")
             assert ready.await_count == 1
             launch = cloud.definitions[0]
-            assert launch.entrypoint_args[-1].endswith("a13n-sandbox-desktop" if desktop else "a13n-envd")
+            assert ("a13n-sandbox-desktop" if desktop else "a13n-envd") in launch.entrypoint_args[-1]
+            assert "a13n-envd-supervise" in launch.entrypoint_args[-1]
             assert access.await_count == int(desktop)
             assert launch.workdir == "/workspace"
             assert [port.port for port in launch.open_ports.ports] == ([8888, 6081] if desktop else [8888])

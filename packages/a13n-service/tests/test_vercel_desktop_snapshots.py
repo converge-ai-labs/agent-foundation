@@ -13,10 +13,12 @@ from a13n_harness.environment.errors import EnvironmentProviderOutcomeCertainty 
 from a13n_harness.providers.environment.native.errors import failure
 from a13n_service.infra.db import now, transaction
 from a13n_service.providers.environment.vercel_build import BuildTarget, Snapshot
-from a13n_service.runs.environments import lifecycle
+from a13n_service.resources.providers.tables import EnvironmentProviderRow
+from a13n_service.runs.environments import lifecycle, maintenance
 from a13n_service.runs.environments import vercel_snapshots as builds
 from a13n_service.runs.environments.schemas import Handle
 from a13n_service.runs.environments.tables import EnvironmentRow
+from sqlalchemy import select
 
 pytestmark = pytest.mark.anyio
 
@@ -217,7 +219,9 @@ async def test_failed_build_requires_explicit_fenced_retry(setup):
     )
     assert response.status_code == 202, response.text
     following = await lifecycle.claim(runtime, op.environment_id, owner="test")
-    assert following.vercel_desktop_snapshot != op.vercel_desktop_snapshot and following.generation > op.generation
+    assert following.vercel_desktop_snapshot is None and following.generation > op.generation
+    async with transaction(runtime.storage) as session:
+        assert list(await session.scalars(select(builds.VercelDesktopSnapshotRow.id))) == [op.vercel_desktop_snapshot]
 
 
 @pytest.mark.parametrize("phase", ["allocating", "snapshotting"])
@@ -319,3 +323,124 @@ async def test_new_automatic_targets_skip_snapshot_build_and_checkpoint_pending(
     assert progress.status_code == 200 and progress.json()["stage"] == "building"
     assert not setup.cloud.calls
     provider.close.assert_awaited_once()
+
+
+async def abandon(runtime, op):
+    async with transaction(runtime.storage) as session:
+        row = await session.get(EnvironmentRow, op.environment_id)
+        row.status = "deleted"
+        row.handle = None
+        row.operation_id = row.operation_started_at = row.operation_deadline = None
+        row.lease_owner = row.lease_token_hash = row.lease_expires_at = None
+        row.next_operation_at = None
+        row.operation_unsettled = False
+
+
+async def test_maintenance_drains_orphan_builder_with_disabled_provider(setup):
+    runtime, cloud = setup.service.runtime, setup.cloud
+    op = await setup.create()
+    await builds.prepare(runtime, op.vercel_desktop_snapshot, op.target.account)
+    await abandon(runtime, op)
+    async with transaction(runtime.storage) as session:
+        provider = await session.get(EnvironmentProviderRow, op.target.account.id)
+        provider.enabled = False
+    for _ in range(2):
+        await maintenance.maintain_environments(runtime, owner="test-drain")
+    async with transaction(runtime.storage) as session:
+        row = await session.get(builds.VercelDesktopSnapshotRow, op.vercel_desktop_snapshot)
+        assert row.phase == "failed" and row.builder is not None
+    assert cloud.target is None and cloud.calls == ["create", "delete_builder"]
+
+
+@pytest.mark.parametrize("terminal", ["new", "ready", "failed"])
+async def test_orphan_drain_never_allocates_or_deletes_ready_assets(setup, terminal):
+    runtime, cloud = setup.service.runtime, setup.cloud
+    op = await setup.create()
+    async with transaction(runtime.storage) as session:
+        row = await session.get(builds.VercelDesktopSnapshotRow, op.vercel_desktop_snapshot)
+        row.phase = terminal
+        row.snapshot_id = "snap_keep" if terminal == "ready" else None
+    await abandon(runtime, op)
+    await builds.drain(runtime, op.vercel_desktop_snapshot)
+    async with transaction(runtime.storage) as session:
+        row = await session.get(builds.VercelDesktopSnapshotRow, op.vercel_desktop_snapshot)
+        assert row.phase == ("failed" if terminal == "new" else terminal)
+        assert row.snapshot_id == ("snap_keep" if terminal == "ready" else None)
+    assert not cloud.calls
+
+
+async def test_orphan_claim_rechecks_waiters_and_active_leases(setup):
+    runtime, cloud = setup.service.runtime, setup.cloud
+    op = await setup.create()
+    await builds.prepare(runtime, op.vercel_desktop_snapshot, op.target.account)
+    # Even a cancellation submitted from a stale scan cannot take a live waiter's builder.
+    await builds.prepare(runtime, op.vercel_desktop_snapshot, op.target.account, cancel=True)
+    assert cloud.calls == ["create"]
+    await abandon(runtime, op)
+    async with transaction(runtime.storage) as session:
+        row = await session.get(builds.VercelDesktopSnapshotRow, op.vercel_desktop_snapshot)
+        row.lease = "live-owner"
+        row.lease_expires_at = await now(session) + timedelta(minutes=5)
+    await builds.drain(runtime, op.vercel_desktop_snapshot)
+    assert cloud.calls == ["create"]
+    await expire(runtime, op.vercel_desktop_snapshot)
+    await builds.drain(runtime, op.vercel_desktop_snapshot)
+    await builds.drain(runtime, op.vercel_desktop_snapshot)
+    assert cloud.calls == ["create", "delete_builder"]
+
+
+async def test_orphan_lost_snapshot_response_reconciles_before_cleanup(setup):
+    runtime, cloud = setup.service.runtime, setup.cloud
+    op = await setup.create()
+    await builds.prepare(runtime, op.vercel_desktop_snapshot, op.target.account)
+    cloud.snapshot_error = True
+    with pytest.raises(TimeoutError):
+        await builds.prepare(runtime, op.vercel_desktop_snapshot, op.target.account)
+    await abandon(runtime, op)
+    await expire(runtime, op.vercel_desktop_snapshot)
+    for _ in range(2):
+        await builds.drain(runtime, op.vercel_desktop_snapshot)
+    assert cloud.calls == ["create", "install", "snapshot", "find_snapshot", "delete_snapshot", "delete_builder"]
+    assert cloud.target is None and cloud.image is None
+
+
+async def test_orphan_cleanup_failure_retains_identity(setup):
+    runtime, cloud = setup.service.runtime, setup.cloud
+    op = await setup.create()
+    await builds.prepare(runtime, op.vercel_desktop_snapshot, op.target.account)
+    await abandon(runtime, op)
+    await builds.drain(runtime, op.vercel_desktop_snapshot)
+    cloud.delete_error = True
+    with pytest.raises(EnvironmentProviderError):
+        await builds.drain(runtime, op.vercel_desktop_snapshot)
+    async with transaction(runtime.storage) as session:
+        row = await session.get(builds.VercelDesktopSnapshotRow, op.vercel_desktop_snapshot)
+        assert row.phase == "cleanup" and row.builder["session_id"] == "ses_1"
+    await expire(runtime, op.vercel_desktop_snapshot)
+    cloud.delete_error = False
+    await builds.drain(runtime, op.vercel_desktop_snapshot)
+    assert cloud.target is None and cloud.calls.count("create") == 1
+
+
+@pytest.mark.parametrize("change", ["credential", "backend"])
+async def test_orphan_changed_account_is_retained_and_rotates_behind_other_work(setup, change):
+    runtime, cloud = setup.service.runtime, setup.cloud
+    op = await setup.create()
+    await abandon(runtime, op)
+    async with transaction(runtime.storage) as session:
+        row = await session.get(builds.VercelDesktopSnapshotRow, op.vercel_desktop_snapshot)
+        if change == "credential":
+            row.credential_version = "old-credential"
+        else:
+            row.backend = "old-account"
+        row.scope = "retired-scope"
+    other = await setup.create()
+    await abandon(runtime, other)
+    with pytest.raises(EnvironmentProviderError):
+        await builds.drain(runtime, op.vercel_desktop_snapshot)
+    async with transaction(runtime.storage) as session:
+        candidates = list(await session.scalars(builds.orphaned().limit(1)))
+        assert candidates == [other.vercel_desktop_snapshot]
+        old = await session.get(builds.VercelDesktopSnapshotRow, op.vercel_desktop_snapshot)
+        assert old.phase == "new"
+    assert not cloud.calls

@@ -95,6 +95,7 @@ async def test_pending_publication_restart_failure_and_explicit_retry(
     await lifecycle.publish(service.runtime, op, outcome)
     progress = await service.client.get(f"/api/v1/environments/{identity}/creation")
     assert progress.json()["stage"] == "building" and not progress.json()["retryable"]
+    assert progress.json()["profile"] == ("desktop" if desktop else "headless")
     assert await lifecycle.claim(service.runtime, identity, owner="early-worker") is None
     await backdate(service, identity, next_operation_at=timedelta(seconds=1))
     resumed = await lifecycle.claim(service.runtime, identity, owner="replacement-worker")

@@ -303,7 +303,8 @@ async def test_creation_progress_reports_cloud_facts_without_cloud_reads(setup):
     response = await client.get(url)
     assert response.json()["stage"] == "building"
     assert response.headers["cache-control"] == "no-store"
-    assert set(response.json()) == {"stage", "started_at", "observed_at", "ended_at", "retryable"}
+    assert set(response.json()) == {"profile", "stage", "started_at", "observed_at", "ended_at", "retryable"}
+    assert response.json()["profile"] == "desktop"
     assert setup.cloud.reserve_count == setup.cloud.submit_count == 1
     setup.cloud.status_value = "error"
     result = await lifecycle.perform(runtime, op)

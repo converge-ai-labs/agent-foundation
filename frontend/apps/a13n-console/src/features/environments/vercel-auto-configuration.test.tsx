@@ -37,7 +37,7 @@ function Editor({ initial = {} }: { initial?: Record<string, unknown> }) {
 }
 const configuration = () =>
   JSON.parse(screen.getByTestId("config").textContent ?? "{}");
-it("one desktop toggle enables automatic snapshot preparation and human control", async () => {
+it("one desktop toggle enables direct target preparation and human control", async () => {
   render(<Editor />);
   const user = userEvent.setup();
   await user.click(screen.getByRole("switch", { name: "Desktop environment" }));
@@ -48,7 +48,9 @@ it("one desktop toggle enables automatic snapshot preparation and human control"
     desktop_assistance: true,
   });
   expect(screen.queryByRole("textbox", { name: "Snapshot" })).toBeNull();
-  expect(screen.getByText(/first Vercel desktop creation/)).toBeTruthy();
+  expect(
+    screen.getByText(/installed directly on each persistent Vercel sandbox/),
+  ).toBeTruthy();
 });
 it("retains a custom snapshot and resource choices when enabling desktop", async () => {
   render(
@@ -66,7 +68,7 @@ it("retains a custom snapshot and resource choices when enabling desktop", async
 it("preserves the custom draft when switching between automatic and custom", async () => {
   render(<Editor initial={{ desktop: true, snapshot: "im-custom" }} />);
   const user = userEvent.setup();
-  await user.click(screen.getByRole("button", { name: "Automatic desktop" }));
+  await user.click(screen.getByRole("button", { name: "Automatic Envd" }));
   expect(configuration().snapshot).toBe("auto");
   await user.click(screen.getByRole("button", { name: "Custom snapshot" }));
   expect(configuration().snapshot).toBe("im-custom");
@@ -110,4 +112,31 @@ it("lets a managed desktop select outbound WebSocket", async () => {
     desktop: true,
     snapshot: "auto",
   });
+});
+
+it("selects direct headless preparation without enabling desktop and preserves snapshot drafts", async () => {
+  render(<Editor />);
+  const user = userEvent.setup();
+  await user.click(
+    screen.getByRole("combobox", { name: "Execution connection" }),
+  );
+  await user.click(screen.getByRole("option", { name: "Envd HTTP" }));
+  expect(configuration()).toMatchObject({
+    execution: "envd_http",
+    snapshot: "auto",
+    timeout_seconds: 2700,
+    desktop_assistance: false,
+  });
+  expect(configuration().desktop).not.toBe(true);
+  expect(
+    screen.getByText(/installed directly on each persistent Vercel sandbox/),
+  ).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "Custom snapshot" }));
+  await user.type(
+    screen.getByRole("textbox", { name: "Snapshot" }),
+    "snap-team",
+  );
+  await user.click(screen.getByRole("button", { name: "Automatic Envd" }));
+  await user.click(screen.getByRole("button", { name: "Custom snapshot" }));
+  expect(configuration().snapshot).toBe("snap-team");
 });

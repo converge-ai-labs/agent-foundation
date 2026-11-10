@@ -21,6 +21,7 @@ from a13n_harness.providers.environment.e2b.http import http_execution, http_run
 from a13n_harness.providers.environment.e2b.shared import E2BProviderRuntime, E2BReference
 from a13n_harness.providers.environment.remote_envd.managed import ManagedCredentialCache
 
+from a13n_service.providers.environment import envd_assets
 from a13n_service.providers.environment._backend import ManagementBackend
 from a13n_service.providers.environment.desktop_access import Description, Reply, Request, command, decode
 from a13n_service.providers.environment.envd_readiness import wait_until_ready
@@ -231,7 +232,7 @@ class E2BManagement(E2BReference, ManagementBackend):
         executable = "a13n-sandbox-desktop" if self._configuration.desktop else "a13n-envd"
         await sandbox.commands.run(
             "umask 077; install -d -m 0700 /var/lib/a13n-envd && exec flock -n /var/lib/a13n-envd/start.lock "
-            "a13n-sandbox-entrypoint " + executable + " > /var/lib/a13n-envd/startup.log 2>&1",
+            "sh -c " + shlex.quote(envd_assets.startup(executable)) + " > /var/lib/a13n-envd/startup.log 2>&1",
             user="root",
             cwd="/workspace",
             background=True,

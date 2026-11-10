@@ -130,15 +130,20 @@ it("permits custom templates in ordinary mode and resets the custom selection", 
   expect(screen.getByText("base", { exact: true })).toBeTruthy();
 });
 
-it("requires a compatible template for outbound WebSocket and retains it when enabling desktop", async () => {
+it("selects headless installation for outbound WebSocket and retains a chosen template when enabling desktop", async () => {
   render(<Editor />);
   const user = userEvent.setup();
   await user.click(
     screen.getByRole("combobox", { name: "Execution transport" }),
   );
   await user.click(screen.getByRole("option", { name: "Envd ws" }));
-  expect(configuration().template).toBe("");
+  expect(configuration()).toMatchObject({
+    template: "base",
+    preparation: "headless",
+  });
   expect(screen.queryByRole("textbox", { name: "Root" })).toBeNull();
+  expect(screen.getByText(/stock base may be too old/)).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "Custom template" }));
   await user.type(
     screen.getByRole("textbox", { name: "E2B template" }),
     "team-envd",
@@ -148,5 +153,6 @@ it("requires a compatible template for outbound WebSocket and retains it when en
     execution: "envd_ws",
     template: "team-envd",
     desktop: true,
+    preparation: "preinstalled",
   });
 });

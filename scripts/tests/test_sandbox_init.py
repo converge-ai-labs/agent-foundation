@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -189,3 +190,49 @@ def test_headless_credentials_need_no_python_or_skill_initializer(tmp_path, tran
     else:
         assert len(result.stdout) == 64
         int(result.stdout, 16)
+
+
+@pytest.mark.parametrize(
+    ("arguments", "expected"),
+    [
+        (["a13n-envd", "--help"], ["supervisor", "a13n-envd", "--help"]),
+        (["a13n-sandbox-desktop"], ["desktop", "a13n-envd-supervise", "a13n-envd"]),
+        (["a13n-sandbox-desktop", "a13n-envd"], ["desktop", "a13n-envd-supervise", "a13n-envd"]),
+        (
+            ["a13n-sandbox-desktop", "a13n-envd-supervise", "a13n-envd"],
+            ["desktop", "a13n-envd-supervise", "a13n-envd"],
+        ),
+        (["a13n-sandbox-desktop", "sh", "-c", "custom command"], ["desktop", "sh", "-c", "custom command"]),
+    ],
+)
+def test_entrypoint_supervises_default_daemon_and_preserves_custom_desktop_commands(
+    tmp_path, monkeypatch, arguments, expected
+):
+    assert_entrypoint_arguments(tmp_path, monkeypatch, arguments, expected)
+
+
+def assert_entrypoint_arguments(tmp_path, monkeypatch, arguments, expected):
+    for executable, label in (
+        ("a13n-sandbox-desktop", "desktop"),
+        ("a13n-envd-supervise", "supervisor"),
+    ):
+        script = tmp_path / executable
+        script.write_text(f'#!/bin/sh\nprintf "%s\\n" "{label}" "$@"\n')
+        script.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.setenv("A13N_ENVD_TRANSPORT", "stdio")
+    result = subprocess.run([str(ENTRYPOINT), *arguments], capture_output=True, text=True, check=True, timeout=5)
+    assert result.stdout.splitlines() == expected
+
+
+def test_desktop_image_default_command_uses_supervised_daemon(tmp_path, monkeypatch):
+    dockerfile = (ENTRYPOINT.parent / "Dockerfile").read_text()
+    entrypoints = [
+        json.loads(line.removeprefix("ENTRYPOINT "))
+        for line in dockerfile.splitlines()
+        if line.startswith("ENTRYPOINT ")
+    ]
+    command = [json.loads(line.removeprefix("CMD ")) for line in dockerfile.splitlines() if line.startswith("CMD ")][-1]
+    desktop_entrypoint = next(entrypoint for entrypoint in entrypoints if "a13n-sandbox-desktop" in entrypoint)
+    arguments = desktop_entrypoint[desktop_entrypoint.index("a13n-sandbox-entrypoint") + 1 :] + command
+    assert_entrypoint_arguments(tmp_path, monkeypatch, arguments, ["desktop", "a13n-envd-supervise", "a13n-envd"])

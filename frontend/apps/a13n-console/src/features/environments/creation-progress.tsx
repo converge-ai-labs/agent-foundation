@@ -18,10 +18,58 @@ export const DAYTONA_FIRST_DESKTOP_NOTICE =
   "The first Daytona desktop creation builds a snapshot and can take several minutes. Later creations reuse it. You can leave this page while creation continues.";
 
 export const VERCEL_FIRST_DESKTOP_NOTICE =
-  "The first Vercel desktop creation builds a snapshot and can take several minutes. Later creations reuse it. You can leave this page while creation continues.";
+  "Envd is installed directly on each persistent Vercel sandbox. Desktop mode also installs desktop dependencies. Creation can take several minutes; you can leave this page while it continues.";
 
 export const SPRITES_DESKTOP_NOTICE =
   "Each new Sprites desktop installs Envd and desktop dependencies and can take several minutes. Existing Sprites retain the installation after sleep. You can leave this page while creation continues.";
+
+export const HEADLESS_INSTALL_NOTICE =
+  "Envd is installed on each new sandbox without a desktop or guest Python runtime. Creation can take several minutes; you can leave this page while it continues.";
+
+export const HEADLESS_IMAGE_NOTICE =
+  "The first headless creation builds an Envd image. Later creations reuse it. No desktop or guest Python runtime is required.";
+
+export const HEADLESS_SNAPSHOT_NOTICE =
+  "The first headless creation builds an Envd snapshot. Later creations reuse it. No desktop or guest Python runtime is required.";
+
+export function creationNotice(
+  providerType: string | undefined,
+  recipe: Record<string, unknown> | undefined,
+): string | undefined {
+  if (!recipe || !["envd_http", "envd_ws"].includes(String(recipe.execution)))
+    return;
+  const desktop = recipe.desktop === true;
+  if (providerType === "modal" && recipe.image === "auto")
+    return desktop ? MODAL_FIRST_DESKTOP_NOTICE : HEADLESS_IMAGE_NOTICE;
+  if (providerType === "daytona" && recipe.snapshot === "auto")
+    return desktop ? DAYTONA_FIRST_DESKTOP_NOTICE : HEADLESS_SNAPSHOT_NOTICE;
+  if (
+    providerType === "vercel" &&
+    (!recipe.snapshot || recipe.snapshot === "auto")
+  )
+    return VERCEL_FIRST_DESKTOP_NOTICE;
+  if (providerType === "sprites")
+    return desktop ? SPRITES_DESKTOP_NOTICE : HEADLESS_INSTALL_NOTICE;
+  if (providerType === "e2b") {
+    if (recipe.template === "auto" && desktop) return FIRST_DESKTOP_NOTICE;
+    if (
+      !desktop &&
+      (recipe.preparation === "headless" ||
+        (recipe.preparation === undefined &&
+          (!recipe.template || recipe.template === "base")))
+    )
+      return HEADLESS_INSTALL_NOTICE;
+  }
+}
+
+const HEADLESS_STAGES = {
+  preparing: "Preparing Envd environment",
+  building: "Preparing headless Envd",
+  starting: "Starting and checking Envd",
+  ready: "Envd environment is ready",
+  failed: "Environment creation needs attention",
+  inactive: "Envd environment is not running",
+} as const;
 
 const STAGES = {
   preparing: "Preparing desktop template",
@@ -59,10 +107,15 @@ export function CreationProgress({
     refetchInterval: environment.status === "creating" ? 2000 : false,
   });
   useEffect(() => {
-    if (environment.status !== "creating" || progress.data?.ended_at) return;
+    if (
+      environment.status !== "creating" ||
+      !progress.data ||
+      progress.data.ended_at
+    )
+      return;
     const timer = window.setInterval(() => setClock(Date.now()), 1000);
     return () => window.clearInterval(timer);
-  }, [environment.status, progress.data?.ended_at]);
+  }, [environment.status, progress.data?.ended_at, !!progress.data]);
   const retry = useMutation({
     mutationFn: () =>
       client
@@ -82,10 +135,14 @@ export function CreationProgress({
       ]);
     },
   });
+  // The server reads the instance's frozen recipe; current template edits cannot
+  // enable automatic preparation or change its captured profile.
+  if (!progress.data && !progress.error) return null;
   const stage =
     environment.status === "ready"
       ? "ready"
       : (progress.data?.stage ?? "preparing");
+  const desktop = progress.data?.profile === "desktop";
   const start =
     progress.data?.started_at ??
     environment.operation_started_at ??
@@ -103,15 +160,24 @@ export function CreationProgress({
         {t(
           providerType === "sprites" && stage === "preparing"
             ? "Allocating Sprite"
-            : providerType === "sprites" && stage === "building"
-              ? "Installing Envd and desktop dependencies"
+            : stage === "building" &&
+                (providerType === "sprites" ||
+                  providerType === "vercel" ||
+                  (providerType === "e2b" && !desktop))
+              ? desktop
+                ? "Installing Envd and desktop dependencies"
+                : "Installing headless Envd"
               : stage === "building" && providerType === "modal"
-                ? "Building desktop image in Modal"
+                ? desktop
+                  ? "Building desktop image in Modal"
+                  : "Building headless Envd image in Modal"
                 : stage === "building" && providerType === "daytona"
-                  ? "Building desktop snapshot in Daytona"
-                  : stage === "building" && providerType === "vercel"
-                    ? "Building desktop snapshot in Vercel"
-                    : STAGES[stage],
+                  ? desktop
+                    ? "Building desktop snapshot in Daytona"
+                    : "Building headless Envd snapshot in Daytona"
+                  : desktop
+                    ? STAGES[stage]
+                    : HEADLESS_STAGES[stage],
         )}
       </h3>
       {environment.status === "creating" && (

@@ -22,6 +22,7 @@ from a13n_harness.providers.environment.native.environment import NativeRuntime
 from a13n_harness.providers.environment.native.errors import failure
 
 from a13n_service.providers.environment import desktop_access as access
+from a13n_service.providers.environment import envd_assets
 from a13n_service.providers.environment.envd_readiness import wait_until_ready
 from a13n_service.providers.environment.native import NativeManagement
 from a13n_service.providers.environment.recipes.modal import ModalRecipe
@@ -75,7 +76,7 @@ class ModalManagement(ModalReference, NativeManagement[ModalEnvironmentConfigura
                 "sh",
                 "-c",
                 "rm -f /tmp/.X99-lock /tmp/.X11-unix/X99 /run/a13n-desktop-access/control.sock; "
-                "exec a13n-sandbox-entrypoint " + ("a13n-sandbox-desktop" if self.config.desktop else "a13n-envd"),
+                + envd_assets.startup("a13n-sandbox-desktop" if self.config.desktop else "a13n-envd"),
                 app=app,
                 name=self.name,
                 image=image,

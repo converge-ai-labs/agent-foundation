@@ -104,22 +104,13 @@ class DockerManagement(DockerReference, ManagementBackend):
             commands = DockerCommands(self.runtime.engine, container_id, self.config)
             try:
                 if created:
-                    await commands.execute(
-                        [
-                            self.config.python,
-                            "-I",
-                            "-c",
-                            "import os; os.makedirs('/workspace',exist_ok=True); os.makedirs('/tmp/a13n',exist_ok=True)",
-                        ]
-                    )
+                    await commands.execute(["mkdir", "-p", "/workspace", "/tmp/a13n"])
                     if self.config.init_script:
                         await commands.execute(
                             [self.config.shell, "-c", self.config.init_script],
                             maximum=self.config.max_output_preview_bytes,
                         )
-                    await commands.execute(
-                        [self.config.python, "-I", "-c", "open('/tmp/a13n/initialized','w').close()"]
-                    )
+                    await commands.execute([self.config.shell, "-c", ": > /tmp/a13n/initialized"])
                 else:
                     await self._check_initialized(commands)
             finally:
@@ -149,7 +140,8 @@ class DockerManagement(DockerReference, ManagementBackend):
                 while True:
                     execution = http_execution(self)
                     try:
-                        await execution.open(execution_id="desktop-readiness")
+                        await execution.open(execution_id="envd-readiness")
+                        await execution.check_ready(frozenset({"files", "shell"}))
                         if not self.config.desktop:
                             return
                         await execution.check_ready(frozenset({"computer"}))

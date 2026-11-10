@@ -539,3 +539,35 @@ async def test_envd_secret_cannot_be_shared_through_a_host_mount(native):
     assert rejected.value.code == "envd_credential_not_private"
     engine.client.containers.create.assert_not_called()
     engine.client.images.get.assert_not_called()
+
+
+@pytest.mark.parametrize("execution", ["envd_http", "envd_ws"])
+async def test_envd_bootstrap_and_restart_need_no_guest_python(native, monkeypatch, execution):
+    _original, engine, container = native
+    config = DockerRecipe(
+        image="sandbox:slim", execution=execution, python="/missing-python", init_script="echo initialized"
+    )
+    runtime = DockerProviderRuntime(engine, DockerHttpConfiguration(host="127.0.0.1"))
+    env = DockerManagement(config, "env_headless", None, runtime)
+    container.labels = env.labels
+    if execution == "envd_ws":
+        # The outbound bootstrap is tested separately; isolate guest initialization.
+        monkeypatch.setattr(env, "_create", lambda: container)
+    monkeypatch.setattr(env, "_wait_envd", AsyncMock())
+    await env.create()
+    calls = [call.args[0] for call in DockerCommands.execute.await_args_list]
+    assert calls == [
+        ["mkdir", "-p", "/workspace", "/tmp/a13n"],
+        ["/bin/sh", "-c", "echo initialized"],
+        ["/bin/sh", "-c", ": > /tmp/a13n/initialized"],
+    ]
+    engine.client.containers.get.side_effect = None
+    engine.client.containers.get.return_value = container
+    DockerCommands.execute.reset_mock()
+    await env.start()
+    await env.create()
+    calls = DockerCommands.execute.await_args_list
+    assert len(calls) == 2
+    assert all(call.args[0][0] == "/bin/sh" and call.kwargs["mutation"] is False for call in calls)
+    assert all("Initialization incomplete" in call.args[0][-1] for call in calls)
+    await env.close()

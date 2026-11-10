@@ -60,8 +60,31 @@ it("retains a custom image and resource choices when enabling desktop", async ()
 it("preserves the custom draft when switching between automatic and custom", async () => {
   render(<Editor initial={{ desktop: true, image: "im-custom" }} />);
   const user = userEvent.setup();
-  await user.click(screen.getByRole("button", { name: "Automatic desktop" }));
+  await user.click(screen.getByRole("button", { name: "Automatic Envd" }));
   expect(configuration().image).toBe("auto");
   await user.click(screen.getByRole("button", { name: "Custom image" }));
   expect(configuration().image).toBe("im-custom");
+});
+
+it("offers headless automatic images and preserves a managed base across custom image drafts", async () => {
+  const base = `debian@sha256:${"a".repeat(64)}`;
+  render(
+    <Editor initial={{ image: "auto", base_image: base, desktop: false }} />,
+  );
+  const user = userEvent.setup();
+  expect(
+    screen.getByText(/first headless creation builds an Envd image/),
+  ).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "Custom image" }));
+  expect(configuration().base_image).toBeUndefined();
+  await user.type(screen.getByRole("textbox", { name: "Image" }), "im-team");
+  await user.click(screen.getByRole("button", { name: "Automatic Envd" }));
+  expect(configuration()).toMatchObject({
+    image: "auto",
+    base_image: base,
+    desktop: false,
+  });
+  await user.click(screen.getByRole("button", { name: "Custom image" }));
+  expect(configuration()).toMatchObject({ image: "im-team", desktop: false });
+  expect(configuration().base_image).toBeUndefined();
 });

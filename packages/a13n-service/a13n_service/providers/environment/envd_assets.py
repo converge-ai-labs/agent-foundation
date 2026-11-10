@@ -1,6 +1,9 @@
 """Immutable public guest assets shared by provider preparation profiles."""
 
+import base64
+import hashlib
 import shlex
+from importlib.resources import files as resources
 from typing import Literal
 
 from .envd_release import download_command
@@ -63,4 +66,28 @@ def commands(profile: Profile) -> list[str]:
     for source, destination, digest in files(profile):
         url = f"https://raw.githubusercontent.com/converge-ai-labs/agent-foundation/{SOURCE_REVISION}/{source}"
         result.append(download_command(url, destination, digest) + f" && chmod 0755 {shlex.quote(destination)}")
+    # Bundle the startup owner with Service so new assets are usable before a
+    # source branch is published. Its exact bytes are frozen in every manifest.
+    startup = resources(__package__).joinpath("envd_supervise.sh").read_bytes()
+    destination = "/usr/local/bin/a13n-envd-supervise"
+    encoded = base64.b64encode(startup).decode()
+    digest = hashlib.sha256(startup).hexdigest()
+    result.append(
+        f"printf %s {encoded} | base64 -d > {destination} && "
+        f"printf '%s\\n' '{digest}  {destination}' | sha256sum -c - && chmod 0755 {destination}"
+    )
     return result
+
+
+def startup(program: str) -> str:
+    """Use guest supervision when installed, retaining older preinstalled images."""
+    supervised = (
+        "a13n-sandbox-desktop a13n-envd-supervise a13n-envd"
+        if program == "a13n-sandbox-desktop"
+        else f"a13n-envd-supervise {shlex.quote(program)}"
+    )
+    return (
+        "if command -v a13n-envd-supervise >/dev/null 2>&1; then "
+        f"exec a13n-sandbox-entrypoint {supervised}; "
+        f"else exec a13n-sandbox-entrypoint {shlex.quote(program)}; fi"
+    )

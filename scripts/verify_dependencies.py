@@ -61,7 +61,7 @@ TEST_INPUTS: dict[str, tuple[str, ...]] = {
     "test_envd_size_report.py": (".github/scripts/envd-size-comment.cjs", ".github/workflows/envd-size-report.yml"),
     "test_envd_ci_workflow.py": (".github/workflows/ci-a13n-envd.yml",),
     "test_envd_release_workflow.py": (".github/workflows/release-a13n-envd.yml",),
-    "test_sandbox_init.py": ("deploy/docker/images/sandbox/*.sh",),
+    "test_sandbox_init.py": ("deploy/docker/images/sandbox/*.sh", "deploy/docker/images/sandbox/Dockerfile"),
     "test_harness_ui_ci_workflow.py": (
         ".github/ui-test-durations.json",
         ".github/workflows/ci-a13n-harness-ui*.yml",
@@ -90,6 +90,7 @@ TEST_INPUTS: dict[str, tuple[str, ...]] = {
         "Makefile",
         "scripts/sandbox_smoke.py",
         "packages/a13n-service/a13n_service/providers/environment/desktop_guest.py",
+        "packages/a13n-service/a13n_service/providers/environment/envd_supervise.sh",
         "deploy/docker/compose/*",
     ),
     "test_k8s_local.py": ("deploy/kubernetes/*",),

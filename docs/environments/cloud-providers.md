@@ -21,7 +21,7 @@ Prepare the selected account and recipe before creating a billable target. Dayto
 
 Store credentials outside recipes and reconnect state. Organization/team fields name backend namespaces, not permission grants. Modal credentials select the workspace; its optional `workspace` field is a label. Service E2B connections select E2B cloud or a compatible backend by domain; see [Service providers](../a13n-service/environments.md#providers).
 
-Custom guest images must provide the selected root, Python, and shell. Daytona, Sprites, and Runloop use guest-PATH `python3`; Modal uses guest-PATH Python for management helpers, and Vercel uses its runtime Python path.
+Headless Envd preparation uses POSIX utilities without installing guest Python, jq or desktop packages. Native Files & Shell helpers retain their Python requirements. Custom preinstalled images provide compatible Envd, the selected users/workspace and boot command; a plain image is not an installation request.
 
 Management prepares the target and, for the Envd path, its daemon and authorized connection. EIP supplies execution semantics; Sandbox and egress settings enforce the chosen execution policy. Migrate existing Native targets explicitly when adopting Envd.
 
@@ -45,7 +45,7 @@ Use this sequence around every managed target:
 
 For Modal, `start()` restores the saved filesystem snapshot and returns the new reference. `open()` neither restores nor cleans up snapshots. Snapshot deletion requires matching native ownership tags. An externally registered state supplies connection information, not destruction authority.
 
-On interrupted creation, reconcile native names or ownership metadata. Treat timeouts, permission errors, and unknown responses as unresolved outcomes, not absence. Never rebuild a lost target or replay an uncertain command implicitly. Envd uses shared deadline, cancellation, output, and Session-cleanup behavior; vendor management owns stop and destruction.
+On interrupted creation, reconcile native names or ownership metadata. Treat timeouts, permission errors, and unknown responses as unresolved outcomes, not absence. Never rebuild a lost target or replay an uncertain command implicitly. Managed Envd launchers replace a crashed daemon up to three times with 1/2/4-second backoff; desktop launchers retain the display/access processes. Sprites uses its native service, and Kubernetes uses the Pod's restart policy. Crash recovery creates a new daemon Session, so reconnect and inspect before further actions. Live hangs and interrupted commands are not replayed. Envd uses shared deadline, cancellation, output, and Session-cleanup behavior; vendor management owns stop and destruction.
 
 ### E2B runtime
 
@@ -110,6 +110,16 @@ Expect a file read, the Provider name, and either a recovered native command or 
 A13N_TEST_E2B_API_KEY="$E2B_API_KEY" make e2b-provider-test
 ```
 
+### E2B headless preparation
+
+Select Envd HTTP without Desktop, then **Install headless Envd**. Service installs on the selected sandbox and preserves E2B's SDK daemon. Choose a GNU/Linux x86_64 template with glibc 2.39 or newer, apt-get and util-linux, such as a base-only Debian 13 or Ubuntu 24.04+ template. The stock `base` may use older Bookworm and fail with template guidance; Service does not upgrade libc. Custom templates default to **Preinstalled Envd** unless you opt into installation.
+
+```json
+{"template":"your-compatible-base","execution":"envd_http","preparation":"headless","timeout_seconds":1200}
+```
+
+Creation records the target and installer revision before the bounded guest job. Reentry follows the same target and terminal result; a confirmed failed attempt needs explicit retry. Attachment only checks readiness. Native pause/resume retains memory and files.
+
 ### E2B desktop preparation
 
 In Console, choose the E2B connection and enable **Desktop environment**. **Automatic desktop** prepares a private template on first creation and reuses it later. The key must permit both template builds and sandboxes. First creation takes longer; the stock E2B `desktop` template alone lacks Envd.
@@ -138,16 +148,16 @@ The supervisor enforces human grants and revocation; Service coordinates safe pa
 
 ### Daytona
 
-For an automatic desktop in Service / Console:
+For automatic headless or desktop Envd in Service / Console:
 
 1. Set the organization's default region in the Daytona dashboard. A connection's region does not replace that account setup.
 2. Add a key with Sandbox operations and Snapshot read/write/delete permissions. `organization_id` is an optional constraint; the default target region is `us`.
-3. Enable Desktop and create an environment. Saving a template alone starts no build.
+3. Keep `snapshot="auto"` and Desktop off for headless Envd, or enable Desktop for Computer and human access. Create an environment; saving a template alone starts no build.
 4. Follow the displayed build stages. You can leave the page and return to Environment instances; after a confirmed failure, fix its cause before retrying.
 
-First creation builds a private snapshot with Envd and desktop/access components; later creations reuse its recorded ID. Automatic snapshots use 2 CPUs, 4 GiB memory, and 10 GiB disk. Reuse is scoped to workspace, Provider, backend, credential version, and manifest, with ownership/identity/content revalidation. Uncertain submissions are reconciled before another build. Validated failed builds are cleaned up; ready snapshots survive instance stop/deletion.
+First creation builds a private snapshot for the selected headless or desktop profile; later creations reuse its recorded ID. Headless snapshots omit Python, X11 and browser dependencies. Automatic snapshots use 2 CPUs, 4 GiB memory, and 10 GiB disk. Reuse is scoped to workspace, Provider, backend, credential version, and manifest, with ownership/identity/content revalidation. Uncertain submissions are reconciled before another build. Validated failed builds are cleaned up; ready snapshots survive instance stop/deletion.
 
-For custom snapshots, including headless targets or runtime-only keys, prepare a Linux amd64 binary and a private `DAYTONA_API_KEY` with snapshot authority. Run from the repository root:
+For custom preinstalled snapshots or runtime-only keys, prepare a Linux amd64 binary and a private `DAYTONA_API_KEY` with snapshot authority. Run from the repository root:
 
 ```bash
 uv run --with daytona==0.225.0 python examples/environment-provider/daytona_desktop_snapshot.py my-envd --region us --binary /absolute/path/to/linux-amd64/a13n-envd
@@ -171,6 +181,8 @@ For automatic Envd preparation in Service:
 4. Use the ready environment, or correct a confirmed failure before retrying. Desktop profiles also provide a preview.
 
 The first creation builds from pinned public artifacts; later creations reuse the immutable image ID for the selected profile. Headless images omit desktop, browser and guest Python dependencies. Automatic desktop defaults are 2 CPUs, 4096 MiB, 3600 seconds, and human assistance enabled, with explicit overrides retained. Build records are scoped to workspace, Provider, credential version, and manifest. Reuse checks current image access; interrupted waits rejoin the same content-addressed build without temporary sandboxes. Images and the App remain account assets.
+
+Modal and Daytona automatic preparation optionally accept `base_image`, a digest-pinned GNU/Linux x86_64 apt-based registry image with glibc >= 2.39, a root build user and unused `sandbox` UID/GID 1000. The digest is part of artifact reuse; incompatible userspace fails before package mutation. Managed builds replace its entrypoint. Explicit custom preinstalled image/snapshot selectors do not accept `base_image`.
 
 Custom images require an explicit compatible `image` and existing App. Authenticate with `modal token new`, prepare a Linux amd64 Envd binary, and run the optional builder from the repository root:
 
@@ -201,7 +213,13 @@ For live validation, set `A13N_TEST_MODAL_DESKTOP=1`, `A13N_TEST_MODAL_IMAGE`, `
 
 ### Vercel Sandbox
 
-Keep `execution="native"` for Native Files & Shell. For Computer use, prepare an operator-built snapshot and select `execution="envd_http"`, `desktop=true`, and Service `desktop_assistance=true` when human access is needed.
+Keep `execution="native"` for Native Files & Shell. Select Envd HTTP with an omitted snapshot or `snapshot="auto"` to install directly on the final persistent Ubuntu target. Desktop off selects headless Envd; Desktop on adds Computer and human access. Automatic lifetime defaults to 2700 seconds. Console reports durable stages while creation continues after navigation.
+
+```json
+{"execution":"envd_http","snapshot":"auto","desktop":false,"timeout_seconds":2700}
+```
+
+Installation rejoins the recorded target and frozen job after interruption; it creates no temporary builder or preparation snapshot. Stop/resume retains files and recreates processes. A custom snapshot remains supported as a preinstalled contract. To build one yourself:
 
 Securely configure `VERCEL_TOKEN`, `VERCEL_TEAM_ID`, and `VERCEL_PROJECT_ID`. From the repository root, build with a compatible Linux amd64 Envd binary:
 
@@ -228,9 +246,9 @@ Envd uses `/workspace` as UID/GID 1001; Native execution uses `/vercel/sandbox`.
 
 ### Fly.io Sprites
 
-Use `/home/sprite` as the default root and guest-PATH `python3` for helpers. The [Sprites environment guide](https://docs.sprites.dev/working-with-sprites/) describes its writable home and tools. Native sleep preserves disk and execution wakes the Sprite. Schedule no explicit stop; destruction waits for confirmed absence.
+Native execution uses `/home/sprite` and guest-PATH `python3` for helpers. Explicit `execution="envd_http"` with Desktop off installs headless Envd on the final Sprite without Python or display dependencies. The Sprites native service owns daemon restart, and each fresh EIP attachment checks the recorded runtime. The [Sprites environment guide](https://docs.sprites.dev/working-with-sprites/) describes its writable home and tools. Native sleep preserves disk and execution wakes the Sprite. Schedule no explicit stop; destruction waits for confirmed absence.
 
-For Computer and human control, let Service [install a desktop on each new Sprite](../a13n-service/computer-use.md#automatic-sprites-desktops), then attach with `execution="envd_http"`. Native execution remains available.
+For Computer and human control, enable Desktop and let Service [install a desktop on each new Sprite](../a13n-service/computer-use.md#automatic-sprites-desktops), then attach with `execution="envd_http"`. Native execution remains available.
 
 ### Runloop
 

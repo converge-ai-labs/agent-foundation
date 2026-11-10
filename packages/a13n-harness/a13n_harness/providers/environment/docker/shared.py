@@ -110,11 +110,11 @@ class DockerReference(BackendReference):
     async def _check_initialized(self, commands: DockerCommands) -> None:
         await commands.execute(
             [
-                self.config.python,
-                "-I",
+                self.config.shell,
                 "-c",
-                "import os; assert os.path.isfile('/tmp/a13n/initialized'), 'Initialization incomplete'",
-            ]
+                "test -f /tmp/a13n/initialized || { echo 'Initialization incomplete' >&2; exit 1; }",
+            ],
+            mutation=False,
         )
 
 

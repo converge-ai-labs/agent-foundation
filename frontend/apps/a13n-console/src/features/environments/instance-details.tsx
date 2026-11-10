@@ -251,21 +251,13 @@ export function EnvironmentPanel({
             <>
               {["e2b", "modal", "daytona", "vercel", "sprites"].includes(
                 provider.data?.type ?? "",
-              ) &&
-                template.data?.config.recipe?.desktop === true && (
-                  <>
-                    {(provider.data?.type === "sprites" ||
-                      template.data.config.recipe?.template === "auto" ||
-                      template.data.config.recipe?.image === "auto" ||
-                      template.data.config.recipe?.snapshot === "auto") && (
-                      <CreationProgress
-                        environment={value}
-                        providerType={provider.data?.type}
-                        etag={detail.data?.etag}
-                      />
-                    )}
-                  </>
-                )}
+              ) && (
+                <CreationProgress
+                  environment={value}
+                  providerType={provider.data?.type}
+                  etag={detail.data?.etag}
+                />
+              )}
               {value.desktop_preview !== "not_configured" &&
                 value.status === "ready" &&
                 !value.failure?.permanent &&
