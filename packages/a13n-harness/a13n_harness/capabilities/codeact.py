@@ -86,17 +86,18 @@ class CodeActCapability(AbstractModelContextCapability):
         if self._stored_values is None:
             raise RuntimeError("CodeAct stored values require an active run")
         index = await self._stored_values.context_index()
-        if not index:
+        block = ModelContextBlock(
+            source_id="codeact.stored_keys",
+            context_group="runtime_state",
+            placement=ModelContextPlacement.REQUEST_EPILOGUE,
+            content=index,
+        )
+        if request.history.matches_latest(block):
             return projection
         return ModelContextProjection(
             blocks=(
                 *projection.blocks,
-                ModelContextBlock(
-                    source_id="codeact.stored_keys",
-                    context_group="runtime_state",
-                    placement=ModelContextPlacement.REQUEST_EPILOGUE,
-                    content=index,
-                ),
+                block,
             )
         )
 

@@ -68,19 +68,20 @@ async def test_identity_is_plain_text_and_preserves_tool_results_and_history() -
         "Use the current Model name when attributing work to a model.\n"
         "</agent-context>"
     )
-    assert _identity(seen[0][-1]) == expected
+    assert _identity(seen[0][-1]).startswith(expected)
     followup = seen[1][-1]
     assert isinstance(followup, ModelRequest)
     assert isinstance(followup.parts[0], ToolReturnPart)
     assert followup.parts[0].content == "advanced"
-    assert _identity(followup).startswith(expected)
-    assert "automatic runtime metadata, not a new user message" in _identity(followup)
-    assert "Continue the existing task only if work remains" in _identity(followup)
-    assert result.run_id not in _identity(followup)
-    assert "harness_run_id" not in _identity(followup)
+    assert not any(item.metadata.source_id == "a13n.agent-context" for item in request_input_content(followup))
+    identity = _identity(seen[0][-1])
+    assert "automatic runtime metadata, not a new user message" in identity
+    assert "Continue the existing task only if work remains" in identity
+    assert result.run_id not in identity
+    assert "harness_run_id" not in identity
     assert ModelMessagesTypeAdapter.dump_json(seen[1][: len(seen[0])]) == ModelMessagesTypeAdapter.dump_json(seen[0])
-    assert any(item.metadata.source_id == "a13n.environment-mounts" for item in request_input_content(followup))
-    assert _identity(result.state.message_history[-2]) == _identity(followup)
+    assert not any(item.metadata.source_id == "a13n.environment-mounts" for item in request_input_content(followup))
+    assert _identity(result.state.message_history[0]) == identity
 
 
 async def test_identity_is_fresh_after_history_replacement_and_escapes_xml_text() -> None:
@@ -126,9 +127,15 @@ async def test_app_projects_current_model_without_inspection_and_refreshes_next_
 
         async def stream(messages, info):
             seen.append((name, deepcopy(messages)))
-            assert "Current Model: " + name + "\n" in _identity(messages[-1])
-            assert "model-primary" not in _identity(messages[-1])
-            assert model_id not in _identity(messages[-1])
+            current_identity = next(
+                _identity(message)
+                for message in reversed(messages)
+                if isinstance(message, ModelRequest)
+                and any(item.metadata.source_id == "a13n.agent-context" for item in request_input_content(message))
+            )
+            assert "Current Model: " + name + "\n" in current_identity
+            assert "model-primary" not in current_identity
+            assert model_id not in current_identity
             if len(seen) == 1:
                 # A new accepted generation must not become this invocation's identity.
                 model_path.write_text(model_path.read_text().replace("openai:gpt-5", "openai:gpt-5-next"))
@@ -154,7 +161,13 @@ async def test_app_projects_current_model_without_inspection_and_refreshes_next_
             assert operation.status is RootOperationStatus.completed, operation
         assert [name for name, _ in seen] == ["gpt-5", "gpt-5", "gpt-5-next"]
         for _, messages in seen:
-            assert f"Current Thread: {thread.thread_id}\n" in _identity(messages[-1])
+            assert any(
+                f"Current Thread: {thread.thread_id}\n" in str(item.value)
+                for message in messages
+                if isinstance(message, ModelRequest)
+                for item in request_input_content(message)
+                if item.metadata.source_id == "a13n.agent-context"
+            )
         # The new identity is appended; old captured requests are not rewritten.
         assert "Current Model: gpt-5\n" in _identity(seen[-1][1][0])
 

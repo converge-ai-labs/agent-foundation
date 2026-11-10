@@ -16,15 +16,19 @@ from pydantic_ai.exceptions import ModelRetry, RunCancelled, ToolFailed, UsageLi
 from pydantic_ai.messages import (
     AgentStreamEvent,
     EnqueuedMessagesEvent,
+    FunctionToolResultEvent,
     ModelResponse,
     PartDeltaEvent,
     PartEndEvent,
     PartStartEvent,
+    RealtimeSessionReconnectEvent,
     RetryPromptPart,
     SpeechPart,
     SpeechPartDelta,
+    TextContent,
     ToolCallPart,
     ToolReturn,
+    ToolReturnPart,
 )
 from pydantic_ai.realtime import (
     AudioRetention,
@@ -38,13 +42,14 @@ from pydantic_ai.usage import RunUsage, UsageLimits
 
 from a13n_harness._run_stream import HarnessRunStream
 from a13n_harness._usage_pricing import _cost_source, price_response
-from a13n_harness.content import native_content
 from a13n_harness.context import AgentContext, RunBindings
 from a13n_harness.environment.sources import EnvironmentEntry
 from a13n_harness.errors import PluginError, RunError
 from a13n_harness.events import enqueued_input_events
 from a13n_harness.model_context import (
+    ModelContextHistory,
     ModelContextInputOrigin,
+    ModelContextProjection,
     ModelContextProjectionRequest,
     ModelContextRequestKind,
     _project_model_context,
@@ -74,6 +79,58 @@ def _semantic_event(event: Any) -> Any | None:
 class _LiveCapability(AbstractCapability[AgentContext]):
     def __init__(self, stream: HarnessLiveStream) -> None:
         self.stream = stream
+        self.initial = ModelContextProjection()
+        self.delivered = ModelContextProjection()
+        self.pending: dict[str, ModelContextProjection] = {}
+        self.ambiguous: set[tuple[str, str | None]] = set()
+        self.unordered: set[tuple[str, str | None]] = set()
+
+    def connected(self) -> None:
+        # Connection instructions are not canonical user input. Keep only this
+        # connection's confirmed baseline; never export it as a watermark.
+        self.delivered = self.initial
+
+    def reconnected(self) -> None:
+        self.delivered = ModelContextProjection()
+        self.pending.clear()
+        self.ambiguous.clear()
+        self.unordered.clear()
+
+    @property
+    def history(self) -> ModelContextHistory:
+        # Pending delivery makes current order unknown, not older content absent.
+        pending = {(block.source_id, block.key) for value in self.pending.values() for block in value.blocks}
+        return ModelContextHistory.from_blocks(self.delivered.blocks, unordered=frozenset(pending | self.unordered))
+
+    def record_pending(self, call_id: str, projection: ModelContextProjection) -> None:
+        identities = {(block.source_id, block.key) for block in projection.blocks}
+        for pending in self.pending.values():
+            self.ambiguous.update(identities & {(block.source_id, block.key) for block in pending.blocks})
+        self.unordered.update(self.ambiguous)
+        if projection.blocks:
+            self.pending[call_id] = projection
+
+    def settled(self, event: FunctionToolResultEvent) -> None:
+        projection = self.pending.pop(event.part.tool_call_id, ModelContextProjection())
+        content = event.content or ()
+        if isinstance(event.part, ToolReturnPart) and event.part.outcome == "success":
+            confirmed = tuple(
+                block
+                for block in projection.blocks
+                if any(
+                    isinstance(item, TextContent)
+                    and item.content == block.content
+                    and item.metadata == block.content_item().metadata.model_dump(mode="json")
+                    for item in content
+                )
+            )
+            self.delivered = ModelContextProjection(blocks=(*self.delivered.blocks, *confirmed))
+            for block in confirmed:
+                identity = (block.source_id, block.key)
+                if identity not in self.ambiguous:
+                    self.unordered.discard(identity)
+        remaining = {(block.source_id, block.key) for pending in self.pending.values() for block in pending.blocks}
+        self.ambiguous.intersection_update(remaining)
 
     def get_instructions(self):
         return self.instructions
@@ -96,6 +153,7 @@ class _LiveCapability(AbstractCapability[AgentContext]):
                 input_origin=ModelContextInputOrigin.USER,
             ),
         )
+        self.initial = projection
         return "\n\n".join(block.content for block in projection.blocks)
 
     async def wrap_tool_execute(
@@ -118,12 +176,16 @@ class _LiveCapability(AbstractCapability[AgentContext]):
             ModelContextProjectionRequest(
                 kind=ModelContextRequestKind.TOOL_RESULTS,
                 tool_call_ids=(call_id,),
+                history=self.history,
             ),
         )
+        self.record_pending(call_id, projection)
         if not projection.blocks:
             return result
-        extra = native_content([block.content_item() for block in projection.blocks])
-        assert isinstance(extra, list)
+        extra = [
+            TextContent(block.content, metadata=block.content_item().metadata.model_dump(mode="json"))
+            for block in projection.blocks
+        ]
         # Native realtime sends supplemental content together with the tool result,
         # before automatic continuation. Result events occur too late for this.
         if isinstance(result, ToolReturn):
@@ -376,10 +438,17 @@ class HarnessLiveStream(HarnessRunStream[None]):
                 message_history=list(self._latest_messages),
             ).session(audio_retention=self._audio_retention) as session:
                 self._session = session
+                bridge.connected()
                 self._session_ready.set()
                 if initial_input is not None:
                     await session.send(initial_input)
                 async for event in session:
+                    # Native session result events follow wire send. Capability
+                    # observations and prepared results are not delivery receipts.
+                    if isinstance(event, RealtimeSessionReconnectEvent):
+                        bridge.reconnected()
+                    if isinstance(event, FunctionToolResultEvent):
+                        bridge.settled(event)
                     if isinstance(event, EnqueuedMessagesEvent):
                         await self.context._steering.mark_applied(event.enqueue_id)
                     self._refresh_live_messages()

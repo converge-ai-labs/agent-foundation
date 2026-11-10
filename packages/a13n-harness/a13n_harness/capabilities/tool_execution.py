@@ -69,19 +69,33 @@ class ToolExecutionCapability(AbstractModelContextCapability):
         runtime = ctx.deps.tool_execution
         if runtime is None:
             return projection
-        records = await runtime.summarize(ctx.deps.thread_id)
-        if not records:
+        # Active executions and undelivered results form the leading priority
+        # groups. One lookahead detects truncation without scanning old history.
+        records = [
+            record
+            for record in await runtime.summarize(ctx.deps.thread_id, limit=21)
+            if not record.terminal or (record.result_available and not record.delivery_acknowledged)
+        ]
+        summary = json.dumps([record.model_dump(mode="json") for record in records[:20]], ensure_ascii=True)
+        if len(records) > 20:
+            summary += "\nMore executions require attention; use tool_execution_info to inspect the remaining records."
+        elif not records:
+            summary += (
+                "\nFinished executions without retained results are no longer listed. "
+                "Use tool_execution_info to inspect their final status; absence does not establish success."
+            )
+        block = ModelContextBlock(
+            source_id="tool_execution.summary",
+            context_group="runtime_state",
+            placement=ModelContextPlacement.REQUEST_EPILOGUE,
+            content=f"Tool executions requiring attention (status only; results are not consumed): {summary}",
+        )
+        if request.history.matches_latest(block):
             return projection
-        summary = json.dumps([record.model_dump(mode="json") for record in records], ensure_ascii=True)
         return ModelContextProjection(
             blocks=(
                 *projection.blocks,
-                ModelContextBlock(
-                    source_id="tool_execution.summary",
-                    context_group="runtime_state",
-                    placement=ModelContextPlacement.REQUEST_EPILOGUE,
-                    content=f"Tool executions (status only; results are not consumed): {summary}",
-                ),
+                block,
             ),
         )
 
