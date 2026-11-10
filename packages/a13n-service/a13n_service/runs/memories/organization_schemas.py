@@ -87,7 +87,23 @@ class OrganizationCandidate(BaseModel):
     candidate_seq: int | None
     target_seq: int | None
     changes: list[CandidateChange]
+    files: list[str]
     application: CandidateApplication | None = None
+
+
+class CandidateFile(BaseModel):
+    path: str
+    candidate_seq: int
+    baseline: str | None
+    candidate: str | None
+
+
+class CandidateReplacement(BaseModel):
+    candidate_seq: int
+    target_seq: int
+    deletions: list[str]
+    overwrites: list[str]
+    restorations: list[str]
 
 
 class CandidateDiff(BaseModel):

@@ -1,9 +1,8 @@
-import { ArrowLeftIcon, ArrowRightIcon } from "@phosphor-icons/react";
+import { ArrowRightIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
-import { Button, DisclosureSection } from "a13n-ui";
-import { useState } from "react";
+import { Button } from "a13n-ui";
 import { useTranslation } from "react-i18next";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import type { Schema } from "../../shared/api";
@@ -16,8 +15,6 @@ import {
 } from "../../shared/collection";
 import { ErrorNotice, Loading, Timestamp } from "../../shared/feedback";
 import { Section } from "../../shared/page";
-import { runPath } from "../conversations/api";
-import { OrganizationCandidate } from "./organization-candidate";
 import { OrganizationRequest } from "./organization-request";
 import {
   organizationQueries,
@@ -40,66 +37,9 @@ export function MemoryOrganizations({
   const query = useQuery(
     organizationQueries(client, workspace.id).page(target, page.cursor),
   );
-  const [selected, setSelected] = useState<Schema["MemoryOrganization"]>();
-  if (selected)
-    return (
-      <div className="grid min-w-0 gap-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setSelected(undefined)}
-          >
-            <ArrowLeftIcon size={14} />
-            {t("Back to organization tasks")}
-          </Button>
-          <Link
-            className="text-xs underline"
-            to={runPath(basePath, selected, "debug")}
-          >
-            {t("Open run and usage")}
-          </Link>
-        </div>
-        <p className="whitespace-pre-wrap break-words text-sm text-muted-foreground">
-          {selected.request.instructions}
-        </p>
-        {selected.candidate_memory_id ? (
-          <OrganizationCandidate key={selected.id} id={selected.id} />
-        ) : (
-          <p className="text-sm text-muted-foreground">
-            {t(
-              "This task writes directly. Inspect file history for committed changes.",
-            )}
-          </p>
-        )}
-        <DisclosureSection title={t("Task context")}>
-          <dl className="grid gap-2 text-xs sm:grid-cols-2">
-            <div>
-              <dt className="text-muted-foreground">{t("Organizer model")}</dt>
-              <dd>{selected.request.model}</dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground">
-                {t("Frozen source runs")}
-              </dt>
-              <dd>{selected.sources.length}</dd>
-            </div>
-          </dl>
-          {selected.sources.length > 0 && (
-            <ul className="mt-4 grid gap-2 text-xs">
-              {selected.sources.map((source) => (
-                <li key={source.run_id}>
-                  <Link to={runPath(basePath, source, "debug")}>
-                    {source.run_id}
-                  </Link>{" "}
-                  · <Timestamp value={source.sealed_at} />
-                </li>
-              ))}
-            </ul>
-          )}
-        </DisclosureSection>
-      </div>
-    );
+  const navigate = useNavigate();
+  const taskPath = (item: Schema["MemoryOrganization"]) =>
+    `${basePath}/memory-organizations/${item.id}/review`;
   return (
     <div className="grid gap-8">
       <Section
@@ -114,7 +54,7 @@ export function MemoryOrganizations({
             <OrganizationRequest
               target={target}
               model={model}
-              onAccepted={setSelected}
+              onAccepted={(item) => navigate(taskPath(item))}
             />
           )
         }
@@ -132,13 +72,12 @@ export function MemoryOrganizations({
                   label: t("Task"),
                   tone: "primary",
                   render: (item) => (
-                    <button
-                      type="button"
+                    <Link
                       className="block max-w-[48ch] truncate text-left hover:underline"
-                      onClick={() => setSelected(item)}
+                      to={taskPath(item)}
                     >
                       {item.request.instructions}
-                    </button>
+                    </Link>
                   ),
                 },
                 {
@@ -157,7 +96,7 @@ export function MemoryOrganizations({
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => setSelected(item)}
+                      render={<Link to={taskPath(item)} />}
                     >
                       {t(
                         item.candidate_memory_id

@@ -131,6 +131,7 @@ export function MemoryFiles({ memory }: { memory: Memory }) {
         count={files.data.length}
         nodes={nodes}
         selected={entry?.path ?? ""}
+        initialFile={!!requested}
         onSelect={select}
         marker={(path) =>
           memory.always_load.includes(path) && (

@@ -1,6 +1,8 @@
 """Composable organization requests; execution control stays on the ordinary Run API."""
 
-from fastapi import APIRouter, Response
+from typing import Annotated
+
+from fastapi import APIRouter, Query, Response
 
 from a13n_service.infra.http import IfMatch, PageLimit, tagged
 from a13n_service.resources.memories.schemas import OrganizationPolicy
@@ -8,6 +10,8 @@ from a13n_service.runs.memories import automation, candidates, organizations
 from a13n_service.runs.memories.organization_schemas import (
     CandidateApply,
     CandidateDiff,
+    CandidateFile,
+    CandidateReplacement,
     MemoryAutomation,
     MemoryOrganization,
     MemoryOrganizationPage,
@@ -73,6 +77,38 @@ async def get_organization_candidate_diff(
     runtime: CurrentRuntime, workspace_id: WorkspaceId, organization_id: str, actor: Actor, path: str
 ) -> CandidateDiff:
     return await candidates.diff(runtime, actor, workspace_id, organization_id, path)
+
+
+@router.get(
+    "/memory-organizations/{organization_id}/candidate/file",
+    response_model=CandidateFile,
+    openapi_extra={"x-a13n-mcp": True},
+)
+async def get_organization_candidate_file(
+    runtime: CurrentRuntime,
+    workspace_id: WorkspaceId,
+    organization_id: str,
+    actor: Actor,
+    path: str,
+    candidate_seq: Annotated[int, Query(ge=0)],
+) -> CandidateFile:
+    return await candidates.file(runtime, actor, workspace_id, organization_id, path, candidate_seq)
+
+
+@router.get(
+    "/memory-organizations/{organization_id}/candidate/replacement",
+    response_model=CandidateReplacement,
+    openapi_extra={"x-a13n-mcp": True},
+)
+async def get_organization_candidate_replacement(
+    runtime: CurrentRuntime,
+    workspace_id: WorkspaceId,
+    organization_id: str,
+    actor: Actor,
+    candidate_seq: Annotated[int, Query(ge=0)],
+    target_seq: Annotated[int, Query(ge=0)],
+) -> CandidateReplacement:
+    return await candidates.replacement(runtime, actor, workspace_id, organization_id, candidate_seq, target_seq)
 
 
 @router.post("/memory-organizations/{organization_id}/candidate/apply", response_model=OrganizationCandidate)

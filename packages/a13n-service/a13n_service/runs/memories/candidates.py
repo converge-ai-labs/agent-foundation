@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra.db import now, transaction
-from a13n_service.infra.errors import conflict
+from a13n_service.infra.errors import conflict, not_found
 from a13n_service.resources.memories import store
 from a13n_service.resources.memories.files import refusals
 from a13n_service.resources.memories.guidance import FileMemoryGuidance
@@ -22,6 +22,8 @@ from a13n_service.runs.memories.organization_schemas import (
     CandidateApply,
     CandidateChange,
     CandidateDiff,
+    CandidateFile,
+    CandidateReplacement,
     OrganizationCandidate,
 )
 from a13n_service.runs.memories.organization_tables import OrganizationRow
@@ -118,6 +120,7 @@ async def _view(
         candidate_seq=None if candidate is None else candidate.seq,
         target_seq=None if target is None else target.seq,
         changes=changes,
+        files=sorted(baseline.keys() | files.keys()) if candidate is not None else [],
         application=None if row.application is None else CandidateApplication.model_validate(row.application),
     )
 
@@ -157,6 +160,63 @@ async def diff(runtime: Runtime, actor: Principal, workspace_id: str, identifier
         preview = list(islice(display_lines, 2001))
         text = "".join(preview[:2000])
         return CandidateDiff(path=path, diff=text[:65536], truncated=len(text) > 65536 or len(preview) > 2000)
+
+
+async def file(
+    runtime: Runtime, actor: Principal, workspace_id: str, identifier: str, path: str, candidate_seq: int
+) -> CandidateFile:
+    """Read both full sides from the reviewed tree, never from the moving target."""
+    async with transaction(runtime.storage) as session:
+        scope = await workspace_scope(session, actor, workspace_id, "read")
+        row = await _load(session, actor, scope, identifier, "read")
+        assert row.baseline is not None and row.candidate_memory_id is not None
+        with refusals(row.memory_id, runtime.settings.memory):
+            path = validate_path(path, store.file_format(runtime.settings.memory))
+        stores = await _stores(session, row)
+        current = stores.get(row.candidate_memory_id)
+        if current is None:
+            raise conflict(OrganizationRow.KIND, row.id, "candidate_unavailable")
+        if current.seq != candidate_seq:
+            raise conflict(OrganizationRow.KIND, row.id, "review_changed")
+        entry = await session.scalar(
+            select(MemoryFileRow).where(MemoryFileRow.memory_id == row.candidate_memory_id, MemoryFileRow.path == path)
+        )
+        baseline = row.baseline["files"].get(path)
+        if baseline is None and entry is None:
+            raise not_found("memory_file", path)
+        return CandidateFile(
+            path=path, candidate_seq=current.seq, baseline=baseline, candidate=None if entry is None else entry.content
+        )
+
+
+async def replacement(
+    runtime: Runtime, actor: Principal, workspace_id: str, identifier: str, candidate_seq: int, target_seq: int
+) -> CandidateReplacement:
+    """Name destructive effects against exactly the pair being confirmed."""
+    async with transaction(runtime.storage) as session:
+        scope = await workspace_scope(session, actor, workspace_id, "read")
+        row = await _load(session, actor, scope, identifier, "read")
+        assert row.baseline is not None and row.candidate_memory_id is not None
+        stores = await _stores(session, row)
+        target, current = stores.get(row.memory_id), stores.get(row.candidate_memory_id)
+        if target is None or current is None:
+            raise conflict(OrganizationRow.KIND, row.id, "candidate_unavailable")
+        if current.seq != candidate_seq or target.seq != target_seq:
+            raise conflict(OrganizationRow.KIND, row.id, "review_changed")
+        proposed = await contents(session, row.candidate_memory_id)
+        saved = await contents(session, row.memory_id)
+        baseline = row.baseline["files"]
+        return CandidateReplacement(
+            candidate_seq=current.seq,
+            target_seq=target.seq,
+            deletions=sorted(saved.keys() - proposed.keys()),
+            restorations=sorted((baseline.keys() & proposed.keys()) - saved.keys()),
+            overwrites=sorted(
+                path
+                for path in saved.keys() & proposed.keys()
+                if saved[path] != proposed[path] and saved[path] != baseline.get(path)
+            ),
+        )
 
 
 async def apply(

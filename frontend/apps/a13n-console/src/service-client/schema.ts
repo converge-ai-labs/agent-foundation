@@ -2255,6 +2255,40 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/memory-organizations/{organization_id}/candidate/file": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Organization Candidate File */
+    get: operations["get_organization_candidate_file"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/memory-organizations/{organization_id}/candidate/replacement": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Organization Candidate Replacement */
+    get: operations["get_organization_candidate_replacement"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/memory-providers": {
     parameters: {
       query?: never;
@@ -6345,6 +6379,30 @@ export interface components {
       path: string;
       /** Truncated */
       truncated: boolean;
+    };
+    /** CandidateFile */
+    CandidateFile: {
+      /** Baseline */
+      baseline: string | null;
+      /** Candidate */
+      candidate: string | null;
+      /** Candidate Seq */
+      candidate_seq: number;
+      /** Path */
+      path: string;
+    };
+    /** CandidateReplacement */
+    CandidateReplacement: {
+      /** Candidate Seq */
+      candidate_seq: number;
+      /** Deletions */
+      deletions: string[];
+      /** Overwrites */
+      overwrites: string[];
+      /** Restorations */
+      restorations: string[];
+      /** Target Seq */
+      target_seq: number;
     };
     /** Capabilities */
     Capabilities: {
@@ -10956,6 +11014,8 @@ export interface components {
       candidate_seq: number | null;
       /** Changes */
       changes: components["schemas"]["CandidateChange"][];
+      /** Files */
+      files: string[];
       /** Memory Id */
       memory_id: string;
       /** Organization Id */
@@ -19792,6 +19852,66 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["OrganizationCandidate"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_organization_candidate_file: {
+    parameters: {
+      query: {
+        path: string;
+        candidate_seq: number;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["CandidateFile"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_organization_candidate_replacement: {
+    parameters: {
+      query: {
+        candidate_seq: number;
+        target_seq: number;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["CandidateReplacement"];
         };
       };
       400: components["responses"]["Error"];

@@ -276,7 +276,7 @@ it("opens SKILL.md by default, switches files without downloading again, and ope
   const { user, requests } = setup("ws_files");
   await screen.findByRole("heading", { name: "Current instructions" });
   expect(screen.queryByRole("tab", { name: "Settings" })).toBeNull();
-  await user.click(screen.getByRole("button", { name: "checklist.md" }));
+  await user.click(screen.getByRole("treeitem", { name: "checklist.md" }));
   await screen.findByRole("heading", { name: "Current checklist" });
   expect(
     requests.filter((request) =>
@@ -286,8 +286,8 @@ it("opens SKILL.md by default, switches files without downloading again, and ope
   await user.click(screen.getByRole("tab", { name: /Versions/ }));
   await user.click(await screen.findByText("v1"));
   await screen.findByRole("heading", { name: "Earlier instructions" });
-  expect(screen.queryByRole("button", { name: "checklist.md" })).toBeNull();
-  await user.click(screen.getByRole("button", { name: "notes.txt" }));
+  expect(screen.queryByRole("treeitem", { name: "checklist.md" })).toBeNull();
+  await user.click(screen.getByRole("treeitem", { name: "notes.txt" }));
   await screen.findByText("Earlier notes");
   await user.click(screen.getByRole("link", { name: "View default version" }));
   await screen.findByRole("heading", { name: "Current instructions" });

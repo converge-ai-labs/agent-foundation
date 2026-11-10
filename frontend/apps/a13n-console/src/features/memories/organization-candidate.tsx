@@ -1,42 +1,71 @@
 import {
   ArrowLeftIcon,
   ArrowRightIcon,
-  CheckIcon,
-  ArrowSquareOutIcon,
+  CheckCircleIcon,
   ArrowsClockwiseIcon,
+  DotsThreeIcon,
   FilePlusIcon,
   FileMinusIcon,
   PencilSimpleIcon,
+  InfoIcon,
+  TrashIcon,
+  ArrowsLeftRightIcon,
 } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, DisclosureSection, ModalFrame } from "a13n-ui";
+import {
+  Button,
+  Menu,
+  MenuItem,
+  MenuPopup,
+  MenuSeparator,
+  MenuTrigger,
+  ModalFrame,
+  SegmentedControl,
+} from "a13n-ui";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { data, type Schema } from "../../shared/api";
-import { Confirm } from "../../shared/dialogs";
-import { Patch } from "../../shared/diff";
 import {
   ErrorNotice,
   Loading,
   StatePill,
   Timestamp,
 } from "../../shared/feedback";
-import { FileBody, FileBrowser, fileTree } from "../../shared/files";
+import {
+  FileBody,
+  FileBrowser,
+  FileHeader,
+  FileText,
+  TextReader,
+  fileTree,
+  isMarkdown,
+} from "../../shared/files";
 import { invalidateMemories } from "./api";
 import { organizationQueries } from "./organizations-api";
+import { ReviewDialog, type ReviewAction } from "./organization-review-dialog";
 import styles from "./organization-review.module.css";
 
 type Candidate = Schema["OrganizationCandidate"];
-type ApplyMode = "checked" | "replace_all";
 
-export function OrganizationCandidate({ id }: { id: string }) {
-  return <CandidateReview key={id} id={id} />;
+export function OrganizationCandidate({
+  id,
+  fullHeight = false,
+}: {
+  id: string;
+  fullHeight?: boolean;
+}) {
+  return <CandidateReview key={id} id={id} fullHeight={fullHeight} />;
 }
-
-function CandidateReview({ id }: { id: string }) {
+function CandidateReview({
+  id,
+  fullHeight,
+}: {
+  id: string;
+  fullHeight: boolean;
+}) {
   const client = useClient(),
     { workspace } = useWorkspace(),
     { t } = useTranslation();
@@ -55,7 +84,7 @@ function CandidateReview({ id }: { id: string }) {
     if (result.isSuccess) setRevision((value) => value + 1);
   }
   return (
-    <div className={styles.review}>
+    <div className={styles.review} data-full-height={fullHeight || undefined}>
       <ErrorNotice error={query.error} retry={() => void reload()} />
       {!loaded
         ? query.isFetching && <Loading variant="detail" />
@@ -65,6 +94,7 @@ function CandidateReview({ id }: { id: string }) {
               initial={query.data}
               reload={reload}
               reloading={query.isFetching}
+              fullHeight={fullHeight}
             />
           )}
       {!query.data && !query.isPending && <p>{t("Candidate unavailable")}</p>}
@@ -76,43 +106,83 @@ function CandidateSnapshot({
   initial,
   reload,
   reloading,
+  fullHeight,
 }: {
   initial: Candidate;
   reload: () => Promise<void>;
   reloading: boolean;
+  fullHeight: boolean;
 }) {
-  // Metadata refreshes must not move the basis of an in-progress review.
+  // Background metadata updates never move the basis of an open review.
   const [candidate] = useState(initial);
-  const [path, setPath] = useState(initial.changes[0]?.path ?? "");
+  const [search, setSearch] = useSearchParams();
+  const [allFiles, setAllFiles] = useState(() => {
+    const requested = search.get("path");
+    return (
+      !!requested &&
+      initial.files.includes(requested) &&
+      !initial.changes.some((item) => item.path === requested)
+    );
+  });
   const [reviewed, setReviewed] = useState<Set<string>>(() => new Set());
-  const [confirmation, setConfirmation] = useState<ApplyMode>();
+  const [confirmation, setConfirmation] = useState<ReviewAction>();
+  const [details, setDetails] = useState(false);
   const client = useClient(),
     cache = useQueryClient();
   const { workspace, basePath, can } = useWorkspace(),
     { t } = useTranslation();
-  const diff = useQuery(
-    organizationQueries(client, workspace.id).diff(
+  const paths = allFiles
+    ? candidate.files
+    : candidate.changes.map((item) => item.path);
+  const requested = search.get("path");
+  const path = paths.includes(requested ?? "") ? requested! : (paths[0] ?? "");
+  function select(path: string) {
+    setSearch(
+      (current) => {
+        const next = new URLSearchParams(current);
+        next.set("path", path);
+        return next;
+      },
+      { replace: true },
+    );
+  }
+  const file = useQuery(
+    organizationQueries(client, workspace.id).file(
       candidate.organization_id,
       path,
       candidate.candidate_seq,
     ),
   );
-  const publish = useMutation({
-    mutationFn: (mode: ApplyMode) =>
-      client
-        .workspace(workspace.id)
-        .POST(
-          "/api/v1/memory-organizations/{organization_id}/candidate/apply",
-          {
-            params: { path: { organization_id: candidate.organization_id } },
-            body: {
-              mode,
-              candidate_seq: candidate.candidate_seq!,
-              target_seq: candidate.target_seq!,
-            },
-          },
-        )
-        .then(data),
+  const action = useMutation({
+    mutationFn: (mode: ReviewAction) =>
+      mode === "discard"
+        ? client
+            .workspace(workspace.id)
+            .POST(
+              "/api/v1/memory-organizations/{organization_id}/candidate/discard",
+              {
+                params: {
+                  path: { organization_id: candidate.organization_id },
+                },
+              },
+            )
+            .then(data)
+        : client
+            .workspace(workspace.id)
+            .POST(
+              "/api/v1/memory-organizations/{organization_id}/candidate/apply",
+              {
+                params: {
+                  path: { organization_id: candidate.organization_id },
+                },
+                body: {
+                  mode,
+                  candidate_seq: candidate.candidate_seq!,
+                  target_seq: candidate.target_seq!,
+                },
+              },
+            )
+            .then(data),
     onSuccess: () => {
       setConfirmation(undefined);
       void invalidateMemories(cache, workspace.id);
@@ -124,17 +194,19 @@ function CandidateSnapshot({
     candidate.status === "ready" &&
     candidate.candidate_seq !== null &&
     candidate.target_seq !== null;
+  const blocked = !!action.error || action.isPending || reloading;
   const operations = {
     create: t("Added"),
     update: t("Modified"),
     delete: t("Deleted"),
   };
-  const operationIcons = {
+  const letters = { create: "A", update: "M", delete: "D" };
+  const icons = {
     create: FilePlusIcon,
     update: PencilSimpleIcon,
     delete: FileMinusIcon,
   };
-  const statusLabels = {
+  const labels = {
     generating: t("Generating"),
     ready: t("Ready for review"),
     failed: t("Generation failed"),
@@ -144,29 +216,16 @@ function CandidateSnapshot({
   };
   const index = candidate.changes.findIndex((item) => item.path === path);
   const selected = candidate.changes[index];
-  const filesUrl = `${basePath}/memories/${candidate.memory_id}`;
   const targetUrl = `${basePath}/memories/${candidate.target_memory_id}`;
-  const counts = (["create", "update", "delete"] as const).map((operation) => ({
-    operation,
-    count: candidate.changes.filter((item) => item.operation === operation)
-      .length,
-  }));
   return (
     <>
       <header className={styles.heading}>
-        <div>
-          <div className={styles.title}>
-            <h3>{t("Candidate review")}</h3>
-            <StatePill
-              state={candidate.status}
-              label={statusLabels[candidate.status]}
-            />
-          </div>
-          {can("write") && ready && (
-            <p>
-              {t("Your memory stays unchanged until you apply all changes.")}
-            </p>
-          )}
+        <div className={styles.title}>
+          <h1>{t("Candidate review")}</h1>
+          <StatePill
+            state={candidate.status}
+            label={labels[candidate.status]}
+          />
         </div>
         <div className={styles.headingActions}>
           <Button
@@ -175,16 +234,56 @@ function CandidateSnapshot({
             aria-label={t("Reload review")}
             title={t("Reload review")}
             loading={reloading}
-            disabled={publish.isPending}
+            disabled={action.isPending}
             onClick={() => void reload()}
           >
             <ArrowsClockwiseIcon />
           </Button>
+          <Menu>
+            <MenuTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={t("Review actions")}
+                  title={t("Review actions")}
+                />
+              }
+            >
+              <DotsThreeIcon />
+            </MenuTrigger>
+            <MenuPopup align="end">
+              <MenuItem onClick={() => setDetails(true)}>
+                <InfoIcon />
+                {t("Review details")}
+              </MenuItem>
+              {can("write") && (ready || candidate.status === "failed") && (
+                <>
+                  <MenuSeparator />
+                  {ready && (
+                    <MenuItem
+                      disabled={blocked}
+                      onClick={() => setConfirmation("replace_all")}
+                    >
+                      <ArrowsLeftRightIcon />
+                      {t("Replace entire target")}
+                    </MenuItem>
+                  )}
+                  <MenuItem
+                    variant="destructive"
+                    disabled={blocked}
+                    onClick={() => setConfirmation("discard")}
+                  >
+                    <TrashIcon />
+                    {t("Discard candidate")}
+                  </MenuItem>
+                </>
+              )}
+            </MenuPopup>
+          </Menu>
           {can("write") && ready && (
             <Button
-              disabled={
-                changed || !!publish.error || publish.isPending || reloading
-              }
+              disabled={changed || blocked}
               onClick={() => setConfirmation("checked")}
             >
               {t("Apply all changes")}
@@ -228,32 +327,36 @@ function CandidateSnapshot({
           <Link to={targetUrl}>{t("View updated memory")}</Link>
         </div>
       )}
-      {ready && (changed || publish.error) && (
-        <div className={styles.warning} role="status">
-          <strong>
-            {t(
-              publish.error
-                ? "Review needs attention"
-                : "Target memory has changed",
-            )}
-          </strong>
-          <p>
-            {t(
-              publish.error
-                ? "Application was not confirmed. Your review is preserved. Reload to check the current state before applying again."
-                : "These changes were prepared from an older version. Start a new task using the current memory, or inspect the target before considering a full replacement.",
-            )}
-          </p>
-          <Link to={targetUrl} target="_blank" rel="noreferrer">
-            {t("Inspect current target")}
-          </Link>
-          {publish.error && <ErrorNotice error={publish.error} />}
-        </div>
-      )}
+      {(ready || candidate.status === "failed") &&
+        (changed || action.error) && (
+          <div className={styles.warning} role="status">
+            <strong>
+              {t(
+                action.error
+                  ? "Review needs attention"
+                  : "Target memory has changed",
+              )}
+            </strong>
+            <p>
+              {t(
+                action.error
+                  ? "Application was not confirmed. Your review is preserved. Reload to check the current state before applying again."
+                  : "These changes were prepared from an older version. Start a new task using the current memory, or inspect the target before considering a full replacement.",
+              )}
+            </p>
+            <Link to={targetUrl} target="_blank" rel="noreferrer">
+              {t("Inspect current target")}
+            </Link>
+            {action.error && <ErrorNotice error={action.error} />}
+          </div>
+        )}
       <div className={styles.summary}>
         <div className={styles.counts} aria-label={t("Change summary")}>
-          {counts.map(({ operation, count }) => {
-            const Icon = operationIcons[operation];
+          {(["create", "update", "delete"] as const).map((operation) => {
+            const Icon = icons[operation],
+              count = candidate.changes.filter(
+                (item) => item.operation === operation,
+              ).length;
             return (
               <span
                 key={operation}
@@ -261,7 +364,8 @@ function CandidateSnapshot({
                 title={operations[operation]}
                 aria-label={`${operations[operation]}: ${count}`}
               >
-                <Icon size={15} aria-hidden="true" /> {count}
+                <Icon size={15} aria-hidden="true" />
+                {count}
               </span>
             );
           })}
@@ -272,130 +376,130 @@ function CandidateSnapshot({
             total: candidate.changes.length,
           })}
         </span>
+        <SegmentedControl
+          size="sm"
+          label={t("File filter")}
+          value={allFiles ? "all" : "changed"}
+          onValueChange={(value) => setAllFiles(value === "all")}
+          options={[
+            { value: "changed", label: t("Changed files") },
+            { value: "all", label: t("All files") },
+          ]}
+        />
       </div>
-      {candidate.changes.length ? (
+      {paths.length ? (
         <FileBrowser
-          label={t("Changed files")}
-          count={candidate.changes.length}
-          nodes={fileTree(candidate.changes)}
+          label={t(allFiles ? "All files" : "Changed files")}
+          count={paths.length}
+          nodes={fileTree(paths.map((path) => ({ path })))}
           selected={path}
-          onSelect={setPath}
-          marker={(file) => {
-            const operation = candidate.changes.find(
-              (item) => item.path === file,
-            )!.operation;
-            const Icon = operationIcons[operation];
+          onSelect={select}
+          fullHeight={fullHeight}
+          initialFile={!!requested}
+          marker={(path) => {
+            const change = candidate.changes.find((item) => item.path === path);
             return (
               <span
                 className={styles.fileMarker}
-                data-operation={operation}
-                title={operations[operation]}
+                data-operation={change?.operation}
               >
-                <Icon aria-label={operations[operation]} size={14} />
-                {reviewed.has(file) && (
-                  <CheckIcon aria-label={t("Reviewed")} size={12} />
+                {change && (
+                  <span
+                    aria-label={operations[change.operation]}
+                    title={operations[change.operation]}
+                  >
+                    {letters[change.operation]}
+                  </span>
+                )}
+                {reviewed.has(path) && (
+                  <CheckCircleIcon aria-label={t("Reviewed")} size={14} />
                 )}
               </span>
             );
           }}
         >
-          <div className={styles.fileHeading}>
-            <div>
-              <strong title={path}>{path}</strong>
-              <span>{selected && operations[selected.operation]}</span>
-            </div>
-            <div className={styles.navigation}>
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                aria-label={t(
-                  reviewed.has(path) ? "Reviewed" : "Mark as reviewed",
-                )}
-                title={t(reviewed.has(path) ? "Reviewed" : "Mark as reviewed")}
-                aria-pressed={reviewed.has(path)}
-                disabled={!diff.data || diff.isError}
-                onClick={() =>
-                  setReviewed((current) => {
-                    const next = new Set(current);
-                    if (next.has(path)) next.delete(path);
-                    else next.add(path);
-                    return next;
-                  })
-                }
-              >
-                <CheckIcon />
-              </Button>
-              {selected?.operation !== "delete" && (
+          <FileHeader
+            path={path}
+            marker={
+              <span className={styles.fileOperation}>
+                {selected ? operations[selected.operation] : t("Unchanged")}
+              </span>
+            }
+            actions={
+              <div className={styles.navigation}>
                 <Button
                   variant="ghost"
                   size="icon-xs"
-                  aria-label={t("Inspect candidate files")}
-                  title={t("Inspect candidate files")}
-                  render={
-                    <Link
-                      to={`${filesUrl}?file=${encodeURIComponent(path)}`}
-                      target="_blank"
-                      rel="noreferrer"
-                    />
+                  aria-label={t(
+                    reviewed.has(path) ? "Reviewed" : "Mark as reviewed",
+                  )}
+                  title={t(
+                    reviewed.has(path) ? "Reviewed" : "Mark as reviewed",
+                  )}
+                  aria-pressed={reviewed.has(path)}
+                  disabled={!selected || !file.data || file.isError}
+                  onClick={() =>
+                    setReviewed((current) => {
+                      const next = new Set(current);
+                      if (next.has(path)) next.delete(path);
+                      else next.add(path);
+                      return next;
+                    })
                   }
                 >
-                  <ArrowSquareOutIcon />
+                  <CheckCircleIcon
+                    weight={reviewed.has(path) ? "fill" : "regular"}
+                  />
                 </Button>
-              )}
-              <span>
-                {index + 1} / {candidate.changes.length}
-              </span>
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                aria-label={t("Previous file")}
-                title={t("Previous file")}
-                disabled={index <= 0}
-                onClick={() => setPath(candidate.changes[index - 1].path)}
-              >
-                <ArrowLeftIcon />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                aria-label={t("Next file")}
-                title={t("Next file")}
-                disabled={index >= candidate.changes.length - 1}
-                onClick={() => setPath(candidate.changes[index + 1].path)}
-              >
-                <ArrowRightIcon />
-              </Button>
-            </div>
-          </div>
+                <span>
+                  {index >= 0
+                    ? `${index + 1} / ${candidate.changes.length}`
+                    : "—"}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label={t("Previous file")}
+                  title={t("Previous file")}
+                  disabled={index <= 0}
+                  onClick={() => select(candidate.changes[index - 1].path)}
+                >
+                  <ArrowLeftIcon />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label={t("Next file")}
+                  title={t("Next file")}
+                  disabled={
+                    index >= candidate.changes.length - 1 ||
+                    !candidate.changes.length
+                  }
+                  onClick={() => select(candidate.changes[index + 1].path)}
+                >
+                  <ArrowRightIcon />
+                </Button>
+              </div>
+            }
+          />
           <FileBody>
-            <ErrorNotice error={diff.error} retry={() => void diff.refetch()} />
-            {diff.isPending ? (
+            <ErrorNotice error={file.error} retry={() => void file.refetch()} />
+            {file.isPending ? (
               <Loading variant="code" />
             ) : (
-              diff.data && (
-                <>
-                  <Patch
-                    hunks={[diff.data.diff]}
-                    expanded
-                    beforeLabel={t("Before: saved baseline")}
-                    afterLabel={t("After: candidate")}
-                  />
-                  {diff.data.truncated && (
-                    <p className={styles.warning} role="status">
-                      {t(
-                        "Diff truncated. Inspect the complete candidate file before applying.",
-                      )}
-                    </p>
-                  )}
-                </>
-              )
+              file.data && <CandidateFile key={path} file={file.data} />
             )}
           </FileBody>
         </FileBrowser>
       ) : (
         <p className={styles.notice}>{t("No candidate file changes.")}</p>
       )}
-      <DisclosureSection title={t("Review details")}>
+      <ModalFrame
+        open={details}
+        onOpenChange={setDetails}
+        title={t("Review details")}
+        closeLabel={t("Close")}
+      >
         <dl className={styles.sequences}>
           <div>
             <dt>{t("Baseline")}</dt>
@@ -415,130 +519,96 @@ function CandidateSnapshot({
             "The diff compares the saved baseline with this candidate. Applying checks both reviewed versions; it never merges changes automatically.",
           )}
         </p>
-      </DisclosureSection>
-      {can("write") && (ready || candidate.status === "failed") && (
-        <DisclosureSection title={t("Other actions")}>
-          <div className={styles.otherActions}>
-            {ready && (
-              <div>
-                <p>
-                  {t(
-                    "Replace the entire target tree with this candidate, deleting target-only files. No automatic merge.",
-                  )}
-                </p>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={!!publish.error || publish.isPending || reloading}
-                  onClick={() => setConfirmation("replace_all")}
-                >
-                  {t("Replace entire target")}
-                </Button>
-              </div>
-            )}
-            <div>
-              <p>
-                {t(
-                  "Prevent publication of this candidate. Its files remain available for inspection.",
-                )}
-              </p>
-              <Confirm
-                title={t("Discard candidate")}
-                subject={t("This candidate and all its proposed changes")}
-                description={t(
-                  "The target memory will not be changed. This candidate can no longer be applied.",
-                )}
-                trigger={t("Discard candidate")}
-                triggerVariant="ghost"
-                danger
-                action={() =>
-                  client
-                    .workspace(workspace.id)
-                    .POST(
-                      "/api/v1/memory-organizations/{organization_id}/candidate/discard",
-                      {
-                        params: {
-                          path: { organization_id: candidate.organization_id },
-                        },
-                      },
-                    )
-                    .then(data)
-                }
-                onSuccess={() => {
-                  void invalidateMemories(cache, workspace.id);
-                }}
-              />
-            </div>
-          </div>
-        </DisclosureSection>
-      )}
-      <ModalFrame
-        open={!!confirmation}
-        onOpenChange={(open) => {
-          if (!open) setConfirmation(undefined);
-        }}
-        title={t(
-          confirmation === "replace_all"
-            ? "Replace entire target"
-            : "Apply all changes",
-        )}
-        closeLabel={t("Close")}
-        description={t(
-          confirmation === "replace_all"
-            ? "All current target files will be replaced by the reviewed candidate. Target-only files will be deleted."
-            : "Apply the reviewed candidate and target sequences atomically. If either changed, reload and review again.",
-        )}
-        footer={
-          <>
-            <Button
-              variant="outline"
-              disabled={publish.isPending}
-              onClick={() => setConfirmation(undefined)}
-            >
-              {t("Back to review")}
-            </Button>
-            <Button
-              variant={
-                confirmation === "replace_all" ? "destructive" : "default"
-              }
-              loading={publish.isPending}
-              onClick={() => {
-                if (confirmation) publish.mutate(confirmation);
-              }}
-            >
-              {t(
-                confirmation === "replace_all"
-                  ? "Replace entire target"
-                  : "Apply all changes",
-              )}
-            </Button>
-          </>
-        }
-      >
-        <div className={styles.confirmSummary}>
-          <strong>
-            {t("All {{count}} changed files", {
-              count: candidate.changes.length,
-            })}
-          </strong>
-          <p>
-            {t("{{reviewed}} of {{total}} files reviewed", {
-              reviewed: reviewed.size,
-              total: candidate.changes.length,
-            })}
-          </p>
-          <dl className={styles.sequences}>
-            <div>
-              <dt>{t("Candidate")}</dt>
-              <dd>{candidate.candidate_seq}</dd>
-            </div>
-            <div>
-              <dt>{t("Target")}</dt>
-              <dd>{candidate.target_seq}</dd>
-            </div>
-          </dl>
-        </div>
       </ModalFrame>
+      {confirmation && (
+        <ReviewDialog
+          key={confirmation}
+          candidate={candidate}
+          mode={confirmation}
+          reviewed={reviewed.size}
+          pending={action.isPending}
+          close={() => setConfirmation(undefined)}
+          confirm={() => action.mutate(confirmation)}
+        />
+      )}
     </>
+  );
+}
+
+function CandidateFile({ file }: { file: Schema["CandidateFile"] }) {
+  const { t } = useTranslation();
+  const modified =
+    file.baseline !== null &&
+    file.candidate !== null &&
+    file.baseline !== file.candidate;
+  const [mode, setMode] = useState(modified ? "diff" : "file");
+  const [side, setSide] = useState(
+    file.candidate === null ? "before" : "after",
+  );
+  const [view, setView] = useState("source");
+  const text = (side === "before" ? file.baseline : file.candidate) ?? "";
+  return (
+    <div className={styles.fileContent}>
+      <div className={styles.readModes}>
+        <SegmentedControl
+          size="sm"
+          label={t("Inspection mode")}
+          value={mode}
+          onValueChange={setMode}
+          options={[
+            { value: "diff", label: t("Diff") },
+            { value: "file", label: t("File") },
+          ]}
+        />
+        {mode === "file" && (
+          <>
+            <SegmentedControl
+              size="sm"
+              label={t("File version")}
+              value={side}
+              onValueChange={setSide}
+              options={[
+                {
+                  value: "before",
+                  label: t("Before"),
+                  disabled: file.baseline === null,
+                },
+                {
+                  value: "after",
+                  label: t("After"),
+                  disabled: file.candidate === null,
+                },
+              ]}
+            />
+            {isMarkdown(file.path) && (
+              <SegmentedControl
+                size="sm"
+                label={t("Markdown view")}
+                value={view}
+                onValueChange={setView}
+                options={[
+                  { value: "source", label: t("Source") },
+                  { value: "preview", label: t("Preview") },
+                ]}
+              />
+            )}
+          </>
+        )}
+      </div>
+      {mode === "diff" ? (
+        <TextReader
+          path={file.path}
+          before={file.baseline ?? ""}
+          text={file.candidate ?? ""}
+          beforeLabel={t("Before: saved baseline")}
+          afterLabel={t("After: candidate")}
+        />
+      ) : (
+        <FileText
+          text={text}
+          preview={isMarkdown(file.path) && view === "preview"}
+        />
+      )}
+    </div>
   );
 }

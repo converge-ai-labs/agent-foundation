@@ -78,8 +78,9 @@ Overlays and the state behind them.
 
 Text files addressed by path, such as a skill package or a memory.
 
-- `FileBrowser` — the tree at the left, with the file count and optional actions beside its heading and an optional `marker` after a file's name, and the chosen file at the right.
-- `FileHeader`, `FileBody`, `FileText`, `FileNotice` — the chosen file: its path and size, a single icon toggle between Markdown preview and source, and the file's icon actions. `FileBody` owns scrolling; `FileText` renders safe Markdown or wrapped source with a non-selectable line-number gutter.
+- `FileBrowser` — independently scrolling explorer/reader panes, a resizable/collapsible desktop explorer, and narrow list → file → Files navigation. Pass `fullHeight` when the enclosing page bounds the workspace, `initialFile` for a document deep link, and `marker`/`fileMenu` for domain annotations/actions. External changes to `selected` open the document on narrow screens.
+- `FileHeader`, `FileBody`, `FileText`, `FileNotice` — place `FileHeader` inside every workspace document; it composes the workspace navigation, path, optional byte size, Markdown preview/source toggle and file actions in one toolbar. `FileBody` bounds the document; Markdown scrolls there and source owns its virtualized scroll surface. `FileText` renders safe Markdown or full source through `TextReader`.
+- `TextReader` — lazy, read-only CodeMirror source or full-context comparison (`before` and `text` are complete raw strings). It owns line numbers, newline metadata, exact source copying, wrap, responsive split/inline diff, unchanged-context collapse and change navigation. Reading options preserve position. Use `Patch` below when only bounded unified hunks are available.
 - `fileTree`, `isMarkdown`, `markdownBody` — the tree built from paths, directories first; a preview renders Markdown without its frontmatter.
 
 ## `shared/diff`

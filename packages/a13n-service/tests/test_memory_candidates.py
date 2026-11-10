@@ -293,3 +293,90 @@ async def test_cancelled_generation_can_be_discarded_but_never_applied(service, 
     for _ in range(2):
         response = await service.client.post(f"{endpoint(service, organization)}/discard")
         assert response.status_code == 200 and response.json()["status"] == "discarded"
+
+
+async def test_review_reads_full_saved_baseline_and_exact_candidate(service, scripted_model, runs_kit):
+    memory = await team_memory(service)
+    deleted = "old\tcontent  \r\n" * 2500 + "no final newline"
+    await write_file(service, memory, "deleted.md", deleted)
+    await write_file(service, memory, "empty.md", "")
+    _, organization = await candidate(service, scripted_model, runs_kit, target=memory)
+    destination = organization["candidate_memory_id"]
+    await edit_file(service, destination, "deleted.md")
+    await edit_file(service, destination, "empty.md", "new\r\n\r\n")
+    await write_file(service, {"id": destination}, "added.md", "")
+    value = await preview(service, organization)
+    assert value["files"] == ["README.md", "added.md", "deleted.md", "empty.md", "notes/tea.md"]
+    # Moving the target cannot change the saved before-side of this review.
+    await edit_file(service, memory["id"], "deleted.md", "concurrent target")
+    url = f"{endpoint(service, organization)}/file"
+    for path, before, after in [
+        ("deleted.md", deleted, None),
+        ("empty.md", "", "new\r\n\r\n"),
+        ("added.md", None, ""),
+    ]:
+        response = await service.client.get(url, params={"path": path, "candidate_seq": value["candidate_seq"]})
+        assert response.status_code == 200, response.text
+        assert response.json() == {
+            "path": path,
+            "candidate_seq": value["candidate_seq"],
+            "baseline": before,
+            "candidate": after,
+        }
+    response = await service.client.get(url, params={"path": "missing.md", "candidate_seq": value["candidate_seq"]})
+    assert response.status_code == 404
+    response = await service.client.get(url, params={"path": "../README.md", "candidate_seq": value["candidate_seq"]})
+    assert response.status_code == 400
+    await edit_file(service, destination, "empty.md", "edited again")
+    response = await service.client.get(url, params={"path": "empty.md", "candidate_seq": value["candidate_seq"]})
+    assert response.status_code == 409 and "review_changed" in response.text
+
+
+async def test_replacement_names_actual_deletions_overwrites_and_restorations(service, scripted_model, runs_kit):
+    memory, organization = await candidate(service, scripted_model, runs_kit)
+    destination = organization["candidate_memory_id"]
+    await edit_file(service, memory["id"], "README.md", "concurrent edit")
+    await edit_file(service, memory["id"], "notes/tea.md")
+    await write_file(service, memory, "target-only.md", "will be deleted")
+    await write_file(service, memory, "already-equal.md", "same")
+    await write_file(service, {"id": destination}, "already-equal.md", "same")
+    value = await preview(service, organization)
+    pair = {"candidate_seq": value["candidate_seq"], "target_seq": value["target_seq"]}
+    url = f"{endpoint(service, organization)}/replacement"
+    response = await service.client.get(url, params=pair)
+    assert response.status_code == 200, response.text
+    assert response.json() == {
+        **pair,
+        "deletions": ["target-only.md"],
+        "overwrites": ["README.md"],
+        "restorations": ["notes/tea.md"],
+    }
+    for field in pair:
+        response = await service.client.get(url, params={**pair, field: pair[field] - 1})
+        assert response.status_code == 409 and "review_changed" in response.text
+    # Missing required sequences and invalid negative ones never read an unbound tree.
+    for params in ({}, {**pair, "candidate_seq": -1}):
+        assert (await service.client.get(url, params=params)).status_code == 400
+
+
+async def test_review_queries_refuse_missing_candidate_and_other_workspace(service, scripted_model, runs_kit):
+    _, organization = await candidate(service, scripted_model, runs_kit)
+    value = await preview(service, organization)
+    paths = [
+        ("file", {"path": "README.md", "candidate_seq": value["candidate_seq"]}),
+        ("replacement", {"candidate_seq": value["candidate_seq"], "target_seq": value["target_seq"]}),
+    ]
+    for path, params in paths:
+        response = await service.client.get(
+            f"{endpoint(service, organization)}/{path}",
+            params=params,
+            headers={"X-Workspace-ID": "ws_00000000000000000000"},
+        )
+        assert response.status_code == 404, response.text
+    url = f"{service.api}/memories/{organization['candidate_memory_id']}"
+    resource = await service.client.get(url)
+    assert (await service.client.delete(url, headers={"If-Match": resource.headers["etag"]})).status_code == 204
+    assert (await preview(service, organization))["files"] == []
+    for path, params in paths:
+        response = await service.client.get(f"{endpoint(service, organization)}/{path}", params=params)
+        assert response.status_code == 409 and "candidate_unavailable" in response.text

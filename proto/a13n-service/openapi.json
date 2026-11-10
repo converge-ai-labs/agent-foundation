@@ -3654,6 +3654,90 @@
         "title": "CandidateDiff",
         "type": "object"
       },
+      "CandidateFile": {
+        "properties": {
+          "baseline": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Baseline"
+          },
+          "candidate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Candidate"
+          },
+          "candidate_seq": {
+            "title": "Candidate Seq",
+            "type": "integer"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "candidate_seq",
+          "baseline",
+          "candidate"
+        ],
+        "title": "CandidateFile",
+        "type": "object"
+      },
+      "CandidateReplacement": {
+        "properties": {
+          "candidate_seq": {
+            "title": "Candidate Seq",
+            "type": "integer"
+          },
+          "deletions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Deletions",
+            "type": "array"
+          },
+          "overwrites": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Overwrites",
+            "type": "array"
+          },
+          "restorations": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Restorations",
+            "type": "array"
+          },
+          "target_seq": {
+            "title": "Target Seq",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "candidate_seq",
+          "target_seq",
+          "deletions",
+          "overwrites",
+          "restorations"
+        ],
+        "title": "CandidateReplacement",
+        "type": "object"
+      },
       "Capabilities": {
         "properties": {
           "collectors": {
@@ -16712,6 +16796,13 @@
             "title": "Changes",
             "type": "array"
           },
+          "files": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Files",
+            "type": "array"
+          },
           "memory_id": {
             "title": "Memory Id",
             "type": "string"
@@ -16756,7 +16847,8 @@
           "baseline_seq",
           "candidate_seq",
           "target_seq",
-          "changes"
+          "changes",
+          "files"
         ],
         "title": "OrganizationCandidate",
         "type": "object"
@@ -41820,6 +41912,179 @@
         "tags": [
           "memory organizations"
         ]
+      }
+    },
+    "/api/v1/memory-organizations/{organization_id}/candidate/file": {
+      "get": {
+        "operationId": "get_organization_candidate_file",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "title": "Path",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "candidate_seq",
+            "required": true,
+            "schema": {
+              "minimum": 0,
+              "title": "Candidate Seq",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CandidateFile"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Get Organization Candidate File",
+        "tags": [
+          "memory organizations"
+        ],
+        "x-a13n-mcp": true
+      }
+    },
+    "/api/v1/memory-organizations/{organization_id}/candidate/replacement": {
+      "get": {
+        "operationId": "get_organization_candidate_replacement",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "candidate_seq",
+            "required": true,
+            "schema": {
+              "minimum": 0,
+              "title": "Candidate Seq",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "target_seq",
+            "required": true,
+            "schema": {
+              "minimum": 0,
+              "title": "Target Seq",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CandidateReplacement"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Get Organization Candidate Replacement",
+        "tags": [
+          "memory organizations"
+        ],
+        "x-a13n-mcp": true
       }
     },
     "/api/v1/memory-providers": {

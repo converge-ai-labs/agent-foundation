@@ -1,28 +1,32 @@
 import {
-  CaretRightIcon,
-  FileTextIcon,
+  ArrowLeftIcon,
+  SidebarSimpleIcon,
   CodeIcon,
   EyeIcon,
-  FolderIcon,
-  DotsThreeOutlineVerticalIcon,
 } from "@phosphor-icons/react";
+import { Button } from "a13n-ui";
 import {
-  Button,
-  ContextMenu,
-  ContextMenuTrigger,
-  Menu,
-  MenuPopup,
-  MenuTrigger,
-} from "a13n-ui";
-import type { ReactNode } from "react";
+  createContext,
+  useContext,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { MarkdownContent } from "../markdown";
+import { FileExplorer } from "./file-explorer";
+import { TextReader } from "./text-reader";
 import { markdownBody, type FileNode } from "./tree";
 import styles from "./files.module.css";
 
 export type FileView = "preview" | "source";
+const FilePath = createContext("");
+const FileNavigation = createContext<ReactNode>(null);
 
-/** A tree of files at the left and the chosen file at the right. */
+/** Shared workspace: independently scrolling panes, mobile list → file navigation. */
 export function FileBrowser({
   label,
   count,
@@ -33,147 +37,168 @@ export function FileBrowser({
   marker,
   fileMenu,
   children,
+  fullHeight = false,
+  initialFile = false,
 }: {
-  /** Names the tree for assistive technology, such as "Package files". */
   label: string;
   count: number;
-  /** Controls beside the tree heading, such as New file. */
   actions?: ReactNode;
   nodes: FileNode[];
   selected: string;
   onSelect: (path: string) => void;
-  /** A mark after a file's name, such as one that says it is always loaded. */
   marker?: (path: string) => ReactNode;
-  /** The same actions appear on right-click and in a touch-accessible row menu. */
   fileMenu?: (path: string) => ReactNode;
   children: ReactNode;
+  fullHeight?: boolean;
+  initialFile?: boolean;
 }) {
   const { t } = useTranslation();
+  const [mobileFile, setMobileFile] = useState(initialFile);
+  const previous = useRef(selected);
+  useEffect(() => {
+    if (previous.current !== selected) setMobileFile(true);
+    previous.current = selected;
+  }, [selected]);
+  const [collapsed, setCollapsed] = useState(false);
+  const [width, setWidth] = useState(260);
+  const root = useRef<HTMLDivElement>(null);
+  const tree = useRef<HTMLElement>(null);
+  const document = useRef<HTMLElement>(null);
+  const treeId = useId();
+  function select(path: string) {
+    onSelect(path);
+    setMobileFile(true);
+    // On a phone the selected row leaves the screen; keep keyboard focus in the reader.
+    if (window.matchMedia("(max-width: 767px)").matches)
+      requestAnimationFrame(() => document.current?.focus());
+  }
   return (
-    <div className={styles.browser}>
-      <nav className={`${styles.tree} a13n-scrollbar`} aria-label={label}>
+    <div
+      ref={root}
+      className={styles.browser}
+      data-full-height={fullHeight || undefined}
+      data-mobile-file={mobileFile || undefined}
+      data-collapsed={collapsed || undefined}
+      style={{ "--explorer-width": `${width}px` } as CSSProperties}
+    >
+      <nav
+        ref={tree}
+        className={styles.tree}
+        id={treeId}
+        aria-label={label}
+        tabIndex={-1}
+      >
         <div className={styles.treeHeading}>
           <span>{t("Files")}</span>
           <span className={styles.treeCount}>{count}</span>
           {actions}
         </div>
         <div className={`${styles.treeBody} a13n-scrollbar`}>
-          <FileTree
+          <FileExplorer
+            label={label}
             nodes={nodes}
             selected={selected}
-            select={onSelect}
+            select={select}
             marker={marker}
             fileMenu={fileMenu}
           />
         </div>
       </nav>
-      <section className={styles.document} aria-label={selected}>
-        {children}
+      <div
+        className={styles.resize}
+        role="separator"
+        aria-label={t("Resize file explorer")}
+        aria-orientation="vertical"
+        aria-valuenow={width}
+        aria-valuemin={220}
+        aria-valuemax={420}
+        tabIndex={collapsed ? -1 : 0}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+            event.preventDefault();
+            setWidth((value) =>
+              Math.max(
+                220,
+                Math.min(420, value + (event.key === "ArrowRight" ? 20 : -20)),
+              ),
+            );
+          }
+        }}
+        onPointerDown={(event) =>
+          event.currentTarget.setPointerCapture(event.pointerId)
+        }
+        onPointerMove={(event) => {
+          if (
+            event.currentTarget.hasPointerCapture(event.pointerId) &&
+            root.current
+          )
+            setWidth(
+              Math.max(
+                220,
+                Math.min(
+                  420,
+                  event.clientX - root.current.getBoundingClientRect().left,
+                ),
+              ),
+            );
+        }}
+        onPointerUp={(event) =>
+          event.currentTarget.releasePointerCapture(event.pointerId)
+        }
+      />
+      <section
+        ref={document}
+        tabIndex={-1}
+        className={styles.document}
+        aria-label={selected || t("Select a file")}
+      >
+        <FileNavigation
+          value={
+            <>
+              <Button
+                variant="ghost"
+                size="sm"
+                className={styles.backFiles}
+                onClick={() => {
+                  setMobileFile(false);
+                  requestAnimationFrame(() =>
+                    tree.current
+                      ?.querySelector<HTMLElement>(
+                        '[role="treeitem"][tabindex="0"]',
+                      )
+                      ?.focus(),
+                  );
+                }}
+              >
+                <ArrowLeftIcon />
+                {t("Files")}
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                className={styles.toggleExplorer}
+                aria-label={t(
+                  collapsed ? "Show file explorer" : "Hide file explorer",
+                )}
+                title={t(
+                  collapsed ? "Show file explorer" : "Hide file explorer",
+                )}
+                aria-expanded={!collapsed}
+                aria-controls={treeId}
+                onClick={() => setCollapsed(!collapsed)}
+              >
+                <SidebarSimpleIcon />
+              </Button>
+            </>
+          }
+        >
+          <FilePath value={selected}>{children}</FilePath>
+        </FileNavigation>
       </section>
     </div>
   );
 }
 
-function FileTree({
-  nodes,
-  selected,
-  select,
-  marker,
-  fileMenu,
-}: {
-  nodes: FileNode[];
-  selected: string;
-  select: (path: string) => void;
-  marker?: (path: string) => ReactNode;
-  fileMenu?: (path: string) => ReactNode;
-}) {
-  const { t } = useTranslation();
-  return (
-    <ul>
-      {nodes.map((node) => (
-        <li key={node.path}>
-          {node.children ? (
-            <details open>
-              <summary title={node.path}>
-                <CaretRightIcon size={12} aria-hidden="true" />
-                <FolderIcon size={14} aria-hidden="true" />
-                <span>{node.name}</span>
-              </summary>
-              <FileTree
-                nodes={node.children}
-                selected={selected}
-                select={select}
-                marker={marker}
-                fileMenu={fileMenu}
-              />
-            </details>
-          ) : (
-            <div
-              className={styles.fileRow}
-              data-selected={selected === node.path || undefined}
-            >
-              {fileMenu ? (
-                <ContextMenu>
-                  <ContextMenuTrigger
-                    render={
-                      <button
-                        type="button"
-                        className={styles.fileButton}
-                        aria-current={
-                          selected === node.path ? "true" : undefined
-                        }
-                        title={node.path}
-                        onClick={() => select(node.path)}
-                      />
-                    }
-                  >
-                    <FileTextIcon size={14} aria-hidden="true" />
-                    <span>{node.name}</span>
-                    {marker?.(node.path)}
-                  </ContextMenuTrigger>
-                  <MenuPopup align="start">{fileMenu(node.path)}</MenuPopup>
-                </ContextMenu>
-              ) : (
-                <button
-                  type="button"
-                  className={styles.fileButton}
-                  aria-current={selected === node.path ? "true" : undefined}
-                  title={node.path}
-                  onClick={() => select(node.path)}
-                >
-                  <FileTextIcon size={14} aria-hidden="true" />
-                  <span>{node.name}</span>
-                  {marker?.(node.path)}
-                </button>
-              )}
-              {fileMenu && (
-                <Menu>
-                  <MenuTrigger
-                    render={
-                      <Button
-                        variant="ghost"
-                        size="icon-xs"
-                        className={styles.fileActions}
-                        aria-label={t("Actions for {{path}}", {
-                          path: node.path,
-                        })}
-                      />
-                    }
-                  >
-                    <DotsThreeOutlineVerticalIcon weight="fill" />
-                  </MenuTrigger>
-                  <MenuPopup align="start">{fileMenu(node.path)}</MenuPopup>
-                </Menu>
-              )}
-            </div>
-          )}
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-/** The chosen file's path and size, its view switch and its actions. */
 export function FileHeader({
   path,
   size,
@@ -183,20 +208,27 @@ export function FileHeader({
   actions,
 }: {
   path: string;
-  size: number;
+  size?: number;
   marker?: ReactNode;
-  /** Offered for Markdown the reader can preview; omit it otherwise. */
   view?: FileView;
   onViewChange?: (view: FileView) => void;
   actions?: ReactNode;
 }) {
   const { t } = useTranslation();
+  const navigation = useContext(FileNavigation);
   return (
     <header className={styles.documentHeader}>
-      <span className={styles.documentPath}>
-        <span title={path}>{path}</span>
-        <small>{t("{{size}} bytes", { size: size.toLocaleString() })}</small>
-        {marker}
+      <span className={styles.documentIdentity}>
+        {navigation}
+        <span className={styles.documentPath}>
+          <span title={path}>{path}</span>
+          {size !== undefined && (
+            <small>
+              {t("{{size}} bytes", { size: size.toLocaleString() })}
+            </small>
+          )}
+          {marker}
+        </span>
       </span>
       {(view || actions) && (
         <span className={styles.documentActions}>
@@ -224,7 +256,7 @@ export function FileBody({ children }: { children: ReactNode }) {
   return <div className={styles.documentBody}>{children}</div>;
 }
 
-/** Text as rendered Markdown or as its source; imported content never runs. */
+/** Imported Markdown keeps the existing safe preview; full source loads lazily. */
 export function FileText({
   text,
   preview,
@@ -232,11 +264,9 @@ export function FileText({
 }: {
   text: string;
   preview: boolean;
-  /** Return true when the owning file browser handles a document link. */
   onOpenLink?: (href: string) => boolean;
 }) {
-  const { t } = useTranslation();
-  if (!text) return <FileNotice>{t("This file is empty.")}</FileNotice>;
+  const path = useContext(FilePath);
   return preview ? (
     <div
       className={styles.markdown}
@@ -256,14 +286,7 @@ export function FileText({
       <MarkdownContent text={markdownBody(text)} />
     </div>
   ) : (
-    <div className={styles.source}>
-      {text.match(/[^\n]*\n|[^\n]+$/g)?.map((line, index) => (
-        <div className={styles.sourceLine} key={index}>
-          <span aria-hidden="true">{index + 1}</span>
-          <code>{line}</code>
-        </div>
-      ))}
-    </div>
+    <TextReader path={path} text={text} />
   );
 }
 

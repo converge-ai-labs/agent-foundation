@@ -32,6 +32,17 @@ export function organizationQueries(client: Client, workspace: string) {
           ),
         refetchInterval: 5000,
       }),
+    task: (id: string) =>
+      queryOptions({
+        queryKey: [...root, id],
+        queryFn: ({ signal }) =>
+          api
+            .GET("/api/v1/memory-organizations/{organization_id}", {
+              params: { path: { organization_id: id } },
+              signal,
+            })
+            .then(data),
+      }),
     candidate: (id: string) =>
       queryOptions({
         queryKey: [...root, id, "candidate"],
@@ -45,19 +56,45 @@ export function organizationQueries(client: Client, workspace: string) {
         refetchInterval: (query) =>
           query.state.data?.status === "generating" ? 3000 : false,
       }),
-    diff: (id: string, path: string, seq: number | null | undefined) =>
+    file: (id: string, path: string, seq: number | null) =>
       queryOptions({
-        queryKey: [...root, id, "diff", path, seq],
-        enabled: !!path,
+        queryKey: [...root, id, "file", path, seq],
+        enabled: !!path && seq !== null,
         staleTime: Infinity,
         refetchOnWindowFocus: false,
         refetchOnReconnect: false,
         queryFn: ({ signal }) =>
           api
             .GET(
-              "/api/v1/memory-organizations/{organization_id}/candidate/diff",
+              "/api/v1/memory-organizations/{organization_id}/candidate/file",
               {
-                params: { path: { organization_id: id }, query: { path } },
+                params: {
+                  path: { organization_id: id },
+                  query: { path, candidate_seq: seq! },
+                },
+                signal,
+              },
+            )
+            .then(data),
+      }),
+    replacement: (
+      id: string,
+      candidate: number | null,
+      target: number | null,
+    ) =>
+      queryOptions({
+        queryKey: [...root, id, "replacement", candidate, target],
+        staleTime: Infinity,
+        refetchOnWindowFocus: false,
+        queryFn: ({ signal }) =>
+          api
+            .GET(
+              "/api/v1/memory-organizations/{organization_id}/candidate/replacement",
+              {
+                params: {
+                  path: { organization_id: id },
+                  query: { candidate_seq: candidate!, target_seq: target! },
+                },
                 signal,
               },
             )
