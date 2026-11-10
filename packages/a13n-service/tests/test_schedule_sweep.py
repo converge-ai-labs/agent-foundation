@@ -83,7 +83,10 @@ async def test_missed_deadline_skips_latest_daily_time(service, scripted_model, 
         assert await session.scalar(select(func.count()).select_from(ThreadRow)) == 0
 
 
-async def test_overlap_retains_existing_pending_and_advances_periodic_time(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+@pytest.mark.parametrize("planning_passes", [1, 2], ids=["same-minute", "minute-boundary"])
+async def test_overlap_retains_existing_pending_and_advances_periodic_time(
+    service, scripted_model, runs_kit, monkeypatch, planning_passes
+) -> None:  # type: ignore[no-untyped-def]
     await runs_kit.pause_sweeps(service)
     agent = await runs_kit.create_agent(service, scripted_model)
     schedule = await create_schedule(service, agent, runs_kit)
@@ -102,14 +105,36 @@ async def test_overlap_retains_existing_pending_and_advances_periodic_time(servi
         )
         pending.next_attempt_at = current + timedelta(minutes=2)
         pending_id = pending.id
-        row.next_fire_at = current.replace(second=0, microsecond=0) - timedelta(minutes=1)
-    await Scheduler(service.runtime)()
+        pending_retry_at = pending.next_attempt_at
+        first_fire = current.replace(second=0, microsecond=0) - timedelta(minutes=1)
+        row.next_fire_at = first_fire
+    # Both instants are already due according to PostgreSQL's real clock. Control
+    # the planner's time to cross a minute boundary without sleeping or racing it.
+    fire_times = [first_fire + timedelta(minutes=index) for index in range(planning_passes)]
+    clock = AsyncMock(side_effect=fire_times)
+    monkeypatch.setattr(sweep, "now", clock)
+    config = service.runtime.settings.model_copy(
+        update={"schedules": service.runtime.settings.schedules.model_copy(update={"batch": planning_passes})}
+    )
+    await Scheduler(replace(service.runtime, settings=config))()
+    assert clock.await_count == planning_passes
     async with short_session(service.runtime.storage) as session:
         row = await session.get_one(ScheduleRow, schedule["id"])
         assert row.pending_occurrence_id == pending_id
-        item = (await session.scalars(select(OccurrenceRow).where(OccurrenceRow.trigger == "scheduled"))).one()
-        assert item.status == "skipped" and item.reason == "overlap"
-        assert row.next_fire_at > await now(session)
+        items = (
+            await session.scalars(
+                select(OccurrenceRow)
+                .where(OccurrenceRow.schedule_id == schedule["id"], OccurrenceRow.trigger == "scheduled")
+                .order_by(OccurrenceRow.scheduled_at)
+            )
+        ).all()
+        # One occurrence per due instant, not one per scheduler invocation.
+        assert [item.scheduled_at for item in items] == fire_times
+        assert all(item.status == "skipped" and item.reason == "overlap" for item in items)
+        pending = await session.get_one(OccurrenceRow, pending_id)
+        assert pending.status == "pending" and pending.next_attempt_at == pending_retry_at
+        assert row.last_processed_fire_at == fire_times[-1]
+        assert row.next_fire_at == fire_times[-1] + timedelta(minutes=1)
         assert await session.scalar(select(func.count()).select_from(ThreadRow)) == 0
 
 
