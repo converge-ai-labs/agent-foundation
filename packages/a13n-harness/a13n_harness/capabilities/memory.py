@@ -19,6 +19,7 @@ from pydantic_ai.toolsets import AbstractToolset
 
 from a13n_harness._memory_reads import FileMemoryReads
 from a13n_harness.context import AgentContext
+from a13n_harness.context_breakdown import ContextItemUsage, InstructionCatalog
 from a13n_harness.errors import DefinitionError
 from a13n_harness.events import HarnessExtensionEvent
 from a13n_harness.model_context import (
@@ -152,8 +153,19 @@ class FileMemoryLimits(BaseModel):
     write_retries: int = Field(default=3, ge=0)
 
 
+class _MemoryCatalogCapability(AbstractModelContextCapability):
+    catalog_measurement: InstructionCatalog | None = None
+
+    def _render_catalog(self) -> InstructionCatalog | None:
+        raise NotImplementedError
+
+    def get_instructions(self) -> str | None:
+        catalog = self.catalog_measurement or self._render_catalog()
+        return catalog.text if catalog else None
+
+
 @dataclass(init=False)
-class FileMemoryCapability(AbstractModelContextCapability):
+class FileMemoryCapability(_MemoryCatalogCapability):
     """Mount file memories: instructions with their guides, tools, and context at each run's first input.
 
     The host opens one store per mount and passes the cursors it persisted; the
@@ -200,7 +212,7 @@ class FileMemoryCapability(AbstractModelContextCapability):
         ctx.deps._record_run_capability(FILE_MEMORY_CAPABILITY_ID, replacement)
         return replacement
 
-    def get_instructions(self) -> str | None:
+    def _render_catalog(self) -> InstructionCatalog | None:
         return _instructions(_INTRODUCTION, "file", self.mounts, DEFAULT_FILE_GUIDE)
 
     def get_toolset(self) -> AbstractToolset[AgentContext] | None:
@@ -233,6 +245,7 @@ class _FileMemoryRun(FileMemoryCapability):
     def __init__(self, source: FileMemoryCapability, context: AgentContext) -> None:
         self.limits = source.limits
         self.mounts = source.mounts
+        self.catalog_measurement = source._render_catalog()
         self.tools = source.tools
         self.origin = source.origin
         self._toolset = source.get_toolset()
@@ -319,17 +332,19 @@ class _FileMemoryRun(FileMemoryCapability):
             payload["fallback_bytes"] = _size(_FILE_CONTEXT_FALLBACK)
         await ctx.deps.events.emit(HarnessExtensionEvent(kind="context", payload=payload))
         contents = (
-            (_FILE_CONTEXT_FALLBACK,)
+            ((None, _FILE_CONTEXT_FALLBACK),)
             if rendered is None
-            else tuple(rendered[mount.name][1] for mount in self.mounts if mount.name in rendered)
+            else tuple((mount.name, rendered[mount.name][1]) for mount in self.mounts if mount.name in rendered)
         )
         return tuple(
             ModelContextBlock(
                 source_id=FILE_MEMORY_CAPABILITY_ID,
+                context_group="memory",
                 placement=ModelContextPlacement.INPUT_PREAMBLE,
                 content=content,
+                memory_mount=name,
             )
-            for content in contents
+            for name, content in contents
         )
 
 
@@ -625,7 +640,7 @@ class RecordMemoryLimits(BaseModel):
 
 
 @dataclass(init=False)
-class RecordMemoryCapability(AbstractModelContextCapability):
+class RecordMemoryCapability(_MemoryCatalogCapability):
     """Mount record memories: instructions with their guides, tools, and recall at each run's first input.
 
     The host opens one store per mount. Recall searches every mount whose
@@ -659,7 +674,7 @@ class RecordMemoryCapability(AbstractModelContextCapability):
         ctx.deps._record_run_capability(RECORD_MEMORY_CAPABILITY_ID, replacement)
         return replacement
 
-    def get_instructions(self) -> str | None:
+    def _render_catalog(self) -> InstructionCatalog | None:
         return _instructions(_RECORD_INTRODUCTION, "record", self.mounts, DEFAULT_RECORD_GUIDE)
 
     def get_toolset(self) -> AbstractToolset[AgentContext] | None:
@@ -671,6 +686,7 @@ class _RecordMemoryRun(RecordMemoryCapability):
     def __init__(self, source: RecordMemoryCapability, context: AgentContext) -> None:
         self.limits = source.limits
         self.mounts = source.mounts
+        self.catalog_measurement = source._render_catalog()
         self.tools = source.tools
         self._context = context
         self._first_input = _FirstInput(context, self._recall)
@@ -723,8 +739,10 @@ class _RecordMemoryRun(RecordMemoryCapability):
                 blocks.append(
                     ModelContextBlock(
                         source_id=RECORD_MEMORY_CAPABILITY_ID,
+                        context_group="memory",
                         placement=ModelContextPlacement.INPUT_PREAMBLE,
                         content=block,
+                        memory_mount=mount.name,
                     )
                 )
         _bound_sources(observed, "records")
@@ -868,19 +886,23 @@ def _selected[K: str](tools: Collection[K] | None, keys: tuple[K, ...], kind: st
 
 def _instructions(
     introduction: str, kind: str, mounts: Sequence[FileMount | RecordMount], default_guide: str
-) -> str | None:
+) -> InstructionCatalog | None:
     """Every mount with its name, kind, access, and escaped guide."""
     if not mounts:
         return None
     lines = [introduction, "<memories>"]
+    items: dict[str, ContextItemUsage] = {}
     for mount in mounts:
         guide = default_guide if mount.guide is None else mount.guide
-        lines.append(f'<memory name="{mount.name}" kind="{kind}" access="{mount.access}">')
+        entry = [f'<memory name="{mount.name}" kind="{kind}" access="{mount.access}">']
         if guide:
-            lines.append(f"<guide>{escape(guide)}</guide>")
-        lines.append("</memory>")
+            entry.append(f"<guide>{escape(guide)}</guide>")
+        entry.append("</memory>")
+        text = "\n".join(entry)
+        lines.append(text)
+        items[mount.name] = ContextItemUsage(characters=len(text))
     lines.append("</memories>")
-    return "\n".join(lines)
+    return InstructionCatalog("memory", "\n".join(lines), items)
 
 
 def _encode(value: JsonValue) -> str:

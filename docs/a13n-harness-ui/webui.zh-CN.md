@@ -111,6 +111,8 @@ flowchart TB
 
 ### 查看 token 用量和估算费用
 
+点击输入框上方的上下文用量圆环，可查看最近一次主 Agent 请求。横条显示输入、本轮输出和剩余窗口。展开技能可查看实际注入的名称和描述。展开工具调用可分别查看参数和返回内容的字符数。分类 token 数按这次输入的字符占比估算；含未计量媒体时，面板显示文本字符占比。
+
 1. 点击侧栏折叠按钮旁的图表图标打开 **Usage**。**Project → View usage** 或 **Details → Usage → Open analytics** 会预选对应范围。
 2. 选择 7、30、90 个 UTC 日，或最多 366 天的自定义范围。按 Project、根 Thread 或实际 provider/model 筛选。
 3. 对比每日汇总和 Project、Thread、模型明细。按 token 或费用排序，点击行缩小范围。

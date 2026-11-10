@@ -12114,6 +12114,49 @@
         "title": "ContentMetadata",
         "description": "Presentation and opaque Host references; never instructions or authority."
       },
+      "ContextBreakdown": {
+        "properties": {
+          "method": {
+            "type": "string",
+            "const": "text_characters_v1",
+            "title": "Method",
+            "default": "text_characters_v1"
+          },
+          "unmeasured_content": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "audio",
+                "other"
+              ]
+            },
+            "type": "array",
+            "title": "Unmeasured Content",
+            "default": []
+          },
+          "counted_input_characters": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Counted Input Characters"
+          },
+          "groups": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ContextGroupUsage"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/ContextGroupName"
+            },
+            "type": "object",
+            "title": "Groups"
+          }
+        },
+        "type": "object",
+        "required": [
+          "counted_input_characters",
+          "groups"
+        ],
+        "title": "ContextBreakdown"
+      },
       "ContextChoice": {
         "properties": {
           "value": {
@@ -12138,11 +12181,167 @@
         ],
         "title": "ContextChoice"
       },
+      "ContextGroupName": {
+        "type": "string",
+        "enum": [
+          "system",
+          "tools",
+          "skills",
+          "memory",
+          "environment_context",
+          "runtime_state",
+          "conversation",
+          "tool_calls",
+          "other"
+        ]
+      },
+      "ContextGroupUsage": {
+        "properties": {
+          "characters": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Characters"
+          },
+          "items": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ContextItemUsage"
+            },
+            "type": "object",
+            "title": "Items"
+          },
+          "omitted_items": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Omitted Items",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "characters"
+        ],
+        "title": "ContextGroupUsage"
+      },
+      "ContextItemUsage": {
+        "properties": {
+          "characters": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Characters"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "calls": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calls"
+          },
+          "argument_characters": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Argument Characters"
+          },
+          "result_characters": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result Characters"
+          }
+        },
+        "type": "object",
+        "required": [
+          "characters"
+        ],
+        "title": "ContextItemUsage"
+      },
       "ContextUsageView": {
         "properties": {
           "thread_id": {
             "type": "string",
             "title": "Thread Id"
+          },
+          "record_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Record Id"
+          },
+          "input_audio_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Audio Tokens"
+          },
+          "context_breakdown": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ContextBreakdown"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "input_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Tokens"
+          },
+          "output_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Tokens"
           },
           "latest_request_tokens": {
             "anyOf": [

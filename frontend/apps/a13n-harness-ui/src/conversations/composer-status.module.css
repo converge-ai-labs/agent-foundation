@@ -54,11 +54,18 @@ button.metric {
   max-height: inherit;
   width: 100%;
 }
-.popupBody {
+.popupScroll {
+  display: flex;
+  flex-direction: column;
+  height: auto;
+}
+.popupScroll [data-slot="scroll-area-viewport"] {
   min-height: 0;
+  height: auto;
+  overflow-anchor: none;
+}
+.popupBody {
   padding: 0 12px 12px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
 }
 .popupHeader {
   display: flex;
@@ -440,6 +447,9 @@ button.metric:focus-visible {
 
 .contextPopup {
   width: min(280px, calc(100vw - 24px));
+}
+.contextPopup:has([data-prompt-breakdown]) {
+  width: min(340px, calc(100vw - 24px));
 }
 .contextPopup .popupHeader {
   padding: 12px 16px 8px;

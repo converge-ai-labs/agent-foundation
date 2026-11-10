@@ -189,6 +189,7 @@ class RuntimeContextCapability(AbstractModelContextCapability):
                 *projection.blocks,
                 ModelContextBlock(
                     source_id=RUNTIME_CONTEXT_CAPABILITY_ID,
+                    context_group="runtime_state",
                     placement=ModelContextPlacement.REQUEST_EPILOGUE,
                     content=reminder,
                 ),
@@ -268,6 +269,7 @@ class WorkspaceOutlineCapability(AbstractModelContextCapability):
                 *projection.blocks,
                 ModelContextBlock(
                     source_id=WORKSPACE_OUTLINE_CAPABILITY_ID,
+                    context_group="environment_context",
                     placement=ModelContextPlacement.INPUT_PREAMBLE,
                     content=content,
                 ),
@@ -583,6 +585,7 @@ class _FileContextRunCapability(FileContextCapability):
                 *projection.blocks,
                 ModelContextBlock(
                     source_id=FILE_CONTEXT_CAPABILITY_ID,
+                    context_group="environment_context",
                     placement=ModelContextPlacement.REQUEST_EPILOGUE,
                     content="\n".join(parts),
                 ),
@@ -684,6 +687,7 @@ class HandoffCapability(AbstractModelContextCapability):
                 *projection.blocks,
                 ModelContextBlock(
                     source_id=HANDOFF_CAPABILITY_ID,
+                    context_group="conversation",
                     placement=ModelContextPlacement.REQUEST_EPILOGUE,
                     content=content,
                 ),

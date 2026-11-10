@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Annotated, Literal, Self
 
+from a13n_harness.context_breakdown import ContextBreakdown
 from a13n_harness.toolsets.file_media import NativeInputMediaKind
 from a13n_stream_protocol import ContentMetadata
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
@@ -52,6 +53,11 @@ class RunModelOverrides(ModelControlSelection):
 
 class ContextUsageView(SurfaceModel):
     thread_id: str
+    record_id: str | None = None
+    input_audio_tokens: int | None = None
+    context_breakdown: ContextBreakdown | None = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
     latest_request_tokens: int | None = None
     context_window: int | None = None
     model_id: str | None = None

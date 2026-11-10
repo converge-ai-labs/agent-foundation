@@ -709,6 +709,7 @@ function ContextDetails({ threadId }: { threadId: string }) {
       <details className={layout.details}>
         <summary>{t("Context")}</summary>
         <ContextUsageDetails
+          request={context.data}
           used={context.data?.latest_request_tokens}
           capacity={context.data?.context_window}
         />

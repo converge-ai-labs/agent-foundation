@@ -38,7 +38,7 @@ from pydantic_ai.usage import RunUsage, UsageLimits
 
 from a13n_harness._run_stream import HarnessRunStream
 from a13n_harness._usage_pricing import _cost_source, price_response
-from a13n_harness.content import ContentItem, ContentMetadata, native_content
+from a13n_harness.content import native_content
 from a13n_harness.context import AgentContext, RunBindings
 from a13n_harness.environment.sources import EnvironmentEntry
 from a13n_harness.errors import PluginError, RunError
@@ -122,12 +122,7 @@ class _LiveCapability(AbstractCapability[AgentContext]):
         )
         if not projection.blocks:
             return result
-        extra = native_content(
-            [
-                ContentItem(block.content, ContentMetadata(display=False, source_id=block.source_id))
-                for block in projection.blocks
-            ]
-        )
+        extra = native_content([block.content_item() for block in projection.blocks])
         assert isinstance(extra, list)
         # Native realtime sends supplemental content together with the tool result,
         # before automatic continuation. Result events occur too late for this.
