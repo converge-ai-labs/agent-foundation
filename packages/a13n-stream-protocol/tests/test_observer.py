@@ -1515,3 +1515,11 @@ def test_structured_tool_media_is_omitted_before_custom_serialization(as_model: 
     assert json.loads(content) == {"record": {"payload_omitted": True}, "other": [{"value": "id-7"}]}
     assert calls == []
     assert media.data == b"private payload"
+
+
+def test_complete_skill_catalog_is_not_a_display_custom_event() -> None:
+    from a13n_harness.capabilities import BoundSkillCatalog, SkillCatalogResolvedEvent
+
+    observer = HarnessAguiObserver()
+    source = SkillCatalogResolvedEvent(catalog=BoundSkillCatalog(items=()))
+    assert observer.observe(_event(0, source)) == ()

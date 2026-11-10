@@ -112,8 +112,8 @@ async def test_prepare_failure_stays_primary_when_cleanup_also_fails(adapter, mo
     assert primary.__cause__ is cleanup
 
 
-@pytest.mark.parametrize("failure", ["not_ready", "error"])
-async def test_eip_readiness_recovers_through_real_adapter_and_aggregate(failure):
+@pytest.mark.parametrize("code", ["environment_unavailable", "environment_stale_mount"])
+async def test_ready_eip_operations_do_not_probe_readiness_or_replay_failures(code):
     from unittest.mock import AsyncMock
 
     from a13n_harness import RunBindings
@@ -136,19 +136,13 @@ async def test_eip_readiness_recovers_through_real_adapter_and_aggregate(failure
             1024,
         )
     )
-    first = (
-        SimpleNamespace(ready=False)
-        if failure == "not_ready"
-        else EnvironmentError("Transient readiness failure", code="environment_unavailable")
-    )
-    readiness = AsyncMock(
-        side_effect=[SimpleNamespace(ready=True), first, SimpleNamespace(ready=True), SimpleNamespace(ready=True)]
-    )
+    readiness = AsyncMock(side_effect=AssertionError("Ready operations must not issue readiness RPCs"))
     stat = AsyncMock(
         return_value=eip.FileStatResult(
             info=eip.FileInfo(path=eip.EIPPath(path="/note.txt"), kind=eip.FileKind.FILE, size_bytes=4)
         )
     )
+    stat.side_effect = [EnvironmentError("Native operation failed", code=code), stat.return_value, stat.return_value]
     session = SimpleNamespace(
         descriptor=SimpleNamespace(
             device_id="device",
@@ -204,12 +198,12 @@ async def test_eip_readiness_recovers_through_real_adapter_and_aggregate(failure
     ) as bound:
         with pytest.raises(EnvironmentError) as caught:
             await bound.files.stat("note.txt")
-        assert caught.value.code == "environment_unavailable"
-        stat.assert_not_awaited()
+        assert caught.value.code == code
+        assert stat.await_count == 1
         for _ in range(2):
             assert (await bound.files.stat("note.txt")).size == 4
-        assert readiness.await_count == 4
-        assert stat.await_count == 2
+        readiness.assert_not_awaited()
+        assert stat.await_count == 3
         assert closed == []
     assert closed == [True]
 

@@ -864,16 +864,12 @@
 }
 .reasoningBody {
   max-height: 144px;
-  overflow: auto;
-  overscroll-behavior: contain;
-  scrollbar-gutter: stable;
   margin: 4px 8px 8px;
 }
-.reasoningBody > div + div {
+.reasoningBody [data-slot="scroll-area-content"] > div + div {
   margin-top: 12px;
 }
-.reasoning > summary:focus-visible,
-.reasoningBody:focus-visible {
+.reasoning > summary:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
@@ -1520,9 +1516,11 @@ dl.detailGrid > .detailLongRow dd {
 }
 .showMore {
   margin: 4px 0 0 8px;
-  color: var(--harness-log-text);
   font-size: calc(var(--a13n-text-body) * 12 / 14);
   font-weight: 400;
+}
+.showMore:not([data-loading]) {
+  color: var(--harness-log-text);
 }
 
 /* Attachment identities live in the editor text; widgets are their presentation. */

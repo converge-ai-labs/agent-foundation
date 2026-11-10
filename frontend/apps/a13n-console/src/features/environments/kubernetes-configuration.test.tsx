@@ -133,7 +133,7 @@ it("requires an explicit execution selection after removing its container", asyn
   });
   expect(selection.textContent).not.toContain("envd");
   await user.click(selection);
-  await user.click(screen.getByRole("option", { name: "helper" }));
+  await user.click(await screen.findByRole("option", { name: "helper" }));
   expect(recipe().execution_container).toBe("helper");
 });
 

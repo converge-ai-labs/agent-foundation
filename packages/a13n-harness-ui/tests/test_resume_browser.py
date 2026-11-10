@@ -256,14 +256,17 @@ async def test_stale_search_and_closed_browser_discard_late_responses() -> None:
         backend.resume_sessions.side_effect = load
         browser.search.text = "slow"
         await started.wait()
+        slow_task = browser._load_task
         browser.search.text = "fast"
         await _until(lambda: browser.selected is not None and browser.selected.thread_id == "thread-3")
         release.set()
-        await asyncio.sleep(0.03)
+        await slow_task
         assert browser.selected.thread_id == "thread-3"
         browser.search.text = "closed"
+        closing_task = browser._load_task
         shell.close_resume()
-        await asyncio.sleep(0.2)
+        await asyncio.gather(closing_task, return_exceptions=True)
+        assert closing_task.cancelled()
         assert browser.closed and browser.page.threads[0].thread_id == "thread-3"
         shell.renderer.transcript.close()
 

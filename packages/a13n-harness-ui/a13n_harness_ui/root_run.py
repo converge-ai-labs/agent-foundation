@@ -14,6 +14,7 @@ from typing import Any, Literal
 from uuid import uuid4
 
 from a13n_harness import HarnessRunStream, SafeFailure
+from a13n_harness.capabilities.skills import BoundSkillCatalog
 from a13n_harness.errors import HarnessError
 from a13n_harness.input import RunInputValue
 from a13n_harness.usage import RunUsageSummary
@@ -91,6 +92,7 @@ class _RootOperation:
     goal: GoalView | None = None
     observation_only: bool = False
     main_account: MainAccountSelection | None = None
+    skill_catalog: BoundSkillCatalog | None = None
 
 
 @dataclass(slots=True)
@@ -671,6 +673,7 @@ class RootRunCoordinator:
                         goal=operation.goal,
                         on_goal=lambda value: self._goal_changed(operation, value),
                         on_main_account=lambda value: self._main_account_changed(operation, value),
+                        on_skill_catalog=lambda value: self._skill_catalog_resolved(operation, value),
                         on_stream=lambda stream, input_files=None: self._running(
                             operation.receipt.receipt_id, stream, input_files
                         ),
@@ -884,6 +887,16 @@ class RootRunCoordinator:
             self._tool_executions.retry(operation.receipt.thread_id)
         if not operation.cancel_requested and self._browser_handback is not None:
             self._browser_handback.retry(operation.receipt.thread_id)
+
+    def _skill_catalog_resolved(self, operation: _RootOperation, value: BoundSkillCatalog) -> None:
+        operation.skill_catalog = value.model_copy(deep=True)
+
+    def skill_catalog(self, receipt_id: str) -> BoundSkillCatalog | None:
+        """Return only the producer-frozen catalog retained by this exact operation."""
+        operation = self._operations.get(receipt_id)
+        if operation is None:
+            raise RunCoordinationError("Root receipt does not exist in this App.", code="root_receipt_missing")
+        return None if operation.skill_catalog is None else operation.skill_catalog.model_copy(deep=True)
 
     async def _main_account_changed(self, operation: _RootOperation, value: MainAccountSelection) -> None:
         previous = operation.main_account

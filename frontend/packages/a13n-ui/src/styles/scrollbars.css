@@ -1,33 +1,35 @@
-/* Native form controls share ScrollBar's sizing and colors. */
+/* Native scroll owners can opt in individually or across an application. */
 .a13n-scrollbar {
-  scrollbar-width: thin;
-  scrollbar-color: var(--a13n-scrollbar-thumb) transparent;
   scrollbar-gutter: stable;
 }
-.a13n-scrollbar:hover {
-  scrollbar-color: var(--a13n-scrollbar-thumb-hover) transparent;
-}
-@supports selector(::-webkit-scrollbar) {
-  .a13n-scrollbar,
-  .a13n-scrollbar:hover {
-    scrollbar-width: auto;
-    scrollbar-color: auto;
+:where(.a13n-scrollbar, .a13n-scrollbars, .a13n-scrollbars *) {
+  scrollbar-width: thin;
+  scrollbar-color: var(--a13n-scrollbar-thumb) transparent;
+  &:hover {
+    scrollbar-color: var(--a13n-scrollbar-thumb-hover) transparent;
   }
-  .a13n-scrollbar::-webkit-scrollbar {
-    width: var(--a13n-scrollbar-size);
-    height: var(--a13n-scrollbar-size);
-  }
-  .a13n-scrollbar::-webkit-scrollbar-track,
-  .a13n-scrollbar::-webkit-scrollbar-corner {
-    background: transparent;
-  }
-  .a13n-scrollbar::-webkit-scrollbar-thumb {
-    min-height: 24px;
-    border-radius: 999px;
-    background: var(--a13n-scrollbar-thumb);
-  }
-  .a13n-scrollbar::-webkit-scrollbar-thumb:hover,
-  .a13n-scrollbar::-webkit-scrollbar-thumb:active {
-    background: var(--a13n-scrollbar-thumb-hover);
+  @supports selector(::-webkit-scrollbar) {
+    &,
+    &:hover {
+      scrollbar-width: auto;
+      scrollbar-color: auto;
+    }
+    &::-webkit-scrollbar {
+      width: var(--a13n-scrollbar-size);
+      height: var(--a13n-scrollbar-size);
+    }
+    &::-webkit-scrollbar-track,
+    &::-webkit-scrollbar-corner {
+      background: transparent;
+    }
+    &::-webkit-scrollbar-thumb {
+      min-height: 24px;
+      border-radius: 999px;
+      background: var(--a13n-scrollbar-thumb);
+    }
+    &::-webkit-scrollbar-thumb:hover,
+    &::-webkit-scrollbar-thumb:active {
+      background: var(--a13n-scrollbar-thumb-hover);
+    }
   }
 }

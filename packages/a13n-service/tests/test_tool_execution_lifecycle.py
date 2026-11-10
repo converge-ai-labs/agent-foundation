@@ -22,6 +22,26 @@ from .test_tool_execution_store import _deliver, _origin, _record, _save
 pytestmark = pytest.mark.anyio
 
 
+@pytest.fixture
+def predecessor_wait(monkeypatch):
+    from types import SimpleNamespace
+
+    from a13n_service.runs.tool_executions import owner
+
+    blocked, retry = asyncio.Event(), asyncio.Event()
+
+    async def sleep(seconds):
+        blocked.set()
+        await retry.wait()
+        await asyncio.sleep(0)
+
+    monkeypatch.setattr(owner, "asyncio", SimpleNamespace(**(vars(asyncio) | {"sleep": sleep})))
+    try:
+        yield blocked, retry
+    finally:
+        retry.set()
+
+
 async def _admit(runtime, lease, operation, *, sequential=False, release=None):
     token = ORIGIN.set(lease)
     try:
@@ -80,7 +100,7 @@ async def test_stopped_origin_retains_cleanup_and_never_wakes(service, scripted_
 
 @pytest.mark.parametrize("prior_sequential,next_sequential", [(True, False), (False, True), (False, False)])
 async def test_cross_worker_barrier_and_later_stop_scope(
-    service, scripted_model, runs_kit, prior_sequential, next_sequential
+    service, scripted_model, runs_kit, prior_sequential, next_sequential, predecessor_wait
 ):
     started, origin = await _origin(service, scripted_model, runs_kit)
     entered, finish, next_entered = asyncio.Event(), asyncio.Event(), asyncio.Event()
@@ -121,8 +141,9 @@ async def test_cross_worker_barrier_and_later_stop_scope(
         finally:
             ORIGIN.reset(token)
         if prior_sequential or next_sequential:
-            with pytest.raises(TimeoutError):
-                await asyncio.wait_for(next_entered.wait(), 0.2)
+            await asyncio.wait_for(predecessor_wait[0].wait(), 5)
+            assert not next_entered.is_set()
+            assert not pending.done()
         else:
             await asyncio.wait_for(next_entered.wait(), 5)
         stopped = await service.client.post(f"{service.api}/runs/{successor.run_id}/interrupt")
@@ -131,10 +152,12 @@ async def test_cross_worker_barrier_and_later_stop_scope(
         assert (await service.runtime.executions.info(origin.thread_id, record.execution_id)).status == "running"
         finish.set()
         await service.runtime.executions.join()
+        predecessor_wait[1].set()
         assert await asyncio.wait_for(pending, 5) == "next"
         assert (await second.executions.result(origin.thread_id, record.execution_id)).result == "original"
     finally:
         finish.set()
+        predecessor_wait[1].set()
         if pending is not None:
             await asyncio.gather(pending, return_exceptions=True)
         await service.runtime.executions.close()
@@ -278,7 +301,9 @@ async def test_failed_terminal_publication_is_not_renewed(service, scripted_mode
     await owner.close()
 
 
-async def test_retained_cross_worker_call_stays_queued_until_barrier_clears(service, scripted_model, runs_kit):
+async def test_retained_cross_worker_call_stays_queued_until_barrier_clears(
+    service, scripted_model, runs_kit, predecessor_wait
+):
     started, lease = await _origin(service, scripted_model, runs_kit)
     entered, finish, next_entered = asyncio.Event(), asyncio.Event(), asyncio.Event()
     second = replace(service.runtime)
@@ -302,17 +327,19 @@ async def test_retained_cross_worker_call_stays_queued_until_barrier_clears(serv
         assert submitted.status_code == 201, submitted.text
         (successor,) = await claim(second, worker_id="worker-b", worker_build="test", limit=1)
         record = await _admit(second, successor, next_operation)
-        with pytest.raises(TimeoutError):
-            await asyncio.wait_for(next_entered.wait(), 0.2)
+        await asyncio.wait_for(predecessor_wait[0].wait(), 5)
+        assert not next_entered.is_set()
         assert (await second.executions.info(lease.thread_id, record.execution_id)).status == "queued"
         assert (await Store(second).get(lease.thread_id, record.execution_id)).record.status == "queued"
         finish.set()
         await service.runtime.executions.join()
+        predecessor_wait[1].set()
         await asyncio.wait_for(second.executions.join(), 5)
         assert next_entered.is_set()
         assert (await second.executions.result(lease.thread_id, record.execution_id)).result == "next"
     finally:
         finish.set()
+        predecessor_wait[1].set()
         await service.runtime.executions.close()
         await second.executions.close()
 

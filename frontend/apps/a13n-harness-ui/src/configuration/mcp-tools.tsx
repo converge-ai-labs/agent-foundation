@@ -1,7 +1,7 @@
 import { useTranslation } from "../i18n";
 import { useContext, useEffect, useId, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Checkbox, Input } from "a13n-ui";
+import { Button, Checkbox, Input, ScrollArea } from "a13n-ui";
 import { ArrowClockwise, CaretRight } from "@phosphor-icons/react";
 import { useTransport } from "../transport/context";
 import { ApiError, result, type Schema } from "../transport/client";
@@ -210,11 +210,15 @@ export function McpTools({ serverId }: { serverId: string }) {
             )}
           </div>
           <ErrorNotice error={discovery.error} />
-          <div
-            className={`${styles.list} a13n-scrollbar`}
-            role="region"
-            aria-label={t("Available MCP tools")}
-            tabIndex={0}
+          <ScrollArea
+            autoHeight
+            scrollbarGutter
+            className={styles.list}
+            viewportProps={{
+              role: "region",
+              "aria-label": t("Available MCP tools"),
+              tabIndex: 0,
+            }}
           >
             {filtered.map((tool) => (
               <ToolRow
@@ -240,7 +244,7 @@ export function McpTools({ serverId }: { serverId: string }) {
                   : t("Load tools to choose which ones to enable.")}
               </p>
             )}
-          </div>
+          </ScrollArea>
           {tools?.length === 0 && (
             <p className={styles.note}>
               {t("No tools enabled. The connection is kept.")}

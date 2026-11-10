@@ -98,11 +98,20 @@ def test_development_images_publish_only_variant_dev_tags_without_smoke_or_sha_t
     assert all(image["platforms"] == "linux/amd64,linux/arm64" for image in images)
     sandbox = [image for image in images if image["name"] == "a13n-sandbox"]
     assert {(image["variant"], image["tag"]) for image in sandbox} == (
-        {("standard", "dev"), ("slim", "dev-slim"), ("desktop", "dev-desktop")} if "a13n-sandbox" in expected else set()
+        {
+            ("standard", "dev"),
+            ("slim", "dev-slim"),
+            ("desktop", "dev-desktop"),
+            ("standard", "dev-vm"),
+            ("slim", "dev-slim-vm"),
+            ("desktop", "dev-desktop-vm"),
+        }
+        if "a13n-sandbox" in expected
+        else set()
     )
     assert all(image["tag"] == "dev" for image in images if image["name"] in {"a13n-service", "a13n-browser"})
     assert "SANDBOX_VARIANT={0}" in build["with"]["build-args"]
-    assert "matrix.variant" in build["with"]["cache-to"]
+    assert "matrix.tag" in build["with"]["cache-to"]
 
 
 @pytest.mark.parametrize("result", ["success", "failure", "skipped", "cancelled"])
@@ -124,8 +133,11 @@ def test_development_sandbox_publication_requires_both_binary_builds(result, mon
         ("a13n-envd", "desktop"),
     ],
 )
+@pytest.mark.parametrize("envd_variant", ["default", "vm"])
 @pytest.mark.parametrize("version", ["1.2.3", "1.2.3-rc.2"])
-def test_all_release_image_tags_follow_one_channel_policy(component, variant, version, tmp_path, monkeypatch) -> None:
+def test_all_release_image_tags_follow_one_channel_policy(
+    component, variant, envd_variant, version, tmp_path, monkeypatch
+) -> None:
     jobs = yaml.safe_load((ROOT / f".github/workflows/release-{component}.yml").read_text())["jobs"]
     steps = jobs["publish-image"]["steps"]
     script = next(step["run"] for step in steps if step["name"] == "Resolve image tags")
@@ -135,12 +147,18 @@ def test_all_release_image_tags_follow_one_channel_policy(component, variant, ve
     monkeypatch.setenv("IMAGE_NAME", image_name)
     monkeypatch.setenv("IMAGE", image)
     monkeypatch.setenv("VERSION", version)
+
     monkeypatch.setenv("VARIANT", variant)
+    monkeypatch.setenv("ENVD_VARIANT", "default")
     monkeypatch.setenv("GITHUB_OUTPUT", str(output))
+    monkeypatch.setenv("ENVD_VARIANT", envd_variant)
     subprocess.run(["bash", "-eu", "-c", script], check=True)
     tags = [line for line in output.read_text().splitlines() if line.startswith(image)]
     suffix = f"-{variant}" if variant not in {"standard", "browser"} else ""
     stable = variant if variant != "standard" else "latest"
+    if component == "a13n-envd" and envd_variant == "vm":
+        suffix += "-vm"
+        stable = "vm" if variant == "standard" else f"{variant}-vm"
     expected = [f"{image}:{version}{suffix}"]
     if "-rc." not in version and variant != "browser":
         expected.append(f"{image}:{stable}")
@@ -368,7 +386,10 @@ def test_quickstart_initializer_propagates_failures(
 def test_sandbox_release_checks_each_variant_digest(version, variant, tmp_path, monkeypatch):
     jobs = yaml.safe_load((ROOT / ".github/workflows/release-a13n-envd.yml").read_text())["jobs"]
     publish = jobs["publish-image"]
-    assert publish["strategy"]["matrix"] == {"variant": ["standard", "slim", "desktop"]}
+    assert publish["strategy"]["matrix"] == {
+        "variant": ["standard", "slim", "desktop"],
+        "envd-variant": ["default", "vm"],
+    }
     steps = publish["steps"]
     build = next(step for step in steps if step.get("uses", "").startswith("docker/build-push-action"))
     assert "SANDBOX_VARIANT=${{ matrix.variant }}" in build["with"]["build-args"]
@@ -381,6 +402,7 @@ def test_sandbox_release_checks_each_variant_digest(version, variant, tmp_path, 
     monkeypatch.setenv("IMAGE", "example/sandbox")
     monkeypatch.setenv("VERSION", version)
     monkeypatch.setenv("VARIANT", variant)
+    monkeypatch.setenv("ENVD_VARIANT", "default")
     subprocess.run(["bash", "-eu", "-c", step["run"]], cwd=tmp_path, check=True)
     suffix = f"-{variant}" if variant != "standard" else ""
     expected = [f"example/sandbox:{version}{suffix}"]
@@ -476,16 +498,19 @@ def test_parallel_compose_checks_wait_for_both_and_propagate_failures(tmp_path, 
         assert (tmp_path / f"{target}.args").read_text().strip() == (f"scripts/deploy_smoke.py {target} --port {port}")
 
 
-def test_sandbox_source_and_development_builds_include_embedded_vm_backends():
+def test_sandbox_source_and_development_builds_select_optional_vm_backends():
     workflow = yaml.safe_load((ROOT / ".github/workflows/images.yml").read_text())
     job = workflow["jobs"]["sandbox-binaries"]
-    step = next(step for step in job["steps"] if step["name"] == "Build sandbox binary with VM backends")
-    assert "--features vm-boxlite,vm-microsandbox" in step["run"]
+    step = next(step for step in job["steps"] if "cargo build" in step.get("run", ""))
+    assert '--features "$features"' in step["run"]
+    assert "features=vm" in step["run"]
+    assert set(job["strategy"]["matrix"]["envd-variant"]) == {"default", "vm"}
     assert step["env"]["BOXLITE_DEPS_STUB"] == "2"
     assert step["env"]["BOXLITE_EMBED_RUNTIME"] == "1"
     assert any("protobuf-compiler" in step.get("run", "") for step in job["steps"])
     dockerfile = (ROOT / "deploy/docker/images/sandbox/Dockerfile").read_text()
-    assert "--features vm-boxlite,vm-microsandbox" in dockerfile
+    assert "ARG ENVD_VARIANT=default" in dockerfile
+    assert "vm) features=vm" in dockerfile
     assert "ENV BOXLITE_DEPS_STUB=2 BOXLITE_EMBED_RUNTIME=1" in dockerfile
     assert "protobuf-compiler" in dockerfile
 
@@ -500,21 +525,14 @@ def test_shared_sandbox_binary_is_source_keyed_and_required_by_ci_consumers():
         assert source in cache["with"]["key"]
     build = next(step for step in steps if "cargo build" in step.get("run", ""))
     assert "--release --locked" in build["run"]
-    assert "--features vm-boxlite,vm-microsandbox" in build["run"]
+    assert "--features" not in build["run"]
     assert workflow["env"]["BOXLITE_DEPS_STUB"] == "2"
     assert workflow["env"]["BOXLITE_EMBED_RUNTIME"] == "1"
     assert build["if"] == "steps.binary.outputs.cache-hit != 'true'"
     upload = next(step for step in steps if step.get("uses", "").startswith("actions/upload-artifact@"))
     assert "if" not in upload and upload["with"]["if-no-files-found"] == "error"
     assert upload["with"]["name"] == "sandbox-binary-${{ inputs.arch }}"
-    for name in ("ci-deploy.yml", "ci-a13n-service-e2e.yml", "ci-containers.yml"):
+    for name in ("ci-a13n-service-e2e.yml", "ci-containers.yml"):
         consumer = yaml.safe_load((ROOT / ".github/workflows" / name).read_text())
         assert path in consumer[True]["pull_request"]["paths"]
         assert any(job.get("uses") == "./" + path for job in consumer["jobs"].values())
-    deployment = yaml.safe_load((ROOT / ".github/workflows/ci-deploy.yml").read_text())
-    for name in ("helm", "journeys"):
-        job = deployment["jobs"][name]
-        assert job["needs"] == "sandbox-binary"
-        download = next(step for step in job["steps"] if step.get("uses", "").startswith("actions/download-artifact@"))
-        assert download["with"]["path"] == "tmp/sandbox-binaries/amd64"
-    assert deployment["jobs"]["helm"]["env"]["K8S_SANDBOX_BINARY_SOURCE"] == "prebuilt"

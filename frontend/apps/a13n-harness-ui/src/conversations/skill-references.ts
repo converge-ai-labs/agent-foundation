@@ -10,14 +10,14 @@ export type LoadSkills = () => Promise<SkillCatalog>;
 export function loadThreadSkills(
   transport: Transport,
   threadId: string,
-  localRoots?: string[] | null,
+  environment?: Schema<"EnvironmentSelectionPatch"> | null,
   signal?: AbortSignal,
 ): Promise<SkillCatalog> {
-  return localRoots !== undefined
+  return environment != null
     ? result(
         transport.client.POST("/api/threads/{thread_id}/skills", {
           params: { path: { thread_id: threadId } },
-          body: { local_roots: localRoots },
+          body: environment,
           signal,
         }),
       )

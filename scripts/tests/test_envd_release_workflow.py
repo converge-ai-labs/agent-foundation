@@ -38,10 +38,13 @@ def test_client_publication_waits_for_downloads_without_a_registry_cycle(jobs: d
 
 
 @pytest.mark.parametrize("version", ["1.2.3", "1.2.3-rc.1"])
+@pytest.mark.parametrize("variant", ["default", "vm"])
 @pytest.mark.parametrize("missing_arch", [None, "amd64", "arm64"])
 def test_sandbox_binary_staging_preserves_target_bytes_and_requires_both_archives(
-    jobs: dict, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, version: str, missing_arch: str | None
+    jobs: dict, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, version: str, missing_arch: str | None, variant: str
 ) -> None:
+    monkeypatch.setenv("ENVD_VARIANT", variant)
+    suffix = "-vm" if variant == "vm" else ""
     archives = tmp_path / "dist/linux"
     archives.mkdir(parents=True)
     targets = {"amd64": "x86_64-unknown-linux-gnu", "arm64": "aarch64-unknown-linux-gnu"}
@@ -51,7 +54,7 @@ def test_sandbox_binary_staging_preserves_target_bytes_and_requires_both_archive
         binary = tmp_path / f"binary-{arch}"
         binary.write_bytes(f"release binary for {target}".encode())
         binary.chmod(0o755)
-        with tarfile.open(archives / f"a13n-envd-{version}-{target}.tar.gz", "w:gz") as archive:
+        with tarfile.open(archives / f"a13n-envd-{version}-{target}{suffix}.tar.gz", "w:gz") as archive:
             archive.add(binary, arcname="a13n-envd")
     monkeypatch.setenv("VERSION", version)
     script = next(step["run"] for step in jobs["publish-image"]["steps"] if step["name"] == "Stage sandbox binaries")
@@ -161,9 +164,14 @@ def test_native_release_checks_binary_version_without_inner_isolation(
 
 
 @pytest.mark.parametrize("target", ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"])
-def test_linux_release_archives_build_both_embedded_vm_backends(jobs, tmp_path, monkeypatch, target):
+@pytest.mark.parametrize("variant", ["default", "vm"])
+def test_linux_release_archives_select_embedded_vm_backends(jobs, tmp_path, monkeypatch, target, variant):
     job = jobs["build-binaries"]
-    entry = next(item for item in job["strategy"]["matrix"]["include"] if item["target"] == target)
+    entry = next(
+        item
+        for item in job["strategy"]["matrix"]["include"]
+        if item["target"] == target and item["envd-variant"] == variant
+    )
     assert entry["os"] == ("ubuntu-24.04-arm" if target.startswith("aarch64") else "ubuntu-24.04")
     assert job["env"]["BOXLITE_DEPS_STUB"] == "2"
     assert job["env"]["BOXLITE_EMBED_RUNTIME"] == "1"
@@ -180,22 +188,27 @@ def test_linux_release_archives_build_both_embedded_vm_backends(jobs, tmp_path, 
     cargo.chmod(0o755)
     (tmp_path / "LICENSE").write_text("license")
     monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ['PATH']}")
-    for key, value in {**job["env"], "TARGET": target, "VERSION": "1.2.3"}.items():
+    for key, value in {**job["env"], "TARGET": target, "VERSION": "1.2.3", "ENVD_VARIANT": variant}.items():
         monkeypatch.setenv(key, value)
     result = run_step(step["run"], tmp_path)
     assert result.returncode == 0, result.stderr
-    assert (tmp_path / "cargo-args").read_text().split() == [
-        "build",
-        "--release",
-        "--locked",
-        "--package",
-        "a13n-envd",
-        "--features",
-        "vm-boxlite,vm-microsandbox",
-        "--target",
-        target,
-    ]
-    with tarfile.open(tmp_path / f"a13n-envd-1.2.3-{target}.tar.gz") as archive:
+    # The default still passes an explicit empty feature argument.
+    args = (tmp_path / "cargo-args").read_text().strip()
+    assert args == " ".join(
+        [
+            "build",
+            "--release",
+            "--locked",
+            "--package",
+            "a13n-envd",
+            "--features",
+            "vm" if variant == "vm" else "",
+            "--target",
+            target,
+        ]
+    )
+    suffix = "-vm" if variant == "vm" else ""
+    with tarfile.open(tmp_path / f"a13n-envd-1.2.3-{target}{suffix}.tar.gz") as archive:
         binary = archive.extractfile("a13n-envd")
         assert binary is not None
         assert binary.read() == b"vm-enabled"

@@ -216,11 +216,10 @@ async fn supplied_environment_is_forwarded_and_rejection_does_not_retry_or_repla
             .len(),
         0
     );
-    assert!(
-        timeout(Duration::from_millis(50), listener.accept())
-            .await
-            .is_err()
-    );
+    assert!(matches!(
+        listener.into_std().unwrap().accept(),
+        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock
+    ));
 }
 
 #[tokio::test]
@@ -292,11 +291,10 @@ async fn rejected_pairing_preserves_local_secret_and_does_not_open_a_websocket()
         credential,
         fs::read_to_string(fixture.profile().join("credential")).unwrap()
     );
-    assert!(
-        timeout(Duration::from_millis(100), listener.accept())
-            .await
-            .is_err()
-    );
+    assert!(matches!(
+        listener.into_std().unwrap().accept(),
+        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock
+    ));
 }
 
 #[tokio::test]
@@ -330,11 +328,10 @@ async fn link_check_reports_target_without_contacting_it_or_starting_a_daemon() 
             .unwrap()
             .contains("pair_test")
     );
-    assert!(
-        timeout(Duration::from_millis(100), listener.accept())
-            .await
-            .is_err()
-    );
+    assert!(matches!(
+        listener.into_std().unwrap().accept(),
+        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock
+    ));
 }
 
 #[cfg(unix)]
@@ -440,11 +437,10 @@ async fn recognition_reuses_registration_while_daemon_owns_runtime_and_preserves
     }
     respond(carrier, 403, json!({})).await;
     finish(child).await;
-    assert!(
-        timeout(Duration::from_millis(100), listener.accept())
-            .await
-            .is_err()
-    );
+    assert!(matches!(
+        listener.into_std().unwrap().accept(),
+        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock
+    ));
 }
 
 #[tokio::test]

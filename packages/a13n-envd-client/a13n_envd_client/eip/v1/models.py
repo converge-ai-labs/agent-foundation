@@ -206,6 +206,11 @@ class ExecutionBackend(StrEnum):
     MICROSANDBOX = "microsandbox"
 
 
+class FileDocumentFailurePhase(StrEnum):
+    PROBE = "probe"
+    READ = "read"
+
+
 class FileKind(StrEnum):
     FILE = "file"
     DIRECTORY = "directory"
@@ -623,6 +628,11 @@ class FileCopyParams(EIPModel):
     replace: StrictBool = False
 
 
+class FileDiscoveryPosition(EIPModel):
+    candidate_offset: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)]
+    text_byte_offset: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)]
+
+
 class FileFindParams(EIPModel):
     context: EIPCallContext
     root: EIPPath
@@ -695,6 +705,7 @@ class FileReadTextParams(EIPModel):
     line_limit: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)]
     line_offset: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] = 0
     max_line_length: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)]
+    text_byte_limit: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)] | None = None
 
 
 class FileReadTextResult(EIPModel):
@@ -778,6 +789,24 @@ class FileStatParams(EIPModel):
 
 class FileStatResult(EIPModel):
     info: FileInfo
+
+
+class FileTreeParams(EIPModel):
+    context: EIPCallContext
+    root: EIPPath
+    max_depth: Annotated[StrictInt, Field(ge=1, le=4294967295)]
+    max_entries: Annotated[StrictInt, Field(ge=1, le=4294967295)]
+    max_directory_calls: Annotated[StrictInt, Field(ge=1, le=4294967295)]
+    include_hidden: StrictBool
+    metadata_byte_limit: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)]
+    path_prefix_bytes: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)]
+    result_byte_limit: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)]
+
+
+class FileTreeResult(EIPModel):
+    entries: tuple[FileListEntry, ...] = ()
+    truncated: StrictBool
+    directory_calls: Annotated[StrictInt, Field(ge=0, le=4294967295)]
 
 
 class FileWriteTextParams(EIPModel):
@@ -1240,6 +1269,26 @@ class FileCopyResult(EIPModel):
     receipt: OperationReceipt
 
 
+class FileDiscoverDocumentsParams(EIPModel):
+    context: EIPCallContext
+    root: EIPPath
+    basename: Annotated[StrictStr, Field(min_length=1)]
+    max_entries: Annotated[StrictInt, Field(ge=1, le=10000)]
+    line_limit: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)]
+    max_line_length: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)]
+    text_byte_limit: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)] | None = None
+    result_byte_limit: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)]
+    position: FileDiscoveryPosition | None = None
+
+
+class FileDocumentText(EIPModel):
+    kind: Literal["text"]
+    prefix: FileReadTextResult
+    text_byte_offset: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)]
+    prefix_byte_length: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)]
+    prefix_digest: ContentDigest
+
+
 class FileFindResult(EIPModel):
     entries: tuple[FileListEntry, ...] = ()
     offset: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)]
@@ -1630,6 +1679,26 @@ class EIPError(EIPModel):
         return self
 
 
+class FileDocumentFailure(EIPModel):
+    kind: Literal["failure"]
+    path: EIPPath
+    phase: FileDocumentFailurePhase
+    error: EIPError
+
+
+type FileDocument = Annotated[
+    FileDocumentText | FileDocumentFailure,
+    Field(discriminator="kind"),
+]
+
+
+class FileDiscoverDocumentsResult(EIPModel):
+    documents: tuple[FileDocument, ...] = ()
+    next_position: FileDiscoveryPosition | None = None
+    entries_exceeded: StrictBool
+    omitted_unrepresentable_entries: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)]
+
+
 AllowlistDestinations.model_rebuild()
 CommandEnvironment.model_rebuild()
 CommandLimits.model_rebuild()
@@ -1668,6 +1737,7 @@ ExecutionFeatures.model_rebuild()
 ExecutionIdentity.model_rebuild()
 FileByteRange.model_rebuild()
 FileCopyParams.model_rebuild()
+FileDiscoveryPosition.model_rebuild()
 FileFindParams.model_rebuild()
 FileInfo.model_rebuild()
 FileListEntry.model_rebuild()
@@ -1688,6 +1758,8 @@ FileSearchParams.model_rebuild()
 FileSearchResult.model_rebuild()
 FileStatParams.model_rebuild()
 FileStatResult.model_rebuild()
+FileTreeParams.model_rebuild()
+FileTreeResult.model_rebuild()
 FileWriteTextParams.model_rebuild()
 FileWriterAbortResult.model_rebuild()
 FileWriterOpenParams.model_rebuild()
@@ -1761,6 +1833,8 @@ EgressStatus.model_rebuild()
 EgressUpdateParams.model_rebuild()
 EgressUpdateResult.model_rebuild()
 FileCopyResult.model_rebuild()
+FileDiscoverDocumentsParams.model_rebuild()
+FileDocumentText.model_rebuild()
 FileFindResult.model_rebuild()
 FileMkdirResult.model_rebuild()
 FileMoveResult.model_rebuild()
@@ -1809,6 +1883,8 @@ SessionConfiguration.model_rebuild()
 SessionOpenParams.model_rebuild()
 DeviceDescribeResult.model_rebuild()
 EIPError.model_rebuild()
+FileDocumentFailure.model_rebuild()
+FileDiscoverDocumentsResult.model_rebuild()
 
 __all__ = [
     "EIP_ERROR_CODES",
@@ -1895,6 +1971,13 @@ __all__ = [
     "FileByteRange",
     "FileCopyParams",
     "FileCopyResult",
+    "FileDiscoverDocumentsParams",
+    "FileDiscoverDocumentsResult",
+    "FileDiscoveryPosition",
+    "FileDocument",
+    "FileDocumentFailure",
+    "FileDocumentFailurePhase",
+    "FileDocumentText",
     "FileFindParams",
     "FileFindResult",
     "FileInfo",
@@ -1923,6 +2006,8 @@ __all__ = [
     "FileSearchResult",
     "FileStatParams",
     "FileStatResult",
+    "FileTreeParams",
+    "FileTreeResult",
     "FileWriteMode",
     "FileWriteTextParams",
     "FileWriteTextResult",

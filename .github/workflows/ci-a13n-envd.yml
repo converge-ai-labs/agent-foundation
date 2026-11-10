@@ -6,6 +6,7 @@ on:
     paths:
       - ".github/workflows/ci-a13n-envd.yml"
       - ".github/workflows/release-a13n-envd.yml"
+      - "scripts/envd_size.py"
       - "Cargo.lock"
       - "Cargo.toml"
       - "Makefile"
@@ -41,6 +42,7 @@ on:
     paths:
       - ".github/workflows/ci-a13n-envd.yml"
       - ".github/workflows/release-a13n-envd.yml"
+      - "scripts/envd_size.py"
       - "Cargo.lock"
       - "Cargo.toml"
       - "Makefile"
@@ -117,6 +119,7 @@ jobs:
               - 'spec/a13n-envd/07-execution-isolation.md'
               - 'proto/a13n-envd/eip/**'
               - 'Cargo.toml'
+              - 'scripts/envd_size.py'
               - 'Cargo.lock'
               - 'pyproject.toml'
               - 'uv.lock'
@@ -137,6 +140,7 @@ jobs:
               - 'conftest.py'
               - '.github/workflows/release-a13n-envd.yml'
               - 'Cargo.toml'
+              - 'scripts/envd_size.py'
               - 'Cargo.lock'
               - 'crates/a13n-envd/**'
               - 'packages/a13n-envd-client/**'
@@ -261,7 +265,7 @@ jobs:
         run: uv build --package a13n-envd-client --out-dir dist/a13n-envd-client
 
   daemon:
-    name: a13n-envd (${{ matrix.name }})
+    name: a13n-envd (${{ matrix.name }}, ${{ matrix.envd-variant }})
     env:
       BOXLITE_DEPS_STUB: "2"
       BOXLITE_EMBED_RUNTIME: "1"
@@ -274,18 +278,27 @@ jobs:
         include:
           - name: Linux x86_64
             runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            envd-variant: default
+            features: ""
             cache-key: linux-x86_64
             complete: true
             linux: true
             components: clippy, rustfmt
           - name: Linux ARM64
             runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            envd-variant: default
+            features: ""
             cache-key: linux-aarch64
             complete: false
             linux: true
             components: ""
           - name: Windows
             runner: windows-2025
+            target: x86_64-pc-windows-msvc
+            envd-variant: default
+            features: ""
             cache-key: windows
             complete: false
             linux: false
@@ -293,12 +306,33 @@ jobs:
           # macOS exercises the Seatbelt-backed execution-isolation path.
           - name: macOS
             runner: macos-15
+            target: aarch64-apple-darwin
+            envd-variant: default
+            features: ""
             cache-key: macos
             complete: false
             linux: false
             components: ""
+          - name: Linux x86_64
+            runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            envd-variant: vm
+            features: vm
+            cache-key: linux-x86_64-vm
+            complete: false
+            linux: true
+            components: ""
+          - name: Linux ARM64
+            runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            envd-variant: vm
+            features: vm
+            cache-key: linux-aarch64-vm
+            complete: false
+            linux: true
+            components: ""
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 20
+    timeout-minutes: 40
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -332,27 +366,50 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p test-results
-          make rust-check-all 2>&1 | tee test-results/native.log
+          make rust-check rust-package 2>&1 | tee test-results/native.log
 
+      # Integration tests compile the distributable binary too; size reporting
+      # consumes that exact binary without a second cargo build.
       - name: Run a13n-envd tests
-        if: matrix.complete == false
         shell: bash
+        env:
+          FEATURES: ${{ matrix.features }}
         run: |
           set -o pipefail
           mkdir -p test-results
-          cargo test --locked --package a13n-envd --all-features 2>&1 | tee test-results/native.log
+          cargo test --release --locked --package a13n-envd --features "$FEATURES" 2>&1 | tee test-results/native.log
+
+      - name: Set up Python for size and native EIP tests
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Measure release binary and archive size
+        if: ${{ !cancelled() }}
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+          ENVD_VARIANT: ${{ matrix.envd-variant }}
+          EXE_SUFFIX: ${{ runner.os == 'Windows' && '.exe' || '' }}
+        run: |
+          python3 scripts/envd_size.py --binary "target/release/a13n-envd$EXE_SUFFIX" \
+            --target "$TARGET" --variant "$ENVD_VARIANT" --output "test-results/size/report.json"
+
+      - name: Retain size report even on budget failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: envd-size-${{ matrix.cache-key }}
+          path: test-results/size/report.json
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Test native X11 clipboard under Xvfb
         if: matrix.linux
         shell: bash
         run: |
           set -o pipefail
-          xvfb-run -a cargo test --locked --package a13n-envd --lib clipboard -- --include-ignored --test-threads=1 2>&1 | tee test-results/clipboard-x11.log
-
-      - name: Set up Python for native EIP tests
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.13"
+          xvfb-run -a cargo test --release --locked --package a13n-envd --features "${{ matrix.features }}" --lib clipboard -- --include-ignored --test-threads=1 2>&1 | tee test-results/clipboard-x11.log
 
       - name: Set up uv for native EIP tests
         uses: astral-sh/setup-uv@v6
@@ -365,7 +422,7 @@ jobs:
         env:
           EXE_SUFFIX: ${{ runner.os == 'Windows' && '.exe' || '' }}
         run: |
-          export A13N_ENVD_TEST_BINARY="$PWD/target/debug/a13n-envd$EXE_SUFFIX"
+          export A13N_ENVD_TEST_BINARY="$PWD/target/release/a13n-envd$EXE_SUFFIX"
           uv run --locked --package a13n-envd-client --group test --no-default-groups python -m pytest \
             packages/a13n-envd-client/tests/eip/test_device_sessions.py \
             -k monitoring -q --junitxml=test-results/monitoring-eip.xml
@@ -373,28 +430,28 @@ jobs:
       # A plain Python runtime supplies the test driver, not an Envd release.
       # Mount the binary built above; namespace permissions allow managed bootstrap.
       - name: Test current Envd binary against real cgroup limits
-        if: matrix.runner == 'ubuntu-24.04'
+        if: matrix.runner == 'ubuntu-24.04' && matrix.envd-variant == 'default'
         shell: bash
         run: |
           set -o pipefail
           docker run --rm --network=none --cap-add=SYS_ADMIN \
             --security-opt seccomp=unconfined --security-opt apparmor=unconfined \
             --cgroupns=private --cpus=0.5 --memory=512m --user 0 \
-            --mount "type=bind,src=$PWD/target/debug/a13n-envd,dst=/test-bin/a13n-envd,readonly" \
+            --mount "type=bind,src=$PWD/target/release/a13n-envd,dst=/test-bin/a13n-envd,readonly" \
             --mount "type=bind,src=$PWD/crates/a13n-envd/tests,dst=/tests,readonly" \
             --entrypoint python3 python:3.13-slim-trixie \
             /tests/monitoring_linux.py /test-bin/a13n-envd 2>&1 | tee test-results/monitoring-managed.log
 
       - name: Test managed OTLP export and Session credential isolation
-        if: matrix.runner == 'ubuntu-24.04'
+        if: matrix.runner == 'ubuntu-24.04' && matrix.envd-variant == 'default'
         shell: bash
         run: |
           set -o pipefail
-          cargo test --locked --package a13n-envd --test otlp --no-run --message-format=json > test-results/otlp-build.jsonl
+          cargo test --release --locked --package a13n-envd --test otlp --no-run --message-format=json > test-results/otlp-build.jsonl
           test_binary=$(python3 -c 'import json; from pathlib import Path; artifacts = [json.loads(line) for line in Path("test-results/otlp-build.jsonl").read_text().splitlines()]; print(next(item["executable"] for item in artifacts if item.get("target", {}).get("name") == "otlp" and item.get("executable")))')
           docker run --rm --network=none --cap-add=SYS_ADMIN \
             --security-opt seccomp=unconfined --security-opt apparmor=unconfined --user 0 \
-            --mount "type=bind,src=$PWD/target/debug/a13n-envd,dst=$PWD/target/debug/a13n-envd,readonly" \
+            --mount "type=bind,src=$PWD/target/release/a13n-envd,dst=$PWD/target/release/a13n-envd,readonly" \
             --mount "type=bind,src=$test_binary,dst=/otlp-test,readonly" \
             --entrypoint /otlp-test python:3.13-slim-trixie \
             managed_mtls_export_keeps_credentials_out_of_sessions --ignored --nocapture 2>&1 | tee test-results/otlp-managed.log
@@ -402,7 +459,7 @@ jobs:
       - name: Exercise native Windows EIP process ownership and fail-closed isolation
         if: matrix.runner == 'windows-2025'
         env:
-          A13N_ENVD_TEST_BINARY: ${{ github.workspace }}\target\debug\a13n-envd.exe
+          A13N_ENVD_TEST_BINARY: ${{ github.workspace }}\target\release\a13n-envd.exe
         run: >-
           uv run --locked --package a13n-envd-client --group test --no-default-groups python -m pytest
           packages/a13n-envd-client/tests/eip/test_windows_process_e2e.py

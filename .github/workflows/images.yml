@@ -6,6 +6,7 @@ on:
     paths:
       - ".dockerignore"
       - ".github/workflows/images.yml"
+      - ".github/workflows/sandbox-binary.yml"
       - "Cargo.lock"
       - "Cargo.toml"
       - "deploy/docker/images/a13n-service/Dockerfile"
@@ -108,6 +109,7 @@ jobs:
             sandbox:
               - '.dockerignore'
               - '.github/workflows/images.yml'
+              - '.github/workflows/sandbox-binary.yml'
               - 'Cargo.lock'
               - 'Cargo.toml'
               - 'crates/a13n-envd/**'
@@ -150,23 +152,25 @@ jobs:
                   "tag": "dev",
               })
           if os.environ["GITHUB_EVENT_NAME"] == "workflow_dispatch" or os.environ["SANDBOX_CHANGED"] == "true":
-              for variant in ("standard", "slim", "desktop"):
-                  images.append({
-                      "name": "a13n-sandbox",
-                      "runner": "ubuntu-24.04",
-                      "file": "deploy/docker/images/sandbox/Dockerfile",
-                      "image": "ghcr.io/converge-ai-labs/a13n-sandbox",
-                      "context": ".",
-                      "platforms": "linux/amd64,linux/arm64",
-                      "variant": variant,
-                      "tag": "dev" if variant == "standard" else f"dev-{variant}",
-                  })
+              for envd_variant in ("default", "vm"):
+                  for variant in ("standard", "slim", "desktop"):
+                      images.append({
+                          "name": "a13n-sandbox",
+                          "runner": "ubuntu-24.04",
+                          "file": "deploy/docker/images/sandbox/Dockerfile",
+                          "image": "ghcr.io/converge-ai-labs/a13n-sandbox",
+                          "context": ".",
+                          "platforms": "linux/amd64,linux/arm64",
+                          "variant": variant,
+                          "envd_variant": envd_variant,
+                          "tag": ("dev" if variant == "standard" else f"dev-{variant}") + ("-vm" if envd_variant == "vm" else ""),
+                      })
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
               output.write(f"images={json.dumps(images, separators=(',', ':'))}\n")
           PY
 
   sandbox-binaries:
-    name: Build sandbox binary (${{ matrix.arch }})
+    name: Build sandbox binary (${{ matrix.arch }}, ${{ matrix.envd-variant }})
     needs: changes
     if: contains(fromJSON(needs.changes.outputs.images).*.name, 'a13n-sandbox')
     runs-on: ${{ matrix.runner }}
@@ -175,6 +179,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        envd-variant: [default, vm]
+        arch: [amd64, arm64]
         include:
           - arch: amd64
             runner: ubuntu-24.04
@@ -196,22 +202,26 @@ jobs:
       - name: Cache Cargo
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: dev-sandbox-${{ matrix.target }}
+          shared-key: dev-sandbox-${{ matrix.target }}-${{ matrix.envd-variant }}
 
       - name: Install SDK build dependencies
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
 
-      - name: Build sandbox binary with VM backends
+      - name: Build sandbox binary
         env:
           TARGET: ${{ matrix.target }}
+          ENVD_VARIANT: ${{ matrix.envd-variant }}
           BOXLITE_DEPS_STUB: "2"
           BOXLITE_EMBED_RUNTIME: "1"
-        run: cargo build --release --locked --package a13n-envd --features vm-boxlite,vm-microsandbox --target "$TARGET"
+        run: |
+          features=""
+          if [[ "$ENVD_VARIANT" == vm ]]; then features=vm; fi
+          cargo build --release --locked --package a13n-envd --features "$features" --target "$TARGET"
 
       - name: Upload sandbox binary
         uses: actions/upload-artifact@v4
         with:
-          name: sandbox-binary-${{ matrix.arch }}
+          name: sandbox-binary-${{ matrix.arch }}-${{ matrix.envd-variant }}
           path: target/${{ matrix.target }}/release/a13n-envd
           if-no-files-found: error
           retention-days: 1
@@ -242,14 +252,14 @@ jobs:
         if: matrix.name == 'a13n-sandbox'
         uses: actions/download-artifact@v4
         with:
-          name: sandbox-binary-amd64
+          name: sandbox-binary-amd64-${{ matrix.envd_variant }}
           path: tmp/sandbox-binaries/amd64
 
       - name: Download ARM64 sandbox binary
         if: matrix.name == 'a13n-sandbox'
         uses: actions/download-artifact@v4
         with:
-          name: sandbox-binary-arm64
+          name: sandbox-binary-arm64-${{ matrix.envd_variant }}
           path: tmp/sandbox-binaries/arm64
 
       - name: Set up QEMU for arm64
@@ -286,7 +296,8 @@ jobs:
           build-args: |
             ${{ matrix.name == 'a13n-sandbox' && 'ENVD_BINARY_SOURCE=prebuilt' || '' }}
             ${{ matrix.name == 'a13n-sandbox' && format('SANDBOX_VARIANT={0}', matrix.variant) || '' }}
+            ${{ matrix.name == 'a13n-sandbox' && format('ENVD_VARIANT={0}', matrix.envd_variant) || '' }}
             BUILD_VERSION=dev
             BUILD_REVISION=${{ github.sha }}
-          cache-from: type=gha,scope=${{ matrix.name }}-${{ matrix.variant }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.name }}-${{ matrix.variant }}
+          cache-from: type=gha,scope=${{ matrix.name }}-${{ matrix.tag }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}-${{ matrix.tag }}

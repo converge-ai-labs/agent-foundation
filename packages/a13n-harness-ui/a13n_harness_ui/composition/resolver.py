@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Literal
 
 from a13n_harness import RunConfiguration, ToolExecutionConfig
@@ -41,7 +41,11 @@ from a13n_harness_ui.configuration.models import (
     SidekickConfiguration,
     SubscriptionGroupResource,
 )
-from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection, validate_environment_selection
+from a13n_harness_ui.environment_bindings import (
+    EnvironmentBindingSelection,
+    EnvironmentSelectionPatch,
+    validate_environment_selection,
+)
 from a13n_harness_ui.environment_profiles import (
     FULL_CONTROL_PROFILE_ID,
     built_in_environment_profile,
@@ -53,7 +57,7 @@ from a13n_harness_ui.memory import ORGANIZATION_PROMPT
 from a13n_harness_ui.model_adapters import PydanticAiModelAdapter, service_tier_setting
 from a13n_harness_ui.model_controls import apply_model_controls
 from a13n_harness_ui.prompts import DEFAULT_SYSTEM_PROMPT
-from a13n_harness_ui.storage.contracts import Thread
+from a13n_harness_ui.storage.contracts import Thread, ThreadConfiguration
 from a13n_harness_ui.surfaces import RunModelOverrides
 
 from .models import (
@@ -107,12 +111,15 @@ class ThreadCompositionSelection:
 
     @classmethod
     def from_thread(cls, thread: Thread) -> ThreadCompositionSelection:
-        configuration = thread.configuration
+        return cls.from_configuration(thread.thread_id, thread.configuration)
+
+    @classmethod
+    def from_configuration(cls, thread_id: str, configuration: ThreadConfiguration) -> ThreadCompositionSelection:
         source = configuration.agent_source
         if source.kind == "memory":
             raise CompositionError("Memory Threads have no interactive Agent selection.", code="thread_scope_invalid")
         return cls(
-            thread_id=thread.thread_id,
+            thread_id=thread_id,
             version=configuration.version,
             project_id=configuration.project_id,
             local_roots=configuration.local_roots,
@@ -126,6 +133,52 @@ class ThreadCompositionSelection:
             environment_run_extension_ids=configuration.environment_run_extension_ids,
             mcp_server_ids=configuration.mcp_server_ids,
         )
+
+    def with_environment(
+        self,
+        environment: EnvironmentSelectionPatch | None,
+        *,
+        captured: ResolvedRunComposition | None = None,
+        patched: frozenset[str] = frozenset(),
+    ) -> ThreadCompositionSelection:
+        """Apply Run overrides, then retain unpatched axes on a deferred resume."""
+        selection = self
+        if environment is not None:
+            selection = replace(
+                selection,
+                local_roots=self.local_roots if environment.local_roots is None else environment.local_roots,
+                environment_profile_id=environment.environment_profile_id or self.environment_profile_id,
+                environment_bindings=(
+                    self.environment_bindings
+                    if environment.environment_bindings is None
+                    else environment.environment_bindings
+                ),
+                default_environment=(
+                    environment.default_environment
+                    if "default_environment" in environment.model_fields_set
+                    else self.default_environment
+                ),
+            )
+            patched = patched | environment.model_fields_set
+        if captured is not None:
+            selection = replace(
+                selection,
+                environment_profile_id=(
+                    selection.environment_profile_id
+                    if "environment_profile_id" in patched
+                    else captured.environment_profile.profile_id
+                ),
+                local_roots=selection.local_roots if "local_roots" in patched else captured.project_roots,
+                environment_bindings=(
+                    selection.environment_bindings
+                    if "environment_bindings" in patched
+                    else tuple(item.selection for item in captured.environment_bindings)
+                ),
+                default_environment=(
+                    selection.default_environment if "default_environment" in patched else captured.default_environment
+                ),
+            )
+        return selection
 
 
 class AgentCompositionResolver:

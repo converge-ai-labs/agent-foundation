@@ -682,17 +682,21 @@ it("restores the API connection when discarding a same-route subscription change
   await waitFor(() =>
     expect(parse(source()).authentication.kind).toBe("grok_subscription"),
   );
-  fireEvent.change(screen.getByLabelText("Advanced source"), {
-    target: { value: initial },
-  });
-  await waitFor(() =>
+  vi.useFakeTimers();
+  try {
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText("Advanced source"), {
+        target: { value: initial },
+      });
+    });
     expect(
       screen.getByRole("combobox", { name: "Model connection" }).textContent,
-    ).toContain("Grok API"),
-  );
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 250));
-  });
+    ).toContain("Grok API");
+    // Cross the owner's 200 ms preparation debounce after restoring the source.
+    await act(async () => vi.advanceTimersByTimeAsync(250));
+  } finally {
+    vi.useRealTimers();
+  }
   expect(source()).toBe(initial);
   expect(mocks.prepare).toHaveBeenCalledTimes(1);
 });

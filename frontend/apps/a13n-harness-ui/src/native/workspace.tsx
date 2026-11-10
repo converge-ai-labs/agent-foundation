@@ -166,9 +166,7 @@ export function NativeWorkspace({
   const panelKey = `native-panel.${threadId ?? "new"}`;
   const [panelStates, setPanelStates] = useState<Record<string, boolean>>({});
   const sidebarCollapsed =
-    panelStates[panelKey] ??
-    readPreference(panelKey, readPreference("native-panel", "open")) ===
-      "closed";
+    panelStates[panelKey] ?? readPreference(panelKey, "closed") === "closed";
   const setSidebarCollapsed = (collapsed: boolean) => {
     setPanelStates((previous) => ({ ...previous, [panelKey]: collapsed }));
     writePreference(panelKey, collapsed ? "closed" : "open");

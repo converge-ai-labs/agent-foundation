@@ -387,8 +387,6 @@ export function ComposerEditor({
                   padding: "4px",
                   scrollPadding: "4px",
                   overscrollBehavior: "contain",
-                  scrollbarWidth: "thin",
-                  scrollbarColor: "var(--a13n-scrollbar-thumb) transparent",
                 },
                 ".cm-tooltip.cm-tooltip-autocomplete > ul > li": {
                   padding: "8px 12px",

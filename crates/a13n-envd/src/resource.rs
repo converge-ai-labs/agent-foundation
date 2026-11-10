@@ -13,16 +13,63 @@ use sha2::{Digest, Sha256};
 
 use crate::{
     eip::{
-        EIPPath, FileCopyParams, FileFindParams, FileFindResult, FileInfo, FileKind, FileListEntry,
-        FileListParams, FileListResult, FileMkdirParams, FileMoveParams, FilePatchTextParams,
-        FileReadTextParams, FileReadTextResult, FileRemoveParams, FileSearchMatch,
-        FileSearchParams, FileSearchResult, FileStatParams, FileStatResult, FileWriteMode,
-        FileWriteTextParams, SearchMode,
+        ContentDigest, EIPPath, FileCopyParams, FileDiscoverDocumentsParams,
+        FileDiscoverDocumentsResult, FileDiscoveryPosition, FileDocument, FileDocumentFailure,
+        FileDocumentFailurePhase, FileDocumentText, FileFindParams, FileFindResult, FileInfo,
+        FileKind, FileListEntry, FileListParams, FileListResult, FileMkdirParams, FileMoveParams,
+        FilePatchTextParams, FileReadTextParams, FileReadTextResult, FileRemoveParams,
+        FileSearchMatch, FileSearchParams, FileSearchResult, FileStatParams, FileStatResult,
+        FileTreeParams, FileTreeResult, FileWriteMode, FileWriteTextParams, SearchMode,
     },
     filesystem::{DeviceFilesystem, PathError, StagedCandidate},
     operation::{OperationInterruption, OperationLedger},
     transfer::file_info,
 };
+
+fn discovery_failure(
+    path: &EIPPath,
+    phase: FileDocumentFailurePhase,
+    error: ResourceError,
+) -> FileDocument {
+    FileDocument::Failure(FileDocumentFailure {
+        kind: "failure".to_owned(),
+        path: path.clone(),
+        phase,
+        error: crate::daemon::map_resource_error(error),
+    })
+}
+
+fn discovery_result_within_limit(
+    result: FileDiscoverDocumentsResult,
+    limit: u64,
+) -> Result<FileDiscoverDocumentsResult, ResourceError> {
+    if serde_json::to_vec(&result)
+        .map_err(|_| ResourceError::Internal)?
+        .len() as u64
+        > limit
+    {
+        return Err(ResourceError::OutputLimit);
+    }
+    Ok(result)
+}
+
+fn json_text_prefix_end(text: &str, max_bytes: u64) -> usize {
+    let mut used = 0;
+    let mut end = 0;
+    for (offset, character) in text.char_indices() {
+        let bytes = match character {
+            '"' | '\\' | '\n' | '\r' | '\t' | '\u{0008}' | '\u{000c}' => 2,
+            '\u{0000}'..='\u{001f}' => 6,
+            _ => character.len_utf8() as u64,
+        };
+        if used + bytes > max_bytes {
+            break;
+        }
+        used += bytes;
+        end = offset + character.len_utf8();
+    }
+    end
+}
 
 const MAX_TRAVERSAL_ENTRIES: usize = 10_000;
 const MAX_TRAVERSAL_DEPTH: u32 = 128;
@@ -145,6 +192,11 @@ impl ResourceRegistry {
                     .saturating_sub(RESPONSE_RESERVE_BYTES),
             )
             .max(1);
+        let max_bytes = match params.text_byte_limit {
+            Some(0) => return Err(ResourceError::Limit),
+            Some(limit) => max_bytes.min(limit),
+            None => max_bytes,
+        };
         let selection = read_text_selection(
             opened.file,
             params.line_offset,
@@ -162,6 +214,244 @@ impl ResourceRegistry {
             has_more: selection.has_more,
             truncated_lines: selection.truncated_lines,
         })
+    }
+
+    pub(crate) fn discover_documents(
+        &self,
+        filesystem: &Arc<DeviceFilesystem>,
+        params: &FileDiscoverDocumentsParams,
+    ) -> Result<FileDiscoverDocumentsResult, ResourceError> {
+        let basename = &params.basename;
+        if basename.is_empty()
+            || matches!(basename.as_str(), "." | "..")
+            || basename.contains(['/', '\\', '\0'])
+        {
+            return Err(ResourceError::InvalidInput {
+                field: "basename",
+                reason: "expected one literal filename",
+            });
+        }
+        if params.max_entries == 0
+            || params.max_entries as usize > MAX_TRAVERSAL_ENTRIES
+            || params.line_limit == 0
+            || params.max_line_length == 0
+            || params.text_byte_limit == Some(0)
+            || params.result_byte_limit == 0
+        {
+            return Err(ResourceError::Limit);
+        }
+        self.check_cancelled(&params.context.operation_id)?;
+        let root = filesystem
+            .resolve_followed(&params.root)
+            .map_err(map_path_error)?;
+        let reader =
+            std::fs::read_dir(root).map_err(|error| map_path_error(PathError::from_io(error)))?;
+        let mut result = FileDiscoverDocumentsResult {
+            documents: Vec::new(),
+            next_position: None,
+            entries_exceeded: false,
+            omitted_unrepresentable_entries: 0,
+        };
+        let mut children = Vec::new();
+        let mut entries = 0;
+        for entry in reader {
+            self.check_cancelled(&params.context.operation_id)?;
+            let entry = entry.map_err(|error| map_path_error(PathError::from_io(error)))?;
+            let Ok(name) = entry.file_name().into_string() else {
+                result.omitted_unrepresentable_entries += 1;
+                continue;
+            };
+            if name.contains(['/', '\0']) {
+                result.omitted_unrepresentable_entries += 1;
+                continue;
+            }
+            if name.starts_with('.') {
+                continue;
+            }
+            entries += 1;
+            if entries > params.max_entries {
+                result.entries_exceeded = true;
+                return discovery_result_within_limit(result, self.discovery_byte_limit(params));
+            }
+            if entry.file_type().map_err(|_| ResourceError::Io)?.is_dir() {
+                children.push(join_logical(&params.root.path, &name));
+            }
+        }
+        children.sort_by(|left, right| left.as_bytes().cmp(right.as_bytes()));
+        let candidates = std::iter::once(params.root.path.clone())
+            .chain(children)
+            .collect::<Vec<_>>();
+        let position = params.position.clone().unwrap_or(FileDiscoveryPosition {
+            candidate_offset: 0,
+            text_byte_offset: 0,
+        });
+        if position.candidate_offset > candidates.len() as u64 {
+            return Err(ResourceError::Conflict);
+        }
+        let limit = self.discovery_byte_limit(params);
+        // Reserve a maximal continuation and the documents array before collecting items.
+        result.next_position = Some(FileDiscoveryPosition {
+            candidate_offset: u64::MAX,
+            text_byte_offset: u64::MAX,
+        });
+        let mut used = serde_json::to_vec(&result)
+            .map_err(|_| ResourceError::Internal)?
+            .len() as u64
+            + 16;
+        result.next_position = None;
+        for (index, directory) in candidates
+            .iter()
+            .enumerate()
+            .skip(position.candidate_offset as usize)
+        {
+            self.check_cancelled(&params.context.operation_id)?;
+            let path = EIPPath {
+                path: join_logical(directory, basename),
+            };
+            let offset = if index as u64 == position.candidate_offset {
+                position.text_byte_offset
+            } else {
+                0
+            };
+            let document = self.discover_document(filesystem, params, &path)?;
+            let Some(mut document) = document else {
+                if offset != 0 {
+                    return Err(ResourceError::Conflict);
+                }
+                continue;
+            };
+            if let FileDocument::Text(text) = &mut document {
+                let offset = usize::try_from(offset).map_err(|_| ResourceError::Conflict)?;
+                if offset > text.prefix.text.len() || !text.prefix.text.is_char_boundary(offset) {
+                    return Err(ResourceError::Conflict);
+                }
+                text.text_byte_offset = offset as u64;
+                text.prefix.text = text.prefix.text[offset..].to_owned();
+            } else if offset != 0 {
+                return Err(ResourceError::Conflict);
+            }
+            let size = serde_json::to_vec(&document)
+                .map_err(|_| ResourceError::Internal)?
+                .len() as u64
+                + 1;
+            if used.saturating_add(size) > limit {
+                if !result.documents.is_empty() {
+                    result.next_position = Some(FileDiscoveryPosition {
+                        candidate_offset: index as u64,
+                        text_byte_offset: offset,
+                    });
+                    return discovery_result_within_limit(result, limit);
+                }
+                let FileDocument::Text(text) = &mut document else {
+                    return Err(ResourceError::OutputLimit);
+                };
+                let full_text = std::mem::take(&mut text.prefix.text);
+                let overhead = serde_json::to_vec(&document)
+                    .map_err(|_| ResourceError::Internal)?
+                    .len() as u64
+                    + 1;
+                let end = json_text_prefix_end(
+                    &full_text,
+                    limit.saturating_sub(used).saturating_sub(overhead),
+                );
+                if end == 0 {
+                    return Err(ResourceError::OutputLimit);
+                }
+                let FileDocument::Text(text) = &mut document else {
+                    unreachable!()
+                };
+                text.prefix.text = full_text[..end].to_owned();
+                result.next_position = Some(FileDiscoveryPosition {
+                    candidate_offset: index as u64,
+                    text_byte_offset: offset + end as u64,
+                });
+                result.documents.push(document);
+                return discovery_result_within_limit(result, limit);
+            }
+            used += size;
+            result.documents.push(document);
+        }
+        if position.candidate_offset == candidates.len() as u64 && position.text_byte_offset != 0 {
+            return Err(ResourceError::Conflict);
+        }
+        discovery_result_within_limit(result, limit)
+    }
+
+    fn discovery_byte_limit(&self, params: &FileDiscoverDocumentsParams) -> u64 {
+        params.result_byte_limit.min(
+            self.inner
+                .max_response_bytes
+                .saturating_sub(RESPONSE_RESERVE_BYTES),
+        )
+    }
+
+    fn discover_document(
+        &self,
+        filesystem: &Arc<DeviceFilesystem>,
+        params: &FileDiscoverDocumentsParams,
+        path: &EIPPath,
+    ) -> Result<Option<FileDocument>, ResourceError> {
+        let opened = match filesystem.open_regular(path) {
+            Ok(opened) => opened,
+            Err(PathError::NotFound | PathError::NotRegular | PathError::Unsupported) => {
+                return Ok(None);
+            }
+            Err(error) => {
+                return Ok(Some(discovery_failure(
+                    path,
+                    FileDocumentFailurePhase::Probe,
+                    map_path_error(error),
+                )));
+            }
+        };
+        let max_bytes = self
+            .inner
+            .max_inline_bytes
+            .min(
+                self.inner
+                    .max_response_bytes
+                    .saturating_sub(RESPONSE_RESERVE_BYTES),
+            )
+            .max(1)
+            .min(params.text_byte_limit.unwrap_or(u64::MAX));
+        let selection = match read_text_selection(
+            opened.file,
+            0,
+            params.line_limit,
+            params.max_line_length,
+            max_bytes,
+            &self.inner.operations,
+            &params.context.operation_id,
+        ) {
+            Ok(selection) => selection,
+            Err(error @ (ResourceError::Cancelled | ResourceError::Timeout)) => return Err(error),
+            Err(error) => {
+                return Ok(Some(discovery_failure(
+                    path,
+                    FileDocumentFailurePhase::Read,
+                    error,
+                )));
+            }
+        };
+        let prefix_byte_length = selection.text.len() as u64;
+        let prefix_digest = ContentDigest {
+            algorithm: "sha256".to_owned(),
+            value: format!("{:x}", Sha256::digest(selection.text.as_bytes())),
+        };
+        Ok(Some(FileDocument::Text(FileDocumentText {
+            kind: "text".to_owned(),
+            prefix: FileReadTextResult {
+                info: file_info(path, &opened.metadata),
+                text: selection.text,
+                line_offset: 0,
+                lines_read: selection.lines_read,
+                has_more: selection.has_more,
+                truncated_lines: selection.truncated_lines,
+            },
+            text_byte_offset: 0,
+            prefix_byte_length,
+            prefix_digest,
+        })))
     }
 
     pub(crate) fn list(
@@ -209,6 +499,109 @@ impl ResourceRegistry {
             has_more,
             omitted_unrepresentable_entries: omitted,
         })
+    }
+
+    pub(crate) fn tree(
+        &self,
+        filesystem: &Arc<DeviceFilesystem>,
+        params: &FileTreeParams,
+    ) -> Result<FileTreeResult, ResourceError> {
+        if params.max_depth == 0
+            || params.max_depth > 16
+            || params.max_entries == 0
+            || params.max_entries > 4096
+            || params.max_directory_calls == 0
+            || params.max_directory_calls > 1024
+            || params.metadata_byte_limit == 0
+            || params.metadata_byte_limit > 256 * 1024
+            || params.result_byte_limit == 0
+        {
+            return Err(ResourceError::Limit);
+        }
+        let mut result = FileTreeResult {
+            entries: Vec::new(),
+            truncated: false,
+            directory_calls: 0,
+        };
+        let mut pending = VecDeque::from([(params.root.clone(), 0_u32, 0_u64)]);
+        let mut used = 0_u64;
+        let limit = params.result_byte_limit.min(self.response_item_limit());
+        let mut wire_used = serde_json::to_vec(&result)
+            .map_err(|_| ResourceError::Internal)?
+            .len() as u64;
+        if wire_used > limit {
+            return Err(ResourceError::OutputLimit);
+        }
+        while let Some((path, depth, offset)) = pending.pop_front() {
+            self.check_cancelled(&params.context.operation_id)?;
+            if result.directory_calls >= params.max_directory_calls
+                || result.entries.len() >= params.max_entries as usize
+                || used >= params.metadata_byte_limit
+            {
+                result.truncated = true;
+                break;
+            }
+            let page = self.list(
+                filesystem,
+                &FileListParams {
+                    context: params.context.clone(),
+                    path: path.clone(),
+                    offset,
+                    max_results: params.max_entries - result.entries.len() as u32,
+                    include_hidden: params.include_hidden,
+                },
+            )?;
+            result.directory_calls += 1;
+            result.truncated |= page.omitted_unrepresentable_entries > 0;
+            let page_count = page.entries.len();
+            for mut entry in page.entries {
+                let suffix = entry
+                    .info
+                    .path
+                    .path
+                    .strip_prefix(params.root.path.trim_end_matches('/'))
+                    .ok_or(ResourceError::Internal)?;
+                let mut value = serde_json::json!({"kind": entry.info.kind, "path": suffix});
+                if let Some(size) = entry.info.size_bytes {
+                    value["size"] = serde_json::json!(size);
+                }
+                let cost = (serde_json::to_vec(&value)
+                    .map_err(|_| ResourceError::Internal)?
+                    .len() as u64)
+                    .saturating_add(params.path_prefix_bytes)
+                    .saturating_add(1);
+                entry.relative_path = suffix.trim_start_matches('/').to_owned();
+                let wire_cost = serde_json::to_vec(&entry)
+                    .map_err(|_| ResourceError::Internal)?
+                    .len() as u64
+                    + 1;
+                // Reserve counter digit growth and envelope state independently from metadata accounting.
+                if used.saturating_add(cost) > params.metadata_byte_limit
+                    || wire_used.saturating_add(wire_cost).saturating_add(16) > limit
+                {
+                    result.truncated = true;
+                    return Ok(result);
+                }
+                used += cost;
+                wire_used += wire_cost;
+                if entry.info.kind == FileKind::Directory {
+                    if depth + 1 < params.max_depth {
+                        pending.push_back((entry.info.path.clone(), depth + 1, 0));
+                    } else {
+                        result.truncated = true;
+                    }
+                }
+                result.entries.push(entry);
+            }
+            if page.has_more {
+                if page_count == 0 {
+                    result.truncated = true;
+                    break;
+                }
+                pending.push_front((path, depth, offset + page_count as u64));
+            }
+        }
+        Ok(result)
     }
 
     pub(crate) fn find(
@@ -2176,6 +2569,21 @@ mod tests {
     }
 
     #[test]
+    fn discovery_json_prefix_accounts_for_escaping_and_utf8() {
+        let text = "中\\\"\t\u{0001}\nend";
+        for budget in 0..40 {
+            let end = super::json_text_prefix_end(text, budget);
+            assert!(text.is_char_boundary(end));
+            let encoded = serde_json::to_vec(&text[..end]).unwrap();
+            assert!(encoded.len() as u64 <= budget + 2);
+            if end < text.len() {
+                let next = end + text[end..].chars().next().unwrap().len_utf8();
+                assert!(serde_json::to_vec(&text[..next]).unwrap().len() as u64 > budget + 2);
+            }
+        }
+    }
+
+    #[test]
     fn joins_device_absolute_paths() {
         assert_eq!(join_logical("/", "a/b"), "/a/b");
         assert_eq!(join_logical("/root", "a"), "/root/a");
@@ -2374,6 +2782,7 @@ mod tests {
                 &fixture.filesystem,
                 &FileReadTextParams {
                     context: context("text-1"),
+                    text_byte_limit: None,
                     path: fixture.path("/docs/main.txt"),
                     line_offset: 0,
                     line_limit: 1,
@@ -2390,6 +2799,7 @@ mod tests {
                 &fixture.filesystem,
                 &FileReadTextParams {
                     context: context("text-2"),
+                    text_byte_limit: None,
                     path: fixture.path("/docs/main.txt"),
                     line_offset: first.line_offset + first.lines_read,
                     line_limit: 1,
@@ -2407,6 +2817,7 @@ mod tests {
                 &fixture.filesystem,
                 &FileReadTextParams {
                     context: context("text-invalid-after-page"),
+                    text_byte_limit: None,
                     path: fixture.path("/docs/invalid-after-page.bin"),
                     line_offset: 0,
                     line_limit: 1,
@@ -2424,6 +2835,7 @@ mod tests {
                 &fixture.filesystem,
                 &FileReadTextParams {
                     context: context("text-boundaries"),
+                    text_byte_limit: None,
                     path: fixture.path("/docs/boundaries.txt"),
                     line_offset: 1,
                     line_limit: 1,
@@ -2552,6 +2964,75 @@ mod tests {
     }
 
     #[test]
+    fn text_byte_limit_preserves_line_continuation_and_provider_ceiling() {
+        let fixture = Fixture::read_only();
+        fs::write(fixture.native.join("text.txt"), "中文\r\n中文\r\ntail").expect("text fixture");
+        let mut params = FileReadTextParams {
+            context: context("bounded-read"),
+            path: fixture.path("/text.txt"),
+            line_offset: 0,
+            line_limit: 1000,
+            max_line_length: 1000,
+            text_byte_limit: Some(8),
+        };
+        let first = fixture
+            .resources
+            .read_text(&fixture.filesystem, &params)
+            .unwrap();
+        assert_eq!(first.text, "中文\r\n");
+        assert_eq!(first.lines_read, 1);
+        assert!(first.has_more);
+        assert!(first.truncated_lines.is_empty());
+        params.line_offset += first.lines_read;
+        let second = fixture
+            .resources
+            .read_text(&fixture.filesystem, &params)
+            .unwrap();
+        assert_eq!(second.text, "中文\r\n");
+        assert_eq!(second.lines_read, 1);
+        params.line_offset += second.lines_read;
+        let last = fixture
+            .resources
+            .read_text(&fixture.filesystem, &params)
+            .unwrap();
+        assert_eq!(last.text, "tail");
+        assert!(!last.has_more);
+        params.line_offset = 3;
+        let end = fixture
+            .resources
+            .read_text(&fixture.filesystem, &params)
+            .unwrap();
+        assert!(end.text.is_empty());
+        assert_eq!(end.lines_read, 0);
+        assert!(!end.has_more);
+        params.line_offset = 0;
+        params.text_byte_limit = Some(1);
+        assert!(matches!(
+            fixture.resources.read_text(&fixture.filesystem, &params),
+            Err(super::ResourceError::OutputLimit)
+        ));
+        params.text_byte_limit = Some(0);
+        assert!(matches!(
+            fixture.resources.read_text(&fixture.filesystem, &params),
+            Err(super::ResourceError::Limit)
+        ));
+        let provider_limit = fixture.resources.inner.max_inline_bytes;
+        fs::write(
+            fixture.native.join("text.txt"),
+            "abcd\n".repeat((provider_limit / 5 + 2) as usize),
+        )
+        .unwrap();
+        params.line_limit = u64::MAX;
+        params.text_byte_limit = Some(u64::MAX);
+        let bounded = fixture
+            .resources
+            .read_text(&fixture.filesystem, &params)
+            .unwrap();
+        assert_eq!(bounded.text.len() as u64, provider_limit / 5 * 5);
+        assert!(bounded.has_more);
+    }
+
+    #[test]
     fn reads_and_searches_files_larger_than_the_mutation_limit() {
         let fixture = Fixture::read_only();
         let mut content = b"needle at the start".to_vec();
@@ -2564,6 +3045,7 @@ mod tests {
                 &fixture.filesystem,
                 &FileReadTextParams {
                     context: context("large-read"),
+                    text_byte_limit: None,
                     path: fixture.path("/large.txt"),
                     line_offset: 0,
                     line_limit: 1,

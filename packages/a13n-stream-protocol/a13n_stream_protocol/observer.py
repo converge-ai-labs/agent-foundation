@@ -17,6 +17,7 @@ from a13n_harness import (
     HarnessRunResultEvent,
     HarnessStreamEvent,
 )
+from a13n_harness.capabilities.skills import SkillCatalogResolvedEvent
 from a13n_harness.events import InlineDelegationPayload, InputMediaEvent, InputTextEvent, ToolExtraEventPayload
 from a13n_harness.tools._output import tool_execution_value
 from a13n_harness.tools.client import client_tool_name
@@ -297,6 +298,10 @@ class HarnessAguiObserver:
                     ),
                 )
             ]
+        elif isinstance(source, SkillCatalogResolvedEvent):
+            # Hosts retain the typed catalog at production. Display streams keep
+            # the existing small skills_catalog_resolved diagnostic instead.
+            return []
         elif isinstance(source, CapabilityEvent):
             # Preserve the native kind and payload, including user-defined capabilities.
             custom = CustomEvent(

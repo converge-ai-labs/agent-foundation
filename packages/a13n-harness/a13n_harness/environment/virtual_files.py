@@ -10,9 +10,14 @@ from typing import Any
 from a13n_harness.environment._streams import closing_stream
 from a13n_harness.environment.archives import FileArchive
 from a13n_harness.environment.batches import file_operation_action, validate_file_batch
+from a13n_harness.environment.discovery import discover_documents, read_document_prefix
 from a13n_harness.environment.files import (
     FileBatchValue,
     FileCopyResult,
+    FileDocument,
+    FileDocumentFailure,
+    FileDocumentRequest,
+    FileDocumentText,
     FileEntriesResult,
     FileMetadata,
     FileMutationResult,
@@ -22,12 +27,16 @@ from a13n_harness.environment.files import (
     FileTextResult,
     FileTextSearchRequest,
     FileTextSearchResult,
+    FileTreeRequest,
+    FileTreeResult,
     FileWriteMode,
     FileWriteResult,
 )
 from a13n_harness.environment.models import EnvironmentAction, EnvironmentError
 from a13n_harness.environment.mounts import EnvironmentPath
 from a13n_harness.environment.providers import FileScopeSelection
+from a13n_harness.environment.trees import encoded_path_prefix_bytes
+from a13n_harness.environment.trees import list_tree as list_tree_from_operations
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,6 +45,7 @@ class _PreparedFile:
     backend: Any
     validate_result: Callable[[Any], None]
     virtualize_path: Callable[[str], str]
+    discovery_single_scope: bool = True
 
 
 ResolvePath = Callable[[str], FileScopeSelection]
@@ -49,6 +59,71 @@ class VirtualFileOperator:
     def __init__(self, resolve: ResolvePath, prepare: PrepareFile) -> None:
         self._resolve = resolve
         self._prepare = prepare
+
+    @staticmethod
+    def _document(prepared: _PreparedFile, document: FileDocument) -> FileDocument:
+        if isinstance(document, FileDocumentFailure):
+            return FileDocumentFailure(prepared.virtualize_path(document.path), document.phase, document.error)
+        prepared.validate_result(document.info)
+        prepared.validate_result(document.prefix)
+        return FileDocumentText(
+            document.info.model_copy(update={"path": prepared.virtualize_path(document.info.path)}),
+            document.prefix.model_copy(update={"path": prepared.virtualize_path(document.prefix.path)}),
+        )
+
+    async def discover_documents(self, request: FileDocumentRequest) -> AsyncGenerator[FileDocument]:
+        selected = self._resolve(request.root)
+        async with AsyncExitStack() as stack:
+            for action in (EnvironmentAction.FILE_LIST, EnvironmentAction.FILE_STAT, EnvironmentAction.FILE_READ_TEXT):
+                prepared = await stack.enter_async_context(self._prepare(selected, action))
+            if prepared.discovery_single_scope:
+                routed = request.model_copy(update={"root": prepared.selected.path})
+                async with closing_stream(prepared.backend.discover_documents(routed)) as stream:
+                    async for document in stream:
+                        yield self._document(prepared, document)
+                return
+            entries = await prepared.backend.list(
+                prepared.selected.path, max_results=request.max_entries, include_hidden=False
+            )
+            prepared.validate_result(entries)
+            entries = entries.model_copy(
+                update={
+                    "entries": tuple(
+                        item.model_copy(update={"path": prepared.virtualize_path(item.path)})
+                        for item in entries.entries
+                    )
+                }
+            )
+
+            async def read(path: str) -> FileDocument | None:
+                selection = self._resolve(path)
+                async with self._prepare(selection, EnvironmentAction.FILE_STAT):
+                    async with self._prepare(selection, EnvironmentAction.FILE_READ_TEXT) as route:
+                        document = await read_document_prefix(route.backend, route.selected.path, request)
+                        return None if document is None else self._document(route, document)
+
+            async with closing_stream(discover_documents(self, request, read_document=read, entries=entries)) as stream:
+                async for document in stream:
+                    yield document
+
+    async def list_tree(self, request: FileTreeRequest) -> FileTreeResult:
+        async with self._prepare(self._resolve(request.root), EnvironmentAction.FILE_LIST) as prepared:
+            if not prepared.discovery_single_scope:
+                return await list_tree_from_operations(self, request)
+            prefix_bytes = request.path_prefix_bytes
+            if prefix_bytes is None:
+                prefix_bytes = encoded_path_prefix_bytes(prepared.virtualize_path(prepared.selected.path))
+            routed = request.model_copy(update={"root": prepared.selected.path, "path_prefix_bytes": prefix_bytes})
+            result = await prepared.backend.list_tree(routed)
+            prepared.validate_result(result)
+            return result.model_copy(
+                update={
+                    "entries": tuple(
+                        entry.model_copy(update={"path": prepared.virtualize_path(entry.path)})
+                        for entry in result.entries
+                    )
+                }
+            )
 
     async def batch(self, operations: Sequence[FileOperation]) -> tuple[FileBatchValue, ...]:
         validate_file_batch(operations)

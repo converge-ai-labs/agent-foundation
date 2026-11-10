@@ -77,6 +77,10 @@ class StdioTransport:
     def process(self) -> asyncio.subprocess.Process | None:
         return self._process
 
+    @property
+    def max_response_bytes(self) -> int:
+        return self._max_response_bytes
+
     def set_limits(
         self,
         *,

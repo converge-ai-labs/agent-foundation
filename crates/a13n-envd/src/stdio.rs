@@ -488,7 +488,7 @@ async fn shutdown_signal() -> io::Result<()> {
 mod tests {
     use std::{fs, future::pending, io, path::PathBuf, sync::Arc, time::Duration};
 
-    use tokio::io::{AsyncReadExt, AsyncWriteExt, duplex};
+    use tokio::io::{AsyncReadExt, AsyncWrite, AsyncWriteExt, duplex};
 
     use crate::{
         config::Config,
@@ -739,6 +739,39 @@ mod tests {
         Stall,
     }
 
+    struct ObservedWriter {
+        stream: tokio::io::DuplexStream,
+        blocked: tokio::sync::watch::Sender<bool>,
+    }
+
+    impl AsyncWrite for ObservedWriter {
+        fn poll_write(
+            mut self: std::pin::Pin<&mut Self>,
+            cx: &mut std::task::Context<'_>,
+            bytes: &[u8],
+        ) -> std::task::Poll<io::Result<usize>> {
+            let result = std::pin::Pin::new(&mut self.stream).poll_write(cx, bytes);
+            if result.is_pending() {
+                self.blocked.send_replace(true);
+            }
+            result
+        }
+
+        fn poll_flush(
+            mut self: std::pin::Pin<&mut Self>,
+            cx: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<io::Result<()>> {
+            std::pin::Pin::new(&mut self.stream).poll_flush(cx)
+        }
+
+        fn poll_shutdown(
+            mut self: std::pin::Pin<&mut Self>,
+            cx: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<io::Result<()>> {
+            std::pin::Pin::new(&mut self.stream).poll_shutdown(cx)
+        }
+    }
+
     async fn run_shutdown_under_stdout_backpressure(end: PeerEnd, data_storm: bool) {
         let mut config = Config::for_test("env-test");
         config.limits.max_device_concurrent_operations = 2;
@@ -746,8 +779,12 @@ mod tests {
         let (mut input_client, input_server) = duplex(512 * 1024);
         let (output_server, mut output_client) = duplex(1024);
         let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
-        // Stalled stdout always waits out the drain deadline, so a short one keeps this fast;
-        // it still exceeds the 20 ms pause before shutdown so the signal path stays exercised.
+        let (blocked_tx, mut blocked) = tokio::sync::watch::channel(false);
+        let output_server = ObservedWriter {
+            stream: output_server,
+            blocked: blocked_tx.clone(),
+        };
+        // Keep the actual carrier-drain timeout while observing backpressure directly.
         let drain_timeout = Duration::from_millis(100);
         let serving = tokio::spawn(async move {
             serve_io(
@@ -788,6 +825,7 @@ mod tests {
             .expect("initialize response is valid")
             .expect("initialize response is present");
 
+        blocked_tx.send_replace(false);
         for index in 0..512 {
             if data_storm {
                 super::write_data_frame(
@@ -822,7 +860,10 @@ mod tests {
             .await
             .expect("describe frame writes");
         }
-        tokio::time::sleep(Duration::from_millis(20)).await;
+        tokio::time::timeout(Duration::from_secs(4), blocked.wait_for(|value| *value))
+            .await
+            .expect("stdout reaches backpressure")
+            .expect("stdout observer stays connected");
         match end {
             PeerEnd::Signal => shutdown_tx.send(()).expect("signals shutdown"),
             PeerEnd::Eof => input_client.shutdown().await.unwrap(),

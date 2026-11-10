@@ -18,15 +18,20 @@ from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any, BinaryIO
 
 from a13n_logging import get_logger
+from anyio import to_thread
 from pathspec.gitignore import GitIgnoreSpec
 from pathspec.patterns.gitignore import GitIgnorePatternError
 from pathspec.patterns.gitignore.spec import GitIgnoreSpecPattern
 
 from a13n_harness.environment.archives import FileArchive, extract_archive_files
 from a13n_harness.environment.batches import apply_file_batch
+from a13n_harness.environment.discovery import discover_documents, document_failure
 from a13n_harness.environment.files import (
     FileBatchValue,
     FileCopyResult,
+    FileDocument,
+    FileDocumentRequest,
+    FileDocumentText,
     FileEntriesResult,
     FileKind,
     FileMetadata,
@@ -38,11 +43,14 @@ from a13n_harness.environment.files import (
     FileTextResult,
     FileTextSearchRequest,
     FileTextSearchResult,
+    FileTreeRequest,
+    FileTreeResult,
     FileWriteMode,
     FileWriteResult,
 )
 from a13n_harness.environment.models import EnvironmentError, EnvironmentOperationReceipt
 from a13n_harness.environment.text import apply_unified_diff
+from a13n_harness.environment.trees import list_tree as list_tree_from_operations
 from a13n_harness.providers.environment._file_patterns import PathPattern, PatternError, content_pattern
 from a13n_harness.providers.environment._file_search import search_text_file
 from a13n_harness.providers.environment.direct_local.protected_files import (
@@ -203,6 +211,57 @@ class _LocalWriter:
 
 class LocalFileOperator:
     """Root-confined Direct Local file operations with staged publication."""
+
+    def discover_documents(self, request: FileDocumentRequest) -> AsyncIterator[FileDocument]:
+        async def read(path: str) -> FileDocument | None:
+            return await to_thread.run_sync(self._read_document, path, request)
+
+        return discover_documents(self, request, read_document=read)
+
+    def _read_document(self, path: str, request: FileDocumentRequest) -> FileDocument | None:
+        try:
+            native = self._resolve(path)
+            mode = native.stat().st_mode
+            if not stat_module.S_ISREG(mode):
+                return None
+        except OSError as exc:
+            error = _environment_error_from_os(exc, action="probe a document")
+            if error.code == "environment_not_found":
+                return None
+            return document_failure(path, "probe", error)
+        except EnvironmentError as error:
+            if error.code in {"environment_not_found", "environment_unsupported"}:
+                return None
+            return document_failure(path, "probe", error)
+        try:
+            with _open_read_stream(native) as file:
+                metadata = os.fstat(file.fileno())
+                if not stat_module.S_ISREG(metadata.st_mode):
+                    return None
+                text, lines, more, clipped = _read_text_stream(
+                    file,
+                    0,
+                    request.line_limit,
+                    request.max_line_length,
+                    min(self._policy.max_value_bytes, request.max_bytes or self._policy.max_value_bytes),
+                )
+            return FileDocumentText(
+                FileMetadata(path=path, kind="file", size=metadata.st_size, writable=native != self._root),
+                FileTextResult(
+                    path=path, text=text, line_offset=0, lines_read=lines, has_more=more, truncated_lines=clipped
+                ),
+            )
+        except UnicodeDecodeError as exc:
+            error = EnvironmentError("Text source is not valid UTF-8.", code="environment_unsupported")
+            error.__cause__ = exc
+            return document_failure(path, "read", error)
+        except OSError as exc:
+            return document_failure(path, "read", _environment_error_from_os(exc, action="read a document"))
+        except EnvironmentError as error:
+            return document_failure(path, "read", error)
+
+    async def list_tree(self, request: FileTreeRequest) -> FileTreeResult:
+        return await list_tree_from_operations(self, request)
 
     async def batch(self, operations: Sequence[FileOperation]) -> tuple[FileBatchValue, ...]:
         return await apply_file_batch(self, operations)
@@ -381,6 +440,7 @@ class LocalFileOperator:
         line_offset: int = 0,
         line_limit: int = 200,
         max_line_length: int = 2_000,
+        max_bytes: int | None = None,
     ) -> FileTextResult:
         if line_offset < 0:
             raise EnvironmentError("line_offset must not be negative.", code="environment_request_invalid")
@@ -388,6 +448,9 @@ class LocalFileOperator:
             raise EnvironmentError("line_limit must be positive.", code="environment_request_invalid")
         if max_line_length < 1:
             raise EnvironmentError("max_line_length must be positive.", code="environment_request_invalid")
+        if max_bytes is not None and max_bytes < 1:
+            raise EnvironmentError("max_bytes must be positive.", code="environment_request_invalid")
+        byte_limit = min(self._policy.max_value_bytes, max_bytes or self._policy.max_value_bytes)
         native = await asyncio.to_thread(self._resolve_file, path, "Path")
         try:
             text, lines_read, has_more, truncated_lines = await asyncio.to_thread(
@@ -396,7 +459,7 @@ class LocalFileOperator:
                 line_offset,
                 line_limit,
                 max_line_length,
-                self._policy.max_value_bytes,
+                byte_limit,
             )
         except UnicodeDecodeError as exc:
             raise EnvironmentError(
@@ -920,6 +983,17 @@ def _read_text_page(
     max_line_length: int,
     max_bytes: int,
 ) -> tuple[str, int, bool, tuple[int, ...]]:
+    with _open_read_stream(path) as file:
+        return _read_text_stream(file, line_offset, line_limit, max_line_length, max_bytes)
+
+
+def _read_text_stream(
+    file: BinaryIO,
+    line_offset: int,
+    line_limit: int,
+    max_line_length: int,
+    max_bytes: int,
+) -> tuple[str, int, bool, tuple[int, ...]]:
     # Even an unbounded source line retains at most one page's character prefix.
     max_line_length = min(max_line_length, max_bytes)
 
@@ -962,36 +1036,33 @@ def _read_text_page(
     selected_bytes = 0
     truncated_lines: list[int] = []
     line_index = 0
-    with _open_read_stream(path) as file:
-        while line_index < line_offset:
-            if read_line(file) is None:
-                return "", 0, False, ()
-            line_index += 1
+    while line_index < line_offset:
+        if read_line(file) is None:
+            return "", 0, False, ()
+        line_index += 1
 
-        while len(selected) < line_limit and selected_bytes < max_bytes:
-            line = read_line(file)
-            if line is None:
-                return "".join(selected), len(selected), False, tuple(truncated_lines)
-            preview, terminated, truncated = line
-            encoded = preview.encode("utf-8")
-            required = len(encoded) + int(terminated)
-            if selected_bytes + required > max_bytes:
-                if selected:
-                    # Leave the next whole line for the caller's next page.
-                    return "".join(selected), len(selected), True, tuple(truncated_lines)
-                # A single line must still make progress. The source has already
-                # passed strict UTF-8 validation; discard only a split code point
-                # at the byte boundary, retaining the LF and declaring the loss.
-                preview = encoded[: max_bytes - int(terminated)].decode("utf-8", errors="ignore")
-                required = len(preview.encode("utf-8")) + int(terminated)
-                truncated = True
-            selected.append(preview + ("\n" if terminated else ""))
-            selected_bytes += required
-            if truncated:
-                truncated_lines.append(line_index + 1)
-            line_index += 1
+    while len(selected) < line_limit and selected_bytes < max_bytes:
+        line = read_line(file)
+        if line is None:
+            return "".join(selected), len(selected), False, tuple(truncated_lines)
+        preview, terminated, truncated = line
+        encoded = preview.encode("utf-8")
+        required = len(encoded) + int(terminated)
+        if selected_bytes + required > max_bytes:
+            if selected:
+                # Leave the next whole line for the caller's next page.
+                return "".join(selected), len(selected), True, tuple(truncated_lines)
+            # Preserve LF and discard only a split code point at the byte bound.
+            preview = encoded[: max_bytes - int(terminated)].decode("utf-8", errors="ignore")
+            required = len(preview.encode("utf-8")) + int(terminated)
+            truncated = True
+        selected.append(preview + ("\n" if terminated else ""))
+        selected_bytes += required
+        if truncated:
+            truncated_lines.append(line_index + 1)
+        line_index += 1
 
-        has_more = bool(file.read(1))
+    has_more = bool(file.read(1))
     return "".join(selected), len(selected), has_more, tuple(truncated_lines)
 
 

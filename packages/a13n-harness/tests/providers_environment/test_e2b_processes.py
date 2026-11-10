@@ -19,6 +19,7 @@ from a13n_harness.environment.commands import (
 from a13n_harness.environment.errors import EnvironmentProviderError
 from a13n_harness.environment.models import EnvironmentError
 from a13n_harness.environment.retention import EnvironmentOutputPolicy
+from a13n_harness.providers.environment.e2b import processes as processes_module
 from a13n_harness.providers.environment.e2b.commands import GuestCommands
 from a13n_harness.providers.environment.e2b.configuration import E2BEnvironmentConfiguration
 from a13n_harness.providers.environment.e2b.processes import E2BProcesses
@@ -559,23 +560,45 @@ async def test_metadata_guard_is_separate_from_active_and_output_budgets(monkeyp
 
 
 async def test_wait_after_output_cap_polls_process_without_reattaching(monkeypatch):
-    monkeypatch.setattr("a13n_harness.providers.environment.e2b.processes._STATUS_POLL_SECONDS", 0.01)
     native = NativeCommands()
     process = adapter(native, max_observation_bytes=16)
     started = await process.start(request("immediate"))
     await tick()
-    before = asyncio.get_running_loop().time()
-    info = await process.wait(started.process.handle, condition="initial_terminal", timeout_seconds=0.025)
-    elapsed = asyncio.get_running_loop().time() - before
+    clock = 100.0
+    deadlines = []
+    delays = []
+
+    def capture_deadline(seconds):
+        assert seconds == 60
+        scope = asyncio.timeout(None)
+        deadlines.append(scope)
+        return scope
+
+    async def advance_poll(delay):
+        nonlocal clock
+        delays.append(delay)
+        assert delay == pytest.approx(processes_module._STATUS_POLL_SECONDS)
+        if len(delays) == 2:
+            deadlines[0].reschedule(asyncio.get_running_loop().time())
+            await asyncio.Event().wait()
+        clock += delay
+
+    local_asyncio = SimpleNamespace(**vars(asyncio))
+    local_asyncio.get_running_loop = lambda: SimpleNamespace(time=lambda: clock)
+    local_asyncio.timeout = capture_deadline
+    local_asyncio.sleep = advance_poll
+    monkeypatch.setattr(processes_module, "asyncio", local_asyncio)
+    info = await process.wait(started.process.handle, condition="initial_terminal", timeout_seconds=60)
+    assert deadlines[0].expired()
     assert info.status.phase == "running"
-    assert 0.02 <= elapsed < 0.6
-    assert 1 <= sum(call[0] == "list" for call in native.calls) <= 4
+    assert len(delays) == 2
+    assert sum(call[0] == "list" for call in native.calls) == 2
     assert not any(call[0] == "connect" for call in native.calls)
     await process.close()
 
 
 @pytest.mark.parametrize("slow_operation", ["list", "connect"])
-async def test_wait_budget_includes_native_requests(slow_operation):
+async def test_wait_budget_includes_native_requests(slow_operation, monkeypatch):
     native = NativeCommands()
     process = adapter(native)
     started = await process.start(request())
@@ -583,26 +606,49 @@ async def test_wait_budget_includes_native_requests(slow_operation):
         native.drop(10)
         await tick()
 
+    deadlines = []
+
+    def capture_deadline(seconds):
+        assert seconds == 60
+        scope = asyncio.timeout(None)
+        deadlines.append(scope)
+        return scope
+
+    local_asyncio = SimpleNamespace(**vars(asyncio))
+    local_asyncio.timeout = capture_deadline
+    monkeypatch.setattr(processes_module, "asyncio", local_asyncio)
+
     async def slow(*args, **kwargs):
-        await asyncio.sleep(10)
+        (scope,) = deadlines
+        scope.reschedule(asyncio.get_running_loop().time())
+        await asyncio.Event().wait()
 
     setattr(native, slow_operation, slow)
-    before = asyncio.get_running_loop().time()
-    info = await process.wait(started.process.handle, condition="initial_terminal", timeout_seconds=0.03)
-    assert asyncio.get_running_loop().time() - before < 0.3
+    info = await process.wait(started.process.handle, condition="initial_terminal", timeout_seconds=60)
+    assert deadlines[0].expired()
     assert info.status.phase == ("unknown" if slow_operation == "list" else "running")
     await process.close()
 
 
 async def test_exec_does_not_complete_when_output_is_capped(monkeypatch):
-    monkeypatch.setattr("a13n_harness.providers.environment.e2b.processes._STATUS_POLL_SECONDS", 0.01)
     native = NativeCommands()
     process = adapter(native, max_observation_bytes=16)
+    polled, release = asyncio.Event(), asyncio.Event()
+    original_list = native.list
+
+    async def inspect_capped_process(**kwargs):
+        await tick()
+        assert process._observations.active == 0
+        polled.set()
+        await release.wait()
+        return await original_list(**kwargs)
+
+    monkeypatch.setattr(native, "list", inspect_capped_process)
     executing = asyncio.create_task(process.exec(request("immediate")))
-    # Span several status polls before the process exits.
-    await asyncio.sleep(0.03)
+    await asyncio.wait_for(polled.wait(), 5)
     assert not executing.done()
     native.emit(10, exit_code=7)
+    release.set()
     result = await asyncio.wait_for(executing, timeout=1)
     # Once detached the SDK cannot recover the exit code; do not fabricate one.
     assert result.status.phase == "missing"
@@ -612,21 +658,45 @@ async def test_exec_does_not_complete_when_output_is_capped(monkeypatch):
     assert process._processes == {}
 
 
-async def test_stdout_wakeups_do_not_trigger_unbounded_status_queries():
+async def test_stdout_wakeups_do_not_trigger_unbounded_status_queries(monkeypatch):
     native = NativeCommands()
     process = adapter(native)
     started = await process.start(request())
+    (record,) = process._processes.values()
+    observation = record.observation
+    waiting = asyncio.Queue()
+    original_wait = observation.changed.wait
+    deadlines = []
 
-    async def produce():
+    async def observe_wait():
+        waiting.put_nowait(None)
+        await original_wait()
+
+    def capture_deadline(seconds):
+        assert seconds == 60 or seconds == pytest.approx(processes_module._STATUS_POLL_SECONDS)
+        scope = asyncio.timeout(None)
+        deadlines.append(scope)
+        return scope
+
+    local_asyncio = SimpleNamespace(**vars(asyncio))
+    local_asyncio.get_running_loop = lambda: SimpleNamespace(time=lambda: 100.0)
+    local_asyncio.timeout = capture_deadline
+    monkeypatch.setattr(processes_module, "asyncio", local_asyncio)
+    monkeypatch.setattr(observation.changed, "wait", observe_wait)
+    waiter = asyncio.create_task(process.wait(started.process.handle, condition="initial_terminal", timeout_seconds=60))
+    async with asyncio.timeout(5):
+        await waiting.get()
         for _ in range(30):
             native.emit(10, stdout=b"x")
-            await asyncio.sleep(0.002)
-
-    producer = asyncio.create_task(produce())
-    info = await process.wait(started.process.handle, condition="initial_terminal", timeout_seconds=0.15)
-    await producer
+            # Each output event must wake the owner and reach its next wait.
+            await waiting.get()
+        assert observation.stdout == b"x" * 30
+        assert not waiter.done()
+        assert sum(call[0] == "list" for call in native.calls) == 1
+        deadlines[0].reschedule(asyncio.get_running_loop().time())
+        info = await waiter
+    assert deadlines[0].expired()
     assert info.status.phase == "running"
-    assert 1 <= sum(call[0] == "list" for call in native.calls) <= 3
     native.emit(10, exit_code=9)
     await tick()
     before = len(native.calls)

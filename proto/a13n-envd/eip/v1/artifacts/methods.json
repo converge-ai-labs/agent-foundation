@@ -1,6 +1,6 @@
 {
   "generated": true,
-  "method_count": 56,
+  "method_count": 58,
   "methods": [
     {
       "device_scoped": false,
@@ -291,6 +291,19 @@
     {
       "device_scoped": false,
       "error_family": "resource",
+      "introduced": "0.4",
+      "jsonrpc_method": "file.discover_documents",
+      "kind": "request_response",
+      "params_type": "FileDiscoverDocumentsParams",
+      "replay_class": "active_only",
+      "result_type": "FileDiscoverDocumentsResult",
+      "rpc_name": "FileDiscoverDocuments",
+      "transfer_action": null,
+      "transfer_direction": null
+    },
+    {
+      "device_scoped": false,
+      "error_family": "resource",
       "introduced": "0.1",
       "jsonrpc_method": "file.find",
       "kind": "request_response",
@@ -428,6 +441,19 @@
       "replay_class": "active_only",
       "result_type": "FileStatResult",
       "rpc_name": "FileStat",
+      "transfer_action": null,
+      "transfer_direction": null
+    },
+    {
+      "device_scoped": false,
+      "error_family": "resource",
+      "introduced": "0.4",
+      "jsonrpc_method": "file.tree",
+      "kind": "request_response",
+      "params_type": "FileTreeParams",
+      "replay_class": "active_only",
+      "result_type": "FileTreeResult",
+      "rpc_name": "FileTree",
       "transfer_action": null,
       "transfer_direction": null
     },

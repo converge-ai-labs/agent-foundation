@@ -321,8 +321,6 @@ async def check_screen_stream(service, logical, workspace, monkeypatch):
                     )
                 )
             assert duplicate.value.code == "environment_conflict"
-            # Let END reach the Worker before the caller consumes the last chunk and sends its credit.
-            await asyncio.sleep(0.05)
             assert b"".join([chunk async for chunk in reader]) == content
             assert reader.opened.observation.observation_id == "obs-test"
         assert handle not in scope.transfers

@@ -1,6 +1,7 @@
 """Disposable Redis output never owns execution, completion, or lease renewal."""
 
 import asyncio
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -46,14 +47,16 @@ def _observation(data=b"ready"):
     )
 
 
-@pytest.mark.parametrize("publish_fails", [False, True])
+@pytest.mark.parametrize("publish_failure", [None, "redis", "timeout"])
 async def test_cache_coalesces_and_redis_failure_does_not_delay_execution(
-    service, scripted_model, runs_kit, monkeypatch, publish_fails
+    service, scripted_model, runs_kit, monkeypatch, publish_failure
 ):
     await runs_kit.pause_sweeps(service)
     agent = await runs_kit.create_agent(service, scripted_model)
     await runs_kit.start_thread(service, agent, "work")
     (lease,) = await claim(service.runtime, worker_id="worker-cache", worker_build="test", limit=1)
+    from a13n_service.runs.tool_executions import output as output_module
+
     owner = service.runtime.executions
     entered, finish, publishing, publish_allowed = (asyncio.Event() for _ in range(4))
 
@@ -104,31 +107,48 @@ async def test_cache_coalesces_and_redis_failure_does_not_delay_execution(
         async def blocked(pipe, *args, **kwargs):
             publishing.set()
             await publish_allowed.wait()
-            if publish_fails:
+            if publish_failure == "redis":
                 raise RedisError("cache unavailable")
+            if publish_failure == "timeout":
+                deadlines[-1].reschedule(asyncio.get_running_loop().time())
+                await asyncio.Event().wait()
             return await original(pipe, *args, **kwargs)
 
         with monkeypatch.context() as patch:
+            # Keep publication blocked until execution has durably settled, then
+            # drive the real cache deadline at the blocked I/O boundary.
+            deadlines = []
+
+            def cache_timeout(seconds):
+                assert seconds == min(1, service.runtime.settings.redis.timeout)
+                scope = asyncio.timeout(None)
+                deadlines.append(scope)
+                return scope
+
+            patch.setattr(
+                output_module,
+                "asyncio",
+                SimpleNamespace(get_running_loop=asyncio.get_running_loop, timeout=cache_timeout),
+            )
             patch.setattr(Pipeline, "execute", blocked)
             owner.output.offer(
                 record.execution_id, snapshot.model_copy(update={"observation": _observation(b"changed")})
             )
             flush = asyncio.create_task(owner.output.flush())
-            await asyncio.wait_for(publishing.wait(), 1)
+            await asyncio.wait_for(publishing.wait(), 10)
             # Cache I/O holds neither a DB transaction nor the execution task.
             assert (await heartbeat(service.runtime, lease.worker_id))[0] == ()
             finish.set()
-            await asyncio.wait_for(owner.join(), 1)
+            await asyncio.wait_for(owner.join(), 10)
+            assert not publish_allowed.is_set()
             assert not flush.done()
             assert (await owner.result(lease.thread_id, record.execution_id)).result == "terminal result"
             publish_allowed.set()
             await flush
             assert not owner.output._pending and not owner.output._sent
-        # Loss/expiry/malformed cache entries are misses, never terminal evidence.
-        await service.runtime.redis.pexpire(key(record.execution_id), 1)
-        async with asyncio.timeout(1):
-            while await owner.output.get(lease.thread_id, record.execution_id, lease.worker_id) is not None:
-                await asyncio.sleep(0.005)
+        # Missing/malformed cache entries are misses, never terminal evidence.
+        await service.runtime.redis.delete(key(record.execution_id))
+        assert await owner.output.get(lease.thread_id, record.execution_id, lease.worker_id) is None
         await service.runtime.redis.set(key(record.execution_id), "broken", ex=10)
         assert await owner.output.get(lease.thread_id, record.execution_id, lease.worker_id) is None
         with monkeypatch.context() as patch:

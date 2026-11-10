@@ -160,15 +160,19 @@ async def test_ensuring_existing_root_allows_child_writes_without_mutating_root(
 
 
 @pytest.mark.parametrize("line", ["abcd\n", "中文\r\n", "𐐀𐐁\n"])
-async def test_byte_budget_pages_complete_lines_without_skipping(tmp_path: Path, line: str) -> None:
+@pytest.mark.parametrize("caller_budget", [False, True])
+async def test_byte_budget_pages_complete_lines_without_skipping(
+    tmp_path: Path, line: str, caller_budget: bool
+) -> None:
     content = line * 7 + "tail"
     (tmp_path / "text").write_bytes(content.encode())
     budget = len(line.encode()) * 2
-    files = _files(tmp_path, budget)
+    files = _files(tmp_path, 1024 if caller_budget else budget)
+    options = {"max_bytes": budget} if caller_budget else {}
     offset = 0
     pages = []
     while True:
-        page = await files.read_text("/text", line_offset=offset, line_limit=1000, max_line_length=20_000)
+        page = await files.read_text("/text", line_offset=offset, line_limit=1000, max_line_length=20_000, **options)
         assert page.lines_read > 0
         assert len(page.text.encode()) <= budget
         assert not page.truncated_lines
@@ -183,9 +187,14 @@ async def test_byte_budget_pages_complete_lines_without_skipping(tmp_path: Path,
 
 
 @pytest.mark.parametrize("terminator", ["", "\n"])
-async def test_single_line_byte_clipping_is_utf8_safe_and_explicit(tmp_path: Path, terminator: str) -> None:
+@pytest.mark.parametrize("caller_budget", [False, True])
+async def test_single_line_byte_clipping_is_utf8_safe_and_explicit(
+    tmp_path: Path, terminator: str, caller_budget: bool
+) -> None:
     (tmp_path / "text").write_bytes(("中文𐐀" * 10 + terminator).encode())
-    page = await _files(tmp_path, 8).read_text("/text", line_limit=1000, max_line_length=20_000)
+    page = await _files(tmp_path, 1024 if caller_budget else 8).read_text(
+        "/text", line_limit=1000, max_line_length=20_000, max_bytes=8 if caller_budget else None
+    )
     assert page.text == "中文" + terminator
     assert page.lines_read == 1
     assert page.has_more is False
@@ -208,6 +217,20 @@ async def test_clipping_does_not_hide_invalid_source_text(tmp_path: Path, data: 
     with pytest.raises(EnvironmentError) as error:
         await _files(tmp_path, 8).read_text("/text")
     assert error.value.code == "environment_unsupported"
+
+
+@pytest.mark.parametrize("maximum", [0, -1])
+async def test_invalid_caller_text_budget_is_rejected(tmp_path: Path, maximum: int) -> None:
+    with pytest.raises(EnvironmentError) as error:
+        await _files(tmp_path).read_text("/missing", max_bytes=maximum)
+    assert error.value.code == "environment_request_invalid"
+
+
+async def test_caller_text_budget_cannot_raise_provider_limit(tmp_path: Path) -> None:
+    (tmp_path / "text").write_bytes(b"abc\n" * 4)
+    page = await _files(tmp_path, 8).read_text("/text", max_bytes=1024)
+    assert page.text == "abc\n" * 2
+    assert page.lines_read == 2 and page.has_more
 
 
 async def test_large_bounds_do_not_mask_a_missing_file(tmp_path: Path) -> None:

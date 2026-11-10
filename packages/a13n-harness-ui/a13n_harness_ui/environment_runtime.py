@@ -7,16 +7,18 @@ import hashlib
 import inspect
 import os
 import stat
-from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
-from contextlib import AsyncExitStack
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Mapping, Sequence
+from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from types import MappingProxyType
 from typing import Literal
 from weakref import WeakValueDictionary
 
 from a13n_envd_client import EIPDeviceConnection
+from a13n_harness import AgentIdentityRef, AgentInstanceContext
 from a13n_harness.environment import (
     FILE_ACTIONS,
     FILE_READ_ACTIONS,
@@ -35,7 +37,7 @@ from a13n_harness.environment.models import (
     EnvironmentError,
     EnvironmentState,
 )
-from a13n_harness.environment.providers import EnvironmentRuntime
+from a13n_harness.environment.providers import BoundEnvironment, EnvironmentRuntime
 from a13n_harness.environment.session_recovery import EnvdSessionBorrower, EnvdSessionState
 from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
 from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
@@ -262,6 +264,7 @@ class EnvironmentRunPlan:
         self,
         *,
         publications: Sequence[EnvironmentStatePublication],
+        path_layout: EnvironmentPathLayout,
         profile: ResolvedEnvironmentProfile,
         mounts: Sequence[_PreparedMount],
         runtime: EnvironmentRuntime,
@@ -270,6 +273,7 @@ class EnvironmentRunPlan:
         default_environment: str,
     ) -> None:
         self._publications = tuple(publications)
+        self.path_layout = path_layout
         self.profile = profile
         self._mounts = tuple(mounts)
         self.runtime = runtime
@@ -371,6 +375,38 @@ class EnvironmentRunService:
 
     async def prepare(self, composition: ResolvedRunComposition) -> EnvironmentRunPlan:
         await self.validate_admission(composition)
+        thread_root = await self._thread_files.touch(composition.thread_id)
+        return await self._assemble(composition, thread_root=thread_root, preview=False)
+
+    @asynccontextmanager
+    async def preview(
+        self, composition: ResolvedRunComposition
+    ) -> AsyncIterator[tuple[BoundEnvironment, EnvironmentPathLayout]]:
+        """Bind an ephemeral Environment without admitting or publishing a Run."""
+        with TemporaryDirectory(prefix="a13n-skill-preview-") as directory:
+            thread_root = Path(directory)
+            (thread_root / "tmp").mkdir()
+            profile = composition.environment_profile
+            if profile.adapter_key == LocalEnvdProjectAdapter.key:
+                roots = await normalize_project_roots(composition.project_roots) if composition.project_roots else ()
+                profile = await self._reconstructor.envd.session_profile(profile, roots, thread_files_root=thread_root)
+                composition = composition.model_copy(update={"environment_profile": profile})
+            plan = await self._assemble(composition, thread_root=thread_root, preview=True)
+            async with plan.runtime.bind(
+                thread_id=composition.thread_id,
+                run_id=f"skill-preview-{thread_root.name}",
+                instance=AgentInstanceContext(
+                    identity=AgentIdentityRef(issuer="harness-ui", subject="skill-preview"),
+                    agent_instance_id="skill-preview",
+                ),
+                host_refs={},
+            ) as environment:
+                await plan.runtime._activate()
+                yield environment, plan.path_layout
+
+    async def _assemble(
+        self, composition: ResolvedRunComposition, *, thread_root: Path, preview: bool
+    ) -> EnvironmentRunPlan:
         live = composition.root.source_kind == "live"
         profile = composition.environment_profile
         reconstructed = self._reconstructor.reconstruct(profile)
@@ -380,10 +416,12 @@ class EnvironmentRunService:
         path_layout = EnvironmentPathLayout.resolve(
             canonical_host_paths=canonical_host_paths,
             project_roots=roots,
+            device_bindings=tuple(
+                (item.selection.alias, item.selection.working_directory) for item in composition.environment_bindings
+            ),
             user_skills_root=self._user_skills_root,
             content_plugins=content_plugins,
         )
-        thread_root = await self._thread_files.touch(composition.thread_id)
         local_runtime = (
             await self._reconstructor.sandbox_runtime(profile=profile)
             if isinstance(reconstructed.adapter, LocalEnvdProjectAdapter)
@@ -399,15 +437,18 @@ class EnvironmentRunService:
                 alias="workspace" if index == 1 else f"workspace-{index}",
                 mount_path=path_layout.project_mounts[index - 1] if canonical_host_paths else None,
                 local_runtime=local_runtime,
+                persistent=not preview,
             )
             mounts.append(mount)
-            publications.append(publication)
+            if publication is not None:
+                publications.append(publication)
         for binding in composition.environment_bindings:
             if isinstance(binding.device.transport, HttpDeviceTransport):
                 composition.run_configuration.authorize_url(binding.device.transport.configuration.endpoint)
-            mount, publication = await self._prepare_device_mount(composition, binding)
+            mount, publication = await self._prepare_device_mount(composition, binding, persistent=not preview)
             mounts.append(mount)
-            publications.append(publication)
+            if publication is not None:
+                publications.append(publication)
         for index, ((_plugin_id, root, _skills), (_layout_id, mount_path)) in enumerate(
             zip(content_plugins, path_layout.content_plugin_roots, strict=True),
             start=1,
@@ -434,11 +475,11 @@ class EnvironmentRunService:
                 )
             )
             if not (canonical_host_paths and Path(path_layout.user_skills) in roots):
-                mounts.append(
-                    await self._prepare_user_skills_mount(
-                        mount_path=(path_layout.user_skills if canonical_host_paths else None)
-                    )
+                user_mount = await self._prepare_user_skills_mount(
+                    mount_path=(path_layout.user_skills if canonical_host_paths else None), create=not preview
                 )
+                if user_mount is not None:
+                    mounts.append(user_mount)
         if self._configuration_root is not None and not live:
             root = self._configuration_root.expanduser().resolve()
             if not (canonical_host_paths and any(mount.mount_path == root.as_posix() for mount in mounts)):
@@ -454,7 +495,7 @@ class EnvironmentRunService:
             thread_root,
             local_runtime=local_runtime,
             session_recovery=await self._session_context(composition, "local", local_runtime.configuration)
-            if local_runtime is not None
+            if local_runtime is not None and not preview
             else None,
         )
         if live:
@@ -480,6 +521,7 @@ class EnvironmentRunService:
         )
         return EnvironmentRunPlan(
             publications=publications,
+            path_layout=path_layout,
             profile=profile,
             mounts=mounts,
             runtime=runtime,
@@ -567,7 +609,8 @@ class EnvironmentRunService:
         mount_path: str | None,
         local_runtime: LocalEnvdProviderRuntime | None,
         original_session_id: str | None = None,
-    ) -> tuple[_PreparedMount, EnvironmentStatePublication]:
+        persistent: bool = True,
+    ) -> tuple[_PreparedMount, EnvironmentStatePublication | None]:
         profile = reconstructed.profile
         key = EnvironmentBindingKey(
             thread_id=composition.thread_id,
@@ -580,12 +623,16 @@ class EnvironmentRunService:
             await self._session_context(
                 composition, "local", local_runtime.configuration, original_session_id=original_session_id
             )
-            if local_runtime is not None
+            if local_runtime is not None and persistent
             else None
         )
-        head = await self._store.environment_states.get(key)
+        head = await self._store.environment_states.get(key) if persistent else None
         expected = None if head is None else head.state
-        state = await self._load_state(key=key, reference=expected, provider_key=profile.provider_key)
+        state = (
+            await self._load_state(key=key, reference=expected, provider_key=profile.provider_key)
+            if persistent
+            else None
+        )
         try:
             environment = await self._reconstructor.bind(
                 reconstructed,
@@ -595,13 +642,14 @@ class EnvironmentRunService:
                 session_recovery=recovery,
             )
         except BaseException as error:
-            with CancelScope(shield=True):
-                try:
-                    await self._publish_state(key, expected, state, observed_binding_state(error, state))
-                except Exception as publication_error:
-                    error.add_note(f"Environment state publication also failed: {publication_error!r}")
+            if persistent:
+                with CancelScope(shield=True):
+                    try:
+                        await self._publish_state(key, expected, state, observed_binding_state(error, state))
+                    except Exception as publication_error:
+                        error.add_note(f"Environment state publication also failed: {publication_error!r}")
             raise
-        publication = await self._publish_state(key, expected, state, environment.state)
+        publication = await self._publish_state(key, expected, state, environment.state) if persistent else None
         return _PreparedMount(
             alias=alias,
             environment=environment,
@@ -618,7 +666,8 @@ class EnvironmentRunService:
         binding: ResolvedEnvironmentBinding,
         *,
         original_session_id: str | None = None,
-    ) -> tuple[_PreparedMount, EnvironmentStatePublication]:
+        persistent: bool = True,
+    ) -> tuple[_PreparedMount, EnvironmentStatePublication | None]:
         if self._devices is None:
             raise EnvironmentLifecycleError(
                 "Device connections are unavailable.", code="device_connections_unavailable"
@@ -641,22 +690,26 @@ class EnvironmentRunService:
             adapter_key=adapter_key,
             normalized_root=selection.working_directory,
         )
-        recovery = await self._session_context(
-            composition,
-            binding.device.id,
-            binding.device,
-            original_session_id=original_session_id,
+        recovery = (
+            await self._session_context(
+                composition,
+                binding.device.id,
+                binding.device,
+                original_session_id=original_session_id,
+            )
+            if persistent
+            else None
         )
-        head = await self._store.environment_states.get(key)
+        head = await self._store.environment_states.get(key) if persistent else None
         expected = None if head is None else head.state
-        state = await self._load_state(key=key, reference=expected, provider_key=provider_key)
+        state = await self._load_state(key=key, reference=expected, provider_key=provider_key) if persistent else None
         environment = await self._devices.bind(
             binding,
             environment_id=f"device-{key.profile_digest[:20]}",
             state=state,
             session_recovery=recovery,
         )
-        publication = await self._publish_state(key, expected, state, environment.state)
+        publication = await self._publish_state(key, expected, state, environment.state) if persistent else None
         return _PreparedMount(
             alias=selection.alias,
             environment=environment,
@@ -747,10 +800,12 @@ class EnvironmentRunService:
             mount_path=mount_path,
         )
 
-    async def _prepare_user_skills_mount(self, *, mount_path: str | None) -> _PreparedMount:
+    async def _prepare_user_skills_mount(self, *, mount_path: str | None, create: bool = True) -> _PreparedMount | None:
         root = self._user_skills_root or Path.home() / ".agents" / "skills"
+        if not create and not await to_thread.run_sync(root.exists):
+            return None
         try:
-            normalized = await to_thread.run_sync(_prepare_user_skills_root, root)
+            normalized = await to_thread.run_sync(_prepare_user_skills_root, root, create)
             provider = DIRECT_LOCAL
             configuration = provider.validate_environment(
                 {
@@ -919,10 +974,11 @@ def _validate_content_plugin_root(value: Path) -> Path:
     return resolved
 
 
-def _prepare_user_skills_root(value: Path) -> Path:
+def _prepare_user_skills_root(value: Path, create: bool = True) -> Path:
     if "\x00" in os.fspath(value):
         raise ValueError("root contains NUL")
-    value.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if create:
+        value.mkdir(mode=0o700, parents=True, exist_ok=True)
     resolved = value.resolve(strict=True)
     if not resolved.is_dir() or not os.access(resolved, os.R_OK | os.W_OK | os.X_OK):
         raise OSError("user Skill root is not an accessible writable directory")

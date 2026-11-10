@@ -1139,7 +1139,7 @@ class HarnessUiApp:
             return await self._terminal_projections.skill_catalog(
                 thread_id=thread_id,
                 defaults=defaults,
-                local_roots_override=None if environment is None else environment.local_roots,
+                environment=environment,
             )
 
     async def validate_skill_references(
@@ -2292,20 +2292,19 @@ class HarnessUiApp:
                 if configuration is None:
                     raise AppStateError("No accepted configuration is selected.", code="configuration_not_accepted")
                 goal = GoalView(objective=objective, max_iterations=configuration.document.max_goal_iterations)
-            catalog = await self._terminal_projections.skill_catalog(
-                thread_id=thread_id,
-                local_roots_override=(
-                    environment.local_roots
-                    if environment is not None and environment.local_roots is not None
-                    else mutation.patch.local_roots
-                    if mutation is not None
-                    else None
-                ),
-            )
-            selected_skills = self._terminal_projections.validate_references_against(catalog, skill_references)
+            catalog = None
+            selected_skills: tuple[str, ...] = ()
+            if skill_references:
+                catalog = await self._terminal_projections.skill_catalog(
+                    thread_id=thread_id,
+                    environment=environment,
+                    mutation=mutation,
+                )
+                selected_skills = self._terminal_projections.validate_references_against(catalog, skill_references)
             await self._threads.get(thread_id)
             prompt = await self._prepare_input(thread_id, prompt, attachment_ids)
-            prompt = prepare_skill_input(prompt, catalog, selected_skills)
+            if catalog is not None:
+                prompt = prepare_skill_input(prompt, catalog, selected_skills)
             if selected_context:
                 prompt = tuple([prompt] if isinstance(prompt, str) else prompt) + tuple(
                     TextContent(text, metadata={"harness_ui": {"mcp_app_context": True}}) for text in selected_context
@@ -2334,11 +2333,6 @@ class HarnessUiApp:
             )
             self._tool_executions.retry(thread_id, refresh=True)
             await self._clear_submitted_draft(thread_id, draft_clear)
-            self._terminal_projections.pin_active_skill_catalog(
-                receipt_id=receipt.receipt_id,
-                thread_id=thread_id,
-                catalog=catalog,
-            )
             return receipt
 
     async def respond_thread(
@@ -3825,6 +3819,8 @@ async def open_harness_ui_app(
                 root_runs=root_runs,
                 children=operator,
                 configuration_path=configuration_path,
+                environments=environment_service,
+                resolver=resolver,
             )
 
             async def rediscover_accounts() -> tuple[

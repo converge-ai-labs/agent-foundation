@@ -3,9 +3,11 @@
 # Local builds compile this checkout; CI publications select same-run artifacts.
 ARG ENVD_BINARY_SOURCE=source
 ARG SANDBOX_VARIANT=standard
+ARG ENVD_VARIANT=default
 
 FROM rust:1.96-trixie AS builder
 ARG TARGETARCH
+ARG ENVD_VARIANT
 # Use the SDK's versioned prebuilt runtime, embedded in the shipped daemon.
 ENV BOXLITE_DEPS_STUB=2 BOXLITE_EMBED_RUNTIME=1
 RUN apt-get update \
@@ -20,7 +22,8 @@ COPY crates/a13n-envd crates/a13n-envd
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,id=a13n-envd-target-${TARGETARCH},target=/src/target,sharing=locked \
-    cargo build --release --locked --package a13n-envd --features vm-boxlite,vm-microsandbox \
+    case "$ENVD_VARIANT" in default) features="" ;; vm) features=vm ;; *) exit 1 ;; esac \
+    && cargo build --release --locked --package a13n-envd --features "$features" \
     && install -D target/release/a13n-envd /out/a13n-envd
 
 FROM scratch AS envd-source
@@ -75,7 +78,7 @@ COPY --chmod=0755 deploy/docker/images/sandbox/desktop.py /usr/local/bin/a13n-sa
 COPY --chmod=0755 packages/a13n-service/a13n_service/providers/environment/desktop_guest.py /opt/a13n-desktop-access.py
 ENTRYPOINT ["tini", "--", "a13n-sandbox-entrypoint", "a13n-sandbox-desktop"]
 
-# All variants use identical daemon bytes, identity and working-directory defaults.
+# Tooling variants share daemon bytes within each Envd build variant.
 FROM ${SANDBOX_VARIANT}-runtime AS runtime
 RUN groupadd --gid 1000 sandbox \
     && useradd --uid 1000 --gid sandbox --create-home --shell /bin/bash sandbox \
@@ -89,8 +92,10 @@ COPY LICENSE /usr/share/licenses/a13n-envd/LICENSE
 ARG BUILD_VERSION=dev
 ARG BUILD_REVISION=unknown
 ARG SANDBOX_VARIANT
+ARG ENVD_VARIANT
 LABEL ai.a13n.environment.user="sandbox" \
       ai.a13n.sandbox.variant="${SANDBOX_VARIANT}" \
+      ai.a13n.envd.variant="${ENVD_VARIANT}" \
       org.opencontainers.image.title="a13n-sandbox" \
       org.opencontainers.image.description="Agent Foundation ${SANDBOX_VARIANT} execution image" \
       org.opencontainers.image.source="https://github.com/converge-ai-labs/agent-foundation" \

@@ -1,4 +1,4 @@
-"""Execute the frozen cloud installer offline through the guest's POSIX shell."""
+"""Exercise the cloud download wrapper and standalone installer together offline."""
 
 import hashlib
 import io
@@ -31,8 +31,12 @@ def release(tmp_path, monkeypatch):
     monkeypatch.setenv("PATH", f"{tools}:{os.environ['PATH']}")
     monkeypatch.setenv("RELEASE_FIXTURE", str(assets))
     installer = Path(__file__).resolve().parents[4] / "scripts/install-a13n-envd.sh"
-    (assets / installer.name).write_bytes(installer.read_bytes())
-    assert hashlib.sha256(installer.read_bytes()).hexdigest() == envd_release.INSTALLER_SHA256
+    content = installer.read_bytes()
+    (assets / installer.name).write_bytes(content)
+    # The offline server serves the checkout's script, not the immutable
+    # production SOURCE_REVISION. Verify that fixture's bytes through the same
+    # wrapper; later tampering must still fail before the script executes.
+    monkeypatch.setattr(envd_release, "INSTALLER_SHA256", hashlib.sha256(content).hexdigest())
     return assets
 
 

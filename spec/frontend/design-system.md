@@ -67,7 +67,7 @@ Neutral surfaces carry the interface. Primary buttons are near-black in light mo
 
 ## Scrolling and States
 
-`ScrollArea` and `a13n-scrollbar` share tokens. Textareas, pickers and readers bound their own scrolling; ordinary pages use their product's page-scroll anatomy. Fixed controls never hide essential content. Long names and narrow viewports retain readable values and reachable actions.
+`ScrollArea` and `a13n-scrollbar` share tokens. Use a content-sized `ScrollArea` for bounded readers and pickers. Applications can opt native scroll owners into the same thumb treatment with `a13n-scrollbars` on the document root. Textareas, pickers and readers bound their own scrolling; ordinary pages use their product's page-scroll anatomy. Fixed controls never hide essential content. Long names and narrow viewports retain readable values and reachable actions.
 
 Skeletons preserve destination geometry; spinners belong to gates and explicit actions. Refresh keeps existing content. Empty/error states align within their owning column. Revealing actions, expanding rows and replacing loading states do not cause unrelated horizontal shifts or discard reading position.
 

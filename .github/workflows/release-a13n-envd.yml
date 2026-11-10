@@ -104,7 +104,7 @@ jobs:
           retention-days: 7
 
   build-binaries:
-    name: Build ${{ matrix.target }}
+    name: Build ${{ matrix.target }} (${{ matrix.envd-variant }})
     env:
       # Upstream mode 2 downloads the versioned runtime; mode 1 is check-only.
       BOXLITE_DEPS_STUB: "2"
@@ -118,21 +118,35 @@ jobs:
           - os: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
             windows: false
+            envd-variant: default
           - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             windows: false
+            envd-variant: default
           - os: macos-15
             target: x86_64-apple-darwin
             windows: false
+            envd-variant: default
           - os: macos-15
             target: aarch64-apple-darwin
             windows: false
+            envd-variant: default
           - os: windows-2025
             target: x86_64-pc-windows-msvc
             windows: true
+            envd-variant: default
           - os: windows-11-arm
             target: aarch64-pc-windows-msvc
             windows: true
+            envd-variant: default
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            windows: false
+            envd-variant: vm
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            windows: false
+            envd-variant: vm
     steps:
       - name: Checkout release tag
         uses: actions/checkout@v6
@@ -162,19 +176,23 @@ jobs:
       - name: Cache Cargo
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: release-a13n-envd-${{ matrix.target }}
+          shared-key: release-a13n-envd-${{ matrix.target }}-${{ matrix.envd-variant }}
 
       - name: Build Unix binary archive
         if: matrix.windows == false
         env:
           TARGET: ${{ matrix.target }}
           VERSION: ${{ needs.prepare.outputs.version }}
+          ENVD_VARIANT: ${{ matrix.envd-variant }}
         run: |
-          cargo build --release --locked --package a13n-envd --features vm-boxlite,vm-microsandbox --target "$TARGET"
+          features=""
+          suffix=""
+          if [[ "$ENVD_VARIANT" == vm ]]; then features=vm; suffix=-vm; fi
+          cargo build --release --locked --package a13n-envd --features "$features" --target "$TARGET"
           mkdir -p staging
           cp "target/$TARGET/release/a13n-envd" staging/a13n-envd
           cp LICENSE staging/LICENSE
-          archive="a13n-envd-${VERSION}-${TARGET}.tar.gz"
+          archive="a13n-envd-${VERSION}-${TARGET}${suffix}.tar.gz"
           tar -czf "$archive" -C staging a13n-envd LICENSE
 
       # The Host owns sandbox launch validation; envd has no inner-isolation probe.
@@ -192,23 +210,44 @@ jobs:
           TARGET: ${{ matrix.target }}
           VERSION: ${{ needs.prepare.outputs.version }}
         run: |
-          cargo build --release --locked --package a13n-envd --features vm-boxlite,vm-microsandbox --target $env:TARGET
+          cargo build --release --locked --package a13n-envd --target $env:TARGET
           New-Item -ItemType Directory -Force staging | Out-Null
           Copy-Item "target/$env:TARGET/release/a13n-envd.exe" staging/a13n-envd.exe
           Copy-Item LICENSE staging/LICENSE
           $archive = "a13n-envd-$env:VERSION-$env:TARGET.zip"
           Compress-Archive -Path staging/a13n-envd.exe, staging/LICENSE -DestinationPath $archive
 
+      - name: Set up Python for size validation
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Enforce release size budgets
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          ENVD_VARIANT: ${{ matrix.envd-variant }}
+          EXE_SUFFIX: ${{ matrix.windows && '.exe' || '' }}
+          EXTENSION: ${{ matrix.windows && 'zip' || 'tar.gz' }}
+        run: |
+          suffix=""
+          if [[ "$ENVD_VARIANT" == vm ]]; then suffix=-vm; fi
+          python3 scripts/envd_size.py --binary "target/$TARGET/release/a13n-envd$EXE_SUFFIX" \
+            --archive "a13n-envd-${VERSION}-${TARGET}${suffix}.$EXTENSION" \
+            --target "$TARGET" --variant "$ENVD_VARIANT" --build-dir "target/$TARGET/release" \
+            --output size-report.json
+
       - name: Upload binary archive
         uses: actions/upload-artifact@v4
         with:
-          name: a13n-envd-${{ matrix.target }}
+          name: a13n-envd-${{ matrix.target }}-${{ matrix.envd-variant }}
           path: a13n-envd-*
           if-no-files-found: error
           retention-days: 7
 
       - name: Verify crate package
-        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        if: matrix.target == 'x86_64-unknown-linux-gnu' && matrix.envd-variant == 'default'
         run: cargo package --locked --allow-dirty --package a13n-envd
 
   publish-crate:
@@ -290,12 +329,13 @@ jobs:
         run: uv publish --check-url https://pypi.org/simple/ dist/*
 
   publish-image:
-    name: Publish sandbox image (${{ matrix.variant }})
+    name: Publish sandbox image (${{ matrix.variant }}, ${{ matrix.envd-variant }})
     needs: [prepare, build-binaries, publish-crate, publish-client]
     strategy:
       fail-fast: false
       matrix:
         variant: [standard, slim, desktop]
+        envd-variant: [default, vm]
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -309,19 +349,22 @@ jobs:
       - name: Download Linux binary archives
         uses: actions/download-artifact@v4
         with:
-          pattern: a13n-envd-*-unknown-linux-gnu
+          pattern: a13n-envd-*-unknown-linux-gnu-${{ matrix.envd-variant }}
           path: dist/linux
           merge-multiple: true
 
       - name: Stage sandbox binaries
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
+          ENVD_VARIANT: ${{ matrix.envd-variant }}
         run: |
+          suffix=""
+          if [[ "$ENVD_VARIANT" == vm ]]; then suffix=-vm; fi
           for platform in amd64:x86_64-unknown-linux-gnu arm64:aarch64-unknown-linux-gnu; do
             arch="${platform%%:*}"
             target="${platform#*:}"
             mkdir -p "tmp/sandbox-binaries/$arch"
-            tar -xzf "dist/linux/a13n-envd-${VERSION}-${target}.tar.gz" \
+            tar -xzf "dist/linux/a13n-envd-${VERSION}-${target}${suffix}.tar.gz" \
               -C "tmp/sandbox-binaries/$arch" a13n-envd
           done
 
@@ -344,12 +387,17 @@ jobs:
           IMAGE: ${{ env.SANDBOX_IMAGE }}
           VERSION: ${{ needs.prepare.outputs.version }}
           VARIANT: ${{ matrix.variant }}
+          ENVD_VARIANT: ${{ matrix.envd-variant }}
         run: |
           suffix=""
           stable=latest
           if [[ "$VARIANT" != standard ]]; then
             suffix="-$VARIANT"
             stable="$VARIANT"
+          fi
+          if [[ "$ENVD_VARIANT" == vm ]]; then
+            suffix="$suffix-vm"
+            if [[ "$VARIANT" == standard ]]; then stable=vm; else stable="$VARIANT-vm"; fi
           fi
           {
             echo "tags<<EOF"
@@ -371,22 +419,28 @@ jobs:
           build-args: |
             ENVD_BINARY_SOURCE=prebuilt
             SANDBOX_VARIANT=${{ matrix.variant }}
+            ENVD_VARIANT=${{ matrix.envd-variant }}
             BUILD_VERSION=${{ needs.prepare.outputs.version }}
             BUILD_REVISION=${{ github.sha }}
-          cache-from: type=gha,scope=release-sandbox-${{ matrix.variant }}
-          cache-to: type=gha,mode=max,scope=release-sandbox-${{ matrix.variant }}
+          cache-from: type=gha,scope=release-sandbox-${{ matrix.variant }}-${{ matrix.envd-variant }}
+          cache-to: type=gha,mode=max,scope=release-sandbox-${{ matrix.variant }}-${{ matrix.envd-variant }}
 
       - name: Verify published image tags
         env:
           IMAGE: ${{ env.SANDBOX_IMAGE }}
           VERSION: ${{ needs.prepare.outputs.version }}
           VARIANT: ${{ matrix.variant }}
+          ENVD_VARIANT: ${{ matrix.envd-variant }}
         run: |
           suffix=""
           stable=latest
           if [[ "$VARIANT" != standard ]]; then
             suffix="-$VARIANT"
             stable="$VARIANT"
+          fi
+          if [[ "$ENVD_VARIANT" == vm ]]; then
+            suffix="$suffix-vm"
+            if [[ "$VARIANT" == standard ]]; then stable=vm; else stable="$VARIANT-vm"; fi
           fi
           version_digest="$(docker buildx imagetools inspect "$IMAGE:$VERSION$suffix" --format '{{json .Manifest.Digest}}')"
           test -n "$version_digest"

@@ -10,9 +10,12 @@ from pydantic import ValidationError
 
 from a13n_harness.environment.archives import FileArchive, extract_archive_files
 from a13n_harness.environment.batches import apply_file_batch
+from a13n_harness.environment.discovery import discover_documents as discover_from_operations
 from a13n_harness.environment.files import (
     FileBatchValue,
     FileCopyResult,
+    FileDocument,
+    FileDocumentRequest,
     FileEntriesResult,
     FileMetadata,
     FileMutationResult,
@@ -23,10 +26,14 @@ from a13n_harness.environment.files import (
     FileTextResult,
     FileTextSearchRequest,
     FileTextSearchResult,
+    FileTreeRequest,
+    FileTreeResult,
     FileWriteMode,
     FileWriteResult,
 )
 from a13n_harness.environment.models import EnvironmentError
+from a13n_harness.environment.trees import encoded_path_prefix_bytes
+from a13n_harness.environment.trees import list_tree as list_tree_from_operations
 from a13n_harness.providers.environment.eip._common import (
     convert_receipt,
     invoke,
@@ -34,6 +41,7 @@ from a13n_harness.providers.environment.eip._common import (
     raise_converted,
     session_client,
 )
+from a13n_harness.providers.environment.eip._discovery import discover_documents
 
 
 class EIPFileOperator:
@@ -71,6 +79,39 @@ class EIPFileOperator:
     def from_eip_path(self, path: eip.EIPPath) -> str:
         return path.path
 
+    async def list_tree(self, request: FileTreeRequest) -> FileTreeResult:
+        if "file.tree" not in self._session.descriptor.available_methods:
+            return await list_tree_from_operations(self, request)
+        root = self.to_eip_path(request.root)
+        prefix_bytes = request.path_prefix_bytes
+        if prefix_bytes is None:
+            prefix_bytes = encoded_path_prefix_bytes(root.path)
+        result = await invoke(
+            self._client.file_tree(
+                eip.FileTreeParams(
+                    context=new_context(),
+                    root=root,
+                    max_depth=request.max_depth,
+                    max_entries=request.max_entries,
+                    max_directory_calls=request.max_directory_calls,
+                    include_hidden=request.include_hidden,
+                    metadata_byte_limit=request.max_bytes,
+                    path_prefix_bytes=prefix_bytes,
+                    result_byte_limit=max(1, self._session.max_response_bytes - 4096),
+                )
+            )
+        )
+        return FileTreeResult(
+            entries=tuple(self._metadata(entry.info) for entry in result.entries),
+            truncated=result.truncated,
+            directory_calls=result.directory_calls,
+        )
+
+    def discover_documents(self, request: FileDocumentRequest) -> AsyncIterator[FileDocument]:
+        if "file.discover_documents" not in self._session.descriptor.available_methods:
+            return discover_from_operations(self, request)
+        return discover_documents(self._session, request, self.to_eip_path(request.root), self._metadata)
+
     async def read_text(
         self,
         path: str,
@@ -78,7 +119,10 @@ class EIPFileOperator:
         line_offset: int = 0,
         line_limit: int = 200,
         max_line_length: int = 2_000,
+        max_bytes: int | None = None,
     ) -> FileTextResult:
+        if max_bytes is not None and max_bytes < 1:
+            raise EnvironmentError("max_bytes must be positive.", code="environment_request_invalid")
         result = await invoke(
             self._client.file_read_text(
                 eip.FileReadTextParams(
@@ -87,6 +131,7 @@ class EIPFileOperator:
                     line_offset=line_offset,
                     line_limit=line_limit,
                     max_line_length=max_line_length,
+                    text_byte_limit=max_bytes,
                 )
             )
         )

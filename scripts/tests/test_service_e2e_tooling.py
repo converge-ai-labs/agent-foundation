@@ -35,10 +35,10 @@ def test_parallel_cluster_setup_preserves_failures(tmp_path, job, status):
     start = names.index("Start the pinned cluster alongside image builds")
     ready = names.index("Require successful cluster creation")
     if job == "helm":
-        assert start < names.index("Build both checkout images alongside cluster creation") < ready
+        assert start < names.index("Build the checkout Service image alongside cluster creation") < ready
         assert ready < names.index("Install the Service, bootstrap and verify a native run")
     else:
-        assert start < names.index("Build the checkout sandbox with reusable layers") < ready
+        assert start < names.index("Load the shared sandbox image") < ready
     assert next(step for step in steps if step.get("uses") == "helm/kind-action@v1")["with"]["install_only"]
     (tmp_path / "kind-create.status").write_text(str(status))
     (tmp_path / "kind-create.log").write_text("cluster diagnostic\n")

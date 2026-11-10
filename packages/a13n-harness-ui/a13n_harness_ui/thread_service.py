@@ -412,15 +412,8 @@ class ThreadService:
         mutation: ThreadConfigurationMutation,
     ) -> Thread:
         thread = await self.get(thread_id)
-        if thread.configuration.agent_source.kind == "live":
-            raise ThreadError("Configure the built-in executor in Live settings.", code="live_thread_reserved")
-        if thread.configuration.version != mutation.expected_version:
-            raise ThreadError(
-                "Thread configuration version changed; read it again.", code="thread_configuration_conflict"
-            )
         source = await self._required_configuration()
-        replacement = mutation.patch.apply(thread.configuration)
-        _validate_configuration(source, replacement, root=thread.parent_thread_id is None)
+        replacement = apply_configuration_mutation(source, thread, mutation)
         return await self._store.threads.update_configuration(
             thread_id=thread_id,
             expected_version=mutation.expected_version,
@@ -435,6 +428,19 @@ class ThreadService:
                 code="configuration_not_accepted",
             )
         return source
+
+
+def apply_configuration_mutation(
+    source: LoadedHarnessUiConfiguration, thread: Thread, mutation: ThreadConfigurationMutation
+) -> ThreadConfiguration:
+    """Validate the next configuration without persisting it."""
+    if thread.configuration.agent_source.kind == "live":
+        raise ThreadError("Configure the built-in executor in Live settings.", code="live_thread_reserved")
+    if thread.configuration.version != mutation.expected_version:
+        raise ThreadError("Thread configuration version changed; read it again.", code="thread_configuration_conflict")
+    replacement = mutation.patch.apply(thread.configuration)
+    _validate_configuration(source, replacement, root=thread.parent_thread_id is None)
+    return replacement
 
 
 def project_defaults_patch(defaults: ProjectDefaults) -> ProjectDefaultsPatch:

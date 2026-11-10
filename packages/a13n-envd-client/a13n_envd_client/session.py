@@ -354,6 +354,11 @@ class EIPSession:
         return self._descriptor
 
     @property
+    def max_response_bytes(self) -> int:
+        """Effective encoded-response ceiling, including the local carrier bound."""
+        return min(self._descriptor.limits.max_response_bytes, self._device._requester.max_response_bytes)
+
+    @property
     def detached(self) -> bool:
         return self._detached
 
@@ -615,8 +620,11 @@ class EIPSession:
             task.cancel()
 
     def _ensure_open(self) -> None:
-        if self._closed or not self._ready:
-            raise EIPSessionStateError("Session is closed or not ready") from self._error
+        if self.is_closed or not self._ready:
+            cause = self._error
+            if cause is None and self._device.is_closed:
+                cause = self._requester._error
+            raise EIPSessionStateError("Session is closed or not ready") from cause
 
     def _require_method(self, method: str) -> None:
         self._ensure_open()

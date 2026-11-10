@@ -3,7 +3,7 @@
 import pytest
 from a13n_harness_ui import model_catalog as module
 from a13n_harness_ui.model_catalog import ModelCatalog, bundled_models, parse_directory
-from anyio import Event, create_task_group, fail_after, sleep_forever
+from anyio import CancelScope, Event, create_task_group, sleep_forever
 
 
 def directory(**models: object) -> dict[str, object]:
@@ -105,11 +105,14 @@ async def test_catalog_offline_and_cancellation(monkeypatch: pytest.MonkeyPatch)
     assert snapshot.updated_at is None
 
     async def wait():
+        cancellation.cancel()
         await sleep_forever()
 
     monkeypatch.setattr(module, "fetch_directory", wait)
     catalog = ModelCatalog()
-    with pytest.raises(TimeoutError), fail_after(0.01):
+    with CancelScope() as cancellation:
         await catalog.read()
+        pytest.fail("catalog swallowed cancellation")
+    assert cancellation.cancelled_caught
     monkeypatch.setattr(module, "fetch_directory", fail)
     assert (await catalog.read()).status == "unavailable"

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-from collections import deque
 from collections.abc import Sequence
 from copy import copy, deepcopy
 from dataclasses import dataclass, replace
@@ -71,8 +70,9 @@ from a13n_harness.compaction import (
 )
 from a13n_harness.content import CONTENT_METADATA_KEY
 from a13n_harness.context import AgentContext
-from a13n_harness.environment.files import FileOperator
+from a13n_harness.environment.files import FileOperator, FileTreeRequest
 from a13n_harness.environment.models import EnvironmentError
+from a13n_harness.environment.trees import tree_entry_value
 from a13n_harness.errors import DefinitionError
 from a13n_harness.events import (
     ContextOperationCompletedPayload,
@@ -281,59 +281,23 @@ async def _scan_workspace_outline(
     files: FileOperator,
     configuration: WorkspaceOutlineConfiguration,
 ) -> str:
-    entries: list[dict[str, JsonValue]] = []
-    pending: deque[tuple[str, int, int]] = deque([(configuration.root, 0, 0)])
-    provider_calls = 0
-    truncated = False
-    stop = False
-    while pending and not stop:
-        if provider_calls >= configuration.max_provider_calls:
-            truncated = True
-            break
-        path, parent_depth, offset = pending.popleft()
-        remaining = configuration.max_entries - len(entries)
-        if remaining <= 0:
-            truncated = True
-            break
-        result = await files.list(
-            path,
-            offset=offset,
-            max_results=remaining,
-            include_hidden=configuration.include_hidden,
+    empty_bytes = len(_workspace_outline_content(configuration.root, [], truncated=True).encode("utf-8"))
+    if empty_bytes >= configuration.max_bytes:
+        raise DefinitionError(
+            "Workspace outline byte limit cannot encode its minimum projection.", code="workspace_outline_limit_invalid"
         )
-        provider_calls += 1
-        page = sorted(result.entries, key=lambda item: item.path)
-        if len(page) > remaining:
-            page = page[:remaining]
-            truncated = True
-        for entry in page:
-            item: dict[str, JsonValue] = {"kind": entry.kind, "path": entry.path}
-            if entry.size is not None:
-                item["size"] = entry.size
-            candidate = [*entries, item]
-            if len(_workspace_outline_content(configuration.root, candidate, truncated=True).encode("utf-8")) > (
-                configuration.max_bytes
-            ):
-                truncated = True
-                stop = True
-                break
-            entries.append(item)
-            item_depth = parent_depth + 1
-            if entry.kind == "directory":
-                if item_depth < configuration.max_depth:
-                    pending.append((entry.path, item_depth, 0))
-                else:
-                    truncated = True
-        if stop:
-            break
-        if result.has_more:
-            if not page or len(entries) >= configuration.max_entries:
-                truncated = True
-                break
-            pending.appendleft((path, parent_depth, offset + len(page)))
-    if pending:
-        truncated = True
-    content = _workspace_outline_content(configuration.root, entries, truncated=truncated)
+    result = await files.list_tree(
+        FileTreeRequest(
+            root=configuration.root,
+            max_depth=configuration.max_depth,
+            max_entries=configuration.max_entries,
+            max_directory_calls=configuration.max_provider_calls,
+            include_hidden=configuration.include_hidden,
+            max_bytes=configuration.max_bytes - empty_bytes + 1,
+        )
+    )
+    entries = [cast(dict[str, JsonValue], tree_entry_value(entry)) for entry in result.entries]
+    content = _workspace_outline_content(configuration.root, entries, truncated=result.truncated)
     if len(content.encode("utf-8")) > configuration.max_bytes:
         raise DefinitionError(
             "Workspace outline byte limit cannot encode its minimum projection.",
@@ -403,8 +367,13 @@ async def _read_file_context(
     while has_more and offset < configuration.max_lines_per_file and budget - used >= 5:
         remaining = budget - used
         line_length = min(configuration.max_line_length, max(1, (remaining - 1) // 4))
-        line_limit = min(configuration.max_lines_per_file - offset, max(1, remaining // (line_length * 4 + 1)))
-        page = await files.read_text(path, line_offset=offset, line_limit=line_limit, max_line_length=line_length)
+        page = await files.read_text(
+            path,
+            line_offset=offset,
+            line_limit=configuration.max_lines_per_file - offset,
+            max_line_length=line_length,
+            max_bytes=remaining,
+        )
         encoded = page.text.encode("utf-8")
         text = encoded[:remaining].decode("utf-8", errors="ignore")
         chunks.append(text)
