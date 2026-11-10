@@ -129,3 +129,36 @@ async def test_unbound_run_projects_reason_without_browser_tools():
     assert len(seen) == 1
     assert "&lt;missing display&gt;" in seen[0]
     assert "Browser tools are absent for this Run" in seen[0]
+
+
+async def test_browser_state_owner_reports_restoration_without_losing_older_presence(browsers):
+    from a13n_harness.model_context import (
+        ModelContextHistory,
+        ModelContextProjection,
+        ModelContextProjectionRequest,
+        ModelContextRequestKind,
+    )
+
+    context = capability(browsers)
+    confirmed = ()
+    seen = []
+
+    async def handler(request):
+        return ModelContextProjection()
+
+    for takeover in (False, False, True, False):
+        browsers.human_thread = "thread-b" if takeover else ""
+        if takeover:
+            browsers.handback.takeover()
+        else:
+            browsers.handback.released()
+        request = ModelContextProjectionRequest(
+            kind=ModelContextRequestKind.INPUT, history=ModelContextHistory.from_blocks(confirmed)
+        )
+        projection = await context.wrap_model_context(None, request, handler)
+        seen.append(projection.blocks)
+        confirmed = (*confirmed, *projection.blocks)
+    assert [len(items) for items in seen] == [1, 0, 1, 1]
+    assert seen[0][0].content == seen[3][0].content
+    assert ModelContextHistory.from_blocks(confirmed).contains(seen[0][0])
+    assert not browsers.handback._pending

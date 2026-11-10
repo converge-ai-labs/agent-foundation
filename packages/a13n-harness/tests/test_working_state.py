@@ -505,8 +505,9 @@ async def test_working_state_projects_complete_notes_refs_and_omission_counts_se
         {},
         WorkingStateConfiguration(max_context_bytes=1024),
     )
-    assert len(task_only) == 1
-    assert task_only[0].source_id.endswith(".tasks")
+    assert len(task_only) == 2
+    assert "No working notes." in task_only[0].content
+    assert task_only[1].source_id.endswith(".tasks")
 
 
 async def test_task_list_and_task_results_hide_internal_versions() -> None:
@@ -763,3 +764,20 @@ async def test_work_observations_publish_restored_baseline_and_committed_mutatio
     assert baseline.revision == 1
     assert baseline.tasks is not None and len(baseline.tasks.tasks) == 1
     assert baseline.tasks == observations[count - 1].tasks
+
+
+async def test_empty_working_state_respects_enabled_groups_and_note_cadence():
+    configuration = WorkingStateConfiguration(max_context_bytes=1024)
+    empty = _render_working_state_blocks((), {}, {}, configuration)
+    assert len(empty) == 2
+    assert "No working notes." in empty[0].content
+    assert "No unfinished tasks." in empty[1].content
+    tool_boundary = _render_working_state_blocks((), {}, {}, configuration, project_notes=False)
+    assert tool_boundary == (empty[1],)
+    assert not _render_working_state_blocks(
+        (), {}, {}, WorkingStateConfiguration(notes_enabled=False, tasks_enabled=False)
+    )
+    full_notes = {f"note-{index}": "x" * 40 for index in range(30)}
+    blocks = _render_working_state_blocks((), {}, full_notes, configuration)
+    assert len(blocks) == 2 and "No unfinished tasks." in blocks[1].content
+    assert sum(len(block.content.encode("utf-8")) for block in blocks) <= 1024

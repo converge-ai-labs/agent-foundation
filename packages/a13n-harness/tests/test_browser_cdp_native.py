@@ -44,15 +44,14 @@ async def native_browser(request, browser_executable):
                         "manifest_version": 3,
                         "name": "Synthetic browser fixture",
                         "version": "1.0",
-                        "background": {"service_worker": "worker.js"},
-                        "action": {"default_popup": "popup.html"},
                         "content_scripts": [{"matches": ["http://127.0.0.1/*"], "js": ["content.js"]}],
                     }
                 )
             )
-            (extension / "content.js").write_text("document.documentElement.dataset.fixtureExtension='ready'")
-            (extension / "worker.js").write_text("chrome.runtime.onInstalled.addListener(()=>{})")
-            (extension / "popup.html").write_text("<!doctype html><h1>Synthetic extension popup</h1>")
+            (extension / "content.js").write_text(
+                "document.body.insertAdjacentHTML('beforeend','<button>Synthetic extension content</button>');"
+                "document.documentElement.dataset.fixtureExtension='ready'"
+            )
             # Test fixture installation only; Harness never installs extensions.
             arguments.append("--load-extension=" + str(extension))
         # Let pytest capture browser diagnostics instead of hiding startup failures.

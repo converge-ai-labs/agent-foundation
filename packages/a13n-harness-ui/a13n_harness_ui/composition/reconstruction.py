@@ -108,14 +108,17 @@ class _GlobalGuidanceCapability(AbstractModelContextCapability):
             else "No global AGENTS.md instructions are configured for this run. Earlier global guidance blocks no longer apply."
         )
         content = "# AGENTS.md instructions (global configuration)\n\n<INSTRUCTIONS>\n" + current + "\n</INSTRUCTIONS>"
+        block = ModelContextBlock(
+            source_id="a13n-harness-ui.global-guidance",
+            context_group="environment_context",
+            placement=ModelContextPlacement.REQUEST_EPILOGUE,
+            content=content,
+        )
+        if request.history.matches_latest(block):
+            return projection
         return ModelContextProjection(
             blocks=(
-                ModelContextBlock(
-                    source_id="a13n-harness-ui.global-guidance",
-                    context_group="environment_context",
-                    placement=ModelContextPlacement.REQUEST_EPILOGUE,
-                    content=content,
-                ),
+                block,
                 *projection.blocks,
             )
         )

@@ -248,7 +248,7 @@ from a13n_harness_ui.push_models import PushConfiguration, PushSubscriptionInput
 from a13n_harness_ui.restart import GracefulRestart
 from a13n_harness_ui.restart_recovery import recover_restart
 from a13n_harness_ui.root_execution import RootRunExecutor
-from a13n_harness_ui.root_input import append_surface_hint, detach_input
+from a13n_harness_ui.root_input import detach_input
 from a13n_harness_ui.root_run import RootRunCoordinator
 from a13n_harness_ui.saved_output_models import SavedChildOutputPage, SavedOutputTarget, SavedOutputView
 from a13n_harness_ui.saved_outputs import SavedOutputs
@@ -276,6 +276,7 @@ from a13n_harness_ui.storage.shares import ShareRepository
 from a13n_harness_ui.storage.usage import ThreadUsageView
 from a13n_harness_ui.storage.usage_analytics import UsageAnalyticsView, UsageQuery
 from a13n_harness_ui.subagent_operator import HarnessUiSubagentOperator
+from a13n_harness_ui.surface_context import append_surface_provenance
 from a13n_harness_ui.surfaces import (
     ActiveWorkSummary,
     ChildControlResult,
@@ -2307,10 +2308,16 @@ class HarnessUiApp:
                 prompt = prepare_skill_input(prompt, catalog, selected_skills)
             if selected_context:
                 prompt = tuple([prompt] if isinstance(prompt, str) else prompt) + tuple(
-                    TextContent(text, metadata={"harness_ui": {"mcp_app_context": True}}) for text in selected_context
+                    TextContent(
+                        text,
+                        metadata={
+                            "source_id": "a13n-harness-ui.mcp-app-context",
+                            "harness_ui": {"mcp_app_context": True},
+                        },
+                    )
+                    for text in selected_context
                 )
-            if input_surface is not None:
-                prompt = append_surface_hint(prompt, input_surface)
+            prompt = append_surface_provenance(prompt, input_surface)
 
             async def authorize_app_message() -> None:
                 if mcp_app_view is not None:
