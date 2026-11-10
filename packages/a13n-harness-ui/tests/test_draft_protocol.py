@@ -205,9 +205,9 @@ async def test_real_shared_composer_submit_capture_steer_rejoin_restart(
     async with listener(tmp_path, configuration_path=root) as (http, ws):
         async with connect(ws + prefix + "/draft/connect", proxy=None, origin=http) as restarted:
             current = await join(restarted)
-            assert current["draft_id"] != draft_id
-            assert composer_values(document(current)) == ("", ())
-            await send(restarted, draft_id, composer_document())
+            assert current["draft_id"] == draft_id
+            assert composer_values(document(current)) == ("NEXT", ())
+            await send(restarted, "draft-expired", composer_document())
             assert (await frame_until(restarted, lambda f: "error" in f))["error"]["code"] == "draft_instance_conflict"
         async with httpx.AsyncClient(base_url=http, headers=headers, trust_env=False) as api:
             assert "reviewed bytes" in (await api.get(prefix + "/transcript")).text

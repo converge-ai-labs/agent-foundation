@@ -51,7 +51,7 @@ The App owns:
 - process-local root admission, receipt correlation, execution, deferred response, waiting, cancellation, and steering;
 - immutable Run composition and continuation publication;
 - App-owned background compaction independent of foreground Run and waiter lifetimes, with [durable result retention](03-local-storage-and-recovery.md#retained-background-compaction);
-- in-memory shared browser drafts, page/focus and editor presence, with frontend Send using existing root admission;
+- bounded persistent shared WebUI composer drafts and process-local page/focus and editor presence, with frontend Send using existing root admission;
 - explicitly enabled native Host files, Git projections, and human PTY lifetimes;
 - Project-root Environment binding and state lifecycle;
 - async child admission, execution, checkpointing, query, wait, steering, cancellation, and linked resume;

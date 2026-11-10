@@ -97,9 +97,11 @@ flowchart TB
 
 ### 共享草稿
 
-查看同一保存对话的人在运行中的 App 内编辑同一份共享草稿。重新连接同一实例即可再次同步。服务器重启会产生替代草稿：明确重新加入，再选择是否恢复本浏览器的文字。
+查看同一保存对话的人共享输入、已上传附件引用、Model/Thinking/Speed/Reasoning mode、Environment 和 Goal 选择。已确认同步的编辑保存在服务器上，可跨浏览器、设备和服务器重启恢复。Prompt 访客共享文字和附件，但不能读取或修改所有者的 Run 选项。
 
-未同步编辑可能因重载或浏览器崩溃丢失；已同步文字在服务器运行期间保留。撤销属于本地编辑器，接受的 Send 建立新的撤销边界。参与者显示名用于辨认协作者，不是认证身份。
+每个输入框最多保留 512 KiB 当前编辑状态；输入和选项连续 30 天未改变后会过期，即使仍有内容，当前连接的编辑者除外。删除对话会删除保存的输入框。非空草稿保留期间，引用的未提交附件不会被普通临时文件清理删除。过期或被替换后，需要明确重新加入，再恢复浏览器输入。
+
+未同步编辑可能因重载或浏览器崩溃丢失。撤销属于本地编辑器，接受的 Send 建立新的撤销边界。参与者显示名用于辨认协作者，不是认证身份。
 
 ### Skill 与工作检查
 
@@ -126,9 +128,9 @@ flowchart TB
 
 点击输入框底部当前 Model，选择 Agent、Model、Reasoning mode、Thinking 等级或 Speed。每项在同一弹层内展开，Default 恢复继承设置。桌面和手机均通过 Chat options 使用 Goal、Coordinate agents、Environment 和 Clear context。
 
-需要持久 Model 选择时，打开对话配置并设置 **Default model**。**Follow Agent model** 清除它。跟随该保存值时输入框显示 **Thread default**；改选输入框 Model 则改变 Run 草稿。配置检查会区分下次 Run 选择与当前或已保存工作的捕获选择。
+需要修改 Thread 默认 Model（包括终端 UI 使用的默认值）时，打开对话配置并设置 **Default model**。**Follow Agent model** 清除它。跟随该保存值时输入框显示 **Thread default**；改选输入框 Model 则改变 Run 草稿。配置检查会区分下次 Run 选择与当前或已保存工作的捕获选择。
 
-新聊天从创建时的默认设置开始。在同一浏览器重新打开草稿或已有聊天时，会恢复该聊天上次在输入框里选的设置。同一 Agent 下，手动选择的 Model 优先于对话默认模型，即使之后修改了对话默认模型也是如此。清除输入框里的模型选择后，会跟随当前对话默认模型；如果对话没有指定模型，则跟随 Agent 的模型。
+新聊天从创建时的默认设置开始。未完成的新对话草稿在当前浏览器保留选择；已有聊天从服务器恢复共享输入框设置。同一 Agent 下，手动选择的 Model 优先于对话默认模型，即使之后修改了对话默认模型也是如此。清除输入框里的模型选择后，会跟随当前对话默认模型；如果对话没有指定模型，则跟随 Agent 的模型。
 
 **Chat options → Clear context** 让下一条消息不带先前模型消息、笔记、任务或保存的 Agent 工作状态开始，同时丢弃待处理问题和审批。聊天历史、文件、设置和未发送输入保留。
 
@@ -140,7 +142,7 @@ flowchart TB
 
 选项取决于 Model 和安装的适配器。仅支持时显示 Off；最低 effort 不一定表示 Off。未知模型保留 Default 并说明原因。禁用预算或自定义设置冲突应在 Model 配置中解决。Thinking 不改变输出 token 上限。
 
-浏览器按会话记住思考强度。刷新页面或重新打开聊天后，下次发送仍会使用所选强度。更换 Agent 或实际使用的 Model 后，强度会恢复为默认值。它不编辑 Model 资源，也不影响 steering 或正在运行的工作。
+共享输入框按会话保存思考强度，可跨浏览器和服务器重启恢复。刷新页面或重新打开聊天后，下次发送仍会使用所选强度。更换 Agent 或实际使用的 Model 后，强度会恢复为默认值。它不编辑 Model 资源，也不影响 steering 或正在运行的工作。
 
 ### 后续 Run 使用的环境
 
@@ -151,15 +153,15 @@ flowchart TB
 
 Full Control 使用服务器账户。Sandbox 需要 Host 支持的隔离启动器和原生运行时；准备失败会保留为错误，不会切换到 Full Control。Device 工作目录用于路由操作，不限制 daemon 的文件系统权限。
 
-标签页的显式 Environment 选择会随之后的 Send 发送，直到重置。它不改变保存的 Thread 默认值、其他参与者或活动 Run。**Steer** 和延后回答保留活动或挂起 Run 的 Environment。新 subagent 继承捕获的 Environment；恢复的 subagent 保留各自对话配置。
+共享输入框已应用的 Environment 选择会随之后的 Send 发送，直到重置或草稿过期。其他持有实例密钥的参与者看到同一选择；保存的 Thread 默认值和活动 Run 保持不变。**Steer** 和延后回答保留活动或挂起 Run 的 Environment。新 subagent 继承捕获的 Environment；恢复的 subagent 保留各自对话配置。
 
-用 **Configuration** 对比保存默认值和 Run 捕获的 Environment。不可用 profile 必须明确替换。新对话草稿在重载后保留选择；已有对话的覆盖只属于标签页。切换模式不会复制或隔离现有 Project 文件或历史。
+用 **Configuration** 对比保存默认值和 Run 捕获的 Environment。不可用 profile 必须明确替换。新对话草稿在浏览器本地保留选择；已有对话的选择由服务器保存并共享。切换模式不会复制或隔离现有 Project 文件或历史。
 
 ## Fast 模式
 
 在 **Agent & Model settings** 选择 **Fast**，或在支持的 Codex 连接上选择 **Ultrafast**。再次点击选中的按钮请求 Off。**Use model setting** 继承 Model 设置；**Provider default** 与 Off 不同。
 
-浏览器会为这个会话记住所选速度。更换 Agent 或实际使用的 Model 后，速度会恢复为默认值。它不影响 steering、Thinking 或保存的 Model 配置。Context / Cost / Cache / Time 一行显示当前或已保存 Run 捕获的 **On**、**Off**、**Ultrafast** 或 **Default**；短横线表示不可用。
+共享输入框会为这个会话保存所选速度。更换 Agent 或实际使用的 Model 后，速度会恢复为默认值。它不影响 steering、Thinking 或保存的 Model 配置。Context / Cost / Cache / Time 一行显示当前或已保存 Run 捕获的 **On**、**Off**、**Ultrafast** 或 **Default**；短横线表示不可用。
 
 服务器为支持的 OpenAI/Codex、直连 Anthropic 和 Gemini 连接提供原生速度控件。被禁用的选项会说明限制。实际效果取决于 provider 资格和收费；请求速度模式不保证更快执行。
 

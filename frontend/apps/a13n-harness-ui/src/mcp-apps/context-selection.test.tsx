@@ -64,7 +64,6 @@ it("captures this browser's exact selected context before preparation, only on o
       undefined,
       undefined,
       undefined,
-      undefined,
       async () => {
         await session.updateContext({ structuredContent: { area: "south" } });
       },

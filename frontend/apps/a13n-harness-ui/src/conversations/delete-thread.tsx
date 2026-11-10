@@ -1,4 +1,3 @@
-import { forgetRunChoices } from "./browser-run-choices";
 import { useTranslation } from "../i18n";
 import { useContext } from "react";
 import { useLocation, useNavigate } from "react-router";
@@ -50,7 +49,6 @@ export function DeleteThread({
       for (const id of deleted) {
         newDrafts.discardDeleted(id);
         composers.delete(id);
-        forgetRunChoices(id);
         unsent.store?.forget(id);
         await queries.cancelQueries({ queryKey: ["thread", id] });
         queries.removeQueries({ queryKey: ["thread", id] });

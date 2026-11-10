@@ -451,3 +451,66 @@ it("marks server synchronization diagnostics as raw even when they match local c
   expect(draft.errorRaw).toBe(false);
   connection.close();
 });
+
+it("acknowledges content and choices together and captures immutable Run choices", () => {
+  const draft = new ThreadDraft();
+  const server = new ThreadDraft();
+  const acknowledge = () =>
+    draft.receive({
+      ...frame(server.doc),
+      options_update_base64: encode(Y.encodeStateAsUpdate(server.optionsDoc)),
+    });
+  acknowledge();
+  draft.doc.getText("text").insert(0, "Review this");
+  draft.modelOptions = {
+    model_id: "model-other",
+    thinking: "high",
+    fast: false,
+  };
+  draft.environment = { local_roots: ["/work"] };
+  draft.mode = "goal";
+  Y.applyUpdate(server.doc, Y.encodeStateAsUpdate(draft.doc));
+  acknowledge();
+  expect(draft.synchronized).toBe(false);
+  expect(() => draft.capture()).toThrow("Synchronize");
+  Y.applyUpdate(server.optionsDoc, Y.encodeStateAsUpdate(draft.optionsDoc));
+  acknowledge();
+  const captured = draft.capture();
+  expect(captured.options).toEqual({
+    model: { model_id: "model-other", thinking: "high", fast: false },
+    environment: { local_roots: ["/work"] },
+    mode: "goal",
+  });
+  expect(captured.snapshot.options_update_base64).toBeDefined();
+  draft.controls = { thinking: "low" };
+  draft.mode = "goal"; // A new assignment must survive consuming the old Goal.
+  draft.doc.getText("text").insert(0, "NEXT");
+  draft.clear(captured, true);
+  expect(draft.mode).toBe("goal");
+  expect(draft.controls.thinking).toBe("low");
+  expect(draft.modelId).toBe("model-other");
+  expect(values(draft.doc).prompt).toBe("NEXT");
+  expect(captured.options.model?.thinking).toBe("high");
+  expect(captured.options.mode).toBe("goal");
+  captured.doc.destroy();
+  captured.optionsDoc.destroy();
+});
+
+it("does not publish owner options on a guest connection", () => {
+  vi.stubGlobal("window", { location: { origin: "http://localhost" } });
+  const latest = mockWebSocket();
+  const draft = new ThreadDraft();
+  const transport = createTransport("guest-key", () => {}, "share-one");
+  const connection = draft.connect(transport, "thread-one", () => {});
+  const socket = latest();
+  socket.open();
+  socket.message({ kind: "draft", ...frame(replica()) });
+  draft.controls = { thinking: "high" };
+  draft.doc.getText("text").insert(0, "Guest input");
+  const commands = socket.sent;
+  expect(commands.some((value) => value.kind === "sync")).toBe(true);
+  expect(commands.every((value) => !("options_update_base64" in value))).toBe(
+    true,
+  );
+  connection.close();
+});

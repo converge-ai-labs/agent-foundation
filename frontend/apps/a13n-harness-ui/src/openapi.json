@@ -25357,6 +25357,19 @@
             "default": null,
             "title": "Update Base64"
           },
+          "options_update_base64": {
+            "anyOf": [
+              {
+                "maxLength": 700000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Options Update Base64"
+          },
           "presence": {
             "anyOf": [
               {
@@ -25396,6 +25409,18 @@
           "update_base64": {
             "title": "Update Base64",
             "type": "string"
+          },
+          "options_update_base64": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Options Update Base64"
           },
           "participants": {
             "additionalProperties": {
@@ -27385,6 +27410,18 @@
             "minLength": 1,
             "title": "Update Base64",
             "type": "string"
+          },
+          "options_update_base64": {
+            "anyOf": [
+              {
+                "maxLength": 700000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Options Update Base64"
           }
         },
         "required": [

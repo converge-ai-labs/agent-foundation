@@ -1,5 +1,5 @@
 import { ReaderFades } from "./reader-fades";
-import { useBrowserRunChoices } from "./browser-run-choices";
+import { useComposerRunChoices } from "./composer-run-choices";
 import { useTranslation } from "../i18n";
 import {
   type ComponentProps,
@@ -617,8 +617,23 @@ function ConversationContent({
   });
   const thread = detail.data?.thread;
   const runAgent = guest ? undefined : thread?.configuration.agent_source.id;
-  const runChoices = useBrowserRunChoices(
-    threadId,
+  const refreshRunConfiguration = useCallback(async () => {
+    const [current, catalog] = await Promise.all([
+      detail.refetch(),
+      selectors.refetch(),
+    ]);
+    if (!current.isSuccess || !catalog.isSuccess) return;
+    const configuration = current.data.thread.configuration;
+    const agent = configuration.agent_source.id;
+    return {
+      agent,
+      inheritedModel:
+        configuration.default_model_id ??
+        catalog.data.agents.find((item) => item.agent_id === agent)?.model_id ??
+        null,
+    };
+  }, [detail.refetch, selectors.refetch]);
+  const runChoices = useComposerRunChoices(
     draft,
     runAgent,
     thread?.configuration.default_model_id ??
@@ -626,6 +641,7 @@ function ConversationContent({
         ? (selectors.data.agents.find((item) => item.agent_id === runAgent)
             ?.model_id ?? null)
         : undefined),
+    refreshRunConfiguration,
   );
   const unavailable =
     detail.isError &&

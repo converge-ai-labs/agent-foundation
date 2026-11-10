@@ -50,6 +50,8 @@ function restore(): Omit<NewDraft, "save"> | undefined {
   const composer = new ThreadDraft();
   try {
     Y.applyUpdate(composer.doc, decode(saved.update));
+    if (typeof saved.optionsUpdate === "string")
+      Y.applyUpdate(composer.optionsDoc, decode(saved.optionsUpdate));
     // Historical browser drafts stored trailing attachments without positions.
     // Convert once at restoration; current editing and Send use inline tokens.
     composer.doc.transact(() => {
@@ -68,13 +70,16 @@ function restore(): Omit<NewDraft, "save"> | undefined {
   } catch (error) {
     composer.undo.destroy();
     composer.doc.destroy();
+    composer.optionsDoc.destroy();
     throw error;
   }
-  if (saved.mode === "goal") composer.mode = "goal";
+  if (!saved.optionsUpdate && saved.mode === "goal") composer.mode = "goal";
   composer.coordinator =
     !saved.coordinatorThreadId && saved.coordinator === true;
-  if (typeof saved.modelId === "string") composer.modelId = saved.modelId;
+  if (!saved.optionsUpdate && typeof saved.modelId === "string")
+    composer.modelId = saved.modelId;
   if (
+    !saved.optionsUpdate &&
     saved.environment &&
     typeof saved.environment === "object" &&
     !Array.isArray(saved.environment)
@@ -158,12 +163,11 @@ export class NewDraftStore {
     if (!old || old.threadId !== threadId) return;
     const composer = new ThreadDraft();
     Y.applyUpdate(composer.doc, Y.encodeStateAsUpdate(old.composer.doc));
-    composer.mode = old.composer.mode;
+    Y.applyUpdate(
+      composer.optionsDoc,
+      Y.encodeStateAsUpdate(old.composer.optionsDoc),
+    );
     composer.coordinator = old.composer.coordinator;
-    composer.modelId = old.composer.modelId;
-    composer.environment = old.composer.environment
-      ? structuredClone(old.composer.environment)
-      : undefined;
     // A new Thread cannot use the archived Thread's uploaded handles. Keep
     // visible markers for reattachment, and stage any still-local file bytes.
     for (const key of composer.doc.getMap<string>("attachments").keys()) {
@@ -216,10 +220,10 @@ export class NewDraftStore {
             attempted: draft.attempted,
             update: encode(Y.encodeStateAsUpdate(draft.composer.doc)),
             draftId: draft.composer.draftId,
-            mode: draft.composer.mode,
+            optionsUpdate: encode(
+              Y.encodeStateAsUpdate(draft.composer.optionsDoc),
+            ),
             coordinator: draft.composer.coordinator,
-            modelId: draft.composer.modelId,
-            environment: draft.composer.environment,
             submission: draft.composer.submission.kind,
           }),
         );
