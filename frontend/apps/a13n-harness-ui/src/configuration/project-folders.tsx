@@ -1,7 +1,7 @@
 import { useTranslation } from "../i18n";
 import { useState } from "react";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Input } from "a13n-ui";
+import { Button, Input, ScrollArea } from "a13n-ui";
 import {
   ArrowUpIcon,
   CaretRightIcon,
@@ -250,7 +250,7 @@ function DirectoryBrowser({
       {listing.isFetching && (
         <small role="status">{t("Reading directory…")}</small>
       )}
-      <div className={`${styles.entries} a13n-scrollbar`}>
+      <ScrollArea autoHeight scrollbarGutter className={styles.entries}>
         {entries.map((entry) => (
           <button
             type="button"
@@ -282,7 +282,7 @@ function DirectoryBrowser({
             {t("Load more entries")}
           </Button>
         )}
-      </div>
+      </ScrollArea>
       <div className={styles.toolbar}>
         <Button
           type="button"

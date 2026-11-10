@@ -66,7 +66,8 @@
 }
 .entries {
   max-height: min(200px, 30dvh);
-  overflow: auto;
+}
+.entries [data-slot="scroll-area-content"] {
   display: grid;
   gap: 4px;
 }

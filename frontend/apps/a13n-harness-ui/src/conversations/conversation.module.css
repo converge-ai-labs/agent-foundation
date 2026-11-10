@@ -864,16 +864,12 @@
 }
 .reasoningBody {
   max-height: 144px;
-  overflow: auto;
-  overscroll-behavior: contain;
-  scrollbar-gutter: stable;
   margin: 4px 8px 8px;
 }
-.reasoningBody > div + div {
+.reasoningBody [data-slot="scroll-area-content"] > div + div {
   margin-top: 12px;
 }
-.reasoning > summary:focus-visible,
-.reasoningBody:focus-visible {
+.reasoning > summary:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
 }

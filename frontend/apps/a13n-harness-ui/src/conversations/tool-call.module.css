@@ -373,14 +373,15 @@
 .recordedDisclosure [data-slot="collapsible-panel"] > div {
   padding-top: 4px;
 }
+.resourceScroll {
+  max-height: 20rem;
+}
 .resources {
   margin: 0;
   padding: 0;
   list-style: none;
   display: grid;
   gap: 0.5rem;
-  max-height: 20rem;
-  overflow: auto;
 }
 .resources li {
   display: grid;

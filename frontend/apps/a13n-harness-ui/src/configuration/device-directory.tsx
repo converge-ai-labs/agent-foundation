@@ -1,7 +1,7 @@
 import { useTranslation } from "../i18n";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Button } from "a13n-ui";
+import { Button, ScrollArea } from "a13n-ui";
 import { FolderIcon } from "@phosphor-icons/react";
 import { useTransport } from "../transport/context";
 import { result } from "../transport/client";
@@ -161,7 +161,7 @@ export function DeviceDirectory({
                   {t("Choose folder")}
                 </Button>
               </div>
-              <div className="max-h-64 overflow-y-auto">
+              <ScrollArea autoHeight scrollbarGutter className="max-h-64">
                 {page.entries?.map((entry) => (
                   <Button
                     key={entry.path}
@@ -175,7 +175,7 @@ export function DeviceDirectory({
                   </Button>
                 ))}
                 {!page.entries?.length && <p>{t("No subdirectories.")}</p>}
-              </div>
+              </ScrollArea>
               <div className="flex justify-between gap-2">
                 <Button
                   type="button"

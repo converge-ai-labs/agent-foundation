@@ -55,7 +55,6 @@
 }
 .list {
   max-height: 360px;
-  overflow: auto;
   border-block: 1px solid var(--a13n-border-soft);
 }
 .tool {
