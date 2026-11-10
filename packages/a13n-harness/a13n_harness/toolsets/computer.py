@@ -7,7 +7,7 @@ from collections import OrderedDict
 from typing import Annotated, Any, Literal
 
 from pydantic import Field
-from pydantic_ai import BinaryContent, ToolReturn
+from pydantic_ai import BinaryContent, Tool, ToolReturn
 from pydantic_ai.toolsets import FunctionToolset
 
 from a13n_harness.context import AgentContext
@@ -81,28 +81,79 @@ class ComputerToolset:
             (self.computer_read_clipboard, EnvironmentAction.COMPUTER_READ_CLIPBOARD, True),
             (self.computer_write_clipboard, EnvironmentAction.COMPUTER_WRITE_CLIPBOARD, False),
         )
-        return InstructionFunctionToolset(
-            tools=[
-                HarnessTool(
-                    method,
-                    harness_metadata=HarnessToolMetadata(
-                        tool_id=action.value,
-                        effects=frozenset({"read"})
-                        if read_only
-                        else frozenset({"read", "write", "delete", "execute", "external_communication"}),
-                        credential_audiences=(),
-                        idempotency="read_only" if read_only else "none",
-                        output_policy=ToolOutputPolicy(
-                            max_inline_bytes=65536, max_output_bytes=5 * 1024 * 1024, overflow="fail"
-                        ),
+        tools: list[Tool[AgentContext]] = [
+            HarnessTool(
+                method,
+                harness_metadata=HarnessToolMetadata(
+                    tool_id=action.value,
+                    effects=frozenset({"read"})
+                    if read_only
+                    else frozenset({"read", "write", "delete", "execute", "external_communication"}),
+                    credential_audiences=(),
+                    idempotency="read_only" if read_only else "none",
+                    output_policy=ToolOutputPolicy(
+                        max_inline_bytes=65536, max_output_bytes=5 * 1024 * 1024, overflow="fail"
                     ),
-                )
-                for method, action, read_only in methods
-                if action in actions and (allowed_names is None or method.__name__ in allowed_names)
-            ]
-            + self._accessibility.tools(allowed_names=allowed_names),
+                ),
+            )
+            for method, action, read_only in methods
+            if action in actions and (allowed_names is None or method.__name__ in allowed_names)
+        ]
+        tools.extend(self._accessibility.tools(allowed_names=allowed_names))
+        names = {tool.name for tool in tools}
+        sections = [
+            section
+            for section, selected in (
+                ("computer_describe", {"computer_describe"}),
+                (
+                    "computer_observe",
+                    {
+                        "computer_observe",
+                        "computer_zoom",
+                        "computer_click",
+                        "computer_move",
+                        "computer_drag",
+                        "computer_scroll",
+                    },
+                ),
+                ("computer_zoom", {"computer_zoom"}),
+                ("computer_clipboard", {"computer_read_clipboard", "computer_write_clipboard"}),
+                (
+                    "computer_input",
+                    {method.__name__ for method, _, read_only in methods if not read_only}
+                    - {"computer_write_clipboard"},
+                ),
+                (
+                    "computer_accessibility",
+                    {name for name in names if name.startswith("computer_accessibility_")}
+                    | {"computer_ax", "computer_uia", "computer_atspi"},
+                ),
+                ("computer_accessibility_mutation", {"computer_ax", "computer_uia", "computer_atspi"}),
+                (
+                    "computer_uia",
+                    {"computer_uia"} if EnvironmentAction.COMPUTER_UIA_SELECTION_SELECT in actions else set(),
+                ),
+                (
+                    "computer_atspi",
+                    {"computer_atspi"} if EnvironmentAction.COMPUTER_ATSPI_SELECTION_ADD_CHILD in actions else set(),
+                ),
+            )
+            if names & selected
+        ]
+        instructions = [tool_instruction("environment-computer", *sections)] if tools else []
+        if names & {
+            "computer_observe",
+            "computer_zoom",
+            "computer_click",
+            "computer_move",
+            "computer_drag",
+            "computer_scroll",
+        }:
+            instructions.append(self._coordinate_instruction())
+        return InstructionFunctionToolset(
+            tools=tools,
             id="a13n-computer-tools",
-            instructions=[tool_instruction("environment-computer"), self._coordinate_instruction()],
+            instructions=instructions,
         )
 
     async def computer_describe(self, *, alias: _ComputerAlias = None) -> Any:
