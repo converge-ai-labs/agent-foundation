@@ -282,3 +282,49 @@ fn health_environment_overrides_file_configuration() {
     let mut child = Running(command.spawn().unwrap());
     fixture.wait(&mut child.0);
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn accept_resource_exhaustion_does_not_stop_the_daemon() {
+    let fixture = Fixture::new();
+    let mut original = fixture.command();
+    original
+        .env("A13N_ENVD_HEALTH_ENABLED", "true")
+        .env("A13N_ENVD_HEALTH_BIND", fixture.address.to_string());
+    // Bound only the child; the test runner and other daemons retain their limits.
+    let mut limited = Command::new("sh");
+    limited
+        .args([
+            "-c",
+            "ulimit -n 32; exec \"$@\"",
+            "sh",
+            env!("CARGO_BIN_EXE_a13n-envd"),
+        ])
+        .args(original.get_args())
+        .envs(
+            original
+                .get_envs()
+                .filter_map(|(key, value)| value.map(|value| (key, value))),
+        )
+        .current_dir(fixture.root.path())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(fs::File::create(fixture.root.path().join("stderr")).unwrap());
+    let mut child = Running(limited.spawn().unwrap());
+    fixture.wait(&mut child.0);
+    let connections: Vec<_> = (0..40)
+        .map(|_| TcpStream::connect_timeout(&fixture.address, Duration::from_secs(1)).unwrap())
+        .collect();
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while !fixture.log().contains("health listener accept failed") {
+        assert!(child.0.try_wait().unwrap().is_none(), "{}", fixture.log());
+        assert!(
+            Instant::now() < deadline,
+            "accept error was not exercised: {}",
+            fixture.log()
+        );
+        sleep(Duration::from_millis(20));
+    }
+    drop(connections);
+    fixture.wait(&mut child.0);
+}

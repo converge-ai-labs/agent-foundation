@@ -31,8 +31,10 @@ def specification() -> dict[str, JsonValue]:
         "x11vnc websockify fonts-noto-cjk fonts-noto-color-emoji xterm mousepad xdotool "
         "&& curl -fL --retry 2 --max-time 120 -o /tmp/google-chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb "
         "&& apt-get install -y /tmp/google-chrome.deb && rm /tmp/google-chrome.deb "
-        "&& ln -s /usr/bin/google-chrome-stable /usr/local/bin/chromium "
-        "&& groupadd --gid 1001 sandbox && useradd --uid 1001 --gid sandbox --create-home --shell /bin/bash sandbox "
+        "&& ln -sf /usr/bin/google-chrome-stable /usr/local/bin/chromium "
+        "&& (getent group sandbox >/dev/null || groupadd --gid 1001 sandbox) "
+        "&& (id sandbox >/dev/null 2>&1 || useradd --uid 1001 --gid sandbox --create-home --shell /bin/bash sandbox) "
+        '&& test "$(id -u sandbox)" = 1001 && test "$(id -g sandbox)" = 1001 '
         "&& install -d -o sandbox -g sandbox /workspace "
         "&& install -d -m 0700 /var/lib/a13n-envd /run/a13n-envd-state "
         "&& rm -rf /var/lib/apt/lists/*",

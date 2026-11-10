@@ -41,7 +41,7 @@ from a13n_service.runs.environments.adapters import Target, execution_connector,
 from a13n_service.runs.environments.clients.observations import Incarnation
 from a13n_service.runs.environments.clients.worker import Target as ClientTarget
 from a13n_service.runs.environments.desktop import admission as desktop_admission
-from a13n_service.runs.environments.lifecycle import Operation, begin, claim_locked, desktop_in_use, dispatch
+from a13n_service.runs.environments.lifecycle import Operation, begin, claim_locked, dispatch, in_use
 from a13n_service.runs.environments.mounts import PRIMARY, require_usable
 from a13n_service.runs.environments.schemas import Handle
 from a13n_service.runs.environments.tables import EnvironmentRow
@@ -251,10 +251,21 @@ async def _inspect(
             from a13n_service.runs.environments.connection import resolve
 
             if handle.recipe.get("envd_management") == "managed" and envd_policy.update_required(handle.envd_version):
-                if await session.scalar(select(desktop_in_use(environment.id))):
-                    return None, None
-                await begin(session, environment, "starting")
-                return None, await claim_locked(runtime, session, environment, owner=lease.worker_id, provider=provider)
+                record = current_execution()
+                held = await session.scalar(
+                    select(
+                        in_use(
+                            environment.id,
+                            excluding_run_id=lease.run_id,
+                            excluding_execution_id=record.execution_id if record is not None else None,
+                        )
+                    )
+                )
+                if not held:
+                    await begin(session, environment, "starting")
+                    return None, await claim_locked(
+                        runtime, session, environment, owner=lease.worker_id, provider=provider
+                    )
             plan = resolve(runtime.registry.get("environment", provider.type), handle, mount)
             if plan.mode == "envd_ws":
                 from a13n_service.runs.environments import outbound

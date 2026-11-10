@@ -42,7 +42,7 @@ class VercelManagement(VercelReference, NativeManagement[VercelEnvironmentConfig
             raise TypeError("Vercel management requires a runtime")
         super().__init__(configuration, environment_id, state, runtime)
         self.recipe = configuration
-        del operation_id
+        self.operation_id = operation_id
 
     @property
     def automatic(self) -> bool:
@@ -130,7 +130,7 @@ class VercelManagement(VercelReference, NativeManagement[VercelEnvironmentConfig
 
         if self.config.execution != "native":
             self.pinned_session = response.session.id
-            if self.automatic and not await preparation.prepare(self, response):
+            if self.automatic and not await preparation.prepare(self, response, self.operation_id):
                 return Pending(self.state, settled=True)
             await self._ready(response, bootstrap=resumed)
         return None
@@ -178,7 +178,7 @@ nohup flock -n /var/lib/a13n-envd/start.lock sh -c '
                 sudo=True,
                 timeout=15,
             )
-        if self.config.execution == "envd_ws":
+        if self.defer_envd_readiness or self.config.execution == "envd_ws":
             return
         runtime = NativeRuntime(self.backend, TokenCredential(api_key=self.token))
 

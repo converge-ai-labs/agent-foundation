@@ -19,6 +19,7 @@ from a13n_harness.providers.environment.remote_envd.configuration import (
 )
 from a13n_harness.providers.environment.remote_envd.environment import REQUIRED_METHODS, RemoteEnvdExecution
 from a13n_harness.providers.environment.remote_envd.http import HttpEnvdProviderRuntime
+from a13n_harness.providers.environment.remote_envd.managed import HTTP_TOKEN_READ
 from a13n_harness.providers.environment.sprites.commands import command
 from a13n_harness.providers.environment.sprites.shared import SpritesReference, SpritesTargetState
 
@@ -110,14 +111,7 @@ async def http_session(
             raise failure("sprites", "provider_target_missing", Category.MISSING)
         raw = await command(
             reference,
-            [
-                "sudo",
-                "-n",
-                "head",
-                "-c",
-                "4097",
-                "/var/lib/a13n-envd/http-token",
-            ],
+            ["sudo", "-n", *HTTP_TOKEN_READ],
             15,
             max_output=4096,
         )

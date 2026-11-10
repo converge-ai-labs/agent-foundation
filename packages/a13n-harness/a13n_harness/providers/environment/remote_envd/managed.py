@@ -15,6 +15,15 @@ from a13n_harness.providers.environment.remote_envd.configuration import (
 )
 from a13n_harness.providers.environment.remote_envd.http import HttpEnvdProviderRuntime
 
+# An unpublished token is empty (retryable); an existing but unreadable file still fails the command.
+HTTP_TOKEN_READ = (
+    "sh",
+    "-c",
+    'if [ ! -e "$1" ]; then exit 0; fi; exec head -c 4097 "$1"',
+    "sh",
+    "/var/lib/a13n-envd/http-token",
+)
+
 
 @dataclass(slots=True)
 class ManagedCredentialCache:

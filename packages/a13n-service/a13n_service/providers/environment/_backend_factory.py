@@ -159,7 +159,9 @@ class BackendProvider[C: BaseModel, K: BaseModel, E: BaseModel, R](EnvironmentPr
             if metrics is not None:
                 target.configure_metrics(metrics)
             self._require_websocket(environment)
+            target.defer_envd_readiness = self._envd_version is not None
             result = await target.create()
+            target.defer_envd_readiness = False
             if isinstance(result, Pending):
                 return result
             if self._envd_version is not None:
@@ -174,7 +176,9 @@ class BackendProvider[C: BaseModel, K: BaseModel, E: BaseModel, R](EnvironmentPr
     ) -> ManagementResult:
         async with self._operation(environment, environment_id, state, operation_id) as target:
             self._require_websocket(environment)
+            target.defer_envd_readiness = self._envd_version is not None
             result = await target.start()
+            target.defer_envd_readiness = False
             if isinstance(result, Pending):
                 return result
             if self._envd_version is not None:

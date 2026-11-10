@@ -107,6 +107,8 @@ class DaytonaManagement(DaytonaReference, NativeManagement[DaytonaEnvironmentCon
         if target.state in {"stopped", "archived", "paused"}:
             await self.transport().request("POST", self.path + "/start")
         target = await self.wait_for("started")
+        if self.defer_envd_readiness:
+            return
         await self._check_envd(target)
         if self.recipe.desktop_assistance:
             await self.desktop_access(access.Describe())
@@ -150,6 +152,8 @@ class DaytonaManagement(DaytonaReference, NativeManagement[DaytonaEnvironmentCon
         ):
             return Pending(self.state, settled=True)
         await self._check_envd(target)
+        if self.recipe.desktop_assistance:
+            await self.desktop_access(access.Describe())
         return None
 
     async def desktop_access(self, request: access.Request) -> access.Reply:

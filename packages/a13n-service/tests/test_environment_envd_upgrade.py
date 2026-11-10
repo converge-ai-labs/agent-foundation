@@ -159,7 +159,7 @@ async def test_first_use_does_not_modify_preinstalled_or_newer_instances(managed
     assert env.upgrades == ["0.8.0"]
 
 
-async def test_first_use_waits_for_existing_human_desktop_reservation(managed, monkeypatch):
+async def test_first_use_serves_existing_runtime_during_human_desktop_reservation(managed, monkeypatch):
     from a13n_harness.environment.models import EnvironmentState
     from a13n_service.runs.environments.desktop.tables import DesktopControlRow
 
@@ -176,11 +176,27 @@ async def test_first_use_waits_for_existing_human_desktop_reservation(managed, m
             DesktopControlRow(id="dctrl-upgrade", target_key="d" * 64, control="human", environment_id=environment_id)
         )
     args = await inspect_first_use(env, receipt)
-    assert await execution._inspect(env.runtime, *args) == (None, None)
+    target, operation = await execution._inspect(env.runtime, *args)
+    assert target is not None and operation is None
     assert (await saved(env, environment_id))[0] == "ready"
     async with transaction(env.runtime.storage) as session:
         control = await session.get_one(DesktopControlRow, "dctrl-upgrade")
         control.control = "automation"
+    target, operation = await execution._inspect(env.runtime, *args)
+    assert target is None and operation is not None and operation.envd_version == "0.9.0"
+
+
+async def test_first_use_defers_upgrade_while_another_run_uses_the_instance(managed, monkeypatch):
+    env = managed
+    receipt, environment_id = await begin_create(env)
+    await lifecycle.advance(env.runtime, environment_id, owner="initial")
+    other = await start(env, environments=[{"name": "workspace", "environment_id": environment_id}])
+    monkeypatch.setattr(envd_policy, "VERSION", "0.9.0")
+    args = await inspect_first_use(env, receipt)
+    target, operation = await execution._inspect(env.runtime, *args)
+    assert target is not None and operation is None
+    assert (await saved(env, environment_id))[0] == "ready"
+    await interrupt(env, other["run"]["id"])
     target, operation = await execution._inspect(env.runtime, *args)
     assert target is None and operation is not None and operation.envd_version == "0.9.0"
 
@@ -191,6 +207,9 @@ async def failed_upgrade(env, monkeypatch):
     monkeypatch.setattr(envd_policy, "VERSION", "0.9.0")
     async with transaction(env.runtime.storage) as session:
         row = await session.get_one(EnvironmentRow, environment_id, with_for_update=True)
+        from a13n_service.resources.environment_templates.schemas import Reclamation
+
+        row.reclamation = Reclamation(idle_delete_seconds=60).model_dump(mode="json")
         await lifecycle.begin(session, row, "starting")
     env.fail_start = True
     operation = await lifecycle.claim(env.runtime, environment_id, owner="failed-upgrade")
@@ -199,6 +218,28 @@ async def failed_upgrade(env, monkeypatch):
     await interrupt(env, receipt["run"]["id"])
     monkeypatch.setattr(envd_policy, "VERSION", "0.10.0")
     return environment_id, operation, outcome
+
+
+async def test_failed_upgrade_does_not_reclaim_a_previously_ready_instance(managed, monkeypatch):
+    from a13n_service.runs.environments.maintenance import maintain_environments
+
+    env = managed
+    environment_id, _, _ = await failed_upgrade(env, monkeypatch)
+    async with transaction(env.runtime.storage) as session:
+        row = await session.get_one(EnvironmentRow, environment_id)
+        assert row.failure["permanent"] and row.preparation_failed_at is None
+    await backdate(
+        env,
+        environment_id,
+        last_used_at=timedelta(days=1),
+        preparation_deadline=timedelta(days=1),
+    )
+    await maintain_environments(env.runtime, owner="retention")
+    status, handle = await saved(env, environment_id)
+    assert status == "starting" and handle.envd_version == "0.8.0"
+    async with transaction(env.runtime.storage) as session:
+        row = await session.get_one(EnvironmentRow, environment_id)
+        assert row.preparation_failed_at is None
 
 
 async def test_explicit_upgrade_retry_retains_target_and_version_but_fences_the_failed_attempt(managed, monkeypatch):

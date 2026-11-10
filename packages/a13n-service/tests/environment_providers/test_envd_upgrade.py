@@ -173,6 +173,7 @@ async def test_backend_upgrade_hook_precedes_final_readiness_and_preserves_pendi
             super().__init__(observed)
 
         async def create(self):
+            assert self.defer_envd_readiness
             events.append("target")
             return Pending(self.state, settled=True) if pending == "target" else None
 
@@ -180,6 +181,7 @@ async def test_backend_upgrade_hook_precedes_final_readiness_and_preserves_pendi
             return await self.create()
 
         async def update_envd(self, version, operation_id):
+            assert not self.defer_envd_readiness
             events.append((version, operation_id))
             return Pending(self.state, settled=True) if pending == "upgrade" else None
 

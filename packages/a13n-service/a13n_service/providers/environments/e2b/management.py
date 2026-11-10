@@ -294,6 +294,8 @@ class E2BManagement(E2BReference, ManagementBackend):
         )
 
     async def _check_envd(self) -> None:
+        if self.defer_envd_readiness:
+            return
         await wait_until_ready(
             lambda: http_execution(self),
             provider_key=PROVIDER_KEY,

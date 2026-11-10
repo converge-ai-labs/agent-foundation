@@ -15,7 +15,7 @@ from a13n_harness.providers.environment.remote_envd.configuration import (
     HttpEnvdCredential,
 )
 from a13n_harness.providers.environment.remote_envd.environment import REQUIRED_METHODS, RemoteEnvdExecution
-from a13n_harness.providers.environment.remote_envd.managed import managed_http_runtime
+from a13n_harness.providers.environment.remote_envd.managed import HTTP_TOKEN_READ, managed_http_runtime
 from a13n_harness.providers.environment.vercel.commands import command
 from a13n_harness.providers.environment.vercel.shared import VercelReference
 
@@ -43,7 +43,7 @@ async def http_session(
             raw = await command(
                 reference,
                 session_id,
-                ["head", "-c", "4097", "/var/lib/a13n-envd/http-token"],
+                list(HTTP_TOKEN_READ),
                 sudo=True,
                 timeout=10,
                 max_output=4096,

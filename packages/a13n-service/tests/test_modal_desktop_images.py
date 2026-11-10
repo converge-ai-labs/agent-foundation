@@ -67,8 +67,19 @@ async def setup(service, monkeypatch, runs_kit):
     )
     assert t.status_code == 201, t.text
 
-    async def create():
-        r = await client.post("/api/v1/environments", json={"template_id": t.json()["id"]})
+    async def create(base_image=None, desktop=True):
+        template = t
+        if base_image is not None or not desktop:
+            template = await client.post(
+                "/api/v1/environment-templates",
+                json={
+                    "name": "Custom base",
+                    "provider_id": p.json()["id"],
+                    "config": {"recipe": {"desktop": desktop, "base_image": base_image}},
+                },
+            )
+            assert template.status_code == 201, template.text
+        r = await client.post("/api/v1/environments", json={"template_id": template.json()["id"]})
         assert r.status_code == 201, r.text
         op = await lifecycle.claim(service.runtime, r.json()["id"], owner="test")
         assert op is not None and op.modal_desktop_image is not None
@@ -150,9 +161,11 @@ async def test_credential_and_backend_changes_refuse_existing_preparation(setup)
     assert not setup.cloud.calls
 
 
-async def test_failed_build_preserved_until_fenced_retry(setup):
+@pytest.mark.parametrize("base_image", [None, "registry.example/custom-base@sha256:" + "a" * 64])
+@pytest.mark.parametrize("desktop", [True, False])
+async def test_failed_build_preserved_until_fenced_retry(setup, base_image, desktop):
     runtime, client = setup.service.runtime, setup.service.client
-    op = await setup.create()
+    op = await setup.create(base_image, desktop)
     setup.cloud.error = failure("modal", "desktop_image_build_failed", Category.CONFLICT)
     result = await lifecycle.perform(runtime, op)
     assert result.fault is not None and result.fault.certainty == "not_dispatched"
@@ -168,6 +181,12 @@ async def test_failed_build_preserved_until_fenced_retry(setup):
     next_op = await lifecycle.claim(runtime, op.environment_id, owner="test")
     assert next_op.modal_desktop_image != op.modal_desktop_image
     assert next_op.generation > op.generation
+    async with transaction(runtime.storage) as session:
+        original = await session.get_one(builds.ModalDesktopImageRow, op.modal_desktop_image)
+        retried_image = await session.get_one(builds.ModalDesktopImageRow, next_op.modal_desktop_image)
+        assert retried_image.manifest == original.manifest
+        if base_image is not None:
+            assert retried_image.manifest["base"] == base_image
     setup.cloud.error = None
     assert (await lifecycle.perform(runtime, next_op)).pending
 

@@ -18,6 +18,8 @@ class ManagementBackend(BackendReference):
     """Lifecycle and desktop-access authority, without execution operations."""
 
     websocket: WebSocketBootstrap | None = None
+    # The adapter joins the guest upgrade after native start and before authenticated readiness.
+    defer_envd_readiness: bool = False
 
     def bootstrap_environment(self, values: dict[str, str]) -> dict[str, str]:
         return self.websocket.environment(values) if self.websocket is not None else values

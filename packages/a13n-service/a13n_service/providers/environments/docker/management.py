@@ -161,6 +161,8 @@ class DockerManagement(DockerReference, ManagementBackend):
         return None
 
     async def _wait_envd(self) -> None:
+        if self.defer_envd_readiness:
+            return
         try:
             async with asyncio.timeout(self.config.request_timeout_seconds):
                 while True:

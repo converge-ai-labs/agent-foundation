@@ -1,7 +1,6 @@
 """Real POSIX-shell preparation dispatch: one job, frozen revision and terminal failures."""
 
 import hashlib
-import json
 import subprocess
 import time
 
@@ -10,12 +9,12 @@ from a13n_service.providers.environments.vercel.preparation import dispatch_scri
 
 
 def digest(manifest):
-    return hashlib.sha256(json.dumps(manifest, sort_keys=True).encode()).hexdigest()
+    return hashlib.sha256(manifest["script"].encode()).hexdigest()
 
 
-def dispatch(root, manifest, expected=None):
+def dispatch(root, manifest, expected=None, operation="first"):
     result = subprocess.run(
-        ["sh", "-c", dispatch_script(manifest, expected or digest(manifest), root=str(root))],
+        ["sh", "-c", dispatch_script(manifest, expected or digest(manifest), operation, root=str(root))],
         capture_output=True,
         text=True,
         timeout=5,
@@ -72,8 +71,8 @@ def test_lost_guest_process_is_terminal_not_silently_retried(tmp_path):
     root.mkdir()
     (root / "revision").write_text(digest(manifest))
     (root / "status").write_text("running")
-    (root / "launch.sh").write_text("exec 9>install.lock; flock -n 9 || exit 0; printf failed > status")
-    assert dispatch(root, manifest) == "running"
+    (root / "attempt").write_text("first")
+    assert dispatch(root, manifest) == "failed"
     assert settle(root) == "failed"
     assert not (root / "count").exists()
 
@@ -86,3 +85,26 @@ def test_headless_installs_no_python_or_desktop_packages():
     assert "entrypoint.sh" in manifest["script"]
     assert "xvfb" not in manifest["script"]
     assert "xvfb" in specification(desktop=True)["script"]
+
+
+def test_explicit_retry_runs_one_new_attempt_on_the_same_target(tmp_path):
+    root = tmp_path / "prepare"
+    manifest = {"image": "test", "script": "printf x >> count; test -f allow-success"}
+    assert dispatch(root, manifest) == "running"
+    assert settle(root) == "failed"
+    assert dispatch(root, manifest) == "failed"
+    (root / "allow-success").touch()
+    assert dispatch(root, manifest, operation="retry") == "running"
+    assert settle(root) == "ready"
+    assert dispatch(root, manifest, operation="retry") == "ready"
+    assert (root / "count").read_text() == "xx"
+    assert (root / "attempt").read_text() == "retry"
+
+
+@pytest.mark.parametrize("desktop", [False, True])
+def test_partial_install_retry_retains_existing_user_and_group(desktop):
+    script = specification(desktop=desktop)["script"]
+    assert "getent group sandbox >/dev/null || groupadd" in script
+    assert "id sandbox >/dev/null 2>&1 || useradd" in script
+    assert 'test "$(id -u sandbox)" = 1001' in script
+    assert 'test "$(id -g sandbox)" = 1001' in script

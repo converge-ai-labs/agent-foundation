@@ -80,8 +80,19 @@ async def setup(service, monkeypatch, runs_kit, request):
     )
     assert t.status_code == 201, t.text
 
-    async def create():
-        r = await client.post("/api/v1/environments", json={"template_id": t.json()["id"]})
+    async def create(base_image=None):
+        template = t
+        if base_image is not None:
+            template = await client.post(
+                "/api/v1/environment-templates",
+                json={
+                    "name": "Custom base",
+                    "provider_id": p.json()["id"],
+                    "config": {"recipe": {"desktop": request.param, "base_image": base_image}},
+                },
+            )
+            assert template.status_code == 201, template.text
+        r = await client.post("/api/v1/environments", json={"template_id": template.json()["id"]})
         assert r.status_code == 201, r.text
         op = await lifecycle.claim(service.runtime, r.json()["id"], owner="test")
         assert op is not None and op.daytona_desktop_snapshot is not None
@@ -186,9 +197,10 @@ async def test_credential_and_backend_changes_refuse_existing_preparation(setup)
     assert not setup.cloud.calls
 
 
-async def test_failed_build_preserved_until_fenced_retry(setup):
+@pytest.mark.parametrize("base_image", [None, "registry.example/custom-base@sha256:" + "a" * 64])
+async def test_failed_build_preserved_until_fenced_retry(setup, base_image):
     runtime, client = setup.service.runtime, setup.service.client
-    op = await setup.create()
+    op = await setup.create(base_image)
     setup.cloud.error = failure("daytona", "desktop_snapshot_build_failed", Category.CONFLICT)
     result = await lifecycle.perform(runtime, op)
     assert result.fault is not None and result.fault.certainty == "not_dispatched"
@@ -204,6 +216,12 @@ async def test_failed_build_preserved_until_fenced_retry(setup):
     next_op = await lifecycle.claim(runtime, op.environment_id, owner="test")
     assert next_op.daytona_desktop_snapshot != op.daytona_desktop_snapshot
     assert next_op.generation > op.generation
+    async with transaction(runtime.storage) as session:
+        original = await session.get_one(builds.DaytonaDesktopSnapshotRow, op.daytona_desktop_snapshot)
+        retried_snapshot = await session.get_one(builds.DaytonaDesktopSnapshotRow, next_op.daytona_desktop_snapshot)
+        assert retried_snapshot.manifest == original.manifest
+        if base_image is not None:
+            assert retried_snapshot.manifest["dockerfile"].startswith("FROM " + base_image + "\n")
     setup.cloud.error = None
     assert (await lifecycle.perform(runtime, next_op)).pending
 

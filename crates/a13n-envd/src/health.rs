@@ -51,7 +51,14 @@ pub(crate) async fn serve(listener: Option<TcpListener>) -> io::Result<()> {
     loop {
         tokio::select! {
             connection = listener.accept(), if connections.len() < 32 => {
-                let (stream, _) = connection?;
+                let (stream, _) = match connection {
+                    Ok(connection) => connection,
+                    Err(error) => {
+                        eprintln!("health listener accept failed: {error}");
+                        tokio::time::sleep(Duration::from_millis(100)).await;
+                        continue;
+                    }
+                };
                 connections.spawn(async move {
                     let _ = timeout(
                         Duration::from_secs(5),

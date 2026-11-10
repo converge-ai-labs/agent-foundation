@@ -381,8 +381,8 @@ async def test_rejoins_same_target_and_prepares_before_readiness(monkeypatch, pr
         manage.accept(value)
         return value
 
-    async def prepare(ref, observed):
-        assert ref is manage and observed == value
+    async def prepare(ref, observed, operation_id):
+        assert ref is manage and observed == value and operation_id == "op-fixture"
         events.append("prepare")
         return prepared
 

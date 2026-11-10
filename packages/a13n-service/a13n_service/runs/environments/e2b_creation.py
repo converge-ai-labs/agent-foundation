@@ -9,6 +9,8 @@ from sqlalchemy import select
 from a13n_service.infra.db import now, short_session, transaction
 from a13n_service.infra.errors import conflict
 from a13n_service.infra.http import require_match
+from a13n_service.providers.environment.recipes.daytona import DaytonaRecipe
+from a13n_service.providers.environment.recipes.modal import ModalRecipe
 from a13n_service.resources.providers.service import resolve_provider
 from a13n_service.resources.providers.tables import EnvironmentProviderRow
 from a13n_service.runs.environments import daytona_snapshots, e2b_templates, lifecycle, modal_images, vercel_snapshots
@@ -205,14 +207,24 @@ async def retry(
             image = await session.get(modal_images.ModalDesktopImageRow, handle.modal_desktop_image)
             if image is not None and image.phase == "failed":
                 key = await modal_images.bind(
-                    runtime, session, row, provider, profile="desktop" if handle.recipe.get("desktop") else "headless"
+                    runtime,
+                    session,
+                    row,
+                    provider,
+                    profile="desktop" if handle.recipe.get("desktop") else "headless",
+                    base_image=ModalRecipe.model_validate(handle.recipe).base_image,
                 )
                 row.handle = handle.model_copy(update={"modal_desktop_image": key}).model_dump(mode="json")
         if handle.recipe.get("snapshot") == "auto" and handle.daytona_desktop_snapshot:
             snapshot = await session.get(daytona_snapshots.DaytonaDesktopSnapshotRow, handle.daytona_desktop_snapshot)
             if snapshot is not None and snapshot.phase == "failed":
                 key = await daytona_snapshots.bind(
-                    runtime, session, row, provider, profile="desktop" if handle.recipe.get("desktop") else "headless"
+                    runtime,
+                    session,
+                    row,
+                    provider,
+                    profile="desktop" if handle.recipe.get("desktop") else "headless",
+                    base_image=DaytonaRecipe.model_validate(handle.recipe).base_image,
                 )
                 row.handle = handle.model_copy(update={"daytona_desktop_snapshot": key}).model_dump(mode="json")
         if handle.recipe.get("snapshot") == "auto" and handle.vercel_desktop_snapshot:

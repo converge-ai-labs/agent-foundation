@@ -28,7 +28,7 @@ from a13n_harness.environment.models import EnvironmentError as OperationError
 from a13n_harness.environment.models import EnvironmentState
 from a13n_logging import exception_details, get_logger
 from pydantic import ValidationError
-from sqlalchemy import ColumnElement, SQLColumnExpression, exists, func, or_, select, text
+from sqlalchemy import ColumnElement, SQLColumnExpression, exists, func, or_, select, text, true
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -148,17 +148,24 @@ def desktop_in_use(environment_id: SQLColumnExpression[str] | str) -> ColumnElem
     )
 
 
-def in_use(environment_id: SQLColumnExpression[str] | str) -> ColumnElement[bool]:
+def in_use(
+    environment_id: SQLColumnExpression[str] | str,
+    *,
+    excluding_run_id: str | None = None,
+    excluding_execution_id: str | None = None,
+) -> ColumnElement[bool]:
     """An active Run/tool holds this instance, or a desktop context holds its native target."""
     return (
         exists().where(
             text("runs.status IN ('accepted', 'running')"),
+            RunRow.id != excluding_run_id if excluding_run_id is not None else true(),
             RunRow.environment_mounts.contains(
                 func.jsonb_build_array(func.jsonb_build_object("environment_id", environment_id))
             ),
         )
         | exists().where(
             ToolExecutionRow.completed_at.is_(None),
+            ToolExecutionRow.id != excluding_execution_id if excluding_execution_id is not None else true(),
             ToolExecutionRow.environment_mounts.contains(
                 func.jsonb_build_array(func.jsonb_build_object("environment_id", environment_id))
             ),
@@ -384,7 +391,13 @@ def record_failure(environment: EnvironmentRow, fault: Fault, at: datetime, *, u
         at=at,
     ).model_dump(mode="json")
     if environment.reclamation is not None and environment.status in {"creating", "starting"}:
-        if fault.permanent and certainty != "unknown" and environment.preparation_failed_at is None:
+        handle = Handle.model_validate(environment.handle) if environment.handle is not None else None
+        if (
+            fault.permanent
+            and certainty != "unknown"
+            and environment.preparation_failed_at is None
+            and (handle is None or handle.envd_version is None)
+        ):
             environment.preparation_failed_at = at
 
 

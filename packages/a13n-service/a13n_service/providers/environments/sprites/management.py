@@ -195,6 +195,8 @@ class SpritesManagement(SpritesReference, NativeManagement[SpritesEnvironmentCon
         await self._check_ready()
 
     async def _check_ready(self) -> None:
+        if self.defer_envd_readiness:
+            return
         if self.config.execution == "envd_ws":
             if self.recipe.desktop_assistance:
                 await self.desktop_access(access.Describe())

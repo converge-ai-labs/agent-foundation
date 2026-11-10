@@ -132,6 +132,8 @@ class ModalManagement(ModalReference, NativeManagement[ModalEnvironmentConfigura
 
     async def _finish_start(self, sandbox: modal.Sandbox) -> None:
         self.sandbox = sandbox
+        if self.defer_envd_readiness:
+            return
         # Readiness and snapshot retirement belong to explicit management. A
         # failed probe retains both the new target ID and the resume snapshot.
         await self._check_envd()
@@ -178,7 +180,7 @@ class ModalManagement(ModalReference, NativeManagement[ModalEnvironmentConfigura
             execute, provider_key=self.provider_key, version=version, operation_id=operation_id
         ):
             return Pending(self.state, settled=True)
-        await self._check_envd()
+        await self._finish_start(sandbox)
         return None
 
     async def desktop_access(self, request: access.Request) -> access.Reply:
