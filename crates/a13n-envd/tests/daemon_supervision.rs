@@ -739,6 +739,9 @@ fn crash_replacement_waits_for_the_command_cleanup_owner() {
     // start, and group termination must not destroy the only payload reaper.
     assert_eq!(fixture.daemon_pids().len(), 1);
     assert_eq!(unsafe { libc::kill(payload as i32, 0) }, 0);
+    // A stopped orphan group receives HUP + CONT on Unix. Linux's outer
+    // subreaper prevents orphaning here, so exercise the HUP explicitly too.
+    assert_eq!(unsafe { libc::kill(cleanup_owner, libc::SIGHUP) }, 0);
     drop(paused);
     fixture.descriptor(Some(&first["generation"]));
     assert_exited(payload);
