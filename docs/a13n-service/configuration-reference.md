@@ -148,7 +148,7 @@ The tables are generated from `Settings`. Contributors updating those definition
 
 | Setting                          | Environment variable                   | Type / choices | Constraints and default                          |
 | -------------------------------- | -------------------------------------- | -------------- | ------------------------------------------------ |
-| `worker.slots`                   | `A13N_WORKER__SLOTS`                   | integer        | minimum=1; maximum=128; default=4                |
+| `worker.slots`                   | `A13N_WORKER__SLOTS`                   | integer        | minimum=1; maximum=1024; default=128             |
 | `worker.max_attempts`            | `A13N_WORKER__MAX_ATTEMPTS`            | integer        | minimum=1; maximum=20; default=3                 |
 | `worker.lease_seconds`           | `A13N_WORKER__LEASE_SECONDS`           | integer        | minimum=3; maximum=300; default=30               |
 | `worker.scan_seconds`            | `A13N_WORKER__SCAN_SECONDS`            | number         | maximum=30; exclusiveMinimum=0; default=1        |

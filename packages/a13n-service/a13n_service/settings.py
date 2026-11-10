@@ -318,7 +318,7 @@ class ToolExecutions(Section):
 
 
 class Worker(Section):
-    slots: int = Field(default=4, ge=1, le=128)
+    slots: int = Field(default=128, ge=1, le=1024)
     max_attempts: int = Field(default=3, ge=1, le=20)
     lease_seconds: int = Field(default=30, ge=3, le=300)
     scan_seconds: float = Field(default=1, gt=0, le=30)
