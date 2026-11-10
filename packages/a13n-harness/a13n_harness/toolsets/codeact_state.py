@@ -106,7 +106,7 @@ class CodeActStateToolset:
         await self._ensure_initialized()
         keys = await self._owner.keys()
         if not keys:
-            return ""
+            return "CodeAct stored keys: []."
         visible: list[str] = []
         used = 0
         for key in keys:

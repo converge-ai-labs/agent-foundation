@@ -87,6 +87,7 @@ from a13n_harness.model_context import (
     AbstractModelContextCapability,
     ModelContextBlock,
     ModelContextCoordinatorCapability,
+    ModelContextEmission,
     ModelContextNext,
     ModelContextPlacement,
     ModelContextProjection,
@@ -541,9 +542,11 @@ class _FileContextRunCapability(FileContextCapability):
         handler: ModelContextNext,
     ) -> ModelContextProjection:
         projection = await handler(request)
-        if request.kind is not ModelContextRequestKind.INPUT or (not self._sections and not self._guidance):
+        if request.kind is not ModelContextRequestKind.INPUT:
             return projection
         parts = [_FILE_CONTEXT_OPEN]
+        if not self._sections and not self._guidance:
+            parts.append("No file context is loaded.")
         for path, content in self._sections:
             parts.extend((f'<file path="{_xml_attribute(path)}">', content, "</file>"))
         if self._guidance:
@@ -656,6 +659,7 @@ class HandoffCapability(AbstractModelContextCapability):
                 *projection.blocks,
                 ModelContextBlock(
                     source_id=HANDOFF_CAPABILITY_ID,
+                    emission=ModelContextEmission.ALWAYS,
                     context_group="conversation",
                     placement=ModelContextPlacement.REQUEST_EPILOGUE,
                     content=content,

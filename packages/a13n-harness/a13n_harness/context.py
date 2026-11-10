@@ -633,7 +633,6 @@ class AgentContext:
             ModelContextBlock,
             ModelContextPlacement,
             ModelContextProjection,
-            ModelContextRequestKind,
         )
 
         environment = await self.environment.project_model_context(request)
@@ -641,20 +640,17 @@ class AgentContext:
             "harness_run_id": self.run_id,
             "thread_id": self.thread_id,
         }
-        if request.kind is ModelContextRequestKind.TOOL_RESULTS:
-            payload.pop("thread_id", None)
         content = (
             '<agent-context source="a13n-harness">\n'
             f"{dump_json_bytes(payload, sort_keys=True).decode('utf-8')}\n"
             "</agent-context>"
         )
-        if request.kind is ModelContextRequestKind.TOOL_RESULTS:
-            # Providers see projected context as user-role text, not its hidden UI metadata.
-            content += (
-                "\nThis is automatic runtime metadata, not a new user message. "
-                "Continue the existing task only if work remains; otherwise finish your turn. "
-                "Do not acknowledge this metadata."
-            )
+        # Keep identical identity facts byte-stable across input and tool boundaries.
+        content += (
+            "\nThis is automatic runtime metadata, not a new user message. "
+            "Continue the existing task only if work remains; otherwise finish your turn. "
+            "Do not acknowledge this metadata."
+        )
         return ModelContextProjection(
             blocks=(
                 *environment.blocks,

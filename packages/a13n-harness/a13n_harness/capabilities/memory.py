@@ -25,6 +25,7 @@ from a13n_harness.events import HarnessExtensionEvent
 from a13n_harness.model_context import (
     AbstractModelContextCapability,
     ModelContextBlock,
+    ModelContextEmission,
     ModelContextNext,
     ModelContextPlacement,
     ModelContextProjection,
@@ -343,6 +344,8 @@ class _FileMemoryRun(FileMemoryCapability):
                 placement=ModelContextPlacement.INPUT_PREAMBLE,
                 content=content,
                 memory_mount=name,
+                key=name,
+                emission=ModelContextEmission.ALWAYS,
             )
             for name, content in contents
         )
@@ -743,6 +746,8 @@ class _RecordMemoryRun(RecordMemoryCapability):
                         placement=ModelContextPlacement.INPUT_PREAMBLE,
                         content=block,
                         memory_mount=mount.name,
+                        key=mount.name,
+                        emission=ModelContextEmission.ALWAYS,
                     )
                 )
         _bound_sources(observed, "records")

@@ -69,9 +69,15 @@ class ToolExecutionCapability(AbstractModelContextCapability):
         runtime = ctx.deps.tool_execution
         if runtime is None:
             return projection
-        records = await runtime.summarize(ctx.deps.thread_id)
-        if not records:
-            return projection
+        records = []
+        offset = 0
+        while len(records) < 20:
+            page = await runtime.summarize(ctx.deps.thread_id, offset=offset, limit=100)
+            records.extend(record for record in page if not record.terminal or not record.delivery_acknowledged)
+            if len(page) < 100:
+                break
+            offset += len(page)
+        records = records[:20]
         summary = json.dumps([record.model_dump(mode="json") for record in records], ensure_ascii=True)
         return ModelContextProjection(
             blocks=(
@@ -80,7 +86,7 @@ class ToolExecutionCapability(AbstractModelContextCapability):
                     source_id="tool_execution.summary",
                     context_group="runtime_state",
                     placement=ModelContextPlacement.REQUEST_EPILOGUE,
-                    content=f"Tool executions (status only; results are not consumed): {summary}",
+                    content=f"Tool executions requiring attention (status only; results are not consumed): {summary}",
                 ),
             ),
         )

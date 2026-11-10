@@ -666,7 +666,13 @@ class _WorkingStateRunCapability(WorkingStateCapability):
             if self.configuration.notes_enabled and request.kind is ModelContextRequestKind.INPUT
             else {}
         )
-        blocks = _render_working_state_blocks(tasks, all_tasks, notes, self.configuration)
+        blocks = _render_working_state_blocks(
+            tasks,
+            all_tasks,
+            notes,
+            self.configuration,
+            project_notes=request.kind is ModelContextRequestKind.INPUT,
+        )
         return ModelContextProjection(blocks=(*projection.blocks, *blocks))
 
 
@@ -675,11 +681,19 @@ def _render_working_state_blocks(
     all_tasks: Mapping[str, Task],
     notes: Mapping[str, str],
     configuration: WorkingStateConfiguration,
+    *,
+    project_notes: bool = True,
 ) -> tuple[ModelContextBlock, ...]:
     """Render separate Notes and Tasks overlays within one aggregate UTF-8 budget."""
     blocks: list[ModelContextBlock] = []
-    notes_budget = configuration.max_context_bytes if not tasks else configuration.max_context_bytes // 2
-    rendered_notes = _render_notes(notes, configuration.max_context_notes, notes_budget)
+    notes_budget = (
+        configuration.max_context_bytes // 2 if configuration.tasks_enabled else configuration.max_context_bytes
+    )
+    rendered_notes = (
+        _render_notes(notes, configuration.max_context_notes, notes_budget)
+        if configuration.notes_enabled and project_notes
+        else None
+    )
     used_bytes = 0
     if rendered_notes is not None:
         used_bytes = len(rendered_notes.encode("utf-8"))
@@ -693,7 +707,11 @@ def _render_working_state_blocks(
         )
 
     tasks_budget = configuration.max_context_bytes - used_bytes
-    rendered_tasks = _render_tasks(tasks, all_tasks, configuration.max_context_tasks, tasks_budget)
+    rendered_tasks = (
+        _render_tasks(tasks, all_tasks, configuration.max_context_tasks, tasks_budget)
+        if configuration.tasks_enabled
+        else None
+    )
     if rendered_tasks is not None:
         blocks.append(
             ModelContextBlock(
@@ -711,7 +729,7 @@ def _render_working_state_blocks(
 
 def _render_notes(notes: Mapping[str, str], limit: int, budget: int) -> str | None:
     if not notes:
-        return None
+        return f"{_NOTES_OPEN}\n  No working notes.\n{_NOTES_CLOSE}"
     lines = [_NOTES_OPEN]
     ordered_notes = sorted(notes.items())
     shown = 0
@@ -752,7 +770,7 @@ def _render_tasks(
     budget: int,
 ) -> str | None:
     if not tasks:
-        return None
+        return f"{_TASKS_OPEN}\n  No unfinished tasks.\n{_TASKS_CLOSE}"
     lines = [_TASKS_OPEN]
     shown = 0
 

@@ -23,6 +23,7 @@ from a13n_harness import (
 from a13n_harness.capabilities import CodeActCapability
 from a13n_harness.model_context import (
     ModelContextBlock,
+    ModelContextEmission,
     ModelContextPlacement,
     ModelContextProjection,
     ModelContextRequestKind,
@@ -36,6 +37,7 @@ from pydantic_ai.capabilities import AbstractCapability, Capability, HandleDefer
 from pydantic_ai.exceptions import ModelRetry
 from pydantic_ai.messages import (
     BinaryAudio,
+    FunctionToolResultEvent,
     ModelMessage,
     ModelRequest,
     ModelResponse,
@@ -47,6 +49,7 @@ from pydantic_ai.messages import (
     RetryPromptPart,
     SpeechPart,
     SpeechPartDelta,
+    TextContent,
     ToolReturnPart,
 )
 from pydantic_ai.models import ModelRequestParameters
@@ -236,6 +239,8 @@ async def _call(model: _Model, name: str, args: str = "{}", *, call_id: str = "c
 class _ContextProjection:
     def __init__(self) -> None:
         self.requests = []
+        self.value: str | None = None
+        self.emission = ModelContextEmission.ON_CHANGE
 
     async def wrap_model_context(self, ctx, request, handler):
         projection = await handler(request)
@@ -246,7 +251,8 @@ class _ContextProjection:
                 ModelContextBlock(
                     source_id="test.live-context",
                     placement=ModelContextPlacement.REQUEST_EPILOGUE,
-                    content=f"Live context {len(self.requests)}",
+                    content=self.value if self.value is not None else f"Live context {len(self.requests)}",
+                    emission=self.emission,
                 ),
             )
         )
@@ -798,3 +804,114 @@ async def test_live_plugin_cleanup_failure_withholds_terminal_result() -> None:
     assert not any(isinstance(event, HarnessRunResultEvent) for event in events)
     assert failure.value.outcome is not None and failure.value.outcome.output is None
     assert "Keep before plugin failure" in (await live.export_state()).model_dump_json()
+
+
+@pytest.mark.parametrize("emission", [ModelContextEmission.ON_CHANGE, ModelContextEmission.ALWAYS])
+async def test_live_snapshot_delivery_uses_confirmed_connection_context(emission) -> None:
+    def lookup() -> str:
+        return "found"
+
+    projection = _ContextProjection()
+    projection.value = "snapshot A"
+    projection.emission = emission
+    executable = HarnessBuilder().build(
+        AgentDefinition(output_type=str, agent=AgentSpec(), capabilities=(Capability(tools=[lookup]),))
+    )
+    model = _Model()
+    delivered = asyncio.Queue()
+    async with executable.live(model=model, bindings=RunBindings.embedded(model_context=projection)) as live:
+
+        async def consume():
+            async for event in live:
+                if isinstance(event, HarnessEvent) and isinstance(event.event, FunctionToolResultEvent):
+                    await delivered.put(event.event.part.tool_call_id)
+
+        consumer = asyncio.create_task(consume())
+        for index, value in enumerate(("snapshot A", "snapshot B", "snapshot B", "snapshot A")):
+            projection.value = value
+            result = await _call(model, "lookup", call_id=f"snapshot-{index}")
+            assert await asyncio.wait_for(delivered.get(), 5) == f"snapshot-{index}"
+            items = [
+                item
+                for item in result.content or ()
+                if isinstance(item, TextContent) and item.metadata.get("source_id") == "test.live-context"
+            ]
+            expected = emission is ModelContextEmission.ALWAYS or index in (1, 3)
+            assert bool(items) is expected
+            if expected:
+                assert items[0].content == value
+                assert items[0].metadata["display"] is False
+                assert items[0].metadata["model_context"]["emission"] == emission.value
+        await live.close()
+        await consumer
+    assert live.result is not None
+    # Initial instructions stay instructions, not a fabricated user message.
+    from a13n_harness.content import request_input_content
+
+    snapshots = [
+        item.value.content
+        for message in live.result.all_messages()
+        if isinstance(message, ModelRequest)
+        for item in request_input_content(message)
+        if item.metadata.source_id == "test.live-context" and isinstance(item.value, TextContent)
+    ]
+    assert snapshots == (
+        ["snapshot A", "snapshot B", "snapshot B", "snapshot A"]
+        if emission is ModelContextEmission.ALWAYS
+        else ["snapshot B", "snapshot A"]
+    )
+
+
+async def test_live_pending_changes_cannot_pin_later_projection_or_replayed_events():
+    from a13n_harness.live import _LiveCapability
+
+    bridge = _LiveCapability(None)
+
+    def projection(text):
+        return ModelContextProjection(
+            blocks=(
+                ModelContextBlock(
+                    source_id="test.snapshot",
+                    placement=ModelContextPlacement.REQUEST_EPILOGUE,
+                    content=text,
+                ),
+            )
+        )
+
+    def confirmed(call_id, value, *, outcome="success", include_content=True):
+        return FunctionToolResultEvent(
+            part=ToolReturnPart(tool_name="lookup", tool_call_id=call_id, content="found", outcome=outcome),
+            content=[
+                TextContent(block.content, metadata=block.content_item().metadata.model_dump(mode="json"))
+                for block in value.blocks
+            ]
+            if include_content
+            else None,
+        )
+
+    a, b = projection("A"), projection("B")
+    bridge.initial = a
+    bridge.connected()
+    assert not bridge.select("unchanged", a).blocks
+    assert bridge.select("first", b) == b
+    assert bridge.select("second", a) == a
+    # Result observations may replay in call order, not actual send order.
+    bridge.settled(confirmed("first", b))
+    bridge.settled(confirmed("second", a))
+    assert bridge.select("repair", a) == a
+    bridge.settled(confirmed("repair", a))
+    assert not bridge.select("stable", a).blocks
+    assert bridge.select("failed", b) == b
+    bridge.settled(confirmed("failed", b, outcome="interrupted", include_content=False))
+    assert bridge.select("resend", b) == b
+    bridge.settled(confirmed("resend", b, include_content=False))
+    assert bridge.select("missing", b) == b
+    bridge.reconnected()
+    assert not bridge.delivered.blocks
+    assert not bridge.pending
+    assert not bridge.ambiguous
+    # A result from the old connection cannot establish the new baseline.
+    bridge.settled(confirmed("missing", b))
+    assert bridge.select("new-connection", a) == a
+    bridge.settled(confirmed("new-connection", a))
+    assert not bridge.select("new-stable", a).blocks

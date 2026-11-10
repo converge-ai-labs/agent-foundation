@@ -6,6 +6,7 @@ from collections.abc import Awaitable, Callable
 from copy import copy
 from dataclasses import dataclass
 from enum import StrEnum
+from hashlib import sha256
 from typing import Protocol
 
 from pydantic_ai import RunContext
@@ -28,7 +29,13 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models import ModelRequestContext
 
-from a13n_harness.content import ContentItem, ContentMetadata, replace_request_parts, request_parts
+from a13n_harness.content import (
+    ContentItem,
+    ContentMetadata,
+    replace_request_parts,
+    request_input_content,
+    request_parts,
+)
 from a13n_harness.context import AgentContext
 from a13n_harness.context_breakdown import ContextGroupName
 from a13n_harness.errors import DefinitionError
@@ -80,6 +87,13 @@ class ModelContextProjectionRequest:
         object.__setattr__(self, "tool_call_ids", tuple(self.tool_call_ids))
 
 
+class ModelContextEmission(StrEnum):
+    """Snapshot comparison versus owner-triggered event or incremental delivery."""
+
+    ON_CHANGE = "on_change"
+    ALWAYS = "always"
+
+
 @dataclass(frozen=True, slots=True)
 class ModelContextBlock:
     """One source-owned context block awaiting structural placement."""
@@ -89,9 +103,21 @@ class ModelContextBlock:
     content: str
     memory_mount: str | None = None
     context_group: ContextGroupName | None = None
+    key: str | None = None
+    emission: ModelContextEmission = ModelContextEmission.ON_CHANGE
 
     def content_item(self) -> ContentItem:
-        metadata = ContentMetadata(display=False, source_id=self.source_id)
+        metadata = ContentMetadata.model_validate(
+            {
+                "display": False,
+                "source_id": self.source_id,
+                "model_context": {
+                    "key": self.key,
+                    "emission": self.emission.value,
+                    "sha256": sha256(self.content.encode("utf-8")).hexdigest(),
+                },
+            }
+        )
         if self.memory_mount is not None:
             metadata = metadata.model_copy(update={"memory_mount": self.memory_mount})
         if self.context_group is not None:
@@ -165,6 +191,7 @@ class ModelContextCoordinatorCapability(AbstractCapability[AgentContext]):
         prepared = request_context
         if request is not None:
             projection = await _project_model_context(ctx, request)
+            projection = _drop_unchanged(request_context.messages, projection)
             original_request = request_context.messages[-1]
             assert isinstance(original_request, ModelRequest)
             committed = _commit_projection(request_context.messages, request, projection)
@@ -272,6 +299,7 @@ def _validate_projection(
         raise DefinitionError("Model context contains too many blocks.", code="model_context_projection_invalid")
 
     aggregate_bytes = 0
+    identities: set[tuple[str, str | None]] = set()
     for block in projection.blocks:
         if not isinstance(block, ModelContextBlock):
             raise DefinitionError(
@@ -294,6 +322,19 @@ def _validate_projection(
                 "Model context block placement or content is invalid.",
                 code="model_context_projection_invalid",
             )
+        if not isinstance(block.emission, ModelContextEmission) or (
+            block.key is not None
+            and (not isinstance(block.key, str) or not block.key or len(block.key) > _MAX_SOURCE_ID_LENGTH)
+        ):
+            raise DefinitionError(
+                "Model context identity or emission is invalid.", code="model_context_projection_invalid"
+            )
+        identity = (block.source_id, block.key)
+        if identity in identities:
+            raise DefinitionError(
+                "Model context block identities must be unique.", code="model_context_projection_invalid"
+            )
+        identities.add(identity)
         size = len(block.content.encode("utf-8"))
         if size > _MAX_BLOCK_BYTES:
             raise DefinitionError(
@@ -312,6 +353,47 @@ def _validate_projection(
         raise DefinitionError(
             "Model context exceeds its aggregate byte limit.", code="model_context_projection_invalid"
         )
+
+
+def _drop_unchanged(messages: list[ModelMessage], projection: ModelContextProjection) -> ModelContextProjection:
+    """Compare each snapshot with its latest canonical copy, never a separate watermark.
+
+    Historical parts are only read. Replacement history naturally forgets pins;
+    events and deltas retain their producer-owned delivery semantics.
+    """
+    wanted = {
+        (block.source_id, block.key) for block in projection.blocks if block.emission is ModelContextEmission.ON_CHANGE
+    }
+    latest: dict[tuple[str, str | None], str] = {}
+    for message in reversed(messages):
+        if wanted <= latest.keys():
+            break
+        if not isinstance(message, ModelRequest):
+            continue
+        for item in reversed(request_input_content(message)):
+            source = item.metadata.source_id
+            if source is None or not isinstance(item.value, str | TextContent):
+                continue
+            marker = (item.metadata.model_extra or {}).get("model_context")
+            if not isinstance(marker, dict) or marker.get("emission") != ModelContextEmission.ON_CHANGE.value:
+                continue
+            key = marker.get("key")
+            if key is not None and not isinstance(key, str):
+                continue
+            identity = (source, key)
+            if identity not in wanted or identity in latest:
+                continue
+            digest = marker.get("sha256")
+            if isinstance(digest, str):
+                latest[identity] = digest
+    return ModelContextProjection(
+        blocks=tuple(
+            block
+            for block in projection.blocks
+            if block.emission is ModelContextEmission.ALWAYS
+            or latest.get((block.source_id, block.key)) != sha256(block.content.encode("utf-8")).hexdigest()
+        )
+    )
 
 
 def _commit_projection(
@@ -436,6 +518,7 @@ def _replace_messages(request_context: ModelRequestContext, messages: list[Model
 __all__ = [
     "AbstractModelContextCapability",
     "ModelContextBlock",
+    "ModelContextEmission",
     "ModelContextInputOrigin",
     "ModelContextMiddleware",
     "ModelContextNext",

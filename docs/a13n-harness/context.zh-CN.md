@@ -20,6 +20,36 @@ description: 提供当前上下文，跨 Run 保留决策，并在压缩 Thread 
 
 先运行[两次 Run 的示例](#context-composition)，再按需添加工作区指导或压缩。Host 如何保存和续接 Thread，见[状态与恢复](state-and-resume.md)。
 
+## 按变化追加上下文
+
+快照上下文仍会在适用的请求边界重新计算，但只有最终渲染文本变化时才追加。Harness 按 `(source_id, key)` 将每个 block 与规范历史中的最新同身份快照比较。旧 block 保持不变，保留提供方已看到的前缀。`A → B → A` 会追加两次变化；压缩和 handoff 移除旧历史后，会重新发送被移除的当前快照。
+
+自定义生产者通过 `AbstractModelContextCapability` 或 `RunBindings.model_context` 返回 `ModelContextBlock`。同一个来源有独立变化的 block 时，使用稳定的 key：
+
+```python
+from a13n_harness.model_context import (
+    ModelContextBlock,
+    ModelContextEmission,
+    ModelContextPlacement,
+)
+
+snapshot = ModelContextBlock(
+    source_id="example.status",
+    key="workspace",
+    placement=ModelContextPlacement.REQUEST_EPILOGUE,
+    content="Workspace status: ready.",
+    # ON_CHANGE is the default.
+)
+event = ModelContextBlock(
+    source_id="example.notice",
+    placement=ModelContextPlacement.REQUEST_EPILOGUE,
+    content="A new delivery is available.",
+    emission=ModelContextEmission.ALWAYS,
+)
+```
+
+事件或增量投递即使文本相同也可能代表不同发生次数，应使用 `ALWAYS`，由其所属组件决定投递时机。这是每个 block 的设置，不是全局去重开关。已有自定义生产者现在默认使用 `ON_CHANGE`；如果重复文本表示新事件，需显式改为 `ALWAYS`。不返回 block 表示没有更新。需要报告移除时，渲染确定性的空状态 block，并区分空状态与无法观测。比较前会校验完整投影。被抑制的 block 不产生新的上下文输入观测。
+
 ## Run 配置
 
 `RunConfiguration` 提供一次 Run 内工具和插件共享的设置。下面的片段构建配置并在本地检查 URL，不发出 HTTP 请求：

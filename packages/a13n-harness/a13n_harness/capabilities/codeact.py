@@ -86,8 +86,6 @@ class CodeActCapability(AbstractModelContextCapability):
         if self._stored_values is None:
             raise RuntimeError("CodeAct stored values require an active run")
         index = await self._stored_values.context_index()
-        if not index:
-            return projection
         return ModelContextProjection(
             blocks=(
                 *projection.blocks,
