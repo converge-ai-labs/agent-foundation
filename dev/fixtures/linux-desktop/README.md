@@ -48,6 +48,20 @@ bash /app/dev/fixtures/linux-desktop/test-accessibility.sh \
   packages/a13n-harness/tests/test_accessibility_linux_native.py
 ```
 
+### Chromium text capabilities
+
+With an already installed Chromium/Chrome executable, run the separate opt-in gate:
+
+```bash
+A13N_ATSPI_CHROMIUM=/absolute/path/to/chromium make accessibility-chromium-test
+```
+
+It launches a visible X11 browser with a disposable profile, `--force-renderer-accessibility` and a controlled loopback page. The test-only browser uses `--no-sandbox`; do not reuse this invocation for untrusted browsing. Chromium is not downloaded or added to the default GTK/CI gate. The page independently reports DOM values and focus; every tested focus/write/read operation travels through native AT-SPI and Session/EIP, not CDP or JavaScript evaluation.
+
+The gate checks input, textarea and contenteditable controls both unfocused and explicitly focused. Native Text/read support does not imply EditableText/write support: without the advertised operation, writes must fail before dispatch and leave DOM values and focus unchanged. If writing is advertised, both native text and independent DOM state must reflect the Unicode write. A native acknowledgement alone is not application success, and the adapter does not focus or retry implicitly.
+
+Locally, Chromium 136.0.7103.25 and Chrome 156.0.8078.47 expose readable Text but no EditableText on all three controls, before and after focus. All six write attempts per browser return explicit `unsupported`; focusing does not add the missing interface. This is version-specific evidence, not a claim about every Chromium build. X11 literal `computer_type_text` is separately unsupported (including ASCII); semantic text entry is available only when that node advertises it. Explicit clipboard-and-paste or browser tools are separate choices with their own permissions, not hidden fallbacks.
+
 ## Service integration
 
 This opt-in test is excluded from the ordinary Service CI suite, which requires zero skipped cases. Run it explicitly with this disposable desktop; do not count an unconfigured or skipped run as native Computer Use validation.

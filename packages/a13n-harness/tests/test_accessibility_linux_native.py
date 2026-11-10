@@ -47,7 +47,8 @@ async def wait_until(predicate):
 
 @asynccontextmanager
 async def child(*args, **kwargs):
-    process = await asyncio.create_subprocess_exec(*args, stderr=asyncio.subprocess.PIPE, **kwargs)
+    kwargs.setdefault("stderr", asyncio.subprocess.PIPE)
+    process = await asyncio.create_subprocess_exec(*args, **kwargs)
     try:
         yield process
     finally:
@@ -59,7 +60,7 @@ async def child(*args, **kwargs):
             process.kill()
             await process.communicate()
             raise
-        assert process.returncode in (0, -15), stderr.decode(errors="replace")
+        assert process.returncode in (0, -15), (stderr or b"").decode(errors="replace")
 
 
 async def test_real_linux_accessibility_session_and_harness(tmp_path):
