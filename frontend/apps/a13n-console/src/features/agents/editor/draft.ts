@@ -1,4 +1,8 @@
 import { subagentLimitsError } from "../subagents";
+import {
+  normalizeSessionPolicy,
+  sessionPolicyError,
+} from "../../credentials/session-policy";
 import { useState } from "react";
 import { replacePluginReferences, type Plugin } from "../plugins";
 import { toolSearchConfig, toolSearchDraft } from "../tool-search";
@@ -76,6 +80,9 @@ export function useAgentDraft(
     [environmentTemplateId, setEnvironmentTemplateId] = useState(
       initial.default_environment_template_id ?? null,
     ),
+    [sessionConfiguration, setSessionConfiguration] = useState(
+      initial.default_session_configuration,
+    ),
     [toolsets, setToolsets] = useState(initial.toolsets ?? {}),
     [reviewer, setReviewer] = useState(initial.reviewer),
     [skills, setSkills] = useState(initial.skills ?? []),
@@ -122,6 +129,8 @@ export function useAgentDraft(
         (initial.media_understanding?.[kind] ?? null),
     ) ||
     environmentId !== (initial.default_environment_id ?? null) ||
+    JSON.stringify(sessionConfiguration) !==
+      JSON.stringify(initial.default_session_configuration) ||
     environmentTemplateId !==
       (initial.default_environment_template_id ?? null) ||
     JSON.stringify(toolsets) !== JSON.stringify(initial.toolsets ?? {}) ||
@@ -172,6 +181,8 @@ export function useAgentDraft(
     setEnvironmentId,
     environmentTemplateId,
     setEnvironmentTemplateId,
+    sessionConfiguration,
+    setSessionConfiguration,
     toolsets,
     setToolsets,
     reviewer,
@@ -241,6 +252,7 @@ export type DraftBuild =
         | "toolSearch"
         | "compaction"
         | "subagents"
+        | "environment"
         | "advanced";
       error: Error;
     };
@@ -323,6 +335,15 @@ export function buildDraftConfig(
     if (message)
       return { ok: false, stage: "subagents", error: new Error(t(message)) };
   }
+  const sessionError =
+    draft.sessionConfiguration &&
+    sessionPolicyError(draft.sessionConfiguration);
+  if (sessionError)
+    return {
+      ok: false,
+      stage: "environment",
+      error: new Error(t(sessionError)),
+    };
   const threshold = draft.backgroundCompaction.blocking_threshold;
   if (threshold !== undefined && !(threshold > 0 && threshold <= 1))
     return {
@@ -368,6 +389,14 @@ export function buildDraftConfig(
           memory: draft.memory,
           default_environment_template_id: draft.environmentTemplateId,
           default_environment_id: draft.environmentId,
+          ...(draft.sessionConfiguration === undefined
+            ? {}
+            : {
+                default_session_configuration:
+                  draft.sessionConfiguration === null
+                    ? null
+                    : normalizeSessionPolicy(draft.sessionConfiguration),
+              }),
         },
         draft.advanced,
       ),

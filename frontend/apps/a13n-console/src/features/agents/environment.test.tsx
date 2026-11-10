@@ -86,7 +86,17 @@ it("preserves collapsed model settings and saves them with the environment choic
                   { id: "provider_local", type: "local" },
                   { id: "provider_cloud", type: "e2b" },
                 ]
-              : [{ type: "e2b", display_name: "E2B" }],
+              : path === "/api/v1/egress-credentials"
+                ? [
+                    {
+                      id: "ecred_0123456789abcdef0123",
+                      name: "GitHub automation",
+                      state: "active",
+                      credential_version: 2,
+                      allowed_hosts: ["api.github.com"],
+                    },
+                  ]
+                : [{ type: "e2b", display_name: "E2B" }],
       next_cursor: null,
     },
     response: new Response(null, { status: 200 }),
@@ -103,6 +113,7 @@ it("preserves collapsed model settings and saves them with the environment choic
             ...initialConfig(),
             model: "model-0123456789abcdef0123",
             instructions: "Check the evidence.",
+            default_session_configuration: { working_directory: "/workspace" },
           }}
           version={7}
           etag='"agent-v1"'
@@ -177,12 +188,52 @@ it("preserves collapsed model settings and saves them with the environment choic
     ).toContain(cloudName),
   );
   expect(submit).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("combobox", { name: "Outbound network" }));
+  await user.click(
+    await screen.findByRole("option", { name: "Controlled HTTPS egress" }),
+  );
+  await user.type(
+    screen.getByRole("textbox", { name: "Allowed destinations" }),
+    "API.GITHUB.COM.",
+  );
+  await user.click(
+    screen.getByRole("button", { name: "Add credential binding" }),
+  );
+  await user.click(screen.getByRole("combobox", { name: "Credential" }));
+  await user.click(
+    await screen.findByRole("option", { name: "GitHub automation" }),
+  );
+  await user.type(
+    screen.getByRole("textbox", { name: "Variable name" }),
+    "GH_TOKEN",
+  );
+  await user.click(screen.getByRole("checkbox", { name: "api.github.com" }));
+  await user.click(screen.getByRole("button", { name: /Agent usage preview/ }));
+  expect(
+    screen.getByText(
+      'curl -H "Authorization: Bearer ${GH_TOKEN}" https://api.github.com/',
+    ),
+  ).toBeTruthy();
   await user.click(screen.getByRole("button", { name: "Save changes" }));
   expect(submit).toHaveBeenCalledWith(
     expect.objectContaining({
       instructions: "Check the evidence. Keep the draft.",
       model_settings: { max_tokens: 2048, temperature: 0.4 },
       default_environment_template_id: "envtpl_1234567890abcdef1234",
+      default_session_configuration: {
+        working_directory: "/workspace",
+        egress_mode: "controlled",
+        egress: {
+          destinations: { mode: "allowlist", hosts: ["api.github.com"] },
+          secrets: [
+            {
+              env: "GH_TOKEN",
+              credential_id: "ecred_0123456789abcdef0123",
+              inject_hosts: ["api.github.com"],
+            },
+          ],
+        },
+      },
     }),
     '"agent-v1"',
     null,

@@ -46,6 +46,75 @@ function draftFor(
   return renderHook(() => useAgentDraft(initial, definitions)).result;
 }
 
+it("keeps absent Session defaults distinct from clearing and preserves unrelated settings", () => {
+  const draft = draftFor();
+  const initial = buildDraftConfig(draft.current, undefined, asIs);
+  expect(initial.ok && initial.config).not.toHaveProperty(
+    "default_session_configuration",
+  );
+  act(() =>
+    draft.current.setSessionConfiguration({
+      working_directory: "/workspace",
+      egress_mode: "controlled",
+      egress: {
+        destinations: {
+          mode: "allowlist",
+          hosts: ["API.GITHUB.COM., api.github.com"],
+        },
+        secrets: [
+          {
+            env: "GH_TOKEN",
+            credential_id: "ecred_0123456789abcdef0123",
+            inject_hosts: ["api.github.com"],
+          },
+        ],
+      },
+    }),
+  );
+  expect(draft.current.dirty).toBe(true);
+  expect(buildDraftConfig(draft.current, undefined, asIs)).toMatchObject({
+    ok: true,
+    config: {
+      default_session_configuration: {
+        working_directory: "/workspace",
+        egress: { destinations: { hosts: ["api.github.com"] } },
+      },
+    },
+  });
+  act(() => draft.current.setSessionConfiguration(null));
+  expect(buildDraftConfig(draft.current, undefined, asIs)).toMatchObject({
+    ok: true,
+    config: { default_session_configuration: null },
+  });
+  act(() => draft.current.setSessionConfiguration(undefined));
+  expect(draft.current.dirty).toBe(false);
+});
+
+it("reports credential policy errors in the environment section without rewriting a saved policy", () => {
+  const configuration = {
+    working_directory: "/workspace",
+    egress_mode: "controlled" as const,
+    egress: {
+      destinations: { mode: "public" as const },
+      secrets: [
+        {
+          env: "PATH",
+          credential_id: "ecred_0123456789abcdef0123",
+          inject_hosts: ["api.github.com"],
+        },
+      ],
+    },
+  };
+  const draft = draftFor({ default_session_configuration: configuration });
+  expect(draft.current.dirty).toBe(false);
+  expect(draft.current.advanced).not.toContain("default_session_configuration");
+  expect(buildDraftConfig(draft.current, undefined, asIs)).toMatchObject({
+    ok: false,
+    stage: "environment",
+  });
+  expect(draft.current.sessionConfiguration).toEqual(configuration);
+});
+
 it("binds platform instructions to enabled tools without losing workspace pins", () => {
   const skill = {
     skill_id: "sk_0123456789abcdef0123",

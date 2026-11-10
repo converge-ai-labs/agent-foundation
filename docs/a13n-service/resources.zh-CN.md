@@ -88,3 +88,5 @@ Provider 保存一个配置好的后端账号。按工作需要选择类型：
 `POST /api/v1/egress-credentials/{id}/sync` 需要工作空间 `write` 权限，请求现有持有者重新比较版本后返回 `202`。活跃和已撤销的凭据都可以重试；操作不改变资源版本，不要求 `If-Match`。它不会 attach 空闲 Session，也不代表所有 Session 都已更新。
 
 `202` 表示 Service 已保存轮换或撤销，不代表所有已有 Envd Session 都已应用，也不会撤销上游服务中的 token。Agent 平台工具和管理 MCP 不提供凭据写操作；MCP 只提供元数据查询。
+
+为 Agent 选择凭据时，在编辑页打开**环境 → 默认 Session 配置**。设置受控 HTTPS 出网、允许的目标，以及凭据绑定，例如为 `api.github.com` 配置 `GH_TOKEN`。使用目标白名单时，每个注入域名也必须加入允许的目标。**Agent 使用说明预览**展示变量名和命令示例。保存 Agent 后，新建主环境绑定会使用这些默认值；已有会话的环境绑定保留自己的配置。**编辑 Session JSON**可以修改其他 Session 设置，先应用到草稿，再保存 Agent。跨工作空间导入 Agent 时，需要选择目标工作空间中可用的凭据。

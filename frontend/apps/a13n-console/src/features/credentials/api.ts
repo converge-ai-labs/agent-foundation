@@ -1,6 +1,7 @@
 import { queryOptions } from "@tanstack/react-query";
 import type { Client } from "../../service-client";
 import {
+  allPages,
   data,
   matchingPage,
   matchesSearch,
@@ -19,6 +20,7 @@ export function credentialKeys(workspaceId: string) {
     lists: [...root, "list"] as const,
     item: (id: string) => [...root, "item", id] as const,
     sessions: [...root, "sessions"] as const,
+    directory: [...root, "directory"] as const,
   };
 }
 
@@ -33,6 +35,12 @@ export function credentialQueries(client: Client, workspaceId: string) {
       })
       .then(data);
   return {
+    directory: () =>
+      queryOptions({
+        queryKey: keys.directory,
+        queryFn: ({ signal }) =>
+          allPages((cursor) => read(signal, cursor, 100)),
+      }),
     list: (cursor: string | undefined, term: string, state: string) =>
       queryOptions({
         queryKey: [...keys.lists, cursor, term, state],
