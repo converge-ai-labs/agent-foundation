@@ -479,7 +479,9 @@ fn registry_eviction_frees_each_kind_and_pins_operands_and_owners() {
                     location: 0,
                     length: 0,
                 },
+                &Budget::new(&json!({})).unwrap(),
             )
+            .unwrap()
             .unwrap();
     }
     for _ in 0..64 {
@@ -516,7 +518,9 @@ fn registry_eviction_frees_each_kind_and_pins_operands_and_owners() {
                 location: 0,
                 length: 0,
             },
+            &Budget::new(&json!({})).unwrap(),
         )
+        .unwrap()
         .unwrap();
     for _ in 0..3000 {
         native.put("an", Handle::Node(n.clone())).unwrap();
@@ -524,6 +528,46 @@ fn registry_eviction_frees_each_kind_and_pins_operands_and_owners() {
     native.prune(&json!({"node":owner}));
     assert!(native.handles.len() < 2048);
     assert!(native.handles.contains_key(&owner_id));
+}
+#[test]
+fn range_capacity_preserves_published_prefix_and_selection_properties() {
+    let mut native = Native {
+        epoch: "aep_test".into(),
+        next: 0,
+        handles: HashMap::new(),
+    };
+    let n = unsafe { AXUIElement::new_application(std::process::id() as i32) };
+    let owner = native.reference(n).unwrap();
+    let span = CFRange {
+        location: 0,
+        length: 0,
+    };
+    let b = Budget::new(&json!({"limits":{"max_items":512}})).unwrap();
+    for _ in 0..255 {
+        native.range_reference(&owner, span, &b).unwrap().unwrap();
+    }
+    let mut out = json!({"ranges":[],"properties":[{"name":"AXSelectedRows","value":[]} ]});
+    native
+        .append_ranges(&owner, vec![span, span], &mut out, &b)
+        .unwrap();
+    assert_eq!(out["ranges"].as_array().unwrap().len(), 1);
+    assert_eq!(out["properties"].as_array().unwrap().len(), 1);
+    assert_eq!(b.completeness()["reason"], "item_limit");
+    let id = out["ranges"][0]["range_handle"].as_str().unwrap();
+    assert!(native.handles.contains_key(id));
+    let before = native.handles.len();
+    assert!(native.range_reference(&owner, span, &b).unwrap().is_none());
+    assert_eq!(native.handles.len(), before);
+
+    // Filling the last slot is complete when there is no remaining candidate.
+    native.handles.remove(id);
+    let exact = Budget::new(&json!({})).unwrap();
+    let mut out = json!({"ranges":[]});
+    native
+        .append_ranges(&owner, vec![span], &mut out, &exact)
+        .unwrap();
+    assert_eq!(out["ranges"].as_array().unwrap().len(), 1);
+    assert_eq!(exact.completeness()["complete"], true);
 }
 #[test]
 #[ignore = "requires a trusted macOS login session and the AppKit fixture"]

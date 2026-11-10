@@ -142,14 +142,7 @@ impl Native {
                         self.collection_property(&n, key, &mut out, b)?;
                     }
                     match self.selected_spans(&n, b) {
-                        Ok(spans) => {
-                            for span in spans {
-                                out["ranges"]
-                                    .as_array_mut()
-                                    .unwrap()
-                                    .push(self.range_reference(owner, span)?);
-                            }
-                        }
+                        Ok(spans) => self.append_ranges(owner, spans, &mut out, b)?,
                         // A list/table can support selected nodes without text
                         // selection. Preserve those properties and report the
                         // unsupported text field instead of fabricating empty.

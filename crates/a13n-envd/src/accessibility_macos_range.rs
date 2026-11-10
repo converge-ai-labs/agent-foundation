@@ -41,16 +41,39 @@ impl Native {
         &mut self,
         owner: &Value,
         span: CFRange,
-    ) -> Result<Value, EIPError> {
-        let owner_id = string(owner, "node_handle")?.to_owned();
-        let id = self.put(
-            "ar",
-            Handle::Range {
-                owner: owner_id,
-                span,
-            },
-        )?;
-        Ok(json!({"node":owner,"range_handle":id,"unit":"ax_native"}))
+        b: &Budget,
+    ) -> Result<Option<Value>, EIPError> {
+        let value = Handle::Range {
+            owner: string(owner, "node_handle")?.to_owned(),
+            span,
+        };
+        if !self.registry_room(std::slice::from_ref(&value)) {
+            b.mark("item_limit");
+            return Ok(None);
+        }
+        let id = self.put("ar", value)?;
+        Ok(Some(
+            json!({"node":owner,"range_handle":id,"unit":"ax_native"}),
+        ))
+    }
+    pub(super) fn append_ranges(
+        &mut self,
+        owner: &Value,
+        spans: Vec<CFRange>,
+        out: &mut Value,
+        b: &Budget,
+    ) -> Result<(), EIPError> {
+        for span in spans {
+            if out["ranges"].as_array().unwrap().len() >= b.limit("max_items").min(256) {
+                b.mark("item_limit");
+                break;
+            }
+            let Some(reference) = self.range_reference(owner, span, b)? else {
+                break;
+            };
+            out["ranges"].as_array_mut().unwrap().push(reference);
+        }
+        Ok(())
     }
     pub(super) fn selected_spans(
         &self,
@@ -285,13 +308,7 @@ impl Native {
                 // target or range-from-child operation. Keep this distinction.
                 _ => return Err(unsupported()),
             }
-            for s in spans.into_iter().take(b.limit("max_items").min(256)) {
-                out["ranges"]
-                    .as_array_mut()
-                    .unwrap()
-                    .push(self.range_reference(owner, s)?);
-            }
-            Ok(())
+            self.append_ranges(owner, spans, &mut out, b)
         })();
         partial(result, b)?;
         out["completeness"] = b.completeness();
@@ -369,13 +386,17 @@ impl Native {
                             .filter(|end| *end > offset && *end <= length)
                             .ok_or_else(unavailable)?;
                         let properties = self.attribute_properties(&attributes, b)?;
-                        let reference = self.range_reference(
+                        let Some(reference) = self.range_reference(
                             owner,
                             CFRange {
                                 location: part.location + offset,
                                 length: end - offset,
                             },
-                        )?;
+                            b,
+                        )?
+                        else {
+                            break;
+                        };
                         out["attribute_runs"]
                             .as_array_mut()
                             .unwrap()
