@@ -1,4 +1,9 @@
 {
+  "Before": "Before",
+  "After": "After",
+  "Unchanged lines omitted": "Unchanged lines omitted",
+  "No newline at end of file": "No newline at end of file",
+  "Your memory stays unchanged until you apply all changes.": "Your memory stays unchanged until you apply all changes.",
   "Client computer": "Client computer",
   "Registered": "Registered",
   "Registration": "Registration",

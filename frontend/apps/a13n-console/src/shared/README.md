@@ -79,12 +79,12 @@ Overlays and the state behind them.
 Text files addressed by path, such as a skill package or a memory.
 
 - `FileBrowser` — the tree at the left, with the file count and optional actions beside its heading and an optional `marker` after a file's name, and the chosen file at the right.
-- `FileHeader`, `FileBody`, `FileText`, `FileNotice` — the chosen file: its path and size, the Preview/Source switch for Markdown and the file's actions, then its text as rendered Markdown or as source, or a notice in its place.
+- `FileHeader`, `FileBody`, `FileText`, `FileNotice` — the chosen file: its path and size, a single icon toggle between Markdown preview and source, and the file's icon actions. `FileBody` owns scrolling; `FileText` renders safe Markdown or wrapped source with a non-selectable line-number gutter.
 - `fileTree`, `isMarkdown`, `markdownBody` — the tree built from paths, directories first; a preview renders Markdown without its frontmatter.
 
 ## `shared/diff`
 
-- `Patch` — unified diff hunks, read by tint and sign.
+- `Patch` — editor-style diff rows with line numbers, aligned before/after panes at reader widths of 680px or more, inline rows below that width, word-level change highlights, and explicit omitted-context/final-newline markers. Accepts complete or bounded unified hunks; `expanded` lets `FileBody` own scrolling and optional `beforeLabel`/`afterLabel` name the compared versions.
 
 ## `shared/time-range`
 

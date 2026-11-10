@@ -1,4 +1,9 @@
 {
+  "Before": "更改前",
+  "After": "更改后",
+  "Unchanged lines omitted": "已省略未更改的行",
+  "No newline at end of file": "文件末尾无换行",
+  "Your memory stays unchanged until you apply all changes.": "应用全部变更前，目标记忆保持不变。",
   "Client computer": "客户端电脑",
   "Registered": "已登记",
   "Registration": "登记状态",

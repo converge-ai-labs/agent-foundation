@@ -444,7 +444,8 @@ it("filters history by run from the URL, opens a diff and restores under the cur
   expect(screen.getByText("#5")).toBeTruthy();
   expect(screen.queryByText("#6")).toBeNull();
   await user.click(screen.getByRole("button", { name: "Changes" }));
-  expect(await screen.findByText("+new line")).toBeTruthy();
+  expect(await screen.findByText("new")).toBeTruthy();
+  expect(screen.queryByText("@@ -1 +1 @@")).toBeNull();
   await user.click(screen.getByRole("button", { name: "Restore" }));
   const confirm = await screen.findByRole("dialog");
   await user.click(

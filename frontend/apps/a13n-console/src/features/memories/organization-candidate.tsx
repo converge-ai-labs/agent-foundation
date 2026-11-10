@@ -2,6 +2,11 @@ import {
   ArrowLeftIcon,
   ArrowRightIcon,
   CheckIcon,
+  ArrowSquareOutIcon,
+  ArrowsClockwiseIcon,
+  FilePlusIcon,
+  FileMinusIcon,
+  PencilSimpleIcon,
 } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, DisclosureSection, ModalFrame } from "a13n-ui";
@@ -124,6 +129,11 @@ function CandidateSnapshot({
     update: t("Modified"),
     delete: t("Deleted"),
   };
+  const operationIcons = {
+    create: FilePlusIcon,
+    update: PencilSimpleIcon,
+    delete: FileMinusIcon,
+  };
   const statusLabels = {
     generating: t("Generating"),
     ready: t("Ready for review"),
@@ -152,16 +162,17 @@ function CandidateSnapshot({
               label={statusLabels[candidate.status]}
             />
           </div>
-          <p>{t("Review the proposed changes before updating this memory.")}</p>
         </div>
         <Button
-          variant="outline"
-          size="sm"
+          variant="ghost"
+          size="icon"
+          aria-label={t("Reload review")}
+          title={t("Reload review")}
           loading={reloading}
           disabled={publish.isPending}
           onClick={() => void reload()}
         >
-          {t("Reload review")}
+          <ArrowsClockwiseIcon />
         </Button>
       </header>
       {candidate.status === "generating" ? (
@@ -224,11 +235,19 @@ function CandidateSnapshot({
       )}
       <div className={styles.summary}>
         <div className={styles.counts} aria-label={t("Change summary")}>
-          {counts.map(({ operation, count }) => (
-            <span key={operation} data-operation={operation}>
-              <b>{count}</b> {operations[operation]}
-            </span>
-          ))}
+          {counts.map(({ operation, count }) => {
+            const Icon = operationIcons[operation];
+            return (
+              <span
+                key={operation}
+                data-operation={operation}
+                title={operations[operation]}
+                aria-label={`${operations[operation]}: ${count}`}
+              >
+                <Icon size={15} aria-hidden="true" /> {count}
+              </span>
+            );
+          })}
         </div>
         <span className={styles.progress}>
           {t("{{reviewed}} of {{total}} files reviewed", {
@@ -244,28 +263,68 @@ function CandidateSnapshot({
           nodes={fileTree(candidate.changes)}
           selected={path}
           onSelect={setPath}
-          marker={(file) => (
-            <span className={styles.fileMarker}>
-              <span>
-                {
-                  operations[
-                    candidate.changes.find((item) => item.path === file)!
-                      .operation
-                  ]
-                }
+          marker={(file) => {
+            const operation = candidate.changes.find(
+              (item) => item.path === file,
+            )!.operation;
+            const Icon = operationIcons[operation];
+            return (
+              <span
+                className={styles.fileMarker}
+                data-operation={operation}
+                title={operations[operation]}
+              >
+                <Icon aria-label={operations[operation]} size={14} />
+                {reviewed.has(file) && (
+                  <CheckIcon aria-label={t("Reviewed")} size={12} />
+                )}
               </span>
-              {reviewed.has(file) && (
-                <CheckIcon aria-label={t("Reviewed")} size={12} />
-              )}
-            </span>
-          )}
+            );
+          }}
         >
           <div className={styles.fileHeading}>
             <div>
-              <strong>{path}</strong>
+              <strong title={path}>{path}</strong>
               <span>{selected && operations[selected.operation]}</span>
             </div>
             <div className={styles.navigation}>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                aria-label={t(
+                  reviewed.has(path) ? "Reviewed" : "Mark as reviewed",
+                )}
+                title={t(reviewed.has(path) ? "Reviewed" : "Mark as reviewed")}
+                aria-pressed={reviewed.has(path)}
+                disabled={!diff.data || diff.isError}
+                onClick={() =>
+                  setReviewed((current) => {
+                    const next = new Set(current);
+                    if (next.has(path)) next.delete(path);
+                    else next.add(path);
+                    return next;
+                  })
+                }
+              >
+                <CheckIcon />
+              </Button>
+              {selected?.operation !== "delete" && (
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label={t("Inspect candidate files")}
+                  title={t("Inspect candidate files")}
+                  render={
+                    <Link
+                      to={`${filesUrl}?file=${encodeURIComponent(path)}`}
+                      target="_blank"
+                      rel="noreferrer"
+                    />
+                  }
+                >
+                  <ArrowSquareOutIcon />
+                </Button>
+              )}
               <span>
                 {index + 1} / {candidate.changes.length}
               </span>
@@ -273,6 +332,7 @@ function CandidateSnapshot({
                 variant="ghost"
                 size="icon-xs"
                 aria-label={t("Previous file")}
+                title={t("Previous file")}
                 disabled={index <= 0}
                 onClick={() => setPath(candidate.changes[index - 1].path)}
               >
@@ -282,16 +342,13 @@ function CandidateSnapshot({
                 variant="ghost"
                 size="icon-xs"
                 aria-label={t("Next file")}
+                title={t("Next file")}
                 disabled={index >= candidate.changes.length - 1}
                 onClick={() => setPath(candidate.changes[index + 1].path)}
               >
                 <ArrowRightIcon />
               </Button>
             </div>
-          </div>
-          <div className={styles.diffLegend}>
-            <span>{t("Before: saved baseline")}</span>
-            <span>{t("After: candidate")}</span>
           </div>
           <FileBody>
             <ErrorNotice error={diff.error} retry={() => void diff.refetch()} />
@@ -300,7 +357,12 @@ function CandidateSnapshot({
             ) : (
               diff.data && (
                 <>
-                  <Patch hunks={[diff.data.diff]} />
+                  <Patch
+                    hunks={[diff.data.diff]}
+                    expanded
+                    beforeLabel={t("Before: saved baseline")}
+                    afterLabel={t("After: candidate")}
+                  />
                   {diff.data.truncated && (
                     <p className={styles.warning} role="status">
                       {t(
@@ -308,31 +370,6 @@ function CandidateSnapshot({
                       )}
                     </p>
                   )}
-                  <div className={styles.fileFooter}>
-                    <Link
-                      to={`${filesUrl}?file=${encodeURIComponent(path)}`}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      {t("Inspect candidate files")}
-                    </Link>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      aria-pressed={reviewed.has(path)}
-                      onClick={() =>
-                        setReviewed((current) => {
-                          const next = new Set(current);
-                          if (next.has(path)) next.delete(path);
-                          else next.add(path);
-                          return next;
-                        })
-                      }
-                    >
-                      <CheckIcon size={14} />
-                      {t(reviewed.has(path) ? "Reviewed" : "Mark as reviewed")}
-                    </Button>
-                  </div>
                 </>
               )
             )}
@@ -344,11 +381,8 @@ function CandidateSnapshot({
       {can("write") && ready && (
         <div className={styles.applyBar}>
           <div>
-            <strong>{t("Apply all changes together")}</strong>
             <p>
-              {t(
-                "Applies the entire candidate, not just the selected file. Your memory stays unchanged until you apply.",
-              )}
+              {t("Your memory stays unchanged until you apply all changes.")}
             </p>
           </div>
           <Button

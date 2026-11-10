@@ -79,6 +79,12 @@ Ordinary Console modals dismiss from the topmost backdrop without activating the
 
 Provider editors group Basic information, Credentials and Configuration, omitting empty groups. Credentials link to their issuing page; Saved/Not configured states expose Replace/Add without destroying saved values on cancellation. Optional non-secret settings disclose in place. Check connection feedback sits above Enabled (left) and Delete/Cancel/Save (right). Delete confirms the resource, shows actionable reference refusals and bounds environment-reference previews. OAuth has separate progress and recovery.
 
+## Text Files and Diffs
+
+File readers use a compact path toolbar and one scrolling document surface. Secondary actions use named icons with hover titles; Markdown has a single source/preview toggle. Source text has a quiet, non-selectable line-number gutter and wraps long lines within the reader.
+
+Diffs use aligned before/after panes when the reader has room, and inline removed/added rows when narrow. Line numbers, change signs, subdued semantic row backgrounds and stronger word-level highlights make changes readable without relying on color alone. Transport headers and hunk syntax stay out of the reading surface; omitted context and missing final newlines remain explicit. Candidate review keeps file navigation, full-file inspection and reversible review marks in the toolbar. The main apply action and destructive confirmations retain text labels.
+
 ## Conversation Rendering
 
 ### Chat

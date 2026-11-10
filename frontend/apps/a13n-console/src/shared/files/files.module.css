@@ -175,11 +175,29 @@
 }
 .source {
   margin: 0;
-  padding: 18px 20px;
-  overflow: auto;
+  padding: 12px 0 20px;
   font-family: var(--a13n-mono);
   font-size: var(--a13n-text-xs);
   line-height: 1.7;
+}
+.sourceLine {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  min-height: 21px;
+}
+.sourceLine > span {
+  padding-right: 14px;
+  color: var(--a13n-secondary);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+.sourceLine > code {
+  padding-right: 20px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  tab-size: 4;
 }
 .notice {
   margin: 0;

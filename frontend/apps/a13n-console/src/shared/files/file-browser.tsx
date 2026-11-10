@@ -1,6 +1,8 @@
 import {
   CaretRightIcon,
   FileTextIcon,
+  CodeIcon,
+  EyeIcon,
   FolderIcon,
   DotsThreeOutlineVerticalIcon,
 } from "@phosphor-icons/react";
@@ -11,7 +13,6 @@ import {
   Menu,
   MenuPopup,
   MenuTrigger,
-  SegmentedControl,
 } from "a13n-ui";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -200,17 +201,17 @@ export function FileHeader({
       {(view || actions) && (
         <span className={styles.documentActions}>
           {view && onViewChange && (
-            <SegmentedControl
-              label={t("File view")}
-              value={view}
-              onValueChange={(value) =>
-                onViewChange(value === "source" ? "source" : "preview")
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              aria-label={t(view === "preview" ? "Source" : "Preview")}
+              title={t(view === "preview" ? "Source" : "Preview")}
+              onClick={() =>
+                onViewChange(view === "source" ? "preview" : "source")
               }
-              options={[
-                { value: "preview", label: t("Preview") },
-                { value: "source", label: t("Source") },
-              ]}
-            />
+            >
+              {view === "preview" ? <CodeIcon /> : <EyeIcon />}
+            </Button>
           )}
           {actions}
         </span>
@@ -255,9 +256,14 @@ export function FileText({
       <MarkdownContent text={markdownBody(text)} />
     </div>
   ) : (
-    <pre className={`${styles.source} a13n-scrollbar`}>
-      <code>{text}</code>
-    </pre>
+    <div className={styles.source}>
+      {text.match(/[^\n]*\n|[^\n]+$/g)?.map((line, index) => (
+        <div className={styles.sourceLine} key={index}>
+          <span aria-hidden="true">{index + 1}</span>
+          <code>{line}</code>
+        </div>
+      ))}
+    </div>
   );
 }
 
