@@ -16,6 +16,7 @@ import { TransportContext } from "./transport/context";
 import { ComposerDrafts } from "./conversations/composer";
 import { ThreadDraft } from "./conversations/draft";
 import { DraftContext, type SourceDraft } from "./configuration/drafts";
+import { readDocument } from "./configuration/documents";
 
 vi.mock("./conversations/live-threads", async () => {
   const { FocusDisplay } = await import("./conversations/stream");
@@ -368,6 +369,56 @@ it("offers inline setup while off and enables with one policy save, without subm
   expect(configurationWrites[0]).toContain("Track release progress");
   expect(requests).toHaveLength(0);
 });
+
+it.each([false, true])(
+  "preserves concurrently saved, untouched Bot fields and YAML nodes when setup edits are %s",
+  async (editInstructions) => {
+    snapshot.enabled = false;
+    rootSource = `# Keep this comment
+schema_version: "1"
+defaults: {agent: agent-assistant}
+webui:
+  bot:
+    enabled: false
+    instructions: Original
+    interval_seconds: 3600
+    run_timeout_seconds: 180
+`;
+    mount();
+    const enable = await screen.findByRole("button", { name: "Turn on Bot" });
+    await waitFor(() => expect(enable.hasAttribute("disabled")).toBe(false));
+    if (editInstructions)
+      fireEvent.change(
+        screen.getByRole("textbox", { name: "Custom instructions" }),
+        { target: { value: "Track release progress" } },
+      );
+    // Another tab/source edit is accepted after setup opened.
+    rootSource = rootSource
+      .replace("instructions: Original", "instructions: Changed elsewhere")
+      .replace(
+        "interval_seconds: 3600",
+        "interval_seconds: 7200 # Latest interval",
+      )
+      .replace(
+        "run_timeout_seconds: 180",
+        "run_timeout_seconds: 600 # Latest timeout",
+      );
+    fireEvent.click(enable);
+    await screen.findByRole("button", { name: "Send" });
+    expect(configurationWrites).toHaveLength(1);
+    const saved = readDocument(configurationWrites[0])!;
+    expect(saved.getIn(["webui", "bot", "enabled"])).toBe(true);
+    expect(saved.getIn(["webui", "bot", "instructions"])).toBe(
+      editInstructions ? "Track release progress" : "Changed elsewhere",
+    );
+    expect(saved.getIn(["webui", "bot", "interval_seconds"])).toBe(7200);
+    expect(saved.getIn(["webui", "bot", "run_timeout_seconds"])).toBe(600);
+    expect(configurationWrites[0]).toContain("# Keep this comment");
+    expect(configurationWrites[0]).toContain("# Latest interval");
+    expect(configurationWrites[0]).toContain("# Latest timeout");
+    expect(requests).toHaveLength(0);
+  },
+);
 
 it("keeps used off Bot history read-only with settings recovery and no Notes management", async () => {
   snapshot.enabled = false;

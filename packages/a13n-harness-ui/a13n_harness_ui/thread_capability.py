@@ -605,7 +605,14 @@ class ThreadCollaborationCapability(AbstractCapability[AgentContext]):
                 (self.write_thread_bot_note if is_bot else self.write_bot_note, "write_bot_note", {"write"}),
                 (self.clear_thread_bot_note if is_bot else self.clear_bot_note, "clear_bot_note", {"write"}),
             ):
-                self._toolset.add_tool(_tool(function, name=name, effects=effects))
+                self._toolset.add_tool(
+                    _tool(
+                        function,
+                        name=name,
+                        effects=effects,
+                        idempotency="none" if "write" in effects else "read_only",
+                    )
+                )
             if is_bot:
                 self._toolset.add_tool(_tool(self.list_bot_notes, name="list_bot_notes", effects={"read"}))
         return self._toolset

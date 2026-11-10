@@ -20,7 +20,7 @@ export function BotFields({
   setup = false,
 }: {
   source: string;
-  onChange: (source: string) => void;
+  onChange: (source: string, key: string, value: unknown) => void;
   setup?: boolean;
 }) {
   const { t } = useTranslation();
@@ -29,7 +29,7 @@ export function BotFields({
   const document = readDocument(source);
   const get = (key: string) => document?.getIn(["webui", "bot", key]);
   const set = (key: string, value: unknown) =>
-    onChange(updateDocument(source, ["webui", "bot", key], value));
+    onChange(updateDocument(source, ["webui", "bot", key], value), key, value);
   const enabled = get("enabled") === true;
   const heartbeat = get("heartbeat_enabled") !== false;
   const interval = Number(get("interval_seconds") ?? 3600);

@@ -6,6 +6,7 @@ from typing import Any
 
 import pytest
 from a13n_harness.errors import DefinitionError
+from a13n_harness.tools import HARNESS_TOOL_METADATA_KEY, HarnessToolMetadata
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.bot_models import BOT_THREAD_ID
 from a13n_harness_ui.errors import HarnessUiError
@@ -115,6 +116,18 @@ async def test_note_tool_schemas_bind_ordinary_roots_and_recheck_host_context(tm
         privileged = ThreadCollaborationCapability(controller=controller, source_thread_id=BOT_THREAD_ID)
         bot_tools = privileged.get_toolset().tools
         assert "list_bot_notes" in bot_tools
+        for toolset in (tools, bot_tools):
+            for name in ("write_bot_note", "clear_bot_note"):
+                metadata = toolset[name].metadata[HARNESS_TOOL_METADATA_KEY]
+                assert isinstance(metadata, HarnessToolMetadata)
+                assert metadata.effects == frozenset({"write"})
+                assert metadata.idempotency == "none"
+            for name in ("read_bot_note", "list_bot_notes"):
+                if name in toolset:
+                    metadata = toolset[name].metadata[HARNESS_TOOL_METADATA_KEY]
+                    assert isinstance(metadata, HarnessToolMetadata)
+                    assert metadata.effects == frozenset({"read"})
+                    assert metadata.idempotency == "read_only"
         assert set(bot_tools["write_bot_note"].function_schema.json_schema["properties"]) == {"thread_id", "content"}
         with pytest.raises(DefinitionError):
             await privileged.write_thread_bot_note(context, thread.thread_id, "Impersonation")

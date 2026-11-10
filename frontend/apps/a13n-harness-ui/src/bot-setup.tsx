@@ -23,9 +23,15 @@ export function BotSetup() {
   const selectors = useSelectors();
   const drafts = useContext(DraftContext);
   const queries = useQueryClient();
-  const [edited, setEdited] = useState<string | null>(null);
+  const [edits, setEdits] = useState<Record<string, unknown>>({});
   const [uncertain, setUncertain] = useState(false);
-  const source = edited ?? root.data?.content ?? "";
+  const applyEdits = (source: string) =>
+    Object.entries(edits).reduce(
+      (content, [key, value]) =>
+        updateDocument(content, ["webui", "bot", key], value),
+      source,
+    );
+  const source = applyEdits(root.data?.content ?? "");
   const document = readDocument(source)?.toJS();
   const agent = selectors.data?.agents.find(
     (agent) => agent.agent_id === document?.defaults?.agent,
@@ -56,11 +62,12 @@ export function BotSetup() {
         throw new Error(
           t("Save or discard your global settings changes first."),
         );
-      // Change only Bot policy in the latest source, preserving unrelated settings and comments.
-      const content = updateDocument(latest.content, ["webui", "bot"], {
-        ...document?.webui?.bot,
-        enabled: true,
-      });
+      // Apply only edited fields to the latest source, retaining concurrent settings and YAML nodes.
+      const content = updateDocument(
+        applyEdits(latest.content),
+        ["webui", "bot", "enabled"],
+        true,
+      );
       const publication = await result(
         client.PUT("/api/configuration/sources/{relative_path}", {
           params: { path: { relative_path: path } },
@@ -103,7 +110,13 @@ export function BotSetup() {
         )}
       />
       {root.data?.content && (
-        <BotFields source={source} onChange={setEdited} setup />
+        <BotFields
+          source={source}
+          onChange={(_, key, value) =>
+            setEdits((current) => ({ ...current, [key]: value }))
+          }
+          setup
+        />
       )}
       <ErrorNotice error={root.error} retry={() => void root.refetch()} />
       <ErrorNotice
