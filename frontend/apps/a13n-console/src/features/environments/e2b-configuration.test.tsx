@@ -34,11 +34,15 @@ const schema = {
 function Editor({
   template = "base",
   desktop = false,
+  initial,
 }: {
   template?: string;
   desktop?: boolean;
+  initial?: Record<string, unknown>;
 }) {
-  const [text, setText] = useState(JSON.stringify({ template, desktop }));
+  const [text, setText] = useState(
+    JSON.stringify(initial ?? { template, desktop }),
+  );
   return (
     <>
       <ProviderConfiguration
@@ -54,6 +58,33 @@ function Editor({
 function configuration() {
   return JSON.parse(screen.getByTestId("config").textContent ?? "{}");
 }
+
+it("keeps Native preinstalled when restoring a previously managed custom template", async () => {
+  const user = userEvent.setup();
+  render(
+    <Editor
+      initial={{
+        template: "team-envd",
+        execution: "envd_http",
+        preparation: "headless",
+        envd_management: "managed",
+      }}
+    />,
+  );
+  await user.click(screen.getByRole("button", { name: "Official default" }));
+  await user.click(
+    screen.getByRole("combobox", { name: "Execution transport" }),
+  );
+  await user.keyboard("{ArrowDown}");
+  await user.click(await screen.findByRole("option", { name: "Native" }));
+  await user.click(screen.getByRole("button", { name: "Custom template" }));
+  expect(configuration()).toMatchObject({
+    template: "team-envd",
+    execution: "native",
+    preparation: "preinstalled",
+    envd_management: "preinstalled",
+  });
+});
 
 it("selects automatic desktop preparation and supports opting into a custom template", async () => {
   const user = userEvent.setup();

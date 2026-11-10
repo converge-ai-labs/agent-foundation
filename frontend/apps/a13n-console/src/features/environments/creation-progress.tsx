@@ -223,7 +223,8 @@ export function CreationProgress({
               )}
             </Button>
           ) : (
-            environment.failure && (
+            environment.failure &&
+            !environment.failure.permanent && (
               <p>
                 {t(
                   "The previous operation is still being reconciled. Retry becomes available once its outcome is confirmed.",

@@ -163,6 +163,7 @@ export function ProviderConfiguration({
       next === "custom"
         ? (customDraft.current ?? value ?? {})
         : applyDockerPreset(value ?? {}, presets[next]),
+      true,
     );
   }
   const properties =
@@ -263,7 +264,7 @@ export function ProviderConfiguration({
       common.push(property);
     else advanced.push(property);
   }
-  const change = (next: Record<string, unknown>) => {
+  const change = (next: Record<string, unknown>, preservePolicy = false) => {
     if (
       next.execution === "native" &&
       variant === "vercel" &&
@@ -274,7 +275,10 @@ export function ProviderConfiguration({
       customPolicyDraft.current = effectivePolicy;
       setVercelCustom(true);
     }
-    if ((executionMode(next) === "native") !== nativeExecution)
+    if (executionMode(next) === "native") {
+      if (variant !== "default")
+        next = { ...next, envd_management: "preinstalled" };
+    } else if (nativeExecution && !preservePolicy)
       next = {
         ...next,
         envd_management:

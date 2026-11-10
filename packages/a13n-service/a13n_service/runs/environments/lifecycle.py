@@ -391,12 +391,11 @@ def record_failure(environment: EnvironmentRow, fault: Fault, at: datetime, *, u
         at=at,
     ).model_dump(mode="json")
     if environment.reclamation is not None and environment.status in {"creating", "starting"}:
-        handle = Handle.model_validate(environment.handle) if environment.handle is not None else None
         if (
             fault.permanent
             and certainty != "unknown"
             and environment.preparation_failed_at is None
-            and (handle is None or handle.envd_version is None)
+            and environment.last_used_at is None
         ):
             environment.preparation_failed_at = at
 

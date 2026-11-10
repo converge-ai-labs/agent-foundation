@@ -55,5 +55,5 @@ async def upgrade(
         "envd_upgrade_failed",
         Category.INVALID,
         certainty=Certainty.KNOWN,
-        description="The managed Envd upgrade did not complete. Inspect the target's protected /var/lib/a13n-envd/update-<version>/output and explicitly retry the lifecycle operation. The previous binary is retained if installation failed; execution commands are never replayed.",
+        description="The managed Envd upgrade did not complete. Inspect the target's protected /var/lib/a13n-envd/update-<version>/output before explicitly retrying. If the native supervisor exited, relaunch it through the outer launcher or replace the instance when relaunch is unsupported. The previous binary is retained if installation failed; execution commands are never replayed.",
     )

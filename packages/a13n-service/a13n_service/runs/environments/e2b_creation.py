@@ -79,12 +79,24 @@ def _automatic(row: EnvironmentRow, handle: Handle | None) -> bool:
     )
 
 
-def _retryable(row: EnvironmentRow) -> bool:
-    return (
+def _retryable(row: EnvironmentRow, handle: Handle | None) -> bool:
+    return bool(
         row.status in {"creating", "starting"}
         and row.failure is not None
+        and row.failure["code"] != "provider_identity_changed"
         and lifecycle.settled(row)
         and not lifecycle.confirmed_loss(row)
+        and handle is not None
+        and (
+            row.status == "creating"
+            or (
+                handle.state is not None
+                and (
+                    _authored_startup(row, handle)
+                    or (handle.recipe.get("envd_management") == "managed" and handle.envd_target_version is not None)
+                )
+            )
+        )
     )
 
 
@@ -104,7 +116,7 @@ async def progress(runtime: Runtime, actor: Principal, workspace_id: str, identi
             stage = "inactive"
         elif row.failure and row.failure["permanent"]:
             stage, ended = "failed", row.failure["at"]
-        elif row.status == "starting":
+        elif row.status == "starting" or _authored_startup(row, handle):
             stage = "starting"
         elif (
             row.provider_identity
@@ -180,7 +192,7 @@ async def progress(runtime: Runtime, actor: Principal, workspace_id: str, identi
             observed_at=await now(session),
             started_at=row.operation_started_at or row.created_at,
             ended_at=ended,
-            retryable=_retryable(row),
+            retryable=_retryable(row, handle),
         )
 
 
@@ -193,19 +205,11 @@ async def retry(
         row = await find(session, scope, identity, lock=True)
         require_match(if_match, row.id, row.version)
         handle = Handle.model_validate(row.handle) if row.handle else None
-        if not _automatic(row, handle) or not _retryable(row):
+        if not _automatic(row, handle) or not _retryable(row, handle):
             raise conflict("environment", identity, "creation_retry_unavailable")
         if await session.scalar(select(lifecycle.in_use(row.id))):
             raise conflict("environment", identity, "in_use")
         assert handle is not None and row.provider_id is not None
-        if row.status == "starting" and (
-            handle.state is None
-            or not (
-                _authored_startup(row, handle)
-                or (handle.recipe.get("envd_management") == "managed" and handle.envd_target_version is not None)
-            )
-        ):
-            raise conflict("environment", identity, "creation_retry_unavailable")
         provider = await resolve_provider(session, actor, EnvironmentProviderRow, scope, row.provider_id)
         if row.provider_identity != provider_identity(runtime.registry, provider):
             raise conflict("environment", identity, "provider_identity_changed")

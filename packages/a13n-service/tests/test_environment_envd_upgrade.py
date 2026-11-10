@@ -201,7 +201,7 @@ async def test_first_use_defers_upgrade_while_another_run_uses_the_instance(mana
     assert target is None and operation is not None and operation.envd_version == "0.9.0"
 
 
-async def failed_upgrade(env, monkeypatch):
+async def failed_upgrade(env, monkeypatch, *, policy="managed"):
     receipt, environment_id = await begin_create(env)
     await lifecycle.advance(env.runtime, environment_id, owner="initial")
     monkeypatch.setattr(envd_policy, "VERSION", "0.9.0")
@@ -210,6 +210,11 @@ async def failed_upgrade(env, monkeypatch):
         from a13n_service.resources.environment_templates.schemas import Reclamation
 
         row.reclamation = Reclamation(idle_delete_seconds=60).model_dump(mode="json")
+        if policy == "preinstalled":
+            handle = Handle.model_validate(row.handle)
+            row.handle = handle.model_copy(
+                update={"recipe": {**handle.recipe, "envd_management": policy}, "envd_version": None}
+            ).model_dump(mode="json")
         await lifecycle.begin(session, row, "starting")
     env.fail_start = True
     operation = await lifecycle.claim(env.runtime, environment_id, owner="failed-upgrade")
@@ -220,13 +225,15 @@ async def failed_upgrade(env, monkeypatch):
     return environment_id, operation, outcome
 
 
-async def test_failed_upgrade_does_not_reclaim_a_previously_ready_instance(managed, monkeypatch):
+@pytest.mark.parametrize("policy", ["managed", "preinstalled"])
+async def test_failed_start_does_not_reclaim_a_previously_ready_instance(managed, monkeypatch, policy):
     from a13n_service.runs.environments.maintenance import maintain_environments
 
     env = managed
-    environment_id, _, _ = await failed_upgrade(env, monkeypatch)
+    environment_id, _, _ = await failed_upgrade(env, monkeypatch, policy=policy)
     async with transaction(env.runtime.storage) as session:
         row = await session.get_one(EnvironmentRow, environment_id)
+        assert row.last_used_at is not None
         assert row.failure["permanent"] and row.preparation_failed_at is None
     await backdate(
         env,
@@ -236,7 +243,7 @@ async def test_failed_upgrade_does_not_reclaim_a_previously_ready_instance(manag
     )
     await maintain_environments(env.runtime, owner="retention")
     status, handle = await saved(env, environment_id)
-    assert status == "starting" and handle.envd_version == "0.8.0"
+    assert status == "starting" and handle.envd_version == ("0.8.0" if policy == "managed" else None)
     async with transaction(env.runtime.storage) as session:
         row = await session.get_one(EnvironmentRow, environment_id)
         assert row.preparation_failed_at is None
@@ -337,3 +344,27 @@ async def test_confirmed_loss_requires_replacement_instead_of_upgrade_retry(mana
     async with transaction(env.runtime.storage) as session:
         row = await session.get_one(EnvironmentRow, environment_id)
         assert lifecycle.confirmed_loss(row) and row.handle == before
+
+
+@pytest.mark.parametrize("blocker", ["provider_identity_changed", "missing_state", "missing_target"])
+async def test_progress_and_retry_agree_when_failed_start_cannot_be_retried(managed, monkeypatch, blocker):
+    env = managed
+    environment_id, _, _ = await failed_upgrade(env, monkeypatch)
+    async with transaction(env.runtime.storage) as session:
+        row = await session.get_one(EnvironmentRow, environment_id, with_for_update=True)
+        if blocker == "provider_identity_changed":
+            row.failure = {**row.failure, "code": blocker}
+        else:
+            handle = Handle.model_validate(row.handle)
+            field = "state" if blocker == "missing_state" else "envd_target_version"
+            row.handle = handle.model_copy(update={field: None}).model_dump(mode="json")
+        before = row.handle
+    url = f"{env.api}/environments/{environment_id}"
+    progress = (await env.client.get(url + "/creation")).json()
+    assert progress["stage"] == "failed" and not progress["retryable"]
+    current = await env.client.get(url)
+    response = await env.client.post(url + "/retry-creation", headers={"If-Match": current.headers["etag"]})
+    assert response.status_code == 409, response.text
+    async with transaction(env.runtime.storage) as session:
+        row = await session.get_one(EnvironmentRow, environment_id)
+        assert row.handle == before

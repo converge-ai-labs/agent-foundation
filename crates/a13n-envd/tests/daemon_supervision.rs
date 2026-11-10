@@ -735,13 +735,14 @@ fn crash_replacement_waits_for_the_command_cleanup_owner() {
     let paused = PausedProcess::new(cleanup_owner);
     kill(fixture.daemon_pids()[0]);
     fixture.wait_for_log("waiting for daemon descendants");
-    // The owner is deliberately unable to process EOF. No replacement may
-    // start, and group termination must not destroy the only payload reaper.
-    assert_eq!(fixture.daemon_pids().len(), 1);
-    assert_eq!(unsafe { libc::kill(payload as i32, 0) }, 0);
-    // A stopped orphan group receives HUP + CONT on Unix. Linux's outer
-    // subreaper prevents orphaning here, so exercise the HUP explicitly too.
-    assert_eq!(unsafe { libc::kill(cleanup_owner, libc::SIGHUP) }, 0);
+    #[cfg(target_os = "linux")]
+    {
+        // Linux's outer subreaper prevents the orphan-group HUP + CONT, so
+        // the owner remains paused and must block replacement until resumed.
+        assert_eq!(fixture.daemon_pids().len(), 1);
+        assert_eq!(unsafe { libc::kill(payload as i32, 0) }, 0);
+        assert_eq!(unsafe { libc::kill(cleanup_owner, libc::SIGHUP) }, 0);
+    }
     drop(paused);
     fixture.descriptor(Some(&first["generation"]));
     assert_exited(payload);

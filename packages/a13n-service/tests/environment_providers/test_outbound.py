@@ -34,11 +34,11 @@ def bootstrap():
         ("e2b", {"template": "team-envd"}),
         ("daytona", {"snapshot": "team-envd"}),
         ("modal", {"image": "team-envd", "startup_command": ["/usr/local/bin/start-envd"]}),
-        ("vercel", {"snapshot": "snap_test"}),
+        ("vercel", {"snapshot": "snap_test", "startup_command": ["/usr/local/bin/start-envd"]}),
         ("sprites", {"desktop": True}),
     ],
 )
-def test_managed_recipes_describe_outbound_execution(provider, recipe):
+def test_recipes_describe_outbound_execution(provider, recipe):
     definition = Registry.of(OSS.providers).get("environment", provider)
     config = definition.validate_environment({**recipe, "execution": "envd_ws"})
     assert definition.execution_environment(config.model_dump(mode="json")).execution == "envd_ws"

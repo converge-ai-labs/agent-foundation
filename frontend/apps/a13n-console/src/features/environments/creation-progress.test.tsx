@@ -206,6 +206,41 @@ it("offers a fenced preparation retry for a failed managed upgrade on an existin
   view.cache.clear();
 });
 
+it.each([false, true])(
+  "shows reconciliation only for an unsettled failure (permanent=%s)",
+  async (permanent) => {
+    http.GET.mockResolvedValue({
+      data: {
+        profile: "headless",
+        stage: permanent ? "failed" : "starting",
+        started_at: environment.created_at,
+        observed_at: environment.created_at,
+        retryable: false,
+      },
+    });
+    const failed = {
+      ...environment,
+      status: "starting",
+      failure: {
+        code: "provider_identity_changed",
+        message: "Replace the instance",
+        permanent,
+      },
+    } as Schema["EnvironmentView"];
+    const view = mount(<CreationProgress environment={failed} />);
+    await screen.findByRole("alert");
+    expect(
+      screen.queryByText(/previous operation is still being reconciled/) !==
+        null,
+    ).toBe(!permanent);
+    expect(
+      screen.queryByRole("button", { name: "Retry preparation" }),
+    ).toBeNull();
+    view.unmount();
+    view.cache.clear();
+  },
+);
+
 it("omits automatic-install notices in preinstalled mode", () => {
   for (const type of ["e2b", "modal", "daytona", "vercel", "sprites"]) {
     expect(
