@@ -8,6 +8,9 @@ import {
 } from "react";
 import {
   Button,
+  Collapsible,
+  CollapsiblePanel,
+  CollapsibleTrigger,
   Dialog,
   DialogClose,
   DialogPopup,
@@ -48,20 +51,19 @@ export function ExecutionDetails({
 
   if (!mobile)
     return (
-      <div className={conversation.execution}>
+      <Collapsible
+        className={conversation.execution}
+        open={expanded}
+        onOpenChange={(next) => {
+          if (next) {
+            pauseFollowing?.();
+            setVisited(true);
+          }
+          setExpanded(next);
+        }}
+      >
         <div className={conversation.executionHeading}>
-          <button
-            type="button"
-            aria-expanded={open}
-            className={conversation.executionToggle}
-            onClick={() => {
-              if (!open) {
-                pauseFollowing?.();
-                setVisited(true);
-              }
-              setExpanded(!open);
-            }}
-          >
+          <CollapsibleTrigger className={conversation.executionToggle}>
             {preview && (
               <span
                 className={conversation.executionPreview}
@@ -76,10 +78,12 @@ export function ExecutionDetails({
               className={conversation.executionCaret}
               aria-hidden="true"
             />
-          </button>
+          </CollapsibleTrigger>
         </div>
-        {visited && children(open)}
-      </div>
+        <CollapsiblePanel keepMounted inert={!open}>
+          {visited && children(open)}
+        </CollapsiblePanel>
+      </Collapsible>
     );
 
   return (

@@ -1343,7 +1343,6 @@ function ExecutionReader({
   return (
     <div
       ref={reader}
-      hidden={!open}
       role="region"
       aria-label={t("Work log")}
       tabIndex={0}

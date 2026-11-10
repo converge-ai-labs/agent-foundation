@@ -1957,9 +1957,6 @@ dl.detailGrid > .detailLongRow dd {
   outline: 2px solid var(--a13n-focus);
   outline-offset: 2px;
 }
-.executionContent[hidden] {
-  display: none;
-}
 .historyActions {
   display: flex;
   justify-content: center;
