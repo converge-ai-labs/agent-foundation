@@ -76,8 +76,16 @@ shutil.copyfile(source, args[args.index('-o') + 1])
     return run, fixtures, destination, home, commands
 
 
-def release(fixtures: Path, version: str = "0.0.6", target: str = "x86_64-unknown-linux-gnu", *, bad: str = "") -> Path:
-    archive = fixtures / f"a13n-envd-{version}-{target}.tar.gz"
+def release(
+    fixtures: Path,
+    version: str = "0.0.6",
+    target: str = "x86_64-unknown-linux-gnu",
+    *,
+    bad: str = "",
+    variant: str = "default",
+) -> Path:
+    suffix = "-vm" if variant == "vm" else ""
+    archive = fixtures / f"a13n-envd-{version}-{target}{suffix}.tar.gz"
     with tarfile.open(archive, "w:gz") as tar:
         names = ["a13n-envd", "LICENSE"]
         if bad == "traversal":
@@ -130,6 +138,24 @@ def test_install_and_replace_without_path_mutation(installer, system, machine, t
         assert not list(destination.glob(".a13n-envd.*"))
     assert not list(home.iterdir())
     assert "release/a13n-envd-v0.0.6/" in (fixtures / "requests").read_text()
+
+
+@pytest.mark.parametrize("use_flag", [True, False])
+def test_vm_variant_selects_separate_asset(installer, use_flag):
+    run, fixtures, destination, _, _ = installer
+    release(fixtures, variant="vm")
+    args = ("--variant", "vm") if use_flag else ()
+    result = run("--version", "0.0.6", *args, A13N_ENVD_VARIANT="default" if use_flag else "vm")
+    assert result.returncode == 0, result.stderr
+    assert (destination / "a13n-envd").read_bytes() == BINARY
+    assert "x86_64-unknown-linux-gnu-vm.tar.gz" in (fixtures / "requests").read_text()
+
+
+@pytest.mark.parametrize("variant,system", [("unknown", "Linux"), ("vm", "Darwin")])
+def test_invalid_variant_fails_before_download(installer, variant, system):
+    run, fixtures, destination, _, _ = installer
+    assert_failed(run("--version", "0.0.6", "--variant", variant, MOCK_OS=system), destination)
+    assert not (fixtures / "requests").exists()
 
 
 def test_default_version_paginates_and_excludes_other_components_and_prereleases(installer):

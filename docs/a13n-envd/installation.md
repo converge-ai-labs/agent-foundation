@@ -27,6 +27,8 @@ The build produces `target/debug/a13n-envd`. Your Provider or Host launches it a
 
 For a published Local Envd installation, match the native release to the installed `a13n-envd-client`, which is versioned independently of Harness and Harness UI. Python RC version `1.2.3rc1` maps to native `1.2.3-rc.1`.
 
+The default build excludes VM backends and runtime assets. On Linux, opt into both VM backends with `BOXLITE_DEPS_STUB=2 BOXLITE_EMBED_RUNTIME=1 cargo build --locked --package a13n-envd --features vm`; this also requires a C compiler and `protoc` 3.12 or newer. Native execution remains available in a VM-enabled build.
+
 ## Connect this computer from Console
 
 After approval, users and service accounts with Run permission in the selected workspace can use this computer within the approved operation limits.
@@ -73,6 +75,8 @@ ENVD_VERSION="$(python -c 'from importlib.metadata import version; import re; pr
 sh install-a13n-envd.sh --version "$ENVD_VERSION" --install-dir "$HOME/.local/bin"
 "$HOME/.local/bin/a13n-envd" --version
 ```
+
+The installer defaults to the native-only archive. Linux users can select the larger VM-enabled archive with `--variant vm` or `A13N_ENVD_VARIANT=vm`. VM archives append `-vm` to the target name, for example `a13n-envd-<version>-x86_64-unknown-linux-gnu-vm.tar.gz`. Missing VM assets fail without falling back. Historical releases such as `0.7.0` retain their original assets; use a release that publishes split builds. To retain VM support when migrating from an unsplit release, use the installer with `--variant vm`; older updaters select the ordinary archive.
 
 ### Windows
 
@@ -130,6 +134,8 @@ a13n-envd update --version 1.2.3 --force
 
 `--force` reinstalls the selected version and cannot be combined with `--check`. The updater replaces the actual executable you invoked, including when reached through a symlink. It leaves PATH and configuration unchanged, uses your current privileges, and leaves service shutdown and restart to you.
 
+The updater preserves the current Linux build flavor: native-only builds select the ordinary archive, and builds with either VM backend select the full `-vm` archive. To switch flavors, stop the daemon and use the standalone installer with `--variant default` or `--variant vm`.
+
 Envd downloads the matching release archive, verifies `SHA256SUMS`, checks the extracted binary's `--version`, then replaces the executable. Download and validation failures preserve the existing binary. If interrupted during replacement, inspect the executable with `--version` before retrying. A forcibly terminated standalone updater can leave a `.a13n-envd-update-*` scratch directory beside the executable; remove that specific directory only after confirming the updater has exited.
 
 Hosts can install another exact version into a separate absolute directory with `--version ... --install-dir ...`, retaining the source installation. `--staging-dir` accepts an existing caller-owned scratch directory for cleanup after an interrupted child process exits. Harness UI uses these options for its version-selected cache. A `.a13n-envd-version` marker pins a managed destination; update it through Harness UI rather than changing the cache entry to another version.
@@ -139,6 +145,8 @@ For binaries without `update` support, use the standalone installer above once t
 ## Run the sandbox image
 
 Use the standard [sandbox image](sandbox.md) for an agent development container with shell commands enabled. Envd runs as root; commands and file operations use the provisioned `1000:1000` account with passwordless sudo. Enable controlled egress explicitly when needed. The image guide covers local builds, stdio and outbound Host connections, persistence, and overrides.
+
+Sandbox images also default to native-only Envd. Choose `vm`, `slim-vm`, or `desktop-vm` for VM support; exact-version tags are `<version>-vm`, `<version>-slim-vm`, and `<version>-desktop-vm`. Development equivalents are `dev-vm`, `dev-slim-vm`, and `dev-desktop-vm`. For local source image builds, pass `--build-arg ENVD_VARIANT=vm`; `SANDBOX_VARIANT` still selects the independent tooling variant. Service automatic acquisition uses ordinary archives and image tags. Existing Service version pins take effect on a later release update.
 
 ## Next step
 

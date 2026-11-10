@@ -38,4 +38,16 @@ def test_linux_ci_builds_real_embedded_vm_backends_on_both_architectures():
     dependencies = next(step for step in job["steps"] if step["name"] == "Install Linux isolation dependency")
     assert "protobuf-compiler" in dependencies["run"]
     tests = next(step for step in job["steps"] if step["name"] == "Run a13n-envd tests")
-    assert "--all-features" in tests["run"]
+    assert '--release --locked --package a13n-envd --features "$FEATURES"' in tests["run"]
+    entries = job["strategy"]["matrix"]["include"]
+    assert len(entries) == 6
+    for target in ("x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"):
+        assert {(row["envd-variant"], row["features"]) for row in entries if row["target"] == target} == {
+            ("default", ""),
+            ("vm", "vm"),
+        }
+    size = next(step for step in job["steps"] if step["name"] == "Measure release binary and archive size")
+    assert "envd_size.py" in size["run"]
+    assert "cargo build" not in size["run"]
+    assert "continue-on-error" not in size
+    assert "target\\debug" not in str(job)
