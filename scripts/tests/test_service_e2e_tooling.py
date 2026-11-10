@@ -145,6 +145,9 @@ def test_user_texts_excludes_runtime_context_without_losing_conversation_order(s
         for content in contents
     ]
     messages.insert(4, {"role": "assistant", "content": "First answer"})
+    for snapshot in ("[]", '[{"status":"running"}]'):
+        text = f"Tool executions requiring attention (status only; results are not consumed): {snapshot}"
+        messages.append({"role": "user", "content": [{"type": "text", "text": text}] if structured else text})
     assert user_texts({"body": {"messages": messages}}) == [contents[0], contents[4]]
 
 
