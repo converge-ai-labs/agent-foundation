@@ -20,6 +20,14 @@ Replacement retains trusted launch arguments, installation state and credential-
 
 The source-built sandbox image uses native supervision for its default network daemon after one-time credential initialization. Its desktop launcher continues to own display and human-access processes, with only the daemon child supervised by Envd. Explicit launch modes, custom commands and stdio retain their selected lifetime owner.
 
+## Optional Health Probe
+
+Trusted startup configuration can enable a separate plaintext HTTP liveness listener with `health.enabled` (default `false`) and `health.bind` (default `127.0.0.1:8080`). `A13N_ENVD_HEALTH_ENABLED` and `A13N_ENVD_HEALTH_BIND` override the corresponding JSON fields. Bind is a numeric IP address and port; enabled-listener bind failure fails daemon startup.
+
+The daemon owns this listener for its lifetime, independently of stdio, HTTP or reverse-WebSocket EIP transport. `GET /healthz` and `GET /ping` return HTTP 200 with `ok\n`; HEAD returns the same status without a body. Other methods on these paths return 405, and other paths return 404. Responses disable caching. The listener serves no EIP, metrics, credentials or Device information and requires no authentication. Operators select an externally reachable bind address explicitly when their deployment's probe needs it.
+
+Success means the local daemon has initialized and its HTTP event loop responds. Host connectivity, Session readiness and command success remain separate observations. An outbound disconnect or reconnect leaves the probe live; daemon exit or replacement closes it. Connection count and request lifetime are finite. The probe never changes startup, upgrade or restart ownership.
+
 ## Device Identity and Generation
 
 `device_id` identifies the daemon installation, not a folder, Environment definition, Session or Run. An operator can provide it explicitly; otherwise envd creates and persists one in its installation state directory. Display name and description are optional metadata, never routing authority. One active reverse connection represents this Device at its Host.

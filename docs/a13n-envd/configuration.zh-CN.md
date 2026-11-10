@@ -127,6 +127,23 @@ Envd 为当前代次创建不可预测的私有子目录，并持有独占运行
 
 用 `--device-id`、JSON `device_id` 或 `A13N_ENVD_DEVICE_ID` 指定稳定设备 ID，或让安装状态目录保留生成的 ID。CLI 元数据选项覆盖 JSON。目录发现通过 JSON 或 `A13N_ENVD_DIRECTORY_DISCOVERY` 设置。Windows 启动路径使用原生格式，EIP 路径使用 `/C:/...` 或 `/UNC/server/share/...`。
 
+## 可选健康探针
+
+部署平台需要时，可以开启独立 HTTP 存活探针。默认关闭；开启后的默认监听地址为 `127.0.0.1:8080`：
+
+```bash
+export A13N_ENVD_HEALTH_ENABLED=true
+export A13N_ENVD_HEALTH_BIND=0.0.0.0:8080
+# 保留已有的传输、凭据和运行时配置。
+a13n-envd daemon
+```
+
+等价 JSON 为 `{"health":{"enabled":true,"bind":"0.0.0.0:8080"}}`，环境变量覆盖 JSON。监听地址接受数字 IPv4 或方括号包围的 IPv6 地址及端口。已开启的探针绑定失败会导致启动失败。
+
+使用 `GET /healthz` 或 `GET /ping`；本地 daemon 正常响应时，两者均返回 HTTP 200 和 `ok`。也支持 HEAD。探针适用于 stdio、HTTP 和 outbound WebSocket，outbound 重连期间仍保持存活。daemon 退出时关闭探针，原生 supervisor 启动替代 daemon 后重新监听。
+
+探针表示本地存活。Device／会话就绪及 Service 连通性仍通过认证 EIP 检查。探针使用无认证明文 HTTP，不暴露执行接口或 Device 详情。请按部署网络选择监听地址和访问范围；Service 不会自动开启它。
+
 ## 系统信息与资源监控
 
 配置与数据解释见 [Device 监控与指标](monitoring.md#system-information-and-resource-monitoring)。

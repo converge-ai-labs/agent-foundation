@@ -127,6 +127,23 @@ The default working directory becomes the Session's initial cwd when `configurat
 
 Choose a stable Device ID with `--device-id`, JSON `device_id` or `A13N_ENVD_DEVICE_ID`, or let the installation state directory retain a generated ID. CLI metadata options override JSON. Directory discovery uses JSON or `A13N_ENVD_DIRECTORY_DISCOVERY`. On Windows, bootstrap paths use native spelling; EIP paths use `/C:/...` or `/UNC/server/share/...`.
 
+## Optional health probe
+
+Enable a separate HTTP liveness probe when your deployment needs one. It is disabled by default; the default bind address when enabled is `127.0.0.1:8080`:
+
+```bash
+export A13N_ENVD_HEALTH_ENABLED=true
+export A13N_ENVD_HEALTH_BIND=0.0.0.0:8080
+# Keep your existing transport, credential and runtime configuration.
+a13n-envd daemon
+```
+
+The equivalent JSON is `{"health":{"enabled":true,"bind":"0.0.0.0:8080"}}`. Environment variables override JSON. Bind accepts a numeric IPv4 or bracketed IPv6 address and port. Failure to bind an enabled probe fails startup.
+
+Use `GET /healthz` or `GET /ping`; both return HTTP 200 and `ok` while the local daemon responds. HEAD is also supported. The probe works with stdio, HTTP and outbound WebSocket, and remains live during outbound reconnection. Daemon exit closes it; native supervision starts it again with the replacement daemon.
+
+This is local liveness. Check authenticated EIP for Device/Session readiness and Service connectivity. The probe is unauthenticated plaintext HTTP and exposes no execution routes or Device details. Choose the bind address and deployment network access accordingly; Service does not enable it automatically.
+
 ## System information and resource monitoring
 
 See [Device monitoring and metrics](monitoring.md#system-information-and-resource-monitoring) for configuration and interpretation.

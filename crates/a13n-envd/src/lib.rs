@@ -21,6 +21,7 @@ mod egress;
 pub mod eip;
 mod execution;
 mod filesystem;
+mod health;
 mod http;
 mod monitoring;
 mod operation;
@@ -269,15 +270,22 @@ async fn serve(config: config::Config) -> Result<(), Box<dyn Error + Send + Sync
         computer::startup::prepare(config.computer_use_permission_timeout).await?;
     }
     let daemon = Arc::new(daemon::Daemon::new(&config)?);
+    let listener = health::bind(&config.health).await?;
     let monitoring = daemon.start_monitoring()?;
-    let result = match &config.transport {
-        config::TransportConfig::Stdio => stdio::serve(daemon, &config).await,
-        config::TransportConfig::Http(http_config) => {
-            http::serve(daemon, &config, http_config).await
+    let carrier = async {
+        match &config.transport {
+            config::TransportConfig::Stdio => stdio::serve(daemon, &config).await,
+            config::TransportConfig::Http(http_config) => {
+                http::serve(daemon, &config, http_config).await
+            }
+            config::TransportConfig::ReverseWebSocket(websocket_config) => {
+                websocket::serve(daemon, &config, websocket_config).await
+            }
         }
-        config::TransportConfig::ReverseWebSocket(websocket_config) => {
-            websocket::serve(daemon, &config, websocket_config).await
-        }
+    };
+    let result = tokio::select! {
+        result = carrier => result,
+        result = health::serve(listener) => result,
     };
     if let Some(monitoring) = monitoring {
         monitoring.shutdown().await;

@@ -64,6 +64,7 @@ impl WorkerConfig {
     fn config(&self) -> io::Result<Config> {
         Ok(Config {
             supervised: false,
+            health: crate::health::Options::default(),
             monitoring: None,
             computer_use: self.computer_use,
             // Permission readiness belongs to daemon startup, not Session workers.
