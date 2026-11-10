@@ -3,13 +3,32 @@ $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName PresentationFramework
 Add-Type -AssemblyName PresentationCore
 Add-Type -AssemblyName WindowsBase
+Add-Type -ReferencedAssemblies @(
+    [Windows.Controls.GroupBox].Assembly.Location,
+    [Windows.Media.Visual].Assembly.Location,
+    [Windows.DependencyObject].Assembly.Location
+) -TypeDefinition @'
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Automation.Peers;
+public sealed class A13nRawOnlyGroup : GroupBox {
+    protected override AutomationPeer OnCreateAutomationPeer() {
+        return new A13nRawOnlyGroupPeer(this);
+    }
+}
+public sealed class A13nRawOnlyGroupPeer : GroupBoxAutomationPeer {
+    public A13nRawOnlyGroupPeer(GroupBox owner) : base(owner) { }
+    protected override bool IsControlElementCore() { return false; }
+    protected override bool IsContentElementCore() { return false; }
+}
+'@
 [xml]$xaml = @'
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Envd accessibility fixture" Width="900" Height="700"
         AutomationProperties.Name="Envd accessibility fixture">
   <ScrollViewer VerticalScrollBarVisibility="Auto" AutomationProperties.Name="Fixture scroll area">
-    <StackPanel Margin="24">
+    <StackPanel x:Name="FixtureLayout" Margin="24">
       <Button x:Name="Apply" Content="Apply changes" AutomationProperties.Name="Apply changes" Height="36"/>
       <TextBox x:Name="Editor" AutomationProperties.Name="Unicode editor" Text="Initial text" Margin="0,8"/>
       <TextBox x:Name="ReadOnly" AutomationProperties.Name="Read-only editor" Text="Read-only text" IsReadOnly="True"/>
@@ -33,6 +52,13 @@ Add-Type -AssemblyName WindowsBase
 '@
 $reader = New-Object System.Xml.XmlNodeReader $xaml
 $window = [Windows.Markup.XamlReader]::Load($reader)
+$rawGroup = New-Object A13nRawOnlyGroup
+[Windows.Automation.AutomationProperties]::SetName($rawGroup, 'Raw-only boundary')
+$scopedChild = New-Object Windows.Controls.Button
+$scopedChild.Content = 'Scoped child'
+[Windows.Automation.AutomationProperties]::SetName($scopedChild, 'Scoped child')
+$rawGroup.Content = $scopedChild
+$window.FindName('FixtureLayout').Children.Insert(0, $rawGroup)
 $editor = $window.FindName('Editor')
 $document = $window.FindName('Document')
 $paragraph = New-Object Windows.Documents.Paragraph

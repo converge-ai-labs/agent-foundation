@@ -277,6 +277,49 @@ impl Native {
             }
         };
         retain_operand_references(params, &mut retain_reference);
+        // Reclaim opaque handles before retaining the dependencies of survivors.
+        // A consumed range/cursor operand is pinned even when its TTL elapsed.
+        for (is_range, cap) in [(true, 256), (false, 64)] {
+            let mut count = self
+                .handles
+                .values()
+                .filter(|entry| {
+                    if is_range {
+                        matches!(entry.value, Handle::Range { .. })
+                    } else {
+                        matches!(entry.value, Handle::Cursor { .. })
+                    }
+                })
+                .count();
+            let mut candidates: Vec<_> = self
+                .handles
+                .iter()
+                .filter(|(id, entry)| {
+                    !dependencies.contains(*id)
+                        && if is_range {
+                            matches!(entry.value, Handle::Range { .. })
+                        } else {
+                            matches!(entry.value, Handle::Cursor { .. })
+                        }
+                })
+                .map(|(id, entry)| (id.clone(), entry.touched))
+                .collect();
+            candidates.sort_unstable_by_key(|(_, touched)| *touched);
+            let pressured = count >= cap;
+            for (id, touched) in candidates {
+                if touched.elapsed() >= Duration::from_secs(120) || pressured && count > cap / 2 {
+                    self.handles.remove(&id);
+                    count -= 1;
+                }
+            }
+        }
+        let mut retain_reference = |reference: &Value| {
+            for key in ["node_handle", "range_handle", "cursor_handle"] {
+                if let Some(id) = reference[key].as_str() {
+                    dependencies.insert(id.to_owned());
+                }
+            }
+        };
         for entry in self
             .handles
             .values()
@@ -317,7 +360,7 @@ impl Native {
         self.identities
             .retain(|_, id| self.handles.contains_key(id));
     }
-    fn put(&mut self, prefix: &str, value: Handle) -> Result<String, EIPError> {
+    fn has_capacity(&self, value: &Handle) -> bool {
         let ranges = self
             .handles
             .values()
@@ -333,11 +376,13 @@ impl Native {
             .values()
             .map(|e| retained_bytes(&e.value))
             .sum();
-        if self.handles.len() >= 4096
-            || bytes.saturating_add(retained_bytes(&value)) > 8 * 1024 * 1024
-            || matches!(&value, Handle::Range { .. }) && ranges >= 256
-            || matches!(&value, Handle::Cursor { .. }) && cursors >= 64
-        {
+        self.handles.len() < 4096
+            && bytes.saturating_add(retained_bytes(value)) <= 8 * 1024 * 1024
+            && (!matches!(value, Handle::Range { .. }) || ranges < 256)
+            && (!matches!(value, Handle::Cursor { .. }) || cursors < 64)
+    }
+    fn put(&mut self, prefix: &str, value: Handle) -> Result<String, EIPError> {
+        if !self.has_capacity(&value) {
             return Err(error(
                 ErrorType::QuotaExceeded,
                 "UIA handle registry is full",
@@ -597,6 +642,74 @@ impl Native {
         result["completeness"] = b.completeness();
         Ok(result)
     }
+    fn require_tree_parent(
+        &self,
+        node: &IUIAutomationElement,
+        parent: &IUIAutomationElement,
+        root: &IUIAutomationElement,
+        walker: &IUIAutomationTreeWalker,
+        b: &Budget,
+    ) -> Result<(), EIPError> {
+        // A supplied raw-only root need not itself belong to the selected
+        // view. Its filtered children have the root's normalized ancestor as
+        // their UIA parent; raw ancestry separately retains the exact scope.
+        let expected = if b
+            .call(|| unsafe { self.automation.CompareElements(parent, root) })?
+            .as_bool()
+        {
+            optional(b.call(|| unsafe { walker.NormalizeElement(root) }))?
+        } else {
+            Some(parent.clone())
+        };
+        let current = optional(b.call(|| unsafe { walker.GetParentElement(node) }))?;
+        let same = match (current, expected) {
+            (Some(current), Some(expected)) => b
+                .call(|| unsafe { self.automation.CompareElements(&current, &expected) })?
+                .as_bool(),
+            (None, None) => true,
+            _ => false,
+        };
+        if same {
+            return Ok(());
+        }
+        Err(error(
+            ErrorType::Conflict,
+            "UIA traversal node changed parent",
+        ))
+    }
+    fn in_tree_scope(
+        &self,
+        node: &IUIAutomationElement,
+        root: &IUIAutomationElement,
+        walker: &IUIAutomationTreeWalker,
+        b: &Budget,
+    ) -> Result<bool, EIPError> {
+        let mut current = Some(node.clone());
+        while let Some(node) = current {
+            if b.call(|| unsafe { self.automation.CompareElements(&node, root) })?
+                .as_bool()
+            {
+                return Ok(true);
+            }
+            current = optional(b.call(|| unsafe { walker.GetParentElement(&node) }))?;
+        }
+        Ok(false)
+    }
+    fn require_tree_scope(
+        &self,
+        node: &IUIAutomationElement,
+        root: &IUIAutomationElement,
+        raw_walker: &IUIAutomationTreeWalker,
+        b: &Budget,
+    ) -> Result<(), EIPError> {
+        if self.in_tree_scope(node, root, raw_walker, b)? {
+            return Ok(());
+        }
+        Err(error(
+            ErrorType::Conflict,
+            "UIA traversal node left the requested subtree",
+        ))
+    }
     fn tree(&mut self, method: &str, p: &Value, b: &Budget) -> Result<Value, EIPError> {
         let root = p["node"].clone();
         let root_node = self.node(&root)?;
@@ -624,9 +737,14 @@ impl Native {
                 _ => return Err(stale()),
             }
         } else {
-            vec![Pending::Node(root_node, 0, None)]
+            vec![Pending::Node(root_node.clone(), 0, None)]
         };
         let walker = self.walker(&view, b)?;
+        let raw_walker = if view == "raw" {
+            walker.clone()
+        } else {
+            self.walker("raw", b)?
+        };
         let mut result = tree_result();
         let mut visited = 0;
         let outcome = (|| {
@@ -644,6 +762,7 @@ impl Native {
                 }
                 match item {
                     Pending::Children(n, d) => {
+                        self.require_tree_scope(&n, &root_node, &raw_walker, b)?;
                         // Keep this stage queued until acquisition succeeds. A
                         // deadline after sampling must not skip the subtree.
                         let child = traversal_optional(
@@ -652,29 +771,62 @@ impl Native {
                         )?;
                         pending.pop();
                         if let Some(child) = child {
-                            pending.push(Pending::Sibling(child.clone(), d, n.clone()));
-                            pending.push(Pending::Node(child, d, Some(n)));
+                            pending.push(Pending::Sibling(child, d, n));
                         }
                     }
                     Pending::Sibling(n, d, parent) => {
-                        // A missing sibling anchor is not an observed end of
-                        // enumeration. Fail this cursor so callers reacquire;
-                        // silently skipping it would hide still-live siblings.
+                        self.require_tree_parent(&n, &parent, &root_node, &walker, b)?;
+                        self.require_tree_scope(&n, &root_node, &raw_walker, b)?;
+                        // Resolve the next sibling before sampling/descending.
+                        // Losing this node later no longer loses its siblings.
+                        // A destroyed future anchor still requires reacquisition.
                         let next =
                             optional(b.call(|| unsafe { walker.GetNextSiblingElement(&n) }))?;
+                        let next = match next {
+                            Some(next)
+                                if self.in_tree_scope(&next, &root_node, &raw_walker, b)? =>
+                            {
+                                Some(next)
+                            }
+                            _ => None,
+                        };
                         pending.pop();
                         if let Some(next) = next {
-                            pending.push(Pending::Sibling(next.clone(), d, parent.clone()));
-                            pending.push(Pending::Node(next, d, Some(parent)));
+                            // Filtered siblings of an excluded root can extend
+                            // outside its raw subtree. That is the scoped end,
+                            // not a changed retained anchor or a wider root.
+                            pending.push(Pending::Sibling(next, d, parent.clone()));
                         }
+                        pending.push(Pending::Node(n, d, Some(parent)));
                     }
                     Pending::Node(n, d, parent) => {
+                        if let Some(parent) = &parent {
+                            let position = self
+                                .require_tree_parent(&n, parent, &root_node, &walker, b)
+                                .and_then(|()| {
+                                    self.require_tree_scope(&n, &root_node, &raw_walker, b)
+                                });
+                            if traversal_optional(position, b)?.is_none() {
+                                pending.pop();
+                                visited += 1;
+                                continue;
+                            }
+                        }
                         let Some(mut sample) = traversal_optional(self.sample_fields(&n, b), b)?
                         else {
                             pending.pop();
                             visited += 1;
                             continue;
                         };
+                        // Optional fields can record budget failures while
+                        // returning a sample. Do not consume an unresolved find
+                        // predicate or publish that interrupted sample.
+                        if Instant::now() >= b.deadline {
+                            b.mark("deadline");
+                        }
+                        if matches!(b.reason.get(), Some("deadline" | "call_limit")) {
+                            break;
+                        }
                         if matches_query(&sample, &query) {
                             if parent.is_some() {
                                 sample["parent"] = sample["reference"].clone();
@@ -716,17 +868,26 @@ impl Native {
             Ok(())
         })();
         if let Err(e) = &outcome
-            && element_unavailable(e)
+            && (element_unavailable(e) || e.data.error_type == ErrorType::Conflict)
         {
             if let Some(id) = p["cursor"]["cursor_handle"].as_str() {
                 self.handles.remove(id);
             }
             return Err(error(
-                ErrorType::InvalidParams,
-                "UIA traversal anchor was destroyed; reacquire the root and restart traversal",
+                ErrorType::Conflict,
+                "UIA traversal anchor changed or was destroyed; reacquire the root and restart traversal",
             ));
         }
         partial(outcome, b)?;
+        if !pending.is_empty()
+            && visited == 0
+            && matches!(b.reason.get(), Some("deadline" | "call_limit"))
+        {
+            return Err(error(
+                ErrorType::Timeout,
+                "UIA traversal made no progress within the native budget; increase the read limits",
+            ));
+        }
         result["completeness"] = b.completeness();
         let mut new_cursor = None;
         if !pending.is_empty() {

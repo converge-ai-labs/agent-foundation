@@ -175,6 +175,15 @@ impl Native {
         })();
         partial(outcome, b)?;
         for range in ranges {
+            // Capacity is a collection cut, not a failed response after an
+            // inaccessible prefix of native ranges has already been retained.
+            if !self.has_capacity(&Handle::Range {
+                owner: string(owner, "node_handle")?.into(),
+                value: range.clone(),
+            }) {
+                b.mark("item_limit");
+                break;
+            }
             let reference = self.range_reference(owner, range)?;
             result["ranges"]
                 .as_array_mut()

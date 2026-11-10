@@ -219,7 +219,111 @@ fn native_cursor_dependencies_survive_pruning_and_epoch_changes_fail() {
     assert!(native.handles.contains_key(&operand));
     assert!(native.handles.contains_key(&root_id));
     assert!(native.handles.contains_key(&cursor));
-    assert!(native.put("an", Handle::Node(element)).is_ok());
+    assert!(native.put("an", Handle::Node(element.clone())).is_ok());
+    // Cursor pressure is reclaimed between requests, preserving the executing
+    // cursor and its root even after both have passed their ordinary TTL.
+    for _ in 0..160 {
+        native.prune(&json!({"cursor":{"cursor_handle":cursor,"root":root}}));
+        native
+            .put(
+                "ac",
+                Handle::Cursor {
+                    root: root.clone(),
+                    query: Value::Null,
+                    view: "raw".into(),
+                    depth: 2,
+                    pending: vec![],
+                },
+            )
+            .unwrap();
+    }
+    assert!(native.handles.contains_key(&cursor));
+    assert!(native.handles.contains_key(&root_id));
+    let scope_budget = Budget::new(&json!({})).unwrap();
+    let raw_walker = unsafe { native.automation.RawViewWalker().unwrap() };
+    let child = unsafe { walker.GetFirstChildElement(&element).unwrap() };
+    native
+        .require_tree_parent(&child, &element, &element, &walker, &scope_budget)
+        .unwrap();
+    native
+        .require_tree_scope(&child, &element, &raw_walker, &scope_budget)
+        .unwrap();
+    assert_eq!(
+        native
+            .require_tree_parent(&child, &child, &element, &walker, &scope_budget)
+            .unwrap_err()
+            .data
+            .error_type,
+        ErrorType::Conflict
+    );
+    assert_eq!(
+        native
+            .require_tree_scope(&element, &child, &raw_walker, &scope_budget)
+            .unwrap_err()
+            .data
+            .error_type,
+        ErrorType::Conflict
+    );
+    // A retained continuation with an obsolete parent must fail before it
+    // follows a sibling or publishes a pending node under the saved parent.
+    for item in [
+        Pending::Sibling(child.clone(), 1, child.clone()),
+        Pending::Node(child.clone(), 1, Some(child.clone())),
+    ] {
+        let obsolete = native
+            .put(
+                "ac",
+                Handle::Cursor {
+                    root: root.clone(),
+                    query: Value::Null,
+                    view: "control".into(),
+                    depth: 2,
+                    pending: vec![item],
+                },
+            )
+            .unwrap();
+        let params = json!({"node":root,"view":"control",
+            "cursor":{"root":root,"cursor_handle":obsolete}});
+        let b = Budget::new(&params).unwrap();
+        assert_eq!(
+            native
+                .tree("computer.a11y_inspect", &params, &b)
+                .unwrap_err()
+                .data
+                .error_type,
+            ErrorType::Conflict
+        );
+        assert!(!native.handles.contains_key(&obsolete));
+    }
+    let retry = native
+        .put(
+            "ac",
+            Handle::Cursor {
+                root: root.clone(),
+                query: Value::Null,
+                view: "control".into(),
+                depth: 2,
+                pending: vec![Pending::Node(child, 1, Some(element.clone()))],
+            },
+        )
+        .unwrap();
+    let params = json!({"node":root,"view":"control",
+        "cursor":{"root":root,"cursor_handle":retry},"limits":{"max_native_calls":1}});
+    let b = Budget::new(&params).unwrap();
+    assert_eq!(
+        native
+            .tree("computer.a11y_inspect", &params, &b)
+            .unwrap_err()
+            .data
+            .error_type,
+        ErrorType::Timeout
+    );
+    assert!(native.handles.contains_key(&retry));
+    // Leave only the original cursor so the expiry assertion below continues
+    // to test that an expired cursor releases its otherwise unreferenced root.
+    native
+        .handles
+        .retain(|id, e| id == &cursor || !matches!(e.value, Handle::Cursor { .. }));
     let mut wrong_epoch = root.clone();
     wrong_epoch["backend_epoch"] = json!("aep_another");
     assert!(native.node(&wrong_epoch).is_err());

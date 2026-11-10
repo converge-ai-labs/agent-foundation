@@ -133,6 +133,26 @@ async def test_real_windows_accessibility_session_and_harness():
             assert all(node.image_projection is None for node in nodes)
             assert all(node.parent is not None for node in nodes[1:])
 
+            # References are view-independent: a raw-only container remains
+            # the exact scope boundary when traversed through a filtered view.
+            for view in ("control", "content"):
+                scoped = []
+                scoped_cursor = None
+                for _ in range(32):
+                    page = await a11y.inspect(
+                        named["Raw-only boundary"].reference, view=view, cursor=scoped_cursor, limits=limits
+                    )
+                    scoped.extend(page.nodes)
+                    scoped_cursor = page.completeness.continuation
+                    if scoped_cursor is None:
+                        assert page.completeness.complete
+                        break
+                else:
+                    pytest.fail(f"Scoped UIA {view} traversal did not finish")
+                scoped_names = {node.name for node in scoped if node.name}
+                assert "Scoped child" in scoped_names
+                assert scoped_names <= {"Raw-only boundary", "Scoped child"}
+
             async def execute(name, request):
                 result = await a11y.execute(named[name].reference, UIARequest(request=request), readback=True)
                 assert result.effect == "executed" and result.native_status == "returned_success", result
@@ -187,3 +207,12 @@ async def test_real_windows_accessibility_session_and_harness():
             with pytest.raises(EnvironmentError):
                 await a11y.inspect(root, limits=tiny)
             assert (await a11y.read(owner, AccessibilityTextRead(), limits=limits)).text.text
+            # Derivation must outlive the registry's per-kind capacity. Each
+            # request pins its source while old, unused ranges are reclaimed.
+            source = document
+            for _ in range(300):
+                derived = await a11y.range(owner, AccessibilityRangeFind(text="世界😀"), source=source, limits=limits)
+                assert len(derived.ranges) == 1
+                source = derived.ranges[0]
+            text = await a11y.range_read(source, AccessibilityRangeRead(kind="text"), limits=limits)
+            assert text.text.text == "世界😀"
