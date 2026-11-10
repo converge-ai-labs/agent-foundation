@@ -110,10 +110,11 @@ async def test_owned_start_rejection_only_preserves_uncertain_effects(tmp_path, 
             assert saved.shell.process.start_operation_id == "op-start"
             assert starts == ["touch must-not-replay"]
             assert not (tmp_path / "must-not-replay").exists()
-            if dispatch_stage == "pre_dispatch":
+            if dispatch_stage == "pre_dispatch" and code != "environment_unknown_outcome":
                 assert record.terminal
                 assert results[0]["ok"] is False
                 assert results[0]["error"]["code"] == code
+                assert results[0]["error"]["outcome_known"] is True
                 assert results[0]["error"]["details"]["dispatch_stage"] == "pre_dispatch"
                 assert results[0].get("type") != "tool_execution_receipt"
             else:

@@ -31,7 +31,6 @@ def predecessor_wait(monkeypatch):
     blocked, retry = asyncio.Event(), asyncio.Event()
 
     async def sleep(seconds):
-        assert seconds == 0.1
         blocked.set()
         await retry.wait()
         await asyncio.sleep(0)

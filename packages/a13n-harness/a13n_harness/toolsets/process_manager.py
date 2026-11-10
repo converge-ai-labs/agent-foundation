@@ -352,11 +352,10 @@ class _ProcessController:
         try:
             entry = admission.result()
         except EnvironmentError as exc:
-            if exc.details.get("dispatch_stage") != "pre_dispatch" and exc.code in {
-                "environment_unavailable",
-                "environment_timeout",
-                "environment_unknown_outcome",
-            }:
+            if exc.code == "environment_unknown_outcome" or (
+                exc.details.get("dispatch_stage") != "pre_dispatch"
+                and exc.code in {"environment_unavailable", "environment_timeout"}
+            ):
                 runtime.suspend_shell(execution_id)
             raise
         return await self._supervise_owned(
