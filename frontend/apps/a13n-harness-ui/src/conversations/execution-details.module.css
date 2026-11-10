@@ -1,3 +1,16 @@
+.readerPanel {
+  position: relative;
+  --reader-fade-inset: 0;
+  --reader-fade-top: 22px;
+  --reader-fade-bottom: 26px;
+}
+.readerPanel > [data-edge] {
+  display: none;
+}
+.readerPanel:has(> [data-more-above]) > [data-edge="top"],
+.readerPanel:has(> [data-more-below]) > [data-edge="bottom"] {
+  display: block;
+}
 .preview {
   display: grid;
   /* Let the excerpt shrink instead of sizing the track to the full tool input. */

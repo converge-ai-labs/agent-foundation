@@ -1,7 +1,7 @@
 /* Compact log controls keep their geometry on hover, press and expansion.
    Result previews align with their disclosure labels. */
 .tool {
-  --tool-row: 28px;
+  --tool-row: var(--execution-row-height, 28px);
   /* One indentation step, shared by reasoning and tool details. */
   --tool-inset: 8px;
   min-width: 0;
@@ -21,7 +21,7 @@
   max-width: 100%;
   height: auto;
   margin: 0;
-  padding: 4px 8px;
+  padding: var(--execution-row-padding, 4px) 8px;
   padding-inline-start: 0;
   border: 0;
   border-radius: 8px;
@@ -61,10 +61,6 @@
 }
 .tool > * > [data-slot="disclosure-surface"] > :not(button) {
   padding-left: var(--tool-inset);
-}
-/* Avoid animating a changing reader height while it restores a scroll anchor. */
-.tool [data-slot="collapsible-panel"] {
-  transition: none;
 }
 .tool [data-slot="collapsible-panel"] > div {
   padding: 0;

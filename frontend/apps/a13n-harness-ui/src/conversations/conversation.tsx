@@ -1,3 +1,4 @@
+import { ReaderFades } from "./reader-fades";
 import { useTranslation } from "../i18n";
 import {
   type ComponentProps,
@@ -698,16 +699,7 @@ function ConversationContent({
           </div>
         )}
         <div className={styles.readerFrame}>
-          <div
-            className={styles.readerFade}
-            data-edge="top"
-            aria-hidden="true"
-          />
-          <div
-            className={styles.readerFade}
-            data-edge="bottom"
-            aria-hidden="true"
-          />
+          <ReaderFades />
           <InputNavigation
             threadId={threadId}
             continuation={continuation}

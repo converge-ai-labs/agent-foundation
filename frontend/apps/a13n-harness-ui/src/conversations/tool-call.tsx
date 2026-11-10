@@ -767,7 +767,6 @@ function CollaborationDetails({ tool }: { tool: ToolView }) {
 export const ToolCall = memo(function ToolCall({ tool }: { tool: ToolView }) {
   const { t } = useTranslation();
   const info = describeTool(tool);
-  const [expanded, setExpanded] = useState(false);
   if (tool.name === "ask_user_question")
     return <QuestionInteraction tool={tool} />;
   return (
@@ -777,8 +776,6 @@ export const ToolCall = memo(function ToolCall({ tool }: { tool: ToolView }) {
       data-state={toolState(info.phase)}
     >
       <DisclosureSection
-        open={expanded}
-        onOpenChange={setExpanded}
         title={
           <span className={styles.title}>
             <strong data-running-label={info.running || undefined}>
@@ -795,7 +792,7 @@ export const ToolCall = memo(function ToolCall({ tool }: { tool: ToolView }) {
           ) : undefined
         }
       >
-        {expanded && <ToolDetails tool={tool} />}
+        <ToolDetails tool={tool} />
       </DisclosureSection>
       <ToolActions tool={tool} />
     </section>
@@ -806,7 +803,6 @@ export const ToolCall = memo(function ToolCall({ tool }: { tool: ToolView }) {
 export function QuestionInteraction({ tool }: { tool: ToolView }) {
   const { t } = useTranslation();
   const info = describeTool(tool);
-  const [expanded, setExpanded] = useState(false);
   const receipt = questionReceipt(tool);
   const questions =
     receipt?.questions ??
@@ -873,40 +869,34 @@ export function QuestionInteraction({ tool }: { tool: ToolView }) {
           </div>
         ))}
       </dl>
-      <DisclosureSection
-        title={t("Questions & details")}
-        open={expanded}
-        onOpenChange={setExpanded}
-      >
-        {expanded && (
-          <div className={styles.details} data-tool-details>
-            {questions.map((question, index) => (
-              <section key={index} className={styles.originalQuestion}>
-                {typeof question.header === "string" && (
-                  <h4>{question.header}</h4>
-                )}
-                {typeof question.question === "string" && (
-                  <p>{question.question}</p>
-                )}
-                {Array.isArray(question.options) && (
-                  <ul>
-                    {question.options.filter(record).map((option, i) => (
-                      <li key={i}>
-                        {typeof option.label === "string" && (
-                          <strong>{option.label}</strong>
-                        )}
-                        {typeof option.description === "string" && (
-                          <span>{option.description}</span>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </section>
-            ))}
-            <ToolDetails tool={tool} />
-          </div>
-        )}
+      <DisclosureSection title={t("Questions & details")}>
+        <div className={styles.details} data-tool-details>
+          {questions.map((question, index) => (
+            <section key={index} className={styles.originalQuestion}>
+              {typeof question.header === "string" && (
+                <h4>{question.header}</h4>
+              )}
+              {typeof question.question === "string" && (
+                <p>{question.question}</p>
+              )}
+              {Array.isArray(question.options) && (
+                <ul>
+                  {question.options.filter(record).map((option, i) => (
+                    <li key={i}>
+                      {typeof option.label === "string" && (
+                        <strong>{option.label}</strong>
+                      )}
+                      {typeof option.description === "string" && (
+                        <span>{option.description}</span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          ))}
+          <ToolDetails tool={tool} />
+        </div>
       </DisclosureSection>
     </section>
   );
@@ -919,7 +909,6 @@ export const ToolActivity = memo(function ToolActivity({
   tools: ToolView[];
 }) {
   const { t } = useTranslation();
-  const [expanded, setExpanded] = useState(false);
   const kind = activityKind(tools[0]);
   if (!kind)
     return (
@@ -944,8 +933,6 @@ export const ToolActivity = memo(function ToolActivity({
       }
     >
       <DisclosureSection
-        open={expanded}
-        onOpenChange={setExpanded}
         title={
           <span className={styles.title}>
             <strong data-running-label={info.running || undefined}>
@@ -962,18 +949,16 @@ export const ToolActivity = memo(function ToolActivity({
           ) : undefined
         }
       >
-        {expanded && (
-          <div className={styles.operations}>
-            {tools.length === 1 ? (
-              <>
-                <ToolDetails tool={tools[0]} />
-                <ToolActions tool={tools[0]} />
-              </>
-            ) : (
-              tools.map((tool) => <ToolOperation key={tool.id} tool={tool} />)
-            )}
-          </div>
-        )}
+        <div className={styles.operations}>
+          {tools.length === 1 ? (
+            <>
+              <ToolDetails tool={tools[0]} />
+              <ToolActions tool={tools[0]} />
+            </>
+          ) : (
+            tools.map((tool) => <ToolOperation key={tool.id} tool={tool} />)
+          )}
+        </div>
       </DisclosureSection>
     </section>
   );

@@ -1,3 +1,4 @@
+import { ReaderFades } from "./reader-fades";
 import { useTranslation } from "../i18n";
 import {
   createContext,
@@ -80,8 +81,13 @@ export function ExecutionDetails({
             />
           </CollapsibleTrigger>
         </div>
-        <CollapsiblePanel keepMounted inert={!open}>
+        <CollapsiblePanel
+          className={styles.readerPanel}
+          keepMounted
+          inert={!open}
+        >
           {visited && children(open)}
+          <ReaderFades />
         </CollapsiblePanel>
       </Collapsible>
     );
