@@ -22627,6 +22627,51 @@
         "title": "ServiceAccountUpdate",
         "type": "object"
       },
+      "SessionApplicationSummary": {
+        "description": "All matching binding versions, counted once each independently of page size and cursor.",
+        "properties": {
+          "applied": {
+            "minimum": 0.0,
+            "title": "Applied",
+            "type": "integer"
+          },
+          "on_create": {
+            "minimum": 0.0,
+            "title": "On Create",
+            "type": "integer"
+          },
+          "on_next_use": {
+            "minimum": 0.0,
+            "title": "On Next Use",
+            "type": "integer"
+          },
+          "pending": {
+            "minimum": 0.0,
+            "title": "Pending",
+            "type": "integer"
+          },
+          "retry": {
+            "minimum": 0.0,
+            "title": "Retry",
+            "type": "integer"
+          },
+          "unknown": {
+            "minimum": 0.0,
+            "title": "Unknown",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "applied",
+          "pending",
+          "retry",
+          "on_next_use",
+          "on_create",
+          "unknown"
+        ],
+        "title": "SessionApplicationSummary",
+        "type": "object"
+      },
       "SessionBindingUpdate": {
         "additionalProperties": false,
         "properties": {
@@ -22988,11 +23033,15 @@
               }
             ],
             "title": "Next Cursor"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/SessionApplicationSummary"
           }
         },
         "required": [
           "items",
-          "next_cursor"
+          "next_cursor",
+          "summary"
         ],
         "title": "SessionCredentialPage",
         "type": "object"

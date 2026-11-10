@@ -95,6 +95,19 @@ const json = (value: unknown, status = 200) =>
   });
 const page = (items: unknown[], next_cursor: string | null = null) =>
   json({ items, next_cursor });
+const idleSummary = {
+  applied: 0,
+  pending: 0,
+  retry: 0,
+  on_next_use: 1,
+  on_create: 0,
+  unknown: 0,
+};
+const sessionPage = (
+  items: unknown[],
+  next_cursor: string | null = null,
+  summary = idleSummary,
+) => json({ items, next_cursor, summary });
 let cache: QueryClient;
 function mount(children: ReactNode, path = "/") {
   return render(
@@ -355,7 +368,7 @@ it("shows saved revocation separately from idle removal and retries only through
   const user = userEvent.setup();
   fetcher.mockImplementation(async (request) =>
     new URL(request.url).pathname.endsWith("/sessions")
-      ? page([{ ...reference, credential_state: "revoked" }])
+      ? sessionPage([{ ...reference, credential_state: "revoked" }])
       : json({ ...credential, state: "revoked", credential_version: 2 }),
   );
   detail();
@@ -377,7 +390,7 @@ it("keeps metadata and Session status readable without mutation authority", asyn
   context.write = false;
   fetcher.mockImplementation(async (request) =>
     new URL(request.url).pathname.endsWith("/sessions")
-      ? page([reference])
+      ? sessionPage([reference])
       : json(credential),
   );
   detail();
@@ -398,20 +411,38 @@ it("pages Session evidence without treating an old applied version as removal", 
   const user = userEvent.setup();
   fetcher.mockImplementation(async (request) =>
     new URL(request.url).searchParams.has("cursor")
-      ? page([
-          {
-            ...reference,
-            credential_state: "revoked",
-            status: "applied",
-            applied_credential_version: 2,
-          },
-        ])
-      : page([reference], "page-two"),
+      ? sessionPage(
+          [
+            {
+              ...reference,
+              credential_state: "revoked",
+              status: "applied",
+              applied_credential_version: 2,
+            },
+          ],
+          null,
+          { ...idleSummary, applied: 1 },
+        )
+      : sessionPage([reference], "page-two", { ...idleSummary, applied: 1 }),
   );
   mount(<CredentialSessions target={{ credentialId: credential.id }} />);
   await screen.findByText("On next use");
+  const summary = () =>
+    screen.getByRole("region", { name: "All Session bindings" });
+  expect(
+    within(summary()).getByText("Current version confirmed").parentElement
+      ?.textContent,
+  ).toBe("Current version confirmed1");
+  expect(
+    within(summary()).getByText("Waiting for next use").parentElement
+      ?.textContent,
+  ).toBe("Waiting for next use1");
   await user.click(screen.getByRole("button", { name: "Next" }));
   await screen.findByText("Removal confirmed");
+  expect(
+    within(summary()).getByText("Waiting for next use").parentElement
+      ?.textContent,
+  ).toBe("Waiting for next use1");
   expect(new URL(requests("GET").at(-1)!.url).searchParams.get("cursor")).toBe(
     "page-two",
   );
@@ -512,7 +543,7 @@ it("preserves a creation draft when a background refresh replaces the empty stat
 
 it("reads environment application evidence only after opening its credential section", async () => {
   const user = userEvent.setup();
-  fetcher.mockImplementation(async () => page([reference]));
+  fetcher.mockImplementation(async () => sessionPage([reference]));
   mount(<EnvironmentCredentials environmentId="env_test" />);
   expect(requests("GET")).toHaveLength(0);
   await user.click(screen.getByRole("button", { name: "Credentials" }));
@@ -525,4 +556,36 @@ it("reads environment application evidence only after opening its credential sec
   expect(requests("POST")).toHaveLength(0);
   await user.click(screen.getByRole("button", { name: "Credentials" }));
   await waitFor(() => expect(screen.queryByText("On next use")).toBeNull());
+});
+
+it("shows zero counts for an empty collection and hides them when refresh fails", async () => {
+  const user = userEvent.setup();
+  fetcher.mockImplementation(async () =>
+    sessionPage([], null, { ...idleSummary, on_next_use: 0 }),
+  );
+  mount(<CredentialSessions target={{ credentialId: credential.id }} />);
+  await screen.findByText("No Session references");
+  const summary = screen.getByRole("region", { name: "All Session bindings" });
+  expect(
+    within(summary)
+      .getAllByRole("definition")
+      .map((item) => item.textContent),
+  ).toEqual(["0", "0", "0", "0", "0", "0"]);
+  fetcher.mockImplementation(async () =>
+    json(
+      {
+        error: {
+          code: "internal_error",
+          message: "Application status unavailable",
+        },
+      },
+      503,
+    ),
+  );
+  await user.click(screen.getByRole("button", { name: "Refresh" }));
+  await screen.findByText("Application status unavailable");
+  expect(
+    screen.queryByRole("region", { name: "All Session bindings" }),
+  ).toBeNull();
+  expect(screen.queryByText("No Session references")).toBeNull();
 });

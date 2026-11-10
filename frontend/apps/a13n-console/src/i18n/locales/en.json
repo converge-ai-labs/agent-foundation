@@ -4298,5 +4298,13 @@
   "Review the current Session configuration": "Review the current Session configuration",
   "The Thread changed or the save result is uncertain. Load the current configuration before saving again. Your draft will be kept.": "The Thread changed or the save result is uncertain. Load the current configuration before saving again. Your draft will be kept.",
   "Your draft is unchanged. Saving replaces the current configuration shown below.": "Your draft is unchanged. Saving replaces the current configuration shown below.",
-  "Save Session configuration": "Save Session configuration"
+  "Save Session configuration": "Save Session configuration",
+  "All Session bindings": "All Session bindings",
+  "Current version confirmed": "Current version confirmed",
+  "Awaiting active synchronization": "Awaiting active synchronization",
+  "Awaiting retry": "Awaiting retry",
+  "Waiting for next use": "Waiting for next use",
+  "Awaiting Session creation": "Awaiting Session creation",
+  "Unconfirmed Sessions": "Unconfirmed Sessions",
+  "Counts cover all pages. Each binding version is counted once; it is confirmed only when every selected credential is applied.": "Counts cover all pages. Each binding version is counted once; it is confirmed only when every selected credential is applied."
 }

@@ -1,4 +1,5 @@
 {
+  "All matching binding versions, counted once each independently of page size and cursor.": "统计全部匹配的绑定版本，每个版本只计一次，不受分页大小和游标影响。",
   "Create Egress Credential": "创建出站凭据",
   "List Egress Credentials": "列出出站凭据",
   "Get Egress Credential": "获取出站凭据",

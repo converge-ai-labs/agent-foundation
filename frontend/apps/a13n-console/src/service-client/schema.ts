@@ -13132,6 +13132,24 @@ export interface components {
       /** Status */
       status?: ("active" | "disabled") | null;
     };
+    /**
+     * SessionApplicationSummary
+     * @description All matching binding versions, counted once each independently of page size and cursor.
+     */
+    SessionApplicationSummary: {
+      /** Applied */
+      applied: number;
+      /** On Create */
+      on_create: number;
+      /** On Next Use */
+      on_next_use: number;
+      /** Pending */
+      pending: number;
+      /** Retry */
+      retry: number;
+      /** Unknown */
+      unknown: number;
+    };
     /** SessionBindingUpdate */
     SessionBindingUpdate: {
       configuration: components["schemas"]["SessionConfiguration"];
@@ -13228,6 +13246,7 @@ export interface components {
       items: components["schemas"]["SessionCredential"][];
       /** Next Cursor */
       next_cursor: string | null;
+      summary: components["schemas"]["SessionApplicationSummary"];
     };
     SessionIsolation:
       | components["schemas"]["NativeIsolation"]

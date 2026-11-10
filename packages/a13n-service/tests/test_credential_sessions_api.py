@@ -9,15 +9,19 @@ from a13n_service.infra.db import transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.resources.egress_credentials.notifications import CHANNEL
 from a13n_service.resources.egress_credentials.service import request_sync
+from a13n_service.runs.claim import claim
 from a13n_service.runs.environments.egress.queries import credential_sessions
+from a13n_service.runs.environments.egress.tables import SessionCredentialRow
 from a13n_service.runs.environments.lifecycle import LOST, Fault, advance, begin, record_failure
-from a13n_service.runs.environments.tables import EnvironmentRow
+from a13n_service.runs.environments.tables import EnvironmentRow, ThreadSessionBindingRow
+from a13n_service.runs.schemas import EnvironmentMount
 from a13n_service.runs.tables import AttemptRow
 from a13n_service.tenancy.authorize import BUILT_IN_ROLES, Grant, Principal
+from sqlalchemy import select
 
 from .environments_support import start
+from .test_egress_sessions import Device, rotate
 from .test_egress_sessions import prepared as prepared
-from .test_egress_sessions import rotate
 from .test_session_credentials import selection
 
 pytestmark = pytest.mark.anyio
@@ -101,6 +105,11 @@ async def test_composite_pages_bind_cursor_to_target_and_validate_types(prepared
     second = await page(p, limit=1, cursor=first["next_cursor"])
     assert len(second["items"]) == 1 and second["next_cursor"] is None
     assert first["items"][0]["thread_id"] != second["items"][0]["thread_id"]
+    assert (
+        first["summary"]
+        == second["summary"]
+        == {"applied": 0, "pending": 0, "retry": 0, "on_next_use": 0, "on_create": 2, "unknown": 0}
+    )
     other = await p.service.client.get(
         f"{p.service.api}/environments/{p.mount.environment_id}/credential-sessions",
         params={"cursor": first["next_cursor"]},
@@ -118,6 +127,137 @@ async def test_composite_pages_bind_cursor_to_target_and_validate_types(prepared
     missing = await p.service.client.get(f"{p.service.api}/egress-credentials/ecred_missing/sessions")
     assert missing.status_code == 404
     assert p.device.opens == p.device.attaches == 0
+
+
+async def test_summary_counts_bindings_once_and_requires_every_reference_to_be_applied(prepared):
+    p = prepared
+    config = selection(p.credential["id"])
+    config["egress"]["secrets"].append({**config["egress"]["secrets"][0], "env": "SECOND_TOKEN"})
+    accepted = await start(
+        p.service,
+        options={
+            "environment": {
+                "mode": "fresh",
+                "template_id": p.service.template["id"],
+                "session_configuration": config,
+            }
+        },
+    )
+    mount = EnvironmentMount.model_validate(accepted["run"]["environment_mounts"][0])
+    (lease,) = await claim(p.service.runtime, worker_id="credential-worker", worker_build="test", limit=1)
+    borrower = await p.service.runtime.environment_contexts.get(lease, mount)
+    device = Device()
+    async with (
+        p.borrower.borrow(p.device, **p.options),
+        borrower.borrow(device, **{**p.options, "target": mount.environment_id}),
+    ):
+        # Two variables in one native Session, plus the original Session: two, not three.
+        result = await page(p, limit=1)
+        assert result["summary"]["applied"] == 2 and sum(result["summary"].values()) == 2
+        async with transaction(p.service.runtime.storage) as db:
+            row = await db.scalar(
+                select(SessionCredentialRow).where(
+                    SessionCredentialRow.thread_id == lease.thread_id, SessionCredentialRow.env == "SECOND_TOKEN"
+                )
+            )
+            assert row is not None
+            row.applied_credential_version = row.applied_session_id = row.applied_device_generation = row.applied_at = (
+                None
+            )
+        result = await page(p)
+        assert len(result["items"]) == 3
+        assert result["summary"] == {
+            "applied": 1,
+            "pending": 1,
+            "retry": 0,
+            "on_next_use": 0,
+            "on_create": 0,
+            "unknown": 0,
+        }
+        # A cursor past the final item still returns whole-collection counts, with an empty detail page.
+        last = max(
+            result["items"],
+            key=lambda r: (r["thread_id"], r["environment_id"], r["binding_name"], r["session_version"], r["env"]),
+        )
+        owner = cursors.query_owner(p.service.tenant.workspace_id, p.credential["id"], None)
+        cursor = cursors.encode(
+            "session_credentials",
+            owner,
+            *(last[k] for k in ("thread_id", "environment_id", "binding_name", "session_version", "env")),
+        )
+        empty = await page(p, cursor=cursor)
+        assert empty["items"] == [] and empty["next_cursor"] is None
+        assert empty["summary"] == result["summary"]
+        environment = await p.service.client.get(
+            f"{p.service.api}/environments/{mount.environment_id}/credential-sessions", params={"limit": 1}
+        )
+        assert environment.status_code == 200
+        assert environment.json()["summary"] == {
+            "applied": 0,
+            "pending": 1,
+            "retry": 0,
+            "on_next_use": 0,
+            "on_create": 0,
+            "unknown": 0,
+        }
+
+
+async def test_summary_of_unused_credential_is_zero(prepared):
+    p = prepared
+    created = await p.service.client.post(
+        f"{p.service.api}/egress-credentials",
+        json={
+            "name": "Unused",
+            "allowed_hosts": ["api.github.com"],
+            "value": "unused-test-token",
+        },
+    )
+    assert created.status_code == 201
+    result = await p.service.client.get(f"{p.service.api}/egress-credentials/{created.json()['id']}/sessions")
+    assert result.status_code == 200, result.text
+    assert result.json() == {
+        "items": [],
+        "next_cursor": None,
+        "summary": {
+            "applied": 0,
+            "pending": 0,
+            "retry": 0,
+            "on_next_use": 0,
+            "on_create": 0,
+            "unknown": 0,
+        },
+    }
+    assert p.device.opens == p.device.attaches == 0
+
+
+@pytest.mark.parametrize(
+    "change,expected",
+    [
+        ({"session": None}, "on_create"),
+        ({"session_version": None}, "on_create"),
+        ({"version": 2**31}, "unknown"),
+        ({"session_status": "retired"}, "unknown"),
+        ({"session_status": None}, "applied"),
+    ],
+)
+async def test_summary_and_rows_share_native_identity_and_legacy_defaults(prepared, change, expected):
+    p = prepared
+    async with p.borrower.borrow(p.device, **p.options):
+        async with transaction(p.service.runtime.storage) as db:
+            binding = await db.get_one(ThreadSessionBindingRow, (p.lease.thread_id, p.mount.environment_id, "default"))
+            head = {**binding.head}
+            if "session_status" in change:
+                head["session"] = {**head["session"]}
+                if change["session_status"] is None:
+                    head["session"].pop("status")
+                else:
+                    head["session"]["status"] = change["session_status"]
+            else:
+                head.update(change)
+            binding.head = head
+        result = await page(p)
+        assert result["items"][0]["status"] == expected
+        assert result["summary"][expected] == 1 and sum(result["summary"].values()) == 1
 
 
 async def test_query_scope_and_manual_retry_authority(prepared):

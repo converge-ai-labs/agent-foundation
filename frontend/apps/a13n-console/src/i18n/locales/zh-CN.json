@@ -4298,5 +4298,13 @@
   "Review the current Session configuration": "检查当前 Session 配置",
   "The Thread changed or the save result is uncertain. Load the current configuration before saving again. Your draft will be kept.": "Thread 已发生变化，或无法确认保存结果。请先加载当前配置再保存；你的草稿会保留。",
   "Your draft is unchanged. Saving replaces the current configuration shown below.": "草稿保持不变。保存将替换下方展示的当前配置。",
-  "Save Session configuration": "保存 Session 配置"
+  "Save Session configuration": "保存 Session 配置",
+  "All Session bindings": "全部 Session 绑定",
+  "Current version confirmed": "已确认当前版本",
+  "Awaiting active synchronization": "等待活跃同步",
+  "Awaiting retry": "等待重试",
+  "Waiting for next use": "下次使用时同步",
+  "Awaiting Session creation": "创建 Session 时应用",
+  "Unconfirmed Sessions": "Session 状态未确认",
+  "Counts cover all pages. Each binding version is counted once; it is confirmed only when every selected credential is applied.": "统计涵盖全部分页，每个绑定版本只计一次。选中的凭据全部应用后，才计为已确认。"
 }

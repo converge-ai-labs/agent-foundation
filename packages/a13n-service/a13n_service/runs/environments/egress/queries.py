@@ -4,8 +4,10 @@ from datetime import datetime
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
-from sqlalchemy import and_, func, literal, select, tuple_
+from sqlalchemy import BigInteger, Numeric, and_, case, func, literal, or_, select, true, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
+from sqlalchemy.sql.selectable import CTE
 
 from a13n_service.infra import cursors
 from a13n_service.infra.db import Storage, short_session
@@ -21,6 +23,20 @@ from a13n_service.tenancy.access import workspace_scope
 from a13n_service.tenancy.authorize import Principal, WorkspaceScope
 
 type ApplicationStatus = Literal["applied", "pending", "retry", "on_next_use", "on_create", "unknown"]
+
+# A binding is applied only if every selected reference is applied. Unconfirmed evidence takes precedence.
+_STATUS_PRIORITY: tuple[ApplicationStatus, ...] = ("applied", "on_create", "on_next_use", "pending", "retry", "unknown")
+
+
+class SessionApplicationSummary(BaseModel):
+    """All matching binding versions, counted once each independently of page size and cursor."""
+
+    applied: int = Field(ge=0)
+    pending: int = Field(ge=0)
+    retry: int = Field(ge=0)
+    on_next_use: int = Field(ge=0)
+    on_create: int = Field(ge=0)
+    unknown: int = Field(ge=0)
 
 
 class SessionCredential(BaseModel):
@@ -52,6 +68,7 @@ class SessionCredential(BaseModel):
 class SessionCredentialPage(BaseModel):
     items: list[SessionCredential]
     next_cursor: str | None
+    summary: SessionApplicationSummary
 
 
 _Position = TypeAdapter(
@@ -69,32 +86,67 @@ def _position(row: SessionCredentialRow) -> tuple[str, str, str, int, str]:
     return row.thread_id, row.environment_id, row.binding_name, row.session_version, row.env
 
 
-def _status(
-    row: SessionCredentialRow, head: SessionHead | None, version: int, active: bool, environment_usable: bool
-) -> ApplicationStatus:
-    if head is None or not environment_usable:
-        return "unknown"
-    if head.session_version != row.session_version or head.session is None:
-        return "on_create" if row.session_version == head.version else "unknown"
-    if head.session.status != "active" or head.version != row.session_version:
-        return "unknown"
-    descriptor = head.session.descriptor
-    sync = head.egress_sync
-    failed = (
-        sync is not None
-        and (sync.session_id, sync.device_generation) == (descriptor.session_id, descriptor.generation)
-        and sync.failures > 0
+def _status(active: ColumnElement[bool]) -> ColumnElement[str]:
+    """One SQL classification serves both the bounded detail page and the full collection summary."""
+    row, head = SessionCredentialRow, ThreadSessionBindingRow.head
+    native, sync = head["session"], head["egress_sync"]
+    descriptor = native["descriptor"]
+    session_id = descriptor["session_id"].as_string()
+    generation = descriptor["generation"].as_string().cast(Numeric(20, 0))
+    head_version = head["version"].as_string().cast(BigInteger)
+    failed = func.coalesce(
+        and_(
+            sync["session_id"].as_string() == session_id,
+            sync["device_generation"].as_string().cast(Numeric(20, 0)) == generation,
+            sync["failures"].as_integer() > 0,
+        ),
+        False,
     )
-    if (
-        not failed
-        and row.applied_credential_version == version
-        and row.applied_session_id == descriptor.session_id
-        and row.applied_device_generation == descriptor.generation
-    ):
-        return "applied"
-    if not active:
-        return "on_next_use"
-    return "retry" if failed else "pending"
+    return case(
+        (
+            or_(
+                head_version.is_(None),
+                EnvironmentRow.status.in_(("stopping", "stopped", "deleting", "deleted", "disabled")),
+                func.coalesce(EnvironmentRow.failure["permanent"].as_boolean(), False),
+            ),
+            "unknown",
+        ),
+        (
+            or_(
+                head["session_version"].as_string().cast(BigInteger).is_distinct_from(row.session_version),
+                session_id.is_(None),
+            ),
+            case((row.session_version == head_version, "on_create"), else_="unknown"),
+        ),
+        (
+            or_(func.coalesce(native["status"].as_string(), "active") != "active", head_version != row.session_version),
+            "unknown",
+        ),
+        (
+            and_(
+                ~failed,
+                row.applied_credential_version == CredentialRow.credential_version,
+                row.applied_session_id == session_id,
+                row.applied_device_generation == generation,
+            ),
+            "applied",
+        ),
+        (~active, "on_next_use"),
+        (failed, "retry"),
+        else_="pending",
+    )
+
+
+def _summary(evidence: CTE):
+    key = (evidence.c.thread_id, evidence.c.environment_id, evidence.c.binding_name, evidence.c.session_version)
+    priority = case({status: rank for rank, status in enumerate(_STATUS_PRIORITY)}, value=evidence.c.status)
+    bindings = select(func.max(priority).label("priority")).group_by(*key).subquery()
+    return select(
+        *(
+            func.count().filter(bindings.c.priority == rank).label(status)
+            for rank, status in enumerate(_STATUS_PRIORITY)
+        )
+    ).subquery()
 
 
 async def credential_sessions(
@@ -138,28 +190,19 @@ async def _page(
             row.session_version,
         )
     )
+    active = live_owner(row.thread_id, context.worker_id, mount=selected_mount)
+    binding_match = and_(
+        binding.thread_id == row.thread_id,
+        binding.environment_id == row.environment_id,
+        binding.name == row.binding_name,
+    )
     query = (
         select(
-            row,
-            binding.head,
-            EnvironmentRow.name,
-            and_(
-                EnvironmentRow.status.not_in(("stopping", "stopped", "deleting", "deleted", "disabled")),
-                ~func.coalesce(EnvironmentRow.failure["permanent"].as_boolean(), False),
-            ),
-            CredentialRow.name,
-            CredentialRow.state,
-            CredentialRow.credential_version,
-            live_owner(row.thread_id, context.worker_id, mount=selected_mount),
+            *order,
+            active.label("active"),
+            _status(active).label("status"),
         )
-        .join(
-            binding,
-            and_(
-                binding.thread_id == row.thread_id,
-                binding.environment_id == row.environment_id,
-                binding.name == row.binding_name,
-            ),
-        )
+        .join(binding, binding_match)
         .join(EnvironmentRow, EnvironmentRow.id == row.environment_id)
         .join(CredentialRow, CredentialRow.id == row.credential_id)
         .outerjoin(context, context.thread_id == row.thread_id)
@@ -169,17 +212,48 @@ async def _page(
         query = query.where(row.credential_id == credential_id)
     if environment_id is not None:
         query = query.where(row.environment_id == environment_id)
+    # The narrow evidence CTE and both consumers share one PostgreSQL statement snapshot.
+    # Only the requested page loads configuration and descriptive metadata into the Service.
+    evidence = query.cte("credential_evidence")
+    summary = _summary(evidence)
+    page_order = tuple(evidence.c[column.key] for column in order)
+    selected = select(evidence)
     if cursor is not None:
         try:
             position = _Position.validate_python(tuple(cursors.decode(cursor, kind, owner)), strict=True)
         except ValidationError:
             raise ServiceError("invalid_cursor", "Invalid collection cursor") from None
-        query = query.where(tuple_(*order) > tuple_(*map(literal, position)))
-    rows = (await session.execute(query.order_by(*order).limit(limit + 1))).all()
+        selected = selected.where(tuple_(*page_order) > tuple_(*map(literal, position)))
+    page = selected.order_by(*page_order).limit(limit + 1).subquery()
+    page_key = tuple(page.c[column.key] for column in order)
+    details = (
+        select(
+            row,
+            binding.head,
+            EnvironmentRow.name,
+            CredentialRow.name,
+            CredentialRow.state,
+            CredentialRow.credential_version,
+            page.c.active,
+            page.c.status,
+            *summary.c,
+        )
+        .select_from(summary)
+        .outerjoin(page, true())
+        .outerjoin(row, tuple_(*order) == tuple_(*page_key))
+        .outerjoin(binding, binding_match)
+        .outerjoin(EnvironmentRow, EnvironmentRow.id == row.environment_id)
+        .outerjoin(CredentialRow, CredentialRow.id == row.credential_id)
+        .order_by(*page_key)
+    )
+    result = (await session.execute(details)).all()
+    counts = SessionApplicationSummary.model_validate(
+        {status: result[0]._mapping[status] for status in _STATUS_PRIORITY}
+    )
+    rows = [item for item in result if item[0] is not None]
     items = []
-    for reference, raw_head, env_name, env_usable, name, state, version, active in rows[:limit]:
+    for reference, raw_head, env_name, name, state, version, active, status, *_counts in rows[:limit]:
         head = SessionHead.model_validate(raw_head) if raw_head is not None else None
-        status = _status(reference, head, version, active, env_usable)
         sync = head.egress_sync if head is not None and status == "retry" else None
         native = head.session if head is not None and head.session_version == reference.session_version else None
         items.append(
@@ -209,4 +283,4 @@ async def _page(
             )
         )
     next_cursor = cursors.encode(kind, owner, *_position(rows[limit - 1][0])) if len(rows) > limit else None
-    return SessionCredentialPage(items=items, next_cursor=next_cursor)
+    return SessionCredentialPage(items=items, next_cursor=next_cursor, summary=counts)
