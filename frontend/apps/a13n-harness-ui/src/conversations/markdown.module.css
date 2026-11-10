@@ -103,8 +103,10 @@
 }
 .markdown :global(.katex-display) {
   max-width: 100%;
-  overflow: auto;
-  padding-block: 4px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  /* KaTeX's positioned glyph boxes extend beyond its line box. */
+  padding-block: 0.5em;
   scrollbar-width: thin;
   overflow-wrap: normal;
 }

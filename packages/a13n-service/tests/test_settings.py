@@ -11,11 +11,13 @@ from a13n_service.settings import Server, Settings, load_settings
 def test_environment_overrides_the_file_and_unknown_keys_fail(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, clean_environment: None
 ) -> None:
+    assert load_settings().worker.slots == 128
     config = tmp_path / "service.toml"
     config.write_text('[worker]\nslots = 2\n[telemetry]\nlog_format = "pretty"\n')
-    monkeypatch.setenv("A13N_WORKER__SLOTS", "6")
+    assert load_settings(config).worker.slots == 2
+    monkeypatch.setenv("A13N_WORKER__SLOTS", "1024")
     loaded = load_settings(config)
-    assert (loaded.worker.slots, loaded.telemetry.log_format) == (6, LogFormat.pretty)
+    assert (loaded.worker.slots, loaded.telemetry.log_format) == (1024, LogFormat.pretty)
     monkeypatch.setenv("A13N_WORKER__SLOT", "6")
     with pytest.raises(ValueError, match=r"worker\.slot"):
         load_settings(config)
@@ -67,6 +69,7 @@ def test_a_distribution_section_cannot_shadow_a_core_section() -> None:
 @pytest.mark.parametrize(
     ("values", "refused"),
     [
+        ({"worker": {"slots": 1025}}, "worker.slots"),
         ({"worker": {"scan_seconds": 2}}, "worker.scan_seconds"),
         ({"worker": {"lease_seconds": 3}}, "worker.authority_seconds"),
         ({"worker": {"lease_seconds": 12}}, "objects.timeout"),
@@ -292,4 +295,18 @@ def test_object_pool_environment_overrides_file(
     for invalid in ("0", "1025"):
         monkeypatch.setenv("A13N_OBJECTS__MAX_POOL_CONNECTIONS", invalid)
         with pytest.raises(ValueError, match="max_pool_connections"):
+            load_settings(config)
+
+
+def test_cleanup_pool_is_independent_and_environment_overrides_file(tmp_path, monkeypatch, clean_environment):
+    assert load_settings().objects.cleanup_max_pool_connections == 4
+    config = tmp_path / "cleanup.toml"
+    config.write_text("[objects]\ncleanup_max_pool_connections = 8\n")
+    assert load_settings(config).objects.cleanup_max_pool_connections == 8
+    monkeypatch.setenv("A13N_OBJECTS__CLEANUP_MAX_POOL_CONNECTIONS", "2")
+    objects = load_settings(config).objects
+    assert objects.cleanup_max_pool_connections == 2 and objects.max_pool_connections == 32
+    for invalid in ("0", "1025"):
+        monkeypatch.setenv("A13N_OBJECTS__CLEANUP_MAX_POOL_CONNECTIONS", invalid)
+        with pytest.raises(ValueError, match="cleanup_max_pool_connections"):
             load_settings(config)

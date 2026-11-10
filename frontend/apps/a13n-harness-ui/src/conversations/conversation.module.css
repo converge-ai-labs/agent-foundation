@@ -624,6 +624,18 @@
   min-width: 64px;
   max-width: min(85%, 640px);
 }
+.sentAttachments {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.sentAttachments + .userMessage {
+  width: fit-content;
+  max-width: 100%;
+  margin: 8px 0 0 auto;
+}
 .userMessage {
   color: var(--a13n-text);
   padding: 12px 12px;
@@ -1517,29 +1529,38 @@ dl.detailGrid > .detailLongRow dd {
 .inlineAttachment {
   display: inline-flex;
   align-items: center;
-  vertical-align: middle;
-  max-width: min(280px, 100%);
-  margin: 0 4px;
+  vertical-align: -0.12em;
+  box-sizing: border-box;
+  height: 20px;
+  max-width: min(280px, calc(100% - 5px));
+  margin-inline: 1px 4px;
   border: 1px solid var(--a13n-border);
-  border-radius: 9px;
+  border-radius: 999px;
   background: var(--a13n-surface);
   font-family: inherit;
-  font-size: var(--a13n-text-body);
-  line-height: 1.4;
+  font-size: calc(var(--a13n-text-body) * 13 / 14);
+  line-height: 1;
   overflow: hidden;
 }
 .inlineAttachmentOpen,
 .inlineAttachmentRemove {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
+  height: 100%;
   border: 0;
   background: transparent;
   color: var(--harness-log-text);
   font: inherit;
   cursor: pointer;
-  padding: 0 8px;
+  padding: 0 7px;
   min-width: 0;
+}
+.inlineAttachmentOpen:has(img) {
+  padding-inline-start: 5px;
+}
+.inlineAttachmentOpen:has(+ .inlineAttachmentRemove) {
+  padding-inline-end: 1px;
 }
 .inlineAttachmentOpen img {
   width: 16px;
@@ -1549,6 +1570,7 @@ dl.detailGrid > .detailLongRow dd {
   flex-shrink: 0;
 }
 .inlineAttachmentOpen span {
+  line-height: 1.4;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -1556,7 +1578,10 @@ dl.detailGrid > .detailLongRow dd {
 .inlineAttachmentRemove {
   align-self: stretch;
   color: var(--harness-log-text);
-  padding-inline: 8px;
+  width: 19px;
+  justify-content: center;
+  padding: 0;
+  margin-inline-end: 2px;
   flex-shrink: 0;
 }
 .inlineAttachment button:hover {
@@ -1582,82 +1607,19 @@ dl.detailGrid > .detailLongRow dd {
   overflow-wrap: anywhere;
   line-height: inherit;
 }
-.inputAttachment {
-  display: inline-block;
-  vertical-align: middle;
-  max-width: calc(100% - 8px);
-  margin: 4px 4px;
-  border: 1px solid var(--a13n-border);
-  border-radius: 8px;
-  background: var(--a13n-surface);
-  font-size: var(--a13n-text-body);
-}
-.inputAttachment > details > summary {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 8px;
-  cursor: pointer;
-  list-style: none;
-}
-.inputAttachment > details > summary::before {
-  content: none;
-}
-.inputAttachment > details > summary::-webkit-details-marker {
-  display: none;
-}
-.inputAttachment > details > summary::after {
-  content: "+";
-  color: var(--harness-log-text);
-  margin-left: 8px;
-}
-.inputAttachment > details[open] > summary::after {
-  content: "−";
-}
-.imageAttachment {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 8px;
-  max-width: min(280px, 100%);
-  color: var(--a13n-text);
-  background: transparent;
-  border: 0;
-  border-radius: 8px;
-  cursor: zoom-in;
-  text-align: start;
-}
-.imageAttachment:hover {
-  background: var(--a13n-hover);
-}
-.imageAttachment:focus-visible {
-  outline: 1px solid var(--ring);
-}
-.imageAttachment .attachmentThumbnail {
-  width: 36px;
-  height: 36px;
-}
-.inputAttachment strong {
-  font-weight: 500;
-  overflow-wrap: anywhere;
-}
 .inputAttachmentDetails {
   display: grid;
   gap: 8px;
   padding: 12px;
   border-top: 1px solid var(--a13n-border);
-  max-width: min(620px, 100%);
+  max-width: min(420px, 80vw);
+  max-height: 60vh;
+  overflow: auto;
   overflow-wrap: anywhere;
 }
 .inputAttachmentDetails small {
   color: var(--harness-log-text);
 }
-.inputAttachment > details[open] .attachmentThumbnail {
-  width: 96px;
-  height: 72px;
-  object-fit: contain;
-}
-
 .recoveryNotice {
   display: flex;
   align-items: center;
@@ -2143,4 +2105,73 @@ dl.detailGrid > .detailLongRow dd {
 }
 .conversationFeedback:empty {
   display: none;
+}
+
+.imageTray {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 6px var(--composer-text-inset, 4px);
+  max-width: 100%;
+}
+.imageTile {
+  width: 120px;
+  aspect-ratio: 1;
+  flex: none;
+  position: relative;
+}
+.imageTileOpen {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 1px solid var(--a13n-border);
+  border-radius: 9px;
+  overflow: hidden;
+  background: var(--a13n-surface);
+  color: var(--harness-log-text);
+  cursor: zoom-in;
+}
+.imageTileOpen img {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  object-fit: cover;
+}
+.imageTileOpen img:not([hidden]) + span {
+  display: none;
+}
+.imageTileOpen span {
+  padding: 6px;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+.imageTileRemove {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid var(--card);
+  background: var(--a13n-text);
+  color: var(--card);
+  font: 14px/1 sans-serif;
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .imageTile:not(:hover, :focus-within) .imageTileRemove {
+    opacity: 0;
+    pointer-events: none;
+  }
+}
+.composerEditor [data-image-placeholder]::before {
+  content: attr(data-image-placeholder);
+  position: absolute;
+  pointer-events: none;
+  color: var(--harness-placeholder);
 }

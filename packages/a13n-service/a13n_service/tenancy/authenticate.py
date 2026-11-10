@@ -8,9 +8,11 @@ import hashlib
 import hmac
 from dataclasses import dataclass
 from datetime import timedelta
+from time import monotonic
 from typing import Literal
 
-from sqlalchemy import func, or_, select
+from a13n_logging import get_logger
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 from starlette.responses import Response
@@ -95,6 +97,69 @@ async def _live_credential(
     return credential
 
 
+async def _touch_credential(session: AsyncSession, credential: TokenRow | ApiKeyRow, *, session_seconds: int) -> None:
+    """Coalesce due touches across processes without waiting for a credential row lock.
+
+    Authentication already checked liveness and authority. A locked row only
+    skips this optional touch; the next request can try again. The SQL predicate
+    checks current liveness/due time so a stale ORM object cannot overwrite a
+    completed touch, extend an expired session, or touch a revoked credential.
+    """
+    started = monotonic()
+    if isinstance(credential, TokenRow):
+        kind = "session"
+        candidates = (
+            select(TokenRow.id)
+            .where(
+                TokenRow.id == credential.id,
+                TokenRow.kind == "session",
+                TokenRow.revoked_at.is_(None),
+                TokenRow.expires_at > func.clock_timestamp(),
+                TokenRow.expires_at < func.clock_timestamp() + timedelta(seconds=session_seconds) - _TOUCH_INTERVAL,
+            )
+            .with_for_update(skip_locked=True)
+            .cte("touchable_session")
+        )
+        statement = (
+            update(TokenRow)
+            .where(TokenRow.id.in_(select(candidates.c.id)))
+            .values(expires_at=func.clock_timestamp() + timedelta(seconds=session_seconds))
+            .returning(TokenRow.id)
+        )
+    else:
+        kind = "key"
+        candidates = (
+            select(ApiKeyRow.id)
+            .where(
+                ApiKeyRow.id == credential.id,
+                ApiKeyRow.revoked_at.is_(None),
+                or_(ApiKeyRow.expires_at.is_(None), ApiKeyRow.expires_at > func.clock_timestamp()),
+                or_(
+                    ApiKeyRow.last_used_at.is_(None), ApiKeyRow.last_used_at <= func.clock_timestamp() - _TOUCH_INTERVAL
+                ),
+            )
+            .with_for_update(skip_locked=True)
+            .cte("touchable_key")
+        )
+        statement = (
+            update(ApiKeyRow)
+            .where(ApiKeyRow.id.in_(select(candidates.c.id)))
+            .values(last_used_at=func.clock_timestamp())
+            .returning(ApiKeyRow.id)
+        )
+    # Never dirty the previously read ORM row: an implicit flush would bypass
+    # the locked candidate and restore the original competing-update behavior.
+    touched = await session.scalar(statement.execution_options(synchronize_session=False))
+    get_logger(__name__).debug(
+        "Credential touch attempted",
+        extra=dict(
+            credential_kind=kind,
+            result="updated" if touched is not None else "skipped",
+            duration_ms=(monotonic() - started) * 1000,
+        ),
+    )
+
+
 async def authenticate_secret(
     storage: Storage, access: Access, secret: str, kind: LocalKind, *, session_seconds: int
 ) -> Authenticated:
@@ -111,9 +176,9 @@ async def authenticate_secret(
         current = await now(session)
         if isinstance(credential, TokenRow):
             if credential.expires_at < current + timedelta(seconds=session_seconds) - _TOUCH_INTERVAL:
-                credential.expires_at = current + timedelta(seconds=session_seconds)
+                await _touch_credential(session, credential, session_seconds=session_seconds)
         elif credential.last_used_at is None or credential.last_used_at <= current - _TOUCH_INTERVAL:
-            credential.last_used_at = current
+            await _touch_credential(session, credential, session_seconds=session_seconds)
         return Authenticated(principal, credential.id, kind)
 
 

@@ -33,6 +33,8 @@ import {
   TerminalWindow,
   ArrowLeft,
   CaretRight,
+  CaretDown,
+  Check,
   SidebarSimple,
   PencilSimple,
   SlidersHorizontal,
@@ -807,7 +809,7 @@ export function NativeWorkspace({
     !projectLoading &&
     directory &&
     pane === "files" &&
-    directoryTrail.length > 1 ? (
+    (view === "page" || directoryTrail.length > 1 || localRoots.length > 1) ? (
       <nav
         ref={folderTrail}
         className={styles.breadcrumbs}
@@ -821,7 +823,52 @@ export function NativeWorkspace({
           {directoryTrail.map((part, index) => (
             <li key={part}>
               {index > 0 && <CaretRight aria-hidden="true" />}
-              {part === directory ? (
+              {index === 0 &&
+              (localRoots.length > 1 ||
+                (!fileRoot && localRoots.length > 0)) ? (
+                <Menu>
+                  <MenuTrigger
+                    render={<Button size="sm" variant="ghost" />}
+                    aria-label={t("Working folders")}
+                    title={part}
+                  >
+                    <span>{basename(part)}</span>
+                    <CaretDown
+                      className={styles.folderCaret}
+                      aria-hidden="true"
+                    />
+                  </MenuTrigger>
+                  <MenuPopup align="start">
+                    {(!fileRoot && part !== directory
+                      ? [part, ...localRoots]
+                      : localRoots
+                    ).map((folder) => (
+                      <MenuItem
+                        key={folder}
+                        title={folder}
+                        onClick={() =>
+                          navigateTab({
+                            kind: "files",
+                            directory: folder,
+                            root: folder,
+                          })
+                        }
+                      >
+                        <span>
+                          {localRoots.some(
+                            (other) =>
+                              other !== folder &&
+                              basename(other) === basename(folder),
+                          )
+                            ? folder
+                            : basename(folder)}
+                        </span>
+                        {folder === fileRoot && <Check aria-hidden="true" />}
+                      </MenuItem>
+                    ))}
+                  </MenuPopup>
+                </Menu>
+              ) : part === directory ? (
                 <span title={part} aria-current="location">
                   {basename(part)}
                 </span>
@@ -832,11 +879,7 @@ export function NativeWorkspace({
                   title={part}
                   onClick={() => void open(part)}
                 >
-                  <span>
-                    {part === fileRoot && localRoots.length === 1 && project
-                      ? project.name
-                      : basename(part)}
-                  </span>
+                  <span>{basename(part)}</span>
                 </Button>
               )}
             </li>
@@ -1404,9 +1447,10 @@ export function NativeWorkspace({
                 directory &&
                 ((view !== "page" && folderBreadcrumbs) ||
                   (localRoots.length > 1 &&
-                    (view === "page" || pane === "files"))) && (
+                    view === "page" &&
+                    pane === "changes")) && (
                   <div className={styles.location}>
-                    {localRoots.length > 1 && (
+                    {pane === "changes" && localRoots.length > 1 && (
                       <nav
                         className={styles.projectFolders}
                         aria-label={t("Working folders")}

@@ -45,6 +45,8 @@ objects:
   addressingStyle: ""
   # Maximum HTTP connections per S3 client (per Service process).
   maxPoolConnections: 32
+  # Separate checkpoint-cleanup pool in control/all; effective cleanup parallelism is capped here.
+  cleanupMaxPoolConnections: 4
 # Local objects only. The chart's claim is retained on uninstall.
 persistence:
   existingClaim: ""

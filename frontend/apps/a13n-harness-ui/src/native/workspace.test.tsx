@@ -1288,7 +1288,7 @@ it.each(["/native", "C:\\native", "\\\\server\\share\\native"])(
     await screen.findByText(`Folder ${root}`);
     expect(
       screen.queryByRole("navigation", { name: "Current folder" }),
-    ).toBeNull();
+    ).not.toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Open child folder" }));
     await screen.findByText(`Folder ${first}`);
     fireEvent.click(screen.getByRole("button", { name: "Open child folder" }));
@@ -1299,18 +1299,21 @@ it.each(["/native", "C:\\native", "\\\\server\\share\\native"])(
     ).toBe(second);
     fireEvent.click(within(trail).getByRole("button", { name: "nested" }));
     await screen.findByText(`Folder ${first}`);
-    fireEvent.click(
-      within(trail).getByRole("button", { name: "Current project" }),
-    );
+    fireEvent.click(within(trail).getByRole("button", { name: "native" }));
     await screen.findByText(`Folder ${root}`);
     expect(
       screen.queryByRole("navigation", { name: "Current folder" }),
-    ).toBeNull();
+    ).not.toBeNull();
     await waitFor(() =>
       expect(focus).toHaveBeenLastCalledWith({ kind: "file", path: root }),
     );
   },
 );
+
+async function chooseWorkingFolder(name: string) {
+  fireEvent.click(screen.getByRole("button", { name: "Working folders" }));
+  fireEvent.click(await screen.findByRole("menuitem", { name }));
+}
 
 it.each(["breadcrumb", "working folder"])(
   "%s navigation from a file stays in its current tab even when the destination is already open",
@@ -1328,34 +1331,14 @@ it.each(["breadcrumb", "working folder"])(
     const id = fileTab.id;
     fireEvent.click(screen.getByRole("button", { name: "New tab" }));
     fireEvent.click(screen.getByRole("button", { name: "Files" }));
-    if (action === "working folder")
-      fireEvent.click(
-        within(
-          screen.getByRole("navigation", { name: "Working folders" }),
-        ).getByRole("button", { name: "other" }),
-      );
-    else
-      fireEvent.click(
-        within(
-          screen.getByRole("navigation", { name: "Current folder" }),
-        ).getByRole("button", { name: "native" }),
-      );
+    if (action === "working folder") await chooseWorkingFolder("other");
+    else await chooseWorkingFolder("native");
     const destination = action === "working folder" ? "/other" : "/native";
     await screen.findByText(`Folder ${destination}`);
     const otherTab = screen.getByRole("tab", { name: "Files", selected: true });
     fireEvent.click(fileTab);
-    if (action === "breadcrumb")
-      fireEvent.click(
-        within(
-          screen.getByRole("navigation", { name: "Current folder" }),
-        ).getByRole("button", { name: "native" }),
-      );
-    else
-      fireEvent.click(
-        within(
-          screen.getByRole("navigation", { name: "Working folders" }),
-        ).getByRole("button", { name: "other" }),
-      );
+    if (action === "breadcrumb") await chooseWorkingFolder("native");
+    else await chooseWorkingFolder("other");
     await screen.findByText(`Folder ${destination}`);
     expect(screen.getByRole("tab", { name: "Files", selected: true }).id).toBe(
       id,
@@ -1457,11 +1440,11 @@ it("explicit external native links keep usable ancestry rather than an empty Pro
   ).toBeNull();
   fireEvent.click(within(trail).getByTitle("/external"));
   await screen.findByText("Folder /external");
-  fireEvent.click(within(trail).getByRole("button", { name: "/" }));
+  await chooseWorkingFolder("/");
   await screen.findByText("Folder /");
   expect(
     screen.queryByRole("navigation", { name: "Current folder" }),
-  ).toBeNull();
+  ).not.toBeNull();
 });
 
 it("switching configured roots from a file view returns to the selected folder instead of leaving a stale editor", async () => {
@@ -1474,16 +1457,12 @@ it("switching configured roots from a file view returns to the selected folder i
     ["/native", "/second-root"],
   );
   await screen.findByText("Editor /native/first.txt");
-  fireEvent.click(
-    within(
-      screen.getByRole("navigation", { name: "Working folders" }),
-    ).getByRole("button", { name: "second-root" }),
-  );
+  await chooseWorkingFolder("second-root");
   await screen.findByText("Folder /second-root");
   expect(screen.queryByText("Editor /native/first.txt")).toBeNull();
   expect(
     screen.queryByRole("navigation", { name: "Current folder" }),
-  ).toBeNull();
+  ).not.toBeNull();
 });
 
 it("opens tool paths through existing private buffers without re-reading or replacing dirty text", async () => {

@@ -318,6 +318,14 @@ def _reconcile_compactions(runtime: Runtime) -> Sweep:
 def _deliver_outbox(runtime: Runtime) -> Sweep:
     settings = runtime.settings
     control = settings.control
+    policies = dict(settings.outbox.policies)
+    if settings.objects.backend == "s3":
+        cleanup = policies[CLEANUP]
+        # Bound claims before leasing: queued handlers would spend their I/O
+        # budgets and leases waiting for this process's reserved connections.
+        policies[CLEANUP] = cleanup.model_copy(
+            update={"parallel": min(cleanup.parallel, settings.objects.cleanup_max_pool_connections)}
+        )
     webhooks = WebhookSender(runtime.storage, runtime.keys, runtime.endpoint_policy, timeout=control.webhook_timeout)
     mail = partial(deliver_mail, runtime.storage, runtime.keys, SmtpMailer(settings.auth.mail))
     return Sweep(
@@ -336,7 +344,7 @@ def _deliver_outbox(runtime: Runtime) -> Sweep:
                 CLEANUP: partial(clean, runtime),
             },
             owner=new_object_id("ctl"),
-            policies=settings.outbox.policies,
+            policies=policies,
         ),
         timeout=2 * max(policy.lease_seconds for policy in settings.outbox.policies.values()),
     )

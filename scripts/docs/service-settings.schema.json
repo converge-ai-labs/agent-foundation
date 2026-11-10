@@ -1323,6 +1323,13 @@
           "title": "Max Pool Connections",
           "type": "integer"
         },
+        "cleanup_max_pool_connections": {
+          "default": 4,
+          "maximum": 1024,
+          "minimum": 1,
+          "title": "Cleanup Max Pool Connections",
+          "type": "integer"
+        },
         "timeout": {
           "default": 5,
           "exclusiveMinimum": 0,
@@ -2051,8 +2058,8 @@
       "additionalProperties": false,
       "properties": {
         "slots": {
-          "default": 4,
-          "maximum": 128,
+          "default": 128,
+          "maximum": 1024,
           "minimum": 1,
           "title": "Slots",
           "type": "integer"
