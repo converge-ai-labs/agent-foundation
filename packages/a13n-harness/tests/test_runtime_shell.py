@@ -71,6 +71,59 @@ def bindings(runtime, **kwargs):
     )
 
 
+@pytest.mark.parametrize("code", ["environment_unavailable", "environment_timeout", "environment_unknown_outcome"])
+@pytest.mark.parametrize("dispatch_stage", ["pre_dispatch", "dispatched", None])
+async def test_owned_start_rejection_only_preserves_uncertain_effects(tmp_path, monkeypatch, code, dispatch_stage):
+    from a13n_harness.environment import EnvironmentError
+    from a13n_harness.environment.process_recovery import EnvdProcessState, current_process_checkpoint
+    from a13n_harness.toolsets.process_manager import _ProcessController
+
+    starts = []
+
+    async def reject_start(self, request, **kwargs):
+        starts.append(request.command.script)
+        checkpoint = current_process_checkpoint()
+        assert checkpoint is not None
+        await checkpoint(
+            EnvdProcessState(
+                device_id="device",
+                session_id="session",
+                generation=1,
+                start_operation_id="op-start",
+                output_policy=request.output_policy,
+            )
+        )
+        details = {} if dispatch_stage is None else {"dispatch_stage": dispatch_stage}
+        raise EnvironmentError("Start rejected", code=code, details=details)
+
+    monkeypatch.setattr(_ProcessController, "_admit", reject_start)
+    runtime = ToolExecutionRuntime()
+    results = []
+    try:
+        async with asyncio.timeout(10):
+            result = await executable(
+                [("shell_exec", {"command": "touch must-not-replay"})], results, wait_seconds=60
+            ).run("start", environment=source(tmp_path), bindings=bindings(runtime))
+            assert result.output_or_raise() == "done"
+            (record,) = await runtime.summarize(result.thread_id)
+            saved = await runtime.result(result.thread_id, record.execution_id)
+            assert saved.shell.process.start_operation_id == "op-start"
+            assert starts == ["touch must-not-replay"]
+            assert not (tmp_path / "must-not-replay").exists()
+            if dispatch_stage == "pre_dispatch":
+                assert record.terminal
+                assert results[0]["ok"] is False
+                assert results[0]["error"]["code"] == code
+                assert results[0]["error"]["details"]["dispatch_stage"] == "pre_dispatch"
+                assert results[0].get("type") != "tool_execution_receipt"
+            else:
+                assert record.status == "running"
+                assert record.completed_at is None
+                assert results[0]["type"] == "tool_execution_receipt"
+    finally:
+        await runtime.close()
+
+
 @pytest.mark.parametrize("mode", ["inline", "auto"])
 async def test_shell_survives_run_close_and_next_run_controls_original_process(tmp_path, mode):
     runtime = ToolExecutionRuntime()
