@@ -39,6 +39,18 @@ mod tests {
     }
 
     #[test]
+    fn empty_allowlist_keeps_its_discriminator_when_default_fields_are_omitted() {
+        let decoded: super::EgressDestinations = decode(r#"{"mode":"allowlist"}"#).unwrap();
+        assert!(
+            matches!(&decoded, super::EgressDestinations::Allowlist(policy) if policy.hosts.is_empty())
+        );
+        assert_eq!(encode(&decoded).unwrap(), br#"{"mode":"allowlist"}"#);
+        let public: super::EgressDestinations = decode(r#"{"mode":"public"}"#).unwrap();
+        assert!(matches!(public, super::EgressDestinations::Public(_)));
+        assert!(decode::<super::EgressDestinations>(r#"{"mode":"unknown"}"#).is_err());
+    }
+
+    #[test]
     fn generated_registry_has_complete_v1_surface() {
         assert_eq!(EIP_PROTOCOL_VERSION, "0.4");
         assert_eq!(EIP_PROTO_PACKAGE, "a13n.agent_envd.eip.v1");

@@ -824,6 +824,35 @@ fn real_oneof_fields(descriptor: &MessageDescriptor) -> Vec<Vec<FieldDescriptor>
         .collect()
 }
 
+fn render_constant_deserializer(
+    output: &mut String,
+    owner: &MessageDescriptor,
+    field: &FieldDescriptor,
+    extensions: &Extensions,
+) -> Result<Option<String>, String> {
+    let Some(option) = field_option_message(field, extensions)? else {
+        return Ok(None);
+    };
+    if !option.has_field_by_name("const_string") {
+        return Ok(None);
+    }
+    // Untagged unions choose a variant during deserialization, before EipValidate runs.
+    // Enforce constants here so variants with omitted default fields cannot match the wrong arm.
+    let expected = string_field(&option, "const_string")?;
+    let function = format!(
+        "deserialize_{}_{}",
+        owner.name().to_snake_case(),
+        field.name()
+    );
+    output.push_str(&format!(
+        "fn {function}<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<String, D::Error> {{\n\
+         let value = String::deserialize(deserializer)?;\n\
+         if value != {expected:?} {{ return Err(serde::de::Error::custom(\"invalid discriminator\")); }}\n\
+         Ok(value)\n}}\n\n"
+    ));
+    Ok(Some(function))
+}
+
 fn render_message(
     output: &mut String,
     descriptor: &MessageDescriptor,
@@ -874,9 +903,14 @@ fn render_message(
     }
 
     let mut default_functions = BTreeMap::new();
+    let mut constant_deserializers = BTreeMap::new();
     for field in &fields {
         if let Some(function) = render_field_default(output, descriptor, field, extensions)? {
             default_functions.insert(field.full_name().to_owned(), function);
+        }
+        if let Some(function) = render_constant_deserializer(output, descriptor, field, extensions)?
+        {
+            constant_deserializers.insert(field.full_name().to_owned(), function);
         }
     }
     let options = descriptor.options();
@@ -907,6 +941,11 @@ fn render_message(
             || real_oneof_names.contains(field.full_name()))
             && explicit_default.is_none();
         let (field_type, default) = rust_field_type(field, optional)?;
+        if let Some(function) = constant_deserializers.get(field.full_name()) {
+            output.push_str(&format!(
+                "    #[serde(deserialize_with = \"{function}\")]\n"
+            ));
+        }
         if let Some(function) = explicit_default {
             output.push_str(&format!(
                 "    #[serde(default = \"{function}\", skip_serializing_if = \"is_{function}\")]\n"
