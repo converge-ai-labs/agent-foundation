@@ -94,3 +94,13 @@ async def revoke_egress_credential(
             runtime.storage, actor, workspace_id, credential_id, if_match=if_match, redis=runtime.redis
         ),
     )
+
+
+@router.post("/{credential_id}/sync", response_model=Credential, status_code=202, openapi_extra={"x-a13n-mcp": False})
+async def sync_egress_credential(
+    response: Response, workspace_id: WorkspaceId, credential_id: str, actor: Actor, runtime: CurrentRuntime
+) -> Credential:
+    return tagged(
+        response,
+        await service.request_sync(runtime.storage, actor, workspace_id, credential_id, redis=runtime.redis),
+    )

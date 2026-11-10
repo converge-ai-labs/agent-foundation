@@ -81,4 +81,8 @@ Provider 保存一个配置好的后端账号。按工作需要选择类型：
 3. 通过 `PUT /api/v1/egress-credentials/{id}/value` 携带 `If-Match` 和 `{"value": "<新 token>"}` 轮换。响应返回 `202` 和新的 `credential_version`。编辑元数据只增加普通 `version`。
 4. 通过 `POST /api/v1/egress-credentials/{id}/revoke` 携带 `If-Match` 撤销。此操作清空存储的值，并永久标记凭据已撤销。需要继续使用时创建新资源；不提供恢复或硬删除操作。
 
+通过 `GET /api/v1/egress-credentials/{id}/sessions` 查询各 Session 的应用状态，或通过 `GET /api/v1/environments/{id}/credential-sessions` 查询一个环境。分页时保持目标不变，使用 `next_cursor` 继续。`applied` 表示最后确认的版本匹配所记录的原生 Session，不代表已探测连接在线；`pending`、`retry` 表示仍有受跟踪的执行，分别等待同步或重试；`on_next_use` 等待下次 attach；`on_create` 等待创建；`unknown` 表示无法确认当前 Session。只有该 Session 已应用撤销后的凭据版本，才能确认删除完成。
+
+`POST /api/v1/egress-credentials/{id}/sync` 需要工作空间 `write` 权限，请求现有持有者重新比较版本后返回 `202`。活跃和已撤销的凭据都可以重试；操作不改变资源版本，不要求 `If-Match`。它不会 attach 空闲 Session，也不代表所有 Session 都已更新。
+
 `202` 表示 Service 已保存轮换或撤销，不代表所有已有 Envd Session 都已应用，也不会撤销上游服务中的 token。Agent 平台工具和管理 MCP 不提供凭据写操作；MCP 只提供元数据查询。

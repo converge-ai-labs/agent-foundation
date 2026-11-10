@@ -13,7 +13,7 @@ from weakref import WeakValueDictionary
 
 from a13n_harness.environment.process_recovery import ShellExecutionState
 from a13n_harness.environment.session_recovery import EnvdSessionBorrower
-from sqlalchemy import SQLColumnExpression, case, exists, func, or_, select, update
+from sqlalchemy import SQLColumnExpression, case, exists, func, or_, select, true, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
@@ -33,7 +33,10 @@ if TYPE_CHECKING:
 
 
 def live_owner(
-    thread_id: str | SQLColumnExpression[str], worker_id: str | SQLColumnExpression[str | None]
+    thread_id: str | SQLColumnExpression[str],
+    worker_id: str | SQLColumnExpression[str | None],
+    *,
+    mount: ColumnElement | None = None,
 ) -> ColumnElement[bool]:
     """An existing, unexpired execution lease is the only source of worker affinity."""
     run = aliased(RunRow)
@@ -48,6 +51,7 @@ def live_owner(
                 AttemptRow.status.in_(("leased", "running")),
                 AttemptRow.worker_id == worker_id,
                 AttemptRow.lease_expires_at > func.clock_timestamp(),
+                true() if mount is None else run.environment_mounts.contains(mount),
             )
         ),
         exists(
@@ -57,6 +61,7 @@ def live_owner(
                 or_(tool.environment_mounts != [], tool.shell.is_not(None)),
                 tool.completed_at.is_(None),
                 tool.lease_expires_at > func.clock_timestamp(),
+                true() if mount is None else tool.environment_mounts.contains(mount),
             )
         ),
     )

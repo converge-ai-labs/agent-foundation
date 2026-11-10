@@ -184,3 +184,15 @@ async def revoke_credential(
         after_commit(session, partial(notify, redis, row.id, row.credential_version))
         await session.flush()
         return Credential.model_validate(row)
+
+
+async def request_sync(
+    storage: Storage, actor: Principal, workspace_id: str, credential_id: str, *, redis: Redis
+) -> Credential:
+    """Wake existing owners without changing the value, acquiring leases, or claiming application success."""
+    async with transaction(storage) as session:
+        scope = await workspace_scope(session, actor, workspace_id, "write")
+        row = await find_row(session, actor, CredentialRow, scope, credential_id, "write")
+        audit_row(session, actor, row, "sync", {"credential_version": row.credential_version})
+        after_commit(session, partial(notify, redis, row.id, row.credential_version))
+        return Credential.model_validate(row)
