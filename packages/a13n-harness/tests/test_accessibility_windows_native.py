@@ -19,6 +19,7 @@ from a13n_envd_client.eip import v1 as eip
 from a13n_envd_client.errors import EIPMethodError
 from a13n_harness.environment import EnvironmentMount
 from a13n_harness.environment.accessibility import (
+    AccessibilityFind,
     AccessibilityLimits,
     AccessibilityRangeAcquire,
     AccessibilityRangeFind,
@@ -152,6 +153,22 @@ async def test_real_windows_accessibility_session_and_harness():
                 scoped_names = {node.name for node in scoped if node.name}
                 assert "Scoped child" in scoped_names
                 assert scoped_names <= {"Raw-only boundary", "Scoped child"}
+
+            # Output truncation must not change exact or suffix predicates.
+            query_limits = AccessibilityLimits(depth=0, max_text_bytes=4, max_native_calls=8192)
+            for query, expected in (
+                (AccessibilityFind(name="Appl"), False),
+                (AccessibilityFind(name="Apply changes"), True),
+                (AccessibilityFind(name="CHANGES", name_match="substring_casefold"), True),
+                (AccessibilityFind(identifier="appl"), False),
+                (AccessibilityFind(identifier="apply-changes"), True),
+            ):
+                page = await a11y.find(named["Apply changes"].reference, query, limits=query_limits)
+                assert bool(page.nodes) == expected
+                assert page.completeness.reason == "byte_limit"
+                if expected:
+                    assert page.nodes[0].name == "Appl"
+                    assert page.nodes[0].identifier == "appl"
 
             async def execute(name, request):
                 result = await a11y.execute(named[name].reference, UIARequest(request=request), readback=True)

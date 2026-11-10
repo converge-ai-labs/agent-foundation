@@ -49,6 +49,56 @@ fn native_queries_casefold_without_inventing_unknown_states() {
 }
 
 #[test]
+fn query_uses_native_strings_before_bounding_the_sample() {
+    for (name, identifier, query, expected) in [
+        ("Save copy", "save-copy", json!({"name":"Save"}), false),
+        (
+            "Save copy",
+            "save-copy",
+            json!({"identifier":"save"}),
+            false,
+        ),
+        ("Save copy", "save-copy", json!({"name":"Save copy"}), true),
+        (
+            "Save copy",
+            "save-copy",
+            json!({"identifier":"save-copy"}),
+            true,
+        ),
+        (
+            "Save copy",
+            "save-copy",
+            json!({"name":"COPY","name_match":"substring_casefold"}),
+            true,
+        ),
+        (
+            "中Straße",
+            "中suffix",
+            json!({"name":"STRASSE","name_match":"substring_casefold"}),
+            true,
+        ),
+        ("中Straße", "中suffix", json!({"identifier":"中s"}), false),
+    ] {
+        let budget = Budget::new(&json!({"limits":{"max_text_bytes":4}})).unwrap();
+        let raw = json!({"name":name,"identifier":identifier,"description":"Long help"});
+        let (sample, matches) = match_and_bound_sample(raw, &query, &budget);
+        assert_eq!(matches, expected, "{query}");
+        for field in ["name", "identifier", "description"] {
+            assert!(sample[field].as_str().unwrap().len() <= 4);
+        }
+        assert_eq!(budget.completeness()["reason"], "byte_limit");
+        assert_eq!(budget.calls.get(), 0);
+    }
+    assert!(!matches_query(&json!({}), &json!({"name":""})));
+    assert!(matches_query(&json!({"name":""}), &json!({"name":""})));
+    let budget = Budget::new(&json!({"limits":{"max_text_bytes":4}})).unwrap();
+    let (sample, matches) =
+        match_and_bound_sample(json!({"name":"Save copy"}), &Value::Null, &budget);
+    assert!(matches);
+    assert_eq!(sample["name"], "Save");
+}
+
+#[test]
 fn call_budget_preserves_the_last_completed_native_call() {
     let budget = Budget::new(&json!({"limits":{"max_native_calls":1}})).unwrap();
     assert_eq!(budget.call(|| Ok(7)).unwrap(), 7);
@@ -117,6 +167,54 @@ fn safe_array_type_checks_and_rectangle_item_boundaries() {
     assert!(array.integers(&budget).is_err());
     let partial_array = OwnedArray(unsafe { SafeArrayCreateVector(VT_R8, 0, 3) });
     assert!(partial_array.rectangles(&budget).is_err());
+}
+
+#[test]
+fn view_membership_scans_beyond_content_limits_and_propagates_budget_failure() {
+    let array = OwnedArray(unsafe { SafeArrayCreateVector(VT_I4, -3, 129) });
+    assert!(!array.0.is_null());
+    for index in -3..126i32 {
+        let value = index + 3;
+        unsafe { SafeArrayPutElement(array.0, &index, (&value as *const i32).cast()).unwrap() };
+    }
+    for params in [json!({}), json!({"limits":{"max_items":1}})] {
+        let budget = Budget::new(&params).unwrap();
+        assert!(array.contains_integer(128, &budget).unwrap());
+        assert!(!array.contains_integer(129, &budget).unwrap());
+        assert_eq!(budget.completeness()["complete"], true);
+    }
+    let budget = Budget::new(&json!({"limits":{"max_items":1}})).unwrap();
+    assert_eq!(array.integers(&budget).unwrap(), vec![0]);
+    assert_eq!(budget.completeness()["reason"], "item_limit");
+    let budget = Budget::new(&json!({"limits":{"max_native_calls":6}})).unwrap();
+    assert_eq!(
+        array
+            .contains_integer(128, &budget)
+            .unwrap_err()
+            .data
+            .error_type,
+        ErrorType::Timeout
+    );
+    assert_eq!(budget.completeness()["reason"], "call_limit");
+    let mut budget = Budget::new(&json!({})).unwrap();
+    budget.deadline = Instant::now() - Duration::from_millis(1);
+    assert_eq!(
+        array
+            .contains_integer(128, &budget)
+            .unwrap_err()
+            .data
+            .error_type,
+        ErrorType::Timeout
+    );
+    assert_eq!(budget.completeness()["reason"], "deadline");
+    let budget = Budget::new(&json!({})).unwrap();
+    assert!(
+        !OwnedArray(std::ptr::null_mut())
+            .contains_integer(0, &budget)
+            .unwrap()
+    );
+    let wrong_type = OwnedArray(unsafe { SafeArrayCreateVector(VT_R8, 0, 1) });
+    assert!(wrong_type.contains_integer(0, &budget).is_err());
 }
 
 #[test]

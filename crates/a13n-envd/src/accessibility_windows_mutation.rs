@@ -362,7 +362,7 @@ impl Native {
                     .and_then(|v| i32::try_from(v).ok())
                     .ok_or_else(invalid)?;
                 let ids = OwnedArray(b.call(|| unsafe { pattern.GetCurrentSupportedViews() })?);
-                if !ids.integers(b)?.contains(&id) {
+                if !ids.contains_integer(id, b)? {
                     return Err(invalid());
                 }
                 Box::new(move || unsafe { pattern.SetCurrentView(id) })

@@ -633,8 +633,26 @@ impl OwnedArray {
         }
         Ok(result)
     }
+    #[cfg(test)]
     pub(super) fn integers(&self, b: &Budget) -> Result<Vec<i32>, EIPError> {
         BorrowedArray(self.0).integers(b)
+    }
+    pub(super) fn contains_integer(&self, expected: i32, b: &Budget) -> Result<bool, EIPError> {
+        let Some((start, end)) = BorrowedArray(self.0).bounds(VT_I4, b)? else {
+            return Ok(false);
+        };
+        // Mutation preflight needs membership in the native set, not a bounded
+        // content prefix. Failure to finish the scan must propagate as failure.
+        for index in start..=end {
+            let mut value = 0i32;
+            b.call(|| unsafe {
+                SafeArrayGetElement(self.0, &index, (&mut value as *mut i32).cast())
+            })?;
+            if value == expected {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
     pub(super) fn rectangles(&self, b: &Budget) -> Result<Vec<f64>, EIPError> {
         BorrowedArray(self.0).double_items(b, 4)
@@ -642,14 +660,9 @@ impl OwnedArray {
 }
 struct BorrowedArray(*mut SAFEARRAY);
 impl BorrowedArray {
-    fn indices(
-        &self,
-        expected: VARENUM,
-        b: &Budget,
-        width: usize,
-    ) -> Result<std::ops::Range<i32>, EIPError> {
+    fn bounds(&self, expected: VARENUM, b: &Budget) -> Result<Option<(i32, i32)>, EIPError> {
         if self.0.is_null() {
-            return Ok(0..0);
+            return Ok(None);
         }
         if unsafe { SafeArrayGetDim(self.0) } != 1 {
             return Err(error(
@@ -666,6 +679,17 @@ impl BorrowedArray {
         }
         let start = b.call(|| unsafe { SafeArrayGetLBound(self.0, 1) })?;
         let end = b.call(|| unsafe { SafeArrayGetUBound(self.0, 1) })?;
+        Ok(Some((start, end)))
+    }
+    fn indices(
+        &self,
+        expected: VARENUM,
+        b: &Budget,
+        width: usize,
+    ) -> Result<std::ops::Range<i32>, EIPError> {
+        let Some((start, end)) = self.bounds(expected, b)? else {
+            return Ok(0..0);
+        };
         let count = (i64::from(end) - i64::from(start) + 1).max(0) as usize;
         if !count.is_multiple_of(width) {
             return Err(error(

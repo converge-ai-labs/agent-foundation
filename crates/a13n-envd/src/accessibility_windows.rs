@@ -483,12 +483,15 @@ impl Native {
         Ok(result)
     }
     fn sample_fields(&self, n: &IUIAutomationElement, b: &Budget) -> Result<Value, EIPError> {
+        Ok(match_and_bound_sample(self.sample_fields_raw(n, b)?, &Value::Null, b).0)
+    }
+    fn sample_fields_raw(&self, n: &IUIAutomationElement, b: &Budget) -> Result<Value, EIPError> {
         let role = b.call(|| unsafe { n.CurrentControlType() })?;
         let mut result = json!({"reference":{"backend":"uia","backend_epoch":self.epoch,"node_handle":"x".repeat(128)},"native_role":format!("UIA_ControlType_{}",role.0),"role":role_name(role),"sampled_at":now(),"states":{},"capabilities":[],"field_errors":[]});
         macro_rules! field {
             ($name:literal,$call:expr) => {
                 match b.call(|| unsafe { $call }) {
-                    Ok(value) => result[$name] = json!(b.text(value.to_string())),
+                    Ok(value) => result[$name] = json!(value.to_string()),
                     Err(e) => field_error(&mut result, $name, &e),
                 }
             };
@@ -812,7 +815,7 @@ impl Native {
                                 continue;
                             }
                         }
-                        let Some(mut sample) = traversal_optional(self.sample_fields(&n, b), b)?
+                        let Some(sample) = traversal_optional(self.sample_fields_raw(&n, b), b)?
                         else {
                             pending.pop();
                             visited += 1;
@@ -827,7 +830,8 @@ impl Native {
                         if matches!(b.reason.get(), Some("deadline" | "call_limit")) {
                             break;
                         }
-                        if matches_query(&sample, &query) {
+                        let (mut sample, matches) = match_and_bound_sample(sample, &query, b);
+                        if matches {
                             if parent.is_some() {
                                 sample["parent"] = sample["reference"].clone();
                             }
@@ -1091,6 +1095,17 @@ fn role_name(id: UIA_CONTROLTYPE_ID) -> Option<&'static str> {
         _ => return None,
     })
 }
+fn match_and_bound_sample(mut sample: Value, query: &Value, b: &Budget) -> (Value, bool) {
+    // Query the values from this native sample, never the display projection.
+    // Re-reading properties would both consume calls and observe another state.
+    let matches = matches_query(&sample, query);
+    for key in ["name", "identifier", "description"] {
+        if let Some(value) = sample[key].as_str() {
+            sample[key] = json!(b.text(value.to_owned()));
+        }
+    }
+    (sample, matches)
+}
 fn matches_query(n: &Value, q: &Value) -> bool {
     if q.is_null() {
         return true;
@@ -1101,7 +1116,9 @@ fn matches_query(n: &Value, q: &Value) -> bool {
         }
     }
     if let Some(name) = q["name"].as_str() {
-        let actual = n["name"].as_str().unwrap_or("");
+        let Some(actual) = n["name"].as_str() else {
+            return false;
+        };
         if match q["name_match"].as_str().unwrap_or("exact") {
             "substring_casefold" => !actual
                 .case_fold()

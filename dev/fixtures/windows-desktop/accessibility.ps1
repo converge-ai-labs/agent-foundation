@@ -29,7 +29,7 @@ public sealed class A13nRawOnlyGroupPeer : GroupBoxAutomationPeer {
         AutomationProperties.Name="Envd accessibility fixture">
   <ScrollViewer VerticalScrollBarVisibility="Auto" AutomationProperties.Name="Fixture scroll area">
     <StackPanel x:Name="FixtureLayout" Margin="24">
-      <Button x:Name="Apply" Content="Apply changes" AutomationProperties.Name="Apply changes" Height="36"/>
+      <Button x:Name="Apply" Content="Apply changes" AutomationProperties.Name="Apply changes" AutomationProperties.AutomationId="apply-changes" Height="36"/>
       <TextBox x:Name="Editor" AutomationProperties.Name="Unicode editor" Text="Initial text" Margin="0,8"/>
       <TextBox x:Name="ReadOnly" AutomationProperties.Name="Read-only editor" Text="Read-only text" IsReadOnly="True"/>
       <PasswordBox x:Name="Protected" AutomationProperties.Name="Protected editor" Password="fixture-secret" Margin="0,8"/>
