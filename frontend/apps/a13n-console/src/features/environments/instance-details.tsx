@@ -37,6 +37,7 @@ import { EnvironmentStatus } from "./instance-status";
 import { useEnvironmentTypes } from "./providers";
 import { KubernetesDetails } from "./kubernetes-details";
 import { EnvironmentMonitoring } from "../monitoring/environment";
+import { EnvironmentCredentials } from "../credentials/environment";
 
 /**
  * Standalone entry point: a "Details" button that opens the same inspector.
@@ -356,6 +357,12 @@ export function EnvironmentPanel({
                 environment={value}
                 etag={detail.data?.etag}
               />
+              <section className={styles.factGroup}>
+                <EnvironmentCredentials
+                  key={value.id}
+                  environmentId={value.id}
+                />
+              </section>
               <section className={styles.factGroup}>
                 <h3>{t("Source")}</h3>
                 <dl className={styles.facts}>

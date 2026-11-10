@@ -165,7 +165,7 @@ export function CredentialSessions({ target }: { target: SessionTarget }) {
         <Empty
           title={t("No Session references")}
           description={t(
-            "References appear when an execution selects this credential and disappear after confirmed Session retirement.",
+            "References appear when executions select credentials and disappear after confirmed Session retirement.",
           )}
         />
       )}

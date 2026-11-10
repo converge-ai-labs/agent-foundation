@@ -4229,7 +4229,7 @@
   "No confirmed application": "No confirmed application",
   "{{count}} credential references on this page": "{{count}} credential references on this page",
   "No Session references": "No Session references",
-  "References appear when an execution selects this credential and disappear after confirmed Session retirement.": "References appear when an execution selects this credential and disappear after confirmed Session retirement.",
+  "References appear when executions select credentials and disappear after confirmed Session retirement.": "References appear when executions select credentials and disappear after confirmed Session retirement.",
   "Revoked in Service. Idle Sessions may retain the old token until next use or expiry. Revoke it upstream for immediate invalidation.": "Revoked in Service. Idle Sessions may retain the old token until next use or expiry. Revoke it upstream for immediate invalidation.",
   "Saved in Service. Active Sessions update asynchronously; idle Sessions update before their next command.": "Saved in Service. Active Sessions update asynchronously; idle Sessions update before their next command.",
   "Sync active Sessions": "Sync active Sessions",

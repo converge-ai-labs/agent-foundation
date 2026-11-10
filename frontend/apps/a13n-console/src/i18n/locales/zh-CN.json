@@ -4229,7 +4229,7 @@
   "No confirmed application": "尚未确认应用",
   "{{count}} credential references on this page": "本页 {{count}} 个凭据引用",
   "No Session references": "暂无 Session 引用",
-  "References appear when an execution selects this credential and disappear after confirmed Session retirement.": "执行选择此凭据后会显示引用，确认 Session 结束后移除。",
+  "References appear when executions select credentials and disappear after confirmed Session retirement.": "执行选择凭据后会显示引用，确认 Session 结束后移除。",
   "Revoked in Service. Idle Sessions may retain the old token until next use or expiry. Revoke it upstream for immediate invalidation.": "Service 中已撤销。空闲 Session 可能保留旧令牌，直到下次使用或过期。如需立即失效，请在上游服务撤销令牌。",
   "Saved in Service. Active Sessions update asynchronously; idle Sessions update before their next command.": "Service 中已保存。活跃 Session 异步更新；空闲 Session 在下次执行命令前更新。",
   "Sync active Sessions": "同步活跃 Session",

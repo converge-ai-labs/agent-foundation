@@ -20,6 +20,7 @@ import { useCredentialEditor } from "./editor";
 import { CredentialsPage } from "./page";
 import { CredentialSessions } from "./sessions";
 import { RevokeCredential } from "./revoke";
+import { EnvironmentCredentials } from "./environment";
 
 function CredentialEditor(props: Parameters<typeof useCredentialEditor>[0]) {
   const editor = useCredentialEditor(props);
@@ -507,4 +508,21 @@ it("preserves a creation draft when a background refresh replaces the empty stat
     "value",
     "",
   );
+});
+
+it("reads environment application evidence only after opening its credential section", async () => {
+  const user = userEvent.setup();
+  fetcher.mockImplementation(async () => page([reference]));
+  mount(<EnvironmentCredentials environmentId="env_test" />);
+  expect(requests("GET")).toHaveLength(0);
+  await user.click(screen.getByRole("button", { name: "Credentials" }));
+  await screen.findByText("On next use");
+  expect(requests("GET")).toHaveLength(1);
+  expect(requests("GET")[0].url).toBe(
+    "https://service.test/api/v1/environments/env_test/credential-sessions?limit=30",
+  );
+  expect(requests("GET")[0].headers.get("X-Workspace-ID")).toBe("ws_test");
+  expect(requests("POST")).toHaveLength(0);
+  await user.click(screen.getByRole("button", { name: "Credentials" }));
+  await waitFor(() => expect(screen.queryByText("On next use")).toBeNull());
 });
