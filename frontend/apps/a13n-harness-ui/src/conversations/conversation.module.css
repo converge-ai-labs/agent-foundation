@@ -1769,8 +1769,8 @@ dl.detailGrid > .detailLongRow dd {
 .readerFade {
   position: absolute;
   /* Keep the scrollbar outside the optical treatment. */
-  inset-inline: 12px;
-  height: 48px;
+  inset-inline: var(--reader-fade-inset, 12px);
+  height: var(--reader-fade-top, 48px);
   z-index: 1;
   pointer-events: none;
   --fade-direction: to top;
@@ -1795,7 +1795,7 @@ dl.detailGrid > .detailLongRow dd {
 }
 .readerFade[data-edge="bottom"] {
   bottom: 0;
-  height: 80px;
+  height: var(--reader-fade-bottom, 80px);
   --fade-direction: to bottom;
   /* Finish the fade before the activity row; its backdrop stays clean. */
   mask-image: linear-gradient(
@@ -1811,6 +1811,8 @@ dl.detailGrid > .detailLongRow dd {
     color-mix(in srgb, var(--a13n-canvas) 92%, transparent),
     var(--a13n-canvas) 60%
   );
+}
+.readerFrame > .readerFade[data-edge="bottom"] {
   display: none;
 }
 .readerFrame:has(~ .composer) > .readerFade[data-edge="bottom"] {
@@ -1937,7 +1939,7 @@ dl.detailGrid > .detailLongRow dd {
 }
 .executionContent {
   position: relative;
-  max-height: min(640px, 70dvh);
+  max-height: min(192px, 32dvh);
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
@@ -1946,6 +1948,36 @@ dl.detailGrid > .detailLongRow dd {
   padding: 4px 0;
   margin-block-start: 0;
   margin-inline-start: 0;
+}
+@media (pointer: fine) {
+  .executionContent {
+    --execution-row-height: 22px;
+    --execution-row-padding: 1px;
+  }
+  .executionContent .reasoning > summary,
+  .executionContent .activity > summary {
+    min-height: var(--execution-row-height);
+    padding-block: var(--execution-row-padding);
+  }
+  .executionContent .activity {
+    margin-block: 1px;
+  }
+}
+@supports (interpolate-size: allow-keywords) and
+  selector(details::details-content) {
+  @media (prefers-reduced-motion: no-preference) {
+    .executionContent details::details-content {
+      interpolate-size: allow-keywords;
+      block-size: 0;
+      overflow: clip;
+      transition:
+        block-size 150ms ease-out,
+        content-visibility 150ms allow-discrete;
+    }
+    .executionContent details[open]::details-content {
+      block-size: auto;
+    }
+  }
 }
 .executionContent .assistantMessage {
   margin-block: 8px 12px;
@@ -1956,9 +1988,6 @@ dl.detailGrid > .detailLongRow dd {
 .executionContent:focus-visible {
   outline: 2px solid var(--a13n-focus);
   outline-offset: 2px;
-}
-.executionContent[hidden] {
-  display: none;
 }
 .historyActions {
   display: flex;

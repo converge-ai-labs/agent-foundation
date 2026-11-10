@@ -111,7 +111,7 @@ Process counts cover observed running handles, excluding foreground calls. The p
 
 ### Review token usage and estimated cost
 
-Select the context ring above the composer to inspect the latest main Agent request. The bar shows input, output and remaining capacity. Expand Skills to see the names and descriptions supplied to the model. Expand Tool calls to inspect argument and result sizes. Category token counts use the character proportions of this input. When media usage cannot be separated, the panel shows text character shares.
+Select the context ring above the composer to inspect the latest main Agent request. The bar shows input, output and remaining capacity. Expand Skills to see the injected Skill names and their usage. Expand Tool calls to inspect argument and result sizes. Category token counts use the character proportions of this input. Media tokens without a separate count are distributed using the same proportions. Each percentage uses the full context window as its denominator.
 
 1. Open **Usage** using the chart icon beside the sidebar collapse button. **Project → View usage** or **Details → Usage → Open analytics** opens a preselected scope.
 2. Choose 7, 30, or 90 UTC days, or a custom range up to 366 days. Filter by Project, root Thread, or actual provider/model.

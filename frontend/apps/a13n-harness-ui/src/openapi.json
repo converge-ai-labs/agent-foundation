@@ -12229,17 +12229,6 @@
             "minimum": 0.0,
             "title": "Characters"
           },
-          "description": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Description"
-          },
           "calls": {
             "anyOf": [
               {

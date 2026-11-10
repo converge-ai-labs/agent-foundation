@@ -1333,6 +1333,35 @@ function ExecutionReader({
   const reader = useRef<HTMLDivElement>(null);
   const follow = useRef(!complete);
   const anchor = useRef<ReadingAnchor | undefined>(undefined);
+  const start = useRef<HTMLDivElement>(null);
+  const end = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const root = reader.current;
+    if (
+      !open ||
+      !root ||
+      !start.current ||
+      !end.current ||
+      typeof IntersectionObserver === "undefined"
+    )
+      return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          root.toggleAttribute(
+            entry.target === start.current
+              ? "data-more-above"
+              : "data-more-below",
+            !entry.isIntersecting,
+          );
+        }
+      },
+      { root },
+    );
+    observer.observe(start.current);
+    observer.observe(end.current);
+    return () => observer.disconnect();
+  }, [open]);
   useLayoutEffect(() => {
     const element = reader.current;
     if (!open || !element) return;
@@ -1343,7 +1372,6 @@ function ExecutionReader({
   return (
     <div
       ref={reader}
-      hidden={!open}
       role="region"
       aria-label={t("Work log")}
       tabIndex={0}
@@ -1375,7 +1403,9 @@ function ExecutionReader({
         anchor.current = captureReadingAnchor(element);
       }}
     >
+      <div ref={start} aria-hidden="true" />
       {children}
+      <div ref={end} aria-hidden="true" />
     </div>
   );
 }

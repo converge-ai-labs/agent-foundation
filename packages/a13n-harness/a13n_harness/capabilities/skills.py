@@ -821,7 +821,7 @@ class _SkillsRunCapability(SkillsCapability):
                 )
             )
             lines.append(entry)
-            sizes[item.name] = ContextItemUsage(characters=len(entry), description=item.description)
+            sizes[item.name] = ContextItemUsage(characters=len(entry))
         lines.append("</available-skills>")
         return InstructionCatalog("skills", "\n".join(lines), sizes)
 

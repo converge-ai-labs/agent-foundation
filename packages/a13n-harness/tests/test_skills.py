@@ -816,7 +816,7 @@ async def test_host_skill_selection_injects_only_exact_selected_names(tmp_path: 
     assert record.context_breakdown is not None
     skills = record.context_breakdown.groups["skills"]
     assert list(skills.items) == ["alpha"]
-    assert skills.items["alpha"].description == "Use alpha."
+    assert "Use alpha." not in skills.model_dump_json()
     assert skills.characters > skills.items["alpha"].characters > len("Use alpha.")
 
 

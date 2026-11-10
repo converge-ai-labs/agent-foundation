@@ -47,7 +47,6 @@ type ContextGroupName = Literal[
 
 class ContextItemUsage(BaseModel):
     characters: int = Field(ge=0)
-    description: str | None = Field(default=None, exclude_if=lambda text: text is None)
     calls: int | None = Field(default=None, ge=0, exclude_if=lambda v: v is None)
     argument_characters: int | None = Field(default=None, ge=0, exclude_if=lambda v: v is None)
     result_characters: int | None = Field(default=None, ge=0, exclude_if=lambda v: v is None)
@@ -130,7 +129,6 @@ def measure_context(
     results: Counter[str] = Counter()
     unmeasured: set[Literal["audio", "other"]] = {"other"} if params.native_tools else set()
     call_names: dict[tuple[str, str], str] = {}
-    skill_descriptions: dict[str, str | None] = {}
 
     def media(value: object) -> None:
         is_audio = isinstance(value, AudioUrl) or (
@@ -145,8 +143,6 @@ def measure_context(
         if catalog and content == catalog.text:
             for name, entry in catalog.items.items():
                 details[group][name] += entry.characters
-                if group == "skills":
-                    skill_descriptions[name] = entry.description
 
     for block in Model._get_instruction_parts(messages, params) or ():
         if params.instruction_visibility_of(block) == "prefix":
@@ -234,26 +230,31 @@ def measure_context(
         totals["tool_calls"] += size
         details["tool_calls"][name] = size
 
-    groups: dict[ContextGroupName, ContextGroupUsage] = {}
-    # Bound named detail within the existing usage-report byte budget. Totals always cover every item.
-    detail_bytes = 24 * 1024
-    for group, size in totals.items():
-        if not size and not details[group]:
-            continue
-        items: dict[str, ContextItemUsage] = {}
-        for name, chars in sorted(details[group].items(), key=lambda pair: (-pair[1], pair[0])):
-            metric = ContextItemUsage(
-                characters=chars,
-                description=skill_descriptions.get(name) if group == "skills" else None,
-                calls=calls[name] if group == "tool_calls" else None,
-                argument_characters=arguments[name] if group == "tool_calls" else None,
-                result_characters=results[name] if group == "tool_calls" else None,
-            )
-            cost = len(dump_json_text({name: metric.model_dump()}).encode())
-            if cost <= detail_bytes:
-                items[name] = metric
-                detail_bytes -= cost
-        groups[group] = ContextGroupUsage(characters=size, items=items, omitted_items=len(details[group]) - len(items))
+    groups: dict[ContextGroupName, ContextGroupUsage] = {
+        group: ContextGroupUsage(characters=size, omitted_items=len(details[group]))
+        for group, size in totals.items()
+        if size or details[group]
+    }
+    # Take the largest item from each category before considering the next rank.
+    by_rank: list[tuple[int, ContextGroupName, str, int]] = sorted(
+        (rank, group, name, chars)
+        for group in groups
+        for rank, (name, chars) in enumerate(sorted(details[group].items(), key=lambda item: (-item[1], item[0])))
+    )
+    remaining = 24 * 1024
+    for _, group, name, chars in by_rank:
+        metric = ContextItemUsage(
+            characters=chars,
+            calls=calls[name] if group == "tool_calls" else None,
+            argument_characters=arguments[name] if group == "tool_calls" else None,
+            result_characters=results[name] if group == "tool_calls" else None,
+        )
+        cost = len(dump_json_text({name: metric.model_dump()}).encode())
+        if cost <= remaining:
+            groups[group].items[name] = metric
+            groups[group].omitted_items -= 1
+            remaining -= cost
+
     return ContextBreakdown(
         counted_input_characters=sum(totals.values()), groups=groups, unmeasured_content=tuple(sorted(unmeasured))
     )

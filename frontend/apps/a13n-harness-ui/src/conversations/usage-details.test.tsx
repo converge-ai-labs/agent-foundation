@@ -157,7 +157,7 @@ it("shows an empty scoped view without unknown-cost placeholders and restores to
   expect(screen.queryByText("No usage in this scope yet.")).toBeNull();
 });
 
-it("estimates from input alone and falls back to characters for unmeasured media", () => {
+it("estimates input groups by character weight and measures shares against the full window", () => {
   const request: Schema<"ContextUsageView"> = {
     thread_id: "one",
     input_tokens: 1000,
@@ -169,7 +169,7 @@ it("estimates from input alone and falls back to characters for unmeasured media
         skills: {
           characters: 25,
           items: {
-            sample: { characters: 20, description: "Sample catalog entry" },
+            sample: { characters: 20 },
           },
         },
         conversation: { characters: 75 },
@@ -180,13 +180,13 @@ it("estimates from input alone and falls back to characters for unmeasured media
     <ContextDetails compact used={1200} capacity={4000} request={request} />,
   );
   expect(screen.getByText("250")).toBeTruthy();
-  expect(screen.getByText("25%")).toBeTruthy();
+  expect(screen.getByText("6.3%")).toBeTruthy();
   expect(screen.getByRole("meter").getAttribute("aria-valuenow")).toBe("1200");
   const skills = screen.getByRole("button", { name: /Skills/ });
   expect(skills.getAttribute("aria-expanded")).toBe("false");
   fireEvent.click(skills);
   expect(skills.getAttribute("aria-expanded")).toBe("true");
-  expect(screen.getByText("Sample catalog entry")).toBeTruthy();
+  expect(screen.getByText("sample")).toBeTruthy();
   view.rerender(
     <ContextDetails
       compact
@@ -201,8 +201,12 @@ it("estimates from input alone and falls back to characters for unmeasured media
       }}
     />,
   );
-  expect(screen.getByText("Text characters")).toBeTruthy();
-  expect(screen.queryByText("250")).toBeNull();
+  expect(screen.getByText("250")).toBeTruthy();
+  expect(screen.getByText("Of window")).toBeTruthy();
+  const segments = screen.getByRole("meter").children;
+  expect(segments).toHaveLength(3);
+  expect((segments[0] as HTMLElement).style.width).toBe("6.25%");
+  expect((segments[1] as HTMLElement).style.width).toBe("18.75%");
   view.rerender(
     <ContextDetails
       compact
@@ -213,11 +217,11 @@ it("estimates from input alone and falls back to characters for unmeasured media
         input_audio_tokens: 100,
         context_breakdown: {
           ...request.context_breakdown!,
-          unmeasured_content: ["audio"],
+          unmeasured_content: ["audio", "other"],
         },
       }}
     />,
   );
   expect(screen.getByText("225")).toBeTruthy();
-  expect(screen.getByText("22.5%")).toBeTruthy();
+  expect(screen.getByText("5.6%")).toBeTruthy();
 });
