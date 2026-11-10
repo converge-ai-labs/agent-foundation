@@ -3864,6 +3864,12 @@ class FileDocumentText(EIPModel):
     prefix_byte_length: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)]
     prefix_digest: ContentDigest
 
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["kind"] = self.kind
+        return result
+
 
 class FileFindResult(EIPModel):
     entries: tuple[FileListEntry, ...] = ()
@@ -4365,6 +4371,12 @@ class FileDocumentFailure(EIPModel):
     path: EIPPath
     phase: FileDocumentFailurePhase
     error: EIPError
+
+    @model_serializer(mode="wrap")
+    def _serialize_constants(self, handler: SerializerFunctionWrapHandler):
+        result = handler(self)
+        result["kind"] = self.kind
+        return result
 
 
 type FileDocument = Annotated[
