@@ -118,6 +118,8 @@ A13N_TEST_E2B_API_KEY="$E2B_API_KEY" make e2b-provider-test
 {"template":"your-compatible-base","execution":"envd_http","preparation":"headless","timeout_seconds":1200}
 ```
 
+使用 `preparation="headless"` 时，`timeout_seconds` 至少为 960 秒，以覆盖有界安装和就绪检查预算。该条件不改变 Native 或预装运行时配置通用的 30 秒下限；所选 E2B 后端可能要求更长的最低存活时间。
+
 创建在启动有界安装任务前记录目标和安装器版本。重入继续同一目标及终态结果，确认失败后需显式重试。连接仅检查就绪。原生暂停/恢复保留内存与文件。
 
 ### E2B 桌面准备 {#e2b-desktop-preparation}

@@ -26,6 +26,8 @@ The [Python EIP client](python-client.md) provides scoped Session management and
 
 Use `a13n-envd daemon` under an external service manager and ask that manager to restart it after installation. Use `a13n-envd supervise` when the deployment has no reliable service manager. The native supervisor replaces an exited daemon at most three times over its lifetime, with one-, two- and four-second backoff. Operator stop drains and cleans up the owned child without replacing it. Stdio remains caller-owned.
 
+After the three crash replacements are exhausted, the supervisor exits unsuccessfully and its local restart endpoint is unavailable. Inspect the launcher/guest startup log, correct the startup failure, then ask the outer service/container launcher to start a fresh `a13n-envd supervise` process with the same trusted arguments, installation state, credential files and workspace. This creates a new replacement budget; running `a13n-envd restart` cannot revive an exited supervisor. Verify authenticated EIP readiness and open new Sessions before continuing. When the provider cannot restart that target, use its explicit instance-replacement path.
+
 After atomically installing a release at the original executable path, request a version-selected restart from the same account:
 
 ```sh

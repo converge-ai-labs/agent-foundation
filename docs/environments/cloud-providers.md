@@ -118,6 +118,8 @@ Select Envd HTTP without Desktop, then **Install headless Envd**. Service instal
 {"template":"your-compatible-base","execution":"envd_http","preparation":"headless","timeout_seconds":1200}
 ```
 
+With `preparation="headless"`, `timeout_seconds` must be at least 960 seconds to cover the bounded installation and readiness budget. This conditional requirement does not raise the general 30-second minimum for Native or preinstalled recipes; the selected E2B backend can impose a higher lifetime minimum.
+
 Creation records the target and installer revision before the bounded guest job. Reentry follows the same target and terminal result; a confirmed failed attempt needs explicit retry. Attachment only checks readiness. Native pause/resume retains memory and files.
 
 ### E2B desktop preparation

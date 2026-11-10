@@ -423,7 +423,9 @@ fn abrupt_supervisor_exit_does_not_leave_a_daemon_or_command() {
 fn operator_stop_escalates_within_the_desktop_launchers_deadline() {
     let fixture = Fixture::new();
     let mut supervisor = fixture.start("supervise");
-    fixture.descriptor(None);
+    let descriptor = fixture.descriptor(None);
+    let session = fixture.open(&descriptor);
+    let payload = fixture.start_payload(&session);
     let pid = fixture.daemon_pids()[0];
     assert_eq!(unsafe { libc::kill(pid as i32, libc::SIGSTOP) }, 0);
     let started = Instant::now();
@@ -434,6 +436,7 @@ fn operator_stop_escalates_within_the_desktop_launchers_deadline() {
         fixture.log()
     );
     assert!(started.elapsed() >= Duration::from_secs(3));
+    assert_exited(payload);
     assert_exited(pid);
     assert_eq!(fixture.daemon_pids().len(), 1);
 }
@@ -651,4 +654,61 @@ fn operator_stop_during_restart_drain_prevents_replacement() {
     assert!(!restart.wait(Duration::from_secs(5)).success());
     assert_exited(daemon);
     assert_eq!(fixture.daemon_pids().len(), 1);
+}
+
+#[cfg(unix)]
+#[test]
+fn crash_replacement_waits_for_the_command_cleanup_owner() {
+    let fixture = Fixture::new();
+    let mut supervisor = fixture.start("supervise");
+    let first = fixture.descriptor(None);
+    let session = fixture.open(&first);
+    let payload = fixture.start_payload(&session);
+    let output = Command::new("ps")
+        .args(["-o", "ppid=", "-p", &payload.to_string()])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let cleanup_owner: i32 = String::from_utf8(output.stdout)
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    let paused = PausedProcess::new(cleanup_owner);
+    kill(fixture.daemon_pids()[0]);
+    fixture.wait_for_log("waiting for daemon descendants");
+    // The owner is deliberately unable to process EOF. No replacement may
+    // start, and group termination must not destroy the only payload reaper.
+    assert_eq!(fixture.daemon_pids().len(), 1);
+    assert_eq!(unsafe { libc::kill(payload as i32, 0) }, 0);
+    drop(paused);
+    fixture.descriptor(Some(&first["generation"]));
+    assert_exited(payload);
+    assert_exited(cleanup_owner as u32);
+    stop(supervisor.0.id());
+    assert!(
+        supervisor.wait(Duration::from_secs(5)).success(),
+        "{}",
+        fixture.log()
+    );
+}
+
+#[cfg(unix)]
+struct PausedProcess(i32);
+
+#[cfg(unix)]
+impl PausedProcess {
+    fn new(pid: i32) -> Self {
+        assert_eq!(unsafe { libc::kill(pid, libc::SIGSTOP) }, 0);
+        Self(pid)
+    }
+}
+
+#[cfg(unix)]
+impl Drop for PausedProcess {
+    fn drop(&mut self) {
+        unsafe {
+            libc::kill(self.0, libc::SIGCONT);
+        }
+    }
 }

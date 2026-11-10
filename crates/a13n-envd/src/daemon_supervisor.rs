@@ -44,6 +44,12 @@ pub(crate) fn run(arguments: &[OsString]) -> Result<(), Box<dyn std::error::Erro
 }
 
 async fn supervise(arguments: &[OsString]) -> io::Result<()> {
+    #[cfg(target_os = "linux")]
+    // Adopt and reap command cleanup owners when the daemon exits abruptly.
+    // They must survive long enough to retire their separate payload groups.
+    if unsafe { libc::prctl(libc::PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) } != 0 {
+        return Err(io::Error::last_os_error());
+    }
     let mut stop = crate::shutdown::Signal::new()?;
     let executable = std::env::current_exe()?;
     let control = crate::daemon_control::Control::bind().await?;
@@ -117,21 +123,28 @@ async fn supervise(arguments: &[OsString]) -> io::Result<()> {
         };
         let mut stopping = matches!(action, Action::Stop);
         let cleanup = async {
+            // Closing this private pipe requests graceful drain on every OS,
+            // including Windows processes launched without an attached console.
+            drop(lifetime);
             if !matches!(action, Action::Crash) {
-                // Closing this private pipe requests graceful drain on every OS,
-                // including Windows processes launched without an attached console.
-                drop(lifetime);
                 let _ = timeout(STOP_GRACE, child.wait()).await;
             }
-            // A crashed leader may leave descendants. Retire the old tree before a
-            // replacement acquires the runtime lock or accepts a fresh generation.
             #[cfg(windows)]
             job.terminate_and_wait(KILL_GRACE).await?;
             #[cfg(unix)]
-            kill_group(pid)?;
+            // Kill only the daemon. Its command supervisors need control-pipe EOF
+            // to terminate and reap payloads in their own process groups.
+            if child.try_wait()?.is_none() {
+                child.start_kill()?;
+            }
             timeout(KILL_GRACE, child.wait())
                 .await
                 .map_err(|_| io::Error::other("daemon did not exit after termination"))??;
+            #[cfg(unix)]
+            {
+                eprintln!("a13n-envd supervise: waiting for daemon descendants");
+                wait_group(pid).await?;
+            }
             Ok::<_, io::Error>(())
         };
         tokio::pin!(cleanup);
@@ -174,14 +187,26 @@ enum Action {
 }
 
 #[cfg(unix)]
-fn kill_group(pid: u32) -> io::Result<()> {
-    if unsafe { libc::kill(-(pid as i32), libc::SIGKILL) } == 0 {
-        return Ok(());
-    }
-    let error = io::Error::last_os_error();
-    if error.raw_os_error() == Some(libc::ESRCH) {
-        Ok(())
-    } else {
-        Err(error)
-    }
+async fn wait_group(pid: u32) -> io::Result<()> {
+    let group = -(pid as i32);
+    timeout(STOP_GRACE, async {
+        loop {
+            #[cfg(target_os = "linux")]
+            // The daemon has been awaited. Only its adopted descendants remain.
+            while unsafe { libc::waitpid(group, std::ptr::null_mut(), libc::WNOHANG) } > 0 {}
+            if unsafe { libc::kill(group, 0) } != 0 {
+                let error = io::Error::last_os_error();
+                return if error.raw_os_error() == Some(libc::ESRCH) {
+                    Ok(())
+                } else {
+                    Err(error)
+                };
+            }
+            sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .map_err(|_| {
+        io::Error::other("daemon descendants did not finish cleanup; replacement refused")
+    })?
 }
