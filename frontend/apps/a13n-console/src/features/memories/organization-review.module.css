@@ -5,15 +5,21 @@
 }
 .heading,
 .summary,
-.fileHeading,
-.applyBar {
+.fileHeading {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
 }
 .heading {
-  align-items: flex-start;
+  flex-wrap: wrap;
+}
+.headingActions {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 8px;
+  margin-left: auto;
 }
 .title {
   display: flex;
@@ -26,7 +32,6 @@
   font-weight: 500;
 }
 .heading p,
-.applyBar p,
 .detailNote,
 .otherActions p,
 .confirmSummary p {
@@ -136,22 +141,6 @@
   margin: 4px 0 8px;
   color: var(--a13n-secondary);
 }
-.applyBar {
-  position: sticky;
-  bottom: 16px;
-  z-index: 5;
-  padding: 12px 16px;
-  border: 1px solid var(--a13n-border-soft);
-  border-radius: 12px;
-  background: var(--a13n-elevated);
-  box-shadow: var(--a13n-shadow-subtle);
-}
-.applyBar p {
-  margin: 0;
-}
-.applyBar > button {
-  flex-shrink: 0;
-}
 .sequences {
   display: flex;
   flex-wrap: wrap;
@@ -188,19 +177,11 @@
 @media (max-width: 640px) {
   .heading,
   .summary,
-  .applyBar,
   .otherActions > div {
     flex-wrap: wrap;
     gap: 12px;
   }
   .counts {
     gap: 16px;
-  }
-  .applyBar {
-    position: static;
-    padding: 14px;
-  }
-  .applyBar > button {
-    width: 100%;
   }
 }

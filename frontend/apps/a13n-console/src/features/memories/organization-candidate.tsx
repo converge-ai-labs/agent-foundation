@@ -162,18 +162,35 @@ function CandidateSnapshot({
               label={statusLabels[candidate.status]}
             />
           </div>
+          {can("write") && ready && (
+            <p>
+              {t("Your memory stays unchanged until you apply all changes.")}
+            </p>
+          )}
         </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label={t("Reload review")}
-          title={t("Reload review")}
-          loading={reloading}
-          disabled={publish.isPending}
-          onClick={() => void reload()}
-        >
-          <ArrowsClockwiseIcon />
-        </Button>
+        <div className={styles.headingActions}>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={t("Reload review")}
+            title={t("Reload review")}
+            loading={reloading}
+            disabled={publish.isPending}
+            onClick={() => void reload()}
+          >
+            <ArrowsClockwiseIcon />
+          </Button>
+          {can("write") && ready && (
+            <Button
+              disabled={
+                changed || !!publish.error || publish.isPending || reloading
+              }
+              onClick={() => setConfirmation("checked")}
+            >
+              {t("Apply all changes")}
+            </Button>
+          )}
+        </div>
       </header>
       {candidate.status === "generating" ? (
         <p className={styles.notice} role="status">
@@ -377,23 +394,6 @@ function CandidateSnapshot({
         </FileBrowser>
       ) : (
         <p className={styles.notice}>{t("No candidate file changes.")}</p>
-      )}
-      {can("write") && ready && (
-        <div className={styles.applyBar}>
-          <div>
-            <p>
-              {t("Your memory stays unchanged until you apply all changes.")}
-            </p>
-          </div>
-          <Button
-            disabled={
-              changed || !!publish.error || publish.isPending || reloading
-            }
-            onClick={() => setConfirmation("checked")}
-          >
-            {t("Apply all changes")}
-          </Button>
-        </div>
       )}
       <DisclosureSection title={t("Review details")}>
         <dl className={styles.sequences}>
