@@ -63,10 +63,14 @@ async def test_bot_is_lazy_singleton_and_direct_chat_is_retained(tmp_path: Path)
         assert (await app.list_threads()).total == 0
         assert not (await bot.snapshot()).state.activated
         command = BotSubmit(input_id="input-first", text="Track this objective")
-        first = await bot.submit(command)
-        assert await bot.submit(command) == first
+        # Compare queued retries before background delivery can advance the retained input.
+        async with bot._dispatch_lock, bot._settlement_lock:
+            first = await bot.submit(command)
+            assert first.state == "queued"
+            assert await bot.submit(command) == first
         item = await consumed(app, command.input_id)
         assert item.state == "completed", item.error
+        assert await bot.submit(command) == item
         snapshot = await bot.snapshot()
         assert snapshot.state.activated
         assert [message.text for message in snapshot.messages] == ["Track this objective", "root complete"]
