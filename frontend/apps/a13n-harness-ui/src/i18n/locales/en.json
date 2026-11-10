@@ -3189,7 +3189,7 @@
   "Tool definitions": "Tool definitions",
   "Context breakdown": "Context breakdown",
   "Est. tokens": "Est. tokens",
-  "{{calls}} calls · {{args, number}} argument chars · {{results, number}} result chars": "{{calls}} calls · {{args, number}} argument chars · {{results, number}} result chars",
+  "{{calls}} calls · {{args}} argument tokens · {{results}} result tokens": "{{calls}} calls · {{args}} argument tokens · {{results}} result tokens",
   "Show {{count}} more": "Show {{count}} more",
   "Catalog instructions": "Catalog instructions",
   "Shared instructions": "Shared instructions",

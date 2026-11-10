@@ -3162,7 +3162,7 @@
   "Tool definitions": "工具定义",
   "Context breakdown": "上下文构成",
   "Est. tokens": "估算 token 数",
-  "{{calls}} calls · {{args, number}} argument chars · {{results, number}} result chars": "调用 {{calls}} 次，参数 {{args, number}} 字符，结果 {{results, number}} 字符",
+  "{{calls}} calls · {{args}} argument tokens · {{results}} result tokens": "调用 {{calls}} 次，参数约 {{args}} tokens，结果约 {{results}} tokens",
   "Show {{count}} more": "再显示 {{count}} 项",
   "Catalog instructions": "目录公共说明",
   "Shared instructions": "公共说明",
