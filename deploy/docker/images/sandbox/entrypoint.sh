@@ -47,7 +47,7 @@ esac
 case ${A13N_ENVD_TRANSPORT:-stdio} in
     http|reverse_websocket)
         case ${2:-} in
-            daemon|supervise|connect|connect-service|connect-link|update|--help|--version) ;;
+            daemon|supervise|restart|connect|connect-service|connect-link|update|--help|--version) ;;
             *) shift; set -- a13n-envd supervise "$@" ;;
         esac ;;
 esac

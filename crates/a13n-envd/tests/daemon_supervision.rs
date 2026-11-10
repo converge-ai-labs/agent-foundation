@@ -63,7 +63,13 @@ impl Fixture {
             )
             .stdin(Stdio::null())
             .stdout(Stdio::null())
-            .stderr(fs::File::create(self.root.path().join("stderr")).unwrap());
+            .stderr(
+                fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(self.root.path().join("stderr"))
+                    .unwrap(),
+            );
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;
@@ -466,4 +472,183 @@ fn child_exit_zero_is_replaced_until_the_same_budget_is_exhausted() {
             .count(),
         4
     );
+}
+
+#[test]
+fn explicit_restart_retires_the_old_session_and_payload_without_consuming_crash_budget() {
+    let fixture = Fixture::new();
+    let mut supervisor = fixture.start("supervise");
+    let original = fixture.descriptor(None);
+    let session = fixture.open(&original);
+    let payload = fixture.start_payload(&session);
+    let mut previous = original.clone();
+    for _ in 0..4 {
+        let output = fixture.command("restart").output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let next = fixture.descriptor(Some(&previous["generation"]));
+        assert_eq!(original["device_id"], next["device_id"]);
+        previous = next;
+    }
+    assert_exited(payload);
+    assert!(supervisor.0.try_wait().unwrap().is_none());
+    assert_eq!(
+        fs::read_to_string(fixture.root.path().join("effects"))
+            .unwrap()
+            .lines()
+            .count(),
+        1
+    );
+    let stale = fixture
+        .request(Some(&session), "environment.describe", json!({}))
+        .unwrap();
+    assert!(stale.get("error").is_some(), "{stale}");
+    stop(supervisor.0.id());
+    assert!(supervisor.wait(Duration::from_secs(5)).success());
+}
+
+#[test]
+fn version_selected_restart_is_idempotent_and_refuses_an_uninstalled_version() {
+    let fixture = Fixture::new();
+    let mut supervisor = fixture.start("supervise");
+    let descriptor = fixture.descriptor(None);
+    assert!(
+        fixture
+            .command("restart")
+            .args(["--version", env!("CARGO_PKG_VERSION")])
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert!(
+        !fixture
+            .command("restart")
+            .args(["--version", "9999.0.0"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert_eq!(
+        fixture.descriptor(None)["generation"],
+        descriptor["generation"]
+    );
+    assert_eq!(fixture.daemon_pids().len(), 1);
+    stop(supervisor.0.id());
+    assert!(supervisor.wait(Duration::from_secs(5)).success());
+}
+
+#[test]
+fn restart_requires_a_live_supervisor_and_an_authenticated_local_request() {
+    use std::io::Write;
+    let fixture = Fixture::new();
+    assert!(!fixture.command("restart").status().unwrap().success());
+    let mut supervisor = fixture.start("supervise");
+    let descriptor = fixture.descriptor(None);
+    let record: Value = serde_json::from_slice(
+        &fs::read(
+            fixture
+                .root
+                .path()
+                .join("runtime/.a13n-envd-supervisor.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let mut stream = std::net::TcpStream::connect(record["address"].as_str().unwrap()).unwrap();
+    stream
+        .write_all(br#"{"token":"wrong","version":null}"#)
+        .unwrap();
+    stream.shutdown(std::net::Shutdown::Write).unwrap();
+    // A subsequent authenticated request proves the invalid request was handled.
+    assert!(
+        fixture
+            .command("restart")
+            .args(["--version", env!("CARGO_PKG_VERSION")])
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert_eq!(
+        fixture.descriptor(None)["generation"],
+        descriptor["generation"]
+    );
+    stop(supervisor.0.id());
+    assert!(supervisor.wait(Duration::from_secs(5)).success());
+    assert!(!fixture.command("restart").status().unwrap().success());
+}
+
+#[cfg(unix)]
+#[test]
+fn restart_executes_the_atomically_replaced_installation_path() {
+    use std::os::unix::fs::PermissionsExt;
+    let fixture = Fixture::new();
+    let installation = fixture.root.path().join("a13n-envd");
+    fs::copy(env!("CARGO_BIN_EXE_a13n-envd"), &installation).unwrap();
+    let template = fixture.command("supervise");
+    let mut command = Command::new(&installation);
+    command
+        .args(template.get_args())
+        .envs(template.get_envs().filter_map(|(k, v)| v.map(|v| (k, v))))
+        .current_dir(fixture.root.path())
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(fs::File::create(fixture.root.path().join("stderr")).unwrap());
+    let mut supervisor = Running(command.spawn().unwrap());
+    let before = fixture.descriptor(None);
+    let candidate = fixture.root.path().join("candidate");
+    fs::write(&candidate, format!("#!/bin/sh\nif [ \"$1\" = --version ]; then echo 'a13n-envd 0.8.1'; exit 0; fi\nprintf updated > replacement-marker\nexec '{}' \"$@\"\n", env!("CARGO_BIN_EXE_a13n-envd"))).unwrap();
+    fs::set_permissions(&candidate, fs::Permissions::from_mode(0o755)).unwrap();
+    fs::rename(&candidate, &installation).unwrap();
+    assert!(
+        fixture
+            .command("restart")
+            .args(["--version", "0.8.1"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    fixture.descriptor(Some(&before["generation"]));
+    assert_eq!(
+        fs::read_to_string(fixture.root.path().join("replacement-marker")).unwrap(),
+        "updated"
+    );
+    assert!(
+        fixture
+            .command("restart")
+            .args(["--version", "0.8.1"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert_eq!(fixture.daemon_pids().len(), 2);
+    stop(supervisor.0.id());
+    assert!(supervisor.wait(Duration::from_secs(5)).success());
+}
+
+#[cfg(unix)]
+#[test]
+fn operator_stop_during_restart_drain_prevents_replacement() {
+    let fixture = Fixture::new();
+    let mut supervisor = fixture.start("supervise");
+    fixture.descriptor(None);
+    let daemon = fixture.daemon_pids()[0];
+    assert_eq!(unsafe { libc::kill(daemon as i32, libc::SIGSTOP) }, 0);
+    let mut restart = Running(fixture.command("restart").spawn().unwrap());
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !fixture.log().contains("explicit restart accepted") {
+        assert!(Instant::now() < deadline, "{}", fixture.log());
+        sleep(Duration::from_millis(20));
+    }
+    stop(supervisor.0.id());
+    assert!(
+        supervisor.wait(Duration::from_secs(5)).success(),
+        "{}",
+        fixture.log()
+    );
+    assert!(!restart.wait(Duration::from_secs(5)).success());
+    assert_exited(daemon);
+    assert_eq!(fixture.daemon_pids().len(), 1);
 }

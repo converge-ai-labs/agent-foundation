@@ -25,6 +25,7 @@ Use daemon under an external service manager; let that manager own restarts.
 Use supervise when no reliable service manager is available. It starts the same
 binary as a separate daemon child, with three lifetime replacement attempts and
 1/2/4-second backoff. Operator stop drains the child without restarting it.
+Use a13n-envd restart --help for explicit restart after a Host-installed upgrade.
 Stdio remains caller-owned and cannot be supervised. Existing daemon launch
 options and A13N_ENVD_* configuration apply to both commands.";
 
@@ -45,8 +46,15 @@ pub(crate) fn run(arguments: &[OsString]) -> Result<(), Box<dyn std::error::Erro
 async fn supervise(arguments: &[OsString]) -> io::Result<()> {
     let mut stop = crate::shutdown::Signal::new()?;
     let executable = std::env::current_exe()?;
+    let control = crate::daemon_control::Control::bind().await?;
     let mut replacements = 0;
+    let mut acknowledgement = None;
     loop {
+        let version = tokio::select! {
+            biased;
+            _ = stop.recv() => return Ok(()),
+            result = crate::daemon_control::binary_version(&executable) => result?,
+        };
         let mut command = Command::new(&executable);
         command
             .arg("--internal-supervised-daemon")
@@ -67,31 +75,81 @@ async fn supervise(arguments: &[OsString]) -> io::Result<()> {
             .id()
             .ok_or_else(|| io::Error::other("daemon PID unavailable"))?;
         eprintln!("a13n-envd supervise: started daemon pid={pid}");
-        let stopped = tokio::select! {
-            biased;
-            _ = stop.recv() => true,
-            result = child.wait() => {
-                eprintln!("a13n-envd supervise: daemon exited: {}", result?);
-                false
-            }
-        };
-        if stopped {
-            // Closing this private pipe requests graceful drain on every OS,
-            // including Windows processes launched without an attached console.
-            drop(lifetime);
-            let _ = timeout(STOP_GRACE, child.wait()).await;
+        if let Some(mut stream) = acknowledgement.take() {
+            // The caller independently verifies EIP readiness. A lost receipt
+            // must not turn a successfully launched daemon into a crash.
+            let _ = crate::daemon_control::reply(&mut stream, None).await;
         }
-        // A crashed leader may leave descendants. Retire the old tree before a
-        // replacement acquires the runtime lock or accepts a fresh generation.
-        #[cfg(windows)]
-        job.terminate_and_wait(KILL_GRACE).await?;
-        #[cfg(unix)]
-        kill_group(pid)?;
-        timeout(KILL_GRACE, child.wait())
-            .await
-            .map_err(|_| io::Error::other("daemon did not exit after termination"))??;
-        if stopped {
+        let action = loop {
+            let (mut stream, request) = tokio::select! {
+                biased;
+                _ = stop.recv() => break Action::Stop,
+                result = child.wait() => {
+                    eprintln!("a13n-envd supervise: daemon exited: {}", result?);
+                    break Action::Crash;
+                }
+                result = control.receive() => result?,
+            };
+            if request.version.as_deref() == Some(&version) {
+                let _ = crate::daemon_control::reply(&mut stream, None).await;
+                continue;
+            }
+            let installed = tokio::select! {
+                biased;
+                _ = stop.recv() => break Action::Stop,
+                result = crate::daemon_control::binary_version(&executable) => result,
+            };
+            if installed.as_ref().is_ok_and(|installed| {
+                request
+                    .version
+                    .as_ref()
+                    .is_none_or(|expected| expected == installed)
+            }) {
+                acknowledgement = Some(stream);
+                eprintln!("a13n-envd supervise: explicit restart accepted");
+                break Action::Restart;
+            }
+            let _ = crate::daemon_control::reply(
+                &mut stream,
+                Some("installed executable does not match requested version"),
+            )
+            .await;
+        };
+        let mut stopping = matches!(action, Action::Stop);
+        let cleanup = async {
+            if !matches!(action, Action::Crash) {
+                // Closing this private pipe requests graceful drain on every OS,
+                // including Windows processes launched without an attached console.
+                drop(lifetime);
+                let _ = timeout(STOP_GRACE, child.wait()).await;
+            }
+            // A crashed leader may leave descendants. Retire the old tree before a
+            // replacement acquires the runtime lock or accepts a fresh generation.
+            #[cfg(windows)]
+            job.terminate_and_wait(KILL_GRACE).await?;
+            #[cfg(unix)]
+            kill_group(pid)?;
+            timeout(KILL_GRACE, child.wait())
+                .await
+                .map_err(|_| io::Error::other("daemon did not exit after termination"))??;
+            Ok::<_, io::Error>(())
+        };
+        tokio::pin!(cleanup);
+        tokio::select! {
+            biased;
+            _ = stop.recv(), if !stopping => {
+                stopping = true;
+                cleanup.await?;
+            },
+            result = &mut cleanup => result?,
+        }
+        if stopping {
             return Ok(());
+        }
+        match action {
+            Action::Stop => return Ok(()),
+            Action::Restart => continue,
+            Action::Crash => {}
         }
         let Some(delay) = RESTART_DELAYS.get(replacements) else {
             return Err(io::Error::other("daemon replacement budget exhausted"));
@@ -107,6 +165,12 @@ async fn supervise(arguments: &[OsString]) -> io::Result<()> {
             _ = sleep(*delay) => {},
         }
     }
+}
+
+enum Action {
+    Stop,
+    Crash,
+    Restart,
 }
 
 #[cfg(unix)]

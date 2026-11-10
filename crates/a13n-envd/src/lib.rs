@@ -5,6 +5,7 @@ mod computer;
 mod config;
 mod connect;
 mod daemon;
+mod daemon_control;
 mod daemon_supervisor;
 mod data_dispatch;
 mod device_path;
@@ -128,6 +129,9 @@ pub fn run_from_environment() -> Result<(), Box<dyn Error + Send + Sync>> {
     {
         println!("{}", daemon_supervisor::HELP);
         return Ok(());
+    }
+    if arguments.first().is_some_and(|value| value == "restart") {
+        return daemon_control::restart(&arguments[1..]);
     }
     if arguments.first().is_some_and(|value| value == "supervise") {
         return daemon_supervisor::run(&arguments[1..]);

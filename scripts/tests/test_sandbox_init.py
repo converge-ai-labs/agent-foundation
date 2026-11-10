@@ -202,6 +202,7 @@ def test_headless_credentials_need_no_python_or_skill_initializer(tmp_path, tran
         ["a13n-envd", "--version"],
         ["a13n-envd", "daemon"],
         ["a13n-envd", "supervise"],
+        ["a13n-envd", "restart", "--runtime-dir", "/run/a13n-envd-state"],
         ["a13n-envd", "connect", "https://host.example"],
         ["a13n-sandbox-desktop"],
         ["a13n-sandbox-desktop", "a13n-envd"],
@@ -222,7 +223,7 @@ def test_entrypoint_supervises_default_network_daemon_and_preserves_explicit_com
     index = 1 if desktop else 0
     daemon = expected[index:]
     if daemon[0] == "a13n-envd":
-        explicit = len(daemon) > 1 and daemon[1] in {"daemon", "supervise", "connect", "--help", "--version"}
+        explicit = len(daemon) > 1 and daemon[1] in {"daemon", "supervise", "restart", "connect", "--help", "--version"}
         if transport != "stdio" and not explicit:
             expected.insert(index + 1, "supervise")
         if not desktop:
