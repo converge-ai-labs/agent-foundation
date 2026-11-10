@@ -102,20 +102,28 @@ async def test_selected_reader_in_another_store_waits_for_replacement_lock(tmp_p
         await app.wait_root_operation(receipt.receipt_id)
         head = await app._store.threads.get(thread.thread_id)
         assert head is not None and head.continuation is not None
-        started, done = Event(), Event()
+        blocked, done = Event(), Event()
+        module = import_module("a13n_harness_ui.storage.checkpoint_lock")
+        retry = Event()
+
+        async def blocked_retry(delay):
+            blocked.set()
+            await retry.wait()
+
+        monkeypatch.setattr(module, "sleep", blocked_retry)
         async with open_local_store(settings.storage) as other:
 
             async def read():
-                started.set()
                 await other.read_continuation(thread.thread_id, head.continuation)
                 done.set()
 
             async with create_task_group() as group:
                 async with checkpoint_lock(settings.storage.data_root, thread.thread_id):
                     group.start_soon(read)
-                    await started.wait()
-                    await sleep(0.1)
+                    with fail_after(5):
+                        await blocked.wait()
                     assert not done.is_set()
+                retry.set()
                 with fail_after(5):
                     await done.wait()
 
@@ -195,9 +203,19 @@ async def test_checkpoint_lock_cancellation_while_waiting_preserves_holder(tmp_p
             group.start_soon(contender)
             await waiting.wait()
             group.cancel_scope.cancel()
-        with pytest.raises(TimeoutError), fail_after(0.1):
+        # A second real acquisition must still reach contention after cancellation.
+        waiting = Event()
+        with CancelScope() as probe:
+
+            async def cancel_at_contention(delay):
+                waiting.set()
+                probe.cancel()
+                await sleep(0)
+
+            monkeypatch.setattr(module, "sleep", cancel_at_contention)
             async with checkpoint_lock(tmp_path, "thread-wait"):
                 pytest.fail("Cancelling a waiter must not release the holder")
+        assert waiting.is_set() and probe.cancelled_caught
     with fail_after(2):
         async with checkpoint_lock(tmp_path, "thread-wait"):
             pass

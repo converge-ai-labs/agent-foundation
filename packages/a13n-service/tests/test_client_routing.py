@@ -82,7 +82,11 @@ async def test_lost_reply_has_unknown_outcome_without_replaying(redis_url):
             assert failed.value.details.get("dispatch_stage") != "pre_dispatch"
             seen = await sink.get_message(ignore_subscribe_messages=True, timeout=1)
             assert Request.model_validate_json(seen["data"]).id == call.id
-            assert await sink.get_message(ignore_subscribe_messages=True, timeout=0.1) is None
+            # The caller has settled. A same-channel sentinel follows every publication it made.
+            sentinel = "publication-barrier"
+            await worker.redis.publish(request_channel(call.environment_id), sentinel)
+            following = await sink.get_message(ignore_subscribe_messages=True, timeout=3)
+            assert following["data"] == sentinel
     finally:
         await worker.close()
 

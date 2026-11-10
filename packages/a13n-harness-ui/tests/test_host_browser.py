@@ -1209,10 +1209,26 @@ async def test_handback_notifies_only_tool_blocked_threads_after_native_release(
         browsers.handback.stop()
 
 
-async def test_control_lease_expires_after_controller_disconnect(browsers, monkeypatch):
+@pytest.fixture
+def lease_clock(monkeypatch):
+    from types import SimpleNamespace
+
     from a13n_harness_ui import browser as module
 
-    monkeypatch.setattr(module, "CONTROL_LEASE_SECONDS", 0.05)
+    clock = SimpleNamespace(now=100.0, sleeps=asyncio.Queue())
+
+    async def sleep(delay):
+        wake = asyncio.Event()
+        clock.sleeps.put_nowait((delay, wake))
+        await wake.wait()
+
+    monkeypatch.setattr(module, "time", SimpleNamespace(monotonic=lambda: clock.now))
+    monkeypatch.setattr(module, "asyncio", SimpleNamespace(**(vars(asyncio) | {"sleep": sleep})))
+    monkeypatch.setattr(module, "CONTROL_LEASE_SECONDS", 60)
+    return clock
+
+
+async def test_control_lease_expires_after_controller_disconnect(browsers, lease_clock):
     identity = browsers.state("thread-a").session_id
     await browsers.control("thread-a", identity, human=True)
     writer = Mock(wait_closed=AsyncMock())
@@ -1220,23 +1236,33 @@ async def test_control_lease_expires_after_controller_disconnect(browsers, monke
     browsers.connections[writer] = "thread-a"
     await browsers.disconnect(writer)
     assert not browsers.control_token and not browsers.released.is_set()
+    delay, wake = await asyncio.wait_for(lease_clock.sleeps.get(), 5)
+    assert delay == 60
+    lease_clock.now = 160
+    wake.set()
     await asyncio.wait_for(browsers.released.wait(), 1)
     assert browsers.state("thread-a").control == "agent"
     assert browsers.state("thread-a").control_remaining_seconds is None
 
 
-async def test_control_lease_renewal_and_late_request(browsers, monkeypatch):
-    from a13n_harness_ui import browser as module
-
-    monkeypatch.setattr(module, "CONTROL_LEASE_SECONDS", 0.12)
+async def test_control_lease_renewal_and_late_request(browsers, lease_clock):
     identity = browsers.state("thread-a").session_id
     control = await browsers.control("thread-a", identity, human=True)
     request = BrowserAccessRequest(session_id=identity, control_token=control.control_token)
-    await asyncio.sleep(0.07)
+    delay, old_wake = await asyncio.wait_for(lease_clock.sleeps.get(), 5)
+    assert delay == 60
+    lease_clock.now = 130
     renewed = await browsers.renew_control("thread-a", request)
-    assert renewed.control_remaining_seconds > 0.1
-    await asyncio.sleep(0.07)
+    assert renewed.control_remaining_seconds == 60
+    assert browsers.control_deadline == 190
+    lease_clock.now = 160
+    old_wake.set()
+    # Reaching the next sleep proves the old wake was processed under the renewed deadline.
+    delay, renewed_wake = await asyncio.wait_for(lease_clock.sleeps.get(), 5)
+    assert delay == 30
     assert not browsers.released.is_set()
+    lease_clock.now = 190
+    renewed_wake.set()
     await asyncio.wait_for(browsers.released.wait(), 1)
     with pytest.raises(HarnessUiError):
         await browsers.renew_control("thread-a", request)
@@ -1272,10 +1298,7 @@ async def test_old_episode_cannot_release_transferred_control(browsers):
     assert browsers.released.is_set()
 
 
-async def test_lease_expiry_keeps_barrier_during_input_drain(browsers, monkeypatch):
-    from a13n_harness_ui import browser as module
-
-    monkeypatch.setattr(module, "CONTROL_LEASE_SECONDS", 0.05)
+async def test_lease_expiry_keeps_barrier_during_input_drain(browsers, lease_clock):
     identity = browsers.state("thread-a").session_id
     await browsers.control("thread-a", identity, human=True)
     entered, finish = asyncio.Event(), asyncio.Event()
@@ -1285,6 +1308,10 @@ async def test_lease_expiry_keeps_barrier_during_input_drain(browsers, monkeypat
         await finish.wait()
 
     browsers.desktop.settle_input = AsyncMock(side_effect=settle)
+    delay, wake = await asyncio.wait_for(lease_clock.sleeps.get(), 5)
+    assert delay == 60
+    lease_clock.now = 160
+    wake.set()
     await asyncio.wait_for(entered.wait(), 1)
     assert not browsers.released.is_set()
     state = browsers.state("thread-a")

@@ -26,6 +26,12 @@ from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output import DummyOutput
 
 
+async def _until(predicate) -> None:
+    async with asyncio.timeout(3):
+        while not predicate():
+            await asyncio.sleep(0.01)
+
+
 def _batch() -> DecisionBatchView:
     options = (
         QuestionOptionView(label="One", description="First option"),
@@ -537,24 +543,20 @@ async def test_long_paste_delete_replacement_and_undo_keep_payload(tmp_path: Pat
                     await asyncio.sleep(0.01)
             original = "source line\n" * 100
             pipe.send_text("\x1b[200~" + original + "\x1b[201~")
-            await asyncio.sleep(0.1)
+            await _until(lambda: shell.composer.text.startswith("[Pasted text"))
             marker = shell.composer.text
             assert marker.startswith("[Pasted text")
             pipe.send_text("\x7f")
-            await asyncio.sleep(0.1)
-            assert shell.composer.text == ""
+            await _until(lambda: shell.composer.text == "")
             pipe.send_text("\x1b[200~replacement\x1b[201~")
-            await asyncio.sleep(0.1)
+            await _until(lambda: shell.composer.text == "replacement")
             pipe.send_text("\x1f\x1f")
-            await asyncio.sleep(0.1)
-            assert shell.composer.text == marker
+            await _until(lambda: shell.composer.text == marker)
             assert shell.pastes.expand(shell.composer.text) == original
             pipe.send_text("\x1be")
-            await asyncio.sleep(0.1)
-            assert shell.composer.text == original
+            await _until(lambda: shell.composer.text == original)
             pipe.send_text("\x1f")
-            await asyncio.sleep(0.1)
-            assert shell.composer.text == marker
+            await _until(lambda: shell.composer.text == marker)
             assert shell.pastes.expand(shell.composer.text) == original
         finally:
             if shell.app.is_running:
@@ -868,7 +870,7 @@ async def test_terminal_decision_editor_keyboard_back_validation_and_submit(tmp_
             # Down from the unselected cursor chooses the first action. Approval
             # denial-with-reason is the third action; external result is the first.
             pipe.send_text("\x1b[B" * (1 if external else 3) + "\r")
-            await asyncio.sleep(0.1)
+            await _until(lambda: interaction.editor == ("result" if external else "reason"))
             assert shell.selection is None
             assert not shell.selector_focused
             assert interaction.editor == ("result" if external else "reason")
@@ -880,15 +882,21 @@ async def test_terminal_decision_editor_keyboard_back_validation_and_submit(tmp_
             assert shell.selection.cursor == -1
             assert interaction.request_started == started
             pipe.send_text(("1" if external else "3") + "\r")
-            await asyncio.sleep(0.1)
+            await _until(lambda: interaction.editor == ("result" if external else "reason"))
             if external:
                 pipe.send_text("invalid JSON\r")
-                await asyncio.sleep(0.1)
+                await _until(
+                    lambda: (
+                        shell.composer.text == "invalid JSON"
+                        and shell._input_task is not None
+                        and shell._input_task.done()
+                    )
+                )
                 assert shell.composer.text == "invalid JSON"
                 assert not submitted
                 shell.composer.text = ""
             pipe.send_text(('{"ok": true}' if external else "Do not remove this report") + "\r")
-            await asyncio.sleep(0.1)
+            await _until(lambda: submitted == [True])
             assert submitted == [True]
             assert shell.interaction is None
             assert shell.composer.text == "saved user draft"

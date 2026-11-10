@@ -604,7 +604,18 @@ async fn exporter_opt_in_and_explicit_monitoring_disable_are_preserved() {
         "default", "endpoint", "exporter", "none", "disabled", "null",
     ] {
         let fixture = Fixture::new();
-        let mut receiver = Receiver::start().await;
+        let enabled = ["endpoint", "exporter"].contains(&mode);
+        let mut receiver = if enabled {
+            Some(Receiver::start().await)
+        } else {
+            None
+        };
+        let quiet = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        quiet.set_nonblocking(true).unwrap();
+        let endpoint = receiver.as_ref().map_or_else(
+            || format!("http://{}", quiet.local_addr().unwrap()),
+            |receiver| receiver.endpoint.clone(),
+        );
         let mut command = fixture.command();
         let mut config = json!({"device_id":"otlp-device", "default_working_directory":fixture.0});
         if mode == "null" {
@@ -617,7 +628,7 @@ async fn exporter_opt_in_and_explicit_monitoring_disable_are_preserved() {
             command.env_remove("OTEL_METRICS_EXPORTER");
         }
         if mode != "default" {
-            command.env("OTEL_EXPORTER_OTLP_ENDPOINT", &receiver.endpoint);
+            command.env("OTEL_EXPORTER_OTLP_ENDPOINT", &endpoint);
         }
         if mode == "none" {
             command.env("OTEL_METRICS_EXPORTER", "none");
@@ -627,7 +638,6 @@ async fn exporter_opt_in_and_explicit_monitoring_disable_are_preserved() {
         }
         let mut child = command.spawn().unwrap();
         let descriptor = initialize(&mut child).await;
-        let enabled = ["endpoint", "exporter"].contains(&mode);
         assert_eq!(
             descriptor["available_methods"]
                 .as_array()
@@ -636,16 +646,19 @@ async fn exporter_opt_in_and_explicit_monitoring_disable_are_preserved() {
             enabled,
             "{mode}: {descriptor}"
         );
-        if enabled {
+        if let Some(receiver) = &mut receiver {
             receiver.sample().await;
-        } else {
-            assert!(
-                timeout(Duration::from_millis(250), receiver.received.recv())
-                    .await
-                    .is_err()
-            );
         }
         stop(child).await;
+        if !enabled {
+            // After shutdown no exporter can connect later. Inspect the socket
+            // backlog directly instead of treating a quiet interval as proof.
+            assert_eq!(
+                quiet.accept().unwrap_err().kind(),
+                std::io::ErrorKind::WouldBlock,
+                "{mode} unexpectedly connected to the OTLP endpoint"
+            );
+        }
     }
 }
 

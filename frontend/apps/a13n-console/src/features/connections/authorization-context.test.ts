@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Client } from "../../service-client";
 import type { Schema } from "../../shared/api";
 import {
@@ -8,12 +8,17 @@ import {
   startBrowserAuthorization,
   takeCallback,
 } from "./authorization-context";
+const now = Date.parse("2026-09-12T00:00:00Z");
+beforeEach(() => {
+  vi.spyOn(Date, "now").mockReturnValue(now);
+});
 const context = {
   connectionId: "conn_test",
   returnPath: "/workspace/design/connections",
-  expiresAt: new Date(Date.now() + 60_000).toISOString(),
+  expiresAt: new Date(now + 60_000).toISOString(),
 };
 afterEach(() => {
+  vi.restoreAllMocks();
   clearAuthorization();
   window.history.replaceState(null, "", "/");
 });
@@ -101,7 +106,7 @@ it("reads the Service outcome and strips it from the address immediately", () =>
   });
 });
 it.each([
-  { expiresAt: new Date(Date.now() - 1).toISOString() },
+  { expiresAt: new Date(now - 1).toISOString() },
   { returnPath: "https://evil.example" },
   { connectionId: undefined },
 ])("rejects expired or malformed application context: %j", (change) => {

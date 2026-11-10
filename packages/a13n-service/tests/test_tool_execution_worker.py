@@ -157,11 +157,23 @@ async def test_failed_heartbeat_cancels_locally_once_without_waiting_for_databas
     await asyncio.wait_for(entered.wait(), 5)
     monkeypatch.setattr(worker_module, "heartbeat", hanging_heartbeat)
     monkeypatch.setattr(runtime.executions, "cancel", forbidden_cancel)
+    repeated = asyncio.Event()
+    original_cancel = runtime.executions.request_cancellation
+    requests = 0
+
+    def request_cancellation(*args, **kwargs):
+        nonlocal requests
+        original_cancel(*args, **kwargs)
+        requests += 1
+        if requests >= 3:
+            repeated.set()
+
+    monkeypatch.setattr(runtime.executions, "request_cancellation", request_cancellation)
     supervisor = asyncio.create_task(Worker(runtime, execute)._supervise())
     try:
         await asyncio.wait_for(cancelled.wait(), 2)
         # Repeated failed heartbeats must leave cancellation cleanup intact.
-        await asyncio.sleep(0.08)
+        await asyncio.wait_for(repeated.wait(), 5)
         assert cancellations == 1 and runtime.executions.active
         cleanup.set()
         await runtime.executions.join()

@@ -1,12 +1,13 @@
 """Reusable limits apply equally to custom callbacks and built-in Web operations."""
 
+from contextlib import contextmanager
 from datetime import UTC, datetime
 
 import pytest
 from a13n_harness.providers.authentication import Authentication, CredentialMode
 from a13n_harness.providers.usage import ProviderUsage
 from a13n_harness.providers.web import ScrapeOptions, WebProviderDefinition, WebScrapeRequest, WebScrapeResult
-from anyio import CancelScope, current_time, fail_after, move_on_after, sleep, sleep_forever
+from anyio import CancelScope, current_time, fail_after, sleep, sleep_forever
 from pydantic import BaseModel, ConfigDict
 
 
@@ -82,32 +83,45 @@ async def test_custom_scrape_enforces_utf8_limits_without_losing_metadata(
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("boundary", ["policy", "callback"])
-async def test_deadline_includes_policy_and_callback_and_allows_cleanup(boundary):
+async def test_deadline_includes_policy_and_callback_and_allows_cleanup(boundary, monkeypatch):
     steps = []
+    deadlines = []
+
+    @contextmanager
+    def capture_deadline(seconds):
+        assert seconds == 60
+        with fail_after(None) as scope:
+            deadlines.append(scope)
+            yield scope
+
+    monkeypatch.setattr("a13n_harness.providers.web.definition.fail_after", capture_deadline)
+
+    async def expire_deadline():
+        (scope,) = deadlines
+        scope.deadline = current_time()
+        await sleep_forever()
 
     class Policy:
         async def authorize(self, url, *, purpose):
             steps.append("policy")
             if boundary == "policy":
                 try:
-                    await sleep_forever()
+                    await expire_deadline()
                 finally:
                     steps.append("policy cleanup")
 
     async def scrape(configuration, credential, requested, options, transport, callback_policy):
         steps.append("callback")
         try:
-            await sleep_forever()
+            await expire_deadline()
         finally:
             with CancelScope(shield=True):
-                await sleep(0.001)
+                await sleep(0)
                 steps.append("callback cleanup")
 
-    started = current_time()
-    with pytest.raises(TimeoutError), fail_after(2):
+    with pytest.raises(TimeoutError):
         async with definition(scrape).open({}, None) as web:
-            await web.scrape(request(deadline=0.01), policy=Policy())
-    assert current_time() - started < 1
+            await web.scrape(request(deadline=60), policy=Policy())
     assert steps == (
         ["policy", "policy cleanup"] if boundary == "policy" else ["policy", "callback", "callback cleanup"]
     )
@@ -120,11 +134,12 @@ async def test_outer_cancellation_is_not_converted_to_timeout_or_provider_failur
     async def scrape(configuration, credential, requested, options, transport, callback_policy):
         nonlocal cleaned
         try:
+            scope.cancel()
             await sleep_forever()
         finally:
             cleaned = True
 
-    with move_on_after(0.01) as scope:
+    with CancelScope() as scope:
         async with definition(scrape).open({}, None) as web:
             await web.scrape(request(deadline=1), policy=policy)
         pytest.fail("cancellation was swallowed")

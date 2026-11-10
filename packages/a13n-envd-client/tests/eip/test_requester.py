@@ -213,7 +213,7 @@ def test_metrics_is_device_scoped_and_checks_response_identity(identity: str, ge
 
 
 @pytest.mark.parametrize("method_name", ["metrics", "describe"])
-def test_stalled_observations_do_not_consume_session_admission(method_name: str) -> None:
+def test_stalled_observations_do_not_consume_session_admission(method_name: str, monkeypatch) -> None:
     async def scenario():
         transport = FakeTransport()
         device = await initialized(transport, monitoring=True)
@@ -223,11 +223,28 @@ def test_stalled_observations_do_not_consume_session_admission(method_name: str)
         first.cancel()
         with pytest.raises(asyncio.CancelledError):
             await first
-        # Poll deadlines must not accumulate dispatched requests/tombstones.
+        admission = device._requester._observation_admission
+        waiting = asyncio.Event()
+        original_wait = admission._changed.wait
+
+        async def blocked_admission():
+            assert admission.active == admission.limit == 1
+            waiting.set()
+            await original_wait()
+
+        monkeypatch.setattr(admission._changed, "wait", blocked_admission)
+        # Cancelling queued polls retains only the original dispatched request.
         for _ in range(10):
-            with pytest.raises(TimeoutError):
-                async with asyncio.timeout(0.01):
-                    await observe()
+            waiting.clear()
+            poll = asyncio.create_task(observe())
+            await asyncio.wait_for(waiting.wait(), 1)
+            assert not poll.done()
+            assert transport.sent.empty()
+            poll.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await poll
+        assert admission.active == 1
+        assert len(device._requester._pending) == 1
         assert transport.sent.empty()
         async with asyncio.timeout(1):
             session = await opened(device, transport)

@@ -51,17 +51,29 @@ async def test_raw_binary_round_trip_and_ttl_need_no_text_encoding(redis_url):
         assert await worker.redis.exists(*worker.keys) == 0
 
 
-async def test_slow_consumer_is_bounded_without_trimming_frames(redis_url):
+async def test_slow_consumer_is_bounded_without_trimming_frames(redis_url, monkeypatch):
     async with pair(redis_url) as (worker, control):
         for i in range(MAX_FRAMES):
             await worker.send(bytes([i]))
+        blocked, retry = asyncio.Event(), asyncio.Event()
+        original_eval = worker.redis.eval
+
+        async def observed_eval(script, *args, **kwargs):
+            result = await original_eval(script, *args, **kwargs)
+            if script == streams._SEND and result == 0:
+                blocked.set()
+                await retry.wait()
+            return result
+
+        monkeypatch.setattr(worker.redis, "eval", observed_eval)
         pending = asyncio.create_task(worker.send(b"next"))
         try:
-            await asyncio.sleep(0.05)
+            await asyncio.wait_for(blocked.wait(), 5)
             assert not pending.done()
             assert await worker.redis.xlen(worker.write_key) == MAX_FRAMES
             assert await control.receive() == b"\x00"
-            await asyncio.wait_for(pending, 1)
+            retry.set()
+            await asyncio.wait_for(pending, 5)
             assert [await control.receive() for _ in range(MAX_FRAMES)] == [
                 *(bytes([i]) for i in range(1, MAX_FRAMES)),
                 b"next",

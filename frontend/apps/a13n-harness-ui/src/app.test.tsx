@@ -16,7 +16,7 @@ import { i18n } from "./i18n";
 import { Realtime } from "./transport/realtime";
 import * as push from "./shell/push";
 import { IDBFactory } from "fake-indexeddb";
-import { onlineManager } from "@tanstack/react-query";
+import { onlineManager, QueryClient } from "@tanstack/react-query";
 
 const status = {
   api_version: "1",
@@ -722,8 +722,12 @@ it("attempts offline publication immediately and does not queue it for reconnect
       "Unable to reach the server. Check your connection and try again.",
     );
     expect(writes).toBe(1);
-    onlineManager.setOnline(true);
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    const resume = vi.spyOn(QueryClient.prototype, "resumePausedMutations");
+    await act(async () => onlineManager.setOnline(true));
+    await waitFor(() => expect(resume).toHaveBeenCalled());
+    await act(async () => {
+      await Promise.all(resume.mock.results.map((result) => result.value));
+    });
     expect(writes).toBe(1);
     expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe(
       "Offline edit",

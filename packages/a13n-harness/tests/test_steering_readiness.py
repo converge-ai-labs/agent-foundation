@@ -225,7 +225,17 @@ async def test_native_completion_wakes_readiness_waiter(monkeypatch):
 
 async def test_acceptance_disarms_readiness_deadline(monkeypatch):
     generating, emitting, release = (asyncio.Event() for _ in range(3))
-    monkeypatch.setattr("a13n_harness._run_stream._IMMEDIATE_STEERING_WAIT_SECONDS", 0.01)
+    deadlines = []
+    timeout = asyncio.timeout
+
+    def capture_timeout(seconds):
+        scope = timeout(seconds)
+        if seconds == 60:
+            deadlines.append(scope)
+        return scope
+
+    monkeypatch.setattr("a13n_harness._run_stream._IMMEDIATE_STEERING_WAIT_SECONDS", 60)
+    monkeypatch.setattr("a13n_harness._run_stream.asyncio.timeout", capture_timeout)
 
     async def model(messages, info):
         if steering_input_ids(messages):
@@ -253,7 +263,9 @@ async def test_acceptance_disarms_readiness_deadline(monkeypatch):
             await generating.wait()
             steering = asyncio.create_task(stream.steer("accepted", input_id="once", immediate=True))
             await emitting.wait()
-            await asyncio.sleep(0.03)  # Deliberately exceed the admission budget after acceptance.
+            # Acceptance disarms the actual scope before publication can block.
+            (deadline,) = deadlines
+            assert deadline.when() is None and not deadline.expired()
             assert not steering.done()
             release.set()
             assert await steering

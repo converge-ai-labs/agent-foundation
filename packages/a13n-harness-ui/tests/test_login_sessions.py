@@ -155,13 +155,26 @@ async def test_cancel_after_publication_begins_reports_success(
         status = await app.start_login(LoginRequest(provider="codex"))
         await publishing.wait()
         outcomes = []
+        joining = Event()
+        session = app._logins._get(status.session_id)
+        original_wait = session.done.wait
+
+        async def wait_for_publication():
+            joining.set()
+            await original_wait()
+
+        from types import SimpleNamespace
+
+        monkeypatch.setattr(session, "done", SimpleNamespace(wait=wait_for_publication, set=session.done.set))
 
         async def cancel():
             outcomes.append(await app.cancel_login(status.session_id))
 
         async with create_task_group() as tasks:
             tasks.start_soon(cancel)
-            await sleep(0.01)
+            with fail_after(5):
+                await joining.wait()
+            assert session.scope.cancel_called
             assert not outcomes
             release.set()
         assert outcomes[0].state == "succeeded"

@@ -1348,7 +1348,17 @@ async def test_client_environment_runs_on_reverse_daemon_and_streams_files(
                 # No borrower keeps the detached native Session alive.
                 await asyncio.sleep(1.2)
             next_decision.set()
-            again = await scripted_model.request()
+            pending_request = asyncio.create_task(scripted_model.request())
+            try:
+                done, _ = await asyncio.wait({pending_request, running}, return_when=asyncio.FIRST_COMPLETED)
+                if pending_request not in done:
+                    await running
+                    pytest.fail(json.dumps(await runs_kit.get_run(service, first["run"]["id"]), default=str))
+                again = await pending_request
+            finally:
+                if not pending_request.done():
+                    pending_request.cancel()
+                    await asyncio.gather(pending_request, return_exceptions=True)
             expected_notice = (
                 "Client mount workspace can prepare a new execution Session." if reconnect == "session" else notice
             )

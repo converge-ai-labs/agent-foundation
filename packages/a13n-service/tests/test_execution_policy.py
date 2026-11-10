@@ -215,8 +215,9 @@ async def test_independent_modes_reach_worker(skill_service, scripted_model, run
         following = await asyncio.wait_for(scripted_model.request(), 10)
         assert "additional input" in str(runs_kit.user_texts(following))
     else:
-        await asyncio.sleep(0.1)
-        assert scripted_model.requests.empty()
+        # Boundary steering has no mailbox listener; delivery is checked after the gated response below.
+        assert listened == []
+        assert delivered == []
     gate.set()
     await running
     assert captured == [{"tools": {"mode": mode, "foreground_wait_seconds": 0}, "steering": steering}]

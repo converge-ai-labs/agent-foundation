@@ -145,7 +145,7 @@ mod tests {
     use super::*;
     use std::cell::Cell;
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn authorized_startup_does_not_request_permissions() {
         wait(
             Duration::from_secs(1),
@@ -161,7 +161,7 @@ mod tests {
         .unwrap();
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn both_permissions_are_required_and_requested_only_once() {
         let calls = Cell::new(0);
         let requested = Cell::new(0);
@@ -189,7 +189,7 @@ mod tests {
         assert_eq!(requested.get(), 1);
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn denied_permission_times_out_with_actionable_guidance() {
         let error = wait(
             Duration::from_millis(10),
@@ -214,7 +214,7 @@ mod tests {
         );
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn failed_probe_is_reported_without_requesting_permissions() {
         let error = wait(
             Duration::from_secs(1),
@@ -230,7 +230,7 @@ mod tests {
         );
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn stalled_probe_is_bounded_by_the_same_deadline() {
         let error = wait(
             Duration::from_millis(10),
