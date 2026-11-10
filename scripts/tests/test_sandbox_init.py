@@ -192,35 +192,55 @@ def test_headless_credentials_need_no_python_or_skill_initializer(tmp_path, tran
         int(result.stdout, 16)
 
 
+@pytest.mark.parametrize("transport", ["stdio", "http", "reverse_websocket"])
 @pytest.mark.parametrize(
-    ("arguments", "expected"),
+    "arguments",
     [
-        (["a13n-envd", "--help"], ["supervisor", "a13n-envd", "--help"]),
-        (["a13n-sandbox-desktop"], ["desktop", "a13n-envd-supervise", "a13n-envd"]),
-        (["a13n-sandbox-desktop", "a13n-envd"], ["desktop", "a13n-envd-supervise", "a13n-envd"]),
-        (
-            ["a13n-sandbox-desktop", "a13n-envd-supervise", "a13n-envd"],
-            ["desktop", "a13n-envd-supervise", "a13n-envd"],
-        ),
-        (["a13n-sandbox-desktop", "sh", "-c", "custom command"], ["desktop", "sh", "-c", "custom command"]),
+        ["a13n-envd"],
+        ["a13n-envd", "--device-id", "device-image"],
+        ["a13n-envd", "--help"],
+        ["a13n-envd", "--version"],
+        ["a13n-envd", "daemon"],
+        ["a13n-envd", "supervise"],
+        ["a13n-envd", "connect", "https://host.example"],
+        ["a13n-sandbox-desktop"],
+        ["a13n-sandbox-desktop", "a13n-envd"],
+        ["a13n-sandbox-desktop", "a13n-envd", "daemon"],
+        ["a13n-sandbox-desktop", "a13n-envd", "supervise"],
+        ["a13n-sandbox-desktop", "sh", "-c", "custom command"],
     ],
 )
-def test_entrypoint_supervises_default_daemon_and_preserves_custom_desktop_commands(
-    tmp_path, monkeypatch, arguments, expected
+def test_entrypoint_supervises_default_network_daemon_and_preserves_explicit_commands(
+    tmp_path, monkeypatch, arguments, transport
 ):
-    assert_entrypoint_arguments(tmp_path, monkeypatch, arguments, expected)
+    expected = list(arguments)
+    desktop = expected[0] == "a13n-sandbox-desktop"
+    if desktop:
+        expected[0] = "desktop"
+        if len(expected) == 1:
+            expected.append("a13n-envd")
+    index = 1 if desktop else 0
+    daemon = expected[index:]
+    if daemon[0] == "a13n-envd":
+        explicit = len(daemon) > 1 and daemon[1] in {"daemon", "supervise", "connect", "--help", "--version"}
+        if transport != "stdio" and not explicit:
+            expected.insert(index + 1, "supervise")
+        if not desktop:
+            expected[0] = "envd"
+    assert_entrypoint_arguments(tmp_path, monkeypatch, arguments, expected, transport=transport)
 
 
-def assert_entrypoint_arguments(tmp_path, monkeypatch, arguments, expected):
+def assert_entrypoint_arguments(tmp_path, monkeypatch, arguments, expected, *, transport="http"):
     for executable, label in (
         ("a13n-sandbox-desktop", "desktop"),
-        ("a13n-envd-supervise", "supervisor"),
+        ("a13n-envd", "envd"),
     ):
         script = tmp_path / executable
         script.write_text(f'#!/bin/sh\nprintf "%s\\n" "{label}" "$@"\n')
         script.chmod(0o755)
     monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ['PATH']}")
-    monkeypatch.setenv("A13N_ENVD_TRANSPORT", "stdio")
+    monkeypatch.setenv("A13N_ENVD_TRANSPORT", transport)
+    monkeypatch.setenv("A13N_ENVD_HTTP_CREDENTIAL_FILE", str(tmp_path / "credential"))
     result = subprocess.run([str(ENTRYPOINT), *arguments], capture_output=True, text=True, check=True, timeout=5)
     assert result.stdout.splitlines() == expected
 
@@ -235,4 +255,5 @@ def test_desktop_image_default_command_uses_supervised_daemon(tmp_path, monkeypa
     command = [json.loads(line.removeprefix("CMD ")) for line in dockerfile.splitlines() if line.startswith("CMD ")][-1]
     desktop_entrypoint = next(entrypoint for entrypoint in entrypoints if "a13n-sandbox-desktop" in entrypoint)
     arguments = desktop_entrypoint[desktop_entrypoint.index("a13n-sandbox-entrypoint") + 1 :] + command
-    assert_entrypoint_arguments(tmp_path, monkeypatch, arguments, ["desktop", "a13n-envd-supervise", "a13n-envd"])
+    assert_entrypoint_arguments(tmp_path, monkeypatch, arguments, ["desktop", "a13n-envd", "supervise"])
+    assert "envd_supervise.sh" not in dockerfile

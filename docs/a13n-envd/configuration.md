@@ -8,6 +8,24 @@ Configure Envd at startup to choose its connection, execution account, filesyste
 
 Use the JSON and environment variables on this page for the daemon. Harness UI YAML and `EnvironmentProviderSpec` configure the Host-side adapter, including required methods and optional Session egress policies with secret references. For a prepared container with account, shell and sudo settings, use the [sandbox image](sandbox.md).
 
+## Daemon lifetime and restarts
+
+Choose one owner for daemon restarts:
+
+| Deployment                                           | Command                                | Restart owner                         |
+| ---------------------------------------------------- | -------------------------------------- | ------------------------------------- |
+| External service manager                             | `a13n-envd daemon [daemon options]`    | The service manager                   |
+| HTTP or reverse WebSocket without a reliable manager | `a13n-envd supervise [daemon options]` | Envd's separate native parent process |
+| Host-owned stdio                                     | `a13n-envd daemon [daemon options]`    | The Host and its protocol pipes       |
+
+Both commands use the same trusted daemon options, JSON and environment configuration. Omitting the subcommand preserves foreground daemon behavior. `connect` and `connect-service` remain foreground registration launchers for an external service manager; `supervise` accepts standalone daemon options, not registration commands.
+
+The native supervisor replaces a child after any exit, including status zero, with three total lifetime replacement attempts and 1/2/4-second backoff. Exhaustion exits unsuccessfully. Operator stop cancels backoff, requests graceful drain and forcibly terminates the owned tree after three seconds, with one second for final reaping. Unix accepts SIGINT, SIGTERM and SIGHUP; Windows accepts Ctrl+C, Ctrl+Break and console close. A private parent lifetime pipe requests drain even without a Windows console; Windows also retains kill-on-close Job ownership. A responsive Unix child drains when its parent disappears.
+
+This mode supervises process exits. It does not detect live hangs or replace authenticated EIP readiness checks. It rejects stdio, whose EOF and protocol lifetime belong to the caller. Ordinary foreground HTTP and reverse-WebSocket launches ignore stdin EOF.
+
+A replacement keeps the installation Device ID, workspace files and existing credential files, and starts a fresh generation. Old Sessions and handles are invalid. The client must open and probe a new Session; interrupted commands are never replayed. Client Session replacement is independent of daemon process supervision.
+
 ## Configuration layers
 
 Envd applies five layers, with later layers taking precedence:

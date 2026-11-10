@@ -86,7 +86,6 @@ RUN groupadd --gid 1000 sandbox \
     && install -d -m 0700 /var/lib/a13n-envd /run/a13n-envd-state
 
 COPY --from=envd /a13n-envd /usr/local/bin/a13n-envd
-COPY --chmod=0755 packages/a13n-service/a13n_service/providers/environment/envd_supervise.sh /usr/local/bin/a13n-envd-supervise
 COPY LICENSE /usr/share/licenses/a13n-envd/LICENSE
 
 # Source identity must not invalidate the stable toolchain installation layer.

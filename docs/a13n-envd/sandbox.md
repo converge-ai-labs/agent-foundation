@@ -68,6 +68,8 @@ For lifecycle management:
 - Stop and start to preserve files and credentials while creating a fresh graphical session.
 - Stop or destroy to revoke access. To rotate a token, stop the container, replace its private token file, close existing sessions and restart.
 
+After one-time credential initialization, the source-built image starts its default HTTP or reverse-WebSocket daemon through native `a13n-envd supervise`. An explicit `a13n-envd daemon` command leaves restart ownership with the external manager. Custom commands and stdio retain their caller-owned lifetime. See [daemon lifetime](configuration.md#daemon-lifetime-and-restarts) for the restart budget and Session replacement semantics.
+
 The root desktop launcher supervises Xvfb/Openbox running as `sandbox`, creates an Xauthority cookie and disables X11 TCP listening. A required desktop process exiting fails the container. X11 supports key events; literal Unicode `type_text` is unavailable.
 
 Human access is a separate opt-in. Set `desktop_assistance: true` and provide a browser-reachable `desktop_viewer_url` routed to the container's port 6081. Service enables the image's `A13N_DESKTOP_ACCESS` supervisor; the operator supplies the viewer route and TLS. Follow [desktop control](../a13n-service/computer-use.md#desktop-access-prerequisites) for permissions and the handback workflow.

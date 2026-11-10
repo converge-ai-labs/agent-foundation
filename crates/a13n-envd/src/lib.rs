@@ -5,6 +5,7 @@ mod computer;
 mod config;
 mod connect;
 mod daemon;
+mod daemon_supervisor;
 mod data_dispatch;
 mod device_path;
 #[cfg(any(target_os = "linux", test))]
@@ -26,6 +27,7 @@ mod process;
 mod resource;
 mod retention;
 mod runtime;
+mod shutdown;
 mod stdio;
 mod supervisor;
 mod transfer;
@@ -118,6 +120,28 @@ pub fn run_internal_mxc_launcher() -> std::io::Result<i32> {
 /// Runs one a13n-envd instance from trusted process configuration.
 pub fn run_from_environment() -> Result<(), Box<dyn Error + Send + Sync>> {
     let mut arguments: Vec<_> = std::env::args_os().skip(1).collect();
+    if matches!(
+        arguments.first().and_then(|value| value.to_str()),
+        Some("daemon" | "supervise")
+    ) && arguments.get(1).is_some_and(|value| value == "--help")
+        && arguments.len() == 2
+    {
+        println!("{}", daemon_supervisor::HELP);
+        return Ok(());
+    }
+    if arguments.first().is_some_and(|value| value == "supervise") {
+        return daemon_supervisor::run(&arguments[1..]);
+    }
+    let supervised = arguments
+        .first()
+        .is_some_and(|value| value == "--internal-supervised-daemon");
+    let foreground_daemon = supervised || arguments.first().is_some_and(|value| value == "daemon");
+    if foreground_daemon {
+        arguments.remove(0);
+        let mut config = config::Config::from_environment(arguments)?;
+        config.supervised = supervised;
+        return run(config);
+    }
     if arguments
         .first()
         .is_some_and(|value| value == "connect-link")
@@ -179,6 +203,7 @@ pub fn run_from_environment() -> Result<(), Box<dyn Error + Send + Sync>> {
             ]
     {
         println!("{}", connect::HELP);
+        println!("\n{}", daemon_supervisor::HELP);
         println!("\nConnect to Service: a13n-envd connect-service --help");
         println!("\nUpdate the native installation: a13n-envd update --help");
         return Ok(());
@@ -216,8 +241,12 @@ pub fn run_from_environment() -> Result<(), Box<dyn Error + Send + Sync>> {
             return Err("managed broker requires Linux".into());
         }
     } else {
-        config::Config::from_environment()?
+        config::Config::from_environment(arguments)?
     };
+    run(config)
+}
+
+fn run(config: config::Config) -> Result<(), Box<dyn Error + Send + Sync>> {
     #[cfg(target_os = "linux")]
     if execution::boundary::managed(&config.sandbox, config.egress) && !config.managed {
         execution::management::enter(config)?;

@@ -222,6 +222,9 @@ pub(crate) struct ConnectionBootstrap {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub(crate) struct Config {
+    /// Private supervisor lifetime pipe; preserved across managed-broker reexec.
+    #[serde(default)]
+    pub(crate) supervised: bool,
     #[serde(default)]
     pub(crate) monitoring: Option<crate::monitoring::Options>,
     #[serde(default)]
@@ -260,9 +263,11 @@ pub(crate) struct Config {
 }
 
 impl Config {
-    pub(crate) fn from_environment() -> Result<Self, ConfigError> {
+    pub(crate) fn from_environment(
+        arguments: Vec<std::ffi::OsString>,
+    ) -> Result<Self, ConfigError> {
         reject_unknown_environment_variables()?;
-        Self::from_arguments(StartupArguments::parse(env::args_os().skip(1))?, None)
+        Self::from_arguments(StartupArguments::parse(arguments)?, None)
     }
 
     pub(crate) fn for_connection(
@@ -458,6 +463,7 @@ impl Config {
             prepare_command_config(file.trusted_executable_roots, file.shell_profiles)?
         };
         Ok(Self {
+            supervised: false,
             monitoring: file.monitoring,
             computer_use,
             computer_use_permission_timeout: Duration::from_millis(permission_timeout_ms),
@@ -488,6 +494,7 @@ impl Config {
     #[cfg(test)]
     pub(crate) fn for_test(device_id: &str) -> Self {
         Self {
+            supervised: false,
             monitoring: None,
             computer_use: false,
             computer_use_permission_timeout: Duration::from_secs(120),

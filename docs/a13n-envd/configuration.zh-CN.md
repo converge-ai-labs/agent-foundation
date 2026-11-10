@@ -8,6 +8,24 @@ description: 将 Envd 连接到 Host，选择执行设置，并采集资源指�
 
 本页的 JSON 和环境变量用于守护进程。Harness UI YAML 和 `EnvironmentProviderSpec` 配置 Host 侧适配器，包括必需方法及带秘密引用的可选会话出站策略。需要预置账号、shell 和 sudo 的容器时，使用[沙箱镜像](sandbox.md)。
 
+## 守护进程生命周期与重启
+
+为守护进程选择一个重启责任方：
+
+| 部署方式                                       | 命令                                   | 重启责任方            |
+| ---------------------------------------------- | -------------------------------------- | --------------------- |
+| 外部 service manager                           | `a13n-envd daemon [daemon options]`    | 外部 service manager  |
+| 缺少可靠 manager 的 HTTP 或反向 WebSocket 环境 | `a13n-envd supervise [daemon options]` | Envd 独立的原生父进程 |
+| Host 管理的 stdio                              | `a13n-envd daemon [daemon options]`    | Host 及其协议管道     |
+
+两个命令使用相同的可信守护进程选项、JSON 和环境配置。省略子命令时保留前台守护进程行为。`connect` 和 `connect-service` 仍是供外部 service manager 管理的前台注册启动器；`supervise` 接受独立守护进程选项，不接受注册命令。
+
+子进程每次退出都会触发原生 supervisor 替换，包括退出码为零的情况。整个父进程生命周期最多替换三次，退避时间依次为 1、2、4 秒。预算耗尽后以失败状态退出。运维停止会取消退避、请求优雅排空，并在三秒后强制终止所拥有的进程树，最后最多等待一秒完成回收。Unix 接受 SIGINT、SIGTERM 和 SIGHUP；Windows 接受 Ctrl+C、Ctrl+Break 和控制台关闭。私有父进程生命周期管道也能在没有 Windows 控制台时请求排空；Windows 另有句柄关闭即终止的 Job 所有权。Unix 子进程能响应时，会在父进程消失后排空退出。
+
+此模式监督进程退出，不检测活进程卡死，也不替代认证 EIP 就绪检查。它拒绝 stdio；stdio 的 EOF 和协议生命周期由调用方负责。普通前台 HTTP 和反向 WebSocket 启动不受 stdin EOF 影响。
+
+替换会保留安装的 Device ID、工作区文件和已有凭据文件，并启动新的 generation。旧会话和句柄失效。客户端必须打开并探测新会话；中断的命令不会重放。客户端会话替换与守护进程监督相互独立。
+
 ## 配置层级
 
 Envd 按五层配置启动，后面的层优先：

@@ -6,6 +6,18 @@ One envd daemon normally serves one machine or outer sandbox, with many Host-cre
 
 The Host chooses the launch policy and any outer Docker container, VM or equivalent deployment before launching envd. Envd prepares and cleans up native, OS-sandboxed or internal VM workers per Session. [Session Execution Isolation](07-execution-isolation.md) defines configuration admission and backend support.
 
+## Launch and Restart Ownership
+
+`a13n-envd daemon` runs one foreground daemon. Omitting the subcommand retains the same foreground behavior. An external service manager starts `daemon` and owns activation and restart policy. The daemon does not spawn its own replacement.
+
+`a13n-envd supervise` is an explicit foreground launch for HTTP or reverse WebSocket deployments without a reliable service manager. A separate native parent starts the same executable as its daemon child. The parent owns process replacement, with three total lifetime replacement attempts and delays of one, two and four seconds. Any child exit, including status zero, consumes this budget. Exhaustion exits unsuccessfully so the outer deployment can report or handle failure. Reconnecting a live reverse-WebSocket daemon does not consume the process replacement budget. Stdio remains caller-owned and is rejected by `supervise`.
+
+Operator stop cancels backoff and prevents replacement. A running child receives a graceful drain request through a private lifetime pipe. After three seconds, the parent forcibly terminates the owned Unix process group or Windows Job and bounds final reaping to one second. Windows assigns the suspended daemon to a non-breakaway kill-on-close Job before execution, using the same native tree ownership as command supervision. Closing the parent also closes the lifetime pipe; a responsive Unix daemon drains on EOF, and Windows Job closure terminates the tree. This is process-exit supervision, not a live-hang watchdog. Ordinary foreground HTTP and reverse-WebSocket daemons remain independent of stdin EOF.
+
+Replacement retains trusted launch arguments, installation state and credential-file references. It creates a new daemon generation and retires the prior runtime; it does not regenerate credentials, restore Sessions or replay commands. Client Session replacement and stale-handle rejection remain separate from process restart. Readiness remains an authenticated EIP handshake and Session probe, never an inference from the supervisor being alive.
+
+The source-built sandbox image uses native supervision for its default network daemon after one-time credential initialization. Its desktop launcher continues to own display and human-access processes, with only the daemon child supervised by Envd. Explicit launch modes, custom commands and stdio retain their selected lifetime owner.
+
 ## Device Identity and Generation
 
 `device_id` identifies the daemon installation, not a folder, Environment definition, Session or Run. An operator can provide it explicitly; otherwise envd creates and persists one in its installation state directory. Display name and description are optional metadata, never routing authority. One active reverse connection represents this Device at its Host.

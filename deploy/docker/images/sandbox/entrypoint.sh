@@ -32,18 +32,24 @@ if [ "${A13N_ENVD_TRANSPORT:-}" = "reverse_websocket" ] && [ -n "${A13N_ENVD_SER
     trap - EXIT HUP INT TERM
     unset A13N_ENVD_SERVICE_BOOTSTRAP_TOKEN
 fi
-# Supervise only the image-owned runtime, preserving arbitrary custom commands
-# and the caller-owned stdio lifecycle. Credentials are initialized exactly once.
+# This image ships source-matched daemon bytes. Supervise only its default
+# network daemon; explicit modes, custom commands and stdio retain their owner.
+desktop=false
 case ${1:-} in
-    a13n-envd)
-        exec a13n-envd-supervise "$@" ;;
+    a13n-envd) ;;
     a13n-sandbox-desktop)
-        # The desktop launcher retains display/access supervision. Only replace
-        # its default daemon child; explicitly authored commands stay intact.
-        if [ "$#" -eq 1 ] || [ "${2:-}" = a13n-envd ]; then
-            shift
-            if [ "$#" -eq 0 ]; then set -- a13n-envd; fi
-            exec a13n-sandbox-desktop a13n-envd-supervise "$@"
-        fi ;;
+        if [ "$#" -gt 1 ] && [ "${2:-}" != a13n-envd ]; then exec "$@"; fi
+        desktop=true
+        shift
+        if [ "$#" -eq 0 ]; then set -- a13n-envd; fi ;;
+    *) exec "$@" ;;
 esac
+case ${A13N_ENVD_TRANSPORT:-stdio} in
+    http|reverse_websocket)
+        case ${2:-} in
+            daemon|supervise|connect|connect-service|connect-link|update|--help|--version) ;;
+            *) shift; set -- a13n-envd supervise "$@" ;;
+        esac ;;
+esac
+if [ "$desktop" = true ]; then exec a13n-sandbox-desktop "$@"; fi
 exec "$@"
