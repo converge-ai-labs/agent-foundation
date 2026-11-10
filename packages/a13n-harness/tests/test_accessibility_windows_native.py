@@ -511,6 +511,19 @@ async def test_real_windows_dynamic_paging_unicode_and_budget_recovery():
         assert exhausted.value.__cause__.error.data.error_type == "timeout"
         resumed = await a11y.inspect(tree, cursor=cursor, limits=page_limits)
         assert resumed.nodes
+        recovered = [*first.nodes, *resumed.nodes]
+        cursor = resumed.completeness.continuation
+        for _ in range(128):
+            if cursor is None:
+                break
+            page = await a11y.inspect(tree, cursor=cursor, limits=page_limits.model_copy(update={"max_nodes": 24}))
+            recovered.extend(page.nodes)
+            cursor = page.completeness.continuation
+        else:
+            pytest.fail("Recovered UIA traversal did not finish")
+        handles = [node.reference.node_handle for node in recovered]
+        assert len(handles) == len(set(handles))
+        assert {node.name for node in recovered if node.name and node.name.startswith("Dynamic item ")} == expected
         # Retain the second sibling, then move it outside the inspected root.
         first = await a11y.inspect(tree, limits=page_limits)
         await acknowledged(a11y, named["Move dynamic anchor"].reference, {"op": "invoke"})
