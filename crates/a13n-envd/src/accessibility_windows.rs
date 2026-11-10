@@ -1021,9 +1021,10 @@ fn native_error(e: windows::core::Error) -> EIPError {
     result
 }
 fn pattern_error(e: EIPError) -> EIPError {
-    // UIA can return success with a null interface for an absent pattern; the
-    // generated COM binding represents that null pointer as E_POINTER.
-    if e.data.safe_detail.as_deref() == Some("UIA HRESULT 0x80004003") {
+    // UIA returns success with a null interface for an absent pattern. The
+    // generated binding's Type::from_abi represents it as Error::empty (S_OK),
+    // not E_POINTER. A failed native HRESULT must still propagate.
+    if e.data.safe_detail.as_deref() == Some("UIA HRESULT 0x00000000") {
         unsupported()
     } else {
         e
@@ -1032,7 +1033,7 @@ fn pattern_error(e: EIPError) -> EIPError {
 fn optional<T>(r: Result<T, EIPError>) -> Result<Option<T>, EIPError> {
     match r {
         Ok(v) => Ok(Some(v)),
-        Err(e) if e.data.safe_detail.as_deref() == Some("UIA HRESULT 0x80004003") => Ok(None),
+        Err(e) if e.data.safe_detail.as_deref() == Some("UIA HRESULT 0x00000000") => Ok(None),
         Err(e) => Err(e),
     }
 }

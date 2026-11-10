@@ -425,6 +425,9 @@ fn native_cursor_dependencies_survive_pruning_and_epoch_changes_fail() {
     let mut wrong_epoch = root.clone();
     wrong_epoch["backend_epoch"] = json!("aep_another");
     assert!(native.node(&wrong_epoch).is_err());
+    // The intervening traversal calls refresh their root operand. Age both
+    // dependencies again so this assertion actually exercises joint expiry.
+    native.handles.get_mut(&root_id).unwrap().touched = Instant::now() - Duration::from_secs(121);
     native.handles.get_mut(&cursor).unwrap().touched = Instant::now() - Duration::from_secs(121);
     native.prune(&json!({}));
     assert!(!native.handles.contains_key(&root_id));
@@ -476,10 +479,27 @@ fn direct_table_and_selection_metadata_obey_item_limits() {
 #[test]
 fn absent_selection_arrays_and_dead_elements_are_not_provider_failures() {
     let b = Budget::new(&json!({})).unwrap();
-    let null = native_error(windows::core::Error::from_hresult(windows::core::HRESULT(
+    // Exercise the generated binding's actual successful-null conversion,
+    // rather than fabricating E_POINTER (which is a failed native HRESULT).
+    let null = unsafe {
+        <IUIAutomationElement as windows::core::Type<IUIAutomationElement>>::from_abi(
+            std::ptr::null_mut(),
+        )
+    }
+    .map_err(native_error);
+    assert!(optional(null.clone()).unwrap().is_none());
+    assert_eq!(
+        pattern_error(null.unwrap_err()).data.error_type,
+        ErrorType::Unsupported
+    );
+    let pointer_error = native_error(windows::core::Error::from_hresult(windows::core::HRESULT(
         0x80004003u32 as i32,
     )));
-    assert!(optional::<()>(Err(null)).unwrap().is_none());
+    assert!(optional::<()>(Err(pointer_error.clone())).is_err());
+    assert_eq!(
+        pattern_error(pointer_error).data.error_type,
+        ErrorType::ProviderUnavailable
+    );
     let dead = native_error(windows::core::Error::from_hresult(windows::core::HRESULT(
         UIA_E_ELEMENTNOTAVAILABLE as i32,
     )));
