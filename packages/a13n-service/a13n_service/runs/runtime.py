@@ -53,6 +53,8 @@ class Runtime:
     # Who may call and what their grants mean: the distribution's authenticator, roles and grant sources.
     access: Access
     tasks: Tasks
+    # Dedicated S3 client for checkpoint cleanup; local storage reuses objects.
+    cleanup_objects: ObjectStore | None = None
     modal_transports: TransportPool | None = field(default=None, repr=False)
     metrics_queries: Queries = field(default_factory=Queries)
     metrics_proxy: Proxy | None = None

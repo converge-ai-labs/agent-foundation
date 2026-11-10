@@ -84,6 +84,10 @@ curl --fail --silent --show-error https://agents.example.com/readyz
 
 存储需要普通读取、写入、列出和删除能力。Service 将每个对象写入新 key。`objects.max_bytes` 限制单个存储对象；`upload_bytes`、`upload_limit` 和 `upload_window_seconds` 控制上传大小和每个主体的上传频率。
 
+每个 S3 进程使用 `objects.max_pool_connections`（默认 32）处理普通对象读写。control 和 all 角色另建独立连接池，专供 `checkpoint_cleanup`，大小由 `objects.cleanup_max_pool_connections` 指定（默认 4）；worker 不创建这个池。两个池使用相同 bucket、前缀、凭证和超时配置，前台未读完的 GET 不会占用清理池的连接。清理任务在领取和获取租约前，将并发数限制为池大小与 `outbox.policies.checkpoint_cleanup.parallel` 中的较小值。这个上限按进程计算，不是所有副本共享的总上限。local 后端继续复用原存储。
+
+环境变量为 `A13N_OBJECTS__CLEANUP_MAX_POOL_CONNECTIONS`，Helm 配置为 `objects.cleanupMaxPoolConnections`。这只隔离客户端连接，不隔离 S3 服务端负载或 CPU。清理的总 I/O 预算、持久化扫描位置和重试规则保持不变。
+
 使用 S3 兼容存储时，让 `objects.addressing_style` 与端点匹配：
 
 | 值        | 地址形式              | 用途                                       |

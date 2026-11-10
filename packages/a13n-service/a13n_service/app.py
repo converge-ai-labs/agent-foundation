@@ -171,7 +171,7 @@ def open_storage(config: Database) -> Storage:
 
 
 async def open_runtime(
-    stack: AsyncExitStack, distribution: Distribution, config: Settings, *, executes: bool
+    stack: AsyncExitStack, distribution: Distribution, config: Settings, *, executes: bool, maintains: bool = True
 ) -> Runtime:
     from a13n_service.runs.search import initialize
 
@@ -199,6 +199,12 @@ async def open_runtime(
     registry = _registry(distribution, config)
     platform_files = await stack.enter_async_context(open_platform_files(registry, config))
     objects = await open_objects(stack, config.objects)
+    cleanup_objects = None
+    if maintains and config.objects.backend == "s3":
+        cleanup_objects = await open_objects(
+            stack,
+            config.objects.model_copy(update={"max_pool_connections": config.objects.cleanup_max_pool_connections}),
+        )
     modal_transports = TransportPool()
     modal_transports.start()
     stack.push_async_callback(modal_transports.close)
@@ -217,6 +223,7 @@ async def open_runtime(
     runtime = Runtime(
         storage=storage,
         objects=objects,
+        cleanup_objects=cleanup_objects,
         tasks=tasks,
         redis=redis,
         client_routing=client_routing,
@@ -304,7 +311,7 @@ def build_app(
         if role != "worker" and config.database.auto_migrate:
             await run_sync(partial(upgrade, config.database, distribution))
         async with AsyncExitStack() as stack:
-            runtime = await open_runtime(stack, distribution, config, executes=executes)
+            runtime = await open_runtime(stack, distribution, config, executes=executes, maintains=serves_api)
             app.state.runtime = runtime
             app.state.started = False
             app.state.background = runtime.tasks.services

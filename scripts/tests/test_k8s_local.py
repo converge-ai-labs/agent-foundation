@@ -79,6 +79,23 @@ def test_s3_addressing_style_reaches_service_configuration(style):
 
 
 @helm
+@pytest.mark.parametrize("size", [4, 2])
+def test_reserved_cleanup_pool_reaches_service_configuration(size):
+    arguments = () if size == 4 else ("--set", f"objects.cleanupMaxPoolConnections={size}")
+    config = next(d for d in render(*EXTERNAL, *arguments) if d["kind"] == "ConfigMap")["data"]["service.toml"]
+    objects = tomllib.loads(config)["objects"]
+    assert objects["max_pool_connections"] == 32
+    assert objects["cleanup_max_pool_connections"] == size
+
+
+@helm
+@pytest.mark.parametrize("size", [0, 1025])
+def test_invalid_cleanup_pool_is_rejected(size):
+    with pytest.raises(subprocess.CalledProcessError):
+        render(*EXTERNAL, "--set", f"objects.cleanupMaxPoolConnections={size}")
+
+
+@helm
 def test_roles_share_one_image_and_start_after_the_migration_job():
     documents = render(*LOCAL)
     deployments = {d["metadata"]["name"]: d for d in documents if d["kind"] == "Deployment"}
