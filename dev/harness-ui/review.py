@@ -73,6 +73,25 @@ For business volume \(N\), adoption share \(a\), and spend per transaction \(b\)
 R = N \times a \times b
 \]
 
+### Formula layout
+
+Fractions and tall matrices stay fully visible without a nested vertical scrollbar:
+
+$$
+h = \sqrt{\frac{1}{2}} = \frac{1}{\sqrt{2}}, \qquad
+A = \begin{pmatrix}
+\frac{1}{2} & \sqrt{2} \\
+\frac{3}{4} & \sqrt{\frac{5}{6}} \\
+\frac{7}{8} & \sqrt{\frac{9}{10}}
+\end{pmatrix}
+$$
+
+This long formula scrolls horizontally on narrow screens:
+
+$$
+f(x_1,\ldots,x_{12}) = x_1+x_2+x_3+x_4+x_5+x_6+x_7+x_8+x_9+x_{10}+x_{11}+x_{12}
+$$
+
 The changes are ready to review. I would keep the retry behavior explicit so a failed payment never looks like a successful order.
 """
 
