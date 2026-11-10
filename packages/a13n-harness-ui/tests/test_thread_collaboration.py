@@ -162,7 +162,10 @@ async def test_rejected_message_never_starts_a_replacement_run(tmp_path: Path, m
         receipt_id, parts = calls[0]
         assert receipt_id == "receipt-captured"
         assert parts == (
-            TextContent(f"Message from Thread {source.thread_id}:", metadata={"display": False}),
+            TextContent(
+                f"Message from Thread {source.thread_id}:",
+                metadata={"display": False, "source_id": "a13n-harness-ui.thread-message-context"},
+            ),
             TextContent(
                 "Report",
                 metadata={
@@ -626,7 +629,7 @@ async def test_requester_identity_uses_run_capture_not_future_thread_selections(
         result = await capability.create_thread(context, prompt="Independent work")
         assert result["ok"] is False and result["thread_id"] != source.thread_id
         context, body = prompts[0]
-        assert context.metadata == {"display": False}
+        assert context.metadata == {"display": False, "source_id": "a13n-harness-ui.thread-message-context"}
         assert f"Requesting Project: {project_id or 'No Project'}" in context.content
         assert "Requesting Project: project-main" not in context.content
         assert body.content == "Independent work"
