@@ -50,6 +50,8 @@ TEST_INPUTS: dict[str, tuple[str, ...]] = {
     ),
     "test_pr_labels.py": (".github/workflows/*.yml",),
     "test_ci_inputs.py": (
+        ".github/scripts/ci-sandbox-image.sh",
+        ".github/actions/load-ci-sandbox/action.yml",
         "scripts/run_python_tests.py",
         ".github/service-test-durations.json",
         ".github/workflows/ci-*.yml",

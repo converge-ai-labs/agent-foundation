@@ -3,8 +3,11 @@ name: Service E2E CI
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-    paths:
+    paths: &integration_inputs
       - ".github/workflows/ci-a13n-service-e2e.yml"
+      - ".github/actions/load-ci-sandbox/**"
+      - ".github/scripts/ci-sandbox-image.sh"
+      - ".github/workflows/images.yml"
       - ".github/workflows/sandbox-binary.yml"
       - "Makefile"
       - "conftest.py"
@@ -34,39 +37,15 @@ on:
       - "packages/a13n-logging/a13n_logging/**"
       - "pyproject.toml"
       - "uv.lock"
+      - ".github/workflows/ci-deploy.yml"
+      - "deploy/kubernetes/**"
+      - "deploy/docker/images/a13n-service/**"
+      - "scripts/deploy_smoke.py"
+      - "scripts/k8s_local.py"
+      - "dev/service/**"
   push:
     branches: [main]
-    paths:
-      - ".github/workflows/ci-a13n-service-e2e.yml"
-      - ".github/workflows/sandbox-binary.yml"
-      - "Makefile"
-      - "conftest.py"
-      - "dev/fixtures/**"
-      - "e2e/**"
-      - "deploy/docker/images/sandbox/**"
-      - ".dockerignore"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "crates/a13n-envd/**"
-      - "LICENSE"
-      - "scripts/tests/test_service_e2e_tooling.py"
-      - "packages/a13n-service/pyproject.toml"
-      - "packages/a13n-service/*.py"
-      - "packages/a13n-service/a13n_service/**"
-      - "packages/a13n-harness/pyproject.toml"
-      - "packages/a13n-harness/*.py"
-      - "packages/a13n-harness/a13n_harness/**"
-      - "packages/a13n-envd-client/pyproject.toml"
-      - "packages/a13n-envd-client/*.py"
-      - "packages/a13n-envd-client/a13n_envd_client/**"
-      - "packages/a13n-stream-protocol/pyproject.toml"
-      - "packages/a13n-stream-protocol/*.py"
-      - "packages/a13n-stream-protocol/a13n_stream_protocol/**"
-      - "packages/a13n-logging/pyproject.toml"
-      - "packages/a13n-logging/*.py"
-      - "packages/a13n-logging/a13n_logging/**"
-      - "pyproject.toml"
-      - "uv.lock"
+    paths: *integration_inputs
   workflow_dispatch:
 
 env:
@@ -74,15 +53,101 @@ env:
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
+  changes:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-24.04
+    outputs:
+      service: ${{ github.event_name == 'workflow_dispatch' || steps.paths.outputs.service == 'true' }}
+      deploy: ${{ github.event_name != 'pull_request' || steps.paths.outputs.deploy == 'true' }}
+      image: ${{ steps.sandbox.outputs.image }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: dorny/paths-filter@v3
+        id: paths
+        if: github.event_name != 'workflow_dispatch'
+        with:
+          filters: |
+            service:
+              - ".github/workflows/ci-a13n-service-e2e.yml"
+              - ".github/actions/load-ci-sandbox/**"
+              - ".github/scripts/ci-sandbox-image.sh"
+              - ".github/workflows/images.yml"
+              - ".github/workflows/sandbox-binary.yml"
+              - "Makefile"
+              - "conftest.py"
+              - "dev/fixtures/**"
+              - "e2e/**"
+              - "deploy/docker/images/sandbox/**"
+              - ".dockerignore"
+              - "Cargo.toml"
+              - "Cargo.lock"
+              - "crates/a13n-envd/**"
+              - "LICENSE"
+              - "scripts/tests/test_service_e2e_tooling.py"
+              - "packages/a13n-service/pyproject.toml"
+              - "packages/a13n-service/*.py"
+              - "packages/a13n-service/a13n_service/**"
+              - "packages/a13n-harness/pyproject.toml"
+              - "packages/a13n-harness/*.py"
+              - "packages/a13n-harness/a13n_harness/**"
+              - "packages/a13n-envd-client/pyproject.toml"
+              - "packages/a13n-envd-client/*.py"
+              - "packages/a13n-envd-client/a13n_envd_client/**"
+              - "packages/a13n-stream-protocol/pyproject.toml"
+              - "packages/a13n-stream-protocol/*.py"
+              - "packages/a13n-stream-protocol/a13n_stream_protocol/**"
+              - "packages/a13n-logging/pyproject.toml"
+              - "packages/a13n-logging/*.py"
+              - "packages/a13n-logging/a13n_logging/**"
+              - "pyproject.toml"
+              - "uv.lock"
+            deploy:
+              - ".github/workflows/ci-a13n-service-e2e.yml"
+              - ".github/actions/load-ci-sandbox/**"
+              - ".github/scripts/ci-sandbox-image.sh"
+              - ".github/workflows/images.yml"
+              - ".github/workflows/ci-deploy.yml"
+              - ".github/workflows/sandbox-binary.yml"
+              - "deploy/kubernetes/**"
+              - "deploy/docker/images/a13n-service/**"
+              - "deploy/docker/images/sandbox/**"
+              - "scripts/deploy_smoke.py"
+              - "scripts/k8s_local.py"
+              - "e2e/service/test_environments.py"
+              - "e2e/service/*kubernetes*"
+              - "e2e/service/conftest.py"
+              - "e2e/service/stack.py"
+              - "dev/fixtures/**"
+              - "scripts/tests/test_service_e2e_tooling.py"
+              - "packages/a13n-service/a13n_service/providers/environment/kubernetes.py"
+              - "packages/a13n-service/a13n_service/cli.py"
+              - "packages/a13n-service/a13n_service/app.py"
+              - "packages/a13n-service/a13n_service/migrations/**"
+              - "Cargo.toml"
+              - "Cargo.lock"
+              - "crates/a13n-envd/**"
+              - ".dockerignore"
+              - "Makefile"
+              - "LICENSE"
+      - name: Resolve a source-matched development sandbox
+        id: sandbox
+        if: github.event_name != 'pull_request' || steps.paths.outputs.service == 'true' || steps.paths.outputs.deploy == 'true'
+        run: bash .github/scripts/ci-sandbox-image.sh
+
   support:
     name: Service E2E support
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    needs: changes
+    if: needs.changes.outputs.service == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -100,7 +165,8 @@ jobs:
         run: make service-e2e-check
 
   sandbox-binary:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    needs: changes
+    if: needs.changes.outputs.image == '' && (needs.changes.outputs.service == 'true' || needs.changes.outputs.deploy == 'true')
     uses: ./.github/workflows/sandbox-binary.yml
     with:
       arch: amd64
@@ -118,7 +184,8 @@ jobs:
             selection: test_recovery
           - name: other
             selection: not (test_memory or test_recovery or docker)
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    needs: changes
+    if: needs.changes.outputs.service == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -158,9 +225,54 @@ jobs:
           path: test-results/
           retention-days: 7
 
+  sandbox-image:
+    name: Build missing checkout sandbox
+    needs: sandbox-binary
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v5
+        with:
+          name: sandbox-binary-amd64
+          path: tmp/sandbox-binaries/amd64
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/images/sandbox/Dockerfile
+          tags: a13n-sandbox:ci
+          build-args: ENVD_BINARY_SOURCE=prebuilt
+          outputs: type=docker,dest=${{ runner.temp }}/sandbox.tar
+          pull: true
+          cache-from: type=gha,scope=service-e2e-sandbox
+          cache-to: type=gha,scope=service-e2e-sandbox,mode=max,ignore-error=true
+      - run: zstd -T0 -1 "$RUNNER_TEMP/sandbox.tar" -o "$RUNNER_TEMP/sandbox.tar.zst"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ci-sandbox-image
+          path: ${{ runner.temp }}/sandbox.tar.zst
+          compression-level: 0
+          retention-days: 1
+          overwrite: true
+          if-no-files-found: error
+
+  deployment:
+    needs: [changes, sandbox-image]
+    if: >-
+      !cancelled() && needs.changes.outputs.deploy == 'true' &&
+      (needs.changes.outputs.image != '' || needs.sandbox-image.result == 'success')
+    uses: ./.github/workflows/ci-deploy.yml
+    with:
+      image: ${{ needs.changes.outputs.image }}
+
   docker:
     name: Service E2E Docker
-    needs: sandbox-binary
+    needs: [changes, sandbox-image]
+    if: >-
+      !cancelled() && needs.changes.outputs.service == 'true' &&
+      (needs.changes.outputs.image != '' || needs.sandbox-image.result == 'success')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -174,22 +286,10 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
-      - uses: actions/download-artifact@v5
+      - uses: ./.github/actions/load-ci-sandbox
         with:
-          name: sandbox-binary-amd64
-          path: tmp/sandbox-binaries/amd64
-      - uses: docker/setup-buildx-action@v3
-      - name: Build the native Docker execution image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: deploy/docker/images/sandbox/Dockerfile
-          tags: a13n-sandbox:local
-          build-args: ENVD_BINARY_SOURCE=prebuilt
-          load: true
-          pull: true
-          cache-from: type=gha,scope=service-e2e-sandbox
-          cache-to: type=gha,scope=service-e2e-sandbox,mode=max,ignore-error=true
+          image: ${{ needs.changes.outputs.image }}
+          tag: a13n-sandbox:local
       - name: Run Docker provider journeys without skips
         run: make service-e2e SERVICE_E2E_ARGS="--require-all -k docker --junitxml=test-results/service-e2e.xml"
       - name: Retain Docker journey reports
@@ -202,8 +302,10 @@ jobs:
 
   e2e:
     name: Service E2E
-    needs: [support, scenarios, docker]
-    if: always() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
+    needs: [changes, support, scenarios, docker]
+    if: >-
+      always() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) &&
+      (needs.changes.result == 'failure' || needs.changes.outputs.service == 'true')
     runs-on: ubuntu-24.04
     steps:
       - name: Require support checks and scenarios

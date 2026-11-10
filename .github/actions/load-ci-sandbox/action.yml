@@ -1,0 +1,29 @@
+name: Load CI sandbox
+description: Load the source-matched Linux amd64 image selected for this run
+inputs:
+  image:
+    description: Development image digest, or empty for the checkout artifact
+    required: true
+  tag:
+    description: Local image tag expected by the consumer
+    required: true
+runs:
+  using: composite
+  steps:
+    - uses: actions/download-artifact@v5
+      if: inputs.image == ''
+      with:
+        name: ci-sandbox-image
+        path: ${{ runner.temp }}/ci-sandbox
+    - shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
+        LOCAL_TAG: ${{ inputs.tag }}
+      run: |
+        if [[ -n "$IMAGE" ]]; then
+          docker pull --platform linux/amd64 "$IMAGE"
+          docker tag "$IMAGE" "$LOCAL_TAG"
+        else
+          zstd -dc "$RUNNER_TEMP/ci-sandbox/sandbox.tar.zst" | docker load
+          if [[ "$LOCAL_TAG" != a13n-sandbox:ci ]]; then docker tag a13n-sandbox:ci "$LOCAL_TAG"; fi
+        fi

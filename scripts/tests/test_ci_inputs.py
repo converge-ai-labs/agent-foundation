@@ -452,30 +452,105 @@ def test_service_gate_requires_detection_and_every_matrix_member(changes: str, r
 )
 def test_service_e2e_owns_automated_scenarios(path: str, selected: bool) -> None:
     workflow = yaml.safe_load((WORKFLOWS / "ci-a13n-service-e2e.yml").read_text())
-    for event in ("pull_request", "push"):
-        assert any(Path(path).full_match(pattern) for pattern in workflow[True][event]["paths"]) == selected
+    selection = next(step for step in workflow["jobs"]["changes"]["steps"] if step.get("id") == "paths")
+    patterns = yaml.safe_load(selection["with"]["filters"])["service"]
+    assert any(Path(path).full_match(pattern) for pattern in patterns) == selected
+    if selected:
+        for event in ("pull_request", "push"):
+            assert any(Path(path).full_match(pattern) for pattern in workflow[True][event]["paths"])
 
 
-def test_e2e_builds_current_checkout_with_optional_layer_cache_and_loads_the_test_image() -> None:
+@pytest.mark.parametrize(
+    "path,selected",
+    [
+        ("packages/a13n-harness/a13n_harness/context_breakdown.py", False),
+        ("frontend/apps/a13n-harness-ui/src/app.tsx", False),
+        ("e2e/service/test_memory.py", False),
+        ("deploy/kubernetes/values.yaml", True),
+        ("deploy/docker/images/sandbox/Dockerfile", True),
+        ("crates/a13n-envd/src/main.rs", True),
+        ("packages/a13n-service/a13n_service/providers/environment/kubernetes.py", True),
+        ("e2e/service/test_kubernetes.py", True),
+    ],
+)
+def test_deployment_prs_select_cluster_inputs_and_main_runs_integration_changes(path, selected):
     workflow = yaml.safe_load((WORKFLOWS / "ci-a13n-service-e2e.yml").read_text())
-    steps = workflow["jobs"]["docker"]["steps"]
-    assert workflow["jobs"]["docker"]["needs"] == "sandbox-binary"
-    assert "needs" not in workflow["jobs"]["scenarios"]
-    build = next(step for step in steps if step.get("uses", "").startswith("docker/build-push-action@"))
-    options = build["with"]
-    assert options["context"] == "." and options["file"] == "deploy/docker/images/sandbox/Dockerfile"
-    assert options["load"] is True and not options.get("push")
-    assert options["tags"] == "a13n-sandbox:local"
-    assert options["pull"] is True
-    assert options["cache-from"] == "type=gha,scope=service-e2e-sandbox"
-    assert options["cache-to"] == "type=gha,scope=service-e2e-sandbox,mode=max,ignore-error=true"
-    # A restored cache never skips the build or test gate, and never substitutes a released daemon.
-    assert "if" not in build and "continue-on-error" not in build
-    assert options["build-args"] == "ENVD_BINARY_SOURCE=prebuilt"
-    download = next(step for step in steps if step.get("uses", "").startswith("actions/download-artifact@"))
-    assert download["with"]["name"] == "sandbox-binary-amd64"
+    changes = workflow["jobs"]["changes"]
+    paths = next(step for step in changes["steps"] if step.get("id") == "paths")
+    patterns = yaml.safe_load(paths["with"]["filters"])["deploy"]
+    assert any(Path(path).full_match(pattern) for pattern in patterns) == selected
+    assert "github.event_name != 'pull_request'" in changes["outputs"]["deploy"]
+    if selected:
+        assert any(Path(path).full_match(pattern) for pattern in workflow[True]["pull_request"]["paths"])
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="CI image selection runs on Ubuntu")
+def test_sandbox_image_reuse_checks_source_and_pins_the_inspected_manifest(tmp_path):
+    repository = tmp_path / "repo"
+    repository.mkdir()
+
+    def git(*args):
+        return subprocess.check_output(["git", *args], cwd=repository, text=True).strip()
+
+    git("init", "-q")
+    git("config", "user.email", "test@example.com")
+    git("config", "user.name", "CI")
+    (repository / "Cargo.lock").write_text("initial")
+    git("add", ".")
+    git("commit", "-qm", "sandbox revision")
+    revision = git("rev-parse", "HEAD")
+    digest = "sha256:" + "1" * 64
+    image = f"ghcr.io/converge-ai-labs/a13n-sandbox@{digest}"
+    docker = tmp_path / "docker"
+    docker.write_text(
+        '#!/bin/sh\ncase "$4" in\n  *:dev) echo "$INDEX" ;;\n  "$IMAGE") echo "$CONFIG" ;;\n  *) exit 1 ;;\nesac\n'
+    )
+    docker.chmod(0o755)
+    env = dict(os.environ, PATH=f"{tmp_path}:{os.environ['PATH']}", IMAGE=image)
+    env["INDEX"] = json.dumps({"manifests": [{"platform": {"os": "linux", "architecture": "amd64"}, "digest": digest}]})
+    env["CONFIG"] = json.dumps(
+        {"config": {"Labels": {"org.opencontainers.image.revision": revision, "ai.a13n.sandbox.variant": "standard"}}}
+    )
+    output = tmp_path / "output"
+
+    def select():
+        output.write_text("")
+        subprocess.run(
+            ["bash", ROOT / ".github/scripts/ci-sandbox-image.sh"],
+            cwd=repository,
+            env=dict(env, GITHUB_OUTPUT=str(output)),
+            check=True,
+        )
+        return output.read_text().strip()
+
+    (repository / "ui.css").write_text("body {}")
+    git("add", ".")
+    git("commit", "-qm", "unrelated UI change")
+    assert select() == f"image={image}"
+    (repository / "Cargo.lock").write_text("changed")
+    git("commit", "-qam", "sandbox dependency change")
+    assert select() == ""
+    git("checkout", "-q", revision)
+    env["CONFIG"] = "{}"
+    assert select() == ""
+    env["INDEX"] = "{}"
+    assert select() == ""
+
+
+def test_docker_journey_consumes_the_source_matched_image_or_successful_same_run_build():
+    workflow = yaml.safe_load((WORKFLOWS / "ci-a13n-service-e2e.yml").read_text())
+    jobs = workflow["jobs"]
+    assert jobs["scenarios"]["needs"] == "changes"
+    assert jobs["sandbox-image"]["needs"] == "sandbox-binary"
+    assert "needs.changes.outputs.image == ''" in jobs["sandbox-binary"]["if"]
+    for name in ("docker", "deployment"):
+        assert jobs[name]["needs"] == ["changes", "sandbox-image"]
+        assert "needs.changes.outputs.image != '' || needs.sandbox-image.result == 'success'" in jobs[name]["if"]
+    steps = jobs["docker"]["steps"]
+    load = next(step for step in steps if step.get("uses") == "./.github/actions/load-ci-sandbox")
+    assert load["with"]["tag"] == "a13n-sandbox:local"
     run = next(step for step in steps if step.get("run", "").startswith("make service-e2e "))
-    assert steps.index(build) < steps.index(run)
+    assert steps.index(load) < steps.index(run)
     assert "--require-all" in run["run"] and "if" not in run
     assert "-k docker" in run["run"]
     assert workflow["jobs"]["scenarios"]["strategy"]["fail-fast"] is False
@@ -495,8 +570,8 @@ def test_e2e_builds_current_checkout_with_optional_layer_cache_and_loads_the_tes
 def test_service_e2e_gate_requires_support_and_scenarios(support: str, scenarios: str, docker: str) -> None:
     workflow = yaml.safe_load((WORKFLOWS / "ci-a13n-service-e2e.yml").read_text())
     gate = workflow["jobs"]["e2e"]
-    assert gate["name"] == "Service E2E" and set(gate["needs"]) == {"support", "scenarios", "docker"}
-    assert "always()" in gate["if"] and "draft == false" in gate["if"]
+    assert gate["name"] == "Service E2E" and set(gate["needs"]) == {"changes", "support", "scenarios", "docker"}
+    assert "always()" in gate["if"] and "needs.changes.result == 'failure'" in gate["if"]
     step = gate["steps"][0]
     assert step["env"] == {
         "SUPPORT_RESULT": "${{ needs.support.result }}",
@@ -606,51 +681,16 @@ def test_deployment_gate_requires_chart_helm_and_every_journey_shard(chart: str,
     assert (completed.returncode == 0) == (chart == helm == journeys == "success")
 
 
-@pytest.mark.parametrize("failure", [None, "a13n-service", "sandbox"])
-def test_deployment_image_preparation_joins_builds_before_publishing(tmp_path, monkeypatch, failure):
-    from threading import Barrier
-
-    from scripts import k8s_local
-
-    workflow = yaml.safe_load((WORKFLOWS / "ci-deploy.yml").read_text())
-    steps = workflow["jobs"]["helm"]["steps"]
-    build = next(step for step in steps if step.get("name") == "Build both checkout images alongside cluster creation")
-    ready = next(step for step in steps if step.get("name") == "Require successful cluster creation")
-    assert steps.index(build) < steps.index(ready)
-    barrier = Barrier(2)
-    finished = set()
-
-    def prepare(component, tag):
-        barrier.wait(timeout=5)
-        finished.add(component)
-        if component == failure:
-            raise RuntimeError(component)
-        return tag + "-built"
-
-    output = tmp_path / "environment"
-    monkeypatch.setenv("GITHUB_ENV", str(output))
-    monkeypatch.setattr(k8s_local, "prepare_image", prepare)
-    code = build["run"].partition("<<'PY'\n")[2].rsplit("\nPY", 1)[0]
-    if failure:
-        with pytest.raises(RuntimeError, match=failure):
-            exec(compile(code, "ci-deploy.yml", "exec"), {})
-        assert not output.exists()
-    else:
-        exec(compile(code, "ci-deploy.yml", "exec"), {})
-        assert output.read_text().splitlines() == [
-            "K8S_SERVICE_IMAGE=a13n-service:ci-built",
-            "K8S_SANDBOX_IMAGE=a13n-sandbox:ci-built",
-        ]
-    assert finished == {"a13n-service", "sandbox"}
+def test_cluster_jobs_load_the_same_sandbox_before_startup():
+    jobs = yaml.safe_load((WORKFLOWS / "ci-deploy.yml").read_text())["jobs"]
     for name in ("helm", "journeys"):
-        builder = next(step for step in workflow["jobs"][name]["steps"] if step.get("name") == "Set up Docker Buildx")
-        assert builder["with"]["driver"] == "docker"
-    journey_build = next(
-        step
-        for step in workflow["jobs"]["journeys"]["steps"]
-        if step.get("uses", "").startswith("docker/build-push-action@")
-    )
-    assert "cache-from" in journey_build["with"] and "cache-to" not in journey_build["with"]
+        steps = jobs[name]["steps"]
+        load = next(step for step in steps if step.get("uses") == "./.github/actions/load-ci-sandbox")
+        assert load["with"] == {"image": "${{ inputs.image }}", "tag": "a13n-sandbox:ci"}
+        assert steps.index(load) < next(
+            i for i, step in enumerate(steps) if step["name"] == "Require successful cluster creation"
+        )
+    assert jobs["helm"]["env"]["K8S_SANDBOX_IMAGE"] == "a13n-sandbox:ci"
 
 
 def test_harness_keeps_full_discovery_and_native_browser_coverage() -> None:
