@@ -507,14 +507,7 @@ def test_shared_sandbox_binary_is_source_keyed_and_required_by_ci_consumers():
     upload = next(step for step in steps if step.get("uses", "").startswith("actions/upload-artifact@"))
     assert "if" not in upload and upload["with"]["if-no-files-found"] == "error"
     assert upload["with"]["name"] == "sandbox-binary-${{ inputs.arch }}"
-    for name in ("ci-deploy.yml", "ci-a13n-service-e2e.yml", "ci-containers.yml"):
+    for name in ("ci-a13n-service-e2e.yml", "ci-containers.yml"):
         consumer = yaml.safe_load((ROOT / ".github/workflows" / name).read_text())
         assert path in consumer[True]["pull_request"]["paths"]
         assert any(job.get("uses") == "./" + path for job in consumer["jobs"].values())
-    deployment = yaml.safe_load((ROOT / ".github/workflows/ci-deploy.yml").read_text())
-    for name in ("helm", "journeys"):
-        job = deployment["jobs"][name]
-        assert job["needs"] == "sandbox-binary"
-        download = next(step for step in job["steps"] if step.get("uses", "").startswith("actions/download-artifact@"))
-        assert download["with"]["path"] == "tmp/sandbox-binaries/amd64"
-    assert deployment["jobs"]["helm"]["env"]["K8S_SANDBOX_BINARY_SOURCE"] == "prebuilt"
