@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import sys
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
@@ -22,6 +23,7 @@ def anyio_backend():
     return "asyncio"
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Executes the Linux guest script with local POSIX tools")
 @pytest.mark.parametrize("stdin", [None, "payload with 'quotes'\n$(touch should-not-exist)\n"])
 @pytest.mark.parametrize("exit_code", [0, 7])
 async def test_command_carries_quoted_argv_and_stdin_without_python(monkeypatch, tmp_path, stdin, exit_code):
