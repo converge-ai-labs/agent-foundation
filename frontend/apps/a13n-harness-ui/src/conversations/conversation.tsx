@@ -1,4 +1,5 @@
 import { ReaderFades } from "./reader-fades";
+import { useBrowserRunChoices } from "./browser-run-choices";
 import { useTranslation } from "../i18n";
 import {
   type ComponentProps,
@@ -143,8 +144,6 @@ function ConversationContent({
       );
     },
     onSuccess: (updated) => {
-      draft.controls = {};
-      draft.notify();
       applyThreadMutation(queries, updated);
     },
     onSettled: () => {
@@ -617,6 +616,17 @@ function ConversationContent({
     },
   });
   const thread = detail.data?.thread;
+  const runAgent = guest ? undefined : thread?.configuration.agent_source.id;
+  const runChoices = useBrowserRunChoices(
+    threadId,
+    draft,
+    runAgent,
+    thread?.configuration.default_model_id ??
+      (selectors.data
+        ? (selectors.data.agents.find((item) => item.agent_id === runAgent)
+            ?.model_id ?? null)
+        : undefined),
+  );
   const unavailable =
     detail.isError &&
     (isUnavailableChat(detail.error) ||
@@ -1023,6 +1033,7 @@ function ConversationContent({
                 : undefined
             }
             canRun={
+              (!runAgent || !runChoices.pending) &&
               !agentSelection.isPending &&
               !agentSelection.isError &&
               !detail.isError &&
@@ -1041,7 +1052,6 @@ function ConversationContent({
                   ? t("Loading chat…")
                   : undefined
             }
-            modelId={draft.modelId}
             leadingControls={
               guest ? undefined : thread?.configuration.agent_source.kind ===
                 "live" ? (
@@ -1072,10 +1082,7 @@ function ConversationContent({
                   defaultModelId={thread?.configuration.default_model_id}
                   modelId={draft.modelId}
                   controls={draft.controls}
-                  onControlsChange={(value) => {
-                    draft.controls = value;
-                    draft.notify();
-                  }}
+                  onControlsChange={runChoices.onControlsChange}
                   disabled={
                     !thread ||
                     agentSelection.isPending ||
@@ -1083,11 +1090,7 @@ function ConversationContent({
                     draft.submission.kind === "unknown"
                   }
                   onAgentChange={(value) => agentSelection.mutate(value)}
-                  onModelChange={(value) => {
-                    draft.modelId = value;
-                    draft.controls = {};
-                    draft.notify();
-                  }}
+                  onModelChange={runChoices.onModelChange}
                 />
               )
             }

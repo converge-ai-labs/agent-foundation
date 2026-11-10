@@ -2,10 +2,11 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import type { Schema } from "../transport/client";
+import { ThreadDraft } from "./draft";
+import { useBrowserRunChoices } from "./browser-run-choices";
 import { ThreadRunChoices } from "./thread-run-choices";
-import type { ModelControlValues } from "./model-controls";
 import { ComposerSettings } from "./composer-settings";
 import { ModelOptions } from "./model-picker";
 import { ModelControlPanel } from "./model-controls";
@@ -19,6 +20,7 @@ beforeEach(() =>
 );
 afterEach(() => {
   cleanup();
+  localStorage.clear();
   vi.unstubAllGlobals();
 });
 
@@ -77,20 +79,25 @@ const catalog: Schema<"ThreadSelectorCatalog"> = {
 };
 
 function Choices({ defaultModelId }: { defaultModelId?: string } = {}) {
-  const [modelId, setModelId] = useState<string>();
-  const [controls, setControls] = useState<ModelControlValues>({});
+  const [draft] = useState(() => new ThreadDraft());
+  useSyncExternalStore(draft.subscribe, draft.getSnapshot);
+  const choices = useBrowserRunChoices(
+    "test",
+    draft,
+    "agent",
+    defaultModelId ?? model.model_id,
+  );
   return (
     <ThreadRunChoices
       catalog={catalog}
       agentId=""
       defaultAgentId="agent"
       defaultModelId={defaultModelId}
-      modelId={modelId}
-      controls={controls}
-      onControlsChange={setControls}
+      modelId={draft.modelId}
+      controls={draft.controls}
+      {...choices}
       disabled={false}
       onAgentChange={vi.fn()}
-      onModelChange={setModelId}
     />
   );
 }
@@ -102,7 +109,7 @@ it("uses the selected model as the settings entry, retaining Agent context and e
   render(<Choices />);
   expect(
     screen.getByLabelText("Agent: Writer. Model: Reasoning model").textContent,
-  ).toBe("Reasoning model");
+  ).toBe("Reasoning modelDefault");
   const trigger = button("Agent & Model settings");
   trigger.focus();
   await user.keyboard("[Enter]");
@@ -116,20 +123,15 @@ it("uses the selected model as the settings entry, retaining Agent context and e
   );
   expect(button("High").getAttribute("aria-pressed")).toBe("false");
   await user.click(button("High"));
-  expect(button("Thinking").textContent).toBe("ThinkingHigh");
-  await user.click(button("Thinking"));
+  expect(trigger.textContent).toContain("High");
   expect(button("Use default thinking").getAttribute("aria-pressed")).toBe(
     "false",
   );
-  expect(button("High").getAttribute("aria-pressed")).toBe("true");
   await user.click(button("Low"));
-  await user.click(button("Thinking"));
   expect(button("Low").getAttribute("aria-pressed")).toBe("true");
-  await user.click(button("Low"));
-  expect(button("Thinking").textContent).toBe("ThinkingLow");
-  await user.click(button("Thinking"));
+  expect(trigger.textContent).toContain("Low");
   await user.click(button("Use default thinking"));
-  expect(button("Thinking").textContent).toBe("ThinkingDefault");
+  expect(trigger.textContent).toContain("Default");
   await user.keyboard("[Escape]");
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(document.activeElement).toBe(trigger);
@@ -141,6 +143,7 @@ it("searches models in one panel and resets overrides on model changes", async (
   await user.click(button("Agent & Model settings"));
   await user.click(button("Thinking"));
   await user.click(button("Low"));
+  await user.click(button("Back to Agent & Model settings"));
   await user.click(button("Model"));
   await user.type(
     screen.getByRole("textbox", { name: "Search models" }),
@@ -272,6 +275,7 @@ it("keeps unsupported overrides resettable instead of silently changing them", a
     fast: true,
     reasoning_mode: "pro",
   });
+  await user.click(button("Back to Agent & Model settings"));
   await user.click(button("Speed"));
   await user.click(button("Use model speed"));
   expect(onControlsChange).toHaveBeenLastCalledWith({
@@ -307,10 +311,14 @@ it("changes Agent inside settings and clears model controls for the new inherite
   const user = userEvent.setup();
   function Agents() {
     const [agentId, setAgentId] = useState("agent");
-    const [controls, setControls] = useState<ModelControlValues>({
-      thinking: "low",
-      fast: false,
-    });
+    const [draft] = useState(() => new ThreadDraft());
+    useSyncExternalStore(draft.subscribe, draft.getSnapshot);
+    const choices = useBrowserRunChoices(
+      "test",
+      draft,
+      agentId,
+      agentId === "agent" ? model.model_id : other.model_id,
+    );
     return (
       <ThreadRunChoices
         catalog={{
@@ -326,16 +334,18 @@ it("changes Agent inside settings and clears model controls for the new inherite
           ],
         }}
         agentId={agentId}
-        controls={controls}
-        onControlsChange={setControls}
+        controls={draft.controls}
+        {...choices}
         disabled={false}
         onAgentChange={setAgentId}
-        onModelChange={vi.fn()}
       />
     );
   }
   render(<Agents />);
   await user.click(button("Agent & Model settings"));
+  await user.click(button("Thinking"));
+  await user.click(button("Low"));
+  await user.click(button("Back to Agent & Model settings"));
   await user.click(button("Agent"));
   await user.click(button(/^Reviewer/));
   expect(

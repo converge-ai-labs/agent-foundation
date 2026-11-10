@@ -381,7 +381,6 @@ export function Composer({
   onReviewOutcome,
   controls,
   leadingControls,
-  modelId,
   threadId,
   activity,
   canRun,
@@ -419,7 +418,6 @@ export function Composer({
   onReviewOutcome?: () => void;
   controls?: () => ReactNode;
   leadingControls?: ReactNode;
-  modelId?: string;
 }) {
   const { t } = useTranslation();
   const draft = useDraft(threadId);
@@ -737,7 +735,7 @@ export function Composer({
         threadId,
         action,
         activity.receipt_id ?? undefined,
-        modelId,
+        draft.modelId,
         localInput,
         metadata,
         loadSkills,

@@ -5,7 +5,9 @@ import userEvent from "@testing-library/user-event";
 import type { Schema } from "../transport/client";
 import { i18n } from "../i18n";
 import { ThinkingPicker } from "./thinking-picker";
-import { ThreadRunChoices } from "./thread-run-choices";
+import { useBrowserRunChoices } from "./browser-run-choices";
+import { ThreadDraft } from "./draft";
+import { renderHook } from "@testing-library/react";
 
 beforeEach(() =>
   vi.stubGlobal("matchMedia", () => ({
@@ -64,50 +66,45 @@ it("renders backend labels and preserves false separately from default", async (
   expect(onChange).toHaveBeenLastCalledWith(null);
 });
 
-it("resets thinking when a refreshed catalog changes the inherited Model", () => {
-  const onThinkingChange = vi.fn();
-  const catalog: Schema<"ThreadSelectorCatalog"> = {
-    agents: [
-      {
-        agent_id: "agent",
-        name: "Agent",
-        model_id: model.model_id,
-        source_path: "agents/agent.yaml",
-      },
-    ],
-    models: [model],
-    environments: [],
-    harness_plugins: [],
-    environment_run_extensions: [],
-    mcp_servers: [],
-  };
-  const props = {
-    catalog,
-    agentId: "agent",
-    controls: {
-      thinking: "low" as const,
-      fast: true,
-      reasoning_mode: "pro" as const,
-    },
-    onControlsChange: onThinkingChange,
-    disabled: false,
-    onAgentChange: vi.fn(),
-    onModelChange: vi.fn(),
-  };
-  const view = render(<ThreadRunChoices {...props} />);
-  expect(onThinkingChange).not.toHaveBeenCalled();
-  view.rerender(
-    <ThreadRunChoices
-      {...props}
-      catalog={{
-        ...catalog,
-        agents: [{ ...catalog.agents[0], model_id: "another-model" }],
-      }}
-    />,
+it("restores only the matching conversation, agent and effective model", () => {
+  localStorage.clear();
+  const draft = new ThreadDraft();
+  const props = { id: "first", draft, model: "original", agent: "writer" };
+  const { result, rerender } = renderHook(
+    (p) => useBrowserRunChoices(p.id, p.draft, p.agent, p.model),
+    { initialProps: props },
   );
-  expect(onThinkingChange).toHaveBeenCalledWith({});
+  act(() =>
+    result.current.onControlsChange({
+      thinking: false,
+      fast: false,
+      reasoning_mode: "pro",
+    }),
+  );
+  const restored = new ThreadDraft();
+  rerender({ ...props, draft: restored });
+  expect(restored.controls).toMatchObject({
+    thinking: false,
+    fast: false,
+    reasoning_mode: "pro",
+  });
+  act(() => result.current.onModelChange("original"));
+  expect(restored.controls.thinking).toBe(false);
+  rerender({ ...props, draft: restored, agent: "reviewer" });
+  expect(restored.controls).toEqual({});
+  act(() => result.current.onModelChange(undefined));
+  act(() => result.current.onControlsChange({ thinking: "low" }));
+  rerender({
+    ...props,
+    draft: restored,
+    agent: "reviewer",
+    model: "new-default",
+  });
+  expect(restored.controls).toEqual({});
+  const other = new ThreadDraft();
+  rerender({ ...props, draft: other, id: "second" });
+  expect(other.controls).toEqual({});
 });
-
 it("renders boolean controls without inventing effort levels", async () => {
   const user = userEvent.setup();
   const onChange = vi.fn();
@@ -133,7 +130,7 @@ it("renders boolean controls without inventing effort levels", async () => {
     />,
   );
   screen.getByRole("button", { name: /^Off/ }).focus();
-  await user.keyboard("[ArrowDown][Space]");
+  await user.keyboard("[ArrowRight][Space]");
   expect(onChange).toHaveBeenLastCalledWith(true);
   expect(screen.queryByRole("button", { name: "High" })).toBeNull();
 });

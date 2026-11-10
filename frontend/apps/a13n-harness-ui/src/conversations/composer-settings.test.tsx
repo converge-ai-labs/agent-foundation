@@ -300,6 +300,9 @@ it.each([false, true])(
       fast: false,
       reasoning_mode: "pro",
     });
+    await user.click(
+      screen.getByRole("button", { name: "返回智能体与模型设置" }),
+    );
     await user.click(screen.getByRole("button", { name: "推理模式" }));
     await user.click(screen.getByRole("button", { name: "默认" }));
     expect(draft.controls).toEqual({
@@ -376,6 +379,9 @@ it.each([false, true])(
     await user.click(screen.getByRole("button", { name: "Thinking" }));
     await user.click(screen.getByRole("button", { name: "Low" }));
     expect(draft.controls).toEqual({ thinking: "low" });
+    await user.click(
+      screen.getByRole("button", { name: "Back to Agent & Model settings" }),
+    );
     expect(
       screen.getByRole("button", { name: "Thinking" }).textContent,
     ).toContain("Low");
