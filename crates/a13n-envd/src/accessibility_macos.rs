@@ -415,7 +415,8 @@ impl Native {
         n: &CFRetained<AXUIElement>,
         b: &Budget,
     ) -> Result<Option<Value>, EIPError> {
-        let sample = self.sample_fields(n, b)?;
+        let mut sample = self.sample_fields(n, b)?;
+        bound_sample(&mut sample.value, b);
         if !self.registry_room(&self.sample_additions(n, &sample.actions)) {
             b.mark("item_limit");
             return Ok(None);
@@ -457,8 +458,10 @@ impl Native {
             ("description", "AXDescription"),
             ("identifier", "AXIdentifier"),
         ] {
-            match optional(get(n, key, b)).and_then(|v| v.map(|v| native::name(&v, b)).transpose())
-            {
+            match optional(get(n, key, b)).and_then(|v| {
+                v.map(|v| typed::<CFString>(v).map(|v| v.to_string()))
+                    .transpose()
+            }) {
                 Ok(Some(v)) => out[field] = json!(v),
                 Ok(None) => {}
                 Err(e) => field_error(&mut out, field, &e),
@@ -734,7 +737,10 @@ impl Native {
                         if let Some(parent) = parent {
                             sample.value["parent"] = parent;
                         }
+                        // Match the complete native sample before limiting its
+                        // display fields. A byte prefix is not a query operand.
                         let matched = matches_query(&sample.value, &query);
+                        bound_sample(&mut sample.value, b);
                         let mut additions =
                             self.sample_additions(&n, if matched { &sample.actions } else { &[] });
                         // Reserve the continuation before minting any page handles.
@@ -1008,6 +1014,20 @@ fn role_name(r: &str) -> Option<&'static str> {
         "AXTabGroup" => "tab_list",
         _ => return None,
     })
+}
+fn bound_sample(n: &mut Value, b: &Budget) {
+    for key in ["name", "identifier", "description"] {
+        if let Some(value) = n[key].as_str() {
+            let mut end = value.len().min(b.limit("max_text_bytes"));
+            while !value.is_char_boundary(end) {
+                end -= 1;
+            }
+            if end < value.len() {
+                b.mark("byte_limit");
+                n[key] = json!(&value[..end]);
+            }
+        }
+    }
 }
 fn matches_query(n: &Value, q: &Value) -> bool {
     for k in ["role", "native_role", "identifier"] {

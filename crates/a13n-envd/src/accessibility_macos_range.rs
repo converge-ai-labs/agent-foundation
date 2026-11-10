@@ -131,8 +131,8 @@ impl Native {
         }
         let result = (|| {
             let kind = string(q, "kind")?;
-            let base = if !p["range"].is_null() {
-                Some(self.range_operand(&p["range"], owner, b)?)
+            let base = if !p["source"].is_null() {
+                Some(self.range_operand(&p["source"], owner, b)?)
             } else {
                 None
             };
@@ -315,7 +315,7 @@ impl Native {
         Ok(out)
     }
     pub(super) fn range_read(&mut self, p: &Value, b: &Budget) -> Result<Value, EIPError> {
-        let owner = &p["range"]["node"];
+        let owner = &p["reference"]["node"];
         let n = self.node(owner)?;
         let mut out = range_result(owner);
         if self.protected(&n, b)? {
@@ -323,7 +323,7 @@ impl Native {
             return Ok(out);
         }
         let result = (|| {
-            let span = self.range_operand(&p["range"], owner, b)?;
+            let span = self.range_operand(&p["reference"], owner, b)?;
             let r = &p["request"];
             match string(r, "kind")? {
                 "text" => out["text"] = self.text_span(&n, span, b)?,

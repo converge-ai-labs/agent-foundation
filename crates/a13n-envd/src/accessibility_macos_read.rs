@@ -219,14 +219,7 @@ impl Native {
                             if !collection_room(&out, "nodes", b) {
                                 break 'rows;
                             }
-                            let args = objc2_core_foundation::CFArray::from_retained_objects(&[
-                                CFNumber::new_isize(x as isize),
-                                CFNumber::new_isize(y as isize),
-                            ]);
-                            if let Some(v) =
-                                optional(native::parameter(&n, "AXCellForColumnAndRow", &args, b))?
-                            {
-                                let cell = typed(v)?;
+                            if let Some(cell) = self.table_cell(&n, x, y, b)? {
                                 let Some(node) = self.sample(&cell, b)? else {
                                     break 'rows;
                                 };
@@ -299,6 +292,64 @@ impl Native {
         out["completeness"] = b.completeness();
         Ok(out)
     }
+    fn table_cell(
+        &self,
+        table: &AXUIElement,
+        column: usize,
+        row: usize,
+        b: &Budget,
+    ) -> Result<Option<CFRetained<AXUIElement>>, EIPError> {
+        let args = objc2_core_foundation::CFArray::from_retained_objects(&[
+            CFNumber::new_isize(column as isize),
+            CFNumber::new_isize(row as isize),
+        ]);
+        match native::parameter(table, "AXCellForColumnAndRow", &args, b) {
+            Ok(value) => return typed(value).map(Some),
+            Err(e) if e.data.error_type == ErrorType::Unsupported => {}
+            Err(e) => return optional(Err(e)),
+        }
+        // AppKit NSTableView exposes rows with ordered cell children, but does
+        // not necessarily implement AXCellForColumnAndRow. Use that native
+        // structure only when the row has one child per observed column; merged
+        // or sparse rows cannot safely be indexed this way.
+        let rows = native::count(table, "AXRows", b)?;
+        let columns = native::count(table, "AXColumns", b)?;
+        if row >= rows || column >= columns {
+            return Ok(None);
+        }
+        let rows = native::page(table, "AXRows", row, 1, b)?;
+        let row = typed::<AXUIElement>(rows.get(0).ok_or_else(unavailable)?)?;
+        if !native::string_is(&*get(&row, "AXRole", b)?, "AXRow")?
+            || native::count(&row, "AXChildren", b)? != columns
+        {
+            return Err(unsupported());
+        }
+        let cells = native::page(&row, "AXChildren", column, 1, b)?;
+        typed(cells.get(0).ok_or_else(unavailable)?).map(Some)
+    }
+    fn property_value(
+        &mut self,
+        n: &AXUIElement,
+        key: &str,
+        b: &Budget,
+    ) -> Result<(Value, String), EIPError> {
+        match get(n, key, b) {
+            Ok(value) => self.value(&value, b).map(|v| (v, key.into())),
+            Err(e)
+                if e.data.error_type == ErrorType::Unsupported
+                    && matches!(key, "AXRowCount" | "AXColumnCount") =>
+            {
+                let source = if key == "AXRowCount" {
+                    "AXRows"
+                } else {
+                    "AXColumns"
+                };
+                let count = native::count(n, source, b)?;
+                Ok((json!({"kind":"scalar","value":count}), source.into()))
+            }
+            Err(e) => Err(e),
+        }
+    }
     fn properties(
         &mut self,
         n: &AXUIElement,
@@ -312,11 +363,11 @@ impl Native {
                 b.mark("item_limit");
                 break;
             }
-            match get(n, key, b).and_then(|v| self.value(&v, b)) {
-                Ok(value) => out["properties"]
+            match self.property_value(n, key, b) {
+                Ok((value, source)) => out["properties"]
                     .as_array_mut()
                     .unwrap()
-                    .push(json!({"name":key,"source":key,"value":value})),
+                    .push(json!({"name":key,"source":source,"value":value})),
                 Err(e) => field_error(out, key, &e),
             }
         }

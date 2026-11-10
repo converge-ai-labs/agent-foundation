@@ -171,6 +171,21 @@ fn query_casefold_and_coordinate_frames_are_explicit() {
     );
 }
 #[test]
+fn complete_sample_matching_precedes_display_bounding() {
+    let name = format!("{}Straße 世界😀 END", "Segment ".repeat(40));
+    let mut sample = json!({"name":name,"identifier":"fixture-long-name"});
+    assert!(matches_query(&sample, &json!({"name":name})));
+    assert!(matches_query(
+        &sample,
+        &json!({"name":"STRASSE 世界😀","name_match":"substring_casefold"})
+    ));
+    assert!(!matches_query(&sample, &json!({"name":"Segment "})));
+    let b = Budget::new(&json!({"limits":{"max_text_bytes":9}})).unwrap();
+    bound_sample(&mut sample, &b);
+    assert_eq!(sample["name"], "Segment S");
+    assert_eq!(b.reason.get(), Some("byte_limit"));
+}
+#[test]
 fn backward_text_keeps_the_endpoint_and_native_start() {
     for (text, bytes, suffix, skipped) in [
         ("éabc", 4, "abc", 1),
@@ -623,4 +638,26 @@ fn native_appkit_read_action_text_and_owner_validation() {
         )
         .unwrap();
     assert_eq!(text["text"]["text"], "updated 😀");
+    let ranges = backend.execute(
+        "computer.a11y_range",
+        json!({"node":node,"query":{"kind":"span","span":{"unit":"ax_native","start":0,"end":7}}}),
+        &mut no_dispatch,
+    ).unwrap();
+    let range = ranges["ranges"][0].clone();
+    let text = backend
+        .execute(
+            "computer.a11y_range_read",
+            json!({"reference":range,"request":{"kind":"text"}}),
+            &mut no_dispatch,
+        )
+        .unwrap();
+    assert_eq!(text["text"]["text"], "updated");
+    let found = backend
+        .execute(
+            "computer.a11y_range",
+            json!({"node":node,"source":range,"query":{"kind":"find_text","text":"😀"}}),
+            &mut no_dispatch,
+        )
+        .unwrap();
+    assert_eq!(found["ranges"], json!([]));
 }

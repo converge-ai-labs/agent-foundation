@@ -7,25 +7,55 @@
 @property(nonatomic, strong) NSTextView *document;
 @property(nonatomic, strong) NSButton *toggle;
 @property(nonatomic, strong) NSSlider *numeric;
+@property(nonatomic, strong) NSTableView *table;
+@property(nonatomic, strong) NSButton *dynamic;
 @property(nonatomic, copy) NSString *statePath;
 @property(nonatomic, strong) NSTimer *timer;
 @property(nonatomic, assign) NSUInteger clicks;
 @end
 
 @implementation Fixture
-- (void)apply:(id)sender { self.clicks++; }
+- (void)apply:(id)sender {
+    self.clicks++;
+    if (self.dynamic) {
+        [self.dynamic removeFromSuperview];
+        self.dynamic = nil;
+    } else {
+        self.dynamic = [NSButton buttonWithTitle:@"Dynamic control" target:nil action:nil];
+        self.dynamic.frame = NSMakeRect(560, 350, 220, 30);
+        self.dynamic.accessibilityIdentifier = @"fixture-dynamic";
+        [self.window.contentView addSubview:self.dynamic];
+    }
+}
 - (NSInteger)numberOfRowsInTableView:(NSTableView *)tableView { return 2; }
 - (id)tableView:(NSTableView *)tableView objectValueForTableColumn:(NSTableColumn *)column row:(NSInteger)row {
     return [NSString stringWithFormat:@"%@ %ld", column.identifier, (long)row];
 }
 - (void)publish:(NSTimer *)timer {
     NSRange selection = self.document.selectedRange;
+    NSMutableArray *selectedRows = [NSMutableArray array];
+    [self.table.selectedRowIndexes enumerateIndexesUsingBlock:^(NSUInteger index, BOOL *stop) {
+        [selectedRows addObject:@(index)];
+    }];
     NSDictionary *state = @{
         @"ready": @(self.window.visible), @"pid": @(NSProcessInfo.processInfo.processIdentifier),
         @"clicks": @(self.clicks), @"text": self.editor.string,
         @"checked": @(self.toggle.state == NSControlStateValueOn),
         @"numeric": @(self.numeric.doubleValue),
-        @"document_selection": [self.document.string substringWithRange:selection]
+        @"document_text": self.document.string,
+        @"document_selection": [self.document.string substringWithRange:selection],
+        @"editor_focused": @(self.window.firstResponder == self.editor),
+        @"window_main": @(self.window.mainWindow),
+        @"window_minimized": @(self.window.miniaturized),
+        @"window_frame": NSStringFromRect(self.window.frame),
+        @"window_x": @(self.window.frame.origin.x),
+        @"window_y": @(NSMaxY(NSScreen.screens.firstObject.frame) - NSMaxY(self.window.frame)),
+        @"window_width": @(self.window.frame.size.width),
+        @"window_height": @(self.window.frame.size.height),
+        @"window_scale": @(self.window.backingScaleFactor),
+        @"selected_row": @(self.table.selectedRow),
+        @"selected_rows": selectedRows,
+        @"dynamic": @(self.dynamic != nil)
     };
     NSError *error = nil;
     NSData *data = [NSJSONSerialization dataWithJSONObject:state options:0 error:&error];
@@ -36,7 +66,7 @@
 }
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
     self.window = [[NSWindow alloc] initWithContentRect:NSMakeRect(100, 100, 900, 700)
-        styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskResizable
+        styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskResizable | NSWindowStyleMaskMiniaturizable
         backing:NSBackingStoreBuffered defer:NO];
     self.window.title = @"Envd accessibility fixture";
     self.window.releasedWhenClosed = NO;
@@ -45,6 +75,13 @@
     apply.frame = NSMakeRect(24, 630, 220, 36);
     apply.accessibilityIdentifier = @"fixture-apply";
     [content addSubview:apply];
+    NSMutableString *longName = [NSMutableString string];
+    for (NSUInteger i = 0; i < 40; i++) [longName appendString:@"Segment "];
+    [longName appendString:@"Straße 世界😀 END"];
+    NSButton *longLabel = [NSButton buttonWithTitle:longName target:nil action:nil];
+    longLabel.frame = NSMakeRect(270, 630, 560, 36);
+    longLabel.accessibilityIdentifier = @"fixture-long-name";
+    [content addSubview:longLabel];
 
     NSScrollView *editorScroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(24, 500, 820, 112)];
     editorScroll.hasVerticalScroller = YES;
@@ -95,7 +132,9 @@
 
     NSScrollView *tableScroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(24, 8, 820, 40)];
     NSTableView *table = [[NSTableView alloc] initWithFrame:tableScroll.bounds];
+    self.table = table;
     table.accessibilityIdentifier = @"fixture-table";
+    table.allowsMultipleSelection = YES;
     table.dataSource = self;
     for (NSString *identifier in @[@"First", @"Second"]) {
         NSTableColumn *column = [[NSTableColumn alloc] initWithIdentifier:identifier];
