@@ -414,7 +414,9 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          xvfb-run -a cargo test --release --locked --package a13n-envd --features "${{ matrix.features }}" --lib clipboard -- --include-ignored --test-threads=1 2>&1 | tee test-results/clipboard-x11.log
+          # Tests close every X client between cases; keep the server from
+          # resetting while the next test connects.
+          xvfb-run -a -s "-screen 0 1280x1024x24 -noreset" cargo test --release --locked --package a13n-envd --features "${{ matrix.features }}" --lib clipboard -- --include-ignored --test-threads=1 2>&1 | tee test-results/clipboard-x11.log
 
       - name: Set up uv for native EIP tests
         uses: astral-sh/setup-uv@v6
