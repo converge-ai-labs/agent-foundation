@@ -388,6 +388,25 @@ A template is created enabled. `PATCH` (with `If-Match`) may change `provider_id
 
 Automatically provisioned templates have null creator/updater until a user changes them ([09](09-runtime.md#workspace-provisioning)).
 
+## Egress credentials
+
+An egress credential is a workspace-owned, write-only static token for a controlled Envd Session. It is independent of provider accounts, connection authorization and the daemon transport credential. Workspace `write` manages it; workspace `run` permits execution to reference it. A stored Agent reference grants no authority. The workspace is the credential-use trust boundary; there is no per-credential ACL.
+
+```
+egress_credentials   (ecred_)
+  id  organization_id  workspace_id  name  description  allowed_hosts JSONB  value JSONB NULL
+  state  credential_version  version  created_by_id  updated_by_id  created_at  updated_at  revoked_at NULL
+  UNIQUE (workspace_id, id)
+  state IN ('active', 'revoked')
+  credential_version > 0  version > 0
+```
+
+`allowed_hosts` is a normalized, deduplicated list of 1–256 exact ASCII DNS names. IP addresses, URLs and wildcards are refused. It is immutable: changing a credential's permitted destinations requires a new resource and explicit reference changes. `value` is a token of 1–8192 UTF-8 bytes without ASCII control characters, encrypted for its exact row and column under [credential encryption](03-tenancy.md#credential-encryption). Resource reads, audit details, traces and errors never contain its plaintext, ciphertext or Envd sentinel.
+
+`POST /egress-credentials` creates an active credential at credential version 1. `GET` lists it newest-first or reads one resource. `PATCH` edits only name and description. `PUT /egress-credentials/{id}/value` replaces the encrypted value and increments `credential_version`; `POST /egress-credentials/{id}/revoke` clears the value, records `revoked_at` and increments the same counter. Both return 202 after database commit: saving a version does not prove that every existing Session has applied it. Mutations of an existing resource require its `If-Match`. Metadata edits advance only the ordinary resource version; encryption-key rewrapping does not itself rotate the upstream token. Revocation is final and retained resources are not hard-deleted.
+
+Management reads are explicitly admitted to MCP. Credential writes are excluded from management MCP and Run platform tools. Audit actions are `egress_credential.create`, `.update`, `.rotate` and `.revoke`; details contain changed field names or the credential version, never the value. Envd Session references, application evidence and lifecycle are owned by [Environments](06-environments.md).
+
 ## Connections
 
 ```

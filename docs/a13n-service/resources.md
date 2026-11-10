@@ -71,3 +71,14 @@ When rotating credentials or moving an endpoint, keep these update rules in view
 - Endpoints must pass the deployment's [outbound policy](configuration.md#outbound-requests). Plain HTTP needs an explicit origin allowance. This policy permits private IP addresses; enforce network restrictions at the deployment boundary.
 
 Disable a provider with `PATCH {"enabled": false}` to stop new use. Maintenance of its existing environments continues. To remove an unused provider, open its edit dialog, choose **Delete** and confirm. This permanently removes local configuration and credentials, not the upstream account or native resources. References from resources, retained configurations or pending cleanup block deletion with `provider_in_use`; disable the provider instead. [Environment providers](environments.md#providers) show template and environment references before deletion.
+
+## Egress credentials
+
+An egress credential stores a static token for controlled Envd HTTPS requests. It belongs to one workspace and uses an `ecred_…` ID. Creating, editing, rotating and revoking it requires workspace `write`. Values are encrypted and write-only; resource queries return metadata and versions, never the token.
+
+1. Create the resource with `POST /api/v1/egress-credentials`, supplying `name`, optional `description`, `allowed_hosts` and `value`. Allowed hosts are exact ASCII DNS names, such as `api.github.com`; URLs, IP addresses and wildcards are refused. The token must contain 1–8192 UTF-8 bytes without ASCII control characters.
+2. Read the resource and retain its ETag. Use `PATCH /api/v1/egress-credentials/{id}` with `If-Match` to edit its name or description. Allowed hosts are fixed after creation; create a new resource to change them.
+3. Rotate with `PUT /api/v1/egress-credentials/{id}/value`, `If-Match` and `{"value": "<new token>"}`. The response returns `202` and the new `credential_version`. Metadata edits change only the ordinary `version`.
+4. Revoke with `POST /api/v1/egress-credentials/{id}/revoke` and `If-Match`. This clears the stored value and permanently marks the credential revoked. Create a new resource to resume use; there is no restore or hard-delete operation.
+
+A `202` confirms that Service saved the rotation or revocation. It does not confirm that all existing Envd Sessions applied it, and does not revoke the token at its upstream provider. Credential writes are unavailable to agent platform tools and management MCP; MCP exposes only metadata queries.

@@ -67,7 +67,16 @@ thread_session_bindings
   thread_id  environment_id  name  organization_id  workspace_id
   configuration JSONB  version  head JSONB NULL
   PRIMARY KEY (thread_id, environment_id, name)
+
+thread_session_credentials
+  thread_id  environment_id  binding_name  session_version  env  organization_id  workspace_id
+  credential_id  inject_hosts JSONB  applied_credential_version NULL  applied_session_id NULL
+  applied_device_generation NUMERIC(20,0) NULL  applied_at NULL
+  PRIMARY KEY (thread_id, environment_id, binding_name, session_version, env)
+  INDEX (credential_id)
 ```
+
+`thread_session_credentials` indexes nonsecret references to [egress credentials](04-resources.md#egress-credentials) for each admitted binding version. Composite foreign keys keep the Thread, Environment, binding and credential in one workspace. It stores neither token values nor sentinels, and is not a Run reference counter. The four application fields are either all null or all present; an application names the exact native Session and Device generation, independently of the logical binding version. Credential versions are positive and Device generations retain the full EIP unsigned 64-bit range. Unknown native outcomes retain their references; confirmed Session retirement or loss permits removal of its runtime application records without changing historical Run captures.
 
 A `reserved` managed instance has a durable identity and selected template/provider but no native target, operation, claim, failure, or renewal schedule. Reservation is not a queued create. A **managed** instance has a template and its provider. An **external HTTP target** has neither, nor a handle or provider identity, and holds the `device_id`, `endpoint` and `token` of the envd daemon it reaches ([external targets](#external-targets)). A **client environment** also has no provider or template; its registered device connects outbound to Control and its separate settings hold a connection-token hash ([client environments](#client-environments)). A target belongs to the principal that registered it (`owner_principal_id`); managed instances have no owner. The instance references its provider by `(workspace_id, provider_id)`, so the database refuses a provider of another workspace ([04](04-resources.md#provider-resources)), and identity columns never change.
 

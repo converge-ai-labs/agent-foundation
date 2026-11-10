@@ -38,6 +38,8 @@ from a13n_service.resources.connections.tables import ConnectionRow
 from a13n_service.resources.connector_providers.routes import router as connector_providers_router
 from a13n_service.resources.dashboards.routes import router as dashboards_router
 from a13n_service.resources.dashboards.tables import DashboardRow
+from a13n_service.resources.egress_credentials.routes import router as egress_credentials_router
+from a13n_service.resources.egress_credentials.tables import CredentialRow as EgressCredentialRow
 from a13n_service.resources.environment_templates.routes import router as environment_templates_router
 from a13n_service.resources.environment_templates.tables import EnvironmentTemplateRow
 from a13n_service.resources.memories.purge import MemoryPurger
@@ -107,6 +109,7 @@ from a13n_service.runs.environments.desktop.tables import (
     DesktopViewerRow,
 )
 from a13n_service.runs.environments.e2b_templates import E2BDesktopTemplateRow
+from a13n_service.runs.environments.egress.tables import SessionCredentialRow
 from a13n_service.runs.environments.maintenance import maintenance_sweep, renewal_sweep
 from a13n_service.runs.environments.modal_images import ModalDesktopImageRow
 from a13n_service.runs.environments.provider_routes import router as environment_provider_lifecycle_router
@@ -405,6 +408,8 @@ OSS = Distribution(
         BrowserOperationRow,
         BrowserBlockedRow,
         EnvironmentTemplateRow,
+        EgressCredentialRow,
+        SessionCredentialRow,
         ConnectionRow,
         SubscriptionRow,
         DataSourceRow,
@@ -472,6 +477,7 @@ OSS = Distribution(
         subscriptions_router,
         metrics_data_sources_router,
         dashboards_router,
+        egress_credentials_router,
         devices_router,
         schedules_router,
         runs_router,
