@@ -642,6 +642,7 @@ function ConversationContent({
             ?.model_id ?? null)
         : undefined),
     refreshRunConfiguration,
+    guest ? undefined : threadId,
   );
   const unavailable =
     detail.isError &&

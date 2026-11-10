@@ -34,6 +34,7 @@ def older_package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path
     """
     newer = tmp_path / "comment-migrations"
     shutil.copytree(migration.MIGRATIONS_PATH, newer, ignore=shutil.ignore_patterns("__pycache__"))
+    (newer / "versions/20261110_e94e15093b5d_persist_shared_webui_composer_drafts.py").unlink()
     (newer / "versions/20261106_d9e633ce9a00_separate_thread_device_session_bindings.py").unlink()
     (newer / "versions/20261105_dd0077431d5b_retain_tool_executions_and_completion_.py").unlink()
     (newer / "versions/20261029_1f69a2ed231f_record_deleted_threads_for_checkpoint_.py").unlink()
@@ -103,6 +104,7 @@ def older_package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path
             # Keep unrelated query/push tables on both sides of this comment-only fixture.
             for name in (
                 "deleted_thread",
+                "webui_draft",
                 "envd_session_binding",
                 "tool_execution",
                 "compaction",

@@ -130,6 +130,9 @@ export class ThreadDraft {
     this.annotations = notes;
     this.notify();
   }
+  get optionsUninitialized() {
+    return this.sharedOptions && Y.snapshot(this.optionsDoc).sv.size === 0;
+  }
   get modelOptions() {
     return composerOptions(this.optionsDoc).model;
   }

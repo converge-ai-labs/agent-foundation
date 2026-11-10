@@ -530,6 +530,157 @@ async def test_draft_retention_expires_disconnected_documents_but_not_active_edi
         assert composer_values(restored.document) == ("", ())
 
 
+@pytest.mark.parametrize("cancel_join", [False, True])
+async def test_editor_registration_protects_draft_before_operation_exit(tmp_path, monkeypatch, cancel_join):
+    from contextlib import asynccontextmanager
+    from dataclasses import replace
+    from datetime import UTC, datetime, timedelta
+
+    from a13n_harness_ui.app import open_harness_ui_app
+    from anyio import CancelScope, Event, create_task_group, fail_after
+
+    from .test_app import _settings, _write_configuration
+
+    async with open_harness_ui_app(_settings(tmp_path), configuration_path=_write_configuration(tmp_path)) as app:
+        thread = await app.create_thread()
+        draft = await app.shared_draft(thread.thread_id)
+        participant = draft.attach()
+        authored = composer_document()
+        authored.get("text", type=Text).insert(0, "Keep this editor's input")
+        await app.edit_shared_draft(thread.thread_id, participant, sync(draft, authored))
+        draft.detach(participant)
+        stored = await app._store.drafts.get(thread.thread_id)
+        assert stored is not None
+        await app._store.drafts.save(replace(stored, updated_at=datetime.now(UTC) - timedelta(days=31)))
+        operation = app._operation
+        exiting, release, finished = Event(), Event(), Event()
+        scope = CancelScope()
+
+        @asynccontextmanager
+        async def pause_operation_exit():
+            async with operation():
+                yield
+            exiting.set()
+            await release.wait()
+
+        async def join_editor():
+            try:
+                with scope:
+                    async with app.shared_draft_editor(thread.thread_id) as (joined, editor):
+                        assert joined is draft and editor in draft.participants
+                        assert not draft.closed
+            finally:
+                finished.set()
+
+        with monkeypatch.context() as patch, fail_after(10):
+            patch.setattr(app, "_operation", pause_operation_exit)
+            async with create_task_group() as group:
+                group.start_soon(join_editor)
+                await exiting.wait()
+                # Loading has finished and the draft lock is released. Even if
+                # operation cleanup suspends here, pruning must see the editor.
+                assert draft.participants
+                await app._prune_drafts()
+                assert await app._store.drafts.get(thread.thread_id) is not None
+                assert app._shared_drafts[thread.thread_id] is draft and not draft.closed
+                if cancel_join:
+                    scope.cancel()
+                else:
+                    release.set()
+                await finished.wait()
+        assert not draft.participants
+        await app._prune_drafts()
+        assert draft.closed and await app._store.drafts.get(thread.thread_id) is None
+
+
+async def test_editor_waits_for_inflight_pruning_then_joins_a_live_draft(tmp_path, monkeypatch):
+    from dataclasses import replace
+    from datetime import UTC, datetime, timedelta
+
+    from a13n_harness_ui.app import open_harness_ui_app
+    from anyio import Event, create_task_group, fail_after, wait_all_tasks_blocked
+
+    from .test_app import _settings, _write_configuration
+
+    async with open_harness_ui_app(_settings(tmp_path), configuration_path=_write_configuration(tmp_path)) as app:
+        thread = await app.create_thread()
+        previous = await app.shared_draft(thread.thread_id)
+        participant = previous.attach()
+        authored = composer_document()
+        authored.get("text", type=Text).insert(0, "expired")
+        await app.edit_shared_draft(thread.thread_id, participant, sync(previous, authored))
+        previous.detach(participant)
+        stored = await app._store.drafts.get(thread.thread_id)
+        assert stored is not None
+        await app._store.drafts.save(replace(stored, updated_at=datetime.now(UTC) - timedelta(days=31)))
+        pruning, release, joined = Event(), Event(), Event()
+        prune = app._store.drafts.prune
+
+        async def paused_prune(*, active, limit=100):
+            assert thread.thread_id not in active
+            pruning.set()
+            await release.wait()
+            return await prune(active=active, limit=limit)
+
+        async def join_editor():
+            async with app.shared_draft_editor(thread.thread_id) as (draft, editor):
+                assert draft is not previous and not draft.closed
+                assert editor in draft.participants
+                authored = composer_document()
+                authored.get("text", type=Text).insert(0, "new input")
+                await app.edit_shared_draft(thread.thread_id, editor, sync(draft, authored))
+                assert await app._store.drafts.get(thread.thread_id) is not None
+                joined.set()
+
+        with monkeypatch.context() as patch, fail_after(10):
+            patch.setattr(app._store.drafts, "prune", paused_prune)
+            async with create_task_group() as group:
+                group.start_soon(app._prune_drafts)
+                await pruning.wait()
+                group.start_soon(join_editor)
+                await wait_all_tasks_blocked()
+                assert not previous.participants and not joined.is_set()
+                release.set()
+                await joined.wait()
+        assert previous.closed
+
+
+@pytest.mark.parametrize("corruption", ["content", "options", "unsupported_options"])
+async def test_draft_restore_failure_preserves_saved_input_and_reports_store_error(tmp_path, corruption):
+    from dataclasses import replace
+
+    from a13n_harness_ui.app import open_harness_ui_app
+    from a13n_harness_ui.errors import StoreIntegrityError
+    from a13n_harness_ui.shared_drafts import options_document
+
+    from .test_app import _settings, _write_configuration
+
+    async with open_harness_ui_app(_settings(tmp_path), configuration_path=_write_configuration(tmp_path)) as app:
+        thread = await app.create_thread()
+        async with app.shared_draft_editor(thread.thread_id) as (draft, editor):
+            authored = composer_document()
+            authored.get("text", type=Text).insert(0, "preserve saved input")
+            await app.edit_shared_draft(thread.thread_id, editor, sync(draft, authored))
+        stored = await app._store.drafts.get(thread.thread_id)
+        assert stored is not None
+        if corruption == "content":
+            broken = replace(stored, document_update=b"bad")
+        elif corruption == "options":
+            broken = replace(stored, options_update=b"bad")
+        else:
+            options = options_document()
+            options.get("options", type=Map)["model"] = {"thinking": "unsupported"}
+            broken = replace(stored, options_update=options.get_update())
+        await app._store.drafts.save(broken)
+        app._shared_drafts.pop(thread.thread_id)
+        with pytest.raises(StoreIntegrityError, match="stored input was preserved") as error:
+            async with app.shared_draft_editor(thread.thread_id):
+                pytest.fail("A corrupt saved draft must not become an empty editor")
+        assert error.value.code == "draft_restore_failed"
+        assert thread.thread_id not in app._shared_drafts
+        assert await app._store.drafts.get(thread.thread_id) == broken
+
+
 async def test_accepted_submission_returns_receipt_when_draft_cleanup_cannot_save(tmp_path, monkeypatch, caplog):
     from datetime import UTC, datetime
 

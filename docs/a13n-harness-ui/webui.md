@@ -99,6 +99,8 @@ Open **Details** for operation status, child executions, tasks, notes, usage, an
 
 People viewing the same saved conversation share its input, uploaded attachment references, Model/Thinking/Speed/Reasoning mode, Environment, and Goal choices. Acknowledged edits are saved on the server and restored across browsers, devices, and server restarts. Prompt guests share text and attachments but cannot read or change owner Run choices.
 
+When upgrading, your browser's previous Model/control choices initialize an untouched shared composer if they still match its Agent and effective Model. Existing shared choices or an explicit reset take precedence. The old browser record is removed only after synchronization confirms the saved state.
+
 Each composer retains at most 512 KiB of current editing state and expires after 30 days without input or option changes, even when nonempty; attached editors are skipped. Deleting the conversation deletes its saved composer. Referenced unsubmitted attachments remain protected from ordinary scratch cleanup while the nonempty draft is retained. After expiry or replacement, explicitly rejoin before restoring browser input.
 
 Unsynchronized edits can be lost on reload or browser crash. Undo belongs to the local editor; accepted Send starts a new undo boundary. Participant display names identify collaborators visually, not as authenticated identities.

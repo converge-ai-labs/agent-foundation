@@ -133,6 +133,7 @@ from a13n_harness_ui.errors import (
     HarnessUiError,
     LivePresentationError,
     RunCoordinationError,
+    StoreIntegrityError,
     ThreadError,
 )
 from a13n_harness_ui.extensions import (
@@ -1838,22 +1839,43 @@ class HarnessUiApp:
             )
 
     async def shared_draft(self, thread_id: str) -> SharedDraft:
-        async with self._operation():
-            thread = await self._threads.require_interactive(thread_id)
-            if thread.parent_thread_id is not None:
-                raise AppStateError("Shared drafts require a root Thread.", code="child_thread_scoped")
-            await self._thread_files.touch(thread_id)
-            async with self._shared_drafts_lock:
-                if thread_id not in self._shared_drafts:
-                    from a13n_harness_ui.storage.drafts import DRAFT_RETENTION
+        async with self._operation(), self._shared_drafts_lock:
+            return await self._load_shared_draft(thread_id)
 
-                    stored = await self._store.drafts.get(thread_id)
-                    if stored is not None and stored.updated_at < datetime.now(UTC) - DRAFT_RETENTION:
-                        stored = None
-                    self._shared_drafts[thread_id] = SharedDraft(
-                        thread_id=thread_id, stored=stored, persist=self._store.drafts.save
-                    )
-                return self._shared_drafts[thread_id]
+    @asynccontextmanager
+    async def shared_draft_editor(self, thread_id: str) -> AsyncGenerator[tuple[SharedDraft, str]]:
+        draft: SharedDraft | None = None
+        participant: str | None = None
+        try:
+            async with self._operation(), self._shared_drafts_lock:
+                draft = await self._load_shared_draft(thread_id)
+                participant = draft.attach()
+            yield draft, participant
+        finally:
+            if draft is not None and participant is not None:
+                draft.detach(participant)
+
+    async def _load_shared_draft(self, thread_id: str) -> SharedDraft:
+        """Load under the draft lock; editor registration shares its prune boundary."""
+        thread = await self._threads.require_interactive(thread_id)
+        if thread.parent_thread_id is not None:
+            raise AppStateError("Shared drafts require a root Thread.", code="child_thread_scoped")
+        await self._thread_files.touch(thread_id)
+        if thread_id not in self._shared_drafts:
+            from a13n_harness_ui.storage.drafts import DRAFT_RETENTION
+
+            stored = await self._store.drafts.get(thread_id)
+            if stored is not None and stored.updated_at < datetime.now(UTC) - DRAFT_RETENTION:
+                stored = None
+            try:
+                draft = SharedDraft(thread_id=thread_id, stored=stored, persist=self._store.drafts.save)
+            except ValueError as exc:
+                raise StoreIntegrityError(
+                    "Couldn't restore this saved composer. Its stored input was preserved; repair the saved draft before reconnecting.",
+                    code="draft_restore_failed",
+                ) from exc
+            self._shared_drafts[thread_id] = draft
+        return self._shared_drafts[thread_id]
 
     async def edit_shared_draft(
         self, thread_id: str, participant: str, command: DraftCommand, *, edit_options: bool = True

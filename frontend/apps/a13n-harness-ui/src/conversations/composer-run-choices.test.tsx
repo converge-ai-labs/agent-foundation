@@ -3,7 +3,8 @@ import { afterEach, expect, it, vi } from "vitest";
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { useSyncExternalStore } from "react";
 import * as Y from "yjs";
-import { ThreadDraft } from "./draft";
+import { encode, optionsReplica, ThreadDraft } from "./draft";
+import { initializeLegacyRunChoices } from "./legacy-run-choices";
 import { useComposerRunChoices } from "./composer-run-choices";
 
 afterEach(cleanup);
@@ -103,4 +104,107 @@ it("clears a confirmed obsolete binding without deleting a concurrent replacemen
   });
   expect(draft.controls.thinking).toBe("high");
   draft.optionsDoc.destroy();
+});
+
+function ownerFrame(draft: ThreadDraft, options = optionsReplica()) {
+  return {
+    draft_id: "draft-legacy",
+    participant_id: "owner",
+    participants: {},
+    update_base64: encode(Y.encodeStateAsUpdate(draft.doc)),
+    options_update_base64: encode(Y.encodeStateAsUpdate(options)),
+  };
+}
+
+it.each([undefined, "original"])(
+  "imports legacy browser choices into initial shared state (override: %s)",
+  (override) => {
+    const draft = new ThreadDraft();
+    const key = "a13n-harness-ui.run-choices.upgraded-thread";
+    localStorage.setItem(
+      key,
+      JSON.stringify({
+        agent: "writer",
+        model: "original",
+        override,
+        controls: { thinking: "high", fast: false, reasoning_mode: "pro" },
+      }),
+    );
+    const { unmount } = renderHook(() => {
+      useSyncExternalStore(draft.subscribe, draft.getSnapshot);
+      return useComposerRunChoices(
+        draft,
+        "writer",
+        "original",
+        undefined,
+        "upgraded-thread",
+      );
+    });
+    expect(draft.modelOptions).toBeUndefined();
+    act(() => draft.receive(ownerFrame(draft)));
+    expect(draft.modelOptions).toMatchObject({
+      agent: "writer",
+      effective_model: "original",
+      thinking: "high",
+      fast: false,
+      reasoning_mode: "pro",
+    });
+    expect(draft.modelId).toBe(override);
+    expect(draft.synchronized).toBe(false);
+    expect(localStorage.getItem(key)).not.toBeNull();
+    act(() => draft.receive(ownerFrame(draft, draft.optionsDoc)));
+    expect(draft.synchronized).toBe(true);
+    expect(localStorage.getItem(key)).toBeNull();
+    unmount();
+  },
+);
+
+it.each([false, true])(
+  "never replaces saved shared options or an explicit reset with legacy choices (reset: %s)",
+  (reset) => {
+    const draft = new ThreadDraft();
+    const saved = optionsReplica();
+    saved.getMap("options").set("model", {
+      agent: "writer",
+      effective_model: "original",
+      thinking: "low",
+    });
+    if (reset) saved.getMap("options").delete("model");
+    draft.receive(ownerFrame(draft, saved));
+    const key = "a13n-harness-ui.run-choices.existing-thread";
+    localStorage.setItem(
+      key,
+      JSON.stringify({
+        agent: "writer",
+        model: "original",
+        controls: { thinking: "high" },
+      }),
+    );
+    initializeLegacyRunChoices("existing-thread", draft, "writer", "original");
+    expect(draft.controls.thinking).toBe(reset ? undefined : "low");
+    expect(draft.synchronized).toBe(true);
+    expect(localStorage.getItem(key)).toBeNull();
+  },
+);
+
+it("waits for matching Agent/defaults and ignores malformed legacy records", () => {
+  const draft = new ThreadDraft();
+  draft.receive(ownerFrame(draft));
+  const key = "a13n-harness-ui.run-choices.waiting-thread";
+  localStorage.setItem(
+    key,
+    JSON.stringify({
+      agent: "writer",
+      model: "original",
+      controls: { thinking: "high" },
+    }),
+  );
+  initializeLegacyRunChoices("waiting-thread", draft, undefined, undefined);
+  initializeLegacyRunChoices("waiting-thread", draft, "reviewer", "original");
+  initializeLegacyRunChoices("waiting-thread", draft, "writer", "other");
+  expect(draft.modelOptions).toBeUndefined();
+  localStorage.setItem(key, "not json");
+  initializeLegacyRunChoices("waiting-thread", draft, "writer", "original");
+  expect(draft.modelOptions).toBeUndefined();
+  localStorage.removeItem(key);
 });

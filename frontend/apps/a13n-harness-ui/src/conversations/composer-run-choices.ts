@@ -1,6 +1,7 @@
 import { useLayoutEffect } from "react";
 import type { ThreadDraft } from "./draft";
 import type { ModelControlValues } from "./model-controls";
+import { initializeLegacyRunChoices } from "./legacy-run-choices";
 
 type Configuration = {
   agent: string | undefined;
@@ -13,9 +14,21 @@ export function useComposerRunChoices(
   agent: string | undefined,
   inheritedModel: string | null | undefined,
   refreshConfiguration?: () => Promise<Configuration | undefined>,
+  legacyThreadId?: string,
 ) {
   const saved = draft.modelOptions;
   const savedKey = JSON.stringify(saved);
+  useLayoutEffect(() => {
+    if (legacyThreadId)
+      initializeLegacyRunChoices(legacyThreadId, draft, agent, inheritedModel);
+  }, [
+    draft,
+    legacyThreadId,
+    agent,
+    inheritedModel,
+    savedKey,
+    draft.synchronized,
+  ]);
   const mismatch = (configuration: Configuration) =>
     !!saved?.agent &&
     !!configuration.agent &&

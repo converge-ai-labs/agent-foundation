@@ -1089,14 +1089,14 @@ def create_webui(
         if not await authenticate_browser(socket):
             return
         delivery = InteractiveOutput(socket)
+        editors = AsyncExitStack()
         try:
             await guest_check(socket, thread_id, prompt=True)
-            draft = await app().shared_draft(thread_id)
+            draft, participant = await editors.enter_async_context(app().shared_draft_editor(thread_id))
         except HarnessUiError as exc:
             await delivery.send(ErrorEnvelope(error=ErrorBody(code=exc.code, message=str(exc))))
             await delivery.close(code=4404)
             return
-        participant = draft.attach()
         try:
             async with create_task_group() as group:
 
@@ -1148,7 +1148,7 @@ def create_webui(
         except* (WebSocketDisconnect, TimeoutError):
             pass
         finally:
-            draft.detach(participant)
+            await editors.aclose()
 
     @server.get("/api/browser", response_model=BrowserRuntimeState)
     async def browser_runtime() -> BrowserRuntimeState:
