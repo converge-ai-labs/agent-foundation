@@ -220,8 +220,8 @@ def test_current_release_sequence_preserves_consumer_requirements(tmp_path: Path
     releases = (
         ("a13n-envd", "0.7.1"),
         ("a13n-logging", "0.2.0"),
-        ("a13n-harness", "0.30.2"),
-        ("a13n-harness-ui", "0.30.9"),
+        ("a13n-harness", "0.30.3"),
+        ("a13n-harness-ui", "0.30.11"),
         ("a13n-service", "0.0.101"),
     )
     for component, version in releases:
@@ -241,7 +241,7 @@ def test_current_release_sequence_preserves_consumer_requirements(tmp_path: Path
         assert "a13n-logging>=0.2.0,<0.3.0" in manifest["project"]["dependencies"]
         if package in {"a13n-harness-ui", "a13n-service"}:
             harness = next(dep for dep in manifest["project"]["dependencies"] if dep.startswith("a13n-harness"))
-            pin = "==0.30.2" if package == "a13n-harness-ui" else "==0.30.0"
+            pin = "==0.30.3" if package == "a13n-harness-ui" else "==0.30.0"
             assert harness.endswith(pin)
             assert f"a13n-stream-protocol{pin}" in manifest["project"]["dependencies"]
 
@@ -552,7 +552,7 @@ def test_same_group_pins_preserve_extras(tmp_path: Path, version: str) -> None:
     ("component", "version", "requirement"),
     [
         ("a13n-service", "0.1.0", "==0.30.0"),
-        ("a13n-harness-ui", "0.30.9", "==0.30.2"),
+        ("a13n-harness-ui", "0.30.11", "==0.30.3"),
     ],
 )
 def test_consumer_contract_line_is_injected_without_changing_source_versions(tmp_path, component, version, requirement):
