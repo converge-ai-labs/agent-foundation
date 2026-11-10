@@ -25,7 +25,7 @@ _SESSION_REPLACEMENT_NOTIFIER: ContextVar[SessionReplacementNotifier | None] = C
 
 @contextmanager
 def envd_session_notifications(notify: SessionReplacementNotifier) -> Iterator[None]:
-    """Bind notices to the originating invocation, including its retained tasks."""
+    """Bind notices to the originating Run or invocation, including retained tasks."""
     token = _SESSION_REPLACEMENT_NOTIFIER.set(notify)
     try:
         yield

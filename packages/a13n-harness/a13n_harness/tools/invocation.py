@@ -464,12 +464,7 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
 
         async def notify_session_replaced(session_id: str) -> None:
             if bridge is not None:
-                await bridge.notify(
-                    "The Envd Session was replaced. Handles from the previous Session are no longer valid. "
-                    "Use fresh operations; previous operations were not replayed.",
-                    source="envd_session",
-                    references=(session_id,),
-                )
+                await bridge.notify_session_replaced(session_id)
 
         try:
             with envd_session_notifications(notify_session_replaced):

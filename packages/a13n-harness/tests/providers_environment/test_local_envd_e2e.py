@@ -643,3 +643,80 @@ async def test_session_notice_failure_preserves_acquisition_or_cancellation(bina
             await acquire()
         assert recovery._users == 0 and recovery._session is None
         assert not device._sessions
+
+
+@pytest.mark.parametrize("phase", ["preparation", "execution"])
+async def test_non_tool_session_replacement_notifies_only_the_originating_run(binary, tmp_path, phase):
+    from a13n_harness import AgentSpec, HarnessBuilder, RunBindings
+    from a13n_harness.environment.attachments import DeviceEIPSessionSource
+    from a13n_harness.environment.session_recovery import EnvdSessionRecovery
+    from a13n_harness.events import HarnessEvent, HarnessExtensionEvent
+    from pydantic_ai.messages import UserPromptPart
+    from pydantic_ai.models.function import FunctionModel
+
+    recovery = EnvdSessionRecovery()
+    calls = []
+    async with LocalEnvdProviderRuntime(
+        executable=binary,
+        allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(parent=tmp_path),
+        configuration=LocalEnvdLaunchConfiguration(default_working_directory=tmp_path),
+    ) as runtime:
+        device = await runtime.acquire_device()
+
+        def borrow():
+            return DeviceEIPSessionSource(device, session_recovery=recovery).open_session(
+                expected_device_id=device.descriptor.device_id, required_methods=frozenset()
+            )
+
+        async with borrow() as original:
+            original_id = original.session_id
+            await original.close()
+
+        async def acquire():
+            async with borrow() as successor:
+                assert successor.session_id != original_id
+
+        async def input_factory(preparation):
+            if phase == "preparation":
+                await acquire()
+            return "start"
+
+        async def model(messages, info):
+            calls.append(messages)
+            if phase == "execution" and len(calls) == 1:
+                await acquire()
+            yield "done"
+
+        executable = HarnessBuilder().build(AgentSpec(), model=FunctionModel(stream_function=model), output_type=str)
+        async with executable.stream(input_factory=input_factory, bindings=RunBindings.embedded()) as stream:
+            events = [event async for event in stream]
+            result = stream.result
+        notices = [
+            event.event.payload
+            for event in events
+            if isinstance(event, HarnessEvent)
+            and isinstance(event.event, HarnessExtensionEvent)
+            and isinstance(event.event.payload, dict)
+            and event.event.payload.get("source") == "envd_session"
+        ]
+        assert len(notices) == 1 and notices[0]["references"] == [recovery.state.descriptor.session_id]
+        assert (
+            sum(
+                "The Envd Session was replaced" in str(part.content)
+                for message in result.state.message_history
+                for part in message.parts
+                if isinstance(part, UserPromptPart)
+            )
+            == 1
+        )
+        # A fresh logical Run may reuse the recovery owner, but not an old Run's hint.
+        calls.clear()
+        async with executable.stream("continue", bindings=RunBindings.embedded()) as next_run:
+            following = [event async for event in next_run]
+        assert not any(
+            isinstance(event, HarnessEvent)
+            and isinstance(event.event, HarnessExtensionEvent)
+            and isinstance(event.event.payload, dict)
+            and event.event.payload.get("source") == "envd_session"
+            for event in following
+        )
