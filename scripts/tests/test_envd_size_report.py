@@ -70,7 +70,9 @@ post({github, context, core: {info() {}}, directory: process.cwd()})
         assert len(data["calls"]) == 1
         operation, args = data["calls"][0]
         assert operation == ("create" if scenario == "fork" else scenario)
-        assert "x86_64-unknown-linux-gnu" in args["body"]
+        assert "| Linux x86_64 | Default |" in args["body"]
+        assert "**1 build within budget.**" in args["body"]
+        assert "<summary>Budgets and build details</summary>" in args["body"]
         assert "1/6 build reports" in args["body"]
     else:
         assert data["calls"] == []
@@ -86,3 +88,4 @@ def test_report_render_shows_vm_duplication_failure(copies):
         ["node", "-e", program, str(REPORTER), json.dumps(report)], capture_output=True, text=True, check=True
     )
     assert ("**FAIL**" in result.stdout) is (copies != 1)
+    assert (f"{copies} runtime copies (expected 1)" in result.stdout) is (copies != 1)
