@@ -545,6 +545,62 @@ fn registry_eviction_frees_each_kind_and_pins_operands_and_owners() {
     assert!(native.handles.contains_key(&owner_id));
 }
 #[test]
+fn node_pressure_preserves_fresh_owned_handles_and_their_owner() {
+    let mut native = Native {
+        epoch: "aep_test".into(),
+        next: 0,
+        handles: HashMap::new(),
+    };
+    let n = unsafe { AXUIElement::new_application(std::process::id() as i32) };
+    let owner = native.reference(n.clone()).unwrap();
+    let owner_id = owner["node_handle"].as_str().unwrap().to_owned();
+    let action = native
+        .put(
+            "aa",
+            Handle::Action {
+                owner: owner_id.clone(),
+                name: CFString::from_str("AXPress"),
+            },
+        )
+        .unwrap();
+    let range = native
+        .range_reference(
+            &owner,
+            CFRange {
+                location: 0,
+                length: 0,
+            },
+            &Budget::new(&json!({})).unwrap(),
+        )
+        .unwrap()
+        .unwrap();
+    let cursor = native
+        .put(
+            "ac",
+            Handle::Cursor {
+                root: owner,
+                query: Value::Null,
+                view: "raw".into(),
+                depth: 2,
+                pending: vec![Pending::Node(n.clone(), 0, None)],
+            },
+        )
+        .unwrap();
+    for _ in 0..3000 {
+        native.put("an", Handle::Node(n.clone())).unwrap();
+    }
+    native.prune(&Value::Null);
+    assert!(native.handles.len() < 2048);
+    for id in [
+        action.as_str(),
+        range["range_handle"].as_str().unwrap(),
+        cursor.as_str(),
+        owner_id.as_str(),
+    ] {
+        assert!(native.handles.contains_key(id), "evicted fresh handle {id}");
+    }
+}
+#[test]
 fn range_capacity_preserves_published_prefix_and_selection_properties() {
     let mut native = Native {
         epoch: "aep_test".into(),

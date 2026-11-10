@@ -323,8 +323,7 @@ impl Native {
                 .sum();
             for (id, _) in candidates {
                 if count < handle_capacity(kind) / 2
-                    && self.handles.len() < 2048
-                    && bytes < 4 * 1024 * 1024
+                    && (kind != 3 || self.handles.len() < 2048 && bytes < 4 * 1024 * 1024)
                 {
                     break;
                 }
