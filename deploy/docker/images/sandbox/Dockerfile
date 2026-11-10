@@ -39,7 +39,8 @@ FROM debian:trixie-slim AS slim-runtime
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates libgcc-s1 tini \
     && rm -rf /var/lib/apt/lists/*
-ENTRYPOINT ["tini", "--"]
+COPY --chmod=0755 deploy/docker/images/sandbox/entrypoint.sh /usr/local/bin/a13n-sandbox-entrypoint
+ENTRYPOINT ["tini", "--", "a13n-sandbox-entrypoint"]
 
 FROM python:3.13.12-slim-trixie AS standard-runtime
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -149,3 +150,42 @@ def test_http_bootstrap_creates_or_reuses_protected_credential(tmp_path, monkeyp
     finally:
         if credential.parent.exists():
             credential.parent.chmod(0o700)
+
+
+@pytest.mark.parametrize("transport", ["http", "reverse_websocket"])
+def test_headless_credentials_need_no_python_or_skill_initializer(tmp_path, transport):
+    commands = tmp_path / "commands"
+    commands.mkdir()
+    for name in ("sh", "mkdir", "dirname", "mktemp", "od", "tr", "ln", "rm", "mv", "cat", "test"):
+        (commands / name).symlink_to(shutil.which(name))
+    credential = tmp_path / "private directory" / "token"
+    env = {
+        "PATH": str(commands),
+        "A13N_ENVD_TRANSPORT": transport,
+        "A13N_ENVD_HTTP_CREDENTIAL_FILE": str(credential),
+        "A13N_ENVD_REVERSE_WS_CREDENTIAL_FILE": str(credential),
+    }
+    if transport == "reverse_websocket":
+        env["A13N_ENVD_SERVICE_BOOTSTRAP_TOKEN"] = "test-bootstrap-credential"
+    result = subprocess.run(
+        [
+            str(ENTRYPOINT),
+            "sh",
+            "-c",
+            'test -z "${A13N_ENVD_SERVICE_BOOTSTRAP_TOKEN:-}" && cat "$1"',
+            "sh",
+            str(credential),
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert result.returncode == 0, result.stderr
+    assert credential.stat().st_mode & 0o777 == 0o600
+    assert not list(credential.parent.glob(".*token*"))
+    if transport == "reverse_websocket":
+        assert result.stdout == "test-bootstrap-credential"
+    else:
+        assert len(result.stdout) == 64
+        int(result.stdout, 16)
