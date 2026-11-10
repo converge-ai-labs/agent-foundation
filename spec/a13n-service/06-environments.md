@@ -172,18 +172,20 @@ The status names the instance's outstanding operation: `creating`, `starting`, `
 
 A normal pending result persists partial state, clears the claim without recording a failure, and schedules `next_operation_at` using the provider's positive delay (at most 300 seconds). Both Worker first-use preparation and Control maintenance honor that timestamp. The phase, generation and operation ID stay unchanged. Pending work blocks replacement unless the provider confirms no request can allocate further resources and the recorded state identifies everything cleanup must reconcile. Native preparation of already identified resources may continue while cleanup replaces a settled create. A later local refusal cannot erase an unsettled request's uncertainty. Completion clears both progress fields; late progress is fenced like any other result.
 
+Managed Envd instances keep an applied binary version and an optional in-flight target version in their private handle. Beginning create/start freezes the Service pin, floored by any newer applied version; continued claims retain that target across Service deployments. Successful fenced readiness publication records the applied version and clears the target. Pending, failed and superseded results cannot advance it. The first authorized preparation of a ready instance whose managed version is older than the Service pin begins `starting` under the same row/Run locks before returning an execution target. A second caller joins the existing operation. Human desktop reservations, viewers and pending handback postpone that update. Ordinary connection/readiness checks do not begin it. [Management providers](06a-environment-management.md#managed-envd-versions) own installation and restart behavior.
+
 An expired claim lets the next dispatcher continue the **same** operation. Shared provider management reconciles the selected instance by stable Environment and operation identity even when no state was recorded: create recovers an earlier allocation, while stop and destroy observe actual state without allocating. So continuing never issues conflicting work, and a timeout never mints a new operation ID.
 
-| Status     | Next action                                                                                     |
-| ---------- | ----------------------------------------------------------------------------------------------- |
-| `reserved` | Wait for authorized first use or explicit preparation; no maintenance create or renewal         |
-| `creating` | Prepare the instance from the frozen recipe; a continued create finds the instance first made   |
-| `ready`    | Renewed before it ends when its type requires it; opening a client is not a lifecycle operation |
-| `stopping` | Continue the same stop until it is known                                                        |
-| `stopped`  | An attempt requiring readiness begins `starting`                                                |
-| `starting` | Resume the same handle; a lost instance fails permanently and is never recreated                |
-| `deleting` | Continue destruction; new mounts and starts are refused                                         |
-| `deleted`  | Terminal tombstone; the ID is never reused                                                      |
+| Status     | Next action                                                                                    |
+| ---------- | ---------------------------------------------------------------------------------------------- |
+| `reserved` | Wait for authorized first use or explicit preparation; no maintenance create or renewal        |
+| `creating` | Prepare the instance from the frozen recipe; a continued create finds the instance first made  |
+| `ready`    | Renew when required; first authorized preparation starts a pending managed Envd version update |
+| `stopping` | Continue the same stop until it is known                                                       |
+| `stopped`  | An attempt requiring readiness begins `starting`                                               |
+| `starting` | Resume the same handle; a lost instance fails permanently and is never recreated               |
+| `deleting` | Continue destruction; new mounts and starts are refused                                        |
+| `deleted`  | Terminal tombstone; the ID is never reused                                                     |
 
 **Maintenance.** The `maintain_environments` sweep ([09](09-runtime.md#sweeps)) runs every `environments.scan_seconds`. Reserved instances are excluded from lifecycle dispatch; after readiness begins `creating`, maintenance can continue that operation even if the requesting attempt ends. Each pass begins idle deletes, then idle stops, then dispatches, concurrently, up to `environments.batch` outstanding operations whose claim is free or expired and whose pending delay has elapsed, oldest change first. A start with confirmed target loss ends preparation for that instance. Other retryable failures are revisited at the fixed interval with the same operation ID. A dispatch that fails unexpectedly is logged and retried by a later pass. A pass is bounded by twice `environments.operation_seconds` plus 30 seconds. The pass also advances at most `environments.batch` orphaned historical Vercel builds through cancellation-only steps, each bounded by `environments.operation_seconds`, under the [legacy preparation contract](06a-environment-management.md#daytona-modal-vercel-sandbox-sprites-and-runloop). Renewals have their own sweep, so a slow lifecycle call never delays one ([renewal](#renewal)).
 

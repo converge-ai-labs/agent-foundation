@@ -52,6 +52,9 @@ class ManagementBackend(BackendReference):
     async def start(self) -> Pending | None:
         raise self._unsupported()
 
+    async def update_envd(self, version: str, operation_id: str) -> Pending | None:
+        raise self._unsupported()
+
     async def inspect(self) -> Literal["running", "stopped", "absent"]:
         raise self._unsupported()
 

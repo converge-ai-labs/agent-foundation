@@ -20,8 +20,10 @@ from a13n_harness.providers.environment.sprites.shared import (
 )
 
 from a13n_service.providers.environment import desktop_access as access
+from a13n_service.providers.environment import envd_assets, envd_upgrade
 from a13n_service.providers.environment.envd_assets import Profile
 from a13n_service.providers.environment.envd_readiness import wait_until_ready
+from a13n_service.providers.environment.management import Pending
 from a13n_service.providers.environment.native import NativeManagement
 from a13n_service.providers.environment.recipes.sprites import SpritesRecipe
 
@@ -64,8 +66,8 @@ class SpritesManagement(SpritesReference, NativeManagement[SpritesEnvironmentCon
                 raise failure("sprites", "provider_target_conflict", Category.CONFLICT, certainty=Certainty.UNKNOWN)
             self.observe(
                 SpritesTargetState(
-                    desktop_phase="installing" if self.config.execution != "native" else "ready",
-                    install_revision=revision(self.profile) if self.config.execution != "native" else None,
+                    desktop_phase="installing" if self.recipe.envd_management == "managed" else "ready",
+                    install_revision=revision(self.profile) if self.recipe.envd_management == "managed" else None,
                     backing_id=info.id,
                     target_id=info.name,
                     environment_id=self.owner,
@@ -73,6 +75,9 @@ class SpritesManagement(SpritesReference, NativeManagement[SpritesEnvironmentCon
                 )
             )
         self._info = info
+        if self.config.execution != "native" and self.recipe.envd_management == "preinstalled":
+            await self._check_ready()
+            return
         if self.config.execution != "native":
             assert self.target is not None
             if self.target.install_revision is None:
@@ -82,7 +87,7 @@ class SpritesManagement(SpritesReference, NativeManagement[SpritesEnvironmentCon
                         update={"desktop_phase": "installing", "install_revision": revision(self.profile)}
                     )
                 )
-            if self.target.install_revision != revision(self.profile):
+            if self.target.desktop_phase != "ready" and self.target.install_revision != revision(self.profile):
                 raise failure("sprites", "desktop_install_revision_changed", Category.CONFLICT)
             if self.target.desktop_phase in {"installing", "failed"}:
                 result = await install(self, self.operation_id)
@@ -106,6 +111,9 @@ class SpritesManagement(SpritesReference, NativeManagement[SpritesEnvironmentCon
         raise failure("sprites", "sprites_desktop_pending", Category.UNAVAILABLE, certainty=Certainty.KNOWN)
 
     async def _ready(self) -> None:
+        if self.recipe.envd_management == "preinstalled":
+            await self._check_ready()
+            return
         # This service alone owns the public route. Envd stays on the authenticated TCP proxy.
         script = "\n".join(
             [
@@ -129,7 +137,7 @@ class SpritesManagement(SpritesReference, NativeManagement[SpritesEnvironmentCon
                     else []
                 ),
                 "cd /workspace",
-                "exec a13n-sandbox-entrypoint " + ("a13n-sandbox-desktop" if self.config.desktop else "a13n-envd"),
+                envd_assets.startup("a13n-sandbox-desktop" if self.config.desktop else "a13n-envd", mode="daemon"),
                 "",
             ]
         )
@@ -184,10 +192,14 @@ class SpritesManagement(SpritesReference, NativeManagement[SpritesEnvironmentCon
             or service.get("http_port") != service_port
         ):
             raise failure("sprites", "desktop_service_conflict", Category.CONFLICT)
+        await self._check_ready()
+
+    async def _check_ready(self) -> None:
         if self.config.execution == "envd_ws":
             if self.recipe.desktop_assistance:
                 await self.desktop_access(access.Describe())
-                await self.transport().request("PUT", self.path, body={"url_settings": {"auth": "public"}})
+                if self.recipe.envd_management == "managed":
+                    await self.transport().request("PUT", self.path, body={"url_settings": {"auth": "public"}})
             return
         state = self.state
         assert state is not None
@@ -213,7 +225,27 @@ class SpritesManagement(SpritesReference, NativeManagement[SpritesEnvironmentCon
         if not self.recipe.desktop_assistance:
             return
         await self.desktop_access(access.Describe())
-        await self.transport().request("PUT", self.path, body={"url_settings": {"auth": "public"}})
+        if self.recipe.envd_management == "managed":
+            await self.transport().request("PUT", self.path, body={"url_settings": {"auth": "public"}})
+
+    async def update_envd(self, version: str, operation_id: str) -> Pending | None:
+        if await self.lookup() is None:
+            raise failure(self.provider_key, "provider_target_missing", Category.MISSING)
+
+        async def execute(argv: list[str]) -> str:
+            return await command(self, ["sudo", "-n", *argv], 15, max_output=4096)
+
+        service = "a13n-desktop" if self.config.desktop else "a13n-envd"
+        if not await envd_upgrade.upgrade(
+            execute,
+            provider_key=self.provider_key,
+            version=version,
+            operation_id=operation_id,
+            restart=["sprite-env", "services", "restart", service],
+        ):
+            return Pending(self.state, settled=True)
+        await self._ready()
+        return None
 
     async def desktop_access(self, request: access.Request) -> access.Reply:
         if not self.recipe.desktop_assistance or self.target is None:

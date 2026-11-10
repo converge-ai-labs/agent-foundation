@@ -21,7 +21,7 @@ from a13n_harness.providers.environment.e2b.http import http_execution, http_run
 from a13n_harness.providers.environment.e2b.shared import E2BProviderRuntime, E2BReference
 from a13n_harness.providers.environment.remote_envd.managed import ManagedCredentialCache
 
-from a13n_service.providers.environment import envd_assets
+from a13n_service.providers.environment import envd_assets, envd_upgrade
 from a13n_service.providers.environment._backend import ManagementBackend
 from a13n_service.providers.environment.desktop_access import Description, Reply, Request, command, decode
 from a13n_service.providers.environment.envd_readiness import wait_until_ready
@@ -147,7 +147,9 @@ class E2BManagement(E2BReference, ManagementBackend):
         with sdk_errors(mutation=True):
             sandbox = await AsyncSandbox.create(
                 template=config.template,
-                envs=config.environment,
+                envs=self._envd_environment()
+                if config.envd_management == "preinstalled" and config.execution != "native"
+                else config.environment,
                 timeout=config.timeout_seconds,
                 metadata=metadata,
                 allow_internet_access=config.allow_internet_access,
@@ -159,7 +161,7 @@ class E2BManagement(E2BReference, ManagementBackend):
             try:
                 if config.preparation == "headless" and not await self._prepare_envd(sandbox):
                     return Pending(self.state, settled=True)
-                if config.execution != "native":
+                if config.execution != "native" and config.envd_management == "managed":
                     try:
                         await self._bootstrap_envd(sandbox)
                     except CommandExitException:
@@ -213,7 +215,9 @@ class E2BManagement(E2BReference, ManagementBackend):
             and self._state is not None
             and self._state.preparation_phase != "ready"
         )
-        if preparing or self._configuration.execution == "envd_ws":
+        if self._configuration.envd_management == "managed" and (
+            preparing or self._configuration.execution == "envd_ws"
+        ):
             sandbox = await open_sandbox(target.sandbox_id, self._options(), self._validate_target)
             try:
                 if preparing and not await self._prepare_envd(sandbox):
@@ -226,9 +230,30 @@ class E2BManagement(E2BReference, ManagementBackend):
         self._prepared("ready")
         return None
 
+    async def update_envd(self, version: str, operation_id: str) -> Pending | None:
+        assert self._state is not None
+        sandbox = await open_sandbox(self._state.sandbox_id, self._options(), self._validate_target)
+        try:
+
+            async def execute(argv: list[str]) -> str:
+                with sdk_errors(mutation=True):
+                    result = await sandbox.commands.run(shlex.join(argv), user="root", timeout=10, request_timeout=15)
+                    return result.stdout
+
+            if not await envd_upgrade.upgrade(
+                execute, provider_key=self.provider_key, version=version, operation_id=operation_id
+            ):
+                return Pending(self.state, settled=True)
+        finally:
+            await close_sandbox(sandbox)
+        if self._configuration.execution == "envd_http":
+            await self._check_envd()
+        return None
+
     async def _bootstrap_envd(self, sandbox: AsyncSandbox) -> None:
-        # Only lifecycle creation starts preinstalled services. Attachments and
-        # human grants never install, repair or restart a desktop.
+        # Managed lifecycle creation starts services; authored boot remains unchanged.
+        if self._configuration.envd_management == "preinstalled":
+            return
         executable = "a13n-sandbox-desktop" if self._configuration.desktop else "a13n-envd"
         await sandbox.commands.run(
             "umask 077; install -d -m 0700 /var/lib/a13n-envd && exec flock -n /var/lib/a13n-envd/start.lock "
@@ -238,31 +263,34 @@ class E2BManagement(E2BReference, ManagementBackend):
             background=True,
             timeout=0,
             request_timeout=self._configuration.request_timeout_seconds,
-            envs=self.bootstrap_environment(
-                {
-                    **self._configuration.environment,
-                    **(self._metrics.environment if self._metrics is not None else {}),
-                    **(
-                        {
-                            "A13N_ENVD_CONFIG_JSON": json.dumps(
-                                {"monitoring": {"sample_interval_ms": self._metrics.sample_interval_ms}}
-                            )
-                        }
-                        if self._metrics is not None
-                        else {}
-                    ),
-                    "A13N_ENVD_DEVICE_ID": self._native_id,
-                    "A13N_ENVD_TRANSPORT": "http",
-                    "A13N_ENVD_HTTP_BIND": "0.0.0.0:8888",
-                    "A13N_ENVD_HTTP_PLAINTEXT_SCOPE": "provider_private_link",
-                    "A13N_ENVD_EXECUTION_UID": "1001",
-                    "A13N_ENVD_EXECUTION_GID": "1001",
-                    "A13N_ENVD_FULL_CONTROL": "true",
-                    "A13N_ENVD_STATE_DIR": "/var/lib/a13n-envd",
-                    "A13N_ENVD_RUNTIME_DIR": "/run/a13n-envd-state",
-                    "A13N_DESKTOP_ACCESS": "true" if self._configuration.desktop_assistance else "false",
-                }
-            ),
+            envs=self._envd_environment(),
+        )
+
+    def _envd_environment(self) -> dict[str, str]:
+        return self.bootstrap_environment(
+            {
+                **self._configuration.environment,
+                **(self._metrics.environment if self._metrics is not None else {}),
+                **(
+                    {
+                        "A13N_ENVD_CONFIG_JSON": json.dumps(
+                            {"monitoring": {"sample_interval_ms": self._metrics.sample_interval_ms}}
+                        )
+                    }
+                    if self._metrics is not None
+                    else {}
+                ),
+                "A13N_ENVD_DEVICE_ID": self._native_id,
+                "A13N_ENVD_TRANSPORT": "http",
+                "A13N_ENVD_HTTP_BIND": "0.0.0.0:8888",
+                "A13N_ENVD_HTTP_PLAINTEXT_SCOPE": "provider_private_link",
+                "A13N_ENVD_EXECUTION_UID": "1001",
+                "A13N_ENVD_EXECUTION_GID": "1001",
+                "A13N_ENVD_FULL_CONTROL": "true",
+                "A13N_ENVD_STATE_DIR": "/var/lib/a13n-envd",
+                "A13N_ENVD_RUNTIME_DIR": "/run/a13n-envd-state",
+                "A13N_DESKTOP_ACCESS": "true" if self._configuration.desktop_assistance else "false",
+            }
         )
 
     async def _check_envd(self) -> None:

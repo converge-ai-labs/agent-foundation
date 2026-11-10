@@ -26,17 +26,12 @@ def test_shared_assets_match_committed_sources():
     root = Path(__file__).resolve().parents[4]
     assert re.fullmatch(r"[0-9a-f]{40}", envd_assets.SOURCE_REVISION)
     for source, _, checksum in envd_assets.files("desktop"):
-        if source.endswith("entrypoint.sh"):
-            # The published entrypoint remains frozen while the image's newer
-            # entrypoint adds guest supervision. Shallow CI has no pinned Git blob.
-            assert checksum == "130fac205b88a997f214c02e5d7c07ebbe533317b4561560850345d28aacfe33"
-        else:
-            assert hashlib.sha256((root / source).read_bytes()).hexdigest() == checksum
+        assert hashlib.sha256((root / source).read_bytes()).hexdigest() == checksum
     headless = envd_assets.commands("headless")
-    assert len(headless) == 2
+    assert len(headless) == 1
     assert "entrypoint.sh" in headless[0]
     assert all("python" not in command for command in headless)
-    assert "envd-supervise" in headless[1] and "sha256sum -c" in headless[1]
+    assert all("envd-supervise" not in command for command in headless)
     assert len(envd_assets.files("desktop")) == 4
 
 
@@ -121,11 +116,12 @@ def test_selected_base_is_explicit_and_preinstalled_fingerprints_stay_compatible
         else (DaytonaRecipe, DaytonaEnvironmentConfiguration, "snapshot", "custom-snapshot")
     )
     custom = {field: identity}
-    assert recipe.model_validate(custom).fingerprint == shared.model_validate(custom).fingerprint
+    service_custom = {**custom, **({"startup_command": ["/usr/local/bin/start-envd"]} if provider == "modal" else {})}
+    assert recipe.model_validate(service_custom).fingerprint == shared.model_validate(custom).fingerprint
     base = "registry.example/base@sha256:" + "a" * 64
     assert recipe.model_validate({"base_image": base}).base_image == base
     with pytest.raises(ValidationError, match="base_image requires"):
-        recipe.model_validate({**custom, "base_image": base})
+        recipe.model_validate({**service_custom, "base_image": base})
     for invalid in ("ubuntu:24.04", "base@sha256:" + "a" * 63, base + "\nRUN echo bad"):
         with pytest.raises(ValidationError):
             recipe.model_validate({"base_image": invalid})

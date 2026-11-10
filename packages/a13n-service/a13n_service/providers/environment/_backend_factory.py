@@ -64,8 +64,12 @@ class BackendProvider[C: BaseModel, K: BaseModel, E: BaseModel, R](EnvironmentPr
         self._factory = factory
         self._runtime = runtime
         self._owned = owned
+        self._envd_version: str | None = None
         self._websocket: WebSocketBootstrap | None = None
         self._close_task: asyncio.Task[None] | None = None
+
+    def configure_envd_version(self, version: str) -> None:
+        self._envd_version = version
 
     def configure_websocket(self, bootstrap: WebSocketBootstrap) -> None:
         self._websocket = bootstrap
@@ -158,6 +162,10 @@ class BackendProvider[C: BaseModel, K: BaseModel, E: BaseModel, R](EnvironmentPr
             result = await target.create()
             if isinstance(result, Pending):
                 return result
+            if self._envd_version is not None:
+                progress = await target.update_envd(self._envd_version, operation_id)
+                if progress is not None:
+                    return progress
             await self._wait_ready(target, operation_id)
             return target.state
 
@@ -169,6 +177,10 @@ class BackendProvider[C: BaseModel, K: BaseModel, E: BaseModel, R](EnvironmentPr
             result = await target.start()
             if isinstance(result, Pending):
                 return result
+            if self._envd_version is not None:
+                progress = await target.update_envd(self._envd_version, operation_id)
+                if progress is not None:
+                    return progress
             await self._wait_ready(target, operation_id)
             return target.state
 

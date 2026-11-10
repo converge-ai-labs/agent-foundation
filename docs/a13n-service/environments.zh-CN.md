@@ -27,6 +27,39 @@ Service 自动下发该环境的专用连接凭据，完成 EIP 初始化后才�
 
 已有模板的 native 或 HTTP 默认行为保持不变。此连接方式需要 Service，独立 Harness 的 Provider 连接器会明确拒绝。修改模板只影响新环境，不改变已经创建的实例。
 
+## Envd 安装与升级
+
+Docker、E2B、Modal、Daytona、Vercel 和 Sprites 的 recipe 支持 `envd_management`：
+
+| 值             | 安装与启动管理权                                                                 |
+| -------------- | -------------------------------------------------------------------------------- |
+| `managed`      | Service 在准备阶段安装其固定版本，并重启运行时。                                 |
+| `preinstalled` | 自行提供 Envd 及启动命令。Service 检查就绪状态，不安装、不替换启动方式、不升级。 |
+
+自动准备的 Envd 以及官方 Docker Envd 镜像默认使用 `managed`。显式自定义镜像、模板和快照默认使用 `preinstalled`。自动资源选择器要求 `managed`；冲突配置会被拒绝。Native 执行不接受 `managed`。Kubernetes 继续使用操作者编写的 Pod 和 init-container 启动配方。
+
+例如，E2B 可以在兼容的所选模板上安装并托管 Envd 二进制：
+
+```json
+{"execution":"envd_http","template":"my-debian13-template","preparation":"headless","envd_management":"managed"}
+```
+
+自行维护兼容的自定义运行时时，选择 `preinstalled`：
+
+- E2B：自定义 `template`，并使用 `preparation: "preinstalled"`。
+- Modal：自定义 `image` 及 `startup_command`，例如 `["/usr/local/bin/start-envd"]`。创建及快照恢复均原样使用这个 argv。
+- Daytona/Vercel：提供启动命令会运行 Envd 的自定义快照。
+- Sprites：使用 `envd_http`，自行安装运行时、配置 Device 身份和服务；Service 不注册标准启动器。`preinstalled` 与 `envd_ws` 组合会被拒绝，因为私有 outbound 启动配置目前需要 Service 启动器。
+- Docker：提供包含自定义启动命令的镜像。
+
+Modal/Daytona 可通过 `base_image` 选择支持的基础镜像并自动托管准备。将已有自定义运行时设为 `managed` 时，目标须具备标准的 root 所有安装/运行目录、GNU/Linux 安装器依赖和原生监督进程；该字段不会替换镜像入口或补装桌面。
+
+Service 在创建、启动/恢复，以及固定版本推进后首次使用已有托管实例时升级。它先取得现有持久化准备操作，再安装经过校验的发布版本、请求重启，并验证认证 EIP 就绪状态。并发调用者加入同一操作。已有人工桌面保留和查看会推迟首次使用升级。空闲实例不通过定时任务升级，Service 也不选择 `latest`。
+
+**升级会结束已有 Envd Session，以及其中的进程和输出句柄。** 工作区文件遵循 Provider 原有的持久化规则。Session 恢复可以打开新 Session，但不会重放命令。安装失败会保留旧二进制并记录准备失败。检查目标中受保护的 `/var/lib/a13n-envd/update-<version>/output`，核对结果后，对确认失败的升级使用 Console 的**重试准备**。API 客户端使用 `POST /api/v1/environments/{id}/retry-creation` 并携带当前 `If-Match`。重试保留原实例和选定版本，创建新的客体尝试；仍在执行或结果未知的操作会被拒绝。缺少回执不代表命令没有执行。
+
+外部服务管理器运行 `a13n-envd daemon` 并负责重启。没有外部管理器时，准备的运行时使用 `a13n-envd supervise`；Service 安装二进制后请求该原生监督进程重启。局部重启命令见 [Envd 运维](../a13n-envd/operations.md#restart-after-installing-a-release)。
+
 ## 工作空间自动配置
 
 创建资源前，先检查**环境 → 模板**。挂载 Docker socket 的单机 Compose 部署会在 Engine 可达时准备 **Docker** provider 和 **Linux Sandbox** 模板。首次文件任务可以直接选择该模板。镜像包含 Python、Node.js、Git 和常用开发工具；命令以 `sandbox` 用户运行，可写目录为 `/workspace` 和 `/tmp/a13n`。
@@ -171,7 +204,7 @@ curl -sS -X POST "$A13N_URL/api/v1/environment-templates" \
 
 | Service 构建                            | 镜像标签 |
 | --------------------------------------- | -------- |
-| 稳定版或 RC                             | `0.5.1`  |
+| 稳定版或 RC                             | `0.8.0`  |
 | 源码（`0.0.0`，包括本地后缀）或 `.devN` | `dev`    |
 
 Sandbox 版本归 Envd 管理，与 Service 版本独立。设置明确的标签或 digest 可选择其他镜像。`pull_policy: if_missing` 使用 Engine 本地镜像，缺失时在首次创建时拉取；`never` 要求镜像已经存在。自动配置的模板保存明确镜像，因此升级会保留这一选择。

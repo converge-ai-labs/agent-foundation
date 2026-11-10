@@ -27,6 +27,39 @@ Service supplies a private per-environment connection credential and waits for E
 
 Existing templates keep their native or HTTP default. This execution mode requires Service; standalone Harness provider connectors reject it. Changing a template affects new environments, not already-created instances.
 
+## Envd installation and upgrades
+
+Docker, E2B, Modal, Daytona, Vercel and Sprites recipes accept `envd_management`:
+
+| Value          | Installation and startup ownership                                                                                          |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `managed`      | Service installs its pinned release and restarts the runtime during preparation.                                            |
+| `preinstalled` | Supply Envd and its boot command yourself. Service checks readiness without installing, replacing startup, or upgrading it. |
+
+Automatic Envd preparation and official Docker Envd images default to `managed`. Explicit custom images/templates/snapshots default to `preinstalled`. Automatic asset selectors require `managed`; conflicting settings are rejected. Native execution does not accept `managed`. Kubernetes keeps its operator-authored Pod and init-container boot recipe.
+
+For example, E2B can prepare a compatible selected template and manage its Envd binary:
+
+```json
+{"execution":"envd_http","template":"my-debian13-template","preparation":"headless","envd_management":"managed"}
+```
+
+Choose `preinstalled` for a compatible custom runtime you maintain yourself:
+
+- E2B: a custom `template` and `preparation: "preinstalled"`.
+- Modal: a custom `image` and `startup_command`, for example `["/usr/local/bin/start-envd"]`. Service uses this argv unchanged on create and snapshot resume.
+- Daytona/Vercel: a custom snapshot whose boot command starts Envd.
+- Sprites: `envd_http` with your own installed runtime, Device identity and configured service; Service does not register its standard launcher. `preinstalled` with `envd_ws` is rejected because private outbound bootstrap currently requires the Service launcher.
+- Docker: an image with your authored boot command.
+
+Modal/Daytona `base_image` selects a supported custom base for automatic managed preparation. Opting an existing custom runtime into `managed` requires the standard root-owned install/runtime paths, GNU/Linux installer prerequisites and native supervision; the flag does not replace its entrypoint or install a desktop.
+
+Service updates on creation, start/resume, and the first use of an existing managed instance after the Service pin advances. It claims the normal durable preparation operation before execution, installs the verified release, requests restart, and checks authenticated EIP readiness. Concurrent callers join the same operation. Human desktop reservations and viewers defer a first-use update. Idle instances are not updated by a timer, and Service never selects `latest`.
+
+**An upgrade ends existing Envd Sessions and their processes and output handles.** Workspace files follow the provider's normal persistence rules. Session recovery can open a new Session; commands are never replayed. Installation failure keeps the previous binary and records the failed preparation. Inspect the target's protected `/var/lib/a13n-envd/update-<version>/output` and reconcile its outcome. Console offers **Retry preparation** for a confirmed failed upgrade; API clients use `POST /api/v1/environments/{id}/retry-creation` with the current `If-Match`. The retry retains the instance and selected version, starts a new guest attempt, and rejects active or unknown outcomes. A lost receipt is not evidence that a command did not run.
+
+External service managers run `a13n-envd daemon` and own restarts. Without such a manager, prepared runtimes use `a13n-envd supervise`; Service asks that native supervisor to restart after installing the binary. [Envd operations](../a13n-envd/operations.md#restart-after-installing-a-release) describes the local restart command.
+
 ## Workspace provisioning
 
 Check **Environments → Templates** before creating anything. The single-host Compose deployment with a Docker socket prepares a **Docker** provider and **Linux Sandbox** template when the Engine is reachable. Select that template for the first file task. Its image includes Python, Node.js, Git and common development tools; commands run as `sandbox`, with writable `/workspace` and `/tmp/a13n`.
@@ -171,7 +204,7 @@ With `recipe.image` omitted, Service selects its reviewed `ghcr.io/converge-ai-l
 
 | Service build                                         | Image tag |
 | ----------------------------------------------------- | --------- |
-| Stable or RC                                          | `0.5.1`   |
+| Stable or RC                                          | `0.8.0`   |
 | Source (`0.0.0`, including local suffixes) or `.devN` | `dev`     |
 
 Sandbox versions belong to Envd and are independent of Service versions. Set an explicit tag or digest to choose another image. `pull_policy: if_missing` uses the Engine's local image or pulls it at first creation; `never` requires the image to be present. Provisioned templates save an explicit image, so upgrades preserve that choice.

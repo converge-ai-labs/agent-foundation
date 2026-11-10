@@ -107,7 +107,7 @@ async def test_native_fingerprint_and_desktop_opt_in():
     assert (
         recipe().fingerprint
         == VercelEnvironmentConfiguration.model_validate(
-            recipe().model_dump(exclude={"desktop_assistance"})
+            recipe().model_dump(exclude={"desktop_assistance", "envd_management"})
         ).fingerprint
     )
     assert VercelRecipe(desktop=True).snapshot == "auto"
@@ -411,3 +411,17 @@ async def test_backend_preserves_pending_and_does_not_wait_for_websocket(monkeyp
     )
     assert result == pending
     wait.assert_not_called()
+
+
+@pytest.mark.parametrize("bootstrap", [False, True])
+async def test_preinstalled_snapshot_never_dispatches_a_service_launcher(monkeypatch, bootstrap):
+    from a13n_service.providers.environments.vercel import management as module
+
+    manage = manager(VercelRecipe(execution="envd_http", snapshot="snap_custom", envd_management="preinstalled"))
+    launch = AsyncMock(side_effect=AssertionError("overrode authored snapshot startup"))
+    readiness = AsyncMock()
+    monkeypatch.setattr(module, "command", launch)
+    monkeypatch.setattr(module, "wait_until_ready", readiness)
+    await manage._ready(response(manage), bootstrap=bootstrap)
+    launch.assert_not_awaited()
+    readiness.assert_awaited_once()

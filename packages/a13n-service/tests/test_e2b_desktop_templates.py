@@ -4,7 +4,7 @@ import asyncio
 from dataclasses import replace
 from datetime import timedelta
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from a13n_harness.environment.errors import EnvironmentProviderError
@@ -114,6 +114,7 @@ async def test_first_build_and_reuse_keep_instance_recipe_pinned(setup, monkeypa
         assert result.pending and result.fault is None
     cloud.status_value = "ready"
     provider = AsyncMock()
+    provider.configure_envd_version = Mock()
     provider.create.return_value = EnvironmentState(
         provider_key="e2b", state_version="1", state={"sandbox_id": "sandbox-test"}
     )
@@ -241,6 +242,7 @@ async def test_delete_timeout_retains_cleanup_and_retries_only_exact_owned_templ
 async def test_resolved_recipe_without_state_still_reconciles_native_deletion(setup, monkeypatch):
     op = await setup.create()
     provider = AsyncMock()
+    provider.configure_envd_version = Mock()
     monkeypatch.setattr(lifecycle, "open_provider", AsyncMock(return_value=provider))
     # A create response may be lost after the concrete template was pinned but before state publication.
     resolved = replace(

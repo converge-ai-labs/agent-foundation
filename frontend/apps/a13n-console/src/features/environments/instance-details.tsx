@@ -249,9 +249,14 @@ export function EnvironmentPanel({
         ) : (
           value && (
             <>
-              {["e2b", "modal", "daytona", "vercel", "sprites"].includes(
-                provider.data?.type ?? "",
-              ) && (
+              {[
+                "docker",
+                "e2b",
+                "modal",
+                "daytona",
+                "vercel",
+                "sprites",
+              ].includes(provider.data?.type ?? "") && (
                 <CreationProgress
                   environment={value}
                   providerType={provider.data?.type}

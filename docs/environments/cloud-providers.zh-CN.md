@@ -196,6 +196,8 @@ uv run --locked python examples/environment-provider/modal_desktop_image.py \
 ```json
 {
   "image": "im-yourImageId",
+  "envd_management": "preinstalled",
+  "startup_command": ["a13n-sandbox-entrypoint", "a13n-sandbox-desktop", "a13n-envd", "supervise"],
   "desktop": true,
   "desktop_assistance": true,
   "cpu": 2,

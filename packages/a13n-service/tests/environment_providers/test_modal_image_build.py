@@ -68,7 +68,7 @@ def test_custom_images_keep_defaults_and_automatic_has_desktop_requirements():
         4096,
         3600,
     )
-    custom = ModalRecipe(image="im-Custom", desktop=True)
+    custom = ModalRecipe(image="im-Custom", startup_command=["/usr/local/bin/start-envd"], desktop=True)
     assert custom.desktop_assistance is False
     assert custom.memory == 1024
     assert ModalRecipe(desktop=True, desktop_assistance=False).desktop_assistance is False

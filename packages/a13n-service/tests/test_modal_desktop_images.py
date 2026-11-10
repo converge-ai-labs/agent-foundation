@@ -4,7 +4,7 @@ import asyncio
 from dataclasses import replace
 from datetime import timedelta
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from a13n_harness.environment.errors import EnvironmentProviderError
@@ -81,6 +81,7 @@ async def test_first_build_then_reuse_pins_exact_image_before_allocation(setup, 
     runtime, cloud = setup.service.runtime, setup.cloud
     op = await setup.create()
     provider = AsyncMock()
+    provider.configure_envd_version = Mock()
     provider.create.return_value = EnvironmentState(provider_key="modal", state_version="1", state={})
     opener = AsyncMock(return_value=provider)
     monkeypatch.setattr(lifecycle, "open_provider", opener)
@@ -247,6 +248,7 @@ async def test_headless_profile_is_frozen_and_isolated_from_desktop(setup, monke
             assert manifest["base"] == base_image
             assert "envd_base_unsupported" in manifest["commands"][0]
     provider = AsyncMock()
+    provider.configure_envd_version = Mock()
     opener = AsyncMock(return_value=provider)
     monkeypatch.setattr(lifecycle, "open_provider", opener)
     outcome = await lifecycle.perform(runtime, headless)

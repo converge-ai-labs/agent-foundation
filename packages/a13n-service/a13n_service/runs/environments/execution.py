@@ -27,10 +27,11 @@ from a13n_harness.providers.environment.remote_envd.http import HTTP_ENVD
 from a13n_harness.providers.environment.remote_envd.websocket import WEBSOCKET_ENVD
 from a13n_harness.tool_execution import current_execution, execution_cleanup_active
 from a13n_logging import exception_details, get_logger
-from sqlalchemy import func, update
+from sqlalchemy import func, select, update
 
 from a13n_service.infra.db import lock, now, transaction
 from a13n_service.infra.errors import ServiceError, conflict, not_found
+from a13n_service.providers.environment import envd_policy
 from a13n_service.resources.environment_templates.service import read_template
 from a13n_service.resources.providers.service import resolve_provider
 from a13n_service.resources.providers.tables import EnvironmentProviderRow
@@ -40,7 +41,7 @@ from a13n_service.runs.environments.adapters import Target, execution_connector,
 from a13n_service.runs.environments.clients.observations import Incarnation
 from a13n_service.runs.environments.clients.worker import Target as ClientTarget
 from a13n_service.runs.environments.desktop import admission as desktop_admission
-from a13n_service.runs.environments.lifecycle import Operation, begin, claim_locked, dispatch
+from a13n_service.runs.environments.lifecycle import Operation, begin, claim_locked, desktop_in_use, dispatch
 from a13n_service.runs.environments.mounts import PRIMARY, require_usable
 from a13n_service.runs.environments.schemas import Handle
 from a13n_service.runs.environments.tables import EnvironmentRow
@@ -249,6 +250,11 @@ async def _inspect(
             handle = Handle.model_validate(environment.handle)
             from a13n_service.runs.environments.connection import resolve
 
+            if handle.recipe.get("envd_management") == "managed" and envd_policy.update_required(handle.envd_version):
+                if await session.scalar(select(desktop_in_use(environment.id))):
+                    return None, None
+                await begin(session, environment, "starting")
+                return None, await claim_locked(runtime, session, environment, owner=lease.worker_id, provider=provider)
             plan = resolve(runtime.registry.get("environment", provider.type), handle, mount)
             if plan.mode == "envd_ws":
                 from a13n_service.runs.environments import outbound

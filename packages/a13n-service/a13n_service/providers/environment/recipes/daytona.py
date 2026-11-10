@@ -6,8 +6,10 @@ from typing import Self
 from a13n_harness.providers.environment.daytona.shared import DaytonaEnvironmentConfiguration
 from pydantic import Field, model_validator
 
+from ..envd_policy import EnvdRecipe
 
-class DaytonaRecipe(DaytonaEnvironmentConfiguration):
+
+class DaytonaRecipe(DaytonaEnvironmentConfiguration, EnvdRecipe):
     snapshot: str = Field(
         default="auto",
         min_length=1,
@@ -29,12 +31,17 @@ class DaytonaRecipe(DaytonaEnvironmentConfiguration):
     @model_validator(mode="before")
     @classmethod
     def automatic_defaults(cls, value: object) -> object:
+        if isinstance(value, dict) and value.get("snapshot", "auto") == "auto":
+            value = dict(value)
+            value.setdefault("envd_management", "managed")
         if isinstance(value, Mapping) and value.get("desktop") is True and value.get("snapshot", "auto") == "auto":
             return {"desktop_assistance": True, **value}
         return value
 
     @model_validator(mode="after")
     def assistance_snapshot(self) -> Self:
+        if self.envd_management == "preinstalled" and self.snapshot == "auto":
+            raise ValueError("Preinstalled Envd requires a custom snapshot")
         if self.base_image is not None and self.snapshot != "auto":
             raise ValueError("base_image requires snapshot=auto; explicit snapshots own preinstallation and boot")
         if self.desktop_assistance and (not self.desktop or not self.snapshot):
@@ -45,5 +52,5 @@ class DaytonaRecipe(DaytonaEnvironmentConfiguration):
     def fingerprint(self) -> str:
         # Management-only policy must not change the identity used by execution attachment.
         return DaytonaEnvironmentConfiguration.model_validate(
-            self.model_dump(exclude={"desktop_assistance", "base_image"})
+            self.model_dump(exclude={"desktop_assistance", "base_image", "envd_management"})
         ).fingerprint

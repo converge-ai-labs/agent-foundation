@@ -12,7 +12,7 @@ from a13n_harness.providers.environment.e2b.errors import sdk_errors
 
 from a13n_service.providers.environment import envd_assets
 from a13n_service.providers.environment.envd_install import dispatch
-from a13n_service.providers.environment.envd_release import installation_command
+from a13n_service.providers.environment.envd_release import VERSION, installation_command
 
 if TYPE_CHECKING:
     from e2b import AsyncSandbox
@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 ROOT = "/var/lib/a13n-e2b-install"
 TAG = "a13n_preparation"
 
-# 0.7.0's published GNU binary requires glibc 2.39. Never upgrade a stock
+# Release GNU binaries target glibc 2.39. Never upgrade a stock
 # template's libc or overwrite E2B's own SDK envd to make it fit.
 PREREQUISITES = """set -eu
 [ "$(uname -s):$(uname -m)" = Linux:x86_64 ] || exit 1
@@ -66,7 +66,7 @@ async def install(sandbox: AsyncSandbox, expected: str, operation_id: str) -> bo
                 "e2b",
                 "envd_userspace_unsupported",
                 Category.UNSUPPORTED,
-                description="Headless preparation requires GNU/Linux x86_64, glibc >= 2.39, apt-get and util-linux. Select a Debian 13 or Ubuntu 24.04+ E2B template and preparation=headless, or supply a compatible preinstalled template. The stock Bookworm base is incompatible with pinned Envd 0.7.0; its libc is never upgraded automatically.",
+                description=f"Headless preparation requires GNU/Linux x86_64, glibc >= 2.39, apt-get and util-linux. Select a Debian 13 or Ubuntu 24.04+ E2B template and preparation=headless, or supply a compatible preinstalled template. The stock Bookworm base is incompatible with pinned Envd {VERSION}; its libc is never upgraded automatically.",
             ) from None
     with sdk_errors(mutation=True):
         result = await sandbox.commands.run(

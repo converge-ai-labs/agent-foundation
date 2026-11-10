@@ -3,10 +3,10 @@
 import shlex
 from pathlib import PurePosixPath
 
-VERSION = "0.7.0"
+VERSION = "0.8.0"
 TARGET = "x86_64-unknown-linux-gnu"
-SOURCE_REVISION = "771c7faf65143bd1595f27a7240806049c450fd8"
-INSTALLER_SHA256 = "03dd5e79cea8a7279d67e848f0b66f39b0ad91294ab875f8c7c2d5e819c624bf"
+SOURCE_REVISION = "9d5ae301051f4faea8ac7a2cfed7c6d61d598bff"
+INSTALLER_SHA256 = "a9b2be3131bb182f35bcdedd3e0cf763dac5f87aa36ba22d03216d138285d88d"
 
 
 def download_command(url: str, destination: str, digest: str) -> str:
@@ -21,8 +21,9 @@ def download_command(url: str, destination: str, digest: str) -> str:
     )
 
 
-def installation_command(destination: str = "/usr/local/bin/a13n-envd") -> str:
+def installation_command(destination: str = "/usr/local/bin/a13n-envd", *, version: str | None = None) -> str:
     """Freeze the same standalone installer used outside managed environments."""
+    version = version or VERSION
     path = PurePosixPath(destination)
     if not path.is_absolute():
         raise ValueError("Envd destination must be absolute")
@@ -40,7 +41,7 @@ def installation_command(destination: str = "/usr/local/bin/a13n-envd") -> str:
         + download_command(url, "installer.sh", INSTALLER_SHA256)
         + ' || exit 1; test "$(uname -s):$(uname -m)" = Linux:x86_64; '
         'test "$2" = x86_64-unknown-linux-gnu; '
-        f'sh installer.sh --version {shlex.quote(VERSION)} --install-dir "$root" --no-add-to-path; '
+        f'sh installer.sh --version {shlex.quote(version)} --install-dir "$root" --no-add-to-path; '
         'mv -f "$root/a13n-envd" "$destination"'
     )
     return shlex.join(["sh", "-c", script, "a13n-envd-install", destination, TARGET])

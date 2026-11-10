@@ -22,13 +22,14 @@ from pydantic import ConfigDict, Field, field_validator
 
 from a13n_service.providers.endpoints import engine_endpoint
 from a13n_service.providers.environment.definition import EnvironmentManagementDefinition
+from a13n_service.providers.environment.envd_release import VERSION as ENVD_VERSION
 from a13n_service.providers.environment.recipes.docker import DockerRecipe
 
 from .definition import DOCKER as BASE_DOCKER
 
 _MOUNTS = DockerRecipe.model_fields["mounts"]
 # Reviewed Envd-owned sandbox release; independent of the Service version.
-DEFAULT_SANDBOX_IMAGE = "ghcr.io/converge-ai-labs/a13n-sandbox:0.7.0"
+DEFAULT_SANDBOX_IMAGE = f"ghcr.io/converge-ai-labs/a13n-sandbox:{ENVD_VERSION}"
 
 
 def default_image() -> str:

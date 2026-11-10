@@ -20,7 +20,7 @@ from a13n_harness.providers.environment.vercel.shared import (
 )
 
 from a13n_service.providers.environment import desktop_access as access
-from a13n_service.providers.environment import envd_assets
+from a13n_service.providers.environment import envd_assets, envd_upgrade
 from a13n_service.providers.environment.envd_readiness import wait_until_ready
 from a13n_service.providers.environment.management import Pending
 from a13n_service.providers.environment.native import NativeManagement
@@ -78,7 +78,11 @@ class VercelManagement(VercelReference, NativeManagement[VercelEnvironmentConfig
                         else {"runtime": self.config.runtime}
                     ),
                     "persistent": True,
-                    **({"env": self.config.environment} if self.config.environment else {}),
+                    **(
+                        {"env": self._envd_environment()}
+                        if self.config.execution != "native"
+                        else ({"env": self.config.environment} if self.config.environment else {})
+                    ),
                     "timeout": self.config.timeout_seconds * 1000,
                     "resources": {"vcpus": self.config.vcpus},
                     "snapshotExpiration": 0,
@@ -131,14 +135,9 @@ class VercelManagement(VercelReference, NativeManagement[VercelEnvironmentConfig
             await self._ready(response, bootstrap=resumed)
         return None
 
-    async def _ready(self, response: SandboxResponse, *, bootstrap: bool) -> None:
-        if response.session.status != "running":
-            raise failure("vercel", "provider_unavailable", Category.UNAVAILABLE)
-        self.pinned_session = response.session.id
-        # Management may restart a dead launcher. Read-only execution attachment never does.
-        # The guest lock makes repeated/lost launches harmless, including within one native session.
-        if self.config.execution != "native":
-            settings = {
+    def _envd_environment(self) -> dict[str, str]:
+        return self.bootstrap_environment(
+            {
                 **self.config.environment,
                 "A13N_ENVD_DEVICE_ID": self.owner,
                 "A13N_ENVD_TRANSPORT": "http",
@@ -151,8 +150,17 @@ class VercelManagement(VercelReference, NativeManagement[VercelEnvironmentConfig
                 "A13N_ENVD_RUNTIME_DIR": "/run/a13n-envd-state",
                 "A13N_DESKTOP_ACCESS": "true" if self.recipe.desktop_assistance else "false",
             }
+        )
+
+    async def _ready(self, response: SandboxResponse, *, bootstrap: bool) -> None:
+        if response.session.status != "running":
+            raise failure("vercel", "provider_unavailable", Category.UNAVAILABLE)
+        self.pinned_session = response.session.id
+        # Management may restart a dead launcher. Read-only execution attachment never does.
+        # The guest lock makes repeated/lost launches harmless, including within one native session.
+        if self.config.execution != "native" and self.recipe.envd_management == "managed":
+            settings = self._envd_environment()
             program = "a13n-sandbox-desktop" if self.config.desktop else "a13n-envd"
-            settings = self.bootstrap_environment(settings)
             script = """set -eu
 umask 077
 install -d -m 0700 /var/lib/a13n-envd
@@ -187,6 +195,22 @@ nohup flock -n /var/lib/a13n-envd/start.lock sh -c '
         )
         if self.recipe.desktop_assistance:
             await self.desktop_access(access.Describe())
+
+    async def update_envd(self, version: str, operation_id: str) -> Pending | None:
+        session_id = self.pinned_session or await self.running_session()
+
+        async def execute(argv: list[str]) -> str:
+            return await command(self, session_id, argv, sudo=True, timeout=15)
+
+        if not await envd_upgrade.upgrade(
+            execute, provider_key=self.provider_key, version=version, operation_id=operation_id
+        ):
+            return Pending(self.state, settled=True)
+        response = await self.lookup()
+        if response is None or response.session.id != session_id:
+            raise failure(self.provider_key, "provider_target_conflict", Category.CONFLICT)
+        await self._ready(response, bootstrap=False)
+        return None
 
     async def desktop_access(self, request: access.Request) -> access.Reply:
         if not self.recipe.desktop_assistance or self.target is None:

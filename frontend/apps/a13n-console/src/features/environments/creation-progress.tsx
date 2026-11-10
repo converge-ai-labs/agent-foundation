@@ -36,7 +36,11 @@ export function creationNotice(
   providerType: string | undefined,
   recipe: Record<string, unknown> | undefined,
 ): string | undefined {
-  if (!recipe || !["envd_http", "envd_ws"].includes(String(recipe.execution)))
+  if (
+    !recipe ||
+    recipe.envd_management === "preinstalled" ||
+    !["envd_http", "envd_ws"].includes(String(recipe.execution))
+  )
     return;
   const desktop = recipe.desktop === true;
   if (providerType === "modal" && recipe.image === "auto")
@@ -104,11 +108,13 @@ export function CreationProgress({
           signal,
         })
         .then(data),
-    refetchInterval: environment.status === "creating" ? 2000 : false,
+    refetchInterval: ["creating", "starting"].includes(environment.status)
+      ? 2000
+      : false,
   });
   useEffect(() => {
     if (
-      environment.status !== "creating" ||
+      !["creating", "starting"].includes(environment.status) ||
       !progress.data ||
       progress.data.ended_at
     )
@@ -158,29 +164,33 @@ export function CreationProgress({
     <section className={styles.factGroup}>
       <h3 aria-live="polite">
         {t(
-          providerType === "sprites" && stage === "preparing"
-            ? "Allocating Sprite"
-            : stage === "building" &&
-                (providerType === "sprites" ||
-                  providerType === "vercel" ||
-                  (providerType === "e2b" && !desktop))
-              ? desktop
-                ? "Installing Envd and desktop dependencies"
-                : "Installing headless Envd"
-              : stage === "building" && providerType === "modal"
+          environment.status === "starting"
+            ? stage === "failed"
+              ? "Environment preparation needs attention"
+              : "Starting and checking Envd"
+            : providerType === "sprites" && stage === "preparing"
+              ? "Allocating Sprite"
+              : stage === "building" &&
+                  (providerType === "sprites" ||
+                    providerType === "vercel" ||
+                    (providerType === "e2b" && !desktop))
                 ? desktop
-                  ? "Building desktop image in Modal"
-                  : "Building headless Envd image in Modal"
-                : stage === "building" && providerType === "daytona"
+                  ? "Installing Envd and desktop dependencies"
+                  : "Installing headless Envd"
+                : stage === "building" && providerType === "modal"
                   ? desktop
-                    ? "Building desktop snapshot in Daytona"
-                    : "Building headless Envd snapshot in Daytona"
-                  : desktop
-                    ? STAGES[stage]
-                    : HEADLESS_STAGES[stage],
+                    ? "Building desktop image in Modal"
+                    : "Building headless Envd image in Modal"
+                  : stage === "building" && providerType === "daytona"
+                    ? desktop
+                      ? "Building desktop snapshot in Daytona"
+                      : "Building headless Envd snapshot in Daytona"
+                    : desktop
+                      ? STAGES[stage]
+                      : HEADLESS_STAGES[stage],
         )}
       </h3>
-      {environment.status === "creating" && (
+      {["creating", "starting"].includes(environment.status) && (
         <>
           <p>
             {t("Elapsed: {{minutes}}m {{seconds}}s", {
@@ -191,7 +201,9 @@ export function CreationProgress({
           {stage !== "failed" && (
             <p>
               {t(
-                "Creation continues in the background. You can leave this page and return to Environment instances to check progress.",
+                environment.status === "starting"
+                  ? "Preparation continues in the background. You can leave this page and return to check progress."
+                  : "Creation continues in the background. You can leave this page and return to Environment instances to check progress.",
               )}
             </p>
           )}
@@ -204,7 +216,11 @@ export function CreationProgress({
               disabled={retry.isPending}
               onClick={() => retry.mutate()}
             >
-              {t("Retry creation")}
+              {t(
+                environment.status === "starting"
+                  ? "Retry preparation"
+                  : "Retry creation",
+              )}
             </Button>
           ) : (
             environment.failure && (

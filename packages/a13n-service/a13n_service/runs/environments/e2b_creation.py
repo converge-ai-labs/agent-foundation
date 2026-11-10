@@ -1,4 +1,4 @@
-"""User-visible automatic E2B/Modal/Daytona/Vercel/Sprites creation progress and fenced retry; no cloud I/O on reads."""
+"""Environment preparation progress and fenced retry; no cloud I/O on reads."""
 
 from datetime import datetime
 from typing import Literal
@@ -35,7 +35,8 @@ def _automatic(row: EnvironmentRow, handle: Handle | None) -> bool:
     return bool(
         handle
         and (
-            handle.e2b_desktop_template
+            handle.recipe.get("envd_management") == "managed"
+            or handle.e2b_desktop_template
             or handle.modal_desktop_image
             or handle.daytona_desktop_snapshot
             or handle.vercel_desktop_snapshot
@@ -48,7 +49,10 @@ def _automatic(row: EnvironmentRow, handle: Handle | None) -> bool:
             or (
                 row.provider_identity
                 and (
-                    row.provider_identity.get("type") == "sprites"
+                    (
+                        row.provider_identity.get("type") == "sprites"
+                        and handle.recipe.get("envd_management") != "preinstalled"
+                    )
                     or (
                         row.provider_identity.get("type") == "e2b"
                         and (handle.recipe.get("template") == "auto" or handle.recipe.get("preparation") == "headless")
@@ -63,7 +67,7 @@ def _automatic(row: EnvironmentRow, handle: Handle | None) -> bool:
 
 
 def _retryable(row: EnvironmentRow) -> bool:
-    return row.status == "creating" and row.failure is not None and lifecycle.settled(row)
+    return row.status in {"creating", "starting"} and row.failure is not None and lifecycle.settled(row)
 
 
 async def progress(runtime: Runtime, actor: Principal, workspace_id: str, identity: str) -> CreationProgress | None:
@@ -78,10 +82,12 @@ async def progress(runtime: Runtime, actor: Principal, workspace_id: str, identi
         ended = None
         if row.status == "ready":
             stage = "ready"
-        elif row.status != "creating":
+        elif row.status not in {"creating", "starting"}:
             stage = "inactive"
         elif row.failure and row.failure["permanent"]:
             stage, ended = "failed", row.failure["at"]
+        elif row.status == "starting":
+            stage = "starting"
         elif (
             row.provider_identity
             and row.provider_identity.get("type") == "vercel"
@@ -101,7 +107,9 @@ async def progress(runtime: Runtime, actor: Principal, workspace_id: str, identi
             stage = (
                 "building" if phase == "installing" else "starting" if phase in {"starting", "ready"} else "preparing"
             )
-        elif row.provider_identity and row.provider_identity.get("type") == "sprites":
+        elif row.provider_identity and (
+            row.provider_identity.get("type") == "sprites" and handle.recipe.get("envd_management") != "preinstalled"
+        ):
             phase = (
                 handle.state.state.get("desktop_phase")
                 if handle.state and isinstance(handle.state.state, dict)
@@ -172,9 +180,21 @@ async def retry(
         if await session.scalar(select(lifecycle.in_use(row.id))):
             raise conflict("environment", identity, "in_use")
         assert handle is not None and row.provider_id is not None
+        if row.status == "starting" and (
+            handle.recipe.get("envd_management") != "managed"
+            or handle.envd_target_version is None
+            or handle.state is None
+        ):
+            raise conflict("environment", identity, "creation_retry_unavailable")
         provider = await resolve_provider(session, actor, EnvironmentProviderRow, scope, row.provider_id)
         if row.provider_identity != provider_identity(runtime.registry, provider):
             raise conflict("environment", identity, "provider_identity_changed")
+        if row.status == "starting":
+            # Retain the native target and frozen version; only the failed guest attempt changes.
+            await lifecycle.begin(session, row, "starting")
+            await session.flush()
+            audit(session, actor, row, "retry_preparation")
+            return environment_view(row)
         if handle.recipe.get("template") == "auto" and handle.e2b_desktop_template:
             build = await session.get(e2b_templates.E2BDesktopTemplateRow, handle.e2b_desktop_template)
             if build is not None and build.phase == "failed":

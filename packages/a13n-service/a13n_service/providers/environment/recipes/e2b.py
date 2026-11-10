@@ -7,8 +7,10 @@ from pydantic import ConfigDict, Field, model_validator
 
 from a13n_service.settings import RENEWAL_HORIZON_SECONDS
 
+from ..envd_policy import EnvdRecipe
 
-class E2BRecipe(E2BEnvironmentConfiguration):
+
+class E2BRecipe(E2BEnvironmentConfiguration, EnvdRecipe):
     template: str = Field(
         default="base",
         min_length=1,
@@ -27,8 +29,14 @@ class E2BRecipe(E2BEnvironmentConfiguration):
                 value.setdefault("template", "auto")
                 if value.get("template") == "auto":
                     value.setdefault("desktop_assistance", True)
-            elif value.get("execution") in {"envd_http", "envd_ws"} and value.get("template", "base") == "base":
+            elif (
+                value.get("envd_management") != "preinstalled"
+                and value.get("execution") in {"envd_http", "envd_ws"}
+                and value.get("template", "base") == "base"
+            ):
                 value.setdefault("preparation", "headless")
+            if value.get("template") == "auto" or value.get("preparation") == "headless":
+                value.setdefault("envd_management", "managed")
         return value
 
     desktop_assistance: bool = Field(
@@ -45,6 +53,8 @@ class E2BRecipe(E2BEnvironmentConfiguration):
 
     @model_validator(mode="after")
     def assistance_template(self) -> Self:
+        if self.envd_management == "preinstalled" and (self.template == "auto" or self.preparation == "headless"):
+            raise ValueError("Preinstalled Envd requires a custom template and preparation=preinstalled")
         if self.preparation == "headless" and self.timeout_seconds < 960:
             raise ValueError("Headless preparation requires a sandbox timeout of at least 960 seconds")
         if self.template == "auto" and not self.desktop:

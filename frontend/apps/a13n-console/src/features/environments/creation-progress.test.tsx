@@ -163,6 +163,60 @@ it("does not offer retry before confirmation or without write permission", async
   view.cache.clear();
 });
 
+it("offers a fenced preparation retry for a failed managed upgrade on an existing instance", async () => {
+  http.GET.mockResolvedValue({
+    data: {
+      profile: "headless",
+      stage: "failed",
+      started_at: environment.created_at,
+      observed_at: environment.created_at,
+      ended_at: environment.created_at,
+      retryable: true,
+    },
+  });
+  http.POST.mockResolvedValue({ data: environment });
+  const failed = {
+    ...environment,
+    status: "starting",
+    failure: {
+      code: "envd_upgrade_failed",
+      message: "Inspect upgrade output",
+      permanent: true,
+    },
+  } as Schema["EnvironmentView"];
+  const view = mount(
+    <CreationProgress
+      environment={failed}
+      etag='"env_test:4"'
+      providerType="docker"
+    />,
+  );
+  await screen.findByText("Environment preparation needs attention");
+  expect(screen.getByRole("alert").textContent).toContain(
+    "Inspect upgrade output",
+  );
+  await userEvent
+    .setup()
+    .click(screen.getByRole("button", { name: "Retry preparation" }));
+  expect(http.POST).toHaveBeenCalledWith(
+    "/api/v1/environments/{environment_id}/retry-creation",
+    expect.objectContaining({ headers: { "If-Match": '"env_test:4"' } }),
+  );
+  view.unmount();
+  view.cache.clear();
+});
+
+it("omits automatic-install notices in preinstalled mode", () => {
+  for (const type of ["e2b", "modal", "daytona", "vercel", "sprites"]) {
+    expect(
+      creationNotice(type, {
+        execution: "envd_http",
+        envd_management: "preinstalled",
+      }),
+    ).toBeUndefined();
+  }
+});
+
 it("captures only on explicit view/refresh and releases preview URLs when closed", async () => {
   const create = vi
     .fn()

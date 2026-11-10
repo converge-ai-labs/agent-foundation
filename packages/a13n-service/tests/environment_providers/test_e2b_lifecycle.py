@@ -377,7 +377,7 @@ async def test_metrics_launch_reaches_only_envd_bootstrap(api, monkeypatch, expo
 
     monkeypatch.setattr(api, "sandbox", sandbox)
     monkeypatch.setattr(E2BManagement, "_check_envd", AsyncMock())
-    config = E2BRecipe(execution="envd_http", template="team-envd")
+    config = E2BRecipe(execution="envd_http", template="team-envd", envd_management="managed")
     values = {"OTEL_EXPORTER_OTLP_METRICS_HEADERS": "authorization=private-write-token"} if exporter else {}
     metrics = MetricsLaunch(values)
     async with await E2B.open_provider(credential={"api_key": "test-key"}) as provider:
@@ -399,7 +399,9 @@ async def test_metrics_launch_reaches_only_envd_bootstrap(api, monkeypatch, expo
 
 
 async def test_envd_creation_records_identity_before_bootstrap_failure(api, monkeypatch):
-    env = environment(configuration=E2BRecipe(execution="envd_http", desktop=True, template="team-envd"))
+    env = environment(
+        configuration=E2BRecipe(execution="envd_http", desktop=True, template="team-envd", envd_management="managed")
+    )
     bootstrap = AsyncMock(side_effect=EnvironmentError("Envd unavailable", code="environment_unavailable"))
     monkeypatch.setattr(env, "_bootstrap_envd", bootstrap)
     with pytest.raises(EnvironmentError):
@@ -418,7 +420,9 @@ async def test_envd_creation_records_identity_before_bootstrap_failure(api, monk
 
 
 async def test_envd_resume_checks_without_bootstrap_or_reallocation(api, monkeypatch):
-    env = environment(configuration=E2BRecipe(execution="envd_http", desktop=True, template="team-envd"))
+    env = environment(
+        configuration=E2BRecipe(execution="envd_http", desktop=True, template="team-envd", envd_management="managed")
+    )
     bootstrap, check = AsyncMock(), AsyncMock()
     monkeypatch.setattr(env, "_bootstrap_envd", bootstrap)
     monkeypatch.setattr(env, "_check_envd", check)
@@ -437,7 +441,7 @@ async def test_envd_resume_checks_without_bootstrap_or_reallocation(api, monkeyp
 async def test_envd_bootstrap_exit_is_actionable_and_does_not_expose_guest_output(api, monkeypatch):
     from e2b.sandbox.commands.command_handle import CommandExitException
 
-    env = environment(configuration=E2BRecipe(execution="envd_http", template="team-envd"))
+    env = environment(configuration=E2BRecipe(execution="envd_http", template="team-envd", envd_management="managed"))
     monkeypatch.setattr(
         env,
         "_bootstrap_envd",
@@ -557,3 +561,22 @@ def test_headless_installer_has_no_python_desktop_or_sdk_daemon_replacement():
     script = preparation.installation_script()
     assert all(word not in script for word in ("python", "xvfb", "openbox", "chromium", "desktop.py", "/usr/bin/envd"))
     assert "a13n-envd" in script and "1001" in script
+
+
+@pytest.mark.parametrize("execution", ["envd_http", "envd_ws"])
+async def test_preinstalled_uses_template_boot_and_receives_platform_environment_without_a_launcher(
+    api, monkeypatch, execution
+):
+    config = E2BRecipe(execution=execution, template="team-authored", envd_management="preinstalled")
+    env = environment(configuration=config)
+    bootstrap, check = AsyncMock(), AsyncMock()
+    monkeypatch.setattr(env, "_bootstrap_envd", bootstrap)
+    monkeypatch.setattr(env, "_check_envd", check)
+    await env.create()
+    assert api.options[0]["envs"]["A13N_ENVD_DEVICE_ID"] == "env-test"
+    await env.stop()
+    await env.start()
+    bootstrap.assert_not_awaited()
+    assert check.await_count == (2 if execution == "envd_http" else 0)
+    assert api.calls.count("create") == 1
+    await env.destroy()

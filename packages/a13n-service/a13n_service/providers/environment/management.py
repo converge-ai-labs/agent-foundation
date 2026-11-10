@@ -73,6 +73,9 @@ class EnvironmentProvider[E: BaseModel](ABC):
     exclude execution options and the complete provisioning configuration.
     """
 
+    def configure_envd_version(self, version: str) -> None:
+        raise NotImplementedError("Managed Envd upgrades are unavailable for this provider")
+
     def configure_websocket(self, bootstrap: WebSocketBootstrap) -> None:
         raise NotImplementedError("Outbound WebSocket bootstrap is unavailable for this provider")
 

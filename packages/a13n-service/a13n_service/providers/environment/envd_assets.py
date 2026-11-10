@@ -1,21 +1,18 @@
 """Immutable public guest assets shared by provider preparation profiles."""
 
-import base64
-import hashlib
 import shlex
-from importlib.resources import files as resources
 from typing import Literal
 
 from .envd_release import download_command
 
 Profile = Literal["headless", "desktop"]
-SOURCE_REVISION = "771c7faf65143bd1595f27a7240806049c450fd8"
+SOURCE_REVISION = "9d5ae301051f4faea8ac7a2cfed7c6d61d598bff"
 BASE_IMAGE = "debian:trixie-slim@sha256:4876fdea29cac1a33a3195f1eb1952feb1fca7dd6dd00be3e2f1879cf20d34d2"
 HEADLESS_FILES = (
     (
         "deploy/docker/images/sandbox/entrypoint.sh",
         "/usr/local/bin/a13n-sandbox-entrypoint",
-        "130fac205b88a997f214c02e5d7c07ebbe533317b4561560850345d28aacfe33",
+        "c7de2019e091a38fbb335c1c2c9e29c9218dbf7a49019056cc47fbaf5fd27eab",
     ),
 )
 DESKTOP_FILES = (
@@ -66,28 +63,10 @@ def commands(profile: Profile) -> list[str]:
     for source, destination, digest in files(profile):
         url = f"https://raw.githubusercontent.com/converge-ai-labs/agent-foundation/{SOURCE_REVISION}/{source}"
         result.append(download_command(url, destination, digest) + f" && chmod 0755 {shlex.quote(destination)}")
-    # Bundle the startup owner with Service so new assets are usable before a
-    # source branch is published. Its exact bytes are frozen in every manifest.
-    startup = resources(__package__).joinpath("envd_supervise.sh").read_bytes()
-    destination = "/usr/local/bin/a13n-envd-supervise"
-    encoded = base64.b64encode(startup).decode()
-    digest = hashlib.sha256(startup).hexdigest()
-    result.append(
-        f"printf %s {encoded} | base64 -d > {destination} && "
-        f"printf '%s\\n' '{digest}  {destination}' | sha256sum -c - && chmod 0755 {destination}"
-    )
     return result
 
 
-def startup(program: str) -> str:
-    """Use guest supervision when installed, retaining older preinstalled images."""
-    supervised = (
-        "a13n-sandbox-desktop a13n-envd-supervise a13n-envd"
-        if program == "a13n-sandbox-desktop"
-        else f"a13n-envd-supervise {shlex.quote(program)}"
-    )
-    return (
-        "if command -v a13n-envd-supervise >/dev/null 2>&1; then "
-        f"exec a13n-sandbox-entrypoint {supervised}; "
-        f"else exec a13n-sandbox-entrypoint {shlex.quote(program)}; fi"
-    )
+def startup(program: str, *, mode: Literal["daemon", "supervise"] = "supervise") -> str:
+    """Select one restart owner; display/access processes keep their outer owner."""
+    command = ["a13n-sandbox-desktop", "a13n-envd", mode] if program == "a13n-sandbox-desktop" else [program, mode]
+    return "exec " + shlex.join(["a13n-sandbox-entrypoint", *command])

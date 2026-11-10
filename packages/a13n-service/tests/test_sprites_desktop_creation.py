@@ -1,7 +1,7 @@
 """Durable Sprites installation progress and explicit retry preserve the original target."""
 
 from datetime import timedelta
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
@@ -80,6 +80,7 @@ async def test_pending_publication_restart_failure_and_explicit_retry(
             ).model_dump(mode="json"),
         )
     provider = AsyncMock()
+    provider.configure_envd_version = Mock()
     provider.create.side_effect = EnvironmentManagementError(
         failure("sprites", "sprites_desktop_pending", Category.UNAVAILABLE, certainty=Certainty.KNOWN),
         state,

@@ -4,7 +4,7 @@ import asyncio
 from dataclasses import replace
 from datetime import timedelta
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from a13n_harness.environment.errors import EnvironmentProviderError
@@ -307,6 +307,7 @@ async def test_new_automatic_targets_skip_snapshot_build_and_checkpoint_pending(
     assert op.target.recipe["snapshot"] == "auto"
     state = EnvironmentState(provider_key="vercel", state_version="1", state={"target_id": "owned-final"})
     provider = AsyncMock()
+    provider.configure_envd_version = Mock()
     provider.create.return_value = Pending(state, retry_after_seconds=3, settled=True)
     monkeypatch.setattr(lifecycle, "open_provider", AsyncMock(return_value=provider))
     result = await lifecycle.perform(runtime, op)

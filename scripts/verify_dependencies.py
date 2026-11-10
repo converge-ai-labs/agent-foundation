@@ -90,7 +90,7 @@ TEST_INPUTS: dict[str, tuple[str, ...]] = {
         "Makefile",
         "scripts/sandbox_smoke.py",
         "packages/a13n-service/a13n_service/providers/environment/desktop_guest.py",
-        "packages/a13n-service/a13n_service/providers/environment/envd_supervise.sh",
+        "crates/a13n-envd/src/daemon_supervisor.rs",
         "deploy/docker/compose/*",
     ),
     "test_k8s_local.py": ("deploy/kubernetes/*",),

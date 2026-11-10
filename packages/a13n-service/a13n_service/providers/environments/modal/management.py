@@ -22,8 +22,9 @@ from a13n_harness.providers.environment.native.environment import NativeRuntime
 from a13n_harness.providers.environment.native.errors import failure
 
 from a13n_service.providers.environment import desktop_access as access
-from a13n_service.providers.environment import envd_assets
+from a13n_service.providers.environment import envd_assets, envd_upgrade
 from a13n_service.providers.environment.envd_readiness import wait_until_ready
+from a13n_service.providers.environment.management import Pending
 from a13n_service.providers.environment.native import NativeManagement
 from a13n_service.providers.environment.recipes.modal import ModalRecipe
 
@@ -70,13 +71,18 @@ class ModalManagement(ModalReference, NativeManagement[ModalEnvironmentConfigura
             tags = {**self.labels, "a13n_expiry": expiry.isoformat()}
             if snapshot is not None:
                 tags["a13n_resume_snapshot"] = snapshot.image_id
+            startup = self.recipe.startup_command
+            if self.recipe.envd_management == "managed":
+                # Filesystem snapshots retain paths, not live owners.
+                startup = [
+                    "sh",
+                    "-c",
+                    "rm -f /tmp/.X99-lock /tmp/.X11-unix/X99 /run/a13n-desktop-access/control.sock; "
+                    + envd_assets.startup("a13n-sandbox-desktop" if self.config.desktop else "a13n-envd"),
+                ]
+            assert startup is not None
             sandbox = await modal.Sandbox.create.aio(
-                # Filesystem snapshots can retain runtime paths, not their owners.
-                # Only a newly allocated VM clears these before starting services.
-                "sh",
-                "-c",
-                "rm -f /tmp/.X99-lock /tmp/.X11-unix/X99 /run/a13n-desktop-access/control.sock; "
-                + envd_assets.startup("a13n-sandbox-desktop" if self.config.desktop else "a13n-envd"),
+                *startup,
                 app=app,
                 name=self.name,
                 image=image,
@@ -160,6 +166,20 @@ class ModalManagement(ModalReference, NativeManagement[ModalEnvironmentConfigura
             desktop=self.config.desktop,
             timeout=self.config.request_timeout_seconds,
         )
+
+    async def update_envd(self, version: str, operation_id: str) -> Pending | None:
+        assert self.sandbox is not None
+        sandbox = self.sandbox
+
+        async def execute(argv: list[str]) -> str:
+            return await execute_command(sandbox, ["sudo", "-n", *argv], 15)
+
+        if not await envd_upgrade.upgrade(
+            execute, provider_key=self.provider_key, version=version, operation_id=operation_id
+        ):
+            return Pending(self.state, settled=True)
+        await self._check_envd()
+        return None
 
     async def desktop_access(self, request: access.Request) -> access.Reply:
         self.reuse_transport = True

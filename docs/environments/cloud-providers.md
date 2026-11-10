@@ -196,6 +196,8 @@ The builder excludes runtime credentials. Put the resulting image ID in your rec
 ```json
 {
   "image": "im-yourImageId",
+  "envd_management": "preinstalled",
+  "startup_command": ["a13n-sandbox-entrypoint", "a13n-sandbox-desktop", "a13n-envd", "supervise"],
   "desktop": true,
   "desktop_assistance": true,
   "cpu": 2,

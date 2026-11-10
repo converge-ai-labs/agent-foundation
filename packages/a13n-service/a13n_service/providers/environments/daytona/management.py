@@ -20,7 +20,9 @@ from a13n_harness.providers.environment.native.http import decode_response
 from pydantic import BaseModel, Field
 
 from a13n_service.providers.environment import desktop_access as access
+from a13n_service.providers.environment import envd_upgrade
 from a13n_service.providers.environment.envd_readiness import wait_until_ready
+from a13n_service.providers.environment.management import Pending
 from a13n_service.providers.environment.native import NativeManagement
 from a13n_service.providers.environment.recipes.daytona import DaytonaRecipe
 
@@ -121,6 +123,34 @@ class DaytonaManagement(DaytonaReference, NativeManagement[DaytonaEnvironmentCon
             desktop=self.config.desktop,
             timeout=min(40, self.config.request_timeout_seconds),
         )
+
+    async def update_envd(self, version: str, operation_id: str) -> Pending | None:
+        target = await self.lookup()
+        if target is None or target.state != "started":
+            raise failure(self.provider_key, "provider_target_missing", Category.MISSING)
+        toolbox = await self.open_toolbox(target)
+
+        async def execute(argv: list[str]) -> str:
+            result = decode_response(
+                Execution,
+                await toolbox.request(
+                    "POST",
+                    target.id + "/process/execute",
+                    body={"command": shlex.join(["sudo", "-n", *argv]), "timeout": 15},
+                ),
+                self.provider_key,
+                mutation=True,
+            )
+            if result.exitCode != 0:
+                raise failure(self.provider_key, "envd_upgrade_dispatch_failed", Category.PROVIDER_FAILURE)
+            return result.result
+
+        if not await envd_upgrade.upgrade(
+            execute, provider_key=self.provider_key, version=version, operation_id=operation_id
+        ):
+            return Pending(self.state, settled=True)
+        await self._check_envd(target)
+        return None
 
     async def desktop_access(self, request: access.Request) -> access.Reply:
         if not self.recipe.desktop_assistance or not self.config.desktop or self.target is None:

@@ -86,7 +86,9 @@ async def test_native_identity_and_automatic_desktop_defaults():
     assert recipe.execution == "envd_http" and recipe.desktop_assistance
     assert (
         recipe.fingerprint
-        == SpritesEnvironmentConfiguration.model_validate(recipe.model_dump(exclude={"desktop_assistance"})).fingerprint
+        == SpritesEnvironmentConfiguration.model_validate(
+            recipe.model_dump(exclude={"desktop_assistance", "envd_management"})
+        ).fingerprint
     )
     assert not SpritesRecipe(execution="envd_http").desktop
     assert not SpritesRecipe(execution="envd_ws").desktop
@@ -183,6 +185,7 @@ async def test_readiness_uses_authenticated_eip_and_native_service(monkeypatch, 
         script = commands.call_args_list[0].kwargs["stdin"]
         assert ("a13n-sandbox-desktop" in script) is desktop
         assert "python3" not in script
+        assert "a13n-envd daemon" in script and "supervise" not in script
         args = commands.call_args_list[1].args[1]
         assert args[3] == ("a13n-desktop" if desktop else "a13n-envd")
         assert args[args.index("--http-port") + 1] == ("6081" if desktop else "8888")
@@ -278,3 +281,35 @@ async def test_headless_shell_job_rejoins_and_only_explicitly_retries(tmp_path, 
     # A different frozen script cannot replace this target's preparation.
     script = "exit 0"
     assert await dispatch("other-revision") == "conflict"
+
+
+async def test_completed_installation_survives_a_new_service_preparation_revision(monkeypatch):
+    manage = manager()
+    monkeypatch.setattr(management, "revision", lambda profile: "a-new-build-revision")
+    monkeypatch.setattr(manage, "lookup", AsyncMock(return_value=SpriteInfo.model_validate(sprite(manage))))
+    ready = AsyncMock()
+    monkeypatch.setattr(manage, "_ready", ready)
+    monkeypatch.setattr(management, "install", AsyncMock(side_effect=AssertionError("must not reinstall")))
+    try:
+        await manage.create()
+        ready.assert_awaited_once()
+    finally:
+        await manage.close()
+
+
+async def test_preinstalled_create_and_start_only_check_readiness(monkeypatch):
+    manage = manager(desktop=False)
+    manage.recipe = manage.config = SpritesRecipe(execution="envd_http", envd_management="preinstalled")
+    lookup = AsyncMock(return_value=SpriteInfo.model_validate(sprite(manage)))
+    install = AsyncMock(side_effect=AssertionError("installed preinstalled runtime"))
+    command = AsyncMock(side_effect=AssertionError("changed preinstalled startup"))
+    ready = AsyncMock()
+    monkeypatch.setattr(manage, "lookup", lookup)
+    monkeypatch.setattr(management, "install", install)
+    monkeypatch.setattr(management, "command", command)
+    monkeypatch.setattr(management, "wait_until_ready", ready)
+    await manage.create()
+    await manage.start()
+    assert ready.await_count == 2
+    install.assert_not_awaited()
+    command.assert_not_awaited()
