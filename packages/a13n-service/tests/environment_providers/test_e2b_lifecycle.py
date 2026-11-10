@@ -394,7 +394,7 @@ async def test_metrics_launch_reaches_only_envd_bootstrap(api, monkeypatch, expo
         assert "private-write-token" not in config.model_dump_json() + state.model_dump_json() + str(api.options)
         await provider.create(config, environment_id="env_metrics", operation_id="create", state=state, metrics=metrics)
         await provider.start(config, environment_id="env_metrics", operation_id="start", state=state)
-        assert run.await_count == 2  # One bootstrap and its bounded TCP readiness probe.
+        assert run.await_count == 1  # Startup only; readiness uses authenticated EIP without guest Python.
         assert api.calls.count("create") == 1
 
 
@@ -458,3 +458,102 @@ async def test_envd_bootstrap_exit_is_actionable_and_does_not_expose_guest_outpu
     assert env.state is not None
     assert api.calls.count("create") == 1
     await env.destroy()
+
+
+async def test_headless_preparation_rejoins_selected_target_and_returns_pending(api, monkeypatch):
+    import a13n_service.providers.environments.e2b.management as management
+    from a13n_service.providers.environment.management import Pending
+    from a13n_service.providers.environments.e2b import preparation
+
+    install = AsyncMock(side_effect=[False, True])
+    bootstrap, ready = AsyncMock(), AsyncMock()
+    monkeypatch.setattr(preparation, "install", install)
+    monkeypatch.setattr(
+        management, "open_sandbox", AsyncMock(side_effect=lambda identifier, *_: api.sandbox(identifier))
+    )
+    monkeypatch.setattr(E2BManagement, "_bootstrap_envd", bootstrap)
+    monkeypatch.setattr(E2BManagement, "_check_envd", ready)
+    config = E2BRecipe(execution="envd_http", template="selected-trixie", preparation="headless")
+    async with await E2B.open_provider(credential={"api_key": "test-key"}) as provider:
+        pending = await provider.create(config, environment_id="env-test", operation_id="op-one")
+        assert isinstance(pending, Pending) and pending.settled
+        assert pending.state.state["preparation_phase"] == "installing"
+        expected = pending.state.state["preparation_revision"]
+        assert expected == preparation.revision()
+        bootstrap.assert_not_awaited()
+        ready.assert_not_awaited()
+        state = await provider.create(config, environment_id="env-test", operation_id="op-one", state=pending.state)
+        assert state.state["preparation_phase"] == "ready"
+        assert state.state["sandbox_id"] == pending.state.state["sandbox_id"]
+        assert state.state["preparation_revision"] == expected
+        assert install.await_count == 2
+        assert all(call.args[1:] == (expected, "op-one") for call in install.call_args_list)
+        await provider.create(config, environment_id="env-test", operation_id="op-one", state=state)
+        await provider.stop(config, environment_id="env-test", operation_id="stop", state=state)
+        await provider.start(config, environment_id="env-test", operation_id="start", state=state)
+        assert install.await_count == 2 and bootstrap.await_count == 1
+        assert api.calls.count("create") == 1 and api.options[0]["template"] == "selected-trixie"
+        assert next(iter(api.targets.values())).metadata[preparation.TAG] == expected
+
+
+async def test_headless_unknown_allocation_recovers_revision_from_metadata(api, monkeypatch):
+    from a13n_service.providers.environment.management import Pending
+    from a13n_service.providers.environments.e2b import preparation
+
+    api.created_then_lost = True
+    config = E2BRecipe(execution="envd_http")
+    env = environment(configuration=config)
+    with pytest.raises(EnvironmentProviderError):
+        await env.create()
+    assert env.state is None
+    recovered = environment(configuration=config)
+    assert await recovered.inspect() == "running"
+    assert recovered.state.state["preparation_revision"] == preparation.revision()
+    assert recovered.state.state["preparation_phase"] == "installing"
+    monkeypatch.setattr(recovered, "start", AsyncMock(return_value=Pending(recovered.state, settled=True)))
+    assert isinstance(await recovered.create(), Pending)
+    assert api.calls.count("create") == 1
+
+
+def test_headless_recipe_is_explicit_for_custom_templates_and_preserves_native_fingerprint():
+    import hashlib
+
+    from a13n_harness.providers.environment.e2b.configuration import E2BEnvironmentConfiguration
+
+    native = E2BRecipe()
+    assert native.preparation == "preinstalled"
+    historical = native.model_dump_json(include={"template", "root", "user", "allow_internet_access"})
+    assert native.fingerprint == hashlib.sha256(historical.encode()).hexdigest()
+    assert E2BRecipe(execution="envd_http").preparation == "headless"
+    custom = E2BRecipe(execution="envd_http", template="custom-envd")
+    assert custom.preparation == "preinstalled"
+    assert custom.fingerprint == E2BEnvironmentConfiguration(execution="envd_http", template="custom-envd").fingerprint
+    assert custom.fingerprint != custom.model_copy(update={"preparation": "headless"}).fingerprint
+    for value in (
+        {"preparation": "headless"},
+        {"execution": "envd_http", "preparation": "headless", "desktop": True},
+        {"execution": "envd_http", "timeout_seconds": 30},
+    ):
+        with pytest.raises(ValueError):
+            E2BRecipe(**value)
+
+
+async def test_headless_unsupported_userspace_is_actionable_and_does_not_install():
+    from a13n_service.providers.environments.e2b import preparation
+    from e2b.sandbox.commands.command_handle import CommandExitException
+
+    run = AsyncMock(side_effect=CommandExitException(stderr="private", stdout="private", exit_code=1, error=None))
+    with pytest.raises(EnvironmentProviderError) as failure:
+        await preparation.install(SimpleNamespace(commands=SimpleNamespace(run=run)), preparation.revision(), "op-one")
+    assert failure.value.code == "envd_userspace_unsupported"
+    assert "glibc >= 2.39" in str(failure.value) and "Bookworm" in str(failure.value)
+    assert "private" not in str(failure.value)
+    assert run.await_count == 1
+
+
+def test_headless_installer_has_no_python_desktop_or_sdk_daemon_replacement():
+    from a13n_service.providers.environments.e2b import preparation
+
+    script = preparation.installation_script()
+    assert all(word not in script for word in ("python", "xvfb", "openbox", "chromium", "desktop.py", "/usr/bin/envd"))
+    assert "a13n-envd" in script and "1001" in script

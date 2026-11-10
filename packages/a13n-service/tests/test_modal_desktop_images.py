@@ -207,7 +207,9 @@ async def test_expired_preparation_fails_before_cloud_work(setup):
 async def test_provider_and_manifest_revision_isolate_reusable_images(setup, monkeypatch):
     op = await setup.create()
     capability = builds._capability(setup.service.runtime)
-    monkeypatch.setattr(builds, "_capability", lambda _: replace(capability, revision=lambda: "next-release"))
+    monkeypatch.setattr(
+        builds, "_capability", lambda _: replace(capability, revision=lambda profile, base_image: "next-release")
+    )
     other = await setup.create()
     assert other.modal_desktop_image != op.modal_desktop_image
     with pytest.raises(EnvironmentProviderError):
@@ -215,3 +217,47 @@ async def test_provider_and_manifest_revision_isolate_reusable_images(setup, mon
             setup.service.runtime, op.modal_desktop_image, replace(op.target.account, id="another-provider")
         )
     assert not setup.cloud.calls
+
+
+@pytest.mark.parametrize("base_image", [None, "registry.example/base@sha256:" + "a" * 64])
+async def test_headless_profile_is_frozen_and_isolated_from_desktop(setup, monkeypatch, base_image):
+    runtime = setup.service.runtime
+    desktop = await setup.create()
+    client = setup.service.client
+    template = await client.post(
+        "/api/v1/environment-templates",
+        json={
+            "name": "Headless",
+            "provider_id": desktop.target.account.id,
+            "config": {"recipe": {"desktop": False, "base_image": base_image}},
+        },
+    )
+    assert template.status_code == 201, template.text
+    created = await client.post("/api/v1/environments", json={"template_id": template.json()["id"]})
+    assert created.status_code == 201, created.text
+    headless = await lifecycle.claim(runtime, created.json()["id"], owner="headless-test")
+    assert headless is not None and headless.modal_desktop_image is not None
+    assert headless.modal_desktop_image != desktop.modal_desktop_image
+    async with transaction(runtime.storage) as session:
+        image = await session.get(builds.ModalDesktopImageRow, headless.modal_desktop_image)
+        manifest = image.manifest
+        assert "python3" not in "\n".join(manifest["commands"])
+        assert "entrypoint.sh" in "\n".join(manifest["commands"])
+        if base_image is not None:
+            assert manifest["base"] == base_image
+            assert "envd_base_unsupported" in manifest["commands"][0]
+    provider = AsyncMock()
+    opener = AsyncMock(return_value=provider)
+    monkeypatch.setattr(lifecycle, "open_provider", opener)
+    outcome = await lifecycle.perform(runtime, headless)
+    assert outcome.pending and outcome.fault is None
+    opener.assert_not_called()
+    assert setup.cloud.calls[0][0] == manifest
+    async with transaction(runtime.storage) as session:
+        row = await session.get(EnvironmentRow, headless.environment_id)
+        recipe = Handle.model_validate(row.handle).recipe
+        assert recipe["image"] == "im-TestImage" and recipe["desktop"] is False
+        assert "base_image" not in recipe
+        from a13n_service.providers.environment.recipes.modal import ModalRecipe
+
+        ModalRecipe.model_validate(recipe)

@@ -9,6 +9,7 @@ from a13n_harness.providers.environment._backend import BackendReference
 from a13n_harness.providers.environment.remote_envd.managed import ManagedCredentialCache
 
 from .desktop_access import Reply, Request
+from .management import Pending
 from .metrics import DeviceObservation, MetricsLaunch, ScrapeTarget
 from .websocket import WebSocketBootstrap
 
@@ -45,10 +46,10 @@ class ManagementBackend(BackendReference):
         """Read Envd-owned cached observations without an execution Session."""
         raise self._unsupported()
 
-    async def create(self) -> None:
+    async def create(self) -> Pending | None:
         raise self._unsupported()
 
-    async def start(self) -> None:
+    async def start(self) -> Pending | None:
         raise self._unsupported()
 
     async def inspect(self) -> Literal["running", "stopped", "absent"]:

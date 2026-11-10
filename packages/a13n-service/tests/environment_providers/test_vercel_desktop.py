@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import json
 from contextlib import asynccontextmanager
+from unittest.mock import AsyncMock
 
 import httpx2
 import pytest
@@ -22,7 +23,10 @@ from a13n_harness.providers.environment.vercel.shared import (
     VercelEnvironmentConfiguration,
 )
 from a13n_service.providers.environment import desktop_access as access
+from a13n_service.providers.environment._backend_factory import BackendProvider, ManagementBackendFactory
+from a13n_service.providers.environment.management import Pending
 from a13n_service.providers.environment.recipes.vercel import VercelRecipe
+from a13n_service.providers.environments.vercel import preparation
 from a13n_service.providers.environments.vercel.management import VercelManagement
 
 pytestmark = pytest.mark.anyio
@@ -107,7 +111,9 @@ async def test_native_fingerprint_and_desktop_opt_in():
         ).fingerprint
     )
     assert VercelRecipe(desktop=True).snapshot == "auto"
-    for values in ({"execution": "envd_http"}, {"snapshot": "snap_x"}, {"desktop_assistance": True}):
+    assert VercelRecipe(execution="envd_http").snapshot == "auto"
+    assert not VercelRecipe(execution="envd_http").desktop_assistance
+    for values in ({"snapshot": "snap_x"}, {"desktop_assistance": True}):
         with pytest.raises(ValueError):
             VercelRecipe(**values)
 
@@ -329,3 +335,79 @@ async def test_lifecycle_starts_services_only_on_new_sessions(monkeypatch, exist
         assert body["ports"] == [8888, 6081] and "runtime" not in body
     elif existing == "running":
         assert len(events) == 1
+
+
+@pytest.mark.parametrize("execution", ["envd_http", "envd_ws"])
+async def test_automatic_allocation_publishes_final_identity_before_install(monkeypatch, execution):
+    manage = manager(VercelRecipe(execution=execution))
+    manage.target = None
+    calls = []
+
+    async def lookup():
+        return None
+
+    class Transport:
+        async def request(self, method, path, **kwargs):
+            calls.append((method, path, kwargs))
+            value = response(manage).model_dump(mode="json")
+            value["sandbox"]["tags"] = kwargs["body"]["tags"]
+            return value
+
+    monkeypatch.setattr(manage, "lookup", lookup)
+    monkeypatch.setattr(manage, "transport", lambda: Transport())
+    install = AsyncMock(side_effect=AssertionError("install before checkpoint"))
+    monkeypatch.setattr(preparation, "prepare", install)
+    result = await manage.create()
+    assert isinstance(result, Pending) and result.settled and result.state == manage.state
+    assert result.state.state["backing_id"] == "a13n-fixture:1"
+    assert len(calls) == 1
+    method, path, kwargs = calls[0]
+    assert method == "POST" and path == "/v3/sandboxes"
+    body = kwargs["body"]
+    assert body["persistent"] and body["image"] == "vercel/sandbox/ubuntu"
+    assert "source" not in body
+    assert body["ports"] == ([8888] if execution == "envd_http" else [])
+    assert body["tags"][preparation.TAG] == preparation.revision(desktop=False)
+    install.assert_not_called()
+
+
+@pytest.mark.parametrize("prepared", [False, True])
+async def test_rejoins_same_target_and_prepares_before_readiness(monkeypatch, prepared):
+    manage = manager(VercelRecipe(execution="envd_http"))
+    value = response(manage)
+    events = []
+
+    async def lookup():
+        manage.accept(value)
+        return value
+
+    async def prepare(ref, observed):
+        assert ref is manage and observed == value
+        events.append("prepare")
+        return prepared
+
+    async def ready(observed, *, bootstrap):
+        events.append("ready")
+
+    monkeypatch.setattr(manage, "lookup", lookup)
+    monkeypatch.setattr(preparation, "prepare", prepare)
+    monkeypatch.setattr(manage, "_ready", ready)
+    result = await manage.create()
+    assert events == (["prepare", "ready"] if prepared else ["prepare"])
+    assert (result is None) if prepared else isinstance(result, Pending)
+
+
+@pytest.mark.parametrize("transition", ["create", "start"])
+async def test_backend_preserves_pending_and_does_not_wait_for_websocket(monkeypatch, transition):
+    manage = manager(VercelRecipe(execution="envd_http"))
+    pending = Pending(manage.state, retry_after_seconds=3, settled=True)
+    monkeypatch.setattr(manage, transition, AsyncMock(return_value=pending))
+    factory = ManagementBackendFactory(key="vercel", environment_model=VercelRecipe, management=lambda **_: manage)
+    provider = BackendProvider(factory, None, None)
+    wait = AsyncMock(side_effect=AssertionError("waited for pending preparation"))
+    monkeypatch.setattr(provider, "_wait_ready", wait)
+    result = await getattr(provider, transition)(
+        manage.recipe, environment_id="env-fixture", operation_id="op-fixture", state=manage.state
+    )
+    assert result == pending
+    wait.assert_not_called()

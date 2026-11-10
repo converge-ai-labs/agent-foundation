@@ -39,6 +39,7 @@ from a13n_harness._review_context import ReviewEvidence, append_review_evidence,
 from a13n_harness._tool_execution import TOOL_EXECUTION_METADATA_KEY
 from a13n_harness.context import AgentContext
 from a13n_harness.environment.models import EnvironmentError
+from a13n_harness.environment.session_recovery import envd_session_notifications
 from a13n_harness.errors import DefinitionError, EnvironmentActivationError
 from a13n_harness.events import HarnessExtensionEvent
 from a13n_harness.tool_execution import _OWNED_TOOL_EXECUTION
@@ -459,8 +460,20 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
         )
         if unsupported:
             ctx.deps._tool_executions.block_handoff(call_id)
+        bridge = ctx.deps._steering
+
+        async def notify_session_replaced(session_id: str) -> None:
+            if bridge is not None:
+                await bridge.notify(
+                    "The Envd Session was replaced. Handles from the previous Session are no longer valid. "
+                    "Use fresh operations; previous operations were not replayed.",
+                    source="envd_session",
+                    references=(session_id,),
+                )
+
         try:
-            return await self._authorize_and_call(name, tool_args, ctx, tool)
+            with envd_session_notifications(notify_session_replaced):
+                return await self._authorize_and_call(name, tool_args, ctx, tool)
         finally:
             # Native ToolManager records success immediately after this return.
             # Reserving here covers nested and foreground calls with one ledger.

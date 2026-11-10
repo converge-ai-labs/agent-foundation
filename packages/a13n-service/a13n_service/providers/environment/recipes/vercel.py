@@ -10,13 +10,15 @@ class VercelRecipe(VercelEnvironmentConfiguration):
     @model_validator(mode="before")
     @classmethod
     def automatic_desktop(cls, value: object) -> object:
-        if isinstance(value, dict) and value.get("desktop") is True:
+        if isinstance(value, dict) and (
+            value.get("desktop") is True or value.get("execution") in {"envd_http", "envd_ws"}
+        ):
             value = dict(value)
             value.setdefault("execution", "envd_http")
             value.setdefault("snapshot", "auto")
-            if value.get("snapshot") == "auto":
-                value.setdefault("desktop_assistance", True)
-                # Automatic desktops must also work on Vercel Hobby accounts.
+            if value.get("snapshot") in {None, "auto"}:
+                value.setdefault("desktop_assistance", value.get("desktop", False))
+                # Automatic targets must also work on Vercel Hobby accounts.
                 value.setdefault("timeout_seconds", 2700)
         return value
 

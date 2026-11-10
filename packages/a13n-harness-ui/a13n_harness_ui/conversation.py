@@ -59,7 +59,11 @@ def _projected_excerpt(content: Iterable[tuple[str | dict, ContentMetadata]]) ->
     attachments: list[str] = []
     for value, metadata in content:
         extra = metadata.model_extra or {}
-        if not metadata.display or extra.get("a13n.steering-source") in {"background_process", "async_subagent"}:
+        if not metadata.display or extra.get("a13n.steering-source") in {
+            "background_process",
+            "async_subagent",
+            "envd_session",
+        }:
             continue
         attachment = extra.get("harness_ui")
         if isinstance(attachment, dict) and isinstance(attachment.get("attachment"), dict):

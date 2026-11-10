@@ -54,8 +54,8 @@ class Cloud:
         self.closed += 1
 
 
-@pytest.fixture
-async def setup(service, monkeypatch, runs_kit):
+@pytest.fixture(params=[True, False], ids=["desktop", "headless"])
+async def setup(service, monkeypatch, runs_kit, request):
     await runs_kit.pause_sweeps(service)
     cloud = Cloud()
     monkeypatch.setattr(builds, "_builder", lambda *_: cloud)
@@ -75,7 +75,7 @@ async def setup(service, monkeypatch, runs_kit):
         json={
             "name": "Desktop",
             "provider_id": p.json()["id"],
-            "config": {"recipe": {"desktop": True}},
+            "config": {"recipe": {"desktop": request.param}},
         },
     )
     assert t.status_code == 201, t.text
@@ -246,7 +246,9 @@ async def test_expired_preparation_fails_before_cloud_work(setup):
 async def test_provider_and_manifest_revision_isolate_reusable_snapshots(setup, monkeypatch):
     op = await setup.create()
     capability = builds._capability(setup.service.runtime)
-    monkeypatch.setattr(builds, "_capability", lambda _: replace(capability, revision=lambda: "next-release"))
+    monkeypatch.setattr(
+        builds, "_capability", lambda _: replace(capability, revision=lambda profile, base_image: "next-release")
+    )
     other = await setup.create()
     assert other.daytona_desktop_snapshot != op.daytona_desktop_snapshot
     with pytest.raises(EnvironmentProviderError):
@@ -254,3 +256,33 @@ async def test_provider_and_manifest_revision_isolate_reusable_snapshots(setup, 
             setup.service.runtime, op.daytona_desktop_snapshot, replace(op.target.account, id="another-provider")
         )
     assert not setup.cloud.calls
+
+
+@pytest.mark.parametrize("base_image", [None, "registry.example/base@sha256:" + "a" * 64])
+async def test_profiles_have_separate_frozen_snapshots(setup, base_image):
+    op = await setup.create()
+    other_desktop = not op.target.recipe["desktop"]
+    client = setup.service.client
+    template = await client.post(
+        "/api/v1/environment-templates",
+        json={
+            "name": "Other profile",
+            "provider_id": op.target.account.id,
+            "config": {"recipe": {"desktop": other_desktop, "base_image": base_image}},
+        },
+    )
+    assert template.status_code == 201, template.text
+    environment = await client.post("/api/v1/environments", json={"template_id": template.json()["id"]})
+    assert environment.status_code == 201, environment.text
+    other = await lifecycle.claim(setup.service.runtime, environment.json()["id"], owner="test")
+    assert other is not None and other.daytona_desktop_snapshot != op.daytona_desktop_snapshot
+    async with transaction(setup.service.runtime.storage) as session:
+        first_row = await session.get(builds.DaytonaDesktopSnapshotRow, op.daytona_desktop_snapshot)
+        other_row = await session.get(builds.DaytonaDesktopSnapshotRow, other.daytona_desktop_snapshot)
+        first_manifest, other_manifest = dict(first_row.manifest), dict(other_row.manifest)
+    assert ("python3" in first_manifest["dockerfile"]) is op.target.recipe["desktop"]
+    assert ("python3" in other_manifest["dockerfile"]) is other_desktop
+    assert first_manifest != other_manifest
+    if base_image is not None:
+        assert other_manifest["dockerfile"].startswith("FROM " + base_image + "\n")
+        assert "envd_base_unsupported" in other_manifest["dockerfile"]

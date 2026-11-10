@@ -102,11 +102,19 @@ async def setup(service, monkeypatch, runs_kit):
     )
     assert t.status_code == 201, t.text
 
-    async def create():
+    async def create(*, legacy=True):
         r = await service.client.post("/api/v1/environments", json={"template_id": t.json()["id"]})
         assert r.status_code == 201, r.text
         op = await lifecycle.claim(service.runtime, r.json()["id"], owner="test")
-        assert op is not None and op.vercel_desktop_snapshot is not None
+        assert op is not None and op.vercel_desktop_snapshot is None
+        if legacy:
+            # Seed a pre-upgrade handle: new automatic instances no longer bind snapshot jobs.
+            async with transaction(service.runtime.storage) as session:
+                row = await session.get(EnvironmentRow, op.environment_id)
+                key = await builds.bind(service.runtime, session, row, op.target.account)
+                handle = Handle.model_validate(row.handle)
+                row.handle = handle.model_copy(update={"vercel_desktop_snapshot": key}).model_dump(mode="json")
+            op = replace(op, vercel_desktop_snapshot=key)
         return op
 
     return SimpleNamespace(service=service, cloud=cloud, create=create)
@@ -283,3 +291,31 @@ async def test_failed_cached_snapshot_requires_cleanup_before_rebuild(setup):
     with pytest.raises(EnvironmentProviderError):
         await builds.prepare(runtime, op.vercel_desktop_snapshot, op.target.account)
     assert cloud.image is None and cloud.calls[-2:] == ["delete_snapshot", "delete_builder"]
+
+
+async def test_new_automatic_targets_skip_snapshot_build_and_checkpoint_pending(setup, monkeypatch):
+    from a13n_harness.environment.models import EnvironmentState
+    from a13n_service.providers.environment.management import Pending
+
+    runtime = setup.service.runtime
+    op = await setup.create(legacy=False)
+    assert op.vercel_desktop_snapshot is None
+    assert op.target.recipe["snapshot"] == "auto"
+    state = EnvironmentState(provider_key="vercel", state_version="1", state={"target_id": "owned-final"})
+    provider = AsyncMock()
+    provider.create.return_value = Pending(state, retry_after_seconds=3, settled=True)
+    monkeypatch.setattr(lifecycle, "open_provider", AsyncMock(return_value=provider))
+    result = await lifecycle.perform(runtime, op)
+    assert result.pending and result.settled and result.state == state
+    assert result.retry_after_seconds == 3 and result.fault is None
+    await lifecycle.publish(runtime, op, result)
+    async with transaction(runtime.storage) as session:
+        row = await session.get(EnvironmentRow, op.environment_id)
+        handle = Handle.model_validate(row.handle)
+        assert handle.state == state and handle.vercel_desktop_snapshot is None
+        assert row.next_operation_at is not None and row.failure is None
+        assert row.status == "creating" and row.operation_id == op.operation_id
+    progress = await setup.service.client.get(f"/api/v1/environments/{op.environment_id}/creation")
+    assert progress.status_code == 200 and progress.json()["stage"] == "building"
+    assert not setup.cloud.calls
+    provider.close.assert_awaited_once()

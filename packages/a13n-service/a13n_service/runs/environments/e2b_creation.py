@@ -40,14 +40,22 @@ def _automatic(row: EnvironmentRow, handle: Handle | None) -> bool:
             or handle.vercel_desktop_snapshot
             or (
                 row.provider_identity
+                and row.provider_identity.get("type") == "vercel"
+                and handle.recipe.get("execution") in {"envd_http", "envd_ws"}
+                and handle.recipe.get("snapshot") in {None, "auto"}
+            )
+            or (
+                row.provider_identity
                 and (
                     row.provider_identity.get("type") == "sprites"
-                    or (row.provider_identity.get("type") == "e2b" and handle.recipe.get("template") == "auto")
+                    or (
+                        row.provider_identity.get("type") == "e2b"
+                        and (handle.recipe.get("template") == "auto" or handle.recipe.get("preparation") == "headless")
+                    )
                     or (row.provider_identity.get("type") == "modal" and handle.recipe.get("image") == "auto")
                     or (row.provider_identity.get("type") == "daytona" and handle.recipe.get("snapshot") == "auto")
-                    or (row.provider_identity.get("type") == "vercel" and handle.recipe.get("snapshot") == "auto")
                 )
-                and handle.recipe.get("desktop")
+                and handle.recipe.get("execution") in {"envd_http", "envd_ws"}
             )
         )
     )
@@ -73,6 +81,21 @@ async def progress(runtime: Runtime, actor: Principal, workspace_id: str, identi
             stage = "inactive"
         elif row.failure and row.failure["permanent"]:
             stage, ended = "failed", row.failure["at"]
+        elif (
+            row.provider_identity
+            and row.provider_identity.get("type") == "vercel"
+            and not handle.vercel_desktop_snapshot
+        ):
+            stage = "building" if handle.state is not None else "preparing"
+        elif (
+            row.provider_identity
+            and row.provider_identity.get("type") == "e2b"
+            and handle.recipe.get("preparation") == "headless"
+        ):
+            phase = handle.state.state.get("preparation_phase") if handle.state else None
+            stage = (
+                "building" if phase == "installing" else "starting" if phase in {"starting", "ready"} else "preparing"
+            )
         elif row.provider_identity and row.provider_identity.get("type") == "sprites":
             phase = (
                 handle.state.state.get("desktop_phase")
@@ -155,12 +178,16 @@ async def retry(
         if handle.recipe.get("image") == "auto" and handle.modal_desktop_image:
             image = await session.get(modal_images.ModalDesktopImageRow, handle.modal_desktop_image)
             if image is not None and image.phase == "failed":
-                key = await modal_images.bind(runtime, session, row, provider)
+                key = await modal_images.bind(
+                    runtime, session, row, provider, profile="desktop" if handle.recipe.get("desktop") else "headless"
+                )
                 row.handle = handle.model_copy(update={"modal_desktop_image": key}).model_dump(mode="json")
         if handle.recipe.get("snapshot") == "auto" and handle.daytona_desktop_snapshot:
             snapshot = await session.get(daytona_snapshots.DaytonaDesktopSnapshotRow, handle.daytona_desktop_snapshot)
             if snapshot is not None and snapshot.phase == "failed":
-                key = await daytona_snapshots.bind(runtime, session, row, provider)
+                key = await daytona_snapshots.bind(
+                    runtime, session, row, provider, profile="desktop" if handle.recipe.get("desktop") else "headless"
+                )
                 row.handle = handle.model_copy(update={"daytona_desktop_snapshot": key}).model_dump(mode="json")
         if handle.recipe.get("snapshot") == "auto" and handle.vercel_desktop_snapshot:
             snapshot = await session.get(vercel_snapshots.VercelDesktopSnapshotRow, handle.vercel_desktop_snapshot)

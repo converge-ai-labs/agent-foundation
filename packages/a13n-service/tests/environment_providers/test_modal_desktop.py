@@ -115,7 +115,7 @@ async def test_readiness_requires_actual_computer_and_closes_connection(monkeypa
     await manager._check_envd()
     assert execution.open.await_count == execution.close.await_count == 2
     execution.check_ready.assert_awaited_with(frozenset({"computer"}))
-    command.assert_awaited_once()
+    command.assert_not_awaited()
 
 
 @pytest.mark.anyio

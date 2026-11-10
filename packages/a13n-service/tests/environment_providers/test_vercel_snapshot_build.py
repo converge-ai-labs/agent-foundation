@@ -86,8 +86,7 @@ async def test_automatic_service_recipe_and_custom_compatibility():
     assert VercelRecipe().execution == "native"
     assert not VercelRecipe(desktop=True, execution="envd_http", snapshot="snap_custom").desktop_assistance
     assert not VercelRecipe(desktop=True, desktop_assistance=False).desktop_assistance
-    with pytest.raises(ValueError):
-        VercelRecipe(execution="envd_http", snapshot="auto")
+    assert VercelRecipe(execution="envd_http", snapshot="auto").snapshot == "auto"
 
 
 async def test_deleted_snapshot_metadata_confirms_cleanup(monkeypatch):

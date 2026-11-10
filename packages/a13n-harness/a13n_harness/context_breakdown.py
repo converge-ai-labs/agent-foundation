@@ -99,6 +99,7 @@ def _untagged_source_group(source: str | None, default: ContextGroupName) -> Con
         "a13n.runtime-context",
         "a13n.async_subagent",
         "a13n.background_process",
+        "a13n.envd_session",
         "tool_execution.summary",
         "codeact.stored_keys",
     ) or (source or "").startswith("a13n.working-state"):

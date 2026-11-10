@@ -8,6 +8,8 @@ from a13n_harness.providers.environment.daytona.shared import DaytonaConnectionC
 from a13n_harness.providers.environment.native.configuration import TokenCredential
 from pydantic import BaseModel, JsonValue
 
+from .envd_assets import Profile
+
 
 class Snapshot(BaseModel):
     id: str
@@ -23,6 +25,6 @@ class DaytonaSnapshotAPI(Protocol):
 
 @dataclass(frozen=True)
 class DaytonaDesktopPreparation:
-    specification: Callable[[], dict[str, JsonValue]]
-    revision: Callable[[], str]
+    specification: Callable[[Profile, str | None], dict[str, JsonValue]]
+    revision: Callable[[Profile, str | None], str]
     connect: Callable[[DaytonaConnectionConfiguration, TokenCredential], DaytonaSnapshotAPI]

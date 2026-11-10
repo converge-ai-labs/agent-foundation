@@ -69,12 +69,7 @@ async def http_session(
         async def credential() -> HttpEnvdCredential:
             token = await execute_command(
                 sandbox,
-                [
-                    "python3",
-                    "-I",
-                    "-c",
-                    "import sys; sys.stdout.write(open('/var/lib/a13n-envd/http-token').read(4097))",
-                ],
+                ["head", "-c", "4097", "/var/lib/a13n-envd/http-token"],
                 10,
             )
             try:

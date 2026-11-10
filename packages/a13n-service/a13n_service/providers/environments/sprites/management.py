@@ -2,7 +2,6 @@
 
 import shlex
 
-from a13n_envd_client.eip.v1.models import ComputerDescribeParams, EIPCallContext
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
 from a13n_harness.environment.errors import EnvironmentProviderOutcomeCertainty as Certainty
 from a13n_harness.environment.models import EnvironmentState
@@ -10,6 +9,7 @@ from a13n_harness.providers.environment.native.configuration import TokenCredent
 from a13n_harness.providers.environment.native.environment import NativeRuntime
 from a13n_harness.providers.environment.native.errors import failure
 from a13n_harness.providers.environment.native.http import decode_response
+from a13n_harness.providers.environment.remote_envd.environment import RemoteEnvdExecution
 from a13n_harness.providers.environment.sprites.commands import command
 from a13n_harness.providers.environment.sprites.http import HttpReference, http_session
 from a13n_harness.providers.environment.sprites.shared import (
@@ -20,6 +20,8 @@ from a13n_harness.providers.environment.sprites.shared import (
 )
 
 from a13n_service.providers.environment import desktop_access as access
+from a13n_service.providers.environment.envd_assets import Profile
+from a13n_service.providers.environment.envd_readiness import wait_until_ready
 from a13n_service.providers.environment.native import NativeManagement
 from a13n_service.providers.environment.recipes.sprites import SpritesRecipe
 
@@ -40,6 +42,7 @@ class SpritesManagement(SpritesReference, NativeManagement[SpritesEnvironmentCon
         super().__init__(configuration, environment_id, state, runtime)
         self.recipe = configuration
         self.operation_id = operation_id
+        self.profile: Profile = "desktop" if configuration.desktop else "headless"
 
     async def create(self) -> None:
         info = await self.lookup()
@@ -61,8 +64,8 @@ class SpritesManagement(SpritesReference, NativeManagement[SpritesEnvironmentCon
                 raise failure("sprites", "provider_target_conflict", Category.CONFLICT, certainty=Certainty.UNKNOWN)
             self.observe(
                 SpritesTargetState(
-                    desktop_phase="installing" if self.config.desktop else "ready",
-                    install_revision=revision() if self.config.desktop else None,
+                    desktop_phase="installing" if self.config.execution != "native" else "ready",
+                    install_revision=revision(self.profile) if self.config.execution != "native" else None,
                     backing_id=info.id,
                     target_id=info.name,
                     environment_id=self.owner,
@@ -70,14 +73,16 @@ class SpritesManagement(SpritesReference, NativeManagement[SpritesEnvironmentCon
                 )
             )
         self._info = info
-        if self.config.desktop:
+        if self.config.execution != "native":
             assert self.target is not None
             if self.target.install_revision is None:
                 # A lost allocation acknowledgement is reconciled by ownership labels.
                 self.observe(
-                    self.target.model_copy(update={"desktop_phase": "installing", "install_revision": revision()})
+                    self.target.model_copy(
+                        update={"desktop_phase": "installing", "install_revision": revision(self.profile)}
+                    )
                 )
-            if self.target.install_revision != revision():
+            if self.target.install_revision != revision(self.profile):
                 raise failure("sprites", "desktop_install_revision_changed", Category.CONFLICT)
             if self.target.desktop_phase in {"installing", "failed"}:
                 result = await install(self, self.operation_id)
@@ -115,12 +120,16 @@ class SpritesManagement(SpritesReference, NativeManagement[SpritesEnvironmentCon
                 "export A13N_ENVD_FULL_CONTROL=true",
                 "export A13N_ENVD_STATE_DIR=/var/lib/a13n-envd",
                 "export A13N_ENVD_RUNTIME_DIR=/run/a13n-envd-state",
-                "export A13N_DESKTOP_ACCESS=true",
+                "export A13N_DESKTOP_ACCESS=" + ("true" if self.recipe.desktop_assistance else "false"),
                 "exec 9>/var/lib/a13n-envd/start.lock",
                 "flock -n 9",
-                "rm -f /tmp/.X99-lock /tmp/.X11-unix/X99 /run/a13n-desktop-access/control.sock",
+                *(
+                    ["rm -f /tmp/.X99-lock /tmp/.X11-unix/X99 /run/a13n-desktop-access/control.sock"]
+                    if self.config.desktop
+                    else []
+                ),
                 "cd /workspace",
-                "exec a13n-sandbox-entrypoint a13n-sandbox-desktop",
+                "exec a13n-sandbox-entrypoint " + ("a13n-sandbox-desktop" if self.config.desktop else "a13n-envd"),
                 "",
             ]
         )
@@ -147,7 +156,9 @@ class SpritesManagement(SpritesReference, NativeManagement[SpritesEnvironmentCon
             15,
             stdin=script,
         )
-        service = await self.transport().request("GET", self.path + "/services/a13n-desktop", missing=True)
+        service_name = "a13n-desktop" if self.config.desktop else "a13n-envd"
+        service_port = 6081 if self.config.desktop else 8888
+        service = await self.transport().request("GET", self.path + "/services/" + service_name, missing=True)
         if service is None:
             await command(
                 self,
@@ -155,13 +166,13 @@ class SpritesManagement(SpritesReference, NativeManagement[SpritesEnvironmentCon
                     "sprite-env",
                     "services",
                     "create",
-                    "a13n-desktop",
+                    service_name,
                     "--cmd",
                     "/usr/bin/sudo",
                     "--args",
                     "-n,/usr/local/bin/a13n-sprites-start",
                     "--http-port",
-                    "6081",
+                    str(service_port),
                     "--no-stream",
                 ],
                 30,
@@ -170,7 +181,7 @@ class SpritesManagement(SpritesReference, NativeManagement[SpritesEnvironmentCon
             not isinstance(service, dict)
             or service.get("cmd") != "/usr/bin/sudo"
             or service.get("args") != ["-n", "/usr/local/bin/a13n-sprites-start"]
-            or service.get("http_port") != 6081
+            or service.get("http_port") != service_port
         ):
             raise failure("sprites", "desktop_service_conflict", Category.CONFLICT)
         if self.config.execution == "envd_ws":
@@ -178,28 +189,26 @@ class SpritesManagement(SpritesReference, NativeManagement[SpritesEnvironmentCon
                 await self.desktop_access(access.Describe())
                 await self.transport().request("PUT", self.path, body={"url_settings": {"auth": "public"}})
             return
-        probe = """import socket,time
-for _ in range(150):
- try:
-  with socket.create_connection(('127.0.0.1',8888),timeout=1): pass
-  with socket.create_connection(('127.0.0.1',6081),timeout=1): pass
-  break
- except OSError: time.sleep(.2)
-else: raise RuntimeError('Desktop readiness timed out')
-"""
-        await command(self, ["python3", "-I", "-c", probe], 35)
-        reference = HttpReference(
-            self.config,
-            self.environment_id,
-            self.state,
-            NativeRuntime(self.backend, TokenCredential(api_key=self.token)),
-        )
-        async with http_session(reference) as binding:
-            description = await binding.session.client.computer_describe(
-                ComputerDescribeParams(context=EIPCallContext(operation_id="op-desktop-readiness"))
+        state = self.state
+        assert state is not None
+        runtime = NativeRuntime(self.backend, TokenCredential(api_key=self.token))
+
+        def readiness_execution() -> RemoteEnvdExecution:
+            reference = HttpReference(self.config, self.environment_id, state, runtime)
+            return RemoteEnvdExecution(
+                provider_key=self.provider_key,
+                environment_id=self.environment_id,
+                state=state,
+                working_directory="/workspace",
+                session_context=http_session(reference),
             )
-            if not description.observe_ready or not description.input_ready or not description.targets:
-                raise failure("sprites", "desktop_unavailable", Category.UNAVAILABLE)
+
+        await wait_until_ready(
+            readiness_execution,
+            provider_key=self.provider_key,
+            desktop=self.config.desktop,
+            timeout=min(40, self.config.request_timeout_seconds),
+        )
         # The guest authenticates every connection, even with a browser-reachable vendor route.
         if not self.recipe.desktop_assistance:
             return
@@ -223,11 +232,11 @@ else: raise RuntimeError('Desktop readiness timed out')
 
     async def start(self) -> None:
         self.require_target()
-        if self.config.desktop and self.target and self.target.desktop_phase != "ready":
+        if self.config.execution != "native" and self.target and self.target.desktop_phase != "ready":
             raise failure("sprites", "desktop_not_ready", Category.CONFLICT)
         if await self.lookup() is None:
             raise failure(self.provider_key, "provider_target_missing", Category.MISSING)
-        if self.config.desktop:
+        if self.config.execution != "native":
             await self._ready()
 
     async def stop(self) -> None:

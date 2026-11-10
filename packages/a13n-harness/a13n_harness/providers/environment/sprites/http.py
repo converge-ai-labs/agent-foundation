@@ -113,10 +113,10 @@ async def http_session(
             [
                 "sudo",
                 "-n",
-                "python3",
-                "-I",
+                "head",
                 "-c",
-                "import sys; sys.stdout.write(open('/var/lib/a13n-envd/http-token').read(4097))",
+                "4097",
+                "/var/lib/a13n-envd/http-token",
             ],
             15,
             max_output=4096,
@@ -134,7 +134,12 @@ async def http_session(
                 async with runtime.open_session(
                     expected_device_id=reference.owner,
                     session_recovery=session_recovery,
-                    required_methods=REQUIRED_METHODS | frozenset({"computer.describe", "computer.observe"}),
+                    required_methods=REQUIRED_METHODS
+                    | (
+                        frozenset({"computer.describe", "computer.observe"})
+                        if reference.config.desktop
+                        else frozenset()
+                    ),
                 ) as session:
                     yield session
     finally:

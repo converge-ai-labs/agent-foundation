@@ -9,7 +9,7 @@ license-files = ["LICENSE"]
 dependencies = [
     "docker>=7.2,<8",
     "e2b>=2.46.4,<3",
-    "modal>=1.5.5,<2",
+    "modal>=1.6.3,<2",
     "a13n-logging",
     "a13n-envd-client",
     "a13n-harness[e2b,kubernetes]",

@@ -72,5 +72,21 @@ def test_custom_images_keep_defaults_and_automatic_has_desktop_requirements():
     assert custom.desktop_assistance is False
     assert custom.memory == 1024
     assert ModalRecipe(desktop=True, desktop_assistance=False).desktop_assistance is False
-    with pytest.raises(ValueError):
-        ModalRecipe(image="auto")
+    headless = ModalRecipe(image="auto")
+    assert not headless.desktop and not headless.desktop_assistance
+    assert headless.cpu == 1 and headless.memory == 1024
+
+
+def test_headless_manifest_installs_only_runtime_assets_and_has_its_own_revision():
+    from a13n_service.providers.environments.modal.desktop_build import revision
+
+    headless = specification("headless")
+    desktop = specification("desktop")
+    headless_commands = "\n".join(headless["commands"])
+    assert "python3" not in headless_commands
+    assert "xvfb" not in headless_commands
+    assert "desktop.py" not in headless_commands
+    assert "entrypoint.sh" in headless_commands
+    assert "a13n-envd --version" in headless_commands
+    assert "python3" in "\n".join(desktop["commands"])
+    assert revision("headless") != revision("desktop")

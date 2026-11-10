@@ -43,12 +43,7 @@ async def http_session(
             raw = await command(
                 reference,
                 session_id,
-                [
-                    "python3",
-                    "-I",
-                    "-c",
-                    "import sys; sys.stdout.write(open('/var/lib/a13n-envd/http-token').read(4097))",
-                ],
+                ["head", "-c", "4097", "/var/lib/a13n-envd/http-token"],
                 sudo=True,
                 timeout=10,
                 max_output=4096,

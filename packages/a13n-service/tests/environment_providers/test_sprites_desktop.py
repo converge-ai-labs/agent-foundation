@@ -5,8 +5,6 @@ import base64
 import hashlib
 import json
 import sys
-from contextlib import asynccontextmanager
-from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import httpx2
@@ -36,8 +34,8 @@ def anyio_backend():
     return "asyncio"
 
 
-def manager(*, phase="ready", operation="op-first", token="fixture-secret"):
-    recipe = SpritesRecipe(desktop=True)
+def manager(*, phase="ready", operation="op-first", token="fixture-secret", desktop=True):
+    recipe = SpritesRecipe(desktop=desktop, execution="envd_http")
     state = EnvironmentState(
         provider_key="sprites",
         state_version="1",
@@ -47,7 +45,7 @@ def manager(*, phase="ready", operation="op-first", token="fixture-secret"):
             environment_id="env-fixture",
             configuration_fingerprint=recipe.fingerprint,
             desktop_phase=phase,
-            install_revision=revision(),
+            install_revision=revision("desktop" if desktop else "headless"),
         ).model_dump(mode="json"),
     )
     return SpritesManagement(
@@ -90,7 +88,9 @@ async def test_native_identity_and_automatic_desktop_defaults():
         recipe.fingerprint
         == SpritesEnvironmentConfiguration.model_validate(recipe.model_dump(exclude={"desktop_assistance"})).fingerprint
     )
-    for fields in ({"desktop_assistance": True}, {"desktop": True, "execution": "native"}, {"execution": "envd_http"}):
+    assert not SpritesRecipe(execution="envd_http").desktop
+    assert not SpritesRecipe(execution="envd_ws").desktop
+    for fields in ({"desktop_assistance": True}, {"desktop": True, "execution": "native"}):
         with pytest.raises(ValueError):
             SpritesRecipe(**fields)
 
@@ -167,23 +167,26 @@ async def test_pending_installation_retains_identity_and_never_allocates(monkeyp
         await manage.close()
 
 
-async def test_desktop_readiness_uses_bound_session(monkeypatch):
-    manage = manager()
+@pytest.mark.parametrize("desktop", [False, True])
+async def test_readiness_uses_authenticated_eip_and_native_service(monkeypatch, desktop):
+    manage = manager(desktop=desktop)
     manage.recipe = manage.recipe.model_copy(update={"desktop_assistance": False})
-    describe = AsyncMock(return_value=SimpleNamespace(observe_ready=True, input_ready=True, targets=["desktop"]))
-
-    @asynccontextmanager
-    async def session(reference):
-        assert reference.environment_id == manage.environment_id
-        yield SimpleNamespace(session=SimpleNamespace(client=SimpleNamespace(computer_describe=describe)))
-
+    wait = AsyncMock()
+    commands = AsyncMock()
     install_transport(monkeypatch, lambda request: httpx2.Response(404))
-    monkeypatch.setattr(management, "command", AsyncMock())
-    monkeypatch.setattr(management, "http_session", session)
+    monkeypatch.setattr(management, "command", commands)
+    monkeypatch.setattr(management, "wait_until_ready", wait)
     try:
         await manage._ready()
-        describe.assert_awaited_once()
-        assert describe.call_args.args[0].context.operation_id == "op-desktop-readiness"
+        wait.assert_awaited_once()
+        assert wait.call_args.kwargs["desktop"] is desktop
+        script = commands.call_args_list[0].kwargs["stdin"]
+        assert ("a13n-sandbox-desktop" in script) is desktop
+        assert "python3" not in script
+        args = commands.call_args_list[1].args[1]
+        assert args[3] == ("a13n-desktop" if desktop else "a13n-envd")
+        assert args[args.index("--http-port") + 1] == ("6081" if desktop else "8888")
+        assert commands.await_count == 2
     finally:
         await manage.close()
 
@@ -233,3 +236,45 @@ async def test_installer_rejoins_live_child_and_retries_only_explicit_failure(tm
         while (root / "status").read_text() != "ready":
             await asyncio.sleep(0.02)
     assert await run("exit 1", "later") == "ready"
+
+
+async def test_headless_installer_has_no_desktop_or_python_dependency():
+    from a13n_service.providers.environments.sprites.desktop_install import installation_script
+
+    headless = installation_script("headless")
+    for dependency in ("python3", "xvfb", "google-chrome", "desktop.py", "desktop_guest.py", "init-skills.sh"):
+        assert dependency not in headless
+        assert dependency in installation_script("desktop")
+    assert revision("headless") != revision("desktop")
+
+
+async def test_headless_shell_job_rejoins_and_only_explicitly_retries(tmp_path, monkeypatch):
+    from a13n_service.providers.environments.sprites import desktop_install as install
+
+    root = tmp_path / "job"
+    script = "sleep .2; exit 1"
+    monkeypatch.setattr(install, "installation_script", lambda _: script)
+
+    async def dispatch(attempt):
+        process = await asyncio.create_subprocess_exec(
+            "sh", "-c", install.headless_dispatch(attempt, root=str(root)), stdout=asyncio.subprocess.PIPE
+        )
+        output, _ = await process.communicate()
+        assert process.returncode == 0
+        return output.decode().strip()
+
+    assert await dispatch("first") == "running"
+    assert await dispatch("first") == "running"
+    async with asyncio.timeout(5):
+        while (root / "status").read_text() != "failed":
+            await asyncio.sleep(0.02)
+    assert await dispatch("first") == "failed"
+    assert await dispatch("retry") == "running"
+    async with asyncio.timeout(5):
+        while (root / "status").read_text() != "failed":
+            await asyncio.sleep(0.02)
+    assert (root / "attempt").read_text() == "retry"
+    assert (root / "output").exists()
+    # A different frozen script cannot replace this target's preparation.
+    script = "exit 0"
+    assert await dispatch("other-revision") == "conflict"

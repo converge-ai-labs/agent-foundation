@@ -510,3 +510,136 @@ async def test_local_exact_recovery_skips_startup_secret_resolution(binary, tmp_
                 configuration, runtime=runtime, environment_id="view", session_recovery=stale
             ).open()
         assert lost.value.code == "environment_not_found"
+
+
+async def test_session_replacement_notice_follows_checkpoint_and_shared_acquisition(binary, tmp_path):
+    from a13n_harness.environment.attachments import DeviceEIPSessionSource
+    from a13n_harness.environment.session_recovery import EnvdSessionRecovery, envd_session_notifications
+
+    notices = []
+    checkpoints = []
+
+    async def checkpoint(state):
+        checkpoints.append(state)
+
+    recovery = EnvdSessionRecovery(checkpoint=checkpoint)
+
+    async def notify(session_id):
+        assert not recovery._lock.locked()
+        assert recovery.state.descriptor.session_id == checkpoints[-1].descriptor.session_id == session_id
+        notices.append(session_id)
+
+    async with LocalEnvdProviderRuntime(
+        executable=binary,
+        allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(parent=tmp_path),
+        configuration=LocalEnvdLaunchConfiguration(default_working_directory=tmp_path),
+    ) as runtime:
+        device = await runtime.acquire_device()
+
+        def borrow(owner=recovery):
+            return DeviceEIPSessionSource(device, session_recovery=owner).open_session(
+                expected_device_id=device.descriptor.device_id, required_methods=frozenset()
+            )
+
+        with envd_session_notifications(notify):
+            async with borrow() as first:
+                original_id = first.session_id
+            async with borrow() as attached:
+                assert attached.session_id == original_id
+                await attached.close()
+            assert notices == []
+
+            async def acquire():
+                async with borrow() as session:
+                    await asyncio.sleep(0)
+                    return session.session_id
+
+            successors = await asyncio.gather(*(acquire() for _ in range(3)))
+            assert len(set(successors)) == 1 and successors[0] != original_id
+            assert notices == [successors[0]]
+            with pytest.raises(EnvironmentError, match="original Session"):
+                async with borrow(recovery.exact(original_id)):
+                    pytest.fail("exact work must not open a successor")
+            assert notices == [successors[0]]
+
+
+async def test_session_replacement_checkpoint_failure_emits_no_notice(binary, tmp_path):
+    from a13n_harness.environment.attachments import DeviceEIPSessionSource
+    from a13n_harness.environment.session_recovery import EnvdSessionRecovery, envd_session_notifications
+
+    original_id = None
+    notices = []
+
+    async def checkpoint(state):
+        if original_id is not None and state.descriptor.session_id != original_id:
+            raise RuntimeError("checkpoint unavailable")
+
+    async def notify(session_id):
+        notices.append(session_id)
+
+    recovery = EnvdSessionRecovery(checkpoint=checkpoint)
+    async with LocalEnvdProviderRuntime(
+        executable=binary,
+        allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(parent=tmp_path),
+        configuration=LocalEnvdLaunchConfiguration(default_working_directory=tmp_path),
+    ) as runtime:
+        device = await runtime.acquire_device()
+
+        def borrow():
+            return DeviceEIPSessionSource(device, session_recovery=recovery).open_session(
+                expected_device_id=device.descriptor.device_id, required_methods=frozenset()
+            )
+
+        with envd_session_notifications(notify):
+            async with borrow() as original:
+                original_id = original.session_id
+                await original.close()
+            with pytest.raises(RuntimeError, match="checkpoint unavailable"):
+                async with borrow():
+                    pytest.fail("uncheckpointed successor must not be exposed")
+        assert notices == []
+        assert recovery._users == 0 and recovery._session is None
+        assert not device._sessions
+
+
+@pytest.mark.parametrize("cancel", [False, True])
+async def test_session_notice_failure_preserves_acquisition_or_cancellation(binary, tmp_path, cancel):
+    from a13n_harness.environment.attachments import DeviceEIPSessionSource
+    from a13n_harness.environment.session_recovery import EnvdSessionRecovery, envd_session_notifications
+
+    recovery = EnvdSessionRecovery()
+
+    async def notify(session_id):
+        assert recovery.state.descriptor.session_id == session_id
+        if cancel:
+            raise asyncio.CancelledError()
+        raise RuntimeError("notice unavailable")
+
+    async with LocalEnvdProviderRuntime(
+        executable=binary,
+        allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(parent=tmp_path),
+        configuration=LocalEnvdLaunchConfiguration(default_working_directory=tmp_path),
+    ) as runtime:
+        device = await runtime.acquire_device()
+
+        def borrow():
+            return DeviceEIPSessionSource(device, session_recovery=recovery).open_session(
+                expected_device_id=device.descriptor.device_id, required_methods=frozenset()
+            )
+
+        async with borrow() as original:
+            original_id = original.session_id
+            await original.close()
+
+        async def acquire():
+            with envd_session_notifications(notify):
+                async with borrow() as successor:
+                    assert successor.session_id != original_id
+
+        if cancel:
+            with pytest.raises(asyncio.CancelledError):
+                await acquire()
+        else:
+            await acquire()
+        assert recovery._users == 0 and recovery._session is None
+        assert not device._sessions

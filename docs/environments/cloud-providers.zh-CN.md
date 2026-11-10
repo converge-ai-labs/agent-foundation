@@ -163,16 +163,16 @@ Agent 操作在 `/workspace` 通过私有 8888 端口使用 EIP。Daytona 代理
 
 ### Modal
 
-在 Service / Console 中准备自动桌面：
+在 Service 中自动准备 Envd：
 
 1. 提供 Modal Token ID 和 Token Secret。凭据选择账号，`workspace` 是可选标签。
-2. 启用 Desktop，省略 `image` 或使用 `auto`。空连接设置选择 `main` 环境中的 `a13n-sandboxes` App，首次准备时按需创建 App。
+2. 省略 `image` 或使用 `auto`。保持 `desktop=false` 可使用无桌面的 Files & Shell；启用 Desktop 可使用 Computer 工具。空连接设置选择 `main` 环境中的 `a13n-sandboxes` App，首次准备时按需创建 App。
 3. 创建环境以开始准备。查看构建阶段和已用时间；离开 Console 不会停止构建。
-4. 打开就绪预览，或在确认失败后修复问题再重试。
+4. 使用就绪环境，或在确认失败后修复问题再重试。桌面配置还提供预览。
 
-首次创建从固定版本的公开文件构建，后续复用不可变镜像 ID。默认 2 CPU、4096 MiB、3600 秒并启用人工协助，保留显式覆盖值。构建记录按工作区、Provider、凭据版本和清单隔离。复用检查当前镜像访问权；等待中断后重新等待同一内容寻址构建，不分配临时沙箱。镜像和 App 保留为账号资源。
+首次创建从固定版本的公开文件构建，后续复用相应配置的不可变镜像 ID。无桌面镜像不安装桌面、浏览器或客体 Python 依赖。自动桌面默认 2 CPU、4096 MiB、3600 秒并启用人工协助，保留显式覆盖值。构建记录按工作区、Provider、凭据版本和清单隔离。复用检查当前镜像访问权；等待中断后重新等待同一内容寻址构建，不分配临时沙箱。镜像和 App 保留为账号资源。
 
-自定义镜像和无桌面目标需要显式兼容的 `image` 及已有 App。用 `modal token new` 登录，准备 Linux amd64 Envd 二进制，再从仓库根目录运行可选构建器：
+自定义镜像需要显式兼容的 `image` 及已有 App。用 `modal token new` 登录，准备 Linux amd64 Envd 二进制，再从仓库根目录运行可选构建器：
 
 ```sh
 uv run --locked python examples/environment-provider/modal_desktop_image.py \

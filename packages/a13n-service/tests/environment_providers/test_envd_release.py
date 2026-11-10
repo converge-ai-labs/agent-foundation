@@ -6,6 +6,7 @@ import os
 import subprocess
 import sys
 import tarfile
+from pathlib import Path
 
 import pytest
 from a13n_service.providers.environment import envd_release
@@ -21,14 +22,17 @@ def release(tmp_path, monkeypatch):
     curl.write_text(
         f"#!{sys.executable}\n"
         "import os, pathlib, shutil, sys\n"
-        "url = sys.argv[-3]\n"
+        "url = next(a for a in sys.argv[1:] if a.startswith('https://'))\n"
         "root = pathlib.Path(os.environ['RELEASE_FIXTURE'])\n"
         "with (root / 'requests').open('a') as log: log.write(url + '\\n')\n"
-        "shutil.copyfile(root / url.rsplit('/', 1)[1], sys.argv[-1])\n"
+        "shutil.copyfile(root / url.rsplit('/', 1)[1], sys.argv[sys.argv.index('-o') + 1])\n"
     )
     curl.chmod(0o755)
     monkeypatch.setenv("PATH", f"{tools}:{os.environ['PATH']}")
     monkeypatch.setenv("RELEASE_FIXTURE", str(assets))
+    installer = Path(__file__).resolve().parents[4] / "scripts/install-a13n-envd.sh"
+    (assets / installer.name).write_bytes(installer.read_bytes())
+    assert hashlib.sha256(installer.read_bytes()).hexdigest() == envd_release.INSTALLER_SHA256
     return assets
 
 
@@ -41,6 +45,9 @@ def prepare(release, *, prefix="", failure=None):
         member = tarfile.TarInfo("other" if failure == "executable" else "a13n-envd")
         member.size = len(binary)
         output.addfile(member, io.BytesIO(binary))
+        license = tarfile.TarInfo("LICENSE")
+        license.size = 7
+        output.addfile(license, io.BytesIO(b"license"))
     if failure == "archive":
         archive.write_bytes(b"not a gzip archive")
     digest = hashlib.sha256(archive.read_bytes()).hexdigest()
@@ -78,7 +85,11 @@ def test_installer_verifies_release_and_publishes_binary(release, tmp_path, pref
         "https://github.com/converge-ai-labs/agent-foundation/releases/download/"
         f"release/a13n-envd-v{envd_release.VERSION}"
     )
-    assert (release / "requests").read_text().splitlines() == [f"{base}/{name}", f"{base}/SHA256SUMS"]
+    assert (release / "requests").read_text().splitlines() == [
+        f"https://raw.githubusercontent.com/converge-ai-labs/agent-foundation/{envd_release.SOURCE_REVISION}/scripts/install-a13n-envd.sh",
+        f"{base}/{name}",
+        f"{base}/SHA256SUMS",
+    ]
     assert not list(tmp_path.glob(".a13n-envd-*"))
 
 
@@ -94,4 +105,21 @@ def test_failed_install_preserves_existing_binary(release, tmp_path, failure):
     assert result.returncode != 0
     assert destination.read_bytes() == b"existing executable"
     assert destination.stat().st_mode & 0o777 == 0o755
+    assert not list(tmp_path.glob(".a13n-envd-*"))
+
+
+@pytest.mark.parametrize("failure", ["missing", "checksum"])
+def test_unverified_installer_is_never_executed(release, tmp_path, failure):
+    prepare(release)
+    installer = release / "install-a13n-envd.sh"
+    if failure == "missing":
+        installer.unlink()
+    else:
+        installer.write_text('#!/bin/sh\ntouch "$RELEASE_FIXTURE/executed"\n')
+    destination = tmp_path / "envd"
+    destination.write_bytes(b"previous executable")
+    result = run_installer(destination)
+    assert result.returncode != 0
+    assert destination.read_bytes() == b"previous executable"
+    assert not (release / "executed").exists()
     assert not list(tmp_path.glob(".a13n-envd-*"))

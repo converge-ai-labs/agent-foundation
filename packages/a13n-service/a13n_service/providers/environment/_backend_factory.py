@@ -22,7 +22,7 @@ from pydantic import BaseModel
 from ._backend import ManagementBackend
 from .desktop_access import Reply, Request
 from .errors import EnvironmentManagementCancelled, EnvironmentManagementError
-from .management import EnvironmentProvider, EnvironmentStatus
+from .management import EnvironmentProvider, EnvironmentStatus, ManagementResult, Pending
 from .metrics import DeviceObservation, MetricsLaunch, ScrapeTarget
 from .websocket import WebSocketBootstrap
 
@@ -150,21 +150,25 @@ class BackendProvider[C: BaseModel, K: BaseModel, E: BaseModel, R](EnvironmentPr
         operation_id: str,
         state: EnvironmentState | None = None,
         metrics: MetricsLaunch | None = None,
-    ) -> EnvironmentState | None:
+    ) -> ManagementResult:
         async with self._operation(environment, environment_id, state, operation_id) as target:
             if metrics is not None:
                 target.configure_metrics(metrics)
             self._require_websocket(environment)
-            await target.create()
+            result = await target.create()
+            if isinstance(result, Pending):
+                return result
             await self._wait_ready(target, operation_id)
             return target.state
 
     async def start(
         self, environment: object, *, environment_id: str, operation_id: str, state: EnvironmentState | None
-    ) -> EnvironmentState | None:
+    ) -> ManagementResult:
         async with self._operation(environment, environment_id, state, operation_id) as target:
             self._require_websocket(environment)
-            await target.start()
+            result = await target.start()
+            if isinstance(result, Pending):
+                return result
             await self._wait_ready(target, operation_id)
             return target.state
 

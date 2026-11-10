@@ -163,16 +163,16 @@ Stop/start preserves files but recreates desktop processes and invalidates old o
 
 ### Modal
 
-For an automatic desktop in Service / Console:
+For automatic Envd preparation in Service:
 
 1. Supply the Modal Token ID and Token Secret. Credentials choose the account; `workspace` is an optional label.
-2. Enable Desktop and leave `image` unset or use `auto`. Empty connection settings choose App `a13n-sandboxes` in environment `main`, creating the App on first preparation if needed.
+2. Leave `image` unset or use `auto`. Keep `desktop=false` for headless Files & Shell, or enable Desktop for Computer tools. Empty connection settings choose App `a13n-sandboxes` in environment `main`, creating the App on first preparation if needed.
 3. Create the environment to start preparation. Follow build stages and elapsed time; leaving Console does not stop the build.
-4. Open the ready preview, or correct a confirmed failure before retrying.
+4. Use the ready environment, or correct a confirmed failure before retrying. Desktop profiles also provide a preview.
 
-The first creation builds from pinned public artifacts; later creations reuse the immutable image ID. Defaults are 2 CPUs, 4096 MiB, 3600 seconds, and human assistance enabled, with explicit overrides retained. Build records are scoped to workspace, Provider, credential version, and manifest. Reuse checks current image access; interrupted waits rejoin the same content-addressed build without temporary sandboxes. Images and the App remain account assets.
+The first creation builds from pinned public artifacts; later creations reuse the immutable image ID for the selected profile. Headless images omit desktop, browser and guest Python dependencies. Automatic desktop defaults are 2 CPUs, 4096 MiB, 3600 seconds, and human assistance enabled, with explicit overrides retained. Build records are scoped to workspace, Provider, credential version, and manifest. Reuse checks current image access; interrupted waits rejoin the same content-addressed build without temporary sandboxes. Images and the App remain account assets.
 
-Custom images and headless targets require an explicit compatible `image` and existing App. Authenticate with `modal token new`, prepare a Linux amd64 Envd binary, and run the optional builder from the repository root:
+Custom images require an explicit compatible `image` and existing App. Authenticate with `modal token new`, prepare a Linux amd64 Envd binary, and run the optional builder from the repository root:
 
 ```sh
 uv run --locked python examples/environment-provider/modal_desktop_image.py \

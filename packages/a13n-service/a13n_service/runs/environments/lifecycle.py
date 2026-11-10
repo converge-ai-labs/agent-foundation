@@ -41,6 +41,8 @@ from a13n_service.providers.environment.definition import EnvironmentManagementD
 from a13n_service.providers.environment.errors import cancelled_management_failure, observed_environment_state
 from a13n_service.providers.environment.management import Completed, EnvironmentProvider, ManagementResult, Pending
 from a13n_service.providers.environment.metrics import MetricsLaunch
+from a13n_service.providers.environment.recipes.daytona import DaytonaRecipe
+from a13n_service.providers.environment.recipes.modal import ModalRecipe
 from a13n_service.resources.environment_instances.access import ENVIRONMENT_LOST, superseded
 from a13n_service.resources.environment_instances.access import require_usable_state as require_usable_state
 from a13n_service.resources.environment_instances.access import unusable as unusable
@@ -438,29 +440,38 @@ async def _refusal(
             except (EnvironmentProviderError, ServiceError) as error:
                 return fault_of(error, dispatched=False)
         modal_preparation = None
-        if provider.type == "modal" and getattr(recipe, "image", None) == "auto":
+        if isinstance(recipe, ModalRecipe) and recipe.image == "auto":
             from a13n_service.runs.environments.modal_images import bind
 
             try:
-                modal_preparation = await bind(runtime, session, environment, provider)
+                modal_preparation = await bind(
+                    runtime,
+                    session,
+                    environment,
+                    provider,
+                    profile="desktop" if recipe.desktop else "headless",
+                    base_image=recipe.base_image,
+                )
             except (EnvironmentProviderError, ServiceError) as error:
                 return fault_of(error, dispatched=False)
         daytona_preparation = None
-        if provider.type == "daytona" and getattr(recipe, "snapshot", None) == "auto":
+        if isinstance(recipe, DaytonaRecipe) and recipe.snapshot == "auto":
             from a13n_service.runs.environments.daytona_snapshots import bind
 
             try:
-                daytona_preparation = await bind(runtime, session, environment, provider)
+                daytona_preparation = await bind(
+                    runtime,
+                    session,
+                    environment,
+                    provider,
+                    profile="desktop" if recipe.desktop else "headless",
+                    base_image=recipe.base_image,
+                )
             except (EnvironmentProviderError, ServiceError) as error:
                 return fault_of(error, dispatched=False)
+        # New Vercel automatic recipes prepare their final persistent target.
+        # Saved snapshot-build handles below remain readable for reconciliation/cleanup.
         vercel_preparation = None
-        if provider.type == "vercel" and getattr(recipe, "snapshot", None) == "auto":
-            from a13n_service.runs.environments.vercel_snapshots import bind
-
-            try:
-                vercel_preparation = await bind(runtime, session, environment, provider)
-            except (EnvironmentProviderError, ServiceError) as error:
-                return fault_of(error, dispatched=False)
         from a13n_service.runs.environments import outbound
 
         try:
@@ -523,12 +534,21 @@ async def claim_locked(
     unresolved = not settled(environment)
     if phase == "creating" and failure.get("permanent") and settled(environment) and environment.handle:
         handle = Handle.model_validate(environment.handle)
-        if (
-            environment.provider_identity
-            and environment.provider_identity.get("type") == "sprites"
-            and handle.recipe.get("desktop")
-        ):
-            return None
+        if environment.provider_identity:
+            provider_type = environment.provider_identity.get("type")
+            if (
+                provider_type == "sprites"
+                or (provider_type == "e2b" and handle.recipe.get("preparation") == "headless")
+            ) and handle.recipe.get("execution") in {"envd_http", "envd_ws"}:
+                return None
+            if (
+                provider_type == "vercel"
+                and handle.recipe.get("execution") in {"envd_http", "envd_ws"}
+                and handle.recipe.get("snapshot") in {None, "auto"}
+                and not handle.vercel_desktop_snapshot
+            ):
+                # Keep an actionable terminal preparation error until explicit retry/deletion.
+                return None
         if handle.recipe.get("template") == "auto" and handle.e2b_desktop_template:
             from a13n_service.runs.environments.e2b_templates import E2BDesktopTemplateRow
 
@@ -885,6 +905,7 @@ async def _pin_modal_image(runtime: Runtime, operation: Operation, image: str) -
         if handle.state is not None or handle.recipe.get("image") not in {"auto", image}:
             raise conflict("environment", row.id, "desktop_image_changed")
         recipe = {**handle.recipe, "image": image}
+        recipe.pop("base_image", None)
         row.handle = handle.model_copy(update={"recipe": recipe}).model_dump(mode="json")
     return replace(operation, target=replace(operation.target, recipe=recipe))
 
@@ -905,6 +926,7 @@ async def _pin_daytona_snapshot(runtime: Runtime, operation: Operation, snapshot
         if handle.state is not None or handle.recipe.get("snapshot") not in {"auto", snapshot}:
             raise conflict("environment", row.id, "desktop_snapshot_changed")
         recipe = {**handle.recipe, "snapshot": snapshot}
+        recipe.pop("base_image", None)
         row.handle = handle.model_copy(update={"recipe": recipe}).model_dump(mode="json")
     return replace(operation, target=replace(operation.target, recipe=recipe))
 

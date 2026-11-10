@@ -1,4 +1,4 @@
-"""Service desktop preparation defaults; explicit custom snapshots retain their behavior."""
+"""Service Envd preparation defaults; explicit custom snapshots retain their behavior."""
 
 from collections.abc import Mapping
 from typing import Self
@@ -12,7 +12,13 @@ class DaytonaRecipe(DaytonaEnvironmentConfiguration):
         default="auto",
         min_length=1,
         max_length=256,
-        description="Use auto to build and reuse an Envd desktop snapshot, or supply a custom snapshot.",
+        description="Use auto to build a headless or desktop Envd snapshot. Custom snapshots must preinstall compatible Envd and start it at boot.",
+    )
+    base_image: str | None = Field(
+        default=None,
+        max_length=512,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._/:-]*@sha256:[a-f0-9]{64}$",
+        description="Explicit managed preparation base for snapshot=auto: digest-pinned Debian 13 or Ubuntu 24.04+ GNU/Linux x86_64, root build user, and free sandbox UID/GID 1000. Preparation replaces its boot entrypoint and installs the selected profile.",
     )
     desktop_assistance: bool = Field(
         default=False,
@@ -29,8 +35,8 @@ class DaytonaRecipe(DaytonaEnvironmentConfiguration):
 
     @model_validator(mode="after")
     def assistance_snapshot(self) -> Self:
-        if self.snapshot == "auto" and not self.desktop:
-            raise ValueError("Automatic snapshots require desktop=True")
+        if self.base_image is not None and self.snapshot != "auto":
+            raise ValueError("base_image requires snapshot=auto; explicit snapshots own preinstallation and boot")
         if self.desktop_assistance and (not self.desktop or not self.snapshot):
             raise ValueError("Desktop access requires desktop=True and an operator-built snapshot")
         return self
@@ -39,5 +45,5 @@ class DaytonaRecipe(DaytonaEnvironmentConfiguration):
     def fingerprint(self) -> str:
         # Management-only policy must not change the identity used by execution attachment.
         return DaytonaEnvironmentConfiguration.model_validate(
-            self.model_dump(exclude={"desktop_assistance"})
+            self.model_dump(exclude={"desktop_assistance", "base_image"})
         ).fingerprint
