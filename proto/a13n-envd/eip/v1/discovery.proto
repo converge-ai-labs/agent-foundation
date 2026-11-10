@@ -1,0 +1,61 @@
+syntax = "proto3";
+
+package a13n.agent_envd.eip.v1;
+
+import "a13n-envd/eip/v1/common.proto";
+import "a13n-envd/eip/v1/error.proto";
+import "a13n-envd/eip/v1/options.proto";
+import "a13n-envd/eip/v1/resource.proto";
+
+message FileDiscoveryPosition {
+  uint64 candidate_offset = 1;
+  uint64 text_byte_offset = 2;
+}
+
+message FileDiscoverDocumentsParams {
+  EIPCallContext context = 1;
+  EIPPath root = 2;
+  string basename = 3 [(eip_field).min_length = 1];
+  uint32 max_entries = 4 [(eip_field).minimum = 1, (eip_field).maximum = 10000];
+  uint64 line_limit = 5 [(eip_field).minimum = 1];
+  uint64 max_line_length = 6 [(eip_field).minimum = 1];
+  optional uint64 text_byte_limit = 7 [(eip_field).minimum = 1];
+  uint64 result_byte_limit = 8 [(eip_field).minimum = 1];
+  optional FileDiscoveryPosition position = 9;
+}
+
+message FileDocumentText {
+  string kind = 1 [(eip_field).const_string = "text"];
+  FileReadTextResult prefix = 2;
+  uint64 text_byte_offset = 3;
+  uint64 prefix_byte_length = 4;
+  ContentDigest prefix_digest = 5;
+}
+
+enum FileDocumentFailurePhase {
+  FILE_DOCUMENT_FAILURE_PHASE_UNSPECIFIED = 0;
+  FILE_DOCUMENT_FAILURE_PHASE_PROBE = 1 [(eip_enum_value).json_name = "probe"];
+  FILE_DOCUMENT_FAILURE_PHASE_READ = 2 [(eip_enum_value).json_name = "read"];
+}
+
+message FileDocumentFailure {
+  string kind = 1 [(eip_field).const_string = "failure"];
+  EIPPath path = 2;
+  FileDocumentFailurePhase phase = 3;
+  EIPError error = 4;
+}
+
+message FileDocument {
+  option (eip_message).discriminated_union = true;
+  oneof outcome {
+    FileDocumentText text = 1;
+    FileDocumentFailure failure = 2;
+  }
+}
+
+message FileDiscoverDocumentsResult {
+  repeated FileDocument documents = 1;
+  optional FileDiscoveryPosition next_position = 2;
+  bool entries_exceeded = 3;
+  uint64 omitted_unrepresentable_entries = 4;
+}

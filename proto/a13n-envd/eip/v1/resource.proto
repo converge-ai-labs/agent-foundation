@@ -68,6 +68,7 @@ message FileReadTextParams {
   uint64 line_limit = 5 [(eip_field).minimum = 1];
   optional uint64 line_offset = 8 [(eip_field).default_uint = 0];
   uint64 max_line_length = 9 [(eip_field).minimum = 1];
+  optional uint64 text_byte_limit = 10 [(eip_field).minimum = 1];
 }
 
 message FileReadTextResult {
@@ -150,6 +151,25 @@ message FileListResult {
   uint64 offset = 3;
   bool has_more = 4;
   uint64 omitted_unrepresentable_entries = 5;
+}
+
+// Metadata-only BFS; byte accounting is independent of the transport response ceiling.
+message FileTreeParams {
+  EIPCallContext context = 1;
+  EIPPath root = 2;
+  uint32 max_depth = 3 [(eip_field).minimum = 1];
+  uint32 max_entries = 4 [(eip_field).minimum = 1];
+  uint32 max_directory_calls = 5 [(eip_field).minimum = 1];
+  bool include_hidden = 6;
+  uint64 metadata_byte_limit = 7 [(eip_field).minimum = 1];
+  uint64 path_prefix_bytes = 8;
+  uint64 result_byte_limit = 9 [(eip_field).minimum = 1];
+}
+
+message FileTreeResult {
+  repeated FileListEntry entries = 1;
+  bool truncated = 2;
+  uint32 directory_calls = 3;
 }
 
 message FileFindParams {

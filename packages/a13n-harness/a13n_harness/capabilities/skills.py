@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import asyncio
-from collections.abc import AsyncIterable, AsyncIterator, Awaitable, Callable, Sequence
+from collections.abc import AsyncIterable, AsyncIterator, Sequence
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from html import escape
@@ -12,20 +11,25 @@ from typing import Any, Literal, Protocol, cast, runtime_checkable
 
 import yaml
 from a13n_logging import get_logger
-from anyio import CancelScope
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 from pydantic_ai import RunContext, ToolReturn
 from pydantic_ai.capabilities import AbstractCapability, ValidatedToolArgs, WrapToolExecuteHandler
-from pydantic_ai.messages import ToolCallPart
+from pydantic_ai.messages import CapabilityEvent, ToolCallPart
 from pydantic_ai.models import ModelRequestContext
 from pydantic_ai.tools import ToolDefinition
 
 from a13n_harness.context import AgentContext, SkillPath
 from a13n_harness.environment._mount_path import parse_mount_path
+from a13n_harness.environment._ordered import map_ordered
+from a13n_harness.environment._streams import closing_stream
 from a13n_harness.environment.archives import FileArchive
+from a13n_harness.environment.discovery import discover_documents
 from a13n_harness.environment.files import (
     FileBatchValue,
     FileCopyResult,
+    FileDocument,
+    FileDocumentFailure,
+    FileDocumentRequest,
     FileEntriesResult,
     FileMetadata,
     FileMutationResult,
@@ -36,12 +40,15 @@ from a13n_harness.environment.files import (
     FileTextResult,
     FileTextSearchRequest,
     FileTextSearchResult,
+    FileTreeRequest,
+    FileTreeResult,
     FileWriteMode,
     FileWriteResult,
 )
 from a13n_harness.environment.models import EnvironmentError
 from a13n_harness.environment.mounts import EnvironmentPath
 from a13n_harness.environment.providers import BoundEnvironment, FileScopeSelection
+from a13n_harness.environment.trees import list_tree as list_tree_from_operations
 from a13n_harness.errors import DefinitionError
 from a13n_harness.events import HarnessExtensionEvent
 from a13n_harness.observation import (
@@ -55,7 +62,6 @@ from a13n_harness.tools.metadata import HARNESS_TOOL_METADATA_KEY, normalize_har
 
 SKILLS_CAPABILITY_ID = "a13n.skills"
 _SKILL_FILE_NAME = "SKILL.md"
-_SKILL_READ_CONCURRENCY = 8
 _DEFAULT_ENVIRONMENT_SKILL_ROOT = "/workspace/.agents/skills"
 _OPTIONAL_SOURCE_UNAVAILABLE_CODES = frozenset(
     {"environment_not_found", "environment_selection_invalid", "environment_unsupported"}
@@ -153,6 +159,19 @@ class BoundSkillCatalog(BaseModel):
                 )
 
 
+@dataclass(kw_only=True)
+class SkillCatalogResolvedEvent(
+    CapabilityEvent, namespace="a13n.skills", name="catalog_resolved", dispatch="immediate"
+):
+    """The complete typed catalog at this logical Run's freeze boundary.
+
+    Catalog policy bounds its size. Small diagnostics and tracing remain separate;
+    Hosts consume this value before any lossy display projection.
+    """
+
+    catalog: BoundSkillCatalog
+
+
 @runtime_checkable
 class SkillSource(Protocol):
     """Trusted discovery source selected explicitly by embedding code."""
@@ -219,70 +238,68 @@ class FileSkillSource:
         return self._required
 
     async def catalog(self, *, files: FileOperator) -> tuple[SkillCatalogItem, ...]:
+        return await self._catalog(files, {})
+
+    async def _catalog(self, files: FileOperator, metadata: dict[str, FileMetadata]) -> tuple[SkillCatalogItem, ...]:
         discovered: list[SkillCatalogItem] = []
         for root in self._roots:
+            request = FileDocumentRequest(
+                root=root,
+                basename=_SKILL_FILE_NAME,
+                max_entries=self._max_entries_per_root,
+                line_limit=self._max_frontmatter_lines,
+                max_line_length=self._max_line_length,
+            )
             try:
-                entries = await files.list(
-                    root,
-                    offset=0,
-                    max_results=self._max_entries_per_root,
-                    include_hidden=False,
-                )
+                async with closing_stream(files.discover_documents(request)) as stream:
+                    async for document in stream:
+                        path = document.path if isinstance(document, FileDocumentFailure) else document.info.path
+                        try:
+                            if isinstance(document, FileDocumentFailure):
+                                if document.phase == "probe":
+                                    raise document.error
+                                raise DefinitionError(
+                                    "A selected skill catalog entry cannot be read.",
+                                    code="skill_catalog_invalid",
+                                    details={"path": path, "environment_code": document.error.code},
+                                ) from document.error
+                            entry = self._catalog_entry(document.prefix)
+                        except DefinitionError as error:
+                            if not self._skip_invalid:
+                                raise
+                            _LOGGER.warning(
+                                "skill_catalog_entry_skipped",
+                                extra={
+                                    "source_id": self.source_id,
+                                    "path": path.rsplit("/", 1)[0] or "/",
+                                    "code": error.code,
+                                },
+                            )
+                        else:
+                            discovered.append(entry)
+                            metadata[entry.path] = document.info
             except EnvironmentError as exc:
-                if not self.required and exc.code in _OPTIONAL_SOURCE_UNAVAILABLE_CODES:
+                if exc.code == "environment_too_large" and exc.details.get("reason") == "entries_exceeded":
+                    raise DefinitionError(
+                        "A skill root exceeds its configured catalog size.",
+                        code="skill_catalog_too_large",
+                        details={"source_id": self.source_id, "root": root},
+                    ) from exc
+                if (
+                    not self.required
+                    and exc.code in _OPTIONAL_SOURCE_UNAVAILABLE_CODES
+                    and exc.details.get("reason") != "unrepresentable_entries"
+                ):
                     continue
                 raise DefinitionError(
                     "An explicit skill root is unavailable.",
                     code="skill_source_unavailable",
                     details={"source_id": self.source_id, "root": root, "environment_code": exc.code},
                 ) from exc
-            if entries.has_more:
-                raise DefinitionError(
-                    "A skill root exceeds its configured catalog size.",
-                    code="skill_catalog_too_large",
-                    details={"source_id": self.source_id, "root": root},
-                )
-            candidates = [
-                root,
-                *(
-                    entry.path
-                    for entry in sorted(entries.entries, key=lambda item: item.path)
-                    if entry.kind == "directory"
-                ),
-            ]
-            results = await _map_ordered(candidates, lambda path: self._read_entry(files, path))
-            for path, result in zip(candidates, results, strict=True):
-                if isinstance(result, DefinitionError) and self._skip_invalid:
-                    _LOGGER.warning(
-                        "skill_catalog_entry_skipped",
-                        extra={"source_id": self.source_id, "path": path, "code": result.code},
-                    )
-                elif isinstance(result, Exception):
-                    raise result
-                elif result is not None:
-                    discovered.append(result)
         return tuple(discovered)
 
-    async def _read_entry(self, files: FileOperator, path: str) -> SkillCatalogItem | None:
-        if not await _is_file(files, _join_logical_path(path, _SKILL_FILE_NAME)):
-            return None
-        return await self._catalog_entry(files, path)
-
-    async def _catalog_entry(self, files: FileOperator, skill_dir: str) -> SkillCatalogItem:
-        path = _join_logical_path(skill_dir, _SKILL_FILE_NAME)
-        try:
-            result = await files.read_text(
-                path,
-                line_offset=0,
-                line_limit=self._max_frontmatter_lines,
-                max_line_length=self._max_line_length,
-            )
-        except EnvironmentError as exc:
-            raise DefinitionError(
-                "A selected skill catalog entry cannot be read.",
-                code="skill_catalog_invalid",
-                details={"path": path, "environment_code": exc.code},
-            ) from exc
+    def _catalog_entry(self, result: FileTextResult) -> SkillCatalogItem:
+        path = result.path
         name, description = _parse_frontmatter(result.text, path=path)
         lines = result.text.lstrip("\ufeff").splitlines()
         closing = next(index for index, line in enumerate(lines[1:], start=1) if line.strip() == "---")
@@ -292,7 +309,7 @@ class FileSkillSource:
                 code="skill_catalog_invalid",
                 details={"path": path},
             )
-        return SkillCatalogItem(name=name, description=description, path=skill_dir)
+        return SkillCatalogItem(name=name, description=description, path=path.rsplit("/", 1)[0] or "/")
 
 
 @dataclass(frozen=True, slots=True)
@@ -360,6 +377,11 @@ class _PinnedSkillFileOperator:
             )
         return source_route
 
+    def discover_documents(self, request: FileDocumentRequest) -> AsyncIterator[FileDocument]:
+        if any(root != request.root and _is_path_within_root(root, request.root) for root in self._known_roots):
+            return discover_documents(self, request)
+        return self._route(request.root).files.discover_documents(request)
+
     async def read_text(
         self,
         path: str,
@@ -367,12 +389,14 @@ class _PinnedSkillFileOperator:
         line_offset: int = 0,
         line_limit: int = 200,
         max_line_length: int = 2_000,
+        max_bytes: int | None = None,
     ) -> FileTextResult:
         return await self._route(path).files.read_text(
             path,
             line_offset=line_offset,
             line_limit=line_limit,
             max_line_length=max_line_length,
+            max_bytes=max_bytes,
         )
 
     async def read_bytes(self, path: str, *, offset: int = 0, length: int | None = None) -> bytes:
@@ -427,6 +451,10 @@ class _PinnedSkillFileOperator:
             max_results=max_results,
             include_hidden=include_hidden,
         )
+
+    async def list_tree(self, request: FileTreeRequest) -> FileTreeResult:
+        # Preserve descendant root routing instead of traversing a backing ancestor.
+        return await list_tree_from_operations(self, request)
 
     async def query(self, request: FileQueryRequest) -> FileEntriesResult:
         return await self._route(request.root).files.query(request)
@@ -560,9 +588,17 @@ class SkillManager:
                 ) from exc
 
         selected: dict[str, SkillCatalogItem] = {}
+        observed: dict[tuple[str, str], FileMetadata] = {}
         for source in self._sources:
             try:
-                entries = tuple(await source.catalog(files=files))
+                # Custom sources, including catalog overrides in subclasses, retain
+                # independent selected-document validation below.
+                if isinstance(source, FileSkillSource) and type(source) is FileSkillSource:
+                    source_metadata: dict[str, FileMetadata] = {}
+                    entries = await source._catalog(files, source_metadata)
+                    observed.update(((source.source_id, path), info) for path, info in source_metadata.items())
+                else:
+                    entries = tuple(await cast(SkillSource, source).catalog(files=files))
             except DefinitionError:
                 raise
             except Exception as exc:
@@ -613,7 +649,15 @@ class SkillManager:
             raise DefinitionError("The selected skill catalog is too large.", code="skill_catalog_too_large")
         access_paths: dict[str, str] = {}
         items = tuple(selected.values())
-        results = await _map_ordered(items, lambda item: files.stat(_join_logical_path(item.path, _SKILL_FILE_NAME)))
+
+        async def document_metadata(item: SkillCatalogItem) -> FileMetadata:
+            metadata = observed.get((item.source_id or "", item.path))
+            if metadata is not None:
+                return metadata
+            return await files.stat(_join_logical_path(item.path, _SKILL_FILE_NAME))
+
+        async with closing_stream(map_ordered(items, document_metadata)) as stream:
+            results = [result async for result in stream]
         for item, result in zip(items, results, strict=True):
             try:
                 if isinstance(result, Exception):
@@ -755,6 +799,7 @@ class SkillsCapability(AbstractCapability[AgentContext]):
             )
         replacement = _SkillsRunCapability(catalog, context=ctx.deps, manager=self.manager)
         ctx.deps._record_run_capability(SKILLS_CAPABILITY_ID, replacement)
+        await ctx.deps.events.emit(SkillCatalogResolvedEvent(catalog=catalog.model_copy(deep=True)))
         observe_skill_catalog([item.name for item in catalog.items[:16]], count=len(catalog.items))
         await ctx.deps.events.emit(
             HarnessExtensionEvent(
@@ -1030,48 +1075,6 @@ def _bind_skill_catalog(
     return BoundSkillCatalog(items=tuple(bound))
 
 
-async def _map_ordered[T, R](items: Sequence[T], read: Callable[[T], Awaitable[R]]) -> list[R | Exception]:
-    """Overlap bounded reads; callers apply results and ordinary errors in input order."""
-    pending = iter(enumerate(items))
-    results: dict[int, R | Exception] = {}
-
-    async def worker() -> None:
-        for index, item in pending:
-            try:
-                results[index] = await read(item)
-            except Exception as exc:
-                results[index] = exc
-
-    workers = [
-        asyncio.create_task(worker(), name="skill-catalog-read")
-        for _ in range(min(_SKILL_READ_CONCURRENCY, len(items)))
-    ]
-    joined = asyncio.gather(*workers)
-    try:
-        # Deliver cancellation ourselves once, rather than letting a level-triggered
-        # Host cancel scope repeatedly cancel workers through the gather future.
-        await asyncio.shield(joined)
-    finally:
-        for task in workers:
-            if not task.done():
-                task.cancel()
-        # A Host may cancel through an AnyIO scope; join reads before releasing
-        # their pinned file scopes, even while that outer scope remains cancelled.
-        with CancelScope(shield=True):
-            await asyncio.gather(joined, *workers, return_exceptions=True)
-    return [results[index] for index in range(len(items))]
-
-
-async def _is_file(files: FileOperator, path: str) -> bool:
-    try:
-        metadata: FileMetadata = await files.stat(path)
-    except EnvironmentError as exc:
-        if exc.code in {"environment_not_found", "environment_unsupported"}:
-            return False
-        raise
-    return metadata.kind == "file"
-
-
 def _parse_frontmatter(content: str, *, path: str) -> tuple[str, str]:
     lines = content.lstrip("\ufeff").splitlines()
     if not lines or lines[0].strip() != "---":
@@ -1117,6 +1120,7 @@ __all__ = [
     "BoundSkillCatalogItem",
     "FileSkillSource",
     "SkillCatalogItem",
+    "SkillCatalogResolvedEvent",
     "SkillManager",
     "SkillMaterializer",
     "SkillSource",

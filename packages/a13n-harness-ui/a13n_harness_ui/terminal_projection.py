@@ -5,28 +5,33 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from collections import OrderedDict
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
-import yaml
 from a13n_harness import DeferredToolRequests
-from a13n_harness.capabilities import AskUserQuestionRequest
+from a13n_harness.capabilities import AskUserQuestionRequest, BoundSkillCatalog
 from a13n_harness.tools.client import client_tool_name
-from a13n_logging import get_logger
 from anyio import to_thread
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
-from a13n_harness_ui.composition import CompositionAcceptanceService
+from a13n_harness_ui.composition import (
+    AgentCompositionResolver,
+    CompositionAcceptanceService,
+    ResolvedRunComposition,
+    ThreadCompositionSelection,
+)
 from a13n_harness_ui.configuration import LoadedHarnessUiConfiguration
-from a13n_harness_ui.environment_paths import BUILTIN_SKILLS_PATH, BUILTIN_SKILLS_ROOT, BUILTIN_SKILLS_SOURCE_ID
+from a13n_harness_ui.environment_bindings import EnvironmentSelectionPatch
 from a13n_harness_ui.environment_profiles import built_in_environment_profile
+from a13n_harness_ui.environment_runtime import EnvironmentRunService
 from a13n_harness_ui.errors import AppStateError, ThreadError
+from a13n_harness_ui.extensions.catalog import create_skill_manager
 from a13n_harness_ui.media_understanding import environment_media_kinds
 from a13n_harness_ui.model_controls import describe_model_controls
 from a13n_harness_ui.root_run import RootRunCoordinator
 from a13n_harness_ui.storage import LocalStore
+from a13n_harness_ui.storage.contracts import ThreadConfigurationMutation
 from a13n_harness_ui.subagent_operator import HarnessUiSubagentOperator
 from a13n_harness_ui.surfaces import (
     ActivitySummary,
@@ -64,12 +69,13 @@ from a13n_harness_ui.surfaces import (
     ThreadSummary,
 )
 from a13n_harness_ui.thread_projection import ThreadProjectionService
-from a13n_harness_ui.thread_service import RootThreadDefaults, resolve_thread_configuration
+from a13n_harness_ui.thread_service import (
+    RootThreadDefaults,
+    apply_configuration_mutation,
+    resolve_thread_configuration,
+)
 
-_LOGGER = get_logger(__name__)
 _MAX_PATH_SCAN = 10_000
-_MAX_SKILLS = 512
-_MAX_SKILL_ENTRIES_PER_ROOT = 256
 _JSON_ADAPTER = TypeAdapter(JsonValue)
 
 
@@ -85,6 +91,8 @@ class TerminalProjectionService:
         root_runs: RootRunCoordinator,
         children: HarnessUiSubagentOperator,
         configuration_path: Path | None,
+        environments: EnvironmentRunService,
+        resolver: AgentCompositionResolver,
     ) -> None:
         self._store = store
         self._configurations = configurations
@@ -92,7 +100,8 @@ class TerminalProjectionService:
         self._root_runs = root_runs
         self._children = children
         self._configuration_path = configuration_path
-        self._active_skill_catalogs: OrderedDict[str, SkillCatalogView] = OrderedDict()
+        self._environments = environments
+        self._resolver = resolver
 
     async def resolve_launch_project(
         self,
@@ -589,25 +598,26 @@ class TerminalProjectionService:
         *,
         thread_id: str | None = None,
         defaults: NewThreadDefaults | None = None,
-        local_roots_override: tuple[str, ...] | None = None,
+        environment: EnvironmentSelectionPatch | None = None,
+        mutation: ThreadConfigurationMutation | None = None,
     ) -> SkillCatalogView:
         receipt_id: str | None = None
         context_kind: Literal["draft", "idle", "active"] = "draft"
         thread = None
         if thread_id is not None:
-            thread = await self._store.threads.get(thread_id)
-            if thread is None:
-                raise ThreadError("Thread does not exist.", code="thread_missing")
             operation = await self._root_runs.active(thread_id)
             if operation is None:
                 context_kind = "idle"
             else:
                 context_kind = "active"
                 receipt_id = operation.receipt.receipt_id
-                cached = self._active_skill_catalogs.get(receipt_id)
-                if cached is not None:
-                    self._active_skill_catalogs.move_to_end(receipt_id)
-                    return cached.model_copy(deep=True)
+                frozen = self._root_runs.skill_catalog(receipt_id)
+                if frozen is None:
+                    raise ThreadError("The Run's Skill catalog is still preparing.", code="skill_catalog_preparing")
+                return _skill_catalog_view(frozen, context_kind="active", thread_id=thread_id, receipt_id=receipt_id)
+            thread = await self._store.threads.get(thread_id)
+            if thread is None:
+                raise ThreadError("Thread does not exist.", code="thread_missing")
         # Active catalogs belong to the admitted Run. Current configuration may
         # have changed (or become unreadable) without changing that live Run.
         source = await self._required_configuration()
@@ -616,40 +626,29 @@ class TerminalProjectionService:
             resolved = resolve_thread_configuration(
                 source, RootThreadDefaults(**selected.model_dump(exclude_unset=True))
             )
-            project_id = resolved.project_id
-            agent_id = resolved.agent_source.id
-            local_roots = resolved.local_roots
         else:
-            project_id = thread.configuration.project_id
-            agent_id = thread.configuration.agent_source.id
-            local_roots = thread.configuration.local_roots
-        if project_id is not None and project_id not in source.projects:
-            raise ThreadError("The selected Project is unavailable.", code="thread_project_missing")
-        if thread is not None and thread.configuration.agent_source.kind == "live":
-            return SkillCatalogView(
-                catalog_id=source.source_digest,
-                context_kind=context_kind,
-                thread_id=thread_id,
-                receipt_id=receipt_id,
-                items=(),
+            resolved = (
+                apply_configuration_mutation(source, thread, mutation) if mutation is not None else thread.configuration
             )
-        if agent_id is None or agent_id not in source.agents:
-            raise ThreadError("A Skill catalog requires an available Agent.", code="thread_agent_missing")
-        catalog = await to_thread.run_sync(
-            _scan_skill_catalog,
-            source,
-            local_roots if local_roots_override is None else local_roots_override,
-            agent_id,
-            context_kind,
-            thread_id,
-            receipt_id,
+        selection = ThreadCompositionSelection.from_configuration(thread_id or "skill-preview", resolved)
+        captured = None
+        if thread is not None and thread.continuation is not None:
+            continuation = await self._store.read_continuation(thread.thread_id, thread.continuation)
+            if continuation.deferred_requests is not None:
+                captured = await self._store.objects.read_model(continuation.run_composition, ResolvedRunComposition)
+        selection = selection.with_environment(
+            environment,
+            captured=captured,
+            patched=frozenset() if mutation is None else frozenset(mutation.patch.model_fields_set),
         )
-        if receipt_id is not None:
-            self._active_skill_catalogs[receipt_id] = catalog
-            self._active_skill_catalogs.move_to_end(receipt_id)
-            while len(self._active_skill_catalogs) > 128:
-                self._active_skill_catalogs.popitem(last=False)
-        return catalog
+        composition = self._resolver.resolve_run(source, selection)
+        recipe = next((item for item in composition.root.capabilities if item.capability == "skills"), None)
+        catalog = BoundSkillCatalog(items=())
+        if recipe is not None:
+            async with self._environments.preview(composition) as (bound, path_layout):
+                manager = create_skill_manager(recipe.configuration, path_layout=path_layout)
+                catalog = await manager.scan_environment(environment=bound)
+        return _skill_catalog_view(catalog, context_kind=context_kind, thread_id=thread_id, receipt_id=receipt_id)
 
     async def validate_skill_references(
         self,
@@ -682,26 +681,6 @@ class TerminalProjectionService:
             if reference.catalog_id == catalog.catalog_id and reference.item_id != matches[0].item_id:
                 raise ThreadError("A selected Skill is unavailable.", code="skill_reference_unavailable")
         return names
-
-    def pin_active_skill_catalog(
-        self,
-        *,
-        receipt_id: str,
-        thread_id: str,
-        catalog: SkillCatalogView,
-    ) -> None:
-        pinned = catalog.model_copy(
-            update={
-                "context_kind": "active",
-                "thread_id": thread_id,
-                "receipt_id": receipt_id,
-            },
-            deep=True,
-        )
-        self._active_skill_catalogs[receipt_id] = pinned
-        self._active_skill_catalogs.move_to_end(receipt_id)
-        while len(self._active_skill_catalogs) > 128:
-            self._active_skill_catalogs.popitem(last=False)
 
     async def retained_review(
         self,
@@ -978,130 +957,30 @@ def _scan_project_paths(
     return tuple(item[1] for item in candidates[:limit]), truncated
 
 
-def _scan_skill_catalog(
-    source: LoadedHarnessUiConfiguration,
-    local_roots: tuple[str, ...],
-    agent_id: str,
+def _skill_catalog_view(
+    catalog: BoundSkillCatalog,
+    *,
     context_kind: Literal["draft", "idle", "active"],
     thread_id: str | None,
-    receipt_id: str | None,
+    receipt_id: str | None = None,
 ) -> SkillCatalogView:
-    agent = source.agents[agent_id]
-    capability = next((item for item in agent.capabilities if item.capability == "skills"), None)
-    sources: list[tuple[str, Path, bool]] = []
-    if capability is not None:
-        sources.append((BUILTIN_SKILLS_SOURCE_ID, BUILTIN_SKILLS_ROOT, True))
-        user_root = (Path.home() / ".agents" / "skills").resolve(strict=False)
-        sources.append(("a13n-harness-ui:user-skills", user_root, False))
-        roots = tuple(Path(path) for path in local_roots)
-        for index in range(len(roots), 1, -1):
-            sources.append(
-                (f"a13n-harness-ui:project:workspace-{index}", roots[index - 1] / ".agents" / "skills", False)
-            )
-        if roots:
-            sources.append(("a13n-harness-ui:project:workspace", roots[0] / ".agents" / "skills", False))
-        raw_roots = capability.configuration.get("roots", [])
-        if isinstance(raw_roots, list):
-            for index, value in enumerate(raw_roots, start=1):
-                if isinstance(value, str):
-                    sources.append(
-                        (f"a13n-harness-ui:explicit:{index}", _logical_to_host(value, roots, user_root), True)
-                    )
-
-    selected: dict[str, SkillCatalogItemView] = {}
-    fingerprints: list[str] = [source.source_digest, *local_roots, agent_id]
-    for source_id, root, required in sources:
-        if not root.exists():
-            if required:
-                raise ThreadError("A required Skill root is unavailable.", code="skill_source_unavailable")
-            continue
-        if not root.is_dir():
-            raise ThreadError("A selected Skill root is not a directory.", code="skill_source_unavailable")
-        entries = sorted(root.iterdir(), key=lambda item: item.name)
-        if len(entries) > _MAX_SKILL_ENTRIES_PER_ROOT:
-            raise ThreadError("A Skill root is too large.", code="skill_catalog_too_large")
-        candidates = [root] if (root / "SKILL.md").is_file() else []
-        candidates.extend(
-            item for item in entries if item.is_dir() and not item.is_symlink() and (item / "SKILL.md").is_file()
+    items = tuple(
+        SkillCatalogItemView(
+            item_id=_digest(item.name, item.description, item.source_id, item.path),
+            name=item.name,
+            description=item.description,
+            source_id=item.source_id,
+            logical_path=item.path,
         )
-        for directory in candidates:
-            document = directory / "SKILL.md"
-            try:
-                name, description = _read_skill_frontmatter(document)
-            except ThreadError as exc:
-                _LOGGER.warning(
-                    "skill_catalog_entry_skipped",
-                    extra={"source_id": source_id, "path": os.fspath(document), "code": exc.code},
-                )
-                continue
-            stat = document.stat()
-            identity = _digest(source_id, os.fspath(directory), name, str(stat.st_mtime_ns), str(stat.st_size))
-            fingerprints.append(identity)
-            selected[name] = SkillCatalogItemView(
-                item_id=identity,
-                name=name,
-                description=description,
-                source_id=source_id,
-                logical_path=(
-                    f"{BUILTIN_SKILLS_PATH}/{directory.relative_to(BUILTIN_SKILLS_ROOT).as_posix()}"
-                    if directory.is_relative_to(BUILTIN_SKILLS_ROOT)
-                    else os.fspath(directory)
-                ),
-            )
-    if len(selected) > _MAX_SKILLS:
-        raise ThreadError("The selected Skill catalog is too large.", code="skill_catalog_too_large")
-    items = tuple(selected[name] for name in sorted(selected, key=str.casefold))
-    catalog_id = _digest(*fingerprints, *(item.item_id for item in items))
+        for item in catalog.items
+    )
     return SkillCatalogView(
-        catalog_id=catalog_id,
+        catalog_id=_digest(*(item.item_id for item in items)),
         context_kind=context_kind,
         thread_id=thread_id,
         receipt_id=receipt_id,
         items=items,
     )
-
-
-def _logical_to_host(value: str, roots: tuple[Path, ...], user_root: Path) -> Path:
-    if value == BUILTIN_SKILLS_PATH or value.startswith(f"{BUILTIN_SKILLS_PATH}/"):
-        return BUILTIN_SKILLS_ROOT / value.removeprefix(BUILTIN_SKILLS_PATH).lstrip("/")
-    if value == "/environment/user-skills" or value.startswith("/environment/user-skills/"):
-        return user_root / value.removeprefix("/environment/user-skills").lstrip("/")
-    if value == "/workspace" or value.startswith("/workspace/"):
-        if not roots:
-            raise ThreadError("An explicit Skill root requires a Project.", code="skill_source_unavailable")
-        return roots[0] / value.removeprefix("/workspace").lstrip("/")
-    for index, root in enumerate(roots[1:], start=2):
-        prefix = f"/environment/workspace-{index}"
-        if value == prefix or value.startswith(f"{prefix}/"):
-            return root / value.removeprefix(prefix).lstrip("/")
-    return Path(value).expanduser().resolve(strict=False)
-
-
-def _read_skill_frontmatter(path: Path) -> tuple[str, str]:
-    try:
-        with path.open("r", encoding="utf-8") as stream:
-            lines = []
-            for index, line in enumerate(stream):
-                if index >= 256:
-                    break
-                lines.append(line)
-                if index > 0 and line.strip() == "---":
-                    break
-    except (OSError, UnicodeError) as exc:
-        raise ThreadError("A Skill document cannot be read.", code="skill_catalog_invalid") from exc
-    if not lines or lines[0].strip() != "---" or len(lines) < 3 or lines[-1].strip() != "---":
-        raise ThreadError("A Skill document has invalid frontmatter.", code="skill_catalog_invalid")
-    try:
-        value = yaml.safe_load("".join(lines[1:-1]))
-    except yaml.YAMLError as exc:
-        raise ThreadError("A Skill document has invalid frontmatter.", code="skill_catalog_invalid") from exc
-    if not isinstance(value, dict):
-        raise ThreadError("A Skill document has invalid frontmatter.", code="skill_catalog_invalid")
-    name = value.get("name")
-    description = value.get("description")
-    if not isinstance(name, str) or not name.strip() or not isinstance(description, str) or not description.strip():
-        raise ThreadError("A Skill document has invalid frontmatter.", code="skill_catalog_invalid")
-    return name.strip()[:256], description.strip()[: 16 * 1024]
 
 
 def _json_mapping(value: object | None) -> dict[str, JsonValue] | None:

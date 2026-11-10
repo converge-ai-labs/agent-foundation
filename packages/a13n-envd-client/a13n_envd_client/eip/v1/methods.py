@@ -37,6 +37,8 @@ from .models import (
     EnvironmentReadinessResult,
     FileCopyParams,
     FileCopyResult,
+    FileDiscoverDocumentsParams,
+    FileDiscoverDocumentsResult,
     FileFindParams,
     FileFindResult,
     FileListParams,
@@ -59,6 +61,8 @@ from .models import (
     FileSearchResult,
     FileStatParams,
     FileStatResult,
+    FileTreeParams,
+    FileTreeResult,
     FileWriterAbortParams,
     FileWriterAbortResult,
     FileWriterCommitParams,
@@ -412,6 +416,19 @@ FILE_COPY = MethodSpec(
     device_scoped=False,
 )
 
+FILE_DISCOVER_DOCUMENTS = MethodSpec(
+    name="file.discover_documents",
+    kind="request_response",
+    replay_class="active_only",
+    introduced="0.4",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=FileDiscoverDocumentsParams,
+    result_type=FileDiscoverDocumentsResult,
+    device_scoped=False,
+)
+
 FILE_FIND = MethodSpec(
     name="file.find",
     kind="request_response",
@@ -552,6 +569,19 @@ FILE_STAT = MethodSpec(
     transfer_direction=None,
     params_type=FileStatParams,
     result_type=FileStatResult,
+    device_scoped=False,
+)
+
+FILE_TREE = MethodSpec(
+    name="file.tree",
+    kind="request_response",
+    replay_class="active_only",
+    introduced="0.4",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=FileTreeParams,
+    result_type=FileTreeResult,
     device_scoped=False,
 )
 
@@ -878,6 +908,7 @@ METHODS = MappingProxyType(
         FILE_CLOSE_READER.name: FILE_CLOSE_READER,
         FILE_COMMIT_WRITER.name: FILE_COMMIT_WRITER,
         FILE_COPY.name: FILE_COPY,
+        FILE_DISCOVER_DOCUMENTS.name: FILE_DISCOVER_DOCUMENTS,
         FILE_FIND.name: FILE_FIND,
         FILE_LIST.name: FILE_LIST,
         FILE_MKDIR.name: FILE_MKDIR,
@@ -889,6 +920,7 @@ METHODS = MappingProxyType(
         FILE_REMOVE.name: FILE_REMOVE,
         FILE_SEARCH.name: FILE_SEARCH,
         FILE_STAT.name: FILE_STAT,
+        FILE_TREE.name: FILE_TREE,
         FILE_WRITE_TEXT.name: FILE_WRITE_TEXT,
         INITIALIZE.name: INITIALIZE,
         OPERATION_CANCEL.name: OPERATION_CANCEL,

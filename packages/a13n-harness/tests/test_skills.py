@@ -1792,3 +1792,43 @@ async def test_resolution_phase_records_selection_and_bounded_results(tmp_path, 
             assert "a13n.output" not in span.attributes
     finally:
         provider.shutdown()
+
+
+async def test_complete_frozen_catalog_reaches_producer_before_model(tmp_path: Path) -> None:
+    from a13n_harness.capabilities.skills import SkillCatalogResolvedEvent
+
+    expected = tuple(f"skill-{index:03}" for index in range(130))
+    for name in expected:
+        directory = tmp_path / ".agents" / "skills" / name
+        directory.mkdir(parents=True)
+        (directory / "SKILL.md").write_text(f"---\nname: {name}\ndescription: {'x' * 600}\n---\n")
+    observed: list[HarnessEvent] = []
+
+    async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del messages, info
+        frozen = [item for item in observed if isinstance(item.event, SkillCatalogResolvedEvent)]
+        assert len(frozen) == 1
+        assert tuple(item.name for item in frozen[0].event.catalog.items) == expected
+        assert len(frozen[0].event.catalog.model_dump_json().encode()) > 64 * 1024
+        yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        model=FunctionModel(stream_function=model),
+        output_type=str,
+        capabilities=(SkillsCapability(_manager()),),
+    )
+    async with executable.stream(
+        "Use skills",
+        bindings=RunBindings.embedded(environment=_binding(tmp_path), producer_observer=observed.append),
+    ) as run:
+        delivered = [item async for item in run]
+    frozen = [
+        item
+        for item in delivered
+        if isinstance(item, HarnessEvent) and isinstance(item.event, SkillCatalogResolvedEvent)
+    ]
+    assert len(frozen) == 1
+    assert frozen[0].thread_id == run.thread_id
+    assert frozen[0].run_id == run.run_id
+    assert tuple(item.name for item in frozen[0].event.catalog.items) == expected

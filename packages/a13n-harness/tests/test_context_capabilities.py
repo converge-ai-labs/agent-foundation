@@ -1569,6 +1569,62 @@ async def test_compaction_failure_is_fail_open() -> None:
     assert "Original task" in str(result.all_messages())
 
 
+@pytest.mark.parametrize("line_count", [100, 200, 500, 1000])
+async def test_file_context_reads_short_lines_in_one_bounded_page(tmp_path: Path, monkeypatch, line_count: int) -> None:
+    from a13n_harness.capabilities.context import _read_file_context
+    from a13n_harness.providers.environment.direct_local.files import LocalFileOperator
+    from a13n_harness.providers.environment.direct_local.shared import _DirectLocalFilePolicy
+
+    content = ("x" * 79 + "\n") * line_count
+    (tmp_path / "guidance").write_text(content)
+    files = LocalFileOperator(
+        root=tmp_path,
+        policy=_DirectLocalFilePolicy(max_value_bytes=128 * 1024),
+        execution_id="workspace",
+        generation="test",
+    )
+    reads = []
+    read_text = files.read_text
+
+    async def read(path, **kwargs):
+        reads.append(kwargs)
+        return await read_text(path, **kwargs)
+
+    monkeypatch.setattr(files, "read_text", read)
+    configuration = FileContextConfiguration()
+    try:
+        assert await _read_file_context(files, "/guidance", configuration, configuration.max_bytes) == content
+    finally:
+        files.close()
+    assert len(reads) == 1
+    assert reads[0]["line_limit"] == configuration.max_lines_per_file
+    assert reads[0]["max_bytes"] == configuration.max_bytes
+
+
+@pytest.mark.parametrize("content", ["", "tail", "中文\r\n" * 30 + "tail", "😀" * 300 + "\nnext\n"])
+async def test_file_context_byte_budget_preserves_paging_and_truncation(tmp_path: Path, content: str) -> None:
+    from a13n_harness.capabilities.context import _read_file_context
+    from a13n_harness.providers.environment.direct_local.files import LocalFileOperator
+    from a13n_harness.providers.environment.direct_local.shared import _DirectLocalFilePolicy
+
+    (tmp_path / "guidance").write_bytes(content.encode())
+    files = LocalFileOperator(
+        root=tmp_path, policy=_DirectLocalFilePolicy(max_value_bytes=128), execution_id="workspace", generation="test"
+    )
+    configuration = FileContextConfiguration(max_bytes=512)
+    try:
+        result = await _read_file_context(files, "/guidance", configuration, configuration.max_bytes)
+    finally:
+        files.close()
+    assert len(result.encode()) <= 512
+    if len(content.encode()) <= 512:
+        assert result == content
+    else:
+        assert "File context truncated by configured limits" in result
+        assert result.endswith("[File context truncated by configured limits]")
+        assert "next\n" in result
+
+
 async def test_file_context_pre_read_budget_is_utf8_byte_safe(tmp_path: Path) -> None:
     (tmp_path / "AGENTS.md").write_text("😀" * 10_000, encoding="utf-8")
     seen: list[list[ModelMessage]] = []

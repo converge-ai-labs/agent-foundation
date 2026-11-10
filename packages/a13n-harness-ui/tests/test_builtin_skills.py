@@ -140,7 +140,7 @@ async def test_user_and_project_skills_override_builtin_in_preview_and_runtime(
         assert all(entry.logical_path != str(invalid.parent) for entry in preview.items)
         warning = next(record for record in caplog.records if record.message == "skill_catalog_entry_skipped")
         assert warning.levelname == "WARNING"
-        assert warning.path == str(invalid)
+        assert warning.path == str(invalid.parent)
         assert warning.code == "skill_catalog_invalid"
         expected_source = f"a13n-harness-ui:{'user-skills' if override_source == 'user' else 'project:workspace'}"
         assert item.source_id == warning.source_id == expected_source

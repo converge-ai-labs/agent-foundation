@@ -143,6 +143,7 @@ def convert_error(error: BaseException) -> EnvironmentError:
             "line_offset": "line_offset",
             "line_limit": "line_limit",
             "max_line_length": "max_line_length",
+            "text_byte_limit": "max_bytes",
             "offset": "offset",
             "max_results": "max_results",
             "context_lines": "context_lines",

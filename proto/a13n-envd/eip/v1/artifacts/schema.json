@@ -2823,6 +2823,234 @@
       "title": "FileCopyResult",
       "type": "object"
     },
+    "FileDiscoverDocumentsParams": {
+      "additionalProperties": false,
+      "properties": {
+        "basename": {
+          "minLength": 1,
+          "title": "Basename",
+          "type": "string"
+        },
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "line_limit": {
+          "maximum": 18446744073709551615,
+          "minimum": 1,
+          "title": "Line Limit",
+          "type": "integer"
+        },
+        "max_entries": {
+          "maximum": 10000,
+          "minimum": 1,
+          "title": "Max Entries",
+          "type": "integer"
+        },
+        "max_line_length": {
+          "maximum": 18446744073709551615,
+          "minimum": 1,
+          "title": "Max Line Length",
+          "type": "integer"
+        },
+        "position": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FileDiscoveryPosition"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "result_byte_limit": {
+          "maximum": 18446744073709551615,
+          "minimum": 1,
+          "title": "Result Byte Limit",
+          "type": "integer"
+        },
+        "root": {
+          "$ref": "#/$defs/EIPPath"
+        },
+        "text_byte_limit": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Text Byte Limit"
+        }
+      },
+      "required": [
+        "context",
+        "root",
+        "basename",
+        "max_entries",
+        "line_limit",
+        "max_line_length",
+        "result_byte_limit"
+      ],
+      "title": "FileDiscoverDocumentsParams",
+      "type": "object"
+    },
+    "FileDiscoverDocumentsResult": {
+      "additionalProperties": false,
+      "properties": {
+        "documents": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/FileDocument"
+          },
+          "title": "Documents",
+          "type": "array"
+        },
+        "entries_exceeded": {
+          "title": "Entries Exceeded",
+          "type": "boolean"
+        },
+        "next_position": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FileDiscoveryPosition"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "omitted_unrepresentable_entries": {
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "title": "Omitted Unrepresentable Entries",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "entries_exceeded",
+        "omitted_unrepresentable_entries"
+      ],
+      "title": "FileDiscoverDocumentsResult",
+      "type": "object"
+    },
+    "FileDiscoveryPosition": {
+      "additionalProperties": false,
+      "properties": {
+        "candidate_offset": {
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "title": "Candidate Offset",
+          "type": "integer"
+        },
+        "text_byte_offset": {
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "title": "Text Byte Offset",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "candidate_offset",
+        "text_byte_offset"
+      ],
+      "title": "FileDiscoveryPosition",
+      "type": "object"
+    },
+    "FileDocument": {
+      "discriminator": {
+        "mapping": {
+          "failure": "#/$defs/FileDocumentFailure",
+          "text": "#/$defs/FileDocumentText"
+        },
+        "propertyName": "kind"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/FileDocumentText"
+        },
+        {
+          "$ref": "#/$defs/FileDocumentFailure"
+        }
+      ]
+    },
+    "FileDocumentFailure": {
+      "additionalProperties": false,
+      "properties": {
+        "error": {
+          "$ref": "#/$defs/EIPError"
+        },
+        "kind": {
+          "const": "failure",
+          "title": "Kind",
+          "type": "string"
+        },
+        "path": {
+          "$ref": "#/$defs/EIPPath"
+        },
+        "phase": {
+          "$ref": "#/$defs/FileDocumentFailurePhase"
+        }
+      },
+      "required": [
+        "kind",
+        "path",
+        "phase",
+        "error"
+      ],
+      "title": "FileDocumentFailure",
+      "type": "object"
+    },
+    "FileDocumentFailurePhase": {
+      "enum": [
+        "probe",
+        "read"
+      ],
+      "title": "FileDocumentFailurePhase",
+      "type": "string"
+    },
+    "FileDocumentText": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "text",
+          "title": "Kind",
+          "type": "string"
+        },
+        "prefix": {
+          "$ref": "#/$defs/FileReadTextResult"
+        },
+        "prefix_byte_length": {
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "title": "Prefix Byte Length",
+          "type": "integer"
+        },
+        "prefix_digest": {
+          "$ref": "#/$defs/ContentDigest"
+        },
+        "text_byte_offset": {
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "title": "Text Byte Offset",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "prefix",
+        "text_byte_offset",
+        "prefix_byte_length",
+        "prefix_digest"
+      ],
+      "title": "FileDocumentText",
+      "type": "object"
+    },
     "FileFindParams": {
       "additionalProperties": false,
       "properties": {
@@ -3267,6 +3495,20 @@
         },
         "path": {
           "$ref": "#/$defs/EIPPath"
+        },
+        "text_byte_limit": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Text Byte Limit"
         }
       },
       "required": [
@@ -3698,6 +3940,99 @@
         "info"
       ],
       "title": "FileStatResult",
+      "type": "object"
+    },
+    "FileTreeParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "include_hidden": {
+          "title": "Include Hidden",
+          "type": "boolean"
+        },
+        "max_depth": {
+          "maximum": 4294967295,
+          "minimum": 1,
+          "title": "Max Depth",
+          "type": "integer"
+        },
+        "max_directory_calls": {
+          "maximum": 4294967295,
+          "minimum": 1,
+          "title": "Max Directory Calls",
+          "type": "integer"
+        },
+        "max_entries": {
+          "maximum": 4294967295,
+          "minimum": 1,
+          "title": "Max Entries",
+          "type": "integer"
+        },
+        "metadata_byte_limit": {
+          "maximum": 18446744073709551615,
+          "minimum": 1,
+          "title": "Metadata Byte Limit",
+          "type": "integer"
+        },
+        "path_prefix_bytes": {
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "title": "Path Prefix Bytes",
+          "type": "integer"
+        },
+        "result_byte_limit": {
+          "maximum": 18446744073709551615,
+          "minimum": 1,
+          "title": "Result Byte Limit",
+          "type": "integer"
+        },
+        "root": {
+          "$ref": "#/$defs/EIPPath"
+        }
+      },
+      "required": [
+        "context",
+        "root",
+        "max_depth",
+        "max_entries",
+        "max_directory_calls",
+        "include_hidden",
+        "metadata_byte_limit",
+        "path_prefix_bytes",
+        "result_byte_limit"
+      ],
+      "title": "FileTreeParams",
+      "type": "object"
+    },
+    "FileTreeResult": {
+      "additionalProperties": false,
+      "properties": {
+        "directory_calls": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "title": "Directory Calls",
+          "type": "integer"
+        },
+        "entries": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/FileListEntry"
+          },
+          "title": "Entries",
+          "type": "array"
+        },
+        "truncated": {
+          "title": "Truncated",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "truncated",
+        "directory_calls"
+      ],
+      "title": "FileTreeResult",
       "type": "object"
     },
     "FileWriteMode": {

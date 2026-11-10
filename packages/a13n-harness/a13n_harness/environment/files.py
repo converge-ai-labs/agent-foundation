@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterable, AsyncIterator, Sequence
+from dataclasses import dataclass
 from typing import Literal, Protocol
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from a13n_harness.environment.archives import FileArchive
-from a13n_harness.environment.models import EnvironmentOperationReceipt
+from a13n_harness.environment.models import EnvironmentError, EnvironmentOperationReceipt
 
 type FileWriteMode = Literal["create", "replace", "upsert", "append"]
 MAX_FILE_BATCH_OPERATIONS = 128
@@ -61,12 +62,76 @@ class FileMetadata(BaseModel):
     writable: bool
 
 
+class FileDocumentRequest(BaseModel):
+    """Observe a named document at a root and its immediate nonhidden directories."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    root: str
+    basename: str = Field(min_length=1)
+    max_entries: int = Field(default=256, gt=0, le=10_000)
+    line_limit: int = Field(default=256, gt=0)
+    max_line_length: int = Field(default=16 * 1024, gt=0)
+    max_bytes: int | None = Field(default=None, gt=0)
+
+    @field_validator("basename")
+    @classmethod
+    def _basename(cls, value: str) -> str:
+        if value in {".", ".."} or any(char in value for char in "/\\\x00"):
+            raise ValueError("document basename must be one non-traversing filename")
+        return value
+
+
+@dataclass(frozen=True, slots=True)
+class FileDocumentText:
+    """One complete bounded prefix with observed regular-file metadata."""
+
+    info: FileMetadata
+    prefix: FileTextResult
+
+
+@dataclass(frozen=True, slots=True)
+class FileDocumentFailure:
+    """A candidate's ordered failure; scope and lifecycle failures still raise."""
+
+    path: str
+    phase: Literal["probe", "read"]
+    error: EnvironmentError
+
+
+type FileDocument = FileDocumentText | FileDocumentFailure
+
+
 class FileEntriesResult(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     entries: tuple[FileMetadata, ...]
     offset: int = Field(ge=0)
     has_more: bool
+
+
+class FileTreeRequest(BaseModel):
+    """A bounded, metadata-only breadth-first observation, without retained cursors."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    root: str
+    max_depth: int = Field(default=4, ge=1, le=16)
+    max_entries: int = Field(default=256, gt=0, le=4_096)
+    max_directory_calls: int = Field(default=64, gt=0, le=1_024)
+    include_hidden: bool = False
+    max_bytes: int = Field(default=16 * 1024, gt=0, le=256 * 1024)
+    # Encoded root-prefix length after path virtualization, excluding JSON quotes.
+    # None selects the observed provider root. This is accounting, never a path grant.
+    path_prefix_bytes: int | None = Field(default=None, ge=0)
+
+
+class FileTreeResult(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    entries: tuple[FileMetadata, ...]
+    truncated: bool
+    directory_calls: int = Field(ge=0)
 
 
 class FileQueryRequest(BaseModel):
@@ -162,6 +227,27 @@ type FileBatchValue = FileMetadata | FileMutationResult | FileWriteResult | None
 
 
 class FileOperator(Protocol):
+    async def list_tree(self, request: FileTreeRequest) -> FileTreeResult:
+        """Observe sorted directory pages in BFS order under FILE_LIST authority.
+
+        max_directory_calls bounds shallow observations, including continuation
+        pages, independently of transport RPC count. max_bytes charges each
+        compact UTF-8 JSON {kind,path,size?} plus one separator byte; paths use
+        the observed root prefix or the declared encoded path_prefix_bytes.
+        Stop before another directory observation after any budget is exhausted.
+        """
+        ...
+
+    def discover_documents(self, request: FileDocumentRequest) -> AsyncIterator[FileDocument]:
+        """Yield root-first then sorted child documents, without following child directories.
+
+        Detect entry overflow before yielding (environment_too_large with reason
+        entries_exceeded). Never treat partial or unrepresentable discovery as
+        complete. Providers own bounded paging and complete-prefix assembly;
+        callers must exhaust or close the iterator within its file scope.
+        """
+        ...
+
     async def batch(self, operations: Sequence[FileOperation]) -> tuple[FileBatchValue, ...]:
         """Run bounded operations in order in one file scope, stopping on error.
 
@@ -182,7 +268,14 @@ class FileOperator(Protocol):
         line_offset: int = 0,
         line_limit: int = 200,
         max_line_length: int = 2_000,
-    ) -> FileTextResult: ...
+        max_bytes: int | None = None,
+    ) -> FileTextResult:
+        """Read logical lines under the optional positive UTF-8 text byte ceiling.
+
+        Provider limits still apply. Continue with line_offset + lines_read;
+        providers clip an oversized first line or report a size-limit error.
+        """
+        ...
 
     async def read_bytes(
         self,

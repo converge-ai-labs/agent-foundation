@@ -499,13 +499,15 @@ def _construct_capability(
             review_config = ToolReviewConfig.model_validate({"on_flagged": "approval_required", **review})
         return ToolPermissionsCapability(ToolPermissions.model_validate(permissions), review=review_config)
     if capability_type is SkillsCapability:
-        return _construct_skills_capability(
-            configuration,
-            path_layout=path_layout
-            or EnvironmentPathLayout(
-                project_mounts=("/workspace",),
-                user_skills="/environment/user-skills",
-            ),
+        return SkillsCapability(
+            create_skill_manager(
+                configuration,
+                path_layout=path_layout
+                or EnvironmentPathLayout(
+                    project_mounts=("/workspace",),
+                    user_skills="/environment/user-skills",
+                ),
+            )
         )
 
     if capability_type is NativeImageGenerationCapability:
@@ -523,11 +525,12 @@ def _construct_capability(
     return capability_type(**arguments)
 
 
-def _construct_skills_capability(
+def create_skill_manager(
     configuration: dict[str, JsonValue],
     *,
     path_layout: EnvironmentPathLayout,
-) -> SkillsCapability:
+) -> SkillManager:
+    """Compose identical ordered sources for runtime freezing and short-lived previews."""
     if len(path_layout.project_mounts) > 64:
         raise ValueError("path_layout must contain at most 64 Project mounts")
     parsed = SkillsConfiguration.model_validate(configuration, strict=True)
@@ -584,12 +587,7 @@ def _construct_skills_capability(
         )
         for index, root in enumerate(parsed.roots, start=1)
     )
-    return SkillsCapability(
-        SkillManager(
-            sources,
-            policy=SkillsPolicy(conflict="prefer_later"),
-        )
-    )
+    return SkillManager(sources, policy=SkillsPolicy(conflict="prefer_later"))
 
 
 def _join_mount_path(root: str, suffix: str) -> str:
@@ -622,4 +620,5 @@ __all__ = [
     "HarnessUiExtensionCatalog",
     "ImplementationReference",
     "SelectedCapability",
+    "create_skill_manager",
 ]

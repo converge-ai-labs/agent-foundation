@@ -209,6 +209,10 @@ class RequestCoordinator(EIPRequester):
         except TimeoutError as error:
             raise EIPRequestTimeoutError("Previous Session replies did not drain", dispatched=False) from error
 
+    @property
+    def max_response_bytes(self) -> int:
+        return self._transport.max_response_bytes
+
     def configure_limits(self, limits: EIPLimits) -> None:
         self._transport.set_limits(
             max_request_bytes=limits.max_request_bytes,

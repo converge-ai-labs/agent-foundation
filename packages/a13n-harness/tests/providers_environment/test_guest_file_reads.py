@@ -202,6 +202,40 @@ async def test_complete_read_retains_path_validation_before_download(guest, tmp_
     guest.sandbox.files.read.assert_not_awaited()
 
 
+@pytest.mark.parametrize("line", ["abcd\n", "中文\r\n", "𐐀𐐁\n"])
+async def test_text_caller_budget_defers_whole_lines(guest, line):
+    content = line * 3 + "tail"
+    guest.reader.path.write_text(content)
+    budget = len(line.encode()) * 2
+    first = await guest.files.read_text("/file", line_limit=1000, max_bytes=budget)
+    assert first.text == line * 2
+    assert first.lines_read == 2 and first.has_more
+    assert first.truncated_lines == ()
+    second = await guest.files.read_text("/file", line_offset=2, max_bytes=budget)
+    assert first.text + second.text == content
+    assert not second.has_more
+
+
+@pytest.mark.parametrize("maximum", [1, 4, 8])
+@pytest.mark.parametrize("suffix", ["", "\n"])
+async def test_text_caller_budget_clips_first_line_with_progress(guest, maximum, suffix):
+    guest.reader.path.write_text("😀" * 10 + suffix)
+    page = await guest.files.read_text("/file", max_bytes=maximum)
+    assert len(page.text.encode()) <= maximum
+    assert page.lines_read == 1 and not page.has_more
+    assert page.truncated_lines == (1,)
+    if suffix:
+        assert page.text.endswith(suffix)
+
+
+@pytest.mark.parametrize("maximum", [0, -1])
+async def test_invalid_text_budget_rejected_before_io(guest, maximum):
+    with pytest.raises(EnvironmentError) as caught:
+        await guest.files.read_text("/file", max_bytes=maximum)
+    assert caught.value.code == "environment_request_invalid"
+    assert guest.actions == []
+
+
 @pytest.mark.parametrize("operation", ["text", "append", "patch"])
 async def test_text_append_and_patch_use_native_complete_read(guest, operation):
     guest.reader.path.write_text("old\n")

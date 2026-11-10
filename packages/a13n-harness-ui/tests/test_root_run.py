@@ -799,3 +799,30 @@ async def test_root_steering_rechecks_cancellation_after_enqueue_wait(monkeypatc
         assert accepted == []
     finally:
         await coordinator.close(timeout_seconds=1)
+
+
+async def test_frozen_skill_catalog_follows_operation_retention() -> None:
+    from a13n_harness.capabilities import BoundSkillCatalog
+
+    class Executor:
+        capture = staticmethod(capture)
+
+        async def execute(self, admission, **kwargs: Any) -> None:
+            kwargs["on_skill_catalog"](BoundSkillCatalog(items=()))
+
+    coordinator = RootRunCoordinator(cast(Any, Executor()), terminal_retention=1)
+    await coordinator.start()
+    try:
+        first = await coordinator.submit_prompt(thread_id="thread-1", prompt="first")
+        await coordinator.wait(first.receipt_id)
+        snapshot = coordinator.skill_catalog(first.receipt_id)
+        assert snapshot == BoundSkillCatalog(items=())
+        assert coordinator.skill_catalog(first.receipt_id) is not snapshot
+        second = await coordinator.submit_prompt(thread_id="thread-1", prompt="second")
+        await coordinator.wait(second.receipt_id)
+        assert coordinator.skill_catalog(second.receipt_id) == snapshot
+        with pytest.raises(RunCoordinationError) as missing:
+            coordinator.skill_catalog(first.receipt_id)
+        assert missing.value.code == "root_receipt_missing"
+    finally:
+        await coordinator.close(timeout_seconds=1)

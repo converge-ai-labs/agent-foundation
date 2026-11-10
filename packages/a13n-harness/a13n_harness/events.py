@@ -500,7 +500,7 @@ type HarnessStreamEvent[OutputT] = HarnessEvent | HarnessRunResultEvent[OutputT]
 class HarnessEventEmitter(Protocol):
     """Run-local path for Harness extensions into the canonical stream."""
 
-    async def emit(self, event: HarnessExtensionEvent) -> None: ...
+    async def emit(self, event: HarnessExtensionEvent | CapabilityEvent) -> None: ...
 
 
 async def emit_harness_event(
@@ -592,7 +592,7 @@ class _RunEventEmitter:
         self._producer_stopped.set()
         self._closed = False
 
-    async def emit(self, event: HarnessExtensionEvent) -> None:
+    async def emit(self, event: HarnessExtensionEvent | CapabilityEvent) -> None:
         if self._closed:
             from a13n_harness.tool_execution import _OWNED_TOOL_EXECUTION
 
@@ -601,6 +601,12 @@ class _RunEventEmitter:
                 # the original conversation stream is already terminal.
                 return
             raise RunError("The Harness event emitter is closed.", code="event_emitter_closed")
+        if isinstance(event, CapabilityEvent):
+            # Harness preparation hooks precede Pydantic AI's native event buffer.
+            # Keep typed Capability observations in the same producer-owned stream.
+            self.observe(event)
+            await self._put(self.envelope(event, sequence=0))
+            return
         if not isinstance(event, HarnessExtensionEvent):
             raise RunError("Harness extension event is invalid.", code="event_invalid")
         try:
@@ -733,7 +739,7 @@ class _RunEventEmitter:
         self._child_provenance_by_token.clear()
         self._producer_stopped.set()
 
-    def envelope(self, event: HarnessExtensionEvent, *, sequence: int) -> HarnessEvent:
+    def envelope(self, event: HarnessExtensionEvent | CapabilityEvent, *, sequence: int) -> HarnessEvent:
         return HarnessEvent(
             thread_id=self.thread_id,
             run_id=self.run_id,

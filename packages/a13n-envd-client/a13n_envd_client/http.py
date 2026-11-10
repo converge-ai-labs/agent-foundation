@@ -96,6 +96,10 @@ class HttpTransport:
         self._close_task: asyncio.Task[None] | None = None
         self._closed = False
 
+    @property
+    def max_response_bytes(self) -> int:
+        return self._max_response_bytes
+
     def set_limits(
         self,
         *,

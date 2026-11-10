@@ -25,6 +25,7 @@ from a13n_harness import (
 from a13n_harness import __version__ as harness_version
 from a13n_harness.capabilities import AskUserQuestionRequest, SubagentOperator, UserQuestionAnswers
 from a13n_harness.capabilities.browser import BrowserUseCapability
+from a13n_harness.capabilities.skills import BoundSkillCatalog, SkillCatalogResolvedEvent, SkillsCapability
 from a13n_harness.context import AgentContext
 from a13n_harness.environment.dynamic import DynamicEnvironmentCapability
 from a13n_harness.input import RunInputFactory, RunInputValue, RunPreparationContext
@@ -273,47 +274,15 @@ class RootRunExecutor:
             else "ordinary",
             coordinator_thread_id=owner,
         )
-        if environment is not None:
-            selection = replace(
-                selection,
-                local_roots=selection.local_roots if environment.local_roots is None else environment.local_roots,
-                environment_profile_id=environment.environment_profile_id or selection.environment_profile_id,
-                environment_bindings=(
-                    selection.environment_bindings
-                    if environment.environment_bindings is None
-                    else environment.environment_bindings
-                ),
-                default_environment=(
-                    environment.default_environment
-                    if "default_environment" in environment.model_fields_set
-                    else selection.default_environment
-                ),
-            )
+        captured_environment = None
         if response is not None:
             assert previous_composition is not None
-            captured = await self._store.objects.read_model(previous_composition, ResolvedRunComposition)
-            patched = set() if mutation is None else set(mutation.patch.model_fields_set)
-            if environment is not None:
-                patched.update(environment.model_fields_set)
-            selection = replace(
-                selection,
-                environment_profile_id=(
-                    captured.environment_profile.profile_id
-                    if "environment_profile_id" not in patched
-                    else selection.environment_profile_id
-                ),
-                local_roots=(captured.project_roots if "local_roots" not in patched else selection.local_roots),
-                environment_bindings=(
-                    tuple(item.selection for item in captured.environment_bindings)
-                    if "environment_bindings" not in patched
-                    else selection.environment_bindings
-                ),
-                default_environment=(
-                    captured.default_environment
-                    if "default_environment" not in patched
-                    else selection.default_environment
-                ),
-            )
+            captured_environment = await self._store.objects.read_model(previous_composition, ResolvedRunComposition)
+        selection = selection.with_environment(
+            environment,
+            captured=captured_environment,
+            patched=frozenset() if mutation is None else frozenset(mutation.patch.model_fields_set),
+        )
         if restart is None:
             source = await self._required_configuration()
             published = await self._compositions.publish(source, selection, model_overrides=model_overrides)
@@ -365,10 +334,16 @@ class RootRunExecutor:
         goal: GoalView | None = None,
         on_goal: Callable[[GoalView], Awaitable[None]] | None = None,
         on_main_account: Callable[[MainAccountSelection], Awaitable[None]] | None = None,
+        on_skill_catalog: Callable[[BoundSkillCatalog], None] | None = None,
     ) -> RootRunOutcome:
         async with self._compaction.use(admission.thread.thread_id) if self._compaction is not None else nullcontext():
             return await self._execute(
-                admission, on_stream=on_stream, goal=goal, on_goal=on_goal, on_main_account=on_main_account
+                admission,
+                on_stream=on_stream,
+                goal=goal,
+                on_goal=on_goal,
+                on_main_account=on_main_account,
+                on_skill_catalog=on_skill_catalog,
             )
 
     async def _execute(
@@ -379,6 +354,7 @@ class RootRunExecutor:
         goal: GoalView | None = None,
         on_goal: Callable[[GoalView], Awaitable[None]] | None = None,
         on_main_account: Callable[[MainAccountSelection], Awaitable[None]] | None = None,
+        on_skill_catalog: Callable[[BoundSkillCatalog], None] | None = None,
     ) -> RootRunOutcome:
         thread = admission.thread
         thread_id = thread.thread_id
@@ -520,6 +496,8 @@ class RootRunExecutor:
                 subscription_sources=self._subscription_sources,
             )
             record_configuration(published.value, reconstructed.definition_capability_ids)
+            if on_skill_catalog is not None and SkillsCapability.id not in reconstructed.definition_capability_ids:
+                on_skill_catalog(BoundSkillCatalog(items=()))
             input_files = (
                 RootInputFiles(
                     self._thread_files,
@@ -573,6 +551,20 @@ class RootRunExecutor:
                 else None
             )
             compaction_result = await self._compaction.restore(previous_state) if self._compaction is not None else None
+
+            def observe_production(item: HarnessEvent) -> None:
+                # The root's exact stream exists before Capability freezing starts.
+                # Inline children share producer capture but never the root catalog.
+                if (
+                    stream is not None
+                    and item.run_id == stream.run_id
+                    and item.thread_id == stream.thread_id
+                    and isinstance(item.event, SkillCatalogResolvedEvent)
+                    and on_skill_catalog is not None
+                ):
+                    on_skill_catalog(item.event.catalog)
+                display.observe(item)
+
             bindings = RunBindings(
                 tool_execution=self._tool_executions.runtime if self._tool_executions is not None else None,
                 codeact_state=self._tool_executions.state(thread_id) if self._tool_executions is not None else None,
@@ -584,7 +576,7 @@ class RootRunExecutor:
                 model_resolver=reconstructed.model_resolver,
                 usage_reporter=usage_reporter,
                 model_call_check=model_call_check,
-                producer_observer=display.observe,
+                producer_observer=observe_production,
                 file_media_understanding=reconstructed.file_media_understanding(previous_state.thread_id),
                 working_state_observer=(
                     partial(self._work.observe, thread_id, base_continuation_id=base_continuation_id)

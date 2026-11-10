@@ -907,6 +907,90 @@
       "x-eip-transfer-direction": null
     },
     {
+      "name": "file.discover_documents",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/FileDiscoverDocumentsParams/properties/context"
+          }
+        },
+        {
+          "name": "root",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/FileDiscoverDocumentsParams/properties/root"
+          }
+        },
+        {
+          "name": "basename",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/FileDiscoverDocumentsParams/properties/basename"
+          }
+        },
+        {
+          "name": "max_entries",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/FileDiscoverDocumentsParams/properties/max_entries"
+          }
+        },
+        {
+          "name": "line_limit",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/FileDiscoverDocumentsParams/properties/line_limit"
+          }
+        },
+        {
+          "name": "max_line_length",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/FileDiscoverDocumentsParams/properties/max_line_length"
+          }
+        },
+        {
+          "name": "text_byte_limit",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/FileDiscoverDocumentsParams/properties/text_byte_limit"
+          }
+        },
+        {
+          "name": "result_byte_limit",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/FileDiscoverDocumentsParams/properties/result_byte_limit"
+          }
+        },
+        {
+          "name": "position",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/FileDiscoverDocumentsParams/properties/position"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/FileDiscoverDocumentsResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.4",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/FileDiscoverDocumentsParams"
+      },
+      "x-eip-replay-class": "active_only",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
       "name": "file.find",
       "paramStructure": "by-name",
       "params": [
@@ -1336,6 +1420,13 @@
           "schema": {
             "$ref": "schema.json#/$defs/FileReadTextParams/properties/max_line_length"
           }
+        },
+        {
+          "name": "text_byte_limit",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/FileReadTextParams/properties/text_byte_limit"
+          }
         }
       ],
       "result": {
@@ -1573,6 +1664,90 @@
       "x-eip-kind": "request_response",
       "x-eip-params-schema": {
         "$ref": "schema.json#/$defs/FileStatParams"
+      },
+      "x-eip-replay-class": "active_only",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "file.tree",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/FileTreeParams/properties/context"
+          }
+        },
+        {
+          "name": "root",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/FileTreeParams/properties/root"
+          }
+        },
+        {
+          "name": "max_depth",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/FileTreeParams/properties/max_depth"
+          }
+        },
+        {
+          "name": "max_entries",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/FileTreeParams/properties/max_entries"
+          }
+        },
+        {
+          "name": "max_directory_calls",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/FileTreeParams/properties/max_directory_calls"
+          }
+        },
+        {
+          "name": "include_hidden",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/FileTreeParams/properties/include_hidden"
+          }
+        },
+        {
+          "name": "metadata_byte_limit",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/FileTreeParams/properties/metadata_byte_limit"
+          }
+        },
+        {
+          "name": "path_prefix_bytes",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/FileTreeParams/properties/path_prefix_bytes"
+          }
+        },
+        {
+          "name": "result_byte_limit",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/FileTreeParams/properties/result_byte_limit"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/FileTreeResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.4",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/FileTreeParams"
       },
       "x-eip-replay-class": "active_only",
       "x-eip-transfer-action": null,

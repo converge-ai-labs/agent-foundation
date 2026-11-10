@@ -6,6 +6,8 @@ import os
 import socket
 from contextlib import asynccontextmanager
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 from a13n_envd_client import (
@@ -13,6 +15,7 @@ from a13n_envd_client import (
     EIPDeviceConnection,
     EIPMethodError,
     EIPRequestTimeoutError,
+    EIPSession,
     EIPSessionStateError,
     HttpTransport,
     StdioTransport,
@@ -37,6 +40,37 @@ from a13n_envd_client.eip.v1 import (
     ShellExecParams,
 )
 from websockets.asyncio.server import serve
+
+
+@pytest.mark.parametrize("state", ["not_ready", "closed", "detached", "carrier_closed"])
+@pytest.mark.parametrize("accessor", ["client", "requester"])
+def test_session_access_rejects_unusable_local_lifecycle_without_io(state, accessor):
+    device = SimpleNamespace(is_closed=state == "carrier_closed", _sessions={})
+    requester = Mock()
+    session = EIPSession(device, requester, SimpleNamespace(session_id="session"))
+    session._ready = state != "not_ready"
+    if state == "closed":
+        session._closed = True
+    elif state == "detached":
+        session._host_binding = True
+        session.detach_host_binding()
+    requester.reset_mock()
+    with pytest.raises(EIPSessionStateError, match="closed or not ready"):
+        if accessor == "client":
+            _ = session.client
+        else:
+            _ = session.requester
+    assert requester.mock_calls == []
+
+
+def test_ready_session_access_uses_local_state_without_io():
+    requester = Mock()
+    session = EIPSession(SimpleNamespace(is_closed=False), requester, SimpleNamespace())
+    session._ready = True
+    for _ in range(10):
+        assert session.client is session._client
+        assert session.requester is requester
+    assert requester.mock_calls == []
 
 
 def binary() -> Path:
@@ -186,6 +220,43 @@ async def running_device(
         expected_code = 1 if os.name == "nt" and terminated_by_test else 0
         assert process.returncode == expected_code, stderr.decode(errors="replace")
         assert b"fixture-device-token" not in stderr
+
+
+@pytest.mark.parametrize("carrier", ["stdio", "http", "websocket"])
+def test_real_text_byte_budget_and_continuation(tmp_path: Path, carrier: str):
+    async def scenario():
+        async with running_device(tmp_path, carrier) as device:
+            path = tmp_path / "alpha" / "guidance.txt"
+            content = ("x" * 79 + "\n") * 1000
+            path.write_text(content)
+            async with await device.open_session() as session:
+                params = FileReadTextParams(
+                    context=EIPCallContext(operation_id="op-bounded-context"),
+                    path=EIPPath(path=device_path(path)),
+                    line_limit=1000,
+                    max_line_length=4000,
+                    text_byte_limit=128 * 1024,
+                )
+                page = await session.client.file_read_text(params)
+                assert page.text == content and page.lines_read == 1000
+                assert not page.has_more and page.truncated_lines == ()
+                path.write_text("中文\r\n中文\r\ntail")
+                params = params.model_copy(update={"text_byte_limit": 8})
+                pages = []
+                while True:
+                    page = await session.client.file_read_text(params)
+                    assert len(page.text.encode()) <= 8 and page.lines_read > 0
+                    pages.append(page.text)
+                    if not page.has_more:
+                        break
+                    params = params.model_copy(update={"line_offset": page.line_offset + page.lines_read})
+                assert "".join(pages) == path.read_bytes().decode()
+                params = params.model_copy(update={"line_offset": 0, "text_byte_limit": 1})
+                with pytest.raises(EIPMethodError) as caught:
+                    await session.client.file_read_text(params)
+                assert caught.value.error.data.error_type == ErrorType.OUTPUT_LIMIT_EXCEEDED
+
+    asyncio.run(scenario())
 
 
 @pytest.mark.parametrize("failure", ["transport", "timeout", "closed"])
@@ -802,5 +873,281 @@ def test_owned_native_job_lives_and_unowned_job_expires(tmp_path: Path, noisy: b
             with pytest.raises(EIPMethodError) as expired:
                 await device.attach_session(saved)
             assert expired.value.error.data.error_type is ErrorType.NOT_INITIALIZED
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("carrier", ["stdio", "http", "websocket"])
+def test_real_document_discovery_order_limits_and_read_failures(tmp_path: Path, carrier: str):
+    from a13n_envd_client.eip.v1 import FileDiscoverDocumentsParams, FileDocumentFailure, FileDocumentText
+
+    async def scenario():
+        async with running_device(tmp_path, carrier) as device:
+            root = tmp_path / "alpha"
+            for name in ("z-last", "a-first", "invalid", "missing", ".hidden"):
+                (root / name).mkdir()
+            (root / "SKILL.md").write_text("root\n")
+            (root / "z-last" / "SKILL.md").write_text("last\n")
+            (root / "a-first" / "SKILL.md").write_bytes("\ufeff---\r\nname: 中\r\n---\r\n".encode())
+            (root / "invalid" / "SKILL.md").write_bytes(b"not\x00text")
+            (root / ".hidden" / "SKILL.md").write_text("hidden")
+            (root / "other-file").write_text("counts toward entry bound")
+            session = await device.open_session()
+            assert session.max_response_bytes == 1024 * 1024
+            assert session.descriptor.limits.max_response_bytes > session.max_response_bytes
+            params = FileDiscoverDocumentsParams(
+                context=EIPCallContext(operation_id="discover-root"),
+                root=EIPPath(path=device_path(root)),
+                basename="SKILL.md",
+                max_entries=6,
+                line_limit=256,
+                max_line_length=16384,
+                result_byte_limit=session.max_response_bytes - 4096,
+            )
+            result = await session.client.file_discover_documents(params)
+            assert not result.entries_exceeded and result.next_position is None
+            assert result.omitted_unrepresentable_entries == 0
+            assert len(result.documents) == 4
+            first, second, failure, last = result.documents
+            assert isinstance(first, FileDocumentText) and first.prefix.text == "root\n"
+            assert isinstance(second, FileDocumentText) and second.prefix.text.startswith("\ufeff---\r\n")
+            assert isinstance(failure, FileDocumentFailure)
+            assert failure.phase.value == "read" and failure.error.data.error_type is ErrorType.UNSUPPORTED
+            assert isinstance(last, FileDocumentText) and last.prefix.text == "last\n"
+            overflow = await session.client.file_discover_documents(
+                params.model_copy(
+                    update={
+                        "context": EIPCallContext(operation_id="discover-overflow"),
+                        "max_entries": 5,
+                    }
+                )
+            )
+            assert overflow.entries_exceeded and not overflow.documents and overflow.next_position is None
+            for index, basename in enumerate(("../SKILL.md", "a/b", "a\\b", ".", "..")):
+                with pytest.raises(EIPMethodError) as invalid:
+                    await session.client.file_discover_documents(
+                        params.model_copy(
+                            update={
+                                "context": EIPCallContext(operation_id=f"invalid-basename-{index}"),
+                                "basename": basename,
+                            }
+                        )
+                    )
+                assert invalid.value.error.data.error_type is ErrorType.INVALID_PARAMS
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("carrier", ["stdio", "http", "websocket"])
+def test_real_document_discovery_fragmented_encoded_budget(tmp_path: Path, carrier: str):
+    import hashlib
+
+    from a13n_envd_client.eip.v1 import FileDiscoverDocumentsParams, FileDocumentText, encode_model
+
+    async def scenario():
+        async with running_device(tmp_path, carrier) as device:
+            root = tmp_path / "alpha"
+            # Large valid frontmatter cannot be replaced by a small per-document cap.
+            text = "---\nname: large\ndescription: valid\n" + ('# 中\\"\t' * 1500 + "\n") * 100 + "---\n"
+            assert len(text.encode()) > 1024 * 1024
+            (root / "SKILL.md").write_text(text, encoding="utf-8", newline="")
+            session = await device.open_session()
+            position = None
+            fragments = []
+            observed_digest = None
+            for index in range(100):
+                budget = session.max_response_bytes - 4096
+                result = await session.client.file_discover_documents(
+                    FileDiscoverDocumentsParams(
+                        context=EIPCallContext(operation_id=f"fragment-{index}"),
+                        root=EIPPath(path=device_path(root)),
+                        basename="SKILL.md",
+                        max_entries=10,
+                        line_limit=256,
+                        max_line_length=16384,
+                        result_byte_limit=budget,
+                        position=position,
+                    )
+                )
+                assert len(encode_model(result)) <= budget
+                assert not result.entries_exceeded and len(result.documents) == 1
+                document = result.documents[0]
+                assert isinstance(document, FileDocumentText)
+                assert document.text_byte_offset == sum(len(part.encode()) for part in fragments)
+                assert document.prefix_byte_length == len(text.encode())
+                assert not document.prefix.truncated_lines and not document.prefix.has_more
+                digest = document.prefix_digest.value
+                assert observed_digest is None or observed_digest == digest
+                observed_digest = digest
+                fragments.append(document.prefix.text)
+                if result.next_position is None:
+                    break
+                assert result.next_position.text_byte_offset > document.text_byte_offset
+                position = result.next_position
+            else:
+                pytest.fail("discovery did not make finite progress")
+            assert index > 0 and "".join(fragments) == text
+            assert observed_digest == hashlib.sha256(text.encode()).hexdigest()
+            with pytest.raises(EIPMethodError) as small:
+                await session.client.file_discover_documents(
+                    FileDiscoverDocumentsParams(
+                        context=EIPCallContext(operation_id="too-small"),
+                        root=EIPPath(path=device_path(root)),
+                        basename="SKILL.md",
+                        max_entries=10,
+                        line_limit=256,
+                        max_line_length=16384,
+                        result_byte_limit=16,
+                    )
+                )
+            assert small.value.error.data.error_type is ErrorType.OUTPUT_LIMIT_EXCEEDED
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.skipif(os.name == "nt", reason="fixture uses POSIX symlinks")
+def test_real_document_discovery_follows_document_not_directory_links(tmp_path: Path):
+    from a13n_envd_client.eip.v1 import FileDiscoverDocumentsParams, FileDocumentText
+
+    async def scenario():
+        async with running_device(tmp_path, "stdio") as device:
+            root = tmp_path / "alpha"
+            external = tmp_path / "beta"
+            (external / "SKILL.md").write_text("external\n")
+            (root / "directory-link").symlink_to(external, target_is_directory=True)
+            (root / "SKILL.md").symlink_to(external / "SKILL.md")
+            (root / "nonregular").mkdir()
+            (root / "nonregular" / "SKILL.md").mkdir()
+            session = await device.open_session()
+            result = await session.client.file_discover_documents(
+                FileDiscoverDocumentsParams(
+                    context=EIPCallContext(operation_id="symlinks"),
+                    root=EIPPath(path=device_path(root)),
+                    basename="SKILL.md",
+                    max_entries=3,
+                    line_limit=256,
+                    max_line_length=16384,
+                    result_byte_limit=session.max_response_bytes - 4096,
+                )
+            )
+            assert result.next_position is None and len(result.documents) == 1
+            document = result.documents[0]
+            assert isinstance(document, FileDocumentText)
+            assert document.prefix.text == "external\n"
+            assert document.prefix.info.path.path == device_path(root / "SKILL.md")
+
+    asyncio.run(scenario())
+
+
+def test_real_document_discovery_batches_wide_root_and_pages_whole_outcomes(tmp_path: Path):
+    from a13n_envd_client.eip.v1 import FileDiscoverDocumentsParams, FileDocumentText, encode_model
+
+    async def scenario():
+        async with running_device(tmp_path, "stdio") as device:
+            root = tmp_path / "alpha"
+            for index in range(250):
+                directory = root / f"skill-{index:03}"
+                directory.mkdir()
+                (directory / "SKILL.md").write_text(f"---\nname: skill-{index:03}\ndescription: fixture\n---\n")
+            session = await device.open_session()
+            params = FileDiscoverDocumentsParams(
+                context=EIPCallContext(operation_id="wide-root"),
+                root=EIPPath(path=device_path(root)),
+                basename="SKILL.md",
+                max_entries=250,
+                line_limit=256,
+                max_line_length=16384,
+                result_byte_limit=session.max_response_bytes - 4096,
+            )
+            result = await session.client.file_discover_documents(params)
+            assert len(result.documents) == 250 and result.next_position is None
+            assert all(isinstance(item, FileDocumentText) for item in result.documents)
+            expected = [item.prefix.info.path.path for item in result.documents]
+            position = None
+            observed = []
+            for index in range(250):
+                page = await session.client.file_discover_documents(
+                    params.model_copy(
+                        update={
+                            "context": EIPCallContext(operation_id=f"whole-page-{index}"),
+                            "result_byte_limit": 4096,
+                            "position": position,
+                        }
+                    )
+                )
+                assert len(encode_model(page)) <= 4096
+                for item in page.documents:
+                    assert isinstance(item, FileDocumentText) and item.text_byte_offset == 0
+                    assert len(item.prefix.text.encode()) == item.prefix_byte_length
+                    observed.append(item.prefix.info.path.path)
+                if page.next_position is None:
+                    break
+                assert page.next_position.text_byte_offset == 0
+                assert position is None or page.next_position.candidate_offset > position.candidate_offset
+                position = page.next_position
+            else:
+                pytest.fail("whole-outcome pagination did not finish")
+            assert index > 0 and observed == expected
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("carrier", ["stdio", "http", "websocket"])
+def test_real_tree_observation_bfs_and_independent_budgets(tmp_path: Path, carrier: str):
+    from a13n_envd_client.eip.v1 import FileKind, FileTreeParams, encode_model
+
+    async def scenario():
+        async with running_device(tmp_path, carrier) as device:
+            root = tmp_path / "alpha"
+            for name in ("a", "z", ".hidden"):
+                (root / name).mkdir()
+                (root / name / "child").write_text("content is not loaded")
+            (root / "a.txt").write_text("content is not loaded")
+            async with await device.open_session() as session:
+                params = FileTreeParams(
+                    context=EIPCallContext(operation_id="tree"),
+                    root=EIPPath(path=device_path(root)),
+                    max_depth=4,
+                    max_entries=256,
+                    max_directory_calls=64,
+                    include_hidden=False,
+                    metadata_byte_limit=16384,
+                    path_prefix_bytes=123,
+                    result_byte_limit=1024 * 1024 - 4096,
+                )
+                result = await session.client.file_tree(params)
+                assert [entry.relative_path for entry in result.entries] == ["a", "a.txt", "z", "a/child", "z/child"]
+                assert not result.truncated and result.directory_calls == 3
+                first = result.entries[0]
+                value = {"kind": first.info.kind.value, "path": "/a"}
+                if first.info.size_bytes is not None:
+                    value["size"] = first.info.size_bytes
+                cost = len(json.dumps(value, separators=(",", ":"), ensure_ascii=False).encode()) + 124
+                for label, update, count, calls in (
+                    ("calls", {"max_directory_calls": 1}, 3, 1),
+                    ("entries", {"max_entries": 1}, 1, 1),
+                    ("bytes", {"metadata_byte_limit": cost}, 1, 1),
+                    ("short", {"metadata_byte_limit": cost - 1}, 0, 1),
+                    ("depth", {"max_depth": 1}, 3, 1),
+                ):
+                    bounded = await session.client.file_tree(
+                        params.model_copy(
+                            update={
+                                **update,
+                                "context": EIPCallContext(operation_id=f"tree-{label}"),
+                            }
+                        )
+                    )
+                    assert bounded.truncated and len(bounded.entries) == count and bounded.directory_calls == calls
+                    assert all(entry.info.kind in (FileKind.FILE, FileKind.DIRECTORY) for entry in bounded.entries)
+                clipped = await session.client.file_tree(
+                    params.model_copy(
+                        update={
+                            "context": EIPCallContext(operation_id="tree-wire"),
+                            "result_byte_limit": 512,
+                        }
+                    )
+                )
+                assert clipped.truncated and len(encode_model(clipped)) <= 512
 
     asyncio.run(scenario())
