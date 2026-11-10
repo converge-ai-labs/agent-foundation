@@ -133,7 +133,22 @@ impl Session {
         if let Some(object) = payload.as_object_mut() {
             object.remove("context");
         }
-        let (work, admitted) = self.admit_owned_record(method, context, params)?;
+        let admission = self.admit_owned_record(method, context, params)?;
+        self.run_accessibility_mutation(method, context, payload, deadline, admission)
+            .await
+    }
+
+    // All native mutations share one execution state machine after typed admission.
+    // Keeping it non-generic avoids duplicating owned tasks for every parameter type.
+    async fn run_accessibility_mutation(
+        &self,
+        method: &'static str,
+        context: &eip::EIPCallContext,
+        mut payload: Value,
+        deadline: tokio::time::Instant,
+        admission: (SessionWorkGuard<'_>, BeginOutcome),
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        let (work, admitted) = admission;
         let operation = match admitted {
             BeginOutcome::New(operation) => operation,
             BeginOutcome::Replay(value) => return self.decode_replay(value),
