@@ -51,9 +51,27 @@ def test_contains_observes_any_retained_occurrence_not_just_latest():
     messages = append(append([], block("A")), block("B"))
     history = ModelContextHistory.from_messages(messages)
     assert history.contains(block("A")) and history.contains(block("B"))
-    assert history.latest("test.snapshot") == "B"
+    assert history.matches_latest(block("B"))
+    assert not history.matches_latest(block("A"))
     assert not history.contains(block("C"))
     assert not history.contains(replace(block("A"), source_id="another.source"))
+
+
+@pytest.mark.parametrize("text", ["", "snapshot", "状态 A\n<file>body</file>"])
+def test_latest_comparison_and_metadata_share_the_complete_rendered_utf8_hash(text):
+    current = block(text, key="file:AGENTS.md")
+    digest = sha256(text.encode("utf-8")).hexdigest()
+    assert current.content_hash == digest
+    assert current.content_item().metadata.model_extra["model_context"]["sha256"] == digest
+    serialized = ModelMessagesTypeAdapter.dump_json(append([], current))
+    restored = ModelMessagesTypeAdapter.validate_json(serialized)
+    for history in (ModelContextHistory.from_messages(restored), ModelContextHistory.from_blocks((current,))):
+        assert history.matches_latest(current)
+        assert not history.matches_latest(replace(current, content=text + "\n"))
+        assert not history.matches_latest(replace(current, source_id="another.source"))
+        assert not history.matches_latest(replace(current, key="file:other.md"))
+    assert replace(current, content=text + "\n").content_hash != digest
+    assert not ModelContextHistory().matches_latest(current)
 
 
 def test_commit_keeps_every_returned_block_even_if_already_retained():
@@ -70,7 +88,7 @@ def test_state_owner_can_describe_a_b_a_and_explicit_empty_transitions():
     for value in ("A", "A", "B", "A", "No current entries.", "No current entries.", "A"):
         current = block(value)
         history = ModelContextHistory.from_messages(messages)
-        selected = () if history.latest(current.source_id, current.key) == current.content else (current,)
+        selected = () if history.matches_latest(current) else (current,)
         messages = append(messages, *selected)
     assert texts(messages) == ["A", "B", "A", "No current entries.", "A"]
 
@@ -80,7 +98,9 @@ def test_keys_are_independent_and_placement_is_not_identity():
     history = ModelContextHistory.from_messages(messages)
     assert history.contains(replace(block("A", key="global"), placement=ModelContextPlacement.INPUT_PREAMBLE))
     assert not history.contains(block("A", key="other"))
-    assert history.latest("test.snapshot", "project") == "A"
+    assert history.matches_latest(block("A", key="project"))
+    assert not history.matches_latest(block("A", key="other"))
+    assert history.matches_latest(replace(block("A", key="global"), placement=ModelContextPlacement.INPUT_PREAMBLE))
 
 
 def test_events_and_deltas_keep_owner_triggered_repetition():
@@ -95,8 +115,8 @@ def test_selected_checkpoint_and_replacement_history_determine_presence():
     assert not ModelContextHistory.from_messages([input_request("summary")]).contains(block("A"))
     newer = append(checkpoint, block("B"))
     assert ModelContextHistory.from_messages(newer).contains(block("A"))
-    assert ModelContextHistory.from_messages(checkpoint).latest("test.snapshot") == "A"
-    assert ModelContextHistory.from_messages(newer).latest("test.snapshot") == "B"
+    assert ModelContextHistory.from_messages(checkpoint).matches_latest(block("A"))
+    assert ModelContextHistory.from_messages(newer).matches_latest(block("B"))
 
 
 def test_canonical_metadata_roundtrips_and_stale_or_unmarked_text_does_not_pin():
@@ -248,7 +268,7 @@ async def test_attention_summary_clears_real_terminal_executions_without_results
     assert "tool_execution_info" in empty.blocks[0].content
     assert "absence does not establish success" in empty.blocks[0].content
     history = append([], active.blocks[0])
-    assert ModelContextHistory.from_messages(history).latest(empty.blocks[0].source_id) != empty.blocks[0].content
+    assert not ModelContextHistory.from_messages(history).matches_latest(empty.blocks[0])
     committed = append(history, empty.blocks[0])
     request = replace(INPUT, history=ModelContextHistory.from_messages(committed))
     assert not (await capability.wrap_model_context(ctx, request, handler)).blocks
@@ -311,7 +331,7 @@ def test_context_breakdown_counts_retained_snapshots_not_hashes_or_suppressed_co
     for text in ("snapshot A", "snapshot A", "snapshot B", "snapshot B", "snapshot A"):
         snapshot = replace(block(text, key="personal"), context_group="memory", memory_mount="personal")
         retained = ModelContextHistory.from_messages(history)
-        history = append(history, *((snapshot,) if retained.latest(snapshot.source_id, snapshot.key) != text else ()))
+        history = append(history, *((snapshot,) if not retained.matches_latest(snapshot) else ()))
     restored = ModelMessagesTypeAdapter.validate_json(ModelMessagesTypeAdapter.dump_json(history))
     breakdown = measure_context(restored, ModelRequestParameters())
     expected = len("snapshot A") * 2 + len("snapshot B")
@@ -323,7 +343,7 @@ def test_context_breakdown_counts_retained_snapshots_not_hashes_or_suppressed_co
 
 
 @pytest.mark.anyio
-async def test_independent_file_bodies_are_reused_while_selection_conveys_restoration():
+async def test_independent_file_snapshots_compare_latest_and_reemit_restored_bodies():
     from a13n_harness.capabilities.context import FileContextConfiguration, _FileContextRunCapability
 
     async def handler(request):
@@ -340,9 +360,16 @@ async def test_independent_file_bodies_are_reused_while_selection_conveys_restor
         history = append(history, *projection.blocks)
     assert [item.key for item in emitted[0]] == ["files", "file:AGENTS.md", "file:guide.md", "project-guidance"]
     assert not emitted[1]
-    assert [item.key for item in emitted[2]] == ["files", "file:AGENTS.md"]
-    assert [item.key for item in emitted[3]] == ["files"]
-    assert sha256(b"A").hexdigest() in emitted[3][0].content
+    assert [item.key for item in emitted[2]] == ["file:AGENTS.md"]
+    assert [item.key for item in emitted[3]] == ["file:AGENTS.md"]
+    assert '<file path="AGENTS.md">\nB\n</file>' in emitted[2][0].content
+    assert emitted[3][0] == emitted[0][1]
+    assert "sha256" not in emitted[0][0].content
+    # Compaction may retain the selection while discarding an independent body.
+    retained_selection = append([], emitted[0][0], emitted[0][2], emitted[0][3])
+    request = replace(INPUT, history=ModelContextHistory.from_messages(retained_selection))
+    missing = await capability.wrap_model_context(None, request, handler)
+    assert [item.key for item in missing.blocks] == ["file:AGENTS.md"]
     # A new history window needs missing bodies even when selection is identical.
     replacement = _FileContextRunCapability(configuration, (("AGENTS.md", "A"),), None)
     fresh = await replacement.wrap_model_context(None, INPUT, handler)
@@ -364,13 +391,15 @@ async def test_final_outer_transform_owns_decision_against_committed_rendering()
     class Source:
         async def project_model_context(self, request):
             current = block("inner")
-            return ModelContextProjection(blocks=() if request.history.contains(current) else (current,))
+            return ModelContextProjection(blocks=() if request.history.matches_latest(current) else (current,))
 
     class Outer:
         async def wrap_model_context(self, ctx, request, handler):
             inner = await handler(request)
             rendered = tuple(replace(item, content="final:" + item.content) for item in inner.blocks)
-            return ModelContextProjection(blocks=tuple(item for item in rendered if not request.history.contains(item)))
+            return ModelContextProjection(
+                blocks=tuple(item for item in rendered if not request.history.matches_latest(item))
+            )
 
     deps = Source()
     deps.model_context = Outer()

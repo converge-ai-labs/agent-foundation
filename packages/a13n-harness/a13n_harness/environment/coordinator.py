@@ -241,7 +241,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
             ),
             content=content,
         )
-        if request.history.latest(block.source_id, block.key) == block.content:
+        if request.history.matches_latest(block):
             return ModelContextProjection()
         return ModelContextProjection(blocks=(block,))
 

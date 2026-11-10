@@ -7,7 +7,6 @@ from collections.abc import Sequence
 from copy import copy, deepcopy
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
-from hashlib import sha256
 from secrets import token_urlsafe
 from typing import Any, Literal, cast
 from xml.etree.ElementTree import Element, SubElement, tostring
@@ -191,7 +190,7 @@ class RuntimeContextCapability(AbstractModelContextCapability):
             placement=ModelContextPlacement.REQUEST_EPILOGUE,
             content=reminder,
         )
-        if request.history.latest(block.source_id, block.key) == block.content:
+        if request.history.matches_latest(block):
             return projection
         return ModelContextProjection(
             blocks=(
@@ -275,7 +274,7 @@ class WorkspaceOutlineCapability(AbstractModelContextCapability):
             placement=ModelContextPlacement.INPUT_PREAMBLE,
             content=content,
         )
-        if request.history.latest(block.source_id, block.key) == block.content:
+        if request.history.matches_latest(block):
             return projection
         return ModelContextProjection(
             blocks=(
@@ -551,52 +550,26 @@ class _FileContextRunCapability(FileContextCapability):
         projection = await handler(request)
         if request.kind is not ModelContextRequestKind.INPUT:
             return projection
-        blocks = [
-            ModelContextBlock(
+
+        def block(key: str, content: str) -> ModelContextBlock:
+            return ModelContextBlock(
                 source_id=FILE_CONTEXT_CAPABILITY_ID,
-                key="files",
+                key=key,
                 context_group="environment_context",
                 placement=ModelContextPlacement.REQUEST_EPILOGUE,
-                content=f"{_FILE_CONTEXT_OPEN}\nCurrent file context paths: "
-                + (
-                    "\n".join(
-                        f"{path} (sha256:{sha256(content.encode('utf-8')).hexdigest()})"
-                        for path, content in self._sections
-                    )
-                    or "No file context is loaded."
-                )
-                + f"\n{_FILE_CONTEXT_CLOSE}",
-            ),
-            *(
-                ModelContextBlock(
-                    source_id=FILE_CONTEXT_CAPABILITY_ID,
-                    key=f"file:{path}",
-                    context_group="environment_context",
-                    placement=ModelContextPlacement.REQUEST_EPILOGUE,
-                    content=f'{_FILE_CONTEXT_OPEN}\n<file path="{_xml_attribute(path)}">\n{content}\n</file>\n{_FILE_CONTEXT_CLOSE}',
-                )
-                for path, content in self._sections
-            ),
-            ModelContextBlock(
-                source_id=FILE_CONTEXT_CAPABILITY_ID,
-                key="project-guidance",
-                context_group="environment_context",
-                placement=ModelContextPlacement.REQUEST_EPILOGUE,
-                content=f"{_FILE_CONTEXT_OPEN}\n<project-guidance>\n"
-                + (self._guidance or "No project guidance entrypoints are available.")
-                + f"\n</project-guidance>\n{_FILE_CONTEXT_CLOSE}",
-            ),
-        ]
-        selected = tuple(
-            block
-            for block in blocks
-            if (block.key != "project-guidance" or self.configuration.include_project_guidance)
-            and (
-                not request.history.contains(block)
-                if block.key is not None and block.key.startswith("file:")
-                else request.history.latest(block.source_id, block.key) != block.content
+                content=f"{_FILE_CONTEXT_OPEN}\n{content}\n{_FILE_CONTEXT_CLOSE}",
             )
+
+        paths = "\n".join(path for path, _ in self._sections)
+        blocks = [block("files", f"Current file context paths: {paths or 'No file context is loaded.'}")]
+        blocks.extend(
+            block(f"file:{path}", f'<file path="{_xml_attribute(path)}">\n{content}\n</file>')
+            for path, content in self._sections
         )
+        if self.configuration.include_project_guidance:
+            guidance = self._guidance or "No project guidance entrypoints are available."
+            blocks.append(block("project-guidance", f"<project-guidance>\n{guidance}\n</project-guidance>"))
+        selected = tuple(item for item in blocks if not request.history.matches_latest(item))
         return ModelContextProjection(blocks=(*projection.blocks, *selected))
 
 

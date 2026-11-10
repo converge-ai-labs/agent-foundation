@@ -90,7 +90,7 @@ class ToolExecutionCapability(AbstractModelContextCapability):
             placement=ModelContextPlacement.REQUEST_EPILOGUE,
             content=f"Tool executions requiring attention (status only; results are not consumed): {summary}",
         )
-        if request.history.latest(block.source_id, block.key) == block.content:
+        if request.history.matches_latest(block):
             return projection
         return ModelContextProjection(
             blocks=(

@@ -50,6 +50,6 @@ class CurrentAgentContextCapability(AbstractModelContextCapability):
         return ModelContextProjection(
             blocks=(
                 *blocks,
-                *(block for block in owned if request.history.latest(block.source_id, block.key) != block.content),
+                *(block for block in owned if not request.history.matches_latest(block)),
             )
         )

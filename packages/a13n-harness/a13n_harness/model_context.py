@@ -79,7 +79,7 @@ class ModelContextPlacement(StrEnum):
 class ModelContextHistory:
     """Detached, read-only facts about context still retained at this boundary.
 
-    Presence and latest-value queries are observations, never emission policies.
+    Presence and latest-hash comparisons are observations, never emission policies.
     Querying does not reserve a block or establish a delivery watermark.
     """
 
@@ -105,8 +105,10 @@ class ModelContextHistory:
                 if key is not None and not isinstance(key, str):
                     continue
                 value = item.value.content if isinstance(item.value, TextContent) else item.value
-                if isinstance(value, str) and marker.get("sha256") == sha256(value.encode("utf-8")).hexdigest():
-                    entries.append((source, key, value))
+                if isinstance(value, str):
+                    digest = sha256(value.encode("utf-8")).hexdigest()
+                    if marker.get("sha256") == digest:
+                        entries.append((source, key, digest))
         return cls(tuple(entries))
 
     @classmethod
@@ -117,20 +119,22 @@ class ModelContextHistory:
         unordered: frozenset[tuple[str, str | None]] = frozenset(),
     ) -> ModelContextHistory:
         """Observe confirmed content; unsettled delivery can leave latest order unknown."""
-        return cls(tuple((block.source_id, block.key, block.content) for block in blocks), unordered)
+        return cls(tuple((block.source_id, block.key, block.content_hash) for block in blocks), unordered)
 
     def contains(self, block: ModelContextBlock) -> bool:
-        """Whether this exact source/key/content occurs anywhere in retained context."""
-        return (block.source_id, block.key, block.content) in self._entries
+        """Whether this source/key/content hash occurs anywhere in retained context."""
+        return (block.source_id, block.key, block.content_hash) in self._entries
 
-    def latest(self, source_id: str, key: str | None = None) -> str | None:
-        """Read the latest content when an owner needs to describe a state transition."""
-        if (source_id, key) in self._unordered:
-            return None
-        return next(
-            (value for source, entry_key, value in reversed(self._entries) if (source, entry_key) == (source_id, key)),
+    def matches_latest(self, block: ModelContextBlock) -> bool:
+        """Compare with the most recent same-identity hash; absent or unknown is false."""
+        identity = (block.source_id, block.key)
+        if identity in self._unordered:
+            return False
+        latest_hash = next(
+            (digest for source, key, digest in reversed(self._entries) if (source, key) == identity),
             None,
         )
+        return latest_hash == block.content_hash
 
 
 @dataclass(frozen=True, slots=True)
@@ -157,6 +161,11 @@ class ModelContextBlock:
     context_group: ContextGroupName | None = None
     key: str | None = None
 
+    @property
+    def content_hash(self) -> str:
+        """SHA-256 of the complete rendered UTF-8 text, shared by comparison and metadata."""
+        return sha256(self.content.encode("utf-8")).hexdigest()
+
     def content_item(self) -> ContentItem:
         metadata = ContentMetadata.model_validate(
             {
@@ -165,7 +174,7 @@ class ModelContextBlock:
                 "model_context": {
                     "key": self.key,
                     "placement": self.placement.value,
-                    "sha256": sha256(self.content.encode("utf-8")).hexdigest(),
+                    "sha256": self.content_hash,
                 },
             }
         )

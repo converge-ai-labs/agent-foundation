@@ -676,7 +676,7 @@ class _WorkingStateRunCapability(WorkingStateCapability):
         return ModelContextProjection(
             blocks=(
                 *projection.blocks,
-                *(block for block in blocks if request.history.latest(block.source_id, block.key) != block.content),
+                *(block for block in blocks if not request.history.matches_latest(block)),
             )
         )
 

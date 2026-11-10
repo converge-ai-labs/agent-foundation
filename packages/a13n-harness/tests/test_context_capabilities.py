@@ -1913,8 +1913,9 @@ async def test_runtime_and_file_context_preserve_history_and_refresh_current_val
     assert '"tenant":"beta"' in second_text
     assert "secret" not in second_text
     assert second_text.count('<runtime-context source="a13n-harness">') == 2
-    # Each run carries its changed selection, independent file, and guidance index.
-    assert second_text.count('<file-context source="a13n-harness">') == 6
+    # Paths stay selected; only the independent body and guidance index change.
+    assert second_text.count("Current file context paths:") == 1
+    assert second_text.count('<file-context source="a13n-harness">') == 5
 
 
 def _user_text(messages: list[ModelMessage]) -> str:

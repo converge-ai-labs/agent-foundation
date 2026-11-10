@@ -92,7 +92,7 @@ class CodeActCapability(AbstractModelContextCapability):
             placement=ModelContextPlacement.REQUEST_EPILOGUE,
             content=index,
         )
-        if request.history.latest(block.source_id, block.key) == block.content:
+        if request.history.matches_latest(block):
             return projection
         return ModelContextProjection(
             blocks=(

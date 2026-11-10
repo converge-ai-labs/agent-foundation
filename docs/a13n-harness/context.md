@@ -24,7 +24,7 @@ Start with the [two-Run example](#context-composition), then add workspace guida
 
 Each context producer decides what to inject through `AbstractModelContextCapability` or `RunBindings.model_context`. Harness supplies the same read-only `request.history` view to all producers, validates the complete returned projection, and commits every returned block. Stable `(source_id, key)` identities distinguish independently changing blocks; canonical metadata records that identity, placement, and a SHA-256 content digest outside prompt text.
 
-Use `history.contains(block)` to ask whether the exact body is anywhere in current retained context. A later same-identity B does not make retained A absent. This resource producer reuses its body while it remains available:
+Use `history.matches_latest(block)` to compare a snapshot's hash with the most recent retained block for the same `(source_id, key)`. The hash covers the complete rendered UTF-8 text and stays in metadata, outside prompt text. This producer appends guidance only when it differs from the latest retained snapshot:
 
 ```python
 from a13n_harness.model_context import (
@@ -44,16 +44,16 @@ class WorkspaceGuide(AbstractModelContextCapability):
             placement=ModelContextPlacement.REQUEST_EPILOGUE,
             content="Workspace guidance: run the focused tests before committing.",
         )
-        if request.history.contains(block):
+        if request.history.matches_latest(block):
             return projection
         return ModelContextProjection(blocks=(*projection.blocks, block))
 ```
 
-For current state, the owner can separately read `history.latest(source_id, key)` and append a snapshot or selection notice when it changes. That preserves `A → B → A` transitions. File context keeps independent file bodies and a current path/digest selection; the selection can restore A without repeating its retained body. Meaningful removals need an explicit empty state; unavailable observation is a different state.
+Current-state producers, including independent file bodies, use the same comparison. `A → A → B → A` appends `A, B, A`: returning to A differs from the latest B, so the complete A block is sent again. File context separately tracks selected paths to report removals with an explicit empty selection. Unavailable observation is a different state. The optional `history.contains(block)` query checks any retained same-identity hash; an older match does not establish the current state.
 
 Events, reminders, and incremental deliveries keep their owner-controlled triggers and cursors. Return the event when it occurs, even if an earlier event has identical text; there is no emission flag or framework post-filter. If outer middleware rewrites a block, that middleware owns its final injection decision against committed rendered content.
 
-Checkpoint continuation and forks query the selected retained history. After compaction or handoff removes a body, `contains` becomes false and its producer can supply it again. Exact retry/resume boundaries stay untouched. In Live sessions, the view includes confirmed connection context; pending content does not establish presence, and ambiguous order leaves `latest` unknown without erasing confirmed older bodies.
+Checkpoint continuation and forks query the selected retained history. After compaction or handoff removes a block, `matches_latest` becomes false and its producer can supply it again. Exact retry/resume boundaries stay untouched. In Live sessions, the view includes confirmed connection context; pending content does not establish presence, and unknown ordering makes `matches_latest` false without erasing confirmed older hashes.
 
 ## Run configuration
 

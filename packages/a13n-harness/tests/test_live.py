@@ -249,7 +249,7 @@ class _ContextProjection:
             placement=ModelContextPlacement.REQUEST_EPILOGUE,
             content=self.value if self.value is not None else f"Live context {len(self.requests)}",
         )
-        if not self.repeat and request.history.latest(block.source_id, block.key) == block.content:
+        if not self.repeat and request.history.matches_latest(block):
             return projection
         return ModelContextProjection(blocks=(*projection.blocks, block))
 
@@ -886,9 +886,7 @@ async def test_live_pending_changes_cannot_pin_later_projection_or_replayed_even
     def select(call_id, value):
         # Selection belongs to the producer. The bridge only records delivery.
         selected = ModelContextProjection(
-            blocks=tuple(
-                block for block in value.blocks if bridge.history.latest(block.source_id, block.key) != block.content
-            )
+            blocks=tuple(block for block in value.blocks if not bridge.history.matches_latest(block))
         )
         bridge.record_pending(call_id, selected)
         return selected
@@ -899,13 +897,15 @@ async def test_live_pending_changes_cannot_pin_later_projection_or_replayed_even
     assert not select("unchanged", a).blocks
     assert select("first", b) == b
     assert bridge.history.contains(a.blocks[0])
-    assert bridge.history.latest("test.snapshot") is None
+    assert not bridge.history.matches_latest(a.blocks[0])
+    assert not bridge.history.matches_latest(b.blocks[0])
     assert select("second", a) == a
     # Result observations may replay in call order, not actual send order.
     bridge.settled(confirmed("first", b))
     bridge.settled(confirmed("second", a))
     assert bridge.history.contains(b.blocks[0])
-    assert bridge.history.latest("test.snapshot") is None
+    assert not bridge.history.matches_latest(a.blocks[0])
+    assert not bridge.history.matches_latest(b.blocks[0])
     assert select("repair", a) == a
     bridge.settled(confirmed("repair", a))
     assert not select("stable", a).blocks
@@ -915,6 +915,13 @@ async def test_live_pending_changes_cannot_pin_later_projection_or_replayed_even
     assert select("resend", b) == b
     bridge.settled(confirmed("resend", b, include_content=False))
     assert select("missing", b) == b
+    # No settlement arrives for this call. A later confirmation cannot establish
+    # ordering against a delivery whose outcome is still unknown.
+    assert select("after-missing", a) == a
+    bridge.settled(confirmed("after-missing", a))
+    assert "missing" in bridge.pending
+    assert bridge.history.contains(a.blocks[0])
+    assert not bridge.history.matches_latest(a.blocks[0])
     bridge.reconnected()
     assert not bridge.delivered.blocks
     assert not bridge.pending
@@ -928,4 +935,4 @@ async def test_live_pending_changes_cannot_pin_later_projection_or_replayed_even
     bridge.settled(confirmed("next-b", b))
     assert bridge.history.contains(a.blocks[0])
     assert bridge.history.contains(b.blocks[0])
-    assert bridge.history.latest("test.snapshot") == "B"
+    assert bridge.history.matches_latest(b.blocks[0])

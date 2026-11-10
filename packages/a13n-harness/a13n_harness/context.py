@@ -657,7 +657,7 @@ class AgentContext:
             placement=ModelContextPlacement.REQUEST_EPILOGUE,
             content=content,
         )
-        if request.history.latest(block.source_id, block.key) == block.content:
+        if request.history.matches_latest(block):
             return ModelContextProjection(blocks=environment.blocks)
         return ModelContextProjection(
             blocks=(
