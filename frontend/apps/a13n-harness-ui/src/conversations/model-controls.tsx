@@ -57,7 +57,7 @@ export function ModelControlPanel({
         model={model}
         value={controls.thinking}
         disabled={disabled}
-        onChange={(thinking) => choose({ thinking })}
+        onChange={(thinking) => onControlsChange({ ...controls, thinking })}
       />
     );
   if (settings.page === "speed")

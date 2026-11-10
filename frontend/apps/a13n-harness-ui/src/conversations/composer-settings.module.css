@@ -122,8 +122,7 @@
     min-width: var(--harness-control-height);
   }
   .header button,
-  .body button,
-  .body .levels > button {
+  .body button {
     min-height: var(--harness-control-height);
   }
 }
@@ -263,38 +262,6 @@
   padding-top: 4px;
   border-top: 1px solid var(--a13n-border);
 }
-.levels {
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  gap: 4px;
-  margin-top: 4px;
-}
-.levels > button {
-  width: 100%;
-  height: auto;
-  min-height: var(--harness-menu-row);
-  padding: 4px 8px;
-  justify-content: space-between;
-  text-align: left;
-  font-size: var(--a13n-text-body);
-  font-weight: 400;
-  white-space: normal;
-  overflow-wrap: anywhere;
-  border: 0;
-  box-shadow: none;
-  background: transparent;
-}
-.levels > button:hover {
-  background: var(--a13n-hover);
-}
-.levels small {
-  display: block;
-  margin-top: 1px;
-  color: var(--a13n-secondary);
-  font-size: var(--a13n-text-body);
-  line-height: 20px;
-}
 .speedControl {
   display: flex;
   flex-direction: column;
@@ -332,22 +299,12 @@
   }
 }
 
-.choice[aria-pressed="true"],
-.levels > button[data-state="on"] {
+.choice[aria-pressed="true"] {
   background: transparent;
   color: var(--a13n-text);
 }
-.choice,
-.levels > button {
-  min-height: var(--harness-menu-row);
-  padding: 4px 8px;
+.choice {
   border-radius: 6px;
-}
-.levels {
-  gap: 2px;
-  margin-top: 4px;
-  padding-top: 4px;
-  border-top: 1px solid var(--a13n-border-soft);
 }
 .value {
   display: inline-flex;
@@ -385,4 +342,221 @@
   flex-shrink: 0;
   margin-top: 0;
   white-space: nowrap;
+}
+.modelSummary {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  vertical-align: middle;
+}
+.modelSummary small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: color-mix(in srgb, var(--a13n-secondary) 89%, var(--a13n-canvas));
+  font-size: inherit;
+}
+.popup:is([data-page="root"], [data-page="thinking"]) {
+  width: min(244px, calc(100vw - 24px));
+}
+.effortPanel {
+  padding: 4px 8px 10px;
+}
+.effortPanel .header {
+  padding: 0;
+  gap: 4px;
+}
+.effortPanel .title {
+  min-width: 0;
+  text-align: center;
+  font-size: calc(var(--a13n-text-body) * 1.15);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.effortValue {
+  display: block;
+  animation: effort-value-in 140ms ease-out;
+}
+@keyframes effort-value-in {
+  from {
+    opacity: 0.55;
+    transform: translateY(1px);
+  }
+}
+.effortPanel .header > button {
+  color: var(--a13n-secondary);
+}
+.effortPanel .resetEffort:disabled {
+  opacity: 0.32;
+}
+.effortPanel .hint {
+  margin-inline: 4px;
+}
+.effortTrack {
+  --rail-height: 28px;
+  --rail-top: 0px;
+  --inset: calc(var(--rail-height) / 2);
+  --center: calc(var(--inset) + var(--progress) * (100% - var(--rail-height)));
+  position: relative;
+  margin: 11px 4px 0;
+  touch-action: pan-y;
+  user-select: none;
+  isolation: isolate;
+}
+.effortTrack::before,
+.effortTrack::after {
+  content: "";
+  position: absolute;
+  border-radius: 99px;
+  pointer-events: none;
+}
+.effortTrack::before {
+  inset: 0 0 auto;
+  height: var(--rail-height);
+  background: color-mix(in srgb, var(--mark-face) 18%, var(--a13n-elevated));
+  box-shadow: inset 0 0 0 1px var(--a13n-border-soft);
+}
+.stops {
+  width: 100%;
+  display: flex;
+  gap: 0;
+}
+.effortFinish {
+  position: absolute;
+  inset: var(--rail-top) 0 auto;
+  height: var(--rail-height);
+  border-radius: 99px;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      ellipse 35px 24px at var(--center) 0%,
+      #ffffff4d,
+      transparent
+    ),
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--mark-face) 38%, white),
+      var(--mark-face) 68%,
+      var(--mark-shadow)
+    );
+  box-shadow:
+    inset 0 1px 1px #fff6,
+    inset 0 -1px 2px #20145f33;
+  clip-path: inset(0 calc(100% - var(--center) - var(--inset)) 0 0 round 99px);
+  transition: clip-path 140ms ease-out;
+}
+.effortTrack::after {
+  left: var(--center);
+  top: calc(var(--rail-top) + 2px);
+  width: calc(var(--rail-height) - 4px);
+  height: calc(var(--rail-height) - 4px);
+  transform: translateX(-50%);
+  background: radial-gradient(at 36% 28%, white 40%, #ececf4);
+  box-shadow:
+    0 1px 4px #0004,
+    0 0 6px color-mix(in srgb, var(--mark-shadow) 25%, transparent);
+  transition: left 140ms ease-out;
+}
+.effortTrack[data-active="false"]::after {
+  visibility: hidden;
+}
+.effortTrack[data-active="false"] .effortFinish {
+  clip-path: none;
+  opacity: 0.22;
+}
+.effortTrack[data-dragging="true"]::after,
+.effortTrack[data-dragging="true"] .effortFinish {
+  transition: none;
+}
+.stops > button {
+  position: relative;
+  display: grid;
+  grid-template-rows: var(--rail-height) auto;
+  align-content: start;
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: center;
+  flex: 1;
+  min-width: 0;
+  height: auto;
+  gap: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--a13n-secondary);
+  cursor: grab;
+}
+.stops > button:first-child:not(:only-child),
+.stops > button:last-child:not(:only-child) {
+  flex: 0.5 var(--inset);
+}
+.stops > button:first-child {
+  justify-items: start;
+}
+.stops > button:last-child:not(:only-child) {
+  justify-items: end;
+}
+.stops > button:first-child .tick {
+  margin-left: calc(var(--inset) - 1px);
+}
+.stops > button:last-child:not(:only-child) .tick {
+  margin-right: calc(var(--inset) - 1px);
+}
+.rangeLabel {
+  margin-top: 5px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: calc(var(--a13n-text-body) * 0.84);
+  font-weight: 400;
+  line-height: 16px;
+  color: var(--a13n-secondary);
+}
+.stops > button:hover,
+.stops > button[data-pressed] {
+  background: transparent;
+}
+.effortTrack[data-dragging="true"]::after {
+  box-shadow:
+    0 1px 4px #0003,
+    0 0 0 3px #ffffff50,
+    0 0 12px color-mix(in srgb, var(--mark-face) 28%, transparent);
+}
+.effortTrack[data-dragging="true"] button {
+  cursor: grabbing;
+}
+.stops > button:disabled {
+  opacity: 0.42;
+}
+.tick {
+  width: 2px;
+  height: 4px;
+  border-radius: 2px;
+  background: currentColor;
+  opacity: 0.55;
+}
+.stops > button[data-filled="true"] .tick {
+  background: white;
+  opacity: 0.56;
+}
+@media (pointer: coarse) {
+  .effortTrack {
+    --rail-top: 9px;
+    padding-block: var(--rail-top);
+    margin-block: 0;
+  }
+  .effortTrack::before {
+    top: var(--rail-top);
+  }
+  .effortTrack .stops > button {
+    min-height: var(--rail-height);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .effortValue {
+    animation: none;
+  }
+  .effortTrack::after,
+  .effortFinish {
+    transition: none;
+  }
 }

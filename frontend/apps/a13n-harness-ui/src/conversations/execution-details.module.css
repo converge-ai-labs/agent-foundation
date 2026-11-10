@@ -113,6 +113,7 @@
    source text, code and diagrams. Horizontal code scrolling remains native. */
 .fullscreen :global([data-tool-details]),
 .fullscreen :global([data-tool-resources]),
+.fullscreen :global([data-tool-source]),
 .fullscreen [data-execution-reader] pre,
 .fullscreen :global([data-diagram-canvas]) {
   max-height: none;

@@ -1,3 +1,4 @@
+import conversation from "./conversation.module.css";
 import { createContext, memo, useContext, useMemo, useState } from "react";
 import { AguiContent, Button, ScrollArea, DisclosureSection } from "a13n-ui";
 import { Link } from "react-router";
@@ -150,12 +151,20 @@ function CodeContent({
           {t("Copy unavailable. Select the text to copy.")}
         </small>
       )}
-      <pre>
-        <SyntaxCode
-          source={content}
-          language={language || (typeof value === "object" ? "json" : "")}
-        />
-      </pre>
+      <ScrollArea
+        autoHeight
+        scrollbarGutter
+        clampContentMinWidth={false}
+        className={`${styles.sourceScroll} ${conversation.innerReader}`}
+        data-tool-source
+      >
+        <pre>
+          <SyntaxCode
+            source={content}
+            language={language || (typeof value === "object" ? "json" : "")}
+          />
+        </pre>
+      </ScrollArea>
     </section>
   );
 }
@@ -705,7 +714,7 @@ function CollaborationDetails({ tool }: { tool: ToolView }) {
           <ScrollArea
             autoHeight
             scrollbarGutter
-            className={styles.resourceScroll}
+            className={`${styles.resourceScroll} ${conversation.innerReader}`}
             data-tool-resources
           >
             <ul className={styles.resources}>

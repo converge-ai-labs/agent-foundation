@@ -1,3 +1,4 @@
+import conversation from "./conversation.module.css";
 import { ScrollArea } from "a13n-ui";
 import { useTranslation } from "../i18n";
 import { describeTool, record, type ToolView } from "./tool-presentation";
@@ -16,7 +17,7 @@ export function ToolWorkingState({ tool }: { tool: ToolView }) {
         <ScrollArea
           autoHeight
           scrollbarGutter
-          className={styles.resourceScroll}
+          className={`${styles.resourceScroll} ${conversation.innerReader}`}
           data-tool-resources
         >
           <ul className={styles.resources} aria-label={t("Notes")}>

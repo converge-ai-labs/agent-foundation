@@ -1764,7 +1764,9 @@ dl.detailGrid > .detailLongRow dd {
 }
 /* One masked surface keeps diffusion and tint on the same continuous curve.
    Stacking backdrop filters leaves dark halos around partially faded text. */
-.readerFade {
+.readerFade,
+.innerReader[data-overflow-y-start]::before,
+.innerReader[data-overflow-y-end]::after {
   position: absolute;
   /* Keep the scrollbar outside the optical treatment. */
   inset-inline: var(--reader-fade-inset, 12px);
@@ -1774,8 +1776,12 @@ dl.detailGrid > .detailLongRow dd {
   --fade-direction: to top;
   background: linear-gradient(
     var(--fade-direction),
-    color-mix(in srgb, var(--a13n-canvas) 92%, transparent),
-    var(--a13n-canvas) 75%
+    color-mix(
+      in srgb,
+      var(--reader-surface, var(--a13n-canvas)) 92%,
+      transparent
+    ),
+    var(--reader-surface, var(--a13n-canvas)) 75%
   );
   backdrop-filter: blur(2px);
   mask-image: linear-gradient(
@@ -1787,6 +1793,22 @@ dl.detailGrid > .detailLongRow dd {
     rgb(0 0 0 / 92%) 80%,
     #000 100%
   );
+}
+.innerReader {
+  --reader-fade-top: 14px;
+  --reader-fade-inset: 0;
+}
+.innerReader[data-overflow-y-start]::before,
+.innerReader[data-overflow-y-end]::after {
+  content: "";
+  inset-inline-end: 10px;
+}
+.innerReader::before {
+  top: 0;
+}
+.innerReader[data-overflow-y-end]::after {
+  bottom: 0;
+  --fade-direction: to bottom;
 }
 .readerFade[data-edge="top"] {
   top: 0;

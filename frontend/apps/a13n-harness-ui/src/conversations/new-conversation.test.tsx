@@ -716,6 +716,36 @@ it("distinguishes inherited choices and sends an independent model without chang
   });
 });
 
+it("submits the same model and effort after reopening a saved chat with a fresh composer", async () => {
+  const user = userEvent.setup();
+  const view = mount(`/threads/${id}`);
+  const settings = () =>
+    screen.findByRole("button", { name: "Agent & Model settings" });
+  await user.click(await settings());
+  await user.click(screen.getByRole("button", { name: "Model" }));
+  await user.click(
+    await screen.findByRole("button", { name: "Primary model" }),
+  );
+  await user.click(screen.getByRole("button", { name: "Thinking" }));
+  await user.click(screen.getByRole("button", { name: "Quick thinking" }));
+  view.unmount();
+  drafts = new Map();
+  queries.clear();
+  mount(`/threads/${id}`);
+  await waitFor(async () =>
+    expect((await settings()).textContent).toContain("Quick thinking"),
+  );
+  act(() => drafts.get(id)!.doc.getText("text").insert(0, "Continue"));
+  const send = screen.getByRole("button", { name: "Send" });
+  await waitFor(() => expect(send).toHaveProperty("disabled", false));
+  await user.click(send);
+  await waitFor(() => expect(writes).toHaveLength(1));
+  expect(await writes[0].json()).toMatchObject({
+    model_id: "model-one",
+    thinking: "low",
+  });
+});
+
 it("keeps accepted input and the next prompt visible while the new chat loads", async () => {
   let resume!: () => void;
   let resumeHistory!: () => void;

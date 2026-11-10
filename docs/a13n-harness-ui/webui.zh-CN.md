@@ -128,6 +128,8 @@ flowchart TB
 
 需要持久 Model 选择时，打开对话配置并设置 **Default model**。**Follow Agent model** 清除它。跟随该保存值时输入框显示 **Thread default**；改选输入框 Model 则改变 Run 草稿。配置检查会区分下次 Run 选择与当前或已保存工作的捕获选择。
 
+新聊天从创建时的默认设置开始。在同一浏览器重新打开草稿或已有聊天时，会恢复该聊天上次在输入框里选的设置。同一 Agent 下，手动选择的 Model 优先于对话默认模型，即使之后修改了对话默认模型也是如此。清除输入框里的模型选择后，会跟随当前对话默认模型；如果对话没有指定模型，则跟随 Agent 的模型。
+
 **Chat options → Clear context** 让下一条消息不带先前模型消息、笔记、任务或保存的 Agent 工作状态开始，同时丢弃待处理问题和审批。聊天历史、文件、设置和未发送输入保留。
 
 ### 下次 Run 的 Thinking 设置
@@ -138,7 +140,7 @@ flowchart TB
 
 选项取决于 Model 和安装的适配器。仅支持时显示 Off；最低 effort 不一定表示 Off。未知模型保留 Default 并说明原因。禁用预算或自定义设置冲突应在 Model 配置中解决。Thinking 不改变输出 token 上限。
 
-覆盖值只属于当前标签页，在修改前应用于后续 Run；更换 Agent 或 Model 会清除它。它不编辑 Model 资源，也不影响 steering 或正在运行的工作。
+浏览器按会话记住思考强度。刷新页面或重新打开聊天后，下次发送仍会使用所选强度。更换 Agent 或实际使用的 Model 后，强度会恢复为默认值。它不编辑 Model 资源，也不影响 steering 或正在运行的工作。
 
 ### 后续 Run 使用的环境
 
@@ -157,7 +159,7 @@ Full Control 使用服务器账户。Sandbox 需要 Host 支持的隔离启动�
 
 在 **Agent & Model settings** 选择 **Fast**，或在支持的 Codex 连接上选择 **Ultrafast**。再次点击选中的按钮请求 Off。**Use model setting** 继承 Model 设置；**Provider default** 与 Off 不同。
 
-选择应用于当前标签页之后的 Send，更换 Agent/Model 时清除。它不影响 steering、Thinking 或保存的 Model 配置。Context / Cost / Cache / Time 一行显示当前或已保存 Run 捕获的 **On**、**Off**、**Ultrafast** 或 **Default**；短横线表示不可用。
+浏览器会为这个会话记住所选速度。更换 Agent 或实际使用的 Model 后，速度会恢复为默认值。它不影响 steering、Thinking 或保存的 Model 配置。Context / Cost / Cache / Time 一行显示当前或已保存 Run 捕获的 **On**、**Off**、**Ultrafast** 或 **Default**；短横线表示不可用。
 
 服务器为支持的 OpenAI/Codex、直连 Anthropic 和 Gemini 连接提供原生速度控件。被禁用的选项会说明限制。实际效果取决于 provider 资格和收费；请求速度模式不保证更快执行。
 

@@ -536,7 +536,7 @@ function Reasoning({
         autoHeight
         scrollbarGutter
         overscrollContain
-        className={styles.reasoningBody}
+        className={`${styles.reasoningBody} ${styles.innerReader}`}
         viewportProps={{
           role: "region",
           "aria-label": t("Thought content"),
