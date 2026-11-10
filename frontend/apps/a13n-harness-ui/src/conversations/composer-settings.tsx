@@ -127,12 +127,7 @@ export function ComposerSettings({
         <span>{label ?? t("Model")}</span>
         <CaretDown aria-hidden="true" />
       </PopoverTrigger>
-      <PopoverPopup
-        side="top"
-        align="end"
-        data-page={page}
-        className={styles.popup}
-      >
+      <PopoverPopup side="top" align="end" className={styles.popup}>
         {content}
       </PopoverPopup>
     </Popover>

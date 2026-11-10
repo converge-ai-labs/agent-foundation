@@ -391,12 +391,12 @@ class ThreadFiles:
                             os.rename(attachment_id, attachment_id, src_dir_fd=source_fd, dst_dir_fd=destination_fd)
             return result
 
-    async def prune(self) -> tuple[str, ...]:
-        """Best effort; age selects candidates, held OS locks determine use."""
+    async def prune(self, *, retained: frozenset[str] = frozenset()) -> tuple[str, ...]:
+        """Best effort; saved drafts and held OS locks protect current inputs."""
         async with self._mutex:
-            return await to_thread.run_sync(self._prune)
+            return await to_thread.run_sync(self._prune, retained)
 
-    def _prune(self) -> tuple[str, ...]:
+    def _prune(self, retained: frozenset[str]) -> tuple[str, ...]:
         removed: list[str] = []
         if not self.root.exists():
             return ()
@@ -407,7 +407,7 @@ class ThreadFiles:
             return ()
         for directory in directories:
             scratch = directory / "tmp"
-            if not _SAFE_ID.fullmatch(directory.name) or directory.is_symlink():
+            if directory.name in retained or not _SAFE_ID.fullmatch(directory.name) or directory.is_symlink():
                 continue
             try:
                 with self._gate(directory.name):

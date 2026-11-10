@@ -6,7 +6,7 @@ Harness UI is a local Agent workbench with a personal CLI and a collaborative We
 
 Human-editable files remain the desired-resource authority so Harness UI can be configured without a browser or a large command surface. Separately, explicit CLI operations install editable declarative Content Plugins under the data root. SQLite owns mutable Thread and execution heads, plus private Bot and Connector state under [Bot and Connector Ingress](12-bot-and-connector-ingress.md), while immutable content-addressed objects retain complete Run compositions and continuation checkpoints.
 
-Harness UI persists complete continuation boundaries. Shared editing drafts, page presence, and ordinary root-input intent remain process-local. [Bot](12-bot-and-connector-ingress.md) additionally retains bounded input intent and Connector ingress without replaying uncertain execution. Process loss can discard a root receipt, uncheckpointed submitted message or deferred response, partial output, an active child segment, live events, and Run-local shell observations. Native command survival is Provider-owned. Retained Shell records let a successor App reconnect supervision to the original process, and retained results and eligible completion hints survive under the [local recovery contract](03-local-storage-and-recovery.md#retained-tool-executions). A later Agent operation resumes only from a previously selected complete checkpoint.
+Harness UI persists complete continuation boundaries and bounded current shared composers. Page presence and ordinary accepted-work intent remain transient. [Bot](12-bot-and-connector-ingress.md) additionally retains bounded input intent and automatic ingress without replaying uncertain execution. Process loss can discard a root receipt, uncheckpointed submitted message or deferred response, partial output, an active child segment, live events, and Run-local shell observations. Native command survival is Provider-owned. Retained Shell records let a successor App reconnect supervision to the original process, and retained results and eligible completion hints survive under the [local recovery contract](03-local-storage-and-recovery.md#retained-tool-executions). A later Agent operation resumes only from a previously selected complete checkpoint.
 
 Harness UI owns two built-in local execution modes. **Full Control** runs commands as the Host user, with Direct Local as the default runtime and local envd as an explicit alternative. Computer Use is an independent opt-in for local envd. **Sandbox** uses Local Envd over EIP with Envd-managed restricted Session workers and inherited Host networking, including localhost; it never falls back to Direct Local. Both preserve the local machine's canonical Project-root paths in Harness aggregate routing and model context while retaining different execution authority. Other adapters use provider-neutral virtual routes unless they explicitly declare that their path space preserves Host paths.
 
@@ -133,12 +133,12 @@ Harness UI stores:
 
 - accepted configuration-generation metadata and safe diagnostics;
 - Project and resource indexes derived from files;
-- Thread metadata, sticky configuration, and selected continuation;
+- Thread metadata, sticky configuration, current shared browser composers, and selected continuation;
 - immutable resolved Run compositions;
 - child execution heads and immutable checkpoints;
 - Host-authoritative Environment state references;
 
-It does not durably store shared browser drafts, root receipts, an execution-accepted input queue, active root Run records, a child scheduler, process-liveness records, shell-process handles, native terminal sessions, presence, native runtime objects, resolved credentials, or live streams. In-memory browser drafts are not queued inputs and never authorize automatic execution.
+It does not durably store root receipts, an execution-accepted input queue, active root Run records, a child scheduler, process-liveness records, shell-process handles, native terminal sessions, presence, native runtime objects, resolved credentials, or live streams. Saved browser drafts are editing state and never authorize automatic execution.
 
 ## Surfaces and Packaging
 

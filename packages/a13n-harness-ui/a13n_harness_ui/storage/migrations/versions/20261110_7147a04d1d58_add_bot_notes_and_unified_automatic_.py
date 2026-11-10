@@ -1,7 +1,7 @@
 """add bot notes and unified automatic inbox.
 
 Revision ID: 7147a04d1d58
-Revises: d9e633ce9a00
+Revises: e94e15093b5d
 Create Date: 2026-11-10 16:00:50.778350+00:00
 """
 
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "7147a04d1d58"
-down_revision: str | Sequence[str] | None = "d9e633ce9a00"
+down_revision: str | Sequence[str] | None = "e94e15093b5d"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

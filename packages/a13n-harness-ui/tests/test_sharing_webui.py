@@ -289,3 +289,40 @@ async def test_browser_runtime_status_and_explicit_retry(tmp_path, monkeypatch, 
         assert response.json()["status"] == "ready"
         assert response.json()["error"] is None
         assert not app.browsers().bindings and not runtime.pages
+
+
+async def test_guest_submission_cannot_replay_owner_options_capture(tmp_path):
+    import base64
+
+    from a13n_harness_ui.shared_drafts import DraftCommand, composer_document, composer_options, options_document
+    from pycrdt import Map, Text
+
+    async with shared_server(tmp_path) as (_, app, client):
+        thread = await app.create_thread()
+        prefix, headers = await create_link(client, "thread", thread.thread_id, "prompt")
+        draft = await app.shared_draft(thread.thread_id)
+        participant = draft.attach()
+        authored, options = composer_document(), options_document()
+        authored.get("text", type=Text).insert(0, "Owner input")
+        options.get("options", type=Map)["mode"] = "goal"
+        content = base64.b64encode(authored.get_update()).decode()
+        selected = base64.b64encode(options.get_update()).decode()
+        await app.edit_shared_draft(
+            thread.thread_id,
+            participant,
+            DraftCommand(
+                kind="sync",
+                draft_id=draft.draft_id,
+                update_base64=content,
+                options_update_base64=selected,
+            ),
+        )
+        capture = {"draft_id": draft.draft_id, "update_base64": content, "options_update_base64": selected}
+        response = await client.post(
+            prefix + f"/threads/{thread.thread_id}/submit",
+            headers=headers,
+            json={"parts": ["Guest input"], "draft": capture},
+        )
+        assert response.status_code == 403
+        assert composer_options(draft.options).mode == "goal"
+        assert str(draft.document["text"]) == "Owner input"

@@ -5,7 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { useState, useSyncExternalStore } from "react";
 import type { Schema } from "../transport/client";
 import { ThreadDraft } from "./draft";
-import { useBrowserRunChoices } from "./browser-run-choices";
+import { useComposerRunChoices } from "./composer-run-choices";
 import { ThreadRunChoices } from "./thread-run-choices";
 import { ComposerSettings } from "./composer-settings";
 import { ModelOptions } from "./model-picker";
@@ -81,8 +81,7 @@ const catalog: Schema<"ThreadSelectorCatalog"> = {
 function Choices({ defaultModelId }: { defaultModelId?: string } = {}) {
   const [draft] = useState(() => new ThreadDraft());
   useSyncExternalStore(draft.subscribe, draft.getSnapshot);
-  const choices = useBrowserRunChoices(
-    "test",
+  const choices = useComposerRunChoices(
     draft,
     "agent",
     defaultModelId ?? model.model_id,
@@ -313,8 +312,7 @@ it("changes Agent inside settings and clears model controls for the new inherite
     const [agentId, setAgentId] = useState("agent");
     const [draft] = useState(() => new ThreadDraft());
     useSyncExternalStore(draft.subscribe, draft.getSnapshot);
-    const choices = useBrowserRunChoices(
-      "test",
+    const choices = useComposerRunChoices(
       draft,
       agentId,
       agentId === "agent" ? model.model_id : other.model_id,

@@ -9161,6 +9161,11 @@ export interface components {
              * @default null
              */
             update_base64?: string | null;
+            /**
+             * Options Update Base64
+             * @default null
+             */
+            options_update_base64?: string | null;
             /** @default null */
             presence?: components["schemas"]["DraftPresence"] | null;
         };
@@ -9178,6 +9183,11 @@ export interface components {
             participant_id: string;
             /** Update Base64 */
             update_base64: string;
+            /**
+             * Options Update Base64
+             * @default null
+             */
+            options_update_base64?: string | null;
             /** Participants */
             participants: {
                 [key: string]: components["schemas"]["DraftPresence"];
@@ -9834,6 +9844,8 @@ export interface components {
             draft_id: string;
             /** Update Base64 */
             update_base64: string;
+            /** Options Update Base64 */
+            options_update_base64?: string | null;
         };
         FastSelection: boolean | "ultrafast";
         /** InputAttachmentReference */

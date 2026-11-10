@@ -1104,21 +1104,21 @@ def create_webui(
         if not await authenticate_browser(socket):
             return
         delivery = InteractiveOutput(socket)
+        editors = AsyncExitStack()
         try:
             await guest_check(socket, thread_id, prompt=True)
-            draft = await app().shared_draft(thread_id)
+            draft, participant = await editors.enter_async_context(app().shared_draft_editor(thread_id))
         except HarnessUiError as exc:
             await delivery.send(ErrorEnvelope(error=ErrorBody(code=exc.code, message=str(exc))))
             await delivery.close(code=4404)
             return
-        participant = draft.attach()
         try:
             async with create_task_group() as group:
 
                 async def output() -> None:
                     while True:
                         changed = draft.changed
-                        frame = draft.frame(participant)
+                        frame = draft.frame(participant, include_options=not bool(socket.path_params.get("share_id")))
                         await delivery.send(frame)
                         if frame.closed:
                             await delivery.close()
@@ -1139,7 +1139,12 @@ def create_webui(
                         try:
                             command = DraftCommand.model_validate_json(await receive_text(socket, limit=710000))
                             await guest_check(socket, thread_id, prompt=True)
-                            await app().edit_shared_draft(thread_id, participant, command)
+                            await app().edit_shared_draft(
+                                thread_id,
+                                participant,
+                                command,
+                                edit_options=not bool(socket.path_params.get("share_id")),
+                            )
                         except (ValidationError, ValueError):
                             await delivery.send(
                                 ErrorEnvelope(
@@ -1158,7 +1163,7 @@ def create_webui(
         except* (WebSocketDisconnect, TimeoutError):
             pass
         finally:
-            draft.detach(participant)
+            await editors.aclose()
 
     @server.get("/api/browser", response_model=BrowserRuntimeState)
     async def browser_runtime() -> BrowserRuntimeState:
@@ -2465,7 +2470,9 @@ def create_webui(
     )
     async def shared_submit(share_id: str, thread_id: str, request: Request) -> RootRunReceipt:
         document = await _document(request, RootSteerRequest, max_bytes=2 * _MAX_BODY)
-        if document.skill_references:
+        if document.skill_references or (
+            document.draft is not None and document.draft.options_update_base64 is not None
+        ):
             raise forbidden()
         await app().sharing.thread(share_id, thread_id, prompt=True)
         return await app().submit_thread(
@@ -2491,7 +2498,9 @@ def create_webui(
     )
     async def shared_steer(share_id: str, receipt_id: str, request: Request) -> RootControlResult:
         document = await _document(request, RootSteerRequest, max_bytes=2 * _MAX_BODY)
-        if document.skill_references:
+        if document.skill_references or (
+            document.draft is not None and document.draft.options_update_base64 is not None
+        ):
             raise forbidden()
         operation = await app().get_root_operation(receipt_id)
         await app().sharing.thread(share_id, operation.receipt.thread_id, prompt=True)

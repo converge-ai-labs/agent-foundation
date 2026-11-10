@@ -24,6 +24,7 @@ from .connectors import ConnectorRepository
 from .continuations import read_continuation
 from .contracts import Continuation, StoredThreadInitialState
 from .database import Database, open_database
+from .drafts import DraftRepository
 from .envd_sessions import EnvdSessionRepository
 from .inspection import InspectionRepository
 from .layout import StorageLayout
@@ -68,6 +69,7 @@ class LocalStore:
         self.configurations = ConfigurationRepository(database.sessions)
         self.project_models = ProjectModelPreferenceRepository(database.sessions)
         self.threads = ThreadRepository(database.sessions)
+        self.drafts = DraftRepository(database.sessions)
         self.inspections = InspectionRepository(database.sessions)
         self.work = WorkRepository(database.sessions)
         self.usage = ThreadUsageRepository(database.sessions)

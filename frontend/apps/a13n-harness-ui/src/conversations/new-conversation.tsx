@@ -1,4 +1,4 @@
-import { useBrowserRunChoices } from "./browser-run-choices";
+import { useComposerRunChoices } from "./composer-run-choices";
 import {
   createContext,
   useContext,
@@ -300,8 +300,7 @@ function NewConversation({
   const effectiveAgent = selectors.data?.agents.find(
     (item) => item.agent_id === effective?.agent_source.id,
   );
-  const runChoices = useBrowserRunChoices(
-    threadId,
+  const runChoices = useComposerRunChoices(
     composerDraft,
     defaults.agent_id ?? effective?.agent_source.id,
     effective?.default_model_id ??

@@ -4,7 +4,18 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Index, Integer, String, Text, UniqueConstraint, text
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    ForeignKey,
+    Index,
+    Integer,
+    LargeBinary,
+    String,
+    Text,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .metadata import Base
@@ -368,6 +379,24 @@ class TranscriptTurnRecord(Base):
     input_position: Mapped[int] = mapped_column(Integer, nullable=False)
     end_position: Mapped[int] = mapped_column(Integer, nullable=False)
     value_json: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class WebuiDraftRecord(Base):
+    """Current bounded editing state, independent of Thread execution configuration."""
+
+    __tablename__ = "webui_draft"
+    __table_args__ = (
+        CheckConstraint("length(document_update) + length(options_update) <= 524288", name="document_size"),
+    )
+
+    thread_id: Mapped[str] = mapped_column(
+        String(80), ForeignKey("thread.thread_id", ondelete="CASCADE"), primary_key=True
+    )
+    draft_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    document_update: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    options_update: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    unsent_since: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False, index=True)
 
 
 class ThreadConfigurationRecord(Base):

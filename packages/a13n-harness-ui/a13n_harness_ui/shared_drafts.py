@@ -1,8 +1,9 @@
-"""Process-local Y CRDT composer state; synchronization never submits input."""
+"""Validated, persistent Y CRDT composer state; synchronization never submits input."""
 
 from __future__ import annotations
 
 import base64
+import json
 import re
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
@@ -14,8 +15,10 @@ from anyio import Event, Lock
 from pycrdt import Doc, Map, Text
 from pydantic import Field
 
+from a13n_harness_ui.environment_bindings import EnvironmentSelectionPatch
 from a13n_harness_ui.errors import HarnessUiError
-from a13n_harness_ui.surfaces import SurfaceModel
+from a13n_harness_ui.storage.drafts import StoredDraft
+from a13n_harness_ui.surfaces import RunModelOverrides, SurfaceModel
 
 MAX_DRAFT_BYTES = 512 * 1024
 DRAFT_PRESENCE_TIMEOUT_SECONDS = 30
@@ -33,6 +36,7 @@ class DraftCapture(SurfaceModel):
 
     draft_id: str = Field(min_length=1, max_length=100)
     update_base64: str = Field(min_length=1, max_length=700000)
+    options_update_base64: str | None = Field(default=None, max_length=700000)
 
 
 class DraftPresence(SurfaceModel):
@@ -49,6 +53,7 @@ class DraftCommand(SurfaceModel):
     # Complete Yjs v1 update, including dependencies and deletion sets.
     # Full updates keep rejoin and rejected-update recovery stateless.
     update_base64: str | None = Field(default=None, max_length=700000)
+    options_update_base64: str | None = Field(default=None, max_length=700000)
     presence: DraftPresence | None = None
 
 
@@ -57,12 +62,36 @@ class DraftFrame(SurfaceModel):
     draft_id: str
     participant_id: str
     update_base64: str
+    options_update_base64: str | None = None
     participants: dict[str, DraftPresence]
     closed: bool = False
 
 
+class ComposerModelOptions(RunModelOverrides):
+    # Bind retained model controls to the Agent and effective Model they describe.
+    agent: str | None = Field(default=None, min_length=1, max_length=128)
+    effective_model: str | None = Field(default=None, min_length=1, max_length=128)
+
+
+class ComposerOptions(SurfaceModel):
+    model: ComposerModelOptions | None = None
+    environment: EnvironmentSelectionPatch | None = None
+    mode: Literal["normal", "goal"] = "normal"
+
+
 def composer_document() -> Doc:
     return Doc({"text": Text(), "attachments": Map[str]()})
+
+
+def options_document() -> Doc:
+    return Doc({"options": Map()})
+
+
+def composer_options(document: Doc) -> ComposerOptions:
+    if set(document.keys()) != {"options"}:
+        raise ValueError("Composer options have only an options root.")
+    # JSON decoding preserves strict wire validation and tuple-valued environment axes.
+    return ComposerOptions.model_validate_json(json.dumps(document.get("options", type=Map).to_py()))
 
 
 def composer_values(document: Doc) -> tuple[str, tuple[str, ...]]:
@@ -90,12 +119,28 @@ def composer_values(document: Doc) -> tuple[str, tuple[str, ...]]:
 
 
 class SharedDraft:
-    def __init__(self) -> None:
-        self.draft_id = f"draft-{uuid4().hex}"
+    def __init__(
+        self,
+        *,
+        thread_id: str = "",
+        stored: StoredDraft | None = None,
+        persist: Callable[[StoredDraft], Awaitable[None]] | None = None,
+    ) -> None:
+        self.thread_id = thread_id
+        self.draft_id = stored.draft_id if stored else f"draft-{uuid4().hex}"
         self.document = composer_document()
+        self.options = options_document()
+        if stored:
+            self.document.apply_update(stored.document_update)
+            self.options.apply_update(stored.options_update)
+            composer_values(self.document)
+            composer_options(self.options)
+        self._options_update = self.options.get_update()
+        self._options_update_base64 = base64.b64encode(self._options_update).decode("ascii")
+        self._persist = persist
         self._update = self.document.get_update()
         self._update_base64 = base64.b64encode(self._update).decode("ascii")
-        self.unsent_since: datetime | None = None
+        self.unsent_since: datetime | None = stored.unsent_since if stored else None
         self.participants: dict[str, DraftPresence] = {}
         self._presence_updated: dict[str, float] = {}
         self.changed = Event()
@@ -129,17 +174,18 @@ class SharedDraft:
         if expired:
             self._notify()
 
-    def frame(self, participant: str) -> DraftFrame:
+    def frame(self, participant: str, *, include_options: bool = True) -> DraftFrame:
         self.expire_presence()
         return DraftFrame(
             draft_id=self.draft_id,
             participant_id=participant,
             update_base64=self._update_base64,
+            options_update_base64=self._options_update_base64 if include_options else None,
             participants=dict(self.participants),
             closed=self.closed,
         )
 
-    def prepare_clear(self, capture: DraftCapture) -> bytes:
+    def prepare_clear(self, capture: DraftCapture, *, reset_mode: bool = False) -> tuple[bytes, bytes | None]:
         """Validate a synchronized capture without changing the shared draft."""
         if self.closed or capture.draft_id != self.draft_id:
             raise HarnessUiError("The shared draft instance changed.", code="draft_instance_conflict")
@@ -157,30 +203,73 @@ class SharedDraft:
         merged.apply_update(update)
         if merged.get_update() != before:
             raise HarnessUiError("Synchronize your edits before sending.", code="draft_not_synchronized")
+        options_clear = None
+        if capture.options_update_base64 is not None:
+            selected = options_document()
+            selected.apply_update(base64.b64decode(capture.options_update_base64, validate=True))
+            composer_options(selected)
+            combined = options_document()
+            combined.apply_update(self._options_update)
+            before_options = combined.get_update()
+            combined.apply_update(selected.get_update())
+            if combined.get_update() != before_options:
+                raise HarnessUiError("Synchronize your options before sending.", code="draft_not_synchronized")
+            if reset_mode and "mode" in selected.get("options", type=Map):
+                del selected.get("options", type=Map)["mode"]
+                options_clear = selected.get_update()
         del captured.get("text", type=Text)[:]
-        return captured.get_update()
+        return captured.get_update(), options_clear
 
-    async def clear(self, update: bytes) -> bool:
+    async def clear(self, updates: tuple[bytes, bytes | None]) -> bool:
         """Consume captured identities while preserving later and concurrent edits."""
         async with self._lock:
             if self.closed:
                 return False
             candidate = composer_document()
             candidate.apply_update(self._update)
-            candidate.apply_update(update)
-            return self._publish(candidate)
+            candidate.apply_update(updates[0])
+            options = options_document()
+            options.apply_update(self._options_update)
+            if updates[1] is not None:
+                options.apply_update(updates[1])
+            return await self._publish(candidate, options)
 
-    def _publish(self, candidate: Doc) -> bool:
+    async def _publish(self, candidate: Doc, options: Doc) -> bool:
+        from anyio import CancelScope
+
+        update = candidate.get_update()
+        options_update = options.get_update()
+        if len(update) + len(options_update) > MAX_DRAFT_BYTES:
+            raise ValueError("Shared draft exceeds 512 KiB of CRDT state.")
         was_unsent = self.unsent_since is not None
-        self.document = candidate
-        self._update = candidate.get_update()
-        self._update_base64 = base64.b64encode(self._update).decode("ascii")
-        # Live tokens count even during uploads; dormant entries do not.
+        since = self.unsent_since
+        # Live tokens count even during uploads; dormant entries and options do not.
         if not str(candidate.get("text", type=Text)).strip():
-            self.unsent_since = None
-        elif self.unsent_since is None:
-            self.unsent_since = datetime.now(UTC)
-        self._notify()
+            since = None
+        elif since is None:
+            since = datetime.now(UTC)
+        # Commit and publication are one editing acknowledgment. No peer observes
+        # candidate state if saving fails, or an unsaved acknowledgment on cancellation.
+        with CancelScope(shield=True):
+            if self._persist is not None and (update != self._update or options_update != self._options_update):
+                await self._persist(
+                    StoredDraft(
+                        thread_id=self.thread_id,
+                        draft_id=self.draft_id,
+                        document_update=update,
+                        options_update=options_update,
+                        unsent_since=since,
+                        updated_at=datetime.now(UTC),
+                    )
+                )
+            self.document = candidate
+            self.options = options
+            self._options_update = options_update
+            self._options_update_base64 = base64.b64encode(options_update).decode("ascii")
+            self._update = update
+            self._update_base64 = base64.b64encode(update).decode("ascii")
+            self.unsent_since = since
+            self._notify()
         return was_unsent != (self.unsent_since is not None)
 
     async def command(
@@ -188,6 +277,8 @@ class SharedDraft:
         participant: str,
         command: DraftCommand,
         validate_attachments: Callable[[tuple[str, ...]], Awaitable[None]],
+        *,
+        edit_options: bool = True,
     ) -> bool:
         """Apply an edit and report a change in nonempty draft membership."""
         async with self._lock:
@@ -195,7 +286,11 @@ class SharedDraft:
             if self.closed or participant not in self.participants or command.draft_id != self.draft_id:
                 raise HarnessUiError("The shared draft instance changed.", code="draft_instance_conflict")
             if command.kind == "presence":
-                if command.presence is None or command.update_base64 is not None:
+                if (
+                    command.presence is None
+                    or command.update_base64 is not None
+                    or command.options_update_base64 is not None
+                ):
                     raise ValueError("Presence requires only participant presentation.")
                 self.participants[participant] = command.presence
                 if command.presence.anchor is not None and command.presence.head is not None:
@@ -212,13 +307,23 @@ class SharedDraft:
                 candidate.apply_update(self._update)
                 candidate.apply_update(update)
                 _, attachments = composer_values(candidate)
+                options = options_document()
+                options.apply_update(self._options_update)
+                if command.options_update_base64 is not None:
+                    if not edit_options:
+                        raise HarnessUiError("Sharing guests cannot change composer options.", code="share_forbidden")
+                    options_update = base64.b64decode(command.options_update_base64, validate=True)
+                    if len(options_update) > MAX_DRAFT_BYTES:
+                        raise ValueError("Shared draft exceeds 512 KiB of CRDT state.")
+                    options.apply_update(options_update)
+                composer_options(options)
                 accepted_update = candidate.get_update()
                 if len(accepted_update) > MAX_DRAFT_BYTES:
                     raise ValueError("Shared draft exceeds 512 KiB of CRDT state.")
                 await validate_attachments(attachments)
                 # Publish only after the entire composer has validated. Rejected
                 # selections cannot partially replace the shared text.
-                return self._publish(candidate)
+                return await self._publish(candidate, options)
             self._notify()
             return was_unsent != (self.unsent_since is not None)
 
