@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
   useContext,
   useEffect,
@@ -152,6 +152,12 @@ vi.mock("./terminal", () => ({
     );
   },
 }));
+beforeEach(() => {
+  // Resource interaction tests start with an explicitly opened supporting panel.
+  for (const chat of ["current", "other", "new"]) {
+    localStorage.setItem(`a13n-harness-ui.native-panel.${chat}`, "open");
+  }
+});
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
@@ -340,6 +346,44 @@ function restoreSideBySide() {
     screen.getByRole("button", { name: "Open supporting panel" }),
   );
 }
+
+it.each(["/", "/new", "/threads/current"])(
+  "keeps the supporting panel closed by default on %s, including with a legacy open preference",
+  async (path) => {
+    localStorage.clear();
+    localStorage.setItem("a13n-harness-ui.native-panel", "open");
+    setup(path);
+    const toggle = await screen.findByRole("button", {
+      name: "Open supporting panel",
+    });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(
+      screen.queryByRole("tablist", { name: "Workspace views" }),
+    ).toBeNull();
+    fireEvent.click(toggle);
+    expect(
+      screen.getByRole("button", { name: "Close supporting panel" }),
+    ).toBeTruthy();
+    expect(
+      localStorage.getItem(
+        `a13n-harness-ui.native-panel.${path.startsWith("/threads/") ? "current" : "new"}`,
+      ),
+    ).toBe("open");
+    fireEvent.click(screen.getByRole("button", { name: "Another chat" }));
+    await screen.findByText("Chat remains mounted /threads/other");
+    expect(
+      screen.getByRole("button", { name: "Open supporting panel" }),
+    ).toBeTruthy();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: path.startsWith("/threads/") ? "Current chat" : "New chat",
+      }),
+    );
+    expect(
+      await screen.findByRole("button", { name: "Close supporting panel" }),
+    ).toBeTruthy();
+  },
+);
 
 it("adds files through the new-tab picker in one strip and closes views without discarding private buffers", async () => {
   const dirty = { dirty: true, text: "Keep this private edit" };
@@ -1851,7 +1895,8 @@ it("remembers each chat's supporting-panel choice across navigation and remounts
   ).toBeTruthy();
 });
 
-it("keeps New chat's choice separate and uses the old global preference only as a default", async () => {
+it("keeps New chat's choice separate without updating the old global preference", async () => {
+  localStorage.clear();
   localStorage.setItem("a13n-harness-ui.native-panel", "closed");
   setup("/new");
   fireEvent.click(
