@@ -1,4 +1,6 @@
 {
+  "Saving…": "正在保存…",
+  "Advanced": "高级",
   "Keeps track of ongoing work across your chats.": "持续跟进各个聊天中的工作。",
   "Turn off Bot?": "关闭 Bot？",
   "History, settings, notes and pending inputs are kept. Active work finishes and other chats keep running. Retained inputs can be processed after you turn Bot back on.": "历史、设置、笔记和待处理输入都会保留。当前工作会继续完成，其他聊天不受影响。重新开启 Bot 后，可以处理保留的输入。",
