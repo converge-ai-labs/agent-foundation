@@ -321,7 +321,13 @@ async def test_installed_extension_content_and_native_action_popup(native_browse
             ):
                 await asyncio.sleep(0.025)
         infos = (await backend.browser.send("Target.getTargets"))["targetInfos"]
-        worker = next(info for info in infos if info["type"] == "service_worker" and info["url"].endswith("/worker.js"))
+        worker = next(
+            info
+            for info in infos
+            if info["type"] == "service_worker"
+            and info["url"].startswith("chrome-extension://")
+            and info["url"].endswith("/worker.js")
+        )
         attached = await backend.browser.send(
             "Target.attachToTarget", {"targetId": worker["targetId"], "flatten": True}
         )
@@ -329,6 +335,21 @@ async def test_installed_extension_content_and_native_action_popup(native_browse
 
         session = Frame("", attached["sessionId"])
         try:
+            # Content-script readiness does not synchronize the background worker's bindings.
+            async with asyncio.timeout(5):
+                while True:
+                    ready = await backend.browser.send(
+                        "Runtime.evaluate",
+                        {
+                            "expression": "typeof globalThis.chrome?.action?.openPopup === 'function'",
+                            "returnByValue": True,
+                        },
+                        session,
+                    )
+                    assert "exceptionDetails" not in ready, ready
+                    if ready.get("result", {}).get("value"):
+                        break
+                    await asyncio.sleep(0.025)
             await backend.browser.activate(backend.page)
             opened = await backend.browser.send(
                 "Runtime.evaluate",
