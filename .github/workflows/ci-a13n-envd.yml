@@ -436,6 +436,8 @@ jobs:
       - name: Test native AT-SPI in an isolated desktop and user bus
         if: matrix.linux
         shell: bash
+        env:
+          ENVD_FEATURES: ${{ matrix.features }}
         run: |
           set -o pipefail
           make accessibility-linux-test 2>&1 | tee test-results/accessibility-linux.log

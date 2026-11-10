@@ -63,7 +63,7 @@ TEST_INPUTS: dict[str, tuple[str, ...]] = {
         ".github/workflows/envd-size-report.yml",
         ".github/workflows/ci-a13n-envd.yml",
     ),
-    "test_envd_ci_workflow.py": (".github/workflows/ci-a13n-envd.yml",),
+    "test_envd_ci_workflow.py": (".github/workflows/ci-a13n-envd.yml", "Makefile"),
     "test_envd_release_workflow.py": (".github/workflows/release-a13n-envd.yml",),
     "test_sandbox_init.py": ("deploy/docker/images/sandbox/*.sh",),
     "test_harness_ui_ci_workflow.py": (
